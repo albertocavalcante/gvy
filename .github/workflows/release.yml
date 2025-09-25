@@ -1,266 +1,168 @@
-name: Release
-
-on:
+---
+name: "Release"
+"on":
   push:
     tags:
-      - 'v*'
+    - "v*"
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v1.0.0)'
+        description: "Release version (e.g., v1.0.0)"
         required: false
-        type: string
-        default: 'manual'
+        type: "string"
+        default: "manual"
       dry_run:
         description: "Dry run (don't create release)"
         required: false
-        type: boolean
+        type: "boolean"
         default: false
-
 permissions:
-  contents: write
-  id-token: write
-
+  contents: "write"
+  id-token: "write"
 jobs:
   build-release:
-    name: Build Release Artifacts
-    runs-on: ${{ matrix.os }}
-
+    name: "Build Release Artifacts"
+    runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        java: [17]
-
+        os:
+        - "ubuntu-latest"
+        - "macos-latest"
+        - "windows-latest"
+        java:
+        - 17
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ matrix.java }}
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          cache-read-only: false
-
-      - name: Set build environment variables
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.version }}" = "manual" ] || [ -z "${{ github.event.inputs.version }}" ]; then
-              VERSION="manual-$(date +%Y%m%d-%H%M%S)"
-            else
-              VERSION="${{ github.event.inputs.version }}"
-            fi
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-
-          echo "Release version: ${VERSION}"
-          echo "BUILD_VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "BUILD_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-
-      - name: Validate Gradle Wrapper
-        run: ./gradlew --version
-
-      - name: Verify version detection
-        run: |
-          echo "Verifying smart version detection..."
-          ./gradlew printVersion
-          echo "Expected release version (without SNAPSHOT): ${BUILD_VERSION#v}"
-
-      - name: Compile and Test
-        run: ./gradlew compileKotlin compileTestKotlin test --stacktrace
-
-      - name: Build Shadow JAR
-        run: ./gradlew shadowJar --stacktrace
-
-      - name: Test JAR
-        shell: bash
-        run: |
-          echo "Testing JAR with --help flag..."
-          java -jar build/libs/groovy-lsp*.jar --help
-
-      - name: Prepare artifacts
-        shell: bash
-        run: |
-          mkdir -p dist
-          # Copy JAR with version in filename
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
-          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
-          elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
-          fi
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-${{ matrix.os }}
-          path: dist/*
-          retention-days: 7
-
+    - name: "Checkout code"
+      uses: "actions/checkout@v4"
+      with:
+        fetch-depth: 0
+    - name: "Set up JDK ${{ matrix.java }}"
+      uses: "actions/setup-java@v4"
+      with:
+        distribution: "temurin"
+        java-version: "${{ matrix.java }}"
+    - name: "Setup Gradle"
+      uses: "gradle/actions/setup-gradle@v3"
+      with:
+        cache-read-only: false
+    - name: "Set build environment variables"
+      shell: "bash"
+      run: "if [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ]; then\n  if\
+        \ [ \"${{ github.event.inputs.version }}\" = \"manual\" ] || [ -z \"${{ github.event.inputs.version\
+        \ }}\" ]; then\n    VERSION=\"manual-$(date +%Y%m%d-%H%M%S)\"\n  else\n  \
+        \  VERSION=\"${{ github.event.inputs.version }}\"\n  fi\nelse\n  VERSION=\"\
+        ${{ github.ref_name }}\"\nfi\n\necho \"Release version: ${VERSION}\"\necho\
+        \ \"BUILD_VERSION=${VERSION}\" >> $GITHUB_ENV\necho \"BUILD_COMMIT=${{ github.sha\
+        \ }}\" >> $GITHUB_ENV\necho \"BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)\"\
+        \ >> $GITHUB_ENV\n"
+    - name: "Validate Gradle Wrapper"
+      run: "./gradlew --version"
+    - name: "Verify version detection"
+      run: "echo \"Verifying smart version detection...\"\n./gradlew printVersion\n\
+        echo \"Expected release version (without SNAPSHOT): ${BUILD_VERSION#v}\"\n"
+    - name: "Compile and Test"
+      run: "./gradlew compileKotlin compileTestKotlin test --stacktrace"
+    - name: "Build Shadow JAR"
+      run: "./gradlew shadowJar --stacktrace"
+    - name: "Test JAR"
+      shell: "bash"
+      run: "echo \"Testing JAR with --help flag...\"\njava -jar build/libs/groovy-lsp*.jar\
+        \ --help\n"
+    - name: "Prepare artifacts"
+      shell: "bash"
+      run: "mkdir -p dist\n# Copy JAR with version in filename\nif [ \"${{ matrix.os\
+        \ }}\" = \"ubuntu-latest\" ]; then\n  cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar\n\
+        elif [ \"${{ matrix.os }}\" = \"macos-latest\" ]; then\n  cp build/libs/groovy-lsp*.jar\
+        \ dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar\nelif [ \"${{ matrix.os\
+        \ }}\" = \"windows-latest\" ]; then\n  cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar\n\
+        fi\n"
+    - name: "Upload release artifacts"
+      uses: "actions/upload-artifact@v4"
+      with:
+        name: "release-artifacts-${{ matrix.os }}"
+        path: "dist/*"
+        retention-days: 7
   create-release:
-    name: Create Release
-    needs: build-release
-    runs-on: ubuntu-latest
-    if: ${{ !inputs.dry_run }}
-
+    name: "Create Release"
+    needs: "build-release"
+    runs-on: "ubuntu-latest"
+    if: "${{ !inputs.dry_run }}"
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-          path: artifacts
-
-      - name: Prepare release assets
-        shell: bash
-        run: |
-          mkdir -p dist
-          echo "Downloaded artifacts:"
-          find artifacts -type f -name "*.jar" | sort
-
-          # Move all artifacts to dist directory
-          cp -r artifacts/* dist/ 2>/dev/null || true
-
-          # Generate checksums
-          cd dist
-          if ls *.jar 1> /dev/null 2>&1; then
-            sha256sum *.jar > checksums.txt
-            echo "Checksums generated:"
-            cat checksums.txt
-          fi
-
-      - name: Generate release notes
-        id: release_notes
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.version }}" = "manual" ] || [ -z "${{ github.event.inputs.version }}" ]; then
-              VERSION="manual-$(date +%Y%m%d-%H%M%S)"
-            else
-              VERSION="${{ github.event.inputs.version }}"
-            fi
-          else
-            VERSION="${{ github.ref_name }}"
-          fi
-
-          cat > release-notes.md <<EOF
-          ## Groovy LSP ${VERSION}
-
-          ### Installation
-
-          Download the appropriate JAR for your platform:
-
-          \`\`\`bash
-          # Download JAR (replace linux-amd64 with your platform)
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/groovy-lsp-${VERSION#v}-linux-amd64.jar
-
-          # Verify checksum
-          curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/checksums.txt
-          sha256sum -c checksums.txt --ignore-missing
-
-          # Run the Language Server
-          java -jar groovy-lsp-${VERSION#v}-linux-amd64.jar
-          \`\`\`
-
-          ### Supported Platforms
-
-          - **Linux AMD64** \`groovy-lsp-${VERSION#v}-linux-amd64.jar\`
-          - **macOS AMD64** \`groovy-lsp-${VERSION#v}-darwin-amd64.jar\`
-          - **Windows AMD64** \`groovy-lsp-${VERSION#v}-windows-amd64.jar\`
-
-          ### Usage
-
-          The Groovy Language Server provides IDE features for Groovy development including:
-          - Code completion
-          - Syntax highlighting
-          - Error checking
-          - Go to definition
-          - Find references
-
-          ### What's Changed
-
-          <!-- GitHub will auto-generate this section -->
-
-          ---
-
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/v0.0.1...${VERSION}
-          EOF
-
-      - name: Determine release settings
-        id: release_info
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.version }}" = "manual" ] || [ -z "${{ github.event.inputs.version }}" ]; then
-              VERSION="manual-$(date +%Y%m%d-%H%M%S)"
-              IS_PRERELEASE=true
-              IS_DRAFT=true
-            else
-              VERSION="${{ github.event.inputs.version }}"
-              IS_PRERELEASE=${{ contains(github.event.inputs.version, '-rc') || contains(github.event.inputs.version, '-beta') || contains(github.event.inputs.version, '-alpha') || contains(github.event.inputs.version, 'manual') }}
-              IS_DRAFT=true
-            fi
-          else
-            VERSION="${{ github.ref_name }}"
-            IS_PRERELEASE=${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
-            IS_DRAFT=false
-          fi
-
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
-          echo "is_draft=${IS_DRAFT}" >> $GITHUB_OUTPUT
-
-          echo "Release settings:"
-          echo "- Version: ${VERSION}"
-          echo "- Prerelease: ${IS_PRERELEASE}"
-          echo "- Draft: ${IS_DRAFT}"
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_info.outputs.version }}
-          draft: ${{ steps.release_info.outputs.is_draft }}
-          prerelease: ${{ steps.release_info.outputs.is_prerelease }}
-          name: Groovy LSP ${{ steps.release_info.outputs.version }}
-          body_path: release-notes.md
-          generate_release_notes: true
-          files: |
-            dist/groovy-lsp-*.jar
-            dist/checksums.txt
-          fail_on_unmatched_files: false
-          make_latest: ${{ steps.release_info.outputs.is_prerelease == 'false' }}
-
-      - name: Release summary
-        shell: bash
-        run: |
-          echo "✅ Release created successfully!"
-          echo "📦 Version: ${{ steps.release_info.outputs.version }}"
-          echo "🏷️ Tag: ${{ steps.release_info.outputs.version }}"
-          echo "📝 Draft: ${{ steps.release_info.outputs.is_draft }}"
-          echo "🔖 Prerelease: ${{ steps.release_info.outputs.is_prerelease }}"
-          echo ""
-          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release_info.outputs.version }}"
-          echo ""
-          echo "📋 Artifacts included:"
-          cd dist
-          for file in groovy-lsp-*.jar checksums.txt; do
-            if [[ -f "$file" ]]; then
-              size=$(ls -lh "$file" | awk '{print $5}')
-              echo "  - $file ($size)"
-            fi
-          done
+    - name: "Checkout code"
+      uses: "actions/checkout@v4"
+      with:
+        fetch-depth: 0
+    - name: "Download all artifacts"
+      uses: "actions/download-artifact@v4"
+      with:
+        merge-multiple: true
+        path: "artifacts"
+    - name: "Prepare release assets"
+      shell: "bash"
+      run: "mkdir -p dist\necho \"Downloaded artifacts:\"\nfind artifacts -type f\
+        \ -name \"*.jar\" | sort\n\n# Move all artifacts to dist directory\ncp -r\
+        \ artifacts/* dist/ 2>/dev/null || true\n\n# Generate checksums\ncd dist\n\
+        if ls *.jar 1> /dev/null 2>&1; then\n  sha256sum *.jar > checksums.txt\n \
+        \ echo \"Checksums generated:\"\n  cat checksums.txt\nfi\n"
+    - name: "Generate release notes"
+      id: "release_notes"
+      shell: "bash"
+      run: "if [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ]; then\n  if\
+        \ [ \"${{ github.event.inputs.version }}\" = \"manual\" ] || [ -z \"${{ github.event.inputs.version\
+        \ }}\" ]; then\n    VERSION=\"manual-$(date +%Y%m%d-%H%M%S)\"\n  else\n  \
+        \  VERSION=\"${{ github.event.inputs.version }}\"\n  fi\nelse\n  VERSION=\"\
+        ${{ github.ref_name }}\"\nfi\n\ncat > release-notes.md <<EOF\n## Groovy LSP\
+        \ ${VERSION}\n\n### Installation\n\nDownload the appropriate JAR for your\
+        \ platform:\n\n\\`\\`\\`bash\n# Download JAR (replace linux-amd64 with your\
+        \ platform)\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/groovy-lsp-${VERSION#v}-linux-amd64.jar\n\
+        \n# Verify checksum\ncurl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/checksums.txt\n\
+        sha256sum -c checksums.txt --ignore-missing\n\n# Run the Language Server\n\
+        java -jar groovy-lsp-${VERSION#v}-linux-amd64.jar\n\\`\\`\\`\n\n### Supported\
+        \ Platforms\n\n- **Linux AMD64** \\`groovy-lsp-${VERSION#v}-linux-amd64.jar\\\
+        `\n- **macOS AMD64** \\`groovy-lsp-${VERSION#v}-darwin-amd64.jar\\`\n- **Windows\
+        \ AMD64** \\`groovy-lsp-${VERSION#v}-windows-amd64.jar\\`\n\n### Usage\n\n\
+        The Groovy Language Server provides IDE features for Groovy development including:\n\
+        - Code completion\n- Syntax highlighting\n- Error checking\n- Go to definition\n\
+        - Find references\n\n### What's Changed\n\n<!-- GitHub will auto-generate\
+        \ this section -->\n\n---\n\n**Full Changelog**: https://github.com/${{ github.repository\
+        \ }}/compare/v0.0.1...${VERSION}\nEOF\n"
+    - name: "Determine release settings"
+      id: "release_info"
+      shell: "bash"
+      run: "if [ \"${{ github.event_name }}\" = \"workflow_dispatch\" ]; then\n  if\
+        \ [ \"${{ github.event.inputs.version }}\" = \"manual\" ] || [ -z \"${{ github.event.inputs.version\
+        \ }}\" ]; then\n    VERSION=\"manual-$(date +%Y%m%d-%H%M%S)\"\n    IS_PRERELEASE=true\n\
+        \    IS_DRAFT=true\n  else\n    VERSION=\"${{ github.event.inputs.version\
+        \ }}\"\n    IS_PRERELEASE=${{ contains(github.event.inputs.version, '-rc')\
+        \ || contains(github.event.inputs.version, '-beta') || contains(github.event.inputs.version,\
+        \ '-alpha') || contains(github.event.inputs.version, 'manual') }}\n    IS_DRAFT=true\n\
+        \  fi\nelse\n  VERSION=\"${{ github.ref_name }}\"\n  IS_PRERELEASE=${{ contains(github.ref_name,\
+        \ '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name,\
+        \ '-alpha') }}\n  IS_DRAFT=false\nfi\n\necho \"version=${VERSION}\" >> $GITHUB_OUTPUT\n\
+        echo \"is_prerelease=${IS_PRERELEASE}\" >> $GITHUB_OUTPUT\necho \"is_draft=${IS_DRAFT}\"\
+        \ >> $GITHUB_OUTPUT\n\necho \"Release settings:\"\necho \"- Version: ${VERSION}\"\
+        \necho \"- Prerelease: ${IS_PRERELEASE}\"\necho \"- Draft: ${IS_DRAFT}\"\n"
+    - name: "Create GitHub release"
+      uses: "softprops/action-gh-release@v2"
+      with:
+        tag_name: "${{ steps.release_info.outputs.version }}"
+        draft: "${{ steps.release_info.outputs.is_draft }}"
+        prerelease: "${{ steps.release_info.outputs.is_prerelease }}"
+        name: "Groovy LSP ${{ steps.release_info.outputs.version }}"
+        body_path: "release-notes.md"
+        generate_release_notes: true
+        files: "dist/groovy-lsp-*.jar\ndist/checksums.txt\n"
+        fail_on_unmatched_files: false
+        make_latest: "${{ steps.release_info.outputs.is_prerelease == 'false' }}"
+    - name: "Release summary"
+      shell: "bash"
+      run: "echo \"✅ Release created successfully!\"\necho \"📦 Version: ${{ steps.release_info.outputs.version\
+        \ }}\"\necho \"🏷️ Tag: ${{ steps.release_info.outputs.version }}\"\necho\
+        \ \"📝 Draft: ${{ steps.release_info.outputs.is_draft }}\"\necho \"🔖 Prerelease:\
+        \ ${{ steps.release_info.outputs.is_prerelease }}\"\necho \"\"\necho \"🔗\
+        \ Release URL: https://github.com/${{ github.repository }}/releases/tag/${{\
+        \ steps.release_info.outputs.version }}\"\necho \"\"\necho \"📋 Artifacts\
+        \ included:\"\ncd dist\nfor file in groovy-lsp-*.jar checksums.txt; do\n \
+        \ if [[ -f \"$file\" ]]; then\n    size=$(ls -lh \"$file\" | awk '{print $5}')\n\
+        \    echo \"  - $file ($size)\"\n  fi\ndone"

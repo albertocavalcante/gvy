@@ -1,11 +1,19 @@
 package com.github.albertocavalcante.groovylsp
 
 import kotlinx.coroutines.runBlocking
-import org.eclipse.lsp4j.*
-import org.eclipse.lsp4j.services.LanguageClient
-import org.junit.jupiter.api.Test
+import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.ClientInfo
+import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.junit.jupiter.api.BeforeEach
-import java.util.concurrent.CompletableFuture
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -13,12 +21,12 @@ import kotlin.test.assertTrue
 class GroovyLanguageServerTest {
 
     private lateinit var server: GroovyLanguageServer
-    private lateinit var mockClient: TestLanguageClient
+    private lateinit var mockClient: SynchronizingTestLanguageClient
 
     @BeforeEach
     fun setup() {
         server = GroovyLanguageServer()
-        mockClient = TestLanguageClient()
+        mockClient = SynchronizingTestLanguageClient()
         server.connect(mockClient)
     }
 
@@ -26,7 +34,7 @@ class GroovyLanguageServerTest {
     fun `test server initialization`() = runBlocking {
         val params = InitializeParams().apply {
             processId = 1234
-            rootUri = "file:///test/project"
+            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
             capabilities = ClientCapabilities()
             clientInfo = ClientInfo("Test Client", "1.0.0")
         }
@@ -53,7 +61,7 @@ class GroovyLanguageServerTest {
             position = Position(0, 0)
         }
 
-        val result = server.completion(params).get()
+        val result = server.textDocumentService.completion(params).get()
 
         assertNotNull(result)
         assertTrue(result.isLeft)
@@ -72,7 +80,7 @@ class GroovyLanguageServerTest {
             position = Position(5, 10)
         }
 
-        val result = server.hover(params).get()
+        val result = server.textDocumentService.hover(params).get()
 
         assertNotNull(result)
         assertNotNull(result.contents)
@@ -80,32 +88,29 @@ class GroovyLanguageServerTest {
 
         val content = result.contents.right
         assertEquals(MarkupKind.MARKDOWN, content.kind)
-        assertTrue(content.value.contains("Hello from Groovy LSP"))
+        assertTrue(content.value.contains("Groovy LSP"))
         assertTrue(content.value.contains("Line 6, Column 11")) // 0-indexed to 1-indexed
     }
 
     @Test
-    fun `test document open with TODO triggers diagnostic`() {
+    fun `test document open compiles valid groovy file`() = runBlocking {
         val params = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
                 uri = "file:///test.groovy"
                 languageId = "groovy"
                 version = 1
-                text = "// TODO: Implement this\nprintln 'Hello World'"
+                text = "class TestClass {\n    void hello() {\n        println 'Hello World'\n    }\n}"
             }
         }
 
-        server.didOpen(params)
+        server.textDocumentService.didOpen(params)
 
-        // Check that diagnostic was published
-        val publishedDiagnostics = mockClient.diagnostics
-        assertNotNull(publishedDiagnostics)
+        // Wait for compilation to complete and diagnostics to be published
+        val publishedDiagnostics = mockClient.awaitSuccessfulCompilation("file:///test.groovy")
+
         assertEquals("file:///test.groovy", publishedDiagnostics.uri)
-        assertTrue(publishedDiagnostics.diagnostics.isNotEmpty())
-
-        val diagnostic = publishedDiagnostics.diagnostics.first()
-        assertEquals(DiagnosticSeverity.Information, diagnostic.severity)
-        assertTrue(diagnostic.message.contains("TODO found"))
+        // Valid Groovy code should have no errors (already verified by awaitSuccessfulCompilation)
+        assertTrue(publishedDiagnostics.diagnostics.isEmpty())
     }
 
     @Test
@@ -113,58 +118,5 @@ class GroovyLanguageServerTest {
         val result = server.shutdown().get()
         assertNotNull(result)
         // Note: We don't actually call exit() in tests as it would terminate the test JVM
-    }
-
-    // Mock client for testing
-    private class TestLanguageClient : LanguageClient {
-        var diagnostics: PublishDiagnosticsParams? = null
-        var messages = mutableListOf<MessageParams>()
-
-        override fun telemetryEvent(obj: Any?) {}
-
-        override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams) {
-            this.diagnostics = diagnostics
-        }
-
-        override fun showMessage(messageParams: MessageParams) {
-            messages.add(messageParams)
-        }
-
-        override fun showMessageRequest(requestParams: ShowMessageRequestParams) =
-            CompletableFuture.completedFuture(MessageActionItem())
-
-        override fun logMessage(message: MessageParams) {}
-
-        override fun workspaceFolders() = CompletableFuture.completedFuture(emptyList<WorkspaceFolder>())
-
-        override fun configuration(params: ConfigurationParams) =
-            CompletableFuture.completedFuture(emptyList<Any>())
-
-        override fun createProgress(params: WorkDoneProgressCreateParams): CompletableFuture<Void> =
-            CompletableFuture.completedFuture(null)
-
-        override fun notifyProgress(params: ProgressParams) {}
-
-        override fun registerCapability(params: RegistrationParams): CompletableFuture<Void> =
-            CompletableFuture.completedFuture(null)
-
-        override fun unregisterCapability(params: UnregistrationParams): CompletableFuture<Void> =
-            CompletableFuture.completedFuture(null)
-
-        override fun applyEdit(params: ApplyWorkspaceEditParams) =
-            CompletableFuture.completedFuture(ApplyWorkspaceEditResponse(false))
-
-        override fun refreshSemanticTokens(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
-
-        override fun refreshCodeLenses(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
-
-        override fun showDocument(params: ShowDocumentParams) =
-            CompletableFuture.completedFuture(ShowDocumentResult(true))
-
-        override fun refreshDiagnostics(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
-
-        override fun refreshInlayHints(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
-
-        override fun refreshInlineValues(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
     }
 }

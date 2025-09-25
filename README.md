@@ -9,12 +9,14 @@ A Language Server Protocol (LSP) implementation for Apache Groovy.
 ## Features
 
 Currently implemented:
+
 - Basic LSP lifecycle (initialize/shutdown)
 - Simple completions (println, def, class)
 - Hover support
 - Diagnostics for TODO comments
 
 Planned:
+
 - Full Groovy AST integration
 - Go-to definition
 - Find references
@@ -37,11 +39,13 @@ This creates a fat JAR at `build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar`
 ## Running
 
 ### Stdio mode (default)
+
 ```bash
 java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar
 ```
 
 ### Socket mode
+
 ```bash
 java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar socket 8080
 ```
@@ -49,16 +53,19 @@ java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar socket 8080
 ## Development
 
 This project uses:
+
 - Kotlin 2.0
 - LSP4J for protocol implementation
 - Gradle 9.1 for builds
 
 ### Running tests
+
 ```bash
 ./gradlew test
 ```
 
 ### Project Structure
+
 ```
 src/
 ├── main/kotlin/         # LSP server implementation

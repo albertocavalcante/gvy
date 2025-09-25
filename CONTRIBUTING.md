@@ -15,15 +15,18 @@ Thanks for your interest in contributing!
 ## Development Setup
 
 ### Requirements
+
 - JDK 17 or higher
 - Kotlin 2.0+
 
 ### Building
+
 ```bash
 ./gradlew build
 ```
 
 ### Running Tests
+
 ```bash
 ./gradlew test
 ```
@@ -39,6 +42,7 @@ Thanks for your interest in contributing!
 ## Reporting Issues
 
 Please use GitHub Issues to report bugs or request features. Include:
+
 - Clear description
 - Steps to reproduce (for bugs)
 - Expected behavior

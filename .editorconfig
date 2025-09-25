@@ -1,0 +1,32 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 120
+ij_kotlin_packages_to_use_import_on_demand = unset
+ij_kotlin_name_count_to_use_star_import = 2147483647
+ij_kotlin_name_count_to_use_star_import_for_members = 2147483647
+ij_kotlin_keep_blank_lines_in_declarations = 1
+ij_kotlin_keep_blank_lines_in_code = 1
+ij_kotlin_keep_blank_lines_before_right_brace = 0
+ij_kotlin_align_multiline_parameters = false
+ij_kotlin_continuation_indent_size = 4
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{md,txt}]
+trim_trailing_whitespace = false
+
+[*.{gradle,gradle.kts}]
+indent_size = 4
+
+[*.json]
+indent_size = 2
