@@ -24,12 +24,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - "ubuntu-latest"
-        - "macos-latest"
-        java:
-        - 17
-        - 21
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
+        java: ${{ fromJSON(github.event_name == 'pull_request' && '[17]' || '[17, 21]') }}
         exclude:
         - os: "macos-latest"
           java: 21
