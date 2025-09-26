@@ -23,6 +23,7 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
      * Provide definitions for the symbol at the given position using Flow pattern.
      * Returns a Flow of Location objects.
      */
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     fun provideDefinitions(uri: String, position: Position): Flow<Location> = flow {
         logger.debug("Providing definitions for $uri at ${position.line}:${position.character}")
 
@@ -31,15 +32,12 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid URI format: $uri", e)
             return@flow
-        } catch (e: RuntimeException) {
-            logger.error("Error creating URI: $uri", e)
-            return@flow
         }
 
         // Get the AST for the document
         val ast = compilationService.getAst(documentUri)
         if (ast == null) {
-            logger.debug("No AST available for $uri")
+            logger.warn("No AST available for $uri - this might indicate compilation service cache issue")
             return@flow
         }
 
@@ -47,13 +45,13 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
         // Note: We need to update GroovyCompilationService to provide these
         val visitor = compilationService.getAstVisitor(documentUri)
         if (visitor == null) {
-            logger.debug("No AST visitor available for $uri")
+            logger.warn("No AST visitor available for $uri - this might indicate visitor cache issue")
             return@flow
         }
 
         val symbolTable = compilationService.getSymbolTable(documentUri)
         if (symbolTable == null) {
-            logger.debug("No symbol table available for $uri")
+            logger.warn("No symbol table available for $uri - this might indicate symbol table cache issue")
             return@flow
         }
 
@@ -66,7 +64,10 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
                 // Convert to Location and emit
                 val location = LocationConverter.nodeToLocation(definitionNode, visitor)
                 if (location != null) {
-                    logger.debug("Found definition at ${location.uri}:${location.range}")
+                    logger.debug(
+                        "Found definition at ${location.uri}:${location.range} " +
+                            "(node: ${definitionNode.javaClass.simpleName})",
+                    )
                     emit(location)
                 } else {
                     logger.debug("Could not convert definition node to location")
@@ -81,14 +82,15 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
             logger.warn("Invalid arguments during definition resolution", e)
         } catch (e: IllegalStateException) {
             logger.warn("Invalid state during definition resolution", e)
-        } catch (e: RuntimeException) {
-            logger.warn("Runtime error during definition resolution", e)
+        } catch (e: Exception) {
+            logger.warn("Unexpected error during definition resolution", e)
         }
     }
 
     /**
      * Provide definitions as LocationLink objects for enhanced navigation.
      */
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     fun provideDefinitionLinks(uri: String, position: Position): Flow<LocationLink> = flow {
         logger.debug("Providing definition links for $uri at ${position.line}:${position.character}")
 
@@ -96,9 +98,6 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
             URI.create(uri)
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid URI format: $uri", e)
-            return@flow
-        } catch (e: RuntimeException) {
-            logger.error("Error creating URI: $uri", e)
             return@flow
         }
 
@@ -135,8 +134,8 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
             logger.warn("Invalid arguments during definition link resolution", e)
         } catch (e: IllegalStateException) {
             logger.warn("Invalid state during definition link resolution", e)
-        } catch (e: RuntimeException) {
-            logger.warn("Runtime error during definition link resolution", e)
+        } catch (e: Exception) {
+            logger.warn("Unexpected error during definition link resolution", e)
         }
     }
 
@@ -151,9 +150,6 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
             URI.create(uri)
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid URI format: $uri", e)
-            return@flow
-        } catch (e: RuntimeException) {
-            logger.error("Error creating URI: $uri", e)
             return@flow
         }
 

@@ -167,6 +167,7 @@ class GroovyTextDocumentService(
         }
     }
 
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
         coroutineScope.future {
             logger.debug(
@@ -193,12 +194,13 @@ class GroovyTextDocumentService(
             } catch (e: IllegalStateException) {
                 logger.error("Invalid state finding definitions", e)
                 Either.forLeft(emptyList())
-            } catch (e: RuntimeException) {
-                logger.error("Runtime error finding definitions", e)
+            } catch (e: Exception) {
+                logger.error("Unexpected error finding definitions", e)
                 Either.forLeft(emptyList())
             }
         }
 
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
         logger.debug(
             "References requested for ${params.textDocument.uri} at " +
@@ -221,8 +223,8 @@ class GroovyTextDocumentService(
         } catch (e: IllegalStateException) {
             logger.error("Invalid state finding references", e)
             emptyList()
-        } catch (e: RuntimeException) {
-            logger.error("Runtime error finding references", e)
+        } catch (e: Exception) {
+            logger.error("Unexpected error finding references", e)
             emptyList()
         }
     }

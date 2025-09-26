@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.references
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
@@ -38,10 +37,10 @@ class ReferenceProviderTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        // Act - Find references of 'localVar' at its declaration (line 0, column 4)
+        // Act - Find references of 'localVar' at its declaration (line 0, column 6)
         val references = referenceProvider.provideReferences(
             uri.toString(),
-            Position(0, 4), // pointing at 'localVar' in declaration
+            Position(0, 6), // pointing at 'ocalVar' in declaration
             includeDeclaration = true,
         ).toList()
 
@@ -73,7 +72,7 @@ class ReferenceProviderTest {
         // Act - Find references without including declaration
         val references = referenceProvider.provideReferences(
             uri.toString(),
-            Position(0, 4),
+            Position(0, 6),
             includeDeclaration = false,
         ).toList()
 
@@ -202,9 +201,11 @@ class ReferenceProviderTest {
         // Assert - Should find no references since variable is never used after declaration
         // Note: This test may be implementation-dependent. If references are found,
         // they should only be the declaration itself (which we're excluding)
+        val message = "Should find few or no references for unused variable when excluding declaration, " +
+            "found: ${references.size}"
         assertTrue(
             references.isEmpty() || references.size <= 1,
-            "Should find few or no references for unused variable when excluding declaration, found: ${references.size}",
+            message,
         )
     }
 

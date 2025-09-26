@@ -1,17 +1,11 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovylsp.ast.AstCache
 import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
-import com.github.albertocavalcante.groovylsp.dsl.RangeBuilder
-import com.github.albertocavalcante.groovylsp.dsl.diagnostic
-import com.github.albertocavalcante.groovylsp.errors.AstGenerationException
 import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
-import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.ResourceExhaustionException
-import com.github.albertocavalcante.groovylsp.errors.syntaxError
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
 import groovy.lang.GroovyClassLoader
@@ -25,16 +19,16 @@ import org.codehaus.groovy.control.io.StringReaderSource
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Service for compiling Groovy source code and managing ASTs.
+ * Refactored to use composition with cache and error handler components.
  */
 class GroovyCompilationService {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
-    private val astCache = AstCache()
-    private val diagnosticsCache = ConcurrentHashMap<URI, List<Diagnostic>>()
+    private val cache = CompilationCache()
+    private val errorHandler = CompilationErrorHandler()
 
     // AST visitor and symbol table caches with LRU eviction
     private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
@@ -44,61 +38,22 @@ class GroovyCompilationService {
     /**
      * Compiles Groovy source code and returns the result.
      */
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - final fallback
     suspend fun compile(uri: URI, content: String): CompilationResult {
         logger.debug("Compiling: $uri")
 
         return try {
             // Check cache first
-            val cachedAst = astCache.get(uri, content)
+            val cachedAst = cache.getCachedAst(uri, content)
             if (cachedAst != null) {
                 logger.debug("Using cached AST for: $uri")
-                val cachedDiagnostics = diagnosticsCache[uri] ?: emptyList()
+                val cachedDiagnostics = cache.getCachedDiagnostics(uri)
                 CompilationResult.success(cachedAst, cachedDiagnostics)
             } else {
                 performCompilation(uri, content)
             }
-        } catch (e: CompilationFailedException) {
-            logger.error("Compilation failed for $uri", e)
-
-            // Try to extract more specific error information
-            val specificException = when {
-                e.message?.contains("Syntax error", ignoreCase = true) == true -> {
-                    // Extract line/column if available from error message
-                    val lineColumn = extractLineColumnFromMessage(e.message)
-                    uri.syntaxError(
-                        lineColumn?.first ?: 0,
-                        lineColumn?.second ?: 0,
-                        e.message ?: "Unknown syntax error",
-                        e,
-                    )
-                }
-                else -> AstGenerationException(uri, e.message ?: "Unknown compilation error", e)
-            }
-
-            val errorDiagnostic = createErrorDiagnostic(
-                "${specificException.javaClass.simpleName}: ${specificException.message}",
-            )
-            CompilationResult.failure(listOf(errorDiagnostic))
-        } catch (e: GroovyLspException) {
-            logger.error("LSP error during compilation for $uri", e)
-            val errorDiagnostic = createErrorDiagnostic("LSP error: ${e.message}")
-            CompilationResult.failure(listOf(errorDiagnostic))
-        } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments during compilation for $uri", e)
-            val errorDiagnostic = createErrorDiagnostic("Invalid arguments: ${e.message}")
-            CompilationResult.failure(listOf(errorDiagnostic))
-        } catch (e: IllegalStateException) {
-            logger.error("Invalid state during compilation for $uri", e)
-            val errorDiagnostic = createErrorDiagnostic("Invalid state: ${e.message}")
-            CompilationResult.failure(listOf(errorDiagnostic))
-        } catch (e: java.io.IOException) {
-            logger.error("I/O error during compilation for $uri", e)
-            val errorDiagnostic = createErrorDiagnostic("I/O error: ${e.message}")
-            CompilationResult.failure(listOf(errorDiagnostic))
-        } catch (e: RuntimeException) {
-            logger.error("Runtime error during compilation for $uri", e)
-            val errorDiagnostic = createErrorDiagnostic("Runtime error: ${e.message}")
-            CompilationResult.failure(listOf(errorDiagnostic))
+        } catch (e: Exception) {
+            errorHandler.handleException(e, uri)
         }
     }
 
@@ -132,8 +87,7 @@ class GroovyCompilationService {
 
         val result = if (ast != null) {
             // We have an AST, cache it and the diagnostics.
-            astCache.put(uri, content, ast)
-            diagnosticsCache[uri] = diagnostics
+            cache.cacheResult(uri, content, ast, diagnostics)
 
             // Build AST visitor and symbol table for go-to-definition
             buildAstVisitorAndSymbolTable(uri, compilationUnit, sourceUnit)
@@ -143,7 +97,6 @@ class GroovyCompilationService {
             CompilationResult(isSuccess, ast, diagnostics)
         } else {
             // No AST, compilation definitely failed.
-            diagnosticsCache[uri] = diagnostics
             CompilationResult.failure(diagnostics)
         }
 
@@ -155,12 +108,12 @@ class GroovyCompilationService {
      * Gets the cached AST for a URI, or null if not cached.
      * Note: This method doesn't validate cache freshness - use compile() for that.
      */
-    fun getAst(uri: URI): ASTNode? = astCache.getUnchecked(uri)
+    fun getAst(uri: URI): ASTNode? = cache.getCachedAst(uri)
 
     /**
      * Gets the cached diagnostics for a URI.
      */
-    fun getDiagnostics(uri: URI): List<Diagnostic> = diagnosticsCache[uri] ?: emptyList()
+    fun getDiagnostics(uri: URI): List<Diagnostic> = cache.getCachedDiagnostics(uri)
 
     /**
      * Gets the AST visitor for a URI, or null if not available.
@@ -181,12 +134,13 @@ class GroovyCompilationService {
      * Clears all caches.
      */
     fun clearCaches() {
-        astCache.clear()
-        diagnosticsCache.clear()
+        cache.clear()
         astVisitorCache.clear()
         symbolTableCache.clear()
         symbolStorageCache.clear()
     }
+
+    fun getCacheStatistics() = cache.getStatistics()
 
     /**
      * Creates a compiler configuration optimized for language server use.
@@ -227,6 +181,7 @@ class GroovyCompilationService {
     /**
      * Build AST visitor and symbol table for go-to-definition functionality
      */
+    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - final fallback for AST building
     private fun buildAstVisitorAndSymbolTable(uri: URI, compilationUnit: CompilationUnit, sourceUnit: SourceUnit) {
         try {
             // Create and configure AST visitor
@@ -285,44 +240,14 @@ class GroovyCompilationService {
             val specificException =
                 CacheCorruptionException("AST visitor/symbol table", e.message ?: "Invalid state", e)
             logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        } catch (e: RuntimeException) {
-            logger.error("Runtime error building AST visitor and symbol table for $uri", e)
+        } catch (e: Exception) {
+            logger.error("Unexpected error building AST visitor and symbol table for $uri", e)
             val specificException =
-                CacheCorruptionException("AST visitor/symbol table", e.message ?: "Runtime error", e)
+                CacheCorruptionException("AST visitor/symbol table", e.message ?: "Unexpected error", e)
             logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
         }
     }
 
-    /**
-     * Creates an error diagnostic for unexpected compilation errors.
-     */
-    private fun createErrorDiagnostic(message: String): Diagnostic = diagnostic {
-        range(RangeBuilder.at(0, 0))
-        error(message)
-        source("groovy-lsp")
-        code("compilation-error")
-    }
-
-    /**
-     * Extract line and column information from Groovy compiler error messages.
-     * Groovy error messages often contain position information like "@ line 5, column 10"
-     */
-    private fun extractLineColumnFromMessage(message: String?): Pair<Int, Int>? {
-        if (message == null) return null
-
-        // Look for patterns like "@ line 5, column 10" or "line: 5, column: 10"
-        val lineColumnRegex = """(?:@\s*)?line[:\s]*(\d+)(?:[,\s]*column[:\s]*(\d+))?""".toRegex(
-            RegexOption.IGNORE_CASE,
-        )
-        val match = lineColumnRegex.find(message)
-
-        return match?.let { matchResult ->
-            val line = matchResult.groups[1]?.value?.toIntOrNull() ?: 0
-            val column = matchResult.groups[2]?.value?.toIntOrNull() ?: 0
-            line to column
-        }
-    }
-
     // Expose cache for testing purposes
-    internal val cache: AstCache get() = astCache
+    internal val astCache get() = cache
 }

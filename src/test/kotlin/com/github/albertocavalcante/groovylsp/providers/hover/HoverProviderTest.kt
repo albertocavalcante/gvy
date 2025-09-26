@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position

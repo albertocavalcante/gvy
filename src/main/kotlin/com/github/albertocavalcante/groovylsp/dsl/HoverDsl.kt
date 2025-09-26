@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.providers.hover
+package com.github.albertocavalcante.groovylsp.dsl
 
 import com.github.albertocavalcante.groovylsp.errors.LspResult
 import com.github.albertocavalcante.groovylsp.errors.toLspResult
@@ -369,22 +369,14 @@ fun AnnotationNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Generic formatter that dispatches to specific formatters
  */
-fun ASTNode.toHoverContent(): HoverContent = when (this) {
-    is VariableExpression -> toHoverContent()
-    is MethodNode -> toHoverContent()
-    is ClassNode -> toHoverContent()
-    is FieldNode -> toHoverContent()
-    is PropertyNode -> toHoverContent()
-    is Parameter -> toHoverContent()
-    is MethodCallExpression -> toHoverContent()
-    is BinaryExpression -> toHoverContent()
-    is DeclarationExpression -> toHoverContent()
-    is ClosureExpression -> toHoverContent()
-    is ConstantExpression -> toHoverContent()
-    is GStringExpression -> toHoverContent()
-    is ImportNode -> toHoverContent()
-    is PackageNode -> toHoverContent()
-    is AnnotationNode -> toHoverContent()
+fun ASTNode.toHoverContent(): HoverContent = when {
+    // Declarations and definitions
+    isDeclarationNode() -> formatDeclarationNode()
+    // Expressions
+    isExpressionNode() -> formatExpressionNode()
+    // Annotations and imports
+    isMetadataNode() -> formatMetadataNode()
+    // Default fallback
     else -> HoverContent.Section(
         "AST Node",
         listOf(
@@ -392,6 +384,45 @@ fun ASTNode.toHoverContent(): HoverContent = when (this) {
             HoverContent.Code(toString()),
         ),
     )
+}
+
+/**
+ * Helper functions for node categorization and formatting
+ */
+private fun ASTNode.isDeclarationNode(): Boolean = this is MethodNode || this is ClassNode ||
+    this is FieldNode || this is PropertyNode || this is Parameter
+
+private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
+    this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
+    this is ConstantExpression || this is GStringExpression
+
+private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
+
+private fun ASTNode.formatDeclarationNode(): HoverContent = when (this) {
+    is MethodNode -> toHoverContent()
+    is ClassNode -> toHoverContent()
+    is FieldNode -> toHoverContent()
+    is PropertyNode -> toHoverContent()
+    is Parameter -> toHoverContent()
+    else -> HoverContent.Text("Unknown declaration")
+}
+
+private fun ASTNode.formatExpressionNode(): HoverContent = when (this) {
+    is VariableExpression -> toHoverContent()
+    is MethodCallExpression -> toHoverContent()
+    is BinaryExpression -> toHoverContent()
+    is DeclarationExpression -> toHoverContent()
+    is ClosureExpression -> toHoverContent()
+    is ConstantExpression -> toHoverContent()
+    is GStringExpression -> toHoverContent()
+    else -> HoverContent.Text("Unknown expression")
+}
+
+private fun ASTNode.formatMetadataNode(): HoverContent = when (this) {
+    is ImportNode -> toHoverContent()
+    is PackageNode -> toHoverContent()
+    is AnnotationNode -> toHoverContent()
+    else -> HoverContent.Text("Unknown metadata")
 }
 
 /**
@@ -433,15 +464,18 @@ private fun ImportNode.formatImport(): String = buildString {
     append("import ")
     if (isStatic) append("static ")
     append(className)
+    if (isStatic && fieldName != null && !isStar) {
+        append(".$fieldName")
+    }
+    if (isStar) append(".*")
     alias?.let { append(" as $it") }
 }
 
 private fun ASTNode.modifiersString(): String = buildString {
-    val modifiers = when (this) {
-        is MethodNode -> modifiers
-        is FieldNode -> modifiers
-        is PropertyNode -> modifiers
-        is ClassNode -> modifiers
+    val modifiers = when (val node = this@modifiersString) {
+        is MethodNode -> node.modifiers
+        is FieldNode -> node.modifiers
+        is ClassNode -> node.modifiers
         else -> 0
     }
 

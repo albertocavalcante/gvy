@@ -19,6 +19,10 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
 
+// Constants for range size calculations
+private const val COLUMN_WEIGHT_FOR_MULTILINE = 100
+private const val LINE_WEIGHT = 1000
+
 /**
  * Type-safe wrappers for position coordinates
  */
@@ -150,12 +154,6 @@ fun ASTNode.safeRange(): LspResult<Range> = safePosition().flatMapResult { start
 }
 
 /**
- * Checks if an AST node has valid position information
- */
-fun ASTNode.hasValidPosition(): Boolean =
-    lineNumber > 0 && columnNumber > 0 && lastLineNumber > 0 && lastColumnNumber > 0
-
-/**
  * Checks if a position is within an AST node's range
  */
 fun ASTNode.containsPosition(position: Position): Boolean = safePosition().flatMapResult { start: SafePosition ->
@@ -174,9 +172,9 @@ fun ASTNode.rangeSize(): Int = if (!hasValidPosition()) {
     val columnSpan = if (lineSpan == 0) {
         lastColumnNumber - columnNumber
     } else {
-        lineSpan * 100 + lastColumnNumber
+        lineSpan * COLUMN_WEIGHT_FOR_MULTILINE + lastColumnNumber
     }
-    lineSpan * 1000 + columnSpan
+    lineSpan * LINE_WEIGHT + columnSpan
 }
 
 /**
@@ -281,11 +279,3 @@ fun ASTNode.safeName(): String? = when (this) {
     is Parameter -> name
     else -> null
 }
-
-/**
- * Extension function for creating validation errors
- */
-fun ASTNode.validationError(message: String): LspError.InternalError = LspError.InternalError(
-    operation = "node_validation",
-    reason = "$message for ${typeName()} at line $lineNumber",
-)

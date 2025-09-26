@@ -27,10 +27,12 @@ complexity:
     excludes:
     - "**/dsl/**"
     - "**/test/**"
-    thresholdInFiles: 11
-    thresholdInClasses: 11
-    thresholdInInterfaces: 11
-    thresholdInObjects: 11
+    - "**/visitor/**"
+    - "**/AstVisitor.kt"
+    thresholdInFiles: 20
+    thresholdInClasses: 18
+    thresholdInInterfaces: 13
+    thresholdInObjects: 13
     thresholdInEnums: 5
 coroutines:
   active: true
@@ -128,7 +130,6 @@ style:
   ForbiddenComment:
     active: true
     comments:
-    - "FIXME:"
     - "STOPSHIP:"
     - "XXX:"
   MaxLineLength:

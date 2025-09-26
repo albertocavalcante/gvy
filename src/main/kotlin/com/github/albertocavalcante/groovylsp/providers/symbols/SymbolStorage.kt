@@ -167,41 +167,46 @@ class SymbolQuery {
         val baseSymbols = uri?.let { storage.getSymbols(it) } ?: storage.symbols.values.flatten()
 
         return baseSymbols
-            .filter { symbol ->
-                // Filter by name
-                name?.let { symbol.name == it } ?: true
-            }
-            .filter { symbol ->
-                // Filter by name pattern
-                namePattern?.let { symbol.matches(it) } ?: true
-            }
-            .filter { symbol ->
-                // Filter by category
-                category?.let { symbol.category() == it } ?: true
-            }
-            .filter { symbol ->
-                // Filter by visibility
-                visibility?.let { vis ->
-                    when (symbol) {
-                        is Symbol.Method -> symbol.visibility == vis
-                        is Symbol.Field -> symbol.visibility == vis
-                        is Symbol.Property -> symbol.visibility == vis
-                        is Symbol.Class -> symbol.visibility == vis
-                        else -> true
-                    }
-                } ?: true
-            }
-            .filter { symbol ->
-                // Filter by static modifier
-                isStatic?.let { static ->
-                    when (symbol) {
-                        is Symbol.Method -> symbol.isStatic == static
-                        is Symbol.Field -> symbol.isStatic == static
-                        is Symbol.Property -> symbol.isStatic == static
-                        else -> true
-                    }
-                } ?: true
-            }
+            .filter(createNameFilter())
+            .filter(createPatternFilter())
+            .filter(createCategoryFilter())
+            .filter(createVisibilityFilter())
+            .filter(createStaticFilter())
+    }
+
+    private fun createNameFilter(): (Symbol) -> Boolean = { symbol ->
+        name?.let { symbol.name == it } ?: true
+    }
+
+    private fun createPatternFilter(): (Symbol) -> Boolean = { symbol ->
+        namePattern?.let { symbol.matches(it) } ?: true
+    }
+
+    private fun createCategoryFilter(): (Symbol) -> Boolean = { symbol ->
+        category?.let { symbol.category() == it } ?: true
+    }
+
+    private fun createVisibilityFilter(): (Symbol) -> Boolean = { symbol ->
+        visibility?.let { vis -> matchesVisibility(symbol, vis) } ?: true
+    }
+
+    private fun createStaticFilter(): (Symbol) -> Boolean = { symbol ->
+        isStatic?.let { static -> matchesStatic(symbol, static) } ?: true
+    }
+
+    private fun matchesVisibility(symbol: Symbol, vis: Visibility): Boolean = when (symbol) {
+        is Symbol.Method -> symbol.visibility == vis
+        is Symbol.Field -> symbol.visibility == vis
+        is Symbol.Property -> symbol.visibility == vis
+        is Symbol.Class -> symbol.visibility == vis
+        else -> true
+    }
+
+    private fun matchesStatic(symbol: Symbol, static: Boolean): Boolean = when (symbol) {
+        is Symbol.Method -> symbol.isStatic == static
+        is Symbol.Field -> symbol.isStatic == static
+        is Symbol.Property -> symbol.isStatic == static
+        else -> true
     }
 }
 

@@ -12,6 +12,12 @@ import java.net.URI
 /**
  * Converts AST nodes to LSP Location objects.
  * Handles position mapping and URI conversion for go-to-definition functionality.
+ *
+ * NB: Coordinate Systems
+ * - Groovy AST: 1-based line and column (line 1 = first line, column 1 = first character)
+ * - LSP Protocol: 0-based line and column (line 0 = first line, column 0 = first character)
+ * - Conversion: groovyPos = lspPos + 1, lspPos = groovyPos - 1
+ * - Invalid positions: Groovy uses -1 for synthetic/invalid nodes
  */
 object LocationConverter {
 
@@ -121,11 +127,13 @@ object LocationConverter {
     }
 
     /**
-     * Check if a node has valid position information
+     * Check if a node has valid position information.
+     * NB: Groovy AST uses 1-based indexing, but we need to handle edge cases
+     * where some valid nodes might have 0 or -1 in column positions.
      */
-    private fun hasValidPosition(node: ASTNode): Boolean = node.lineNumber >= 0 &&
+    private fun hasValidPosition(node: ASTNode): Boolean = node.lineNumber >= 1 &&
         node.columnNumber >= 0 &&
-        node.lastLineNumber >= 0 &&
+        node.lastLineNumber >= 1 &&
         node.lastColumnNumber >= 0
 
     /**
