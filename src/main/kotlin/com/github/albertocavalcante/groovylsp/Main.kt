@@ -48,12 +48,14 @@ fun main(args: Array<String>) {
 }
 
 private fun runStdio() {
-    logger.info("Starting Groovy Language Server in stdio mode")
     val input = System.`in`
     val output = System.out
 
-    // Redirect System.out to System.err to prevent pollution of LSP messages
+    // Redirect System.out to System.err IMMEDIATELY to prevent pollution of LSP messages
     System.setOut(System.err)
+
+    // Now safe to log (will go to stderr)
+    logger.info("Starting Groovy Language Server in stdio mode")
 
     startServer(input, output)
 }

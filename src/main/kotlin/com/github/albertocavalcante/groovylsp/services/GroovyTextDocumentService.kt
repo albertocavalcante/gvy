@@ -2,9 +2,12 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.dsl.GroovyCompletions
+import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
+import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
@@ -24,6 +27,7 @@ import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.PublishDiagnosticsParams
+import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
@@ -68,6 +72,10 @@ class GroovyTextDocumentService(
                 logger.debug("Published ${result.diagnostics.size} diagnostics for ${params.textDocument.uri}")
             } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
                 logger.error("Compilation failed on file open: ${params.textDocument.uri}", e)
+            } catch (e: IllegalArgumentException) {
+                logger.error("Invalid arguments on file open: ${params.textDocument.uri}", e)
+            } catch (e: java.io.IOException) {
+                logger.error("I/O error on file open: ${params.textDocument.uri}", e)
             }
         }
     }
@@ -92,6 +100,10 @@ class GroovyTextDocumentService(
                     )
                 } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
                     logger.error("Compilation failed on file change: ${params.textDocument.uri}", e)
+                } catch (e: IllegalArgumentException) {
+                    logger.error("Invalid arguments on file change: ${params.textDocument.uri}", e)
+                } catch (e: java.io.IOException) {
+                    logger.error("I/O error on file change: ${params.textDocument.uri}", e)
                 }
             }
         }
@@ -140,37 +152,80 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}",
         )
 
-        val hoverContent = """
-            ## Groovy LSP
+        // Use the new HoverProvider for actual symbol information
+        val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(compilationService)
+        val hover = hoverProvider.provideHover(params.textDocument.uri, params.position)
 
-            **Position**: Line ${params.position.line + 1}, Column ${params.position.character + 1}
-
-            This is a basic implementation of a Groovy Language Server.
-
-            ### Features
-            - Syntax highlighting
-            - Basic completions
-            - Error diagnostics
-            - Hover information
-
-            ### Status
-            Currently in development. More features coming soon!
-        """.trimIndent()
-
-        Hover().apply {
+        // Return the hover if found, otherwise return an empty hover
+        hover ?: Hover().apply {
             contents = Either.forRight(
                 MarkupContent().apply {
                     kind = MarkupKind.MARKDOWN
-                    value = hoverContent
+                    value = "_No information available_"
                 },
             )
         }
     }
 
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
-        CompletableFuture.completedFuture(
-            Either.forLeft(emptyList()),
+        coroutineScope.future {
+            logger.debug(
+                "Definition requested for ${params.textDocument.uri} at " +
+                    "${params.position.line}:${params.position.character}",
+            )
+
+            try {
+                // Create definition provider
+                val definitionProvider = DefinitionProvider(compilationService)
+
+                // Get definitions using Flow pattern
+                val locations = definitionProvider.provideDefinitions(
+                    params.textDocument.uri,
+                    params.position,
+                ).toList()
+
+                logger.debug("Found ${locations.size} definitions")
+
+                Either.forLeft(locations)
+            } catch (e: IllegalArgumentException) {
+                logger.error("Invalid arguments finding definitions", e)
+                Either.forLeft(emptyList())
+            } catch (e: IllegalStateException) {
+                logger.error("Invalid state finding definitions", e)
+                Either.forLeft(emptyList())
+            } catch (e: RuntimeException) {
+                logger.error("Runtime error finding definitions", e)
+                Either.forLeft(emptyList())
+            }
+        }
+
+    override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
+        logger.debug(
+            "References requested for ${params.textDocument.uri} at " +
+                "${params.position.line}:${params.position.character}",
         )
+
+        try {
+            val referenceProvider = ReferenceProvider(compilationService)
+            val locations = referenceProvider.provideReferences(
+                params.textDocument.uri,
+                params.position,
+                params.context.isIncludeDeclaration,
+            ).toList()
+
+            logger.debug("Found ${locations.size} references")
+            locations
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid arguments finding references", e)
+            emptyList()
+        } catch (e: IllegalStateException) {
+            logger.error("Invalid state finding references", e)
+            emptyList()
+        } catch (e: RuntimeException) {
+            logger.error("Runtime error finding references", e)
+            emptyList()
+        }
+    }
 
     override fun documentSymbol(
         params: DocumentSymbolParams,

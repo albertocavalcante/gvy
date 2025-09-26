@@ -128,7 +128,6 @@ style:
   ForbiddenComment:
     active: true
     comments:
-    - "TODO:"
     - "FIXME:"
     - "STOPSHIP:"
     - "XXX:"

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender that outputs to stderr to avoid LSP protocol pollution -->
+    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -- %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="STDERR" />
+    </root>
+
+    <!-- Groovy LSP specific logger -->
+    <logger name="com.github.albertocavalcante.groovylsp" level="INFO" />
+    <logger name="GroovyLSP" level="INFO" />
+
+    <!-- Reduce verbosity of some dependencies -->
+    <logger name="org.eclipse.lsp4j" level="WARN" />
+    <logger name="org.codehaus.groovy" level="WARN" />
+</configuration>

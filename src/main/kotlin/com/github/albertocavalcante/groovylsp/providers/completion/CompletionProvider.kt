@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.completion
+package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.ast.SymbolExtractor
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
