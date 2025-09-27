@@ -42,7 +42,7 @@ jobs:
         distribution: "temurin"
         java-version: "${{ matrix.java }}"
     - name: "Setup Gradle"
-      uses: "gradle/actions/setup-gradle@v3"
+      uses: "gradle/actions/setup-gradle@v4"
       with:
         cache-read-only: "${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'\
           \ }}"
@@ -105,7 +105,7 @@ jobs:
         distribution: "temurin"
         java-version: 17
     - name: "Setup Gradle"
-      uses: "gradle/actions/setup-gradle@v3"
+      uses: "gradle/actions/setup-gradle@v4"
     - name: "Check for dependency updates"
       run: "./gradlew dependencyUpdates --refresh-dependencies || true\n"
       continue-on-error: true
