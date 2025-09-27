@@ -1,5 +1,9 @@
 package com.github.albertocavalcante.groovylsp.dsl
 
+import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionBuilder
+import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
+import com.github.albertocavalcante.groovylsp.dsl.completion.completion
+import com.github.albertocavalcante.groovylsp.dsl.completion.completions
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.MarkupKind

@@ -34,6 +34,8 @@ object GradleConnectionPool {
      *
      * @param projectDir The project directory whose connection to close
      */
+    // FIXME: Replace with specific exception types (IOException, GradleConnectionException)
+    @Suppress("TooGenericExceptionCaught")
     fun closeConnection(projectDir: Path) {
         connections.remove(projectDir)?.let { connection ->
             try {

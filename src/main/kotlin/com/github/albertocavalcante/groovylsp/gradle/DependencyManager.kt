@@ -46,6 +46,8 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
      * @param onComplete Callback invoked when resolution completes successfully
      * @param onError Optional callback invoked if resolution fails
      */
+    // FIXME: Replace with specific exception types (IOException, GradleConnectionException)
+    @Suppress("TooGenericExceptionCaught")
     fun startAsyncResolution(
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)? = null,
@@ -165,6 +167,8 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
     /**
      * Starts build file watching for automatic dependency refresh.
      */
+    // FIXME: Replace with specific exception types (IOException, FileSystemException)
+    @Suppress("TooGenericExceptionCaught")
     private fun startBuildFileWatching(
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)? = null,

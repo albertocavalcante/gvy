@@ -44,6 +44,8 @@ class BuildFileWatcher(
     /**
      * Starts watching the given project directory for build file changes.
      */
+    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
+    @Suppress("TooGenericExceptionCaught")
     fun startWatching(projectDir: Path) {
         if (watchJob?.isActive == true) {
             logger.debug("Build file watcher already active for project")
@@ -76,6 +78,8 @@ class BuildFileWatcher(
     /**
      * Stops watching for build file changes.
      */
+    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
+    @Suppress("TooGenericExceptionCaught")
     fun stopWatching() {
         try {
             watchJob?.cancel()
@@ -98,6 +102,8 @@ class BuildFileWatcher(
     /**
      * Main watch loop that processes file system events.
      */
+    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun watchLoop() {
         val watchService = this.watchService ?: return
 
@@ -147,6 +153,8 @@ class BuildFileWatcher(
     /**
      * Processes a single file system watch event.
      */
+    // FIXME: Replace with specific exception types (IOException, CancellationException)
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
         val kind = event.kind()
 

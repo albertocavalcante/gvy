@@ -1,15 +1,13 @@
-package com.github.albertocavalcante.groovylsp.dsl
+package com.github.albertocavalcante.groovylsp.dsl.completion
 
+import com.github.albertocavalcante.groovylsp.dsl.LspBuilder
+import com.github.albertocavalcante.groovylsp.dsl.LspDslMarker
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-
-/**
- * DSL for creating LSP CompletionItem objects in an immutable, type-safe manner.
- */
 
 /**
  * Top-level function to create a single completion item.
@@ -364,25 +362,4 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
     }
 
     override fun build(): List<CompletionItem> = completions.toList()
-}
-
-/**
- * Utility functions for common Groovy completions.
- */
-object GroovyCompletions {
-    /**
-     * Get basic Groovy language completions.
-     */
-    fun basic(): List<CompletionItem> = completions {
-        keyword("def", "def \${1:name} = \${2:value}", "Define a variable")
-        keyword("class", "class \${1:Name} {\n    \$0\n}", "Define a class")
-        keyword("interface", "interface \${1:Name} {\n    \$0\n}", "Define an interface")
-        keyword("enum", "enum \${1:Name} {\n    \$0\n}", "Define an enum")
-        keyword("if", "if (\${1:condition}) {\n    \$0\n}", "Conditional statement")
-        keyword("for", "for (\${1:item} in \${2:collection}) {\n    \$0\n}", "For loop")
-        keyword("while", "while (\${1:condition}) {\n    \$0\n}", "While loop")
-
-        method("println", "void", listOf("Object"), "Print a line to console")
-        method("print", "void", listOf("Object"), "Print to console")
-    }
 }

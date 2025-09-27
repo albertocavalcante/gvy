@@ -38,7 +38,7 @@ class AstVisitor : ClassCodeVisitorSupport() {
 
     private val tracker = NodeRelationshipTracker()
     private val positionQuery = AstPositionQuery(tracker)
-    private val delegate = NodeVisitorDelegate(this, tracker)
+    private val delegate = NodeVisitorDelegate(tracker)
 
     override fun getSourceUnit(): SourceUnit? = delegate.getSourceUnit()
 

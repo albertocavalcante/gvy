@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovylsp.ast.findNodeAt
 import com.github.albertocavalcante.groovylsp.ast.isHoverable
 import com.github.albertocavalcante.groovylsp.ast.resolveToDefinition
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.dsl.createHoverFor
+import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException

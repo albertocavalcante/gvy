@@ -25,6 +25,8 @@ class ProgressReporter(private val client: LanguageClient?) {
      * @param title The title to display in the progress UI
      * @param initialMessage Optional initial progress message
      */
+    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
+    @Suppress("TooGenericExceptionCaught")
     fun startDependencyResolution(
         title: String = "Resolving Gradle dependencies",
         initialMessage: String = "Initializing...",
@@ -70,6 +72,8 @@ class ProgressReporter(private val client: LanguageClient?) {
      * @param message The progress message to display
      * @param percentage Optional completion percentage (0-100)
      */
+    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
+    @Suppress("TooGenericExceptionCaught")
     fun updateProgress(message: String, percentage: Int? = null) {
         if (client == null || !isActive) {
             logger.debug("Progress update skipped - client unavailable or not active: $message")
@@ -100,6 +104,8 @@ class ProgressReporter(private val client: LanguageClient?) {
      *
      * @param message The completion message to display
      */
+    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
+    @Suppress("TooGenericExceptionCaught")
     fun complete(message: String) {
         if (client == null || !isActive) {
             logger.debug("Progress completion skipped - client unavailable or not active: $message")

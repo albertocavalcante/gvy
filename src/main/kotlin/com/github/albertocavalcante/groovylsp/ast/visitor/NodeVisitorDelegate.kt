@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.ast.visitor
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.ast.NodeRelationshipTracker
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
@@ -36,10 +35,7 @@ import java.net.URI
  * - Reflection-based visiting
  * - Split into specialized visitors (expressions, statements, declarations)
  */
-internal class NodeVisitorDelegate(
-    @Suppress("unused") private val visitor: AstVisitor, // TODO: Remove if truly unused after refactoring
-    private val tracker: NodeRelationshipTracker,
-) : ClassCodeVisitorSupport() {
+internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker) : ClassCodeVisitorSupport() {
 
     private var _sourceUnit: SourceUnit? = null
     private var currentUri: URI? = null

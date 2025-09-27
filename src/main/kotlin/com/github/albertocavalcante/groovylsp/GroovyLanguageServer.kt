@@ -99,7 +99,7 @@ class GroovyLanguageServer :
 
         val serverInfo = ServerInfo().apply {
             name = "Groovy Language Server"
-            version = "0.1.0-SNAPSHOT"
+            version = Version.current
         }
 
         // Return immediately - NO BLOCKING dependency resolution!

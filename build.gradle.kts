@@ -182,6 +182,40 @@ tasks.named("startShadowScripts") {
     dependsOn(tasks.shadowJar, tasks.jar)
 }
 
+// Generate version properties file for runtime access
+tasks.register("generateVersionProperties") {
+    description = "Generate version.properties file from build version"
+    group = "build"
+
+    val outputDir =
+        layout.buildDirectory
+            .dir("generated/resources")
+            .get()
+            .asFile
+    val propertiesFile = File(outputDir, "version.properties")
+
+    inputs.property("version", version)
+    inputs.property("baseVersion", baseVersion)
+    outputs.file(propertiesFile)
+
+    doLast {
+        outputDir.mkdirs()
+        propertiesFile.writeText(
+            """
+            version=$version
+            baseVersion=$baseVersion
+            """.trimIndent(),
+        )
+        println("Generated version.properties: version=$version, baseVersion=$baseVersion")
+    }
+}
+
+// Make processResources depend on version properties generation
+tasks.processResources {
+    dependsOn("generateVersionProperties")
+    from(layout.buildDirectory.dir("generated/resources"))
+}
+
 // Debug task to print version information
 tasks.register("printVersion") {
     doLast {
