@@ -2,7 +2,7 @@ plugins {
     kotlin("jvm") version "2.0.20"
     id("com.gradleup.shadow") version "9.0.0-beta2"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
-    id("com.diffplug.spotless") version "7.2.1"
+    id("com.diffplug.spotless") version "8.0.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.2"
     id("org.sonarqube") version "6.3.1.5724"
     application
