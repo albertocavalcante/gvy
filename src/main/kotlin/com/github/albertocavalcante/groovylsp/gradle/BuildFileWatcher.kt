@@ -103,7 +103,7 @@ class BuildFileWatcher(
      * Main watch loop that processes file system events.
      */
     // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
     private suspend fun watchLoop() {
         val watchService = this.watchService ?: return
 
