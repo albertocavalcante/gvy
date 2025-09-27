@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.0.20"
+    kotlin("jvm") version "2.2.20"
     id("com.gradleup.shadow") version "9.2.2"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     id("com.diffplug.spotless") version "8.0.0"
