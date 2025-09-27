@@ -166,7 +166,9 @@ class GroovyCompilationService {
      * @param newDependencies The list of resolved dependency paths
      */
     fun updateDependencies(newDependencies: List<Path>) {
-        if (newDependencies != dependencyClasspath) {
+        if (newDependencies.size != dependencyClasspath.size ||
+            newDependencies.toSet() != dependencyClasspath.toSet()
+        ) {
             dependencyClasspath.clear()
             dependencyClasspath.addAll(newDependencies)
 
@@ -225,9 +227,6 @@ class GroovyCompilationService {
                 it.toString()
             }
             setClasspath(classpathString)
-        }
-
-        if (dependencyClasspath.isNotEmpty()) {
             logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
         }
     }

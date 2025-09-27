@@ -172,22 +172,25 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
         onError: ((Exception) -> Unit)? = null,
     ) {
         try {
-            buildFileWatcher = BuildFileWatcher(scope) { changedProjectDir ->
-                logger.info("Build file changed, refreshing dependencies for: $changedProjectDir")
-                onProgress?.invoke(0, "Build file changed, refreshing dependencies...")
+            buildFileWatcher = BuildFileWatcher(
+                coroutineScope = scope,
+                onBuildFileChanged = { changedProjectDir ->
+                    logger.info("Build file changed, refreshing dependencies for: $changedProjectDir")
+                    onProgress?.invoke(0, "Build file changed, refreshing dependencies...")
 
-                // Reset state to trigger fresh resolution
-                state.set(State.NOT_STARTED)
+                    // Reset state to trigger fresh resolution
+                    state.set(State.NOT_STARTED)
 
-                // Start fresh resolution
-                startAsyncResolution(
-                    workspaceRoot = changedProjectDir,
-                    onProgress = onProgress,
-                    onComplete = onComplete,
-                    onError = onError,
-                    enableFileWatching = false, // Avoid recursive watching
-                )
-            }
+                    // Start fresh resolution
+                    startAsyncResolution(
+                        workspaceRoot = changedProjectDir,
+                        onProgress = onProgress,
+                        onComplete = onComplete,
+                        onError = onError,
+                        enableFileWatching = false, // Avoid recursive watching
+                    )
+                },
+            )
 
             buildFileWatcher?.startWatching(workspaceRoot)
             logger.info("Started build file watching for: $workspaceRoot")

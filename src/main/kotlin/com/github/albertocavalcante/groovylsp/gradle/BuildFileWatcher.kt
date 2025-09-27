@@ -24,7 +24,11 @@ private const val FILE_CHANGE_DELAY_MS = 500L
  * Watches Gradle build files for changes and triggers dependency re-resolution.
  * Monitors build.gradle, build.gradle.kts, settings.gradle, and settings.gradle.kts files.
  */
-class BuildFileWatcher(private val coroutineScope: CoroutineScope, private val onBuildFileChanged: (Path) -> Unit) {
+class BuildFileWatcher(
+    private val coroutineScope: CoroutineScope,
+    private val onBuildFileChanged: (Path) -> Unit,
+    private val debounceDelayMs: Long = FILE_CHANGE_DELAY_MS,
+) {
     private val logger = LoggerFactory.getLogger(BuildFileWatcher::class.java)
     private var watchService: WatchService? = null
     private var watchJob: Job? = null
@@ -168,8 +172,10 @@ class BuildFileWatcher(private val coroutineScope: CoroutineScope, private val o
                 if (fullPath.exists()) {
                     logger.info("Build file changed: $filenameStr")
 
-                    // Add a small delay to handle rapid successive changes
-                    delay(FILE_CHANGE_DELAY_MS)
+                    // Add configurable delay to handle rapid successive changes
+                    if (debounceDelayMs > 0) {
+                        delay(debounceDelayMs)
+                    }
 
                     // Trigger dependency re-resolution
                     try {

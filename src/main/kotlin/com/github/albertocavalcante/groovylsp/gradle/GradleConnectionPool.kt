@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.groovylsp.gradle
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
 import org.slf4j.LoggerFactory
@@ -30,24 +27,6 @@ object GradleConnectionPool {
     fun getConnection(projectDir: Path): ProjectConnection = connections.computeIfAbsent(projectDir) { dir ->
         logger.debug("Creating new Gradle connection for: $dir")
         createConnection(dir)
-    }
-
-    /**
-     * Pre-warms a Gradle connection in the background for faster subsequent access.
-     * This starts the Gradle daemon if not already running.
-     *
-     * @param projectDir The project directory to warm up
-     */
-    fun warmUp(projectDir: Path) {
-        GlobalScope.launch(Dispatchers.IO) {
-            try {
-                logger.debug("Warming up Gradle connection for: $projectDir")
-                getConnection(projectDir)
-                logger.debug("Gradle connection warmed up for: $projectDir")
-            } catch (e: Exception) {
-                logger.warn("Failed to warm up Gradle connection for $projectDir", e)
-            }
-        }
     }
 
     /**
