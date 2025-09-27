@@ -28,6 +28,8 @@ version =
 
 repositories {
     mavenCentral()
+    // Gradle repository for Tooling API
+    maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
 }
 
 java {
@@ -46,6 +48,9 @@ dependencies {
     // Add additional Groovy modules that might be needed for compilation
     implementation("org.apache.groovy:groovy-ant:4.0.28")
     implementation("org.apache.groovy:groovy-console:4.0.28")
+
+    // Gradle Tooling API - For dependency resolution
+    implementation("org.gradle:gradle-tooling-api:9.1.0")
 
     // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")

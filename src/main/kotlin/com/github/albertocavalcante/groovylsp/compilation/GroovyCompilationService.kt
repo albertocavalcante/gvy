@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
 import com.github.albertocavalcante.groovylsp.errors.ResourceExhaustionException
+import com.github.albertocavalcante.groovylsp.gradle.SimpleDependencyResolver
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
 import groovy.lang.GroovyClassLoader
@@ -19,6 +20,7 @@ import org.codehaus.groovy.control.io.StringReaderSource
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Path
 
 /**
  * Service for compiling Groovy source code and managing ASTs.
@@ -29,11 +31,16 @@ class GroovyCompilationService {
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
+    private val dependencyResolver = SimpleDependencyResolver()
 
     // AST visitor and symbol table caches with LRU eviction
     private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
     private val symbolTableCache = LRUCache<URI, SymbolTable>(maxSize = 100)
     private val symbolStorageCache = LRUCache<URI, SymbolStorage>(maxSize = 100)
+
+    // Dependency classpath management
+    private val dependencyClasspath = mutableListOf<Path>()
+    private var workspaceRoot: Path? = null
 
     /**
      * Compiles Groovy source code and returns the result.
@@ -143,6 +150,60 @@ class GroovyCompilationService {
     fun getCacheStatistics() = cache.getStatistics()
 
     /**
+     * Initialize the workspace without resolving dependencies (non-blocking).
+     * Dependencies will be updated separately via updateDependencies().
+     */
+    fun initializeWorkspace(workspaceRoot: Path) {
+        logger.info("Initializing workspace (non-blocking): $workspaceRoot")
+        this.workspaceRoot = workspaceRoot
+        // No dependency resolution here - will be done asynchronously
+    }
+
+    /**
+     * Updates the dependency classpath with pre-resolved dependencies.
+     * Clears compilation caches since the classpath has changed.
+     *
+     * @param newDependencies The list of resolved dependency paths
+     */
+    fun updateDependencies(newDependencies: List<Path>) {
+        if (newDependencies.size != dependencyClasspath.size ||
+            newDependencies.toSet() != dependencyClasspath.toSet()
+        ) {
+            dependencyClasspath.clear()
+            dependencyClasspath.addAll(newDependencies)
+
+            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
+
+            // Clear caches since classpath has changed
+            clearCaches()
+        } else {
+            logger.debug("Dependencies unchanged, no cache clearing needed")
+        }
+    }
+
+    /**
+     * Legacy method - Updates the dependency classpath by resolving dependencies from the workspace.
+     * @deprecated Use updateDependencies(List<Path>) with pre-resolved dependencies instead.
+     */
+    @Deprecated("Use updateDependencies(List<Path>) for non-blocking resolution")
+    fun updateDependencies() {
+        val root = workspaceRoot
+        if (root == null) {
+            logger.debug("No workspace root set, skipping dependency resolution")
+            return
+        }
+
+        logger.info("Resolving dependencies for workspace: $root")
+        val newDependencies = dependencyResolver.resolveDependencies(root)
+        updateDependencies(newDependencies)
+    }
+
+    /**
+     * Gets the current dependency classpath.
+     */
+    fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
+
+    /**
      * Creates a compiler configuration optimized for language server use.
      */
     private fun createCompilerConfiguration(): CompilerConfiguration = CompilerConfiguration().apply {
@@ -159,6 +220,15 @@ class GroovyCompilationService {
 
         // Set encoding
         sourceEncoding = "UTF-8"
+
+        // Add dependency JARs to the classpath
+        if (dependencyClasspath.isNotEmpty()) {
+            val classpathString = dependencyClasspath.joinToString(System.getProperty("path.separator")) {
+                it.toString()
+            }
+            setClasspath(classpathString)
+            logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
+        }
     }
 
     /**
