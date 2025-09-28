@@ -1,11 +1,14 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.async.future
+import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
+import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
+import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -29,6 +32,7 @@ import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
@@ -46,6 +50,16 @@ class GroovyTextDocumentService(
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
 
+    // Type definition provider - created lazily
+    private val typeDefinitionProvider by lazy {
+        val typeResolver = GroovyTypeResolver()
+        TypeDefinitionProvider(
+            coroutineScope = coroutineScope,
+            typeResolver = typeResolver,
+            contextProvider = { uri -> createCompilationContext(uri) },
+        )
+    }
+
     /**
      * Helper function to publish diagnostics with better readability
      */
@@ -56,6 +70,34 @@ class GroovyTextDocumentService(
                 this.diagnostics = diagnostics
             },
         )
+    }
+
+    /**
+     * Creates a CompilationContext from cached compilation data.
+     */
+    private fun createCompilationContext(uri: java.net.URI): CompilationContext? {
+        val ast = compilationService.getAst(uri)
+        val astVisitor = compilationService.getAstVisitor(uri)
+        val diagnostics = compilationService.getDiagnostics(uri)
+
+        if (ast is org.codehaus.groovy.ast.ModuleNode && astVisitor != null) {
+            // Use the actual compilation unit from the compilation service
+            val compilationUnit = compilationService.getCompilationUnit(uri)
+            if (compilationUnit == null) {
+                return null
+            }
+
+            return CompilationContext(
+                uri = uri,
+                moduleNode = ast,
+                compilationUnit = compilationUnit,
+                astVisitor = astVisitor,
+                workspaceRoot = null, // TODO: Get from compilation service
+                classpath = compilationService.getDependencyClasspath(),
+            )
+        }
+
+        return null
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
@@ -226,6 +268,23 @@ class GroovyTextDocumentService(
         } catch (e: Exception) {
             logger.error("Unexpected error finding references", e)
             emptyList()
+        }
+    }
+
+    override fun typeDefinition(
+        params: TypeDefinitionParams,
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+        logger.debug(
+            "Type definition requested for ${params.textDocument.uri} at " +
+                "${params.position.line}:${params.position.character}",
+        )
+
+        return typeDefinitionProvider.provideTypeDefinition(params).thenApply { locations ->
+            logger.debug("Found ${locations.size} type definitions")
+            Either.forLeft<List<Location>, List<LocationLink>>(locations)
+        }.exceptionally { e ->
+            logger.error("Error providing type definition", e)
+            Either.forLeft(emptyList())
         }
     }
 

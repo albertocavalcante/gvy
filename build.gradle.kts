@@ -273,3 +273,12 @@ tasks.register("quality") {
 tasks.check {
     dependsOn("detekt", "spotlessCheck")
 }
+
+sonar {
+    properties {
+        property("sonar.projectKey", "albertocavalcante_groovy-lsp")
+        property("sonar.organization", "albertocavalcante")
+        property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/kover/report.xml")
+    }
+}

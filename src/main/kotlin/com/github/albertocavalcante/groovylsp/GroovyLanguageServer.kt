@@ -94,6 +94,9 @@ class GroovyLanguageServer :
             // References
             referencesProvider = Either.forLeft(true)
 
+            // Type definition support
+            typeDefinitionProvider = Either.forLeft(true)
+
             // Diagnostics will be pushed
         }
 

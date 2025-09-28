@@ -55,7 +55,7 @@ class GroovyCompilationService {
             if (cachedAst != null) {
                 logger.debug("Using cached AST for: $uri")
                 val cachedDiagnostics = cache.getCachedDiagnostics(uri)
-                CompilationResult.success(cachedAst, cachedDiagnostics)
+                CompilationResult.success(cachedAst, cachedDiagnostics, content)
             } else {
                 performCompilation(uri, content)
             }
@@ -94,17 +94,17 @@ class GroovyCompilationService {
 
         val result = if (ast != null) {
             // We have an AST, cache it and the diagnostics.
-            cache.cacheResult(uri, content, ast, diagnostics)
+            cache.cacheResult(uri, content, ast, diagnostics, compilationUnit)
 
             // Build AST visitor and symbol table for go-to-definition
             buildAstVisitorAndSymbolTable(uri, compilationUnit, sourceUnit)
 
             // Success is true only if there are no error-level diagnostics.
             val isSuccess = diagnostics.none { it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error }
-            CompilationResult(isSuccess, ast, diagnostics)
+            CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
             // No AST, compilation definitely failed.
-            CompilationResult.failure(diagnostics)
+            CompilationResult.failure(diagnostics, content)
         }
 
         logger.debug("Compilation result for $uri: success=${result.isSuccess}, diagnostics=${diagnostics.size}")
@@ -121,6 +121,11 @@ class GroovyCompilationService {
      * Gets the cached diagnostics for a URI.
      */
     fun getDiagnostics(uri: URI): List<Diagnostic> = cache.getCachedDiagnostics(uri)
+
+    /**
+     * Gets the cached CompilationUnit for a URI.
+     */
+    fun getCompilationUnit(uri: URI): CompilationUnit? = cache.getCachedCompilationUnit(uri)
 
     /**
      * Gets the AST visitor for a URI, or null if not available.

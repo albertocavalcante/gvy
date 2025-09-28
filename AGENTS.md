@@ -46,3 +46,15 @@
   ./gradlew lintFix - Auto-fix all correctable lint and formatting issues
   Order: Spotless formatting first, then Detekt auto-correct
 </code-quality>
+
+<pr-review-commands>
+  SonarCloud API - Get code quality issues for PR analysis:
+  curl "https://sonarcloud.io/api/issues/search?componentKeys=albertocavalcante_groovy-lsp&pullRequest=PR_NUMBER&types=BUG,CODE_SMELL,VULNERABILITY&statuses=OPEN,CONFIRMED"
+
+GitHub CLI - PR review insights: gh pr view PR_NUMBER --comments # View PR with all comments gh api
+repos/owner/repo/pulls/PR_NUMBER/reviews | jq -r '.[] | "Author: \(.user.login)\nState: \(.state)\n\(.body)"' gh api
+repos/owner/repo/pulls/PR_NUMBER/comments | jq -r '.[] | "File: \(.path)\nLine: \(.line)\nAuthor:
+\(.user.login)\nComment:\n\(.body)"' gh pr checks PR_NUMBER # Check CI/CD status
+
+Claude WebFetch - For automated analysis: WebFetch url="https://sonarcloud.io/api/issues/search?..." prompt="List the
+issues with severity and file locations" </pr-review-commands>

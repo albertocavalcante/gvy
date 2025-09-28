@@ -21,17 +21,23 @@ data class CompilationResult(
      * List of diagnostics (errors, warnings, etc.) from compilation.
      */
     val diagnostics: List<Diagnostic>,
+
+    /**
+     * The original source text that was compiled.
+     */
+    val sourceText: String? = null,
 ) {
     companion object {
         /**
          * Creates a successful compilation result.
          */
-        fun success(ast: ASTNode, diagnostics: List<Diagnostic> = emptyList()) =
-            CompilationResult(true, ast, diagnostics)
+        fun success(ast: ASTNode, diagnostics: List<Diagnostic> = emptyList(), sourceText: String? = null) =
+            CompilationResult(true, ast, diagnostics, sourceText)
 
         /**
          * Creates a failed compilation result.
          */
-        fun failure(diagnostics: List<Diagnostic>) = CompilationResult(false, null, diagnostics)
+        fun failure(diagnostics: List<Diagnostic>, sourceText: String? = null) =
+            CompilationResult(false, null, diagnostics, sourceText)
     }
 }
