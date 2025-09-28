@@ -234,6 +234,29 @@ tasks.register("lint") {
     dependsOn("detekt", "spotlessCheck")
 }
 
+tasks.register<io.gitlab.arturbosch.detekt.Detekt>("detektAutoCorrect") {
+    description = "Run detekt with auto-correct enabled"
+    parallel = true
+    config.setFrom(files("detekt.yml"))
+    buildUponDefaultConfig = true
+    setSource(files("src"))
+    autoCorrect = true
+    reports {
+        // Disable reports for auto-correct run to keep output clean
+        html.required.set(false)
+        xml.required.set(false)
+        sarif.required.set(false)
+    }
+}
+
+tasks.register("lintFix") {
+    description = "Fix all auto-correctable lint and formatting issues"
+    group = "formatting"
+    dependsOn("spotlessApply", "detektAutoCorrect")
+}
+
+tasks.named("detektAutoCorrect").configure { mustRunAfter("spotlessApply") }
+
 tasks.register("format") {
     description = "Format all source code"
     group = "formatting"

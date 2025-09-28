@@ -34,3 +34,15 @@
     Expected delivery: Pull Request created and ready for review
   </ship-it-definition>
 </git-workflow-rules>
+
+<test-debugging>
+  For test debugging with println: MUST run with --info flag
+  Example: ./gradlew test --tests "*SomeTest*" --console=plain --info
+  Without --info flag, println output will not be visible in test results
+</test-debugging>
+
+<code-quality>
+  ./gradlew lint - Check for issues (no changes)
+  ./gradlew lintFix - Auto-fix all correctable lint and formatting issues
+  Order: Spotless formatting first, then Detekt auto-correct
+</code-quality>
