@@ -95,3 +95,20 @@ repos/owner/repo/pulls/PR_NUMBER/comments | jq -r '.[] | "File: \(.path)\nLine: 
 
 Claude WebFetch - For automated analysis: WebFetch url="https://sonarcloud.io/api/issues/search?..." prompt="List the
 issues with severity and file locations" </pr-review-commands>
+
+<github-issues>
+  # Quick Issue Creation
+  gh issue create -R albertocavalcante/groovy-lsp \
+    --title "[lsp/completion] Add method signatures" \
+    --body-file github-issues/issue.md \
+    --label "enhancement" --label "lsp/completion" --label "P1-must" --label "size/M"
+
+# Label Formula: Type + Area + Priority + Size
+
+Type: bug, enhancement, documentation, architecture, tech-debt Area: lsp/completion, lsp/navigation, lsp/diagnostics,
+lsp/hover, lsp/symbols Priority: P0-critical, P1-must, P2-should, P3-nice Size: size/XS, size/S, size/M, size/L, size/XL
+
+# Common Commands
+
+gh issue list -R albertocavalcante/groovy-lsp -l "P1-must" gh issue edit 31 --add-label "blocked" --remove-label
+"help-wanted" gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-issues>
