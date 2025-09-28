@@ -1,1 +1,50 @@
+plugins {
+    id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.2"
+}
+
+gitHooks {
+    preCommit {
+        from {
+            """
+            #!/bin/sh
+            # Cross-platform: sh works on all systems via Git
+
+            # Check not on main branch (works on Windows/Mac/Linux)
+            branch=${'$'}(git rev-parse --abbrev-ref HEAD)
+            if [ "${'$'}branch" = "main" ]; then
+                echo "ERROR: Direct commits to main branch are forbidden!"
+                echo "Please create a feature branch: git checkout -b your-branch-name"
+                exit 1
+            fi
+
+            echo "Running auto-formatting and code quality fixes..."
+
+            # Store list of staged files
+            staged_files=${'$'}(git diff --cached --name-only --diff-filter=d)
+
+            # Run auto-fixers (spotlessApply + detektAutoCorrect)
+            ./gradlew lintFix --quiet || exit 1
+
+            # Re-stage modified files
+            for file in ${'$'}staged_files; do
+                if [ -f "${'$'}file" ]; then
+                    git add "${'$'}file"
+                fi
+            done
+
+            echo "✓ Code formatting applied and files re-staged"
+            """
+        }
+    }
+
+    commitMsg {
+        conventionalCommits {
+            // Supports: feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test
+            defaultTypes()
+        }
+    }
+
+    createHooks(true) // Allow overwriting existing hooks
+}
+
 rootProject.name = "groovy-lsp"

@@ -1,5 +1,27 @@
 # AGENTS.md
 
+<github-cli-ironclad>
+  MUST use GitHub CLI exclusively for reading GitHub content. NEVER use WebFetch for GitHub.
+
+# Repository metadata
+
+gh api repos/owner/repo --jq '.description, .topics, .homepage' gh api repos/owner/repo/releases/latest --jq '.tag_name,
+.published_at'
+
+# File content (base64 decode)
+
+gh api repos/owner/repo/contents/path/to/file.md --jq '.content' | base64 -d gh api repos/owner/repo/contents/README.md
+--jq '.content' | base64 -d
+
+# Search and exploration
+
+gh api repos/owner/repo/contents/path --jq '.[] | select(.type=="file") | .name' gh search repos "gradle hooks
+language:kotlin" --limit 5 gh search repos --language=kotlin --topic=gradle --limit 5
+
+# Raw content with --jq for processing
+
+gh api repos/owner/repo/contents/build.gradle.kts --jq '.download_url' | xargs curl -s </github-cli-ironclad>
+
 <git-workflow-rules>
   <forbidden>
     NEVER commit while on main branch
