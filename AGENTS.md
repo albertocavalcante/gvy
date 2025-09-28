@@ -35,6 +35,21 @@
   </ship-it-definition>
 </git-workflow-rules>
 
+<local-git-ignore>
+  File: .git/info/exclude (local ignore, not shared with others)
+
+Add files/folders that should be ignored only on your machine: echo "filename.ext" >> .git/info/exclude echo
+"folder-name/" >> .git/info/exclude
+
+Use for: local dev files, personal notes, temp directories NOT for: files all developers should ignore (use .gitignore
+instead)
+
+  <default-behavior>
+    When asked to "ignore a file" or "add to ignore": ALWAYS use .git/info/exclude
+    Only use .gitignore when explicitly told "add to .gitignore"
+  </default-behavior>
+</local-git-ignore>
+
 <test-debugging>
   For test debugging with println: MUST run with --info flag
   Example: ./gradlew test --tests "*SomeTest*" --console=plain --info
