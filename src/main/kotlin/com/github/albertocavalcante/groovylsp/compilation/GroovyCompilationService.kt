@@ -142,8 +142,11 @@ class GroovyCompilationService(private val dependencyManager: CentralizedDepende
         } catch (e: IOException) {
             logger.error("TODO SCANNER: IO error scanning $uri", e)
             emptyList()
-        } catch (e: RuntimeException) {
-            logger.error("TODO SCANNER: Error scanning $uri", e)
+        } catch (e: IllegalArgumentException) {
+            logger.error("TODO SCANNER: Invalid input for scanning $uri", e)
+            emptyList()
+        } catch (e: IllegalStateException) {
+            logger.error("TODO SCANNER: Invalid state while scanning $uri", e)
             emptyList()
         }
         val diagnostics = compilationDiagnostics + todoDiagnostics
