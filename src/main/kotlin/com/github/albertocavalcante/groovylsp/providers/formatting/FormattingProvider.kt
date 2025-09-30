@@ -153,8 +153,11 @@ class FormattingProvider {
     } catch (e: IOException) {
         logger.error("Failed to read document content for $uri", e)
         throw IllegalStateException("Cannot read document content for formatting", e)
-    } catch (e: RuntimeException) {
-        logger.error("Failed to read document content for $uri", e)
+    } catch (e: IllegalArgumentException) {
+        logger.error("Invalid URI format: $uri", e)
+        throw IllegalStateException("Cannot read document content for formatting", e)
+    } catch (e: java.nio.file.InvalidPathException) {
+        logger.error("Invalid file path for URI: $uri", e)
         throw IllegalStateException("Cannot read document content for formatting", e)
     }
 }
