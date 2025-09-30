@@ -75,12 +75,36 @@ formatting:
   NoWildcardImports:
     active: true
     autoCorrect: true
+  NoUnusedImports:
+    active: true
+    autoCorrect: true
   FinalNewline:
     active: true
     autoCorrect: true
   MaximumLineLength:
     active: true
     maxLineLength: 120
+  NoTrailingSpaces:
+    active: true
+    autoCorrect: true
+  NoSemicolons:
+    active: true
+    autoCorrect: true
+  ImportOrdering:
+    active: true
+    autoCorrect: true
+  ModifierOrdering:
+    active: true
+    autoCorrect: true
+  NoConsecutiveBlankLines:
+    active: true
+    autoCorrect: true
+  SpacingBetweenPackageAndImports:
+    active: true
+    autoCorrect: true
+  ArgumentListWrapping:
+    active: true
+    autoCorrect: true
 naming:
   active: true
   ClassNaming:

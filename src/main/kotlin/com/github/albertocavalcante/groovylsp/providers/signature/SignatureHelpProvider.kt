@@ -165,9 +165,9 @@ class SignatureHelpProvider(private val compilationService: GroovyCompilationSer
      * This is a simplified fallback - can be enhanced later.
      */
     private fun findIncompleteMethodCall(
-        documentUri: URI,
-        position: Position,
-        astVisitor: com.github.albertocavalcante.groovylsp.ast.AstVisitor,
+        @Suppress("UNUSED_PARAMETER") documentUri: URI,
+        @Suppress("UNUSED_PARAMETER") position: Position,
+        @Suppress("UNUSED_PARAMETER") astVisitor: com.github.albertocavalcante.groovylsp.ast.AstVisitor,
     ): MethodCallContext? {
         // For now, return null - this can be enhanced to handle incomplete syntax
         logger.debug("Fallback incomplete method call detection not yet implemented")
@@ -290,7 +290,8 @@ class SignatureHelpProvider(private val compilationService: GroovyCompilationSer
      */
     private fun createSignatureFromMethodNode(methodNode: MethodNode): SignatureInformation {
         val parameterLabels = methodNode.parameters.map { param ->
-            "${param.type.nameWithoutPackage} ${param.name}${if (param.hasInitialExpression()) " = ${param.initialExpression?.text}" else ""}"
+            val initialValue = if (param.hasInitialExpression()) " = ${param.initialExpression?.text}" else ""
+            "${param.type.nameWithoutPackage} ${param.name}$initialValue"
         }
 
         val label = "${methodNode.name}(${parameterLabels.joinToString(

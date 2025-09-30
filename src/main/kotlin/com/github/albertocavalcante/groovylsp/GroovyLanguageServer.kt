@@ -236,7 +236,8 @@ class GroovyLanguageServer :
 
                     if (compilationResult.isSuccess) {
                         logger.info(
-                            "Workspace compilation completed successfully: ${compilationResult.modulesByUri.size} modules",
+                            "Workspace compilation completed successfully: " +
+                                "${compilationResult.modulesByUri.size} modules",
                         )
                     } else {
                         logger.warn(

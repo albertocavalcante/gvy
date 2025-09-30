@@ -92,7 +92,10 @@ class DebugRenameTest {
                 variableNodes.forEachIndexed { index, varNode ->
                     println("  [$index] VariableExpression at ${varNode.lineNumber}:${varNode.columnNumber}")
                     println("       accessedVariable: ${varNode.accessedVariable}")
-                    println("       accessedVariable == node.accessedVariable: ${varNode.accessedVariable == node.accessedVariable}")
+                    println(
+                        "       accessedVariable == node.accessedVariable: " +
+                            "${varNode.accessedVariable == node.accessedVariable}",
+                    )
                     println("       same object identity: ${varNode === node}")
                 }
             } else {
@@ -101,7 +104,10 @@ class DebugRenameTest {
                 astVisitor.getAllNodes()
                     .filter { it.lineNumber >= 0 && it.lineNumber <= 2 }
                     .forEach { nearbyNode ->
-                        println("  ${nearbyNode.javaClass.simpleName} at ${nearbyNode.lineNumber}:${nearbyNode.columnNumber}")
+                        println(
+                            "  ${nearbyNode.javaClass.simpleName} at " +
+                                "${nearbyNode.lineNumber}:${nearbyNode.columnNumber}",
+                        )
                     }
             }
         } else {

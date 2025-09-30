@@ -40,7 +40,8 @@ class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry)
         logger.debug("Total diagnostics: ${allDiagnostics.size}")
         allDiagnostics.forEach { diagnostic ->
             logger.debug(
-                "  Diagnostic: source='${diagnostic.source}', code='${diagnostic.code}', message='${diagnostic.message}'",
+                "  Diagnostic: source='${diagnostic.source}', code='${diagnostic.code}', " +
+                    "message='${diagnostic.message}'",
             )
         }
 

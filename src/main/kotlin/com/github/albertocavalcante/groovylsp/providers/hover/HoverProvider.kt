@@ -52,7 +52,8 @@ class HoverProvider(private val compilationService: GroovyCompilationService) {
             }
 
             logger.debug(
-                "Found hover node: ${hoverNode.javaClass.simpleName} at ${hoverNode.lineNumber}:${hoverNode.columnNumber}",
+                "Found hover node: ${hoverNode.javaClass.simpleName} " +
+                    "at ${hoverNode.lineNumber}:${hoverNode.columnNumber}",
             )
 
             // Only provide hover for hoverable nodes
@@ -241,23 +242,6 @@ class HoverProvider(private val compilationService: GroovyCompilationService) {
     private fun resolveFallbackNode(nodeAtPosition: ASTNode): ASTNode = when (nodeAtPosition) {
         is ConstantExpression -> nodeAtPosition
         else -> nodeAtPosition
-    }
-
-    /**
-     * Create hover content using the DSL.
-     */
-    private fun createHoverContent(node: ASTNode): Hover? {
-        logger.debug("Creating hover content for node: ${node.javaClass.simpleName}")
-        logger.debug("Node is hoverable: ${node.isHoverable()}")
-
-        val result = createHoverFor(node)
-        if (result.isFailure) {
-            logger.debug("Hover creation failed: ${result.exceptionOrNull()?.message}")
-        } else {
-            logger.debug("Hover creation succeeded")
-        }
-
-        return result.getOrNull()
     }
 
     /**
