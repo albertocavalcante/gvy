@@ -105,8 +105,9 @@ java.lang.AssertionError: No such rule named [ScriptNotInClass]
 
 ### Non-Existent Rules (as of CodeNarc 3.5.0)
 
-> **Note:** This list is accurate as of CodeNarc 3.5.0. Please check the [CodeNarc release notes](https://github.com/CodeNarc/CodeNarc/releases) or documentation for updates in newer versions.
-These rules **do not exist** and will cause fatal errors:
+> **Note:** This list is accurate as of CodeNarc 3.5.0. Please check the
+> [CodeNarc release notes](https://github.com/CodeNarc/CodeNarc/releases) or documentation for updates in newer
+> versions. These rules **do not exist** and will cause fatal errors:
 
 ```groovy
 // ❌ These rules DON'T EXIST
