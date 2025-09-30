@@ -76,6 +76,9 @@ import java.net.URI
  * - Reflection-based visiting
  * - Split into specialized visitors (expressions, statements, declarations)
  */
+// TODO: Split this class into smaller, specialized visitor classes (e.g., ExpressionVisitor, StatementVisitor, DeclarationVisitor)
+//       to improve maintainability and reduce complexity
+@Suppress("LargeClass")
 internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker) : ClassCodeVisitorSupport() {
 
     private val logger = LoggerFactory.getLogger(NodeVisitorDelegate::class.java)
@@ -858,6 +861,7 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
 
     /**
      * Enhanced module processing to use the new visitor methods
+     * TODO: This function will be used in future AST processing enhancements
      */
     @Suppress("UnusedPrivateMember")
     private fun processModuleEnhanced(module: ModuleNode) {
@@ -973,13 +977,12 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     fun visitArrayType(classNode: org.codehaus.groovy.ast.ClassNode) {
         pushNode(classNode)
         try {
-            if (classNode.isArray) {
-                // Visit component type for arrays (with recursion guard)
-                classNode.componentType?.let { componentType ->
-                    if (componentType != classNode) { // Prevent infinite recursion
-                        visitArrayType(componentType) // Recursive for multi-dimensional
-                    }
-                }
+            if (!classNode.isArray) return
+
+            // Visit component type for arrays (with recursion guard)
+            val componentType = classNode.componentType ?: return
+            if (componentType != classNode) { // Prevent infinite recursion
+                visitArrayType(componentType) // Recursive for multi-dimensional
             }
             // Don't call visitClassNode here to avoid double visiting
         } finally {
@@ -1029,17 +1032,20 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         try {
             classNode.genericsTypes?.forEach { genericsType ->
                 visitGenericsType(genericsType)
-
-                // Visit nested generics recursively (with recursion guard)
-                genericsType.type?.let { nestedType ->
-                    if (nestedType != classNode && nestedType.genericsTypes != null) {
-                        visitNestedGenerics(nestedType)
-                    }
-                }
+                visitNestedGenericType(genericsType, classNode)
             }
         } finally {
             popNode()
         }
+    }
+
+    private fun visitNestedGenericType(
+        genericsType: org.codehaus.groovy.ast.GenericsType,
+        classNode: org.codehaus.groovy.ast.ClassNode,
+    ) {
+        val nestedType = genericsType.type ?: return
+        if (nestedType == classNode || nestedType.genericsTypes == null) return
+        visitNestedGenerics(nestedType)
     }
 
     /**
