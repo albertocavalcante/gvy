@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.ClientInfo
 import org.eclipse.lsp4j.CompletionParams
@@ -34,7 +34,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test server initialization`() = runBlocking {
+    fun `test server initialization`() = runTest {
         val params = InitializeParams().apply {
             processId = 1234
             workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
@@ -58,7 +58,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test completion returns items`() = runBlocking {
+    fun `test completion returns items`() = runTest {
         val params = CompletionParams().apply {
             textDocument = TextDocumentIdentifier("file:///test.groovy")
             position = Position(0, 0)
@@ -77,7 +77,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test hover returns content`() = runBlocking {
+    fun `test hover returns content`() = runTest {
         val params = HoverParams().apply {
             textDocument = TextDocumentIdentifier("file:///test.groovy")
             position = Position(5, 10)
@@ -96,7 +96,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test document open compiles valid groovy file`() = runBlocking {
+    fun `test document open compiles valid groovy file`() = runTest {
         val params = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
                 uri = "file:///test.groovy"
@@ -117,7 +117,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test hover should work immediately after workspace initialization`() = runBlocking {
+    fun `test hover should work immediately after workspace initialization`() = runTest {
         // This test verifies that hover works immediately after server initialization
         // Previously this would fail because workspace compilation was async
 
@@ -189,7 +189,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test hover should work after didChange`() = runBlocking {
+    fun `test hover should work after didChange`() = runTest {
         // Test that hover continues to work after document changes
         val workspaceUri = "file:///tmp/test-workspace"
         val params = InitializeParams().apply {
@@ -254,7 +254,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test shutdown and exit`() = runBlocking {
+    fun `test shutdown and exit`() = runTest {
         val result = server.shutdown().get()
         assertNotNull(result)
         // Note: We don't actually call exit() in tests as it would terminate the test JVM

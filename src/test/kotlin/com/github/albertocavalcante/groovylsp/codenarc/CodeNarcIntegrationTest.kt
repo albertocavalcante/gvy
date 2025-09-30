@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.codenarc
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import java.net.URI
@@ -28,7 +28,7 @@ class CodeNarcIntegrationTest {
     }
 
     @Test
-    fun `should handle empty source code`() = runBlocking {
+    fun `should handle empty source code`() = runTest {
         val configProvider = mockk<ConfigurationProvider> {
             every { getServerConfiguration() } returns ServerConfiguration()
             every { getWorkspaceRoot() } returns null
@@ -43,7 +43,7 @@ class CodeNarcIntegrationTest {
     }
 
     @Test
-    fun `should handle blank source code`() = runBlocking {
+    fun `should handle blank source code`() = runTest {
         val configProvider = mockk<ConfigurationProvider> {
             every { getServerConfiguration() } returns ServerConfiguration()
             every { getWorkspaceRoot() } returns null
@@ -58,7 +58,7 @@ class CodeNarcIntegrationTest {
     }
 
     @Test
-    fun `should analyze simple Groovy code without throwing exceptions`() = runBlocking {
+    fun `should analyze simple Groovy code without throwing exceptions`() = runTest {
         val configProvider = mockk<ConfigurationProvider> {
             every { getServerConfiguration() } returns ServerConfiguration()
             every { getWorkspaceRoot() } returns null

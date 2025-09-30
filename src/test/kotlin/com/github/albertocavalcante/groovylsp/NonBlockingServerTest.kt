@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
@@ -26,7 +26,7 @@ class NonBlockingServerTest {
     }
 
     @Test
-    fun `test server lifecycle with non-blocking harness`() = runBlocking {
+    fun `test server lifecycle with non-blocking harness`() = runTest {
         val runner = TestLanguageServerRunner()
         serverHandle = runner.startInMemoryServer()
 

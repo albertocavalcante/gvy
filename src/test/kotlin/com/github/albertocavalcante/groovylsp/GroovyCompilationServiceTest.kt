@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -25,7 +25,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile valid groovy file returns success with no errors`() = runBlocking {
+    fun `test compile valid groovy file returns success with no errors`() = runTest {
         val simpleGroovyContent = """
             package test
 
@@ -47,7 +47,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile invalid groovy file returns errors`() = runBlocking {
+    fun `test compile invalid groovy file returns errors`() = runTest {
         val invalidGroovyContent = """
             package test
 
@@ -73,7 +73,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile caches AST for repeated requests`() = runBlocking {
+    fun `test compile caches AST for repeated requests`() = runTest {
         val groovyContent = """
             class SimpleClass {
                 String name = "test"
@@ -99,7 +99,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile updates cache when content changes`() = runBlocking {
+    fun `test compile updates cache when content changes`() = runTest {
         val originalContent = """
             class OriginalClass {
                 String originalField
@@ -129,7 +129,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test getDiagnostics returns empty for valid file`() = runBlocking {
+    fun `test getDiagnostics returns empty for valid file`() = runTest {
         val validContent = """
             class ValidClass {
                 void validMethod() {
@@ -146,7 +146,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test getDiagnostics handles compilation gracefully for unusual syntax`() = runBlocking {
+    fun `test getDiagnostics handles compilation gracefully for unusual syntax`() = runTest {
         // FIXME: Groovy is extremely tolerant of "invalid" syntax, treating many constructs
         // as valid DSL or scripting. This test verifies the compilation service handles
         // unusual syntax gracefully rather than expecting specific error detection.
@@ -171,7 +171,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile with real test resource files`() = runBlocking {
+    fun `test compile with real test resource files`() = runTest {
         // Load the Simple.groovy test resource
         val simpleGroovyContent = this::class.java.classLoader
             .getResource("Simple.groovy")
@@ -187,7 +187,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile with syntax error test resource files`() = runBlocking {
+    fun `test compile with syntax error test resource files`() = runTest {
         // Load the SyntaxError.groovy test resource
         val syntaxErrorContent = this::class.java.classLoader
             .getResource("SyntaxError.groovy")
@@ -213,7 +213,7 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test diagnostics contain proper position information`() = runBlocking {
+    fun `test diagnostics contain proper position information`() = runTest {
         val contentWithError = """
             class TestClass {
                 void method( {

@@ -5,7 +5,7 @@ import com.github.albertocavalcante.groovylsp.test.MockConfigurationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
@@ -38,7 +38,7 @@ class GroovyTextDocumentServiceTest {
     }
 
     @Test
-    fun `should provide code actions for unresolved class through text document service`() = runBlocking {
+    fun `should provide code actions for unresolved class through text document service`() = runTest {
         val code = """
             class Foo {
                 def list = new ArrayList()  // Unresolved
@@ -79,7 +79,7 @@ class GroovyTextDocumentServiceTest {
     }
 
     @Test
-    fun `should provide remove import action for unused imports`() = runBlocking {
+    fun `should provide remove import action for unused imports`() = runTest {
         val code = """
             import java.util.HashMap  // Unused
 
@@ -121,7 +121,7 @@ class GroovyTextDocumentServiceTest {
     }
 
     @Test
-    fun `should return multiple import candidates for ambiguous classes`() = runBlocking {
+    fun `should return multiple import candidates for ambiguous classes`() = runTest {
         val code = """
             class Foo {
                 def date = new Date()  // Ambiguous
@@ -154,7 +154,7 @@ class GroovyTextDocumentServiceTest {
     }
 
     @Test
-    fun `should return empty list when no code actions available`() = runBlocking {
+    fun `should return empty list when no code actions available`() = runTest {
         val code = """
             class Foo {
                 def validCode = "hello"
@@ -184,7 +184,7 @@ class GroovyTextDocumentServiceTest {
     }
 
     @Test
-    fun `should handle empty diagnostics gracefully`() = runBlocking {
+    fun `should handle empty diagnostics gracefully`() = runTest {
         val params = CodeActionParams().apply {
             textDocument = TextDocumentIdentifier("file:///test.groovy")
             range = Range(Position(0, 0), Position(0, 0))
