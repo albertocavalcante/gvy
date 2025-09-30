@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.integration
 import com.github.albertocavalcante.groovylsp.TestUtils
 import kotlinx.coroutines.test.runTest
 import java.net.URI
-import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -12,7 +11,6 @@ class GradleDependencyIntegrationTest {
     @Test
     fun `should initialize workspace and resolve dependencies for compilation`() = runTest {
         val compilationService = TestUtils.createCompilationService()
-        val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
         // Initialize the workspace and trigger dependency resolution for the test
         // Use our test project which has known dependencies
@@ -40,7 +38,6 @@ class GradleDependencyIntegrationTest {
     @Test
     fun `should compile groovy code with external dependencies`() = runTest {
         val compilationService = TestUtils.createCompilationService()
-        val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
         // Initialize workspace with dependencies using test project
         // Note: These methods are not available on GroovyCompilationService

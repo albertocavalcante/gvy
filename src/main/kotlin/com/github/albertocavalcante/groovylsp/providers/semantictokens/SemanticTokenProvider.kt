@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
 import com.github.albertocavalcante.groovylsp.scanner.TodoCommentScanner
-import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
 import org.eclipse.lsp4j.SemanticTokens
 import org.eclipse.lsp4j.SemanticTokensLegend
@@ -52,10 +51,6 @@ class SemanticTokenProvider {
 
         // Regex patterns for finding TODO comments in source code
         private val SINGLE_LINE_COMMENT_PATTERN = Pattern.compile("//.*", Pattern.CASE_INSENSITIVE)
-        private val MULTI_LINE_COMMENT_PATTERN = Pattern.compile(
-            "/\\*.*?\\*/",
-            Pattern.DOTALL or Pattern.CASE_INSENSITIVE,
-        )
     }
 
     private val todoScanner = TodoCommentScanner()
@@ -130,7 +125,7 @@ class SemanticTokenProvider {
     ) {
         val supportedPatterns = todoScanner.getSupportedPatterns()
 
-        for ((keyword, severity) in supportedPatterns) {
+        for ((keyword, _) in supportedPatterns) {
             // Create case-insensitive pattern for the keyword
             val keywordPattern = Pattern.compile("\\b$keyword\\b:?", Pattern.CASE_INSENSITIVE)
             val matcher = keywordPattern.matcher(commentText)

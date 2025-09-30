@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.ast.visitor
 import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.ast.NodeRelationshipTracker
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.Test
@@ -41,7 +40,6 @@ class ExpressionVisitorTest {
 
         // Should have tracked method call expressions
         val nodes = tracker.getAllNodes()
-        val methodCalls = nodes.filter { it.javaClass.simpleName.contains("MethodCall") }
 
         // Currently this might be empty depending on how we traverse
         // The important thing is that the visitor doesn't crash
