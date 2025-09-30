@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.codenarc
 import com.github.albertocavalcante.groovylsp.test.MockConfigurationProvider
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -37,7 +37,7 @@ class CodeNarcServiceTest {
     inner class CurrentBugTests {
 
         @Test
-        fun `should no longer throw JsonException with DSL ruleset`() = runBlocking {
+        fun `should no longer throw JsonException with DSL ruleset`() = runTest {
             // This test verifies that the JsonException bug is fixed
             // Previously: DSL format was incorrectly parsed as JSON causing JsonException
             // Now: DSL format should work via temp file approach
@@ -62,21 +62,21 @@ class CodeNarcServiceTest {
     inner class BasicFunctionalityTests {
 
         @Test
-        fun `should handle empty source code gracefully`() = runBlocking {
+        fun `should handle empty source code gracefully`() = runTest {
             val violations = service.analyzeString("", testUri)
             assertNotNull(violations)
             assertTrue(violations.isEmpty())
         }
 
         @Test
-        fun `should handle blank source code gracefully`() = runBlocking {
+        fun `should handle blank source code gracefully`() = runTest {
             val violations = service.analyzeString("   \n\t\n  ", testUri)
             assertNotNull(violations)
             assertTrue(violations.isEmpty())
         }
 
         @Test
-        fun `should analyze simple Groovy code without exceptions`() = runBlocking {
+        fun `should analyze simple Groovy code without exceptions`() = runTest {
             val source = """
                 def hello() {
                     println "Hello World"
@@ -95,7 +95,7 @@ class CodeNarcServiceTest {
     inner class RulesetFormatTests {
 
         @Test
-        fun `should support Groovy DSL ruleset format`() = runBlocking {
+        fun `should support Groovy DSL ruleset format`() = runTest {
             // Test that DSL format works (this should work after our fix)
             val source = "def hello() {    \n    println 'Hello'    \n}"
 
@@ -107,7 +107,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should detect violations with DSL ruleset`() = runBlocking {
+        fun `should detect violations with DSL ruleset`() = runTest {
             // Code with trailing whitespace should trigger TrailingWhitespace rule
             val sourceWithTrailingWS = "def hello() {    \n    println 'Hello'    \n}"
 
@@ -123,7 +123,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should support JSON ruleset format when provided`() = runBlocking {
+        fun `should support JSON ruleset format when provided`() = runTest {
             // Test future JSON format support
             // Note: This test will guide implementation of JSON format support
             @Suppress("UNUSED_VARIABLE")
@@ -152,7 +152,7 @@ class CodeNarcServiceTest {
     inner class MemoryEfficiencyTests {
 
         @Test
-        fun `should reuse ruleset compilation for same content`() = runBlocking {
+        fun `should reuse ruleset compilation for same content`() = runTest {
             val source = "def hello() { println 'Hello' }"
 
             // Run analysis multiple times - should be memory efficient
@@ -166,7 +166,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should handle concurrent analysis safely`() = runBlocking {
+        fun `should handle concurrent analysis safely`() = runTest {
             val source = "def hello() { println 'Hello' }"
 
             // Run concurrent analyses using coroutineScope
@@ -193,7 +193,7 @@ class CodeNarcServiceTest {
     inner class CustomRulesetTests {
 
         @Test
-        fun `should support custom ruleset from file path`() = runBlocking {
+        fun `should support custom ruleset from file path`() = runTest {
             // Create a temporary custom ruleset file
             val customRuleset = """
                 ruleset {
@@ -226,7 +226,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should fallback to default ruleset when custom ruleset fails`() = runBlocking {
+        fun `should fallback to default ruleset when custom ruleset fails`() = runTest {
             // Test fallback behavior when custom ruleset is invalid
             val source = "def hello() { println 'Hello' }"
 
@@ -243,7 +243,7 @@ class CodeNarcServiceTest {
     inner class ErrorHandlingTests {
 
         @Test
-        fun `should handle malformed Groovy code gracefully`() = runBlocking {
+        fun `should handle malformed Groovy code gracefully`() = runTest {
             val malformedSource = "def hello( { invalid syntax"
 
             assertDoesNotThrow {
@@ -254,7 +254,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should handle very large source files`() = runBlocking {
+        fun `should handle very large source files`() = runTest {
             val largeSource = buildString {
                 appendLine("class LargeClass {")
                 repeat(1000) { i ->
@@ -270,7 +270,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should handle invalid URI gracefully`() = runBlocking {
+        fun `should handle invalid URI gracefully`() = runTest {
             val source = "def hello() { println 'Hello' }"
             val invalidUri = URI.create("invalid://uri/path")
 
@@ -286,7 +286,7 @@ class CodeNarcServiceTest {
     inner class DuplicateDetectionTests {
 
         @Test
-        fun `should not duplicate diagnostics from hierarchical results`() = runBlocking {
+        fun `should not duplicate diagnostics from hierarchical results`() = runTest {
             // This test verifies the fix for the triplication bug where violations
             // appeared 3 times due to processing at root, directory, and file levels
             val source = """
@@ -327,7 +327,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should handle multiple different violations without duplication`() = runBlocking {
+        fun `should handle multiple different violations without duplication`() = runTest {
             // Code with multiple types of violations to test duplication across different rules
             val source = """
                 def hello() {
@@ -361,7 +361,7 @@ class CodeNarcServiceTest {
     inner class JenkinsProjectTests {
 
         @Test
-        fun `should analyze Jenkins pipeline code`() = runBlocking {
+        fun `should analyze Jenkins pipeline code`() = runTest {
             val pipelineSource = """
                 pipeline {
                     agent any
@@ -382,7 +382,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `should handle Jenkins shared library code`() = runBlocking {
+        fun `should handle Jenkins shared library code`() = runTest {
             val sharedLibSource = """
                 def call(Map config) {
                     pipeline {
@@ -415,18 +415,16 @@ class CodeNarcServiceTest {
     inner class TempFileManagementTests {
 
         @Test
-        fun `should clean up temporary files properly`() {
+        fun `should clean up temporary files properly`() = runTest {
             // TODO: Implement temp file tracking and cleanup verification
             // This will be part of RuleSetManager implementation
 
             // Test that temp files are created and cleaned up
             val initialTempFileCount = getTempFileCount()
 
-            runBlocking {
-                repeat(5) {
-                    val source = "def hello() { println 'Hello $it' }"
-                    service.analyzeString(source, testUri)
-                }
+            repeat(5) {
+                val source = "def hello() { println 'Hello $it' }"
+                service.analyzeString(source, testUri)
             }
 
             // After cleanup, temp file count should be reasonable
@@ -458,7 +456,7 @@ class CodeNarcServiceTest {
     inner class MockKExamples {
 
         @Test
-        fun `demonstrate MockK with ConfigurationProvider`() = runBlocking {
+        fun `demonstrate MockK with ConfigurationProvider`() = runTest {
             // Example of MockK relaxed mock - automatically returns defaults for unspecified methods
             val relaxedConfig = io.mockk.mockk<ConfigurationProvider>(relaxed = true)
             val serviceWithRelaxed = CodeNarcService(relaxedConfig)
@@ -471,7 +469,7 @@ class CodeNarcServiceTest {
         }
 
         @Test
-        fun `demonstrate MockK behavior verification`() = runBlocking {
+        fun `demonstrate MockK behavior verification`() = runTest {
             val mockConfig = io.mockk.mockk<ConfigurationProvider>()
 
             // Set up mock behavior
