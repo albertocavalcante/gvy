@@ -165,7 +165,7 @@ spotless {
     }
     groovy {
         target("src/**/*.groovy")
-        targetExclude("**/build/**/*.groovy")
+        targetExclude("**/build/**/*.groovy", "src/test/resources/**/*.groovy")
         // Use simple indentation-based formatting for Groovy
         leadingTabsToSpaces()
         trimTrailingWhitespace()
