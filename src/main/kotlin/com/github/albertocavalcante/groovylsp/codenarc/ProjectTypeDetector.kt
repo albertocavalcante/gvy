@@ -38,12 +38,11 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
             "src/org/", // Common Jenkins shared library structure
         )
 
-        // Grails project indicators
+        // Grails project indicators (excluding generic build files)
         private val grailsIndicators = listOf(
             "grails-app",
-            "application.yml",
-            "application.properties",
-            "build.gradle", // Modern Grails
+            "application.yml", // When combined with grails-app or Grails-specific files
+            "application.properties", // When combined with grails-app or Grails-specific files
             "grails.gradle", // Grails-specific
         )
 
@@ -63,6 +62,11 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                 logger.info("Detected Jenkins project: $workspaceRoot")
                 ProjectType.JenkinsLibrary
             }
+            isGradleProject(workspaceRoot) -> {
+                val hasSpock = hasSpockTesting(workspaceRoot)
+                logger.info("Detected Gradle project: $workspaceRoot (spock=$hasSpock)")
+                ProjectType.GradleProject(hasSpock)
+            }
             isGrailsProject(workspaceRoot) -> {
                 logger.info("Detected Grails project: $workspaceRoot")
                 ProjectType.GrailsApplication
@@ -70,11 +74,6 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
             isSpringBootProject(workspaceRoot) -> {
                 logger.info("Detected Spring Boot project: $workspaceRoot")
                 ProjectType.SpringBootProject
-            }
-            isGradleProject(workspaceRoot) -> {
-                val hasSpock = hasSpockTesting(workspaceRoot)
-                logger.info("Detected Gradle project: $workspaceRoot (spock=$hasSpock)")
-                ProjectType.GradleProject(hasSpock)
             }
             isMavenProject(workspaceRoot) -> {
                 logger.info("Detected Maven project: $workspaceRoot")
@@ -106,13 +105,28 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
             return true
         }
 
-        // Check for Grails configuration files
-        return grailsIndicators.any { indicator ->
-            workspaceRoot.resolve(indicator).exists()
-        } && (
-            workspaceRoot.resolve("build.gradle").exists() ||
-                workspaceRoot.resolve("pom.xml").exists()
-            )
+        // Check for Grails-specific files (must have grails.gradle or specific Grails markers)
+        val hasGrailsGradle = workspaceRoot.resolve("grails.gradle").exists()
+        if (hasGrailsGradle) {
+            return true
+        }
+
+        // Additional check: look for Grails in build.gradle content
+        val buildFile = workspaceRoot.resolve("build.gradle")
+        if (buildFile.exists()) {
+            try {
+                val content = buildFile.readText()
+                if (content.contains("grails") &&
+                    (content.contains("org.grails") || content.contains("grails-core"))
+                ) {
+                    return true
+                }
+            } catch (e: Exception) {
+                logger.debug("Failed to read build.gradle for Grails detection", e)
+            }
+        }
+
+        return false
     }
 
     /**

@@ -83,11 +83,17 @@ class GroovyCompilationService(private val dependencyManager: CentralizedDepende
         logger.debug("Compiling: $uri")
 
         return try {
-            // Use workspace compilation if enabled
+            // Use workspace compilation if enabled and file is in workspace context
             workspaceCompilationService?.let { workspaceService ->
-                logger.debug("Using workspace compilation for: $uri")
-                val result = workspaceService.updateFile(uri, content)
-                return convertWorkspaceResult(uri, result)
+                // Check if the file is actually in a workspace context
+                val contextName = workspaceService.getContextForFile(uri)
+                if (contextName != null) {
+                    logger.debug("Using workspace compilation for: $uri (context: $contextName)")
+                    val result = workspaceService.updateFile(uri, content)
+                    return convertWorkspaceResult(uri, result)
+                } else {
+                    logger.debug("File not in workspace context, using standalone compilation: $uri")
+                }
             }
 
             // Fall back to single-file compilation

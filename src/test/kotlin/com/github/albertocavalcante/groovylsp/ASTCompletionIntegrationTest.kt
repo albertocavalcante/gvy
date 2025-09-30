@@ -46,7 +46,7 @@ class ASTCompletionIntegrationTest {
     @Test
     fun `completion should include AST symbols from current file`() = runTest {
         val content = createCalculatorClass()
-        val uri = "file:///Calculator.groovy"
+        val uri = "file:///tmp/test/Calculator.groovy"
 
         openDocument(uri, content)
         val items = requestCompletionsAt(uri, Position(21, 8))
@@ -74,7 +74,7 @@ class ASTCompletionIntegrationTest {
     @Test
     fun `completion should work with multiple classes in same file`() = runTest {
         val content = createGeometryClasses()
-        val uri = "file:///Geometry.groovy"
+        val uri = "file:///tmp/test/Geometry.groovy"
 
         openDocument(uri, content)
         val items = requestCompletionsAt(uri, Position(32, 8))
@@ -100,7 +100,7 @@ class ASTCompletionIntegrationTest {
         """.trimIndent()
 
         val textDoc = TextDocumentItem().apply {
-            uri = "file:///Broken.groovy"
+            uri = "file:///tmp/test/Broken.groovy"
             languageId = "groovy"
             version = 1
             text = contentWithError
@@ -109,10 +109,10 @@ class ASTCompletionIntegrationTest {
         serverHandle!!.server.textDocumentService.didOpen(DidOpenTextDocumentParams().apply { textDocument = textDoc })
 
         // Wait for compilation to complete (expecting errors)
-        val diagnostics = serverHandle!!.client.awaitFailedCompilation("file:///Broken.groovy")
+        val diagnostics = serverHandle!!.client.awaitFailedCompilation("file:///tmp/test/Broken.groovy")
 
         // Should have published diagnostics
-        assertEquals("file:///Broken.groovy", diagnostics.uri)
+        assertEquals("file:///tmp/test/Broken.groovy", diagnostics.uri)
         assertFalse(diagnostics.diagnostics.isEmpty())
 
         val error = diagnostics.diagnostics[0]

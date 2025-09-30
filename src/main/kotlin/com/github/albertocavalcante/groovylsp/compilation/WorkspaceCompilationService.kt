@@ -231,11 +231,22 @@ class WorkspaceCompilationService(
                 logger.debug("Recompiling context '$contextName' for file update: $uri")
                 recompileContext(contextName)
             } else {
-                // File not in any known context - might be a new standalone file
-                logger.debug("File not in any context, rebuilding workspace: $uri")
-                recompileWorkspace()
+                // File not in any known context - return empty result for standalone files
+                logger.debug("File not in any context, skipping workspace rebuild for standalone file: $uri")
+                WorkspaceCompilationResult(
+                    isSuccess = true,
+                    modulesByUri = mapOf(),
+                    diagnostics = mapOf(),
+                    astVisitor = null,
+                    symbolTable = SymbolTable(),
+                )
             }
         }
+
+    /**
+     * Get the context name for a file URI, or null if not in any context.
+     */
+    fun getContextForFile(uri: URI): String? = contextManager.getContextForFile(uri)
 
     /**
      * Remove a file and recompile.
