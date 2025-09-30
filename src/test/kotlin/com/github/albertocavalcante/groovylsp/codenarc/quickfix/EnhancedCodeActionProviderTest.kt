@@ -177,7 +177,8 @@ class EnhancedCodeActionProviderTest {
         val quickFixActions = actions.filter { it.kind == CodeActionKind.QuickFix }
         assertEquals(2, quickFixActions.size)
 
-        // Actions should be ordered by fixer priority (TrailingWhitespace has priority 1, UnnecessarySemicolon has priority 2)
+        // Actions should be ordered by fixer priority (TrailingWhitespace has priority 1,
+        // UnnecessarySemicolon has priority 2)
         assertEquals("Remove trailing whitespace", quickFixActions[0].title)
         assertEquals("Remove unnecessary semicolon", quickFixActions[1].title)
     }

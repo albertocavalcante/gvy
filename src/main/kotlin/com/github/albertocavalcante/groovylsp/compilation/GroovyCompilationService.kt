@@ -144,7 +144,8 @@ class GroovyCompilationService(private val dependencyManager: CentralizedDepende
         val diagnostics = compilationDiagnostics + todoDiagnostics
 
         logger.debug(
-            "Found ${compilationDiagnostics.size} compilation diagnostics and ${todoDiagnostics.size} TODO items for $uri",
+            "Found ${compilationDiagnostics.size} compilation diagnostics " +
+                "and ${todoDiagnostics.size} TODO items for $uri",
         )
 
         // Get the AST

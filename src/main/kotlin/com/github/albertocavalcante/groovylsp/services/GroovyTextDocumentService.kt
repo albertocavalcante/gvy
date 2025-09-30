@@ -524,7 +524,8 @@ class GroovyTextDocumentService(
                 val semanticTokens = semanticTokenProvider.generateSemanticTokens(content, params.textDocument.uri)
 
                 logger.debug(
-                    "Generated semantic tokens for ${params.textDocument.uri}: ${semanticTokens.data.size / SEMANTIC_TOKEN_VALUES_PER_TOKEN} tokens",
+                    "Generated semantic tokens for ${params.textDocument.uri}: " +
+                        "${semanticTokens.data.size / SEMANTIC_TOKEN_VALUES_PER_TOKEN} tokens",
                 )
                 semanticTokens
             } catch (e: Exception) {
