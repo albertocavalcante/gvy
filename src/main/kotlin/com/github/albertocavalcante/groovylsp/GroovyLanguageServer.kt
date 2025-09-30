@@ -288,13 +288,13 @@ class GroovyLanguageServer :
     /**
      * Compiles the workspace and waits for completion.
      */
-    private suspend fun compileWorkspace(workspaceRoot: Path): WorkspaceCompilationService.CompilationResult =
+    private suspend fun compileWorkspace(workspaceRoot: Path): WorkspaceCompilationService.WorkspaceCompilationResult =
         workspaceCompilationService!!.initializeWorkspace(workspaceRoot)
 
     /**
      * Logs the workspace compilation result.
      */
-    private fun logCompilationResult(result: WorkspaceCompilationService.CompilationResult) {
+    private fun logCompilationResult(result: WorkspaceCompilationService.WorkspaceCompilationResult) {
         if (result.isSuccess) {
             logger.info(
                 "Workspace compilation completed successfully: ${result.modulesByUri.size} modules",
