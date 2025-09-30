@@ -100,8 +100,9 @@ class WorkspaceCompilationTest {
 
     @Test
     fun `should handle file updates incrementally`() = runBlocking {
-        // Create initial file
-        val file1Uri = URI.create("file:///test/Example.groovy")
+        // Create file in temp directory BEFORE workspace initialization
+        val file1 = tempDir.resolve("Example.groovy")
+        val file1Uri = file1.toUri()
         val initialContent = """
             package com.example
             class Example {
@@ -109,7 +110,13 @@ class WorkspaceCompilationTest {
             }
         """.trimIndent()
 
-        // Add initial file
+        // Create the file on disk first
+        Files.write(file1, initialContent.toByteArray())
+
+        // Initialize workspace - should find the existing file
+        workspaceService.initializeWorkspace(tempDir)
+
+        // Update file content (file should now be in a context)
         val result1 = workspaceService.updateFile(file1Uri, initialContent)
         assertTrue(result1.isSuccess, "Initial compilation should succeed")
 
@@ -121,6 +128,9 @@ class WorkspaceCompilationTest {
                 int version = 2
             }
         """.trimIndent()
+
+        // Write updated content to disk
+        Files.write(file1, updatedContent.toByteArray())
 
         // Update file
         val result2 = workspaceService.updateFile(file1Uri, updatedContent)

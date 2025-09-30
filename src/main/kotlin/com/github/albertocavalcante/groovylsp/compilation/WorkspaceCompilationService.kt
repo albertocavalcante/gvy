@@ -54,6 +54,7 @@ class WorkspaceCompilationService(
     private val contextAstVisitors = ConcurrentHashMap<String, AstVisitor>()
     private val contextSymbolTables = ConcurrentHashMap<String, SymbolTable>()
     private var workspaceRoot: Path? = null
+    private var lastWorkspaceCompilationResult: WorkspaceCompilationResult? = null
 
     // Combined workspace-level views
     private var workspaceAstVisitor: AstVisitor? = null
@@ -152,7 +153,9 @@ class WorkspaceCompilationService(
 
             if (contexts.isEmpty()) {
                 logger.warn("No compilation contexts found for workspace")
-                return WorkspaceCompilationResult.success(emptyMap(), emptyMap(), null, null)
+                val result = WorkspaceCompilationResult.success(emptyMap(), emptyMap(), null, null)
+                lastWorkspaceCompilationResult = result
+                return result
             }
 
             logger.info("Found ${contexts.size} compilation contexts")
@@ -195,10 +198,19 @@ class WorkspaceCompilationService(
                 }} diagnostics",
             )
 
-            WorkspaceCompilationResult.success(allModules, allDiagnostics, combinedAstVisitor, combinedSymbolTable)
+            val result = WorkspaceCompilationResult.success(
+                allModules,
+                allDiagnostics,
+                combinedAstVisitor,
+                combinedSymbolTable,
+            )
+            lastWorkspaceCompilationResult = result
+            result
         } catch (e: Exception) {
             logger.error("Failed to initialize workspace compilation", e)
-            WorkspaceCompilationResult.failure(emptyMap())
+            val result = WorkspaceCompilationResult.failure(emptyMap())
+            lastWorkspaceCompilationResult = result
+            result
         }
     }
 
@@ -393,11 +405,13 @@ class WorkspaceCompilationService(
      * Get workspace statistics.
      */
     fun getWorkspaceStatistics(): Map<String, Any> {
-        val fileStats = mapOf("totalFiles" to 0)
-        val moduleStats = mapOf("compiledModules" to 0)
+        val contextStats = contextManager.getWorkspaceStatistics()
+        val totalFiles = contextStats["totalFiles"] as Int
+        val compiledModules = lastWorkspaceCompilationResult?.modulesByUri?.size ?: 0
+
         return mapOf(
-            "totalFiles" to fileStats["totalFiles"]!!,
-            "compiledModules" to moduleStats["compiledModules"]!!,
+            "totalFiles" to totalFiles,
+            "compiledModules" to compiledModules,
             "dependencyCount" to dependencyManager.getDependencies().size,
             "totalContexts" to contextCompilationUnits.size,
             "symbolTableSize" to (getWorkspaceSymbolTable()?.getStatistics()?.values?.sum() ?: 0),
