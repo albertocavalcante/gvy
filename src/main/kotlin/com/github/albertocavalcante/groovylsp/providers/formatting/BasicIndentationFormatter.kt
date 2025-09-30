@@ -59,9 +59,7 @@ class BasicIndentationFormatter {
     /**
      * Removes trailing whitespace from all lines.
      */
-    fun removeTrailingWhitespace(content: String): String {
-        return content.lines().joinToString("\n") { it.trimEnd() }
-    }
+    fun removeTrailingWhitespace(content: String): String = content.lines().joinToString("\n") { it.trimEnd() }
 
     /**
      * Ensures the content ends with a single newline.
@@ -71,22 +69,15 @@ class BasicIndentationFormatter {
         return "$trimmed\n"
     }
 
-    private fun isOpeningBrace(line: String): Boolean {
-        return line.endsWith('{') || line.endsWith('[') ||
-               (line.endsWith('(') && !isMethodCall(line))
-    }
+    private fun isOpeningBrace(line: String): Boolean = line.endsWith('{') || line.endsWith('[') ||
+        (line.endsWith('(') && !isMethodCall(line))
 
-    private fun isClosingBrace(line: String): Boolean {
-        return line.startsWith('}') || line.startsWith(']') || line.startsWith(')')
-    }
+    private fun isClosingBrace(line: String): Boolean =
+        line.startsWith('}') || line.startsWith(']') || line.startsWith(')')
 
-    private fun isSimpleOpeningBrace(line: String): Boolean {
-        return line.endsWith('{') && !line.contains('}')
-    }
+    private fun isSimpleOpeningBrace(line: String): Boolean = line.endsWith('{') && !line.contains('}')
 
-    private fun isSimpleClosingBrace(line: String): Boolean {
-        return line.startsWith('}') && !line.contains('{')
-    }
+    private fun isSimpleClosingBrace(line: String): Boolean = line.startsWith('}') && !line.contains('{')
 
     /**
      * Counts the net change in brace depth for a line.
@@ -94,38 +85,71 @@ class BasicIndentationFormatter {
      */
     private fun countNetBraceChange(line: String): Int {
         var depth = 0
+        val stringState = StringParsingState()
+
+        for (char in line) {
+            if (stringState.processCharacter(char)) {
+                continue // Character was consumed by string processing
+            }
+
+            if (!stringState.inString) {
+                depth += updateBraceDepth(char, line)
+            }
+        }
+        return depth
+    }
+
+    /**
+     * Updates the brace depth based on the current character.
+     */
+    private fun updateBraceDepth(char: Char, line: String): Int = when (char) {
+        '{', '[' -> 1
+        '}', ']' -> -1
+        '(' -> if (!isInMethodCall(line, char)) 1 else 0
+        ')' -> if (!isInMethodCall(line, char)) -1 else 0
+        else -> 0
+    }
+
+    /**
+     * Tracks string parsing state including escape sequences and quote types.
+     */
+    private class StringParsingState {
         var inString = false
         var stringChar = '\u0000'
         var escapeNext = false
 
-        for (char in line) {
+        /**
+         * Processes a character and returns true if it was consumed by string parsing.
+         */
+        fun processCharacter(char: Char): Boolean {
             when {
                 escapeNext -> {
                     escapeNext = false
+                    return true
                 }
                 char == '\\' && inString -> {
                     escapeNext = true
+                    return true
                 }
-                char == '"' || char == '\'' -> {
-                    if (!inString) {
-                        inString = true
-                        stringChar = char
-                    } else if (char == stringChar) {
-                        inString = false
-                        stringChar = '\u0000'
-                    }
-                }
-                !inString -> {
-                    when (char) {
-                        '{', '[' -> depth++
-                        '}', ']' -> depth--
-                        '(' -> if (!isInMethodCall(line, char)) depth++
-                        ')' -> if (!isInMethodCall(line, char)) depth--
-                    }
+                isStringDelimiter(char) -> {
+                    updateStringState(char)
+                    return true
                 }
             }
+            return false
         }
-        return depth
+
+        private fun isStringDelimiter(char: Char): Boolean = char == '"' || char == '\''
+
+        private fun updateStringState(char: Char) {
+            if (!inString) {
+                inString = true
+                stringChar = char
+            } else if (char == stringChar) {
+                inString = false
+                stringChar = '\u0000'
+            }
+        }
     }
 
     /**
@@ -136,12 +160,13 @@ class BasicIndentationFormatter {
         // Simple heuristic: if line contains = or other assignment-like patterns,
         // and ends with (, it's likely a method call
         return trimmed.contains("=") || trimmed.contains("return ") ||
-               trimmed.matches(Regex(".*\\w+\\s*\\(.*"))
+            trimmed.matches(Regex(".*\\w+\\s*\\(.*"))
     }
 
     /**
      * Checks if a parenthesis is part of a method call context.
      */
+    @Suppress("UnusedParameter")
     private fun isInMethodCall(line: String, char: Char): Boolean {
         // For now, treat all parentheses as method calls to avoid over-indenting
         return char == '(' || char == ')'

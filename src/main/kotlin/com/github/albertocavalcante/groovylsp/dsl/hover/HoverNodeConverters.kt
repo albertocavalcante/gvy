@@ -1340,30 +1340,85 @@ private fun ASTNode.formatExpressionNode(): HoverContent = when {
     else -> HoverContent.Text("Unknown expression")
 }
 
-private fun ASTNode.formatBasicExpression(): HoverContent = when (this) {
-    // Call expressions - delegate to specific formatters
+private fun ASTNode.formatBasicExpression(): HoverContent = when {
+    isCallExpression() -> formatCallExpression()
+    isAccessExpression() -> formatAccessExpression()
+    isValueExpression() -> formatValueExpression()
+    isComplexExpression() -> formatComplexExpression()
+    else -> HoverContent.Text("Basic expression: ${this::class.simpleName}")
+}
+
+/**
+ * Checks if the node is a call expression (method, constructor, static method).
+ */
+private fun ASTNode.isCallExpression(): Boolean = this is MethodCallExpression ||
+    this is ConstructorCallExpression ||
+    this is StaticMethodCallExpression
+
+/**
+ * Formats call expressions (method, constructor, static method calls).
+ */
+private fun ASTNode.formatCallExpression(): HoverContent = when (this) {
     is MethodCallExpression -> this.toHoverContent()
     is ConstructorCallExpression -> HoverContent.Section("Constructor Call", listOf(HoverContent.Code(this.toString())))
     is StaticMethodCallExpression -> HoverContent.Section(
         "Static Method Call",
         listOf(HoverContent.Code(this.toString())),
     )
+    else -> HoverContent.Text("Unknown call expression")
+}
 
-    // Access expressions - delegate to specific formatters
+/**
+ * Checks if the node is an access expression (variable, property, field, attribute).
+ */
+private fun ASTNode.isAccessExpression(): Boolean = this is VariableExpression ||
+    this is PropertyExpression ||
+    this is FieldExpression ||
+    this is AttributeExpression
+
+/**
+ * Formats access expressions (variable, property, field, attribute access).
+ */
+private fun ASTNode.formatAccessExpression(): HoverContent = when (this) {
     is VariableExpression -> this.toHoverContent()
     is PropertyExpression -> HoverContent.Section("Property Access", listOf(HoverContent.Code(this.toString())))
     is FieldExpression -> HoverContent.Section("Field Access", listOf(HoverContent.Code(this.toString())))
     is AttributeExpression -> HoverContent.Section("Attribute Access", listOf(HoverContent.Code(this.toString())))
+    else -> HoverContent.Text("Unknown access expression")
+}
 
-    // Value expressions - delegate to specific formatters
+/**
+ * Checks if the node is a value expression (constant, string, class reference).
+ */
+private fun ASTNode.isValueExpression(): Boolean = this is ConstantExpression ||
+    this is GStringExpression ||
+    this is ClassExpression
+
+/**
+ * Formats value expressions (constants, strings, class references).
+ */
+private fun ASTNode.formatValueExpression(): HoverContent = when (this) {
     is ConstantExpression -> this.toHoverContent()
     is GStringExpression -> HoverContent.Section("String Template", listOf(HoverContent.Code(this.toString())))
     is ClassExpression -> HoverContent.Section("Class Reference", listOf(HoverContent.Code(this.toString())))
+    else -> HoverContent.Text("Unknown value expression")
+}
+
+/**
+ * Checks if the node is a complex expression (binary, declaration, closure).
+ */
+private fun ASTNode.isComplexExpression(): Boolean = this is BinaryExpression ||
+    this is DeclarationExpression ||
+    this is ClosureExpression
+
+/**
+ * Formats complex expressions (binary, declaration, closure expressions).
+ */
+private fun ASTNode.formatComplexExpression(): HoverContent = when (this) {
     is BinaryExpression -> this.toHoverContent()
     is DeclarationExpression -> this.toHoverContent()
     is ClosureExpression -> this.toHoverContent()
-
-    else -> HoverContent.Text("Basic expression: ${this::class.simpleName}")
+    else -> HoverContent.Text("Unknown complex expression")
 }
 
 private fun ASTNode.formatHighPriorityExpression(): HoverContent = when (this) {
