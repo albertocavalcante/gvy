@@ -138,20 +138,6 @@ class GroovyWorkspaceService(
     private fun isReplCommand(command: String): Boolean = command.startsWith("groovy/repl/")
 
     /**
-     * Sets the workspace compilation service for workspace-wide compilation.
-     */
-    fun setWorkspaceCompilationService(service: WorkspaceCompilationService?) {
-        this.workspaceCompilationService = service
-    }
-
-    /**
-     * Sets the REPL command handler for REPL operations.
-     */
-    fun setReplCommandHandler(handler: ReplCommandHandler?) {
-        this.replCommandHandler = handler
-    }
-
-    /**
      * Gets the list of supported commands for server capabilities.
      */
     fun getSupportedCommands(): List<String> {

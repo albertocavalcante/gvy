@@ -77,7 +77,8 @@ class GroovyLanguageServer :
         coroutineScope,
         compilationService,
         this, // ConfigurationProvider
-    ) { client }
+        { client }
+    )
 
     private val workspaceService = GroovyWorkspaceService(
         compilationService = compilationService,
