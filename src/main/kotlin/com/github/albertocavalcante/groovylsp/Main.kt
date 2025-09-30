@@ -9,8 +9,10 @@ import java.net.BindException
 import java.net.ServerSocket
 import kotlin.system.exitProcess
 
-private val logger = LoggerFactory.getLogger("GroovyLSP")
 private const val DEFAULT_PORT = 8080
+
+// Use lazy initialization to avoid class loading issues at startup
+private val logger by lazy { LoggerFactory.getLogger("GroovyLSP") }
 
 fun main(args: Array<String>) {
     val mode = args.firstOrNull() ?: "stdio"

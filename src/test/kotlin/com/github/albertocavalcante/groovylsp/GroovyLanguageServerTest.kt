@@ -4,13 +4,16 @@ import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.ClientInfo
 import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -111,6 +114,143 @@ class GroovyLanguageServerTest {
         assertEquals("file:///test.groovy", publishedDiagnostics.uri)
         // Valid Groovy code should have no errors (already verified by awaitSuccessfulCompilation)
         assertTrue(publishedDiagnostics.diagnostics.isEmpty())
+    }
+
+    @Test
+    fun `test hover should work immediately after workspace initialization`() = runBlocking {
+        // This test verifies that hover works immediately after server initialization
+        // Previously this would fail because workspace compilation was async
+
+        // Create initialization params with actual workspace
+        val workspaceUri = "file:///tmp/test-workspace"
+        val params = InitializeParams().apply {
+            processId = 1234
+            workspaceFolders = listOf(WorkspaceFolder(workspaceUri, "test-workspace"))
+            capabilities = ClientCapabilities()
+            clientInfo = ClientInfo("Test Client", "1.0.0")
+        }
+
+        // Initialize server - this should BLOCK until everything is ready
+        val initResult = server.initialize(params).get()
+        assertNotNull(initResult)
+
+        // Call initialized to complete the handshake
+        server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+        // Use the same content that was written to disk during setup
+        val documentContent = "class TestClass { String name = \"test\" }"
+
+        // Write this content to the file so workspace compilation and didOpen match
+        val testFile = java.io.File("/tmp/test-workspace/TestClass.groovy")
+        testFile.writeText(documentContent)
+
+        val documentUri = "$workspaceUri/TestClass.groovy"
+        val openParams = DidOpenTextDocumentParams().apply {
+            textDocument = TextDocumentItem().apply {
+                uri = documentUri
+                languageId = "groovy"
+                version = 1
+                text = documentContent
+            }
+        }
+
+        server.textDocumentService.didOpen(openParams)
+
+        // Give a moment for document processing
+        Thread.sleep(200)
+
+        // NOW test hover - this should work immediately!
+        // Content: "class TestClass { String name = \"test\" }"
+        // Hovering over "String" which should be around position 0:20
+        val hoverParams = HoverParams().apply {
+            textDocument = TextDocumentIdentifier(documentUri)
+            position = Position(0, 20) // Position of "String" in "class TestClass { String name"
+        }
+
+        val hoverResult = server.textDocumentService.hover(hoverParams).get()
+
+        // This should now PASS with the fix!
+        assertNotNull(hoverResult, "Hover should work immediately after initialization")
+        assertNotNull(hoverResult.contents, "Hover should have content")
+
+        // Verify we got actual hover content, not the fallback message
+        val content = hoverResult.contents.right.value
+        // Should NOT contain the "No hover information available" fallback
+        kotlin.test.assertFalse(
+            content.contains("No hover information available"),
+            "Should not show fallback message - actual hover should work. Got: $content",
+        )
+
+        // Should contain meaningful type information about String
+        assertTrue(
+            content.contains("String") || content.contains("type") || content.contains("class"),
+            "Hover should contain type information about String. Got: $content",
+        )
+    }
+
+    @Test
+    fun `test hover should work after didChange`() = runBlocking {
+        // Test that hover continues to work after document changes
+        val workspaceUri = "file:///tmp/test-workspace"
+        val params = InitializeParams().apply {
+            processId = 1234
+            workspaceFolders = listOf(WorkspaceFolder(workspaceUri, "test-workspace"))
+            capabilities = ClientCapabilities()
+            clientInfo = ClientInfo("Test Client", "1.0.0")
+        }
+
+        server.initialize(params).get()
+        server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+        val documentUri = "$workspaceUri/TestClass.groovy"
+        val initialContent = "class TestClass { String name = \"test\" }"
+
+        // Open document
+        val openParams = DidOpenTextDocumentParams().apply {
+            textDocument = TextDocumentItem().apply {
+                uri = documentUri
+                languageId = "groovy"
+                version = 1
+                text = initialContent
+            }
+        }
+        server.textDocumentService.didOpen(openParams)
+
+        // Change document content
+        val changedContent = "class TestClass { Integer age = 25; String name = \"test\" }"
+        val changeParams = DidChangeTextDocumentParams().apply {
+            textDocument = VersionedTextDocumentIdentifier(documentUri, 2)
+            contentChanges = listOf(
+                TextDocumentContentChangeEvent(changedContent),
+            )
+        }
+        server.textDocumentService.didChange(changeParams)
+
+        // Give time for change processing
+        Thread.sleep(200)
+
+        // Test hover on the new field "Integer"
+        val hoverParams = HoverParams().apply {
+            textDocument = TextDocumentIdentifier(documentUri)
+            position = Position(0, 20) // Position of "Integer" in changed content
+        }
+
+        val hoverResult = server.textDocumentService.hover(hoverParams).get()
+
+        assertNotNull(hoverResult, "Hover should work after didChange")
+        assertNotNull(hoverResult.contents, "Hover should have content after didChange")
+
+        val content = hoverResult.contents.right.value
+        kotlin.test.assertFalse(
+            content.contains("No hover information available"),
+            "Should not show fallback message after didChange. Got: $content",
+        )
+
+        // Should contain information about Integer type
+        assertTrue(
+            content.contains("Integer") || content.contains("age") || content.contains("Property"),
+            "Hover should contain information about the changed content. Got: $content",
+        )
     }
 
     @Test

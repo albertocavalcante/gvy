@@ -34,7 +34,10 @@ class ReferenceResolver {
      * @param scope The AST scope to search within
      * @return List of variable reference nodes
      */
-    fun findVariableReferences(variable: VariableExpression, scope: ASTNode): List<ASTNode> {
+    fun findVariableReferences(
+        @Suppress("UNUSED_PARAMETER") variable: VariableExpression,
+        @Suppress("UNUSED_PARAMETER") scope: ASTNode,
+    ): List<ASTNode> {
         // In a real implementation, we would:
         // 1. Traverse the AST within the scope
         // 2. Find all VariableExpression nodes with matching names
@@ -43,7 +46,10 @@ class ReferenceResolver {
         return emptyList()
     }
 
-    fun findMethodReferences(methodCall: MethodCallExpression, scope: ASTNode): List<ASTNode> {
+    fun findMethodReferences(
+        @Suppress("UNUSED_PARAMETER") methodCall: MethodCallExpression,
+        @Suppress("UNUSED_PARAMETER") scope: ASTNode,
+    ): List<ASTNode> {
         // In a real implementation, we would:
         // 1. Extract the method name and signature
         // 2. Traverse the AST within the scope
@@ -52,7 +58,10 @@ class ReferenceResolver {
         return emptyList()
     }
 
-    fun findPropertyReferences(property: PropertyExpression, scope: ASTNode): List<ASTNode> {
+    fun findPropertyReferences(
+        @Suppress("UNUSED_PARAMETER") property: PropertyExpression,
+        @Suppress("UNUSED_PARAMETER") scope: ASTNode,
+    ): List<ASTNode> {
         // In a real implementation, we would:
         // 1. Extract the property name
         // 2. Traverse the AST within the scope

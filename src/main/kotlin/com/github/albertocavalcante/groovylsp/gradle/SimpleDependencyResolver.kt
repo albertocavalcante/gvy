@@ -21,6 +21,7 @@ import kotlin.io.path.exists
  *  - Future: Need interface DependencyResolver with implementations for:
  *    - Gradle (current)
  *    - Maven (future)
+ *    - Bazel (future)
  *    - Manual classpath (future)
  *  - This would allow proper abstraction and testing
  */

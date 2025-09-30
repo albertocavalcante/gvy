@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
-import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals

@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
 import com.github.albertocavalcante.groovylsp.TestUtils
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.SymbolKind
 import org.junit.jupiter.api.Test

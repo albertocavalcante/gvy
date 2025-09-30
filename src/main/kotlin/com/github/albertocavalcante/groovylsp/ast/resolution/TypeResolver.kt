@@ -51,7 +51,8 @@ class TypeResolver {
         else -> null
     }
 
-    private fun resolveVariableType(varExpr: VariableExpression): ClassNode? {
+    @Suppress("FunctionOnlyReturningConstant")
+    private fun resolveVariableType(@Suppress("UNUSED_PARAMETER") varExpr: VariableExpression): ClassNode? {
         // In a real implementation, we would:
         // 1. Look up the variable declaration
         // 2. Return the declared type or infer from initializer
@@ -59,7 +60,8 @@ class TypeResolver {
         return null
     }
 
-    private fun resolveMethodCallType(methodCall: MethodCallExpression): ClassNode? {
+    @Suppress("FunctionOnlyReturningConstant")
+    private fun resolveMethodCallType(@Suppress("UNUSED_PARAMETER") methodCall: MethodCallExpression): ClassNode? {
         // In a real implementation, we would:
         // 1. Determine the type of the object expression
         // 2. Find the method in that type
@@ -68,7 +70,8 @@ class TypeResolver {
         return null
     }
 
-    private fun resolveBinaryExpressionType(binaryExpr: BinaryExpression): ClassNode? {
+    @Suppress("FunctionOnlyReturningConstant")
+    private fun resolveBinaryExpressionType(@Suppress("UNUSED_PARAMETER") binaryExpr: BinaryExpression): ClassNode? {
         // In a real implementation, we would:
         // 1. Resolve types of left and right expressions
         // 2. Apply operator type rules (e.g., int + int = int)
@@ -77,7 +80,7 @@ class TypeResolver {
         return null
     }
 
-    private fun resolveClosureType(closureExpr: ClosureExpression): ClassNode? {
+    private fun resolveClosureType(@Suppress("UNUSED_PARAMETER") closureExpr: ClosureExpression): ClassNode? {
         // Closures in Groovy are always of type groovy.lang.Closure
         return ClassNode(groovy.lang.Closure::class.java)
     }

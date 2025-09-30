@@ -7,7 +7,6 @@ import org.eclipse.lsp4j.FoldingRangeKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.io.File
-import java.net.URI
 import kotlin.test.assertTrue
 
 /**

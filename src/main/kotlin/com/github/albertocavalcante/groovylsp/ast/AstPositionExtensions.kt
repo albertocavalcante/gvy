@@ -138,7 +138,7 @@ fun ASTNode.getDefinition(visitor: AstVisitor, symbolTable: SymbolTable): ASTNod
  */
 fun ASTNode.resolveToDefinition(visitor: AstVisitor, symbolTable: SymbolTable, strict: Boolean = true): ASTNode? =
     when (this) {
-        is VariableExpression -> resolveVariableDefinition(this)
+        is VariableExpression -> resolveVariableDefinition(this, visitor, symbolTable)
         is MethodCallExpression -> resolveMethodDefinition(this, symbolTable, visitor)
         is ClassNode, is ClassExpression, is ConstructorCallExpression -> resolveTypeDefinition(this)
         is PropertyExpression -> resolvePropertyExpression(this, visitor, symbolTable)
@@ -157,9 +157,20 @@ fun ASTNode.resolveToDefinition(visitor: AstVisitor, symbolTable: SymbolTable, s
  * - For declarations: accessedVariable points to itself
  * - For references: accessedVariable points to the declaration
  */
-private fun resolveVariableDefinition(expr: VariableExpression): ASTNode? {
-    // Return the accessedVariable directly if it's an ASTNode
-    return expr.accessedVariable as? ASTNode
+private fun resolveVariableDefinition(
+    expr: VariableExpression,
+    visitor: AstVisitor,
+    symbolTable: SymbolTable,
+): ASTNode? {
+    // First try the accessedVariable directly if it's an ASTNode
+    val accessedVar = expr.accessedVariable as? ASTNode
+    if (accessedVar != null) {
+        return accessedVar
+    }
+
+    // Fallback to symbol table when accessedVariable is null
+    // This handles local variables declared with 'def' where Groovy doesn't set accessedVariable
+    return symbolTable.resolveSymbol(expr, visitor) as? ASTNode
 }
 
 /**

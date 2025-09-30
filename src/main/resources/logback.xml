@@ -8,14 +8,16 @@
         </encoder>
     </appender>
 
-    <!-- Root logger configuration -->
+    <!-- Root logger configuration - keep at INFO to avoid dependency spam -->
     <root level="INFO">
         <appender-ref ref="STDERR" />
     </root>
 
     <!-- Groovy LSP specific logger -->
-    <logger name="com.github.albertocavalcante.groovylsp" level="INFO" />
-    <logger name="GroovyLSP" level="INFO" />
+    <!-- TODO: Change back to INFO level after debugging hover issues -->
+    <!-- Temporarily set to DEBUG for troubleshooting hover position resolution -->
+    <logger name="com.github.albertocavalcante.groovylsp" level="DEBUG" />
+    <logger name="GroovyLSP" level="DEBUG" />
 
     <!-- Reduce verbosity of some dependencies -->
     <logger name="org.eclipse.lsp4j" level="WARN" />

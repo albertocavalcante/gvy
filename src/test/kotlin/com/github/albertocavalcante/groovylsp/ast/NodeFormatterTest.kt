@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.ast
 import com.github.albertocavalcante.groovylsp.TestUtils
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.Test

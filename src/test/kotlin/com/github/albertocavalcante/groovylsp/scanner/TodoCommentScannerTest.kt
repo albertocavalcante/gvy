@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.scanner
 
 import org.eclipse.lsp4j.DiagnosticSeverity
-import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
