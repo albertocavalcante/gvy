@@ -1,0 +1,43 @@
+plugins {
+    id 'groovy'
+    id 'application'
+}
+
+repositories {
+    gradlePluginPortal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.groovy:groovy:4.0.28'
+    implementation 'org.springframework:spring-core:6.0.0'
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-4.0'
+}
+
+application {
+    mainClass = 'com.example.MainClass'
+}
+
+tasks.test {
+    useJUnitPlatform()
+
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+tasks.named('jar') {
+    archiveBaseName = 'my-application'
+
+    manifest {
+        attributes(
+            'Implementation-Title': 'My Application',
+            'Implementation-Version': project.version,
+            'Main-Class': application.mainClass
+        )
+    }
+}

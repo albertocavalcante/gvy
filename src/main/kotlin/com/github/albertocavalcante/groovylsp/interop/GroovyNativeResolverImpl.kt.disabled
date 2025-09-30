@@ -1,0 +1,339 @@
+package com.github.albertocavalcante.groovylsp.interop
+
+import com.github.albertocavalcante.groovylsp.groovy.dsl.DSLIntrospector
+import com.github.albertocavalcante.groovylsp.groovy.metaclass.MetaClassAnalyzer
+import com.github.albertocavalcante.groovylsp.groovy.resolution.GroovyDynamicResolver
+import org.codehaus.groovy.ast.ClassNode
+import org.eclipse.lsp4j.Position
+import org.slf4j.LoggerFactory
+
+/**
+ * Implementation that bridges Kotlin code to Groovy native components.
+ * This class handles the interop between Kotlin and Groovy, converting data types
+ * and orchestrating calls to the native Groovy resolution components.
+ */
+class GroovyNativeResolverImpl : GroovyNativeResolver {
+
+    private val logger = LoggerFactory.getLogger(GroovyNativeResolverImpl::class.java)
+
+    // Groovy component instances
+    private val groovyResolver = GroovyDynamicResolver()
+    private val metaClassAnalyzer = MetaClassAnalyzer()
+    private val dslIntrospector = DSLIntrospector()
+
+    // GroovyDynamicResolver interface implementation
+
+    override fun resolveMethod(
+        methodName: String,
+        receiverType: ClassNode,
+        argTypes: List<ClassNode>
+    ): ResolutionResult {
+        logger.debug("Resolving method '$methodName' on type '${receiverType.name}'")
+
+        try {
+            val groovyResult = groovyResolver.resolveMethod(methodName, receiverType, argTypes)
+            return convertGroovyResolutionResult(groovyResult)
+        } catch (e: Exception) {
+            logger.warn("Error resolving method '$methodName'", e)
+            return ResolutionResult(methodName, "unknown", ResolutionConfidence.UNKNOWN)
+        }
+    }
+
+    override fun resolveProperty(propertyName: String, receiverType: ClassNode): ResolutionResult {
+        logger.debug("Resolving property '$propertyName' on type '${receiverType.name}'")
+
+        try {
+            val groovyResult = groovyResolver.resolveProperty(propertyName, receiverType)
+            return convertGroovyResolutionResult(groovyResult)
+        } catch (e: Exception) {
+            logger.warn("Error resolving property '$propertyName'", e)
+            return ResolutionResult(propertyName, "unknown", ResolutionConfidence.UNKNOWN)
+        }
+    }
+
+    override fun isStaticallyCompiled(classNode: ClassNode): Boolean {
+        return try {
+            groovyResolver.isStaticallyCompiled(classNode)
+        } catch (e: Exception) {
+            logger.warn("Error checking static compilation for '${classNode.name}'", e)
+            false
+        }
+    }
+
+    override fun getAllPossibleMembers(receiverType: ClassNode): List<ResolutionResult> {
+        return try {
+            val groovyResults = groovyResolver.getAllPossibleMembers(receiverType)
+            groovyResults.map { convertGroovyResolutionResult(it) }
+        } catch (e: Exception) {
+            logger.warn("Error getting possible members for '${receiverType.name}'", e)
+            emptyList()
+        }
+    }
+
+    override fun wouldMethodSucceedAtRuntime(
+        classNode: ClassNode,
+        methodName: String,
+        argTypes: List<ClassNode>
+    ): Boolean {
+        return try {
+            groovyResolver.wouldMethodSucceedAtRuntime(classNode, methodName, argTypes)
+        } catch (e: Exception) {
+            logger.warn("Error checking runtime method success for '$methodName'", e)
+            false
+        }
+    }
+
+    // GroovyMetaClassAnalyzer interface implementation
+
+    override fun analyze(classNode: ClassNode): DynamicCapabilities {
+        return try {
+            val groovyCapabilities = metaClassAnalyzer.analyze(classNode)
+            convertGroovyDynamicCapabilities(groovyCapabilities)
+        } catch (e: Exception) {
+            logger.warn("Error analyzing metaclass for '${classNode.name}'", e)
+            DynamicCapabilities()
+        }
+    }
+
+    override fun getDynamicMethodSuggestions(classNode: ClassNode): List<String> {
+        return try {
+            metaClassAnalyzer.getDynamicMethodSuggestions(classNode)
+        } catch (e: Exception) {
+            logger.warn("Error getting dynamic method suggestions for '${classNode.name}'", e)
+            emptyList()
+        }
+    }
+
+    // GroovyDSLIntrospector interface implementation
+
+    override fun introspectDSL(classNode: ClassNode): DSLContext {
+        return try {
+            val groovyDSLContext = dslIntrospector.introspectDSL(classNode)
+            convertGroovyDSLContext(groovyDSLContext)
+        } catch (e: Exception) {
+            logger.warn("Error introspecting DSL for '${classNode.name}'", e)
+            DSLContext(classNode.name)
+        }
+    }
+
+    override fun getDSLCompletions(contextClass: ClassNode, prefix: String): List<String> {
+        return try {
+            dslIntrospector.getDSLCompletions(contextClass, prefix)
+        } catch (e: Exception) {
+            logger.warn("Error getting DSL completions for '${contextClass.name}'", e)
+            emptyList()
+        }
+    }
+
+    override fun isDSLClass(classNode: ClassNode): Boolean {
+        return try {
+            dslIntrospector.isDSLClass(classNode)
+        } catch (e: Exception) {
+            logger.warn("Error checking if '${classNode.name}' is DSL class", e)
+            false
+        }
+    }
+
+    override fun getDSLMethodSignature(contextClass: ClassNode, methodName: String): String? {
+        return try {
+            dslIntrospector.getDSLMethodSignature(contextClass, methodName)
+        } catch (e: Exception) {
+            logger.warn("Error getting DSL method signature for '$methodName'", e)
+            null
+        }
+    }
+
+    // GroovyNativeResolver interface implementation (combined operations)
+
+    override fun resolveSymbol(
+        symbol: String,
+        context: ClassNode,
+        position: Position?
+    ): List<ResolutionResult> {
+        val results = mutableListOf<ResolutionResult>()
+
+        // Try method resolution
+        val methodResult = resolveMethod(symbol, context)
+        if (methodResult.isFound) {
+            results.add(methodResult)
+        }
+
+        // Try property resolution
+        val propertyResult = resolveProperty(symbol, context)
+        if (propertyResult.isFound) {
+            results.add(propertyResult)
+        }
+
+        // If DSL class, try DSL-specific resolution
+        if (isDSLClass(context)) {
+            val dslCompletions = getDSLCompletions(context, symbol)
+            dslCompletions.forEach { completion ->
+                if (completion == symbol) {
+                    results.add(ResolutionResult(
+                        symbol = symbol,
+                        type = "dsl_method",
+                        confidence = ResolutionConfidence.CONVENTION_BASED,
+                        documentation = "DSL method from ${context.nameWithoutPackage}"
+                    ))
+                }
+            }
+        }
+
+        return results
+    }
+
+    override fun getCompletions(
+        context: ClassNode,
+        prefix: String,
+        includeStatic: Boolean,
+        includeDynamic: Boolean,
+        includeDSL: Boolean
+    ): List<ResolutionResult> {
+        val completions = mutableListOf<ResolutionResult>()
+
+        // Static completions
+        if (includeStatic) {
+            val staticMembers = getAllPossibleMembers(context)
+            completions.addAll(staticMembers.filter { it.symbol.startsWith(prefix) })
+        }
+
+        // Dynamic completions
+        if (includeDynamic) {
+            val capabilities = analyze(context)
+            if (capabilities.isDynamic) {
+                val dynamicSuggestions = getDynamicMethodSuggestions(context)
+                dynamicSuggestions.filter { it.startsWith(prefix) }.forEach { suggestion ->
+                    completions.add(ResolutionResult(
+                        symbol = suggestion,
+                        type = "dynamic_method",
+                        confidence = ResolutionConfidence.DYNAMIC_INFERRED,
+                        documentation = "Dynamic method suggestion"
+                    ))
+                }
+            }
+        }
+
+        // DSL completions
+        if (includeDSL && isDSLClass(context)) {
+            val dslCompletions = getDSLCompletions(context, prefix)
+            dslCompletions.forEach { completion ->
+                completions.add(ResolutionResult(
+                    symbol = completion,
+                    type = "dsl_method",
+                    confidence = ResolutionConfidence.CONVENTION_BASED,
+                    documentation = "DSL method"
+                ))
+            }
+        }
+
+        return completions.distinctBy { it.symbol }
+    }
+
+    override fun analyzeGroovyCharacteristics(classNode: ClassNode): Map<String, Any> {
+        val characteristics = mutableMapOf<String, Any>()
+
+        // Basic info
+        characteristics["className"] = classNode.name
+        characteristics["isInterface"] = classNode.isInterface
+        characteristics["isAbstract"] = classNode.isAbstract
+        characteristics["isStaticallyCompiled"] = isStaticallyCompiled(classNode)
+
+        // Dynamic capabilities
+        val capabilities = analyze(classNode)
+        characteristics["dynamicCapabilities"] = capabilities
+        characteristics["dynamicScore"] = capabilities.dynamicScore
+        characteristics["isDynamic"] = capabilities.isDynamic
+
+        // DSL characteristics
+        characteristics["isDSLClass"] = isDSLClass(classNode)
+        if (isDSLClass(classNode)) {
+            val dslContext = introspectDSL(classNode)
+            characteristics["dslContext"] = dslContext
+        }
+
+        return characteristics
+    }
+
+    // Conversion methods between Groovy and Kotlin data types
+
+    private fun convertGroovyResolutionResult(
+        groovyResult: GroovyDynamicResolver.ResolutionResult
+    ): ResolutionResult {
+        val confidence = when (groovyResult.confidence) {
+            GroovyDynamicResolver.ResolutionConfidence.COMPILE_TIME -> ResolutionConfidence.COMPILE_TIME
+            GroovyDynamicResolver.ResolutionConfidence.CLASSPATH_STATIC -> ResolutionConfidence.CLASSPATH_STATIC
+            GroovyDynamicResolver.ResolutionConfidence.CONVENTION_BASED -> ResolutionConfidence.CONVENTION_BASED
+            GroovyDynamicResolver.ResolutionConfidence.DYNAMIC_INFERRED -> ResolutionConfidence.DYNAMIC_INFERRED
+            GroovyDynamicResolver.ResolutionConfidence.UNKNOWN -> ResolutionConfidence.UNKNOWN
+        }
+
+        return ResolutionResult(
+            symbol = groovyResult.symbol,
+            type = groovyResult.type,
+            confidence = confidence,
+            documentation = groovyResult.documentation,
+            sourceLocation = groovyResult.sourceLocation,
+            metadata = groovyResult.metadata ?: emptyMap()
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun convertGroovyDynamicCapabilities(
+        groovyCapabilities: MetaClassAnalyzer.DynamicCapabilities
+    ): DynamicCapabilities {
+        return DynamicCapabilities(
+            hasMethodMissing = groovyCapabilities.hasMethodMissing,
+            hasPropertyMissing = groovyCapabilities.hasPropertyMissing,
+            hasGetPropertyMissing = groovyCapabilities.hasGetPropertyMissing,
+            hasSetPropertyMissing = groovyCapabilities.hasSetPropertyMissing,
+            delegateFields = groovyCapabilities.delegateFields,
+            categoryClasses = groovyCapabilities.categoryClasses,
+            mixinClasses = groovyCapabilities.mixinClasses,
+            traitClasses = groovyCapabilities.traitClasses,
+            expandoMethods = groovyCapabilities.expandoMethods,
+            expandoProperties = groovyCapabilities.expandoProperties,
+            isExpandoMetaClass = groovyCapabilities.isExpandoMetaClass,
+            hasCustomMetaClass = groovyCapabilities.hasCustomMetaClass,
+            transformationAnnotations = groovyCapabilities.transformationAnnotations,
+            metadata = groovyCapabilities.metadata ?: emptyMap()
+        )
+    }
+
+    private fun convertGroovyDSLContext(
+        groovyDSLContext: DSLIntrospector.DSLContext
+    ): DSLContext {
+        val methods = groovyDSLContext.availableMethods.map { groovyMethod ->
+            DSLMethod(
+                name = groovyMethod.name,
+                returnType = groovyMethod.returnType,
+                parameterTypes = groovyMethod.parameterTypes,
+                acceptsClosure = groovyMethod.acceptsClosure,
+                closureDelegateType = groovyMethod.closureDelegateType,
+                documentation = groovyMethod.documentation,
+                kind = convertDSLMethodKind(groovyMethod.kind)
+            )
+        }
+
+        return DSLContext(
+            builderClass = groovyDSLContext.builderClass,
+            availableMethods = methods,
+            implicitProperties = groovyDSLContext.implicitProperties,
+            commonPatterns = groovyDSLContext.commonPatterns,
+            isBuilder = groovyDSLContext.isBuilder,
+            isConfigurable = groovyDSLContext.isConfigurable
+        )
+    }
+
+    private fun convertDSLMethodKind(
+        groovyKind: DSLIntrospector.DSLMethod.DSLMethodKind
+    ): DSLMethodKind {
+        return when (groovyKind) {
+            DSLIntrospector.DSLMethod.DSLMethodKind.BUILDER -> DSLMethodKind.BUILDER
+            DSLIntrospector.DSLMethod.DSLMethodKind.CONFIGURATOR -> DSLMethodKind.CONFIGURATOR
+            DSLIntrospector.DSLMethod.DSLMethodKind.PROPERTY_SETTER -> DSLMethodKind.PROPERTY_SETTER
+            DSLIntrospector.DSLMethod.DSLMethodKind.FACTORY -> DSLMethodKind.FACTORY
+            DSLIntrospector.DSLMethod.DSLMethodKind.COLLECTION_ADDER -> DSLMethodKind.COLLECTION_ADDER
+            DSLIntrospector.DSLMethod.DSLMethodKind.UTILITY -> DSLMethodKind.UTILITY
+        }
+    }
+}

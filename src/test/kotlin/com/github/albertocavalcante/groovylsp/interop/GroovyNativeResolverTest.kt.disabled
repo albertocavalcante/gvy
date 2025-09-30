@@ -1,0 +1,150 @@
+package com.github.albertocavalcante.groovylsp.interop
+
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class GroovyNativeResolverTest {
+
+    private lateinit var resolver: GroovyNativeResolver
+
+    @BeforeEach
+    fun setup() {
+        resolver = GroovyNativeResolverImpl()
+    }
+
+    @Test
+    fun `should resolve basic Object methods`() {
+        val objectClass = ClassHelper.OBJECT_TYPE
+
+        val toStringResult = resolver.resolveMethod("toString", objectClass)
+        assertTrue(toStringResult.isFound)
+        assertEquals("toString", toStringResult.symbol)
+        assertEquals(ResolutionConfidence.COMPILE_TIME, toStringResult.confidence)
+    }
+
+    @Test
+    fun `should detect method missing capability`() {
+        // Create a simple class with methodMissing
+        val classNode = ClassNode("TestClass").apply {
+            // Add a methodMissing method
+            addMethod("methodMissing",
+                org.codehaus.groovy.ast.ClassHelper.dynamicType(),
+                arrayOf(
+                    ClassHelper.STRING_TYPE,
+                    ClassHelper.OBJECT_TYPE
+                ),
+                null
+            )
+        }
+
+        val capabilities = resolver.analyze(classNode)
+        assertTrue(capabilities.hasMethodMissing)
+        assertTrue(capabilities.isDynamic)
+        assertTrue(capabilities.dynamicScore > 0)
+    }
+
+    @Test
+    fun `should resolve dynamic methods when methodMissing present`() {
+        val classNode = ClassNode("DynamicClass").apply {
+            addMethod("methodMissing",
+                org.codehaus.groovy.ast.ClassHelper.dynamicType(),
+                arrayOf(
+                    ClassHelper.STRING_TYPE,
+                    ClassHelper.OBJECT_TYPE
+                ),
+                null
+            )
+        }
+
+        val result = resolver.resolveMethod("anyDynamicMethod", classNode)
+        assertTrue(result.isFound)
+        assertEquals("anyDynamicMethod", result.symbol)
+        assertEquals(ResolutionConfidence.DYNAMIC_INFERRED, result.confidence)
+    }
+
+    @Test
+    fun `should provide all possible members`() {
+        val objectClass = ClassHelper.OBJECT_TYPE
+
+        val members = resolver.getAllPossibleMembers(objectClass)
+        assertTrue(members.isNotEmpty())
+
+        // Should contain standard Object methods
+        val methodNames = members.map { it.symbol }
+        assertTrue(methodNames.contains("toString"))
+        assertTrue(methodNames.contains("equals"))
+        assertTrue(methodNames.contains("hashCode"))
+    }
+
+    @Test
+    fun `should analyze groovy characteristics`() {
+        val stringClass = ClassHelper.STRING_TYPE
+
+        val characteristics = resolver.analyzeGroovyCharacteristics(stringClass)
+
+        assertNotNull(characteristics["className"])
+        assertEquals("java.lang.String", characteristics["className"])
+        assertNotNull(characteristics["isInterface"])
+        assertFalse(characteristics["isInterface"] as Boolean)
+        assertNotNull(characteristics["dynamicCapabilities"])
+    }
+
+    @Test
+    fun `should get completions with prefix filtering`() {
+        val objectClass = ClassHelper.OBJECT_TYPE
+
+        val completions = resolver.getCompletions(objectClass, "to")
+
+        assertTrue(completions.isNotEmpty())
+        val symbols = completions.map { it.symbol }
+        assertTrue(symbols.any { it.startsWith("to") })
+    }
+
+    @Test
+    fun `should resolve symbol comprehensively`() {
+        val objectClass = ClassHelper.OBJECT_TYPE
+
+        val results = resolver.resolveSymbol("toString", objectClass)
+
+        assertTrue(results.isNotEmpty())
+        val result = results.first()
+        assertEquals("toString", result.symbol)
+        assertTrue(result.isFound)
+    }
+
+    @Test
+    fun `should check static compilation status`() {
+        val plainClass = ClassNode("PlainClass")
+        assertFalse(resolver.isStaticallyCompiled(plainClass))
+
+        // Test would need a class with @CompileStatic annotation
+        // This is a basic smoke test
+    }
+
+    @Test
+    fun `should predict runtime method success`() {
+        val classWithMethodMissing = ClassNode("DynamicClass").apply {
+            addMethod("methodMissing",
+                org.codehaus.groovy.ast.ClassHelper.dynamicType(),
+                arrayOf(ClassHelper.STRING_TYPE, ClassHelper.OBJECT_TYPE),
+                null
+            )
+        }
+
+        // Should predict success for any method on a class with methodMissing
+        assertTrue(resolver.wouldMethodSucceedAtRuntime(classWithMethodMissing, "anyMethod"))
+
+        // Plain class without dynamic features
+        val plainClass = ClassNode("PlainClass")
+        // This depends on the implementation - could be true or false
+        val result = resolver.wouldMethodSucceedAtRuntime(plainClass, "unknownMethod")
+        // Just ensure it doesn't throw an exception
+        assertNotNull(result)
+    }
+}
