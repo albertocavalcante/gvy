@@ -84,35 +84,56 @@ class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry)
         for (diagnostic in diagnostics) {
             val ruleName = diagnostic.code.left
             logger.debug("Processing diagnostic for rule: $ruleName")
-
-            val fixers = registry.getFixers(ruleName)
-            logger.debug("Found ${fixers.size} fixers for rule $ruleName")
-
-            for (fixer in fixers) {
-                try {
-                    logger.debug("Trying fixer ${fixer::class.simpleName} for rule $ruleName")
-
-                    if (fixer.canFix(diagnostic, context)) {
-                        logger.debug("Fixer ${fixer::class.simpleName} can fix the diagnostic")
-                        val action = fixer.computeAction(diagnostic, context)
-                        if (action != null) {
-                            logger.debug("Fixer ${fixer::class.simpleName} generated action: ${action.title}")
-                            actions.add(action)
-                        } else {
-                            logger.debug("Fixer ${fixer::class.simpleName} returned null action")
-                        }
-                    } else {
-                        logger.debug("Fixer ${fixer::class.simpleName} cannot fix this diagnostic")
-                    }
-                } catch (e: Exception) {
-                    logger.warn("Failed to compute action for rule $ruleName with fixer ${fixer::class.simpleName}", e)
-                }
-            }
+            processDiagnosticFixers(diagnostic, ruleName, context, actions)
         }
 
-        // Sort by fixer priority (lower number = higher priority)
-        return actions.sortedBy { action ->
-            // Find the fixer that created this action by matching the title pattern
+        return sortActionsByPriority(actions, diagnostics)
+    }
+
+    private fun processDiagnosticFixers(
+        diagnostic: Diagnostic,
+        ruleName: String,
+        context: FixContext,
+        actions: MutableList<CodeAction>,
+    ) {
+        val fixers = registry.getFixers(ruleName)
+        logger.debug("Found ${fixers.size} fixers for rule $ruleName")
+
+        for (fixer in fixers) {
+            processIndividualFixer(fixer, diagnostic, ruleName, context, actions)
+        }
+    }
+
+    private fun processIndividualFixer(
+        fixer: QuickFixer,
+        diagnostic: Diagnostic,
+        ruleName: String,
+        context: FixContext,
+        actions: MutableList<CodeAction>,
+    ) {
+        try {
+            logger.debug("Trying fixer ${fixer::class.simpleName} for rule $ruleName")
+
+            if (!fixer.canFix(diagnostic, context)) {
+                logger.debug("Fixer ${fixer::class.simpleName} cannot fix this diagnostic")
+                return
+            }
+
+            logger.debug("Fixer ${fixer::class.simpleName} can fix the diagnostic")
+            val action = fixer.computeAction(diagnostic, context)
+            if (action != null) {
+                logger.debug("Fixer ${fixer::class.simpleName} generated action: ${action.title}")
+                actions.add(action)
+            } else {
+                logger.debug("Fixer ${fixer::class.simpleName} returned null action")
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to compute action for rule $ruleName with fixer ${fixer::class.simpleName}", e)
+        }
+    }
+
+    private fun sortActionsByPriority(actions: List<CodeAction>, diagnostics: List<Diagnostic>): List<CodeAction> =
+        actions.sortedBy { action ->
             val ruleName = diagnostics.find { it in (action.diagnostics ?: emptyList()) }?.code?.left
             if (ruleName != null) {
                 registry.getFixers(ruleName).minOfOrNull { it.metadata.priority } ?: DEFAULT_ACTION_PRIORITY
@@ -120,41 +141,61 @@ class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry)
                 DEFAULT_ACTION_PRIORITY
             }
         }
-    }
 
     /**
      * Generates a fix-all action that applies all available fixes.
      */
     private fun generateFixAllAction(diagnostics: List<Diagnostic>, context: FixContext): CodeAction? {
         try {
-            val allEdits = mutableListOf<org.eclipse.lsp4j.TextEdit>()
-
-            // Group diagnostics by rule and let each fixer handle its own
-            val diagnosticsByRule = diagnostics.groupBy { it.code.left }
-
-            for ((ruleName, ruleDiagnostics) in diagnosticsByRule) {
-                val fixers = registry.getFixers(ruleName)
-                for (fixer in fixers) {
-                    val action = fixer.computeFixAllAction(ruleDiagnostics, context)
-                    action?.edit?.changes?.get(context.uri)?.let { edits ->
-                        allEdits.addAll(edits)
-                    }
-                }
-            }
-
+            val allEdits = collectAllFixEdits(diagnostics, context)
             if (allEdits.isEmpty()) return null
-
-            return CodeAction().apply {
-                title = "Fix all CodeNarc issues"
-                kind = CodeActionKind.SourceFixAll
-                this.diagnostics = diagnostics
-                edit = org.eclipse.lsp4j.WorkspaceEdit().apply {
-                    changes = mapOf(context.uri to allEdits)
-                }
-            }
+            return createFixAllCodeAction(diagnostics, context, allEdits)
         } catch (e: Exception) {
             logger.warn("Failed to compute fix-all action", e)
             return null
+        }
+    }
+
+    private fun collectAllFixEdits(
+        diagnostics: List<Diagnostic>,
+        context: FixContext,
+    ): List<org.eclipse.lsp4j.TextEdit> {
+        val allEdits = mutableListOf<org.eclipse.lsp4j.TextEdit>()
+        val diagnosticsByRule = diagnostics.groupBy { it.code.left }
+
+        for ((ruleName, ruleDiagnostics) in diagnosticsByRule) {
+            collectRuleFixEdits(ruleName, ruleDiagnostics, context, allEdits)
+        }
+
+        return allEdits
+    }
+
+    private fun collectRuleFixEdits(
+        ruleName: String,
+        ruleDiagnostics: List<Diagnostic>,
+        context: FixContext,
+        allEdits: MutableList<org.eclipse.lsp4j.TextEdit>,
+    ) {
+        val fixers = registry.getFixers(ruleName)
+        for (fixer in fixers) {
+            val action = fixer.computeFixAllAction(ruleDiagnostics, context)
+            val edits = action?.edit?.changes?.get(context.uri)
+            if (edits != null) {
+                allEdits.addAll(edits)
+            }
+        }
+    }
+
+    private fun createFixAllCodeAction(
+        diagnostics: List<Diagnostic>,
+        context: FixContext,
+        allEdits: List<org.eclipse.lsp4j.TextEdit>,
+    ): CodeAction = CodeAction().apply {
+        title = "Fix all CodeNarc issues"
+        kind = CodeActionKind.SourceFixAll
+        this.diagnostics = diagnostics
+        edit = org.eclipse.lsp4j.WorkspaceEdit().apply {
+            changes = mapOf(context.uri to allEdits)
         }
     }
 

@@ -85,33 +85,41 @@ class CodeAnalysisService(
                     "${currentResults.children.size} children",
             )
 
-            // Only process violations at leaf nodes (no children) to avoid duplicates
             if (currentResults.children.isEmpty()) {
-                logger.debug("Processing leaf node with ${currentResults.violations.size} violations")
-
-                currentResults.violations.forEach { violation ->
-                    if (violation is Violation) {
-                        val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
-                        if (diagnostic != null) {
-                            diagnostics.add(diagnostic)
-                        }
-                    }
-                }
+                processLeafNodeViolations(currentResults, sourceLines, diagnostics)
             } else {
-                // Has children - recurse without processing violations at this level
-                logger.debug("Skipping non-leaf node, recursing into ${currentResults.children.size} children")
-
-                currentResults.children.forEach { childResult ->
-                    if (childResult is Results) {
-                        processResults(childResult)
-                    }
-                }
+                processChildResults(currentResults, ::processResults)
             }
         }
 
         processResults(results)
         logger.info("Total diagnostics generated: ${diagnostics.size}")
         return diagnostics
+    }
+
+    private fun processLeafNodeViolations(
+        results: Results,
+        sourceLines: List<String>,
+        diagnostics: MutableList<Diagnostic>,
+    ) {
+        logger.debug("Processing leaf node with ${results.violations.size} violations")
+        results.violations.forEach { violation ->
+            if (violation is Violation) {
+                val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
+                if (diagnostic != null) {
+                    diagnostics.add(diagnostic)
+                }
+            }
+        }
+    }
+
+    private fun processChildResults(results: Results, processResults: (Results) -> Unit) {
+        logger.debug("Skipping non-leaf node, recursing into ${results.children.size} children")
+        results.children.forEach { childResult ->
+            if (childResult is Results) {
+                processResults(childResult)
+            }
+        }
     }
 
     /**
