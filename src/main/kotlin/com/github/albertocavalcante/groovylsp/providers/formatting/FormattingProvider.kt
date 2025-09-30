@@ -93,8 +93,11 @@ class FormattingProvider {
         } catch (e: IOException) {
             logger.error("IO error formatting range in document $uri", e)
             return emptyList()
-        } catch (e: RuntimeException) {
-            logger.error("Error formatting range in document $uri", e)
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid range format for $uri", e)
+            return emptyList()
+        } catch (e: IllegalStateException) {
+            logger.error("Invalid state while formatting range in document $uri", e)
             return emptyList()
         }
     }
