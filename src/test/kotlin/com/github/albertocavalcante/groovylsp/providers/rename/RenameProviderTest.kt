@@ -147,7 +147,7 @@ class RenameProviderTest {
 
         val changes = workspaceEdit.changes[uri.toString()]
         assertNotNull(changes) { "Should have changes for the file" }
-        assertEquals(3, changes!!.size) { "Should find 3 references: declaration + 2 uses" }
+        assertEquals(3, changes!!.size, "Should find 3 references: declaration + 2 uses")
     }
 
     @Test
@@ -174,7 +174,7 @@ class RenameProviderTest {
 
         val changes = workspaceEdit.changes[uri.toString()]
         assertNotNull(changes) { "Should have changes for the file" }
-        assertEquals(3, changes!!.size) { "Should find 3 references: parameter + 2 uses" }
+        assertEquals(3, changes!!.size, "Should find 3 references: parameter + 2 uses")
     }
 
     @Test
@@ -204,7 +204,7 @@ class RenameProviderTest {
 
         val changes = workspaceEdit.changes[uri.toString()]
         assertNotNull(changes) { "Should have changes for the file" }
-        assertEquals(5, changes!!.size) { "Should find 5 references: declaration + 4 uses" }
+        assertEquals(5, changes!!.size, "Should find 5 references: declaration + 4 uses")
     }
 
     @Test
