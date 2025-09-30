@@ -66,31 +66,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             CoordinateSystem.isValidNodePosition(node) && CoordinateSystem.nodeContainsPosition(node, lspPosition)
         }
 
-        logger.debug("AstPositionQuery: Found ${candidateNodes.size} candidate nodes")
-        if (candidateNodes.isNotEmpty()) {
-            candidateNodes.take(MAX_DEBUG_CANDIDATES_TO_SHOW).forEach { node ->
-                logger.debug(
-                    "  Candidate: ${node.javaClass.simpleName} at ${CoordinateSystem.getNodePositionDebugString(
-                        node,
-                    )} - text: ${node.text?.take(DEBUG_TEXT_PREVIEW_LENGTH)}",
-                )
-            }
-        } else {
-            // Debug: Show why no nodes matched by examining first few nodes
-            logger.debug("AstPositionQuery: No candidates found, examining first $MAX_DEBUG_REJECTED_TO_SHOW nodes:")
-            nodes.take(MAX_DEBUG_REJECTED_TO_SHOW).forEach { node ->
-                if (CoordinateSystem.isValidNodePosition(node)) {
-                    val contains = CoordinateSystem.nodeContainsPosition(node, lspPosition)
-                    logger.debug(
-                        "  Rejected: ${node.javaClass.simpleName} at ${CoordinateSystem.getNodePositionDebugString(
-                            node,
-                        )} - contains: $contains",
-                    )
-                } else {
-                    logger.debug("  Invalid: ${node.javaClass.simpleName} - invalid position")
-                }
-            }
-        }
+        logCandidateNodes(candidateNodes, nodes, lspPosition)
 
         val result = candidateNodes.minByOrNull { node ->
             // Calculate node size to find the smallest containing node - use Long to prevent overflow
@@ -102,22 +78,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             }
             val baseSize = lineSpan.toLong() * PositionConstants.LINE_WEIGHT + charSpan.toLong()
 
-            // CRITICAL FIX: When nodes have the same size, prefer more specific types
-            // Add a priority boost for specific node types that are more meaningful for definitions
-            val typePriority = when (node) {
-                is org.codehaus.groovy.ast.expr.VariableExpression -> VARIABLE_EXPRESSION_PRIORITY // Highest priority
-                is org.codehaus.groovy.ast.expr.DeclarationExpression -> DECLARATION_EXPRESSION_PRIORITY
-                is org.codehaus.groovy.ast.expr.MethodCallExpression -> METHOD_CALL_EXPRESSION_PRIORITY
-                is org.codehaus.groovy.ast.expr.PropertyExpression -> PROPERTY_EXPRESSION_PRIORITY
-                is org.codehaus.groovy.ast.expr.FieldExpression -> FIELD_EXPRESSION_PRIORITY
-                is org.codehaus.groovy.ast.MethodNode -> METHOD_NODE_PRIORITY
-                is org.codehaus.groovy.ast.FieldNode -> FIELD_NODE_PRIORITY
-                is org.codehaus.groovy.ast.PropertyNode -> PROPERTY_NODE_PRIORITY
-                is org.codehaus.groovy.ast.ClassNode -> CLASS_NODE_PRIORITY // Much lower priority
-                is org.codehaus.groovy.ast.expr.ArgumentListExpression -> ARGUMENT_LIST_EXPRESSION_PRIORITY
-                is org.codehaus.groovy.ast.stmt.ExpressionStatement -> EXPRESSION_STATEMENT_PRIORITY
-                else -> DEFAULT_NODE_PRIORITY
-            }
+            val typePriority = calculateNodePriority(node)
 
             // Combine base size with type priority (multiply by small factor to maintain size ordering)
             baseSize + (typePriority * TYPE_PRIORITY_MULTIPLIER)
@@ -134,6 +95,61 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         }
 
         return result
+    }
+
+    /**
+     * Calculates type-based priority for AST node selection.
+     * Lower values indicate higher priority for position queries.
+     */
+    private fun calculateNodePriority(node: ASTNode): Int = when (node) {
+        is org.codehaus.groovy.ast.expr.VariableExpression -> VARIABLE_EXPRESSION_PRIORITY // Highest priority
+        is org.codehaus.groovy.ast.expr.DeclarationExpression -> DECLARATION_EXPRESSION_PRIORITY
+        is org.codehaus.groovy.ast.expr.MethodCallExpression -> METHOD_CALL_EXPRESSION_PRIORITY
+        is org.codehaus.groovy.ast.expr.PropertyExpression -> PROPERTY_EXPRESSION_PRIORITY
+        is org.codehaus.groovy.ast.expr.FieldExpression -> FIELD_EXPRESSION_PRIORITY
+        is org.codehaus.groovy.ast.MethodNode -> METHOD_NODE_PRIORITY
+        is org.codehaus.groovy.ast.FieldNode -> FIELD_NODE_PRIORITY
+        is org.codehaus.groovy.ast.PropertyNode -> PROPERTY_NODE_PRIORITY
+        is org.codehaus.groovy.ast.ClassNode -> CLASS_NODE_PRIORITY // Much lower priority
+        is org.codehaus.groovy.ast.expr.ArgumentListExpression -> ARGUMENT_LIST_EXPRESSION_PRIORITY
+        is org.codehaus.groovy.ast.stmt.ExpressionStatement -> EXPRESSION_STATEMENT_PRIORITY
+        else -> DEFAULT_NODE_PRIORITY
+    }
+
+    /**
+     * Logs candidate nodes for debugging position queries.
+     * Extracted to reduce complexity of getNodeAt method.
+     */
+    private fun logCandidateNodes(
+        candidateNodes: List<ASTNode>,
+        allNodes: List<ASTNode>,
+        lspPosition: CoordinateSystem.LspPosition,
+    ) {
+        logger.debug("AstPositionQuery: Found ${candidateNodes.size} candidate nodes")
+        if (candidateNodes.isNotEmpty()) {
+            candidateNodes.take(MAX_DEBUG_CANDIDATES_TO_SHOW).forEach { node ->
+                logger.debug(
+                    "  Candidate: ${node.javaClass.simpleName} at ${CoordinateSystem.getNodePositionDebugString(
+                        node,
+                    )} - text: ${node.text?.take(DEBUG_TEXT_PREVIEW_LENGTH)}",
+                )
+            }
+        } else {
+            // Debug: Show why no nodes matched by examining first few nodes
+            logger.debug("AstPositionQuery: No candidates found, examining first $MAX_DEBUG_REJECTED_TO_SHOW nodes:")
+            allNodes.take(MAX_DEBUG_REJECTED_TO_SHOW).forEach { node ->
+                if (CoordinateSystem.isValidNodePosition(node)) {
+                    val contains = CoordinateSystem.nodeContainsPosition(node, lspPosition)
+                    logger.debug(
+                        "  Rejected: ${node.javaClass.simpleName} at ${CoordinateSystem.getNodePositionDebugString(
+                            node,
+                        )} - contains: $contains",
+                    )
+                } else {
+                    logger.debug("  Invalid: ${node.javaClass.simpleName} - invalid position")
+                }
+            }
+        }
     }
 
     // Position validation and containment logic has been moved to CoordinateSystem
