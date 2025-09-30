@@ -5,6 +5,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -13,6 +14,7 @@ import java.nio.file.Paths
  * Provides document formatting capabilities for Groovy files.
  * Integrates with the LSP to format entire documents or specific ranges.
  */
+@Suppress("TooGenericExceptionCaught", "ReturnCount") // Formatting needs robust error handling and validation returns
 class FormattingProvider {
     private val logger = LoggerFactory.getLogger(FormattingProvider::class.java)
     private val basicFormatter = BasicIndentationFormatter()
@@ -30,8 +32,14 @@ class FormattingProvider {
         try {
             val content = getDocumentContent(uri)
             return formatContent(content, options)
-        } catch (e: Exception) {
-            logger.error("Error formatting document $uri", e)
+        } catch (e: IOException) {
+            logger.error("IO error formatting document $uri", e)
+            return emptyList()
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid document format for $uri", e)
+            return emptyList()
+        } catch (e: IllegalStateException) {
+            logger.error("Invalid state while formatting document $uri", e)
             return emptyList()
         }
     }
@@ -82,7 +90,10 @@ class FormattingProvider {
             }
 
             return emptyList()
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            logger.error("IO error formatting range in document $uri", e)
+            return emptyList()
+        } catch (e: RuntimeException) {
             logger.error("Error formatting range in document $uri", e)
             return emptyList()
         }
@@ -136,7 +147,10 @@ class FormattingProvider {
         // so we read from file. In a full implementation, we'd cache the content too.
         val path = Paths.get(parsedUri)
         Files.readString(path)
-    } catch (e: Exception) {
+    } catch (e: IOException) {
+        logger.error("Failed to read document content for $uri", e)
+        throw IllegalStateException("Cannot read document content for formatting", e)
+    } catch (e: RuntimeException) {
         logger.error("Failed to read document content for $uri", e)
         throw IllegalStateException("Cannot read document content for formatting", e)
     }
