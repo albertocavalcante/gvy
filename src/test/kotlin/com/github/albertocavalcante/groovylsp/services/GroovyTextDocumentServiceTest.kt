@@ -33,7 +33,8 @@ class GroovyTextDocumentServiceTest {
             coroutineScope,
             compilationService,
             MockConfigurationProvider(),
-        ) { null } // No client for tests
+            { null }, // No client for tests
+        )
     }
 
     @Test
