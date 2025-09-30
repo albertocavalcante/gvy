@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.folding
 
 import com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.FoldingRangeKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -37,7 +37,7 @@ class FoldingRangeIntegrationTest {
         val uri = testFile.toURI()
 
         // Compile the source
-        runBlocking {
+        runTest {
             compilationService.compile(uri, sourceCode)
         }
 
@@ -78,7 +78,7 @@ class FoldingRangeIntegrationTest {
         val uri = testFile.toURI()
 
         // Compile the source
-        runBlocking {
+        runTest {
             compilationService.compile(uri, sourceCode)
         }
 
@@ -107,7 +107,7 @@ class FoldingRangeIntegrationTest {
         val uri = testFile.toURI()
 
         // Compile the source
-        runBlocking {
+        runTest {
             compilationService.compile(uri, sourceCode)
         }
 

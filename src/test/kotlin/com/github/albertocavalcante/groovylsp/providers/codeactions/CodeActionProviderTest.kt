@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.codeactions
 import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
@@ -163,7 +163,7 @@ class CodeActionProviderTest {
     private fun createCodeActionParams(code: String, diagnostic: Diagnostic): CodeActionParams {
         // Store the code in compilation service for testing
         val uri = URI.create("file:///test.groovy")
-        runBlocking {
+        runTest {
             compilationService.compile(uri, code)
         }
 

@@ -282,5 +282,5 @@ class CompilationContextClasspathTest {
     }
 
     private suspend fun CompilationContextManager.buildContexts(root: Path) =
-        kotlinx.coroutines.runBlocking { buildContexts(root) }
+        kotlinx.coroutines.test.runTest { buildContexts(root) }
 }

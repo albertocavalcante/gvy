@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.folding
 
 import com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.FoldingRangeKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -277,7 +277,7 @@ class FoldingRangeProviderTest {
     private fun createTestUri(filename: String): URI = URI.create("file:///test/$filename")
 
     private fun compileSource(uri: URI, sourceCode: String) {
-        runBlocking {
+        runTest {
             compilationService.compile(uri, sourceCode)
         }
     }
