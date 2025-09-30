@@ -3,11 +3,7 @@ package com.github.albertocavalcante.groovylsp.ast.resolution
 import com.github.albertocavalcante.groovylsp.ast.NodeRelationshipTracker
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.FieldNode
-import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
-import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
