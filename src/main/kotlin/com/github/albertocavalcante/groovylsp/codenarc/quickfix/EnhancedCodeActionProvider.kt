@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.codenarc.quickfix
 
+import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.CodeNarcQuickFixer
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FixContext
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FixScope
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FormattingConfig
@@ -105,7 +106,7 @@ class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry)
     }
 
     private fun processIndividualFixer(
-        fixer: QuickFixer,
+        fixer: CodeNarcQuickFixer,
         diagnostic: Diagnostic,
         ruleName: String,
         context: FixContext,
