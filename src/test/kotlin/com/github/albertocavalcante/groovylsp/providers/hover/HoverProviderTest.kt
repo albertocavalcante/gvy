@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class HoverProviderTest {
 
     private val logger = LoggerFactory.getLogger(HoverProviderTest::class.java)
-    private val compilationService = GroovyCompilationService()
+    private val compilationService = TestUtils.createCompilationService()
     private val hoverProvider = HoverProvider(compilationService)
 
     @Test

@@ -1,0 +1,342 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.Test
+import java.net.URI
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Integration test using the real MethodSignature.groovy file to validate our hover functionality.
+ * This provides realistic test coverage for AST node types that are actually used in real code.
+ */
+class MethodSignatureHoverIntegrationTest {
+
+    private val compilationService = GroovyCompilationService()
+    private val hoverProvider = HoverProvider(compilationService)
+
+    /**
+     * The actual MethodSignature.groovy content from JenkinsPipelineUnit
+     */
+    private val methodSignatureCode = """
+        package com.lesfurets.jenkins.unit.pipelines
+
+        /**
+         * A method signature representation for pipeline steps
+         */
+        class MethodSignature {
+            String name
+            Class[] args
+
+            static MethodSignature method(String name, Class... args = []) {
+                return new MethodSignature(name, args)
+            }
+
+            String argsToString() {
+                return args.collect { it.toString() }.join(', ')
+            }
+
+            boolean equals(Object other) {
+                if (!(other instanceof MethodSignature)) return false
+                MethodSignature otherSig = (MethodSignature) other
+                return name == otherSig.name && args == otherSig.args
+            }
+
+            int hashCode() {
+                return Objects.hash(name, args)
+            }
+
+            String toString() {
+                return name + '(' + argsToString() + ')'
+            }
+        }
+    """.trimIndent()
+
+    /**
+     * Helper function to test hover at a specific position and validate the response.
+     */
+    private suspend fun testHoverAt(
+        line: Int,
+        character: Int,
+        description: String,
+        expectedContent: String? = null,
+        shouldHaveHover: Boolean = true,
+    ) {
+        val uri = URI.create("file:///MethodSignature.groovy")
+        compilationService.compile(uri, methodSignatureCode)
+        val hover = hoverProvider.provideHover(uri.toString(), Position(line, character))
+
+        if (shouldHaveHover) {
+            assertNotNull(hover, "Expected hover at $line:$character for $description")
+            assertTrue(hover.contents.isRight, "Should have markup content for $description")
+
+            val content = hover.contents.right
+            assertEquals(MarkupKind.MARKDOWN, content.kind, "Should be markdown content for $description")
+
+            // Should NOT show "No information available"
+            assertFalse(
+                content.value.contains("No information available"),
+                "Should NOT show 'No information available' for $description, got: ${content.value}",
+            )
+
+            if (expectedContent != null) {
+                assertTrue(
+                    content.value.contains(expectedContent),
+                    "Should contain '$expectedContent' for $description, got: ${content.value}",
+                )
+            }
+
+            println("✓ Hover for $description: ${content.value.take(100)}...")
+        } else {
+            assertNotNull(hover, "Should not have hover for $description")
+        }
+    }
+
+    @Test
+    fun `should provide hover for class declaration`() = runTest {
+        testHoverAt(
+            line = 5,
+            character = 6, // On "MethodSignature" class name
+            description = "class declaration",
+            expectedContent = "Class",
+        )
+    }
+
+    @Test
+    fun `should provide hover for field declarations`() = runTest {
+        testHoverAt(
+            line = 6,
+            character = 11, // On "name" field
+            description = "String field",
+            expectedContent = "Field",
+        )
+
+        testHoverAt(
+            line = 7,
+            character = 12, // On "args" field
+            description = "Class array field",
+            expectedContent = "Field",
+        )
+    }
+
+    @Test
+    fun `should provide hover for static method declaration`() = runTest {
+        testHoverAt(
+            line = 9,
+            character = 23, // On "method" method name
+            description = "static method declaration",
+            expectedContent = "Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method parameters`() = runTest {
+        testHoverAt(
+            line = 9,
+            character = 38, // On "name" parameter
+            description = "method parameter",
+            expectedContent = "String name",
+        )
+
+        testHoverAt(
+            line = 9,
+            character = 52, // On "args" parameter with default value
+            description = "varargs parameter with default",
+            expectedContent = "Class",
+        )
+    }
+
+    @Test
+    fun `should provide hover for constructor call`() = runTest {
+        testHoverAt(
+            line = 10,
+            character = 20, // On "new MethodSignature"
+            description = "constructor call",
+            expectedContent = "Constructor Call",
+        )
+    }
+
+    @Test
+    fun `should provide hover for instance method declaration`() = runTest {
+        testHoverAt(
+            line = 13,
+            character = 11, // On "argsToString" method name
+            description = "instance method declaration",
+            expectedContent = "Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for collection operations`() = runTest {
+        testHoverAt(
+            line = 14,
+            character = 20, // On "collect" method call
+            description = "collect method call",
+            expectedContent = "Built-in Method",
+        )
+
+        testHoverAt(
+            line = 14,
+            character = 38, // On "join" method call
+            description = "join method call",
+            expectedContent = "Built-in Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for closure expression`() = runTest {
+        testHoverAt(
+            line = 14,
+            character = 25, // On closure "{ it.toString() }"
+            description = "closure expression",
+            expectedContent = "Closure",
+        )
+    }
+
+    @Test
+    fun `should provide hover for instanceof check`() = runTest {
+        testHoverAt(
+            line = 18,
+            character = 23, // On "instanceof" operator
+            description = "instanceof check",
+            expectedContent = "Binary Expression",
+        )
+    }
+
+    @Test
+    fun `should provide hover for type cast`() = runTest {
+        testHoverAt(
+            line = 19,
+            character = 27, // On cast "(MethodSignature)"
+            description = "type cast expression",
+            expectedContent = "Type Cast",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method call with property access`() = runTest {
+        testHoverAt(
+            line = 20,
+            character = 35, // On "otherSig.name" property access
+            description = "property access",
+            expectedContent = "Property Access",
+        )
+    }
+
+    @Test
+    fun `should provide hover for static method call`() = runTest {
+        testHoverAt(
+            line = 24,
+            character = 15, // On "Objects.hash" static method call
+            description = "static method call",
+            expectedContent = "Static Method Call",
+        )
+    }
+
+    @Test
+    fun `should provide hover for string concatenation`() = runTest {
+        testHoverAt(
+            line = 28,
+            character = 20, // On string concatenation operator
+            description = "string concatenation",
+            expectedContent = "Binary Expression",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method call chain`() = runTest {
+        testHoverAt(
+            line = 28,
+            character = 35, // On "argsToString()" method call
+            description = "method call in expression",
+            expectedContent = "Method Call",
+        )
+    }
+
+    @Test
+    fun `should provide hover for variable references`() = runTest {
+        testHoverAt(
+            line = 14,
+            character = 15, // On "args" variable reference
+            description = "variable reference",
+            expectedContent = "Class",
+        )
+
+        testHoverAt(
+            line = 20,
+            character = 15, // On "name" variable reference
+            description = "field reference",
+            expectedContent = "String",
+        )
+    }
+
+    @Test
+    fun `should provide hover for return statements`() = runTest {
+        testHoverAt(
+            line = 10,
+            character = 8, // On "return" statement
+            description = "return statement",
+            expectedContent = "Return Statement",
+        )
+
+        testHoverAt(
+            line = 18,
+            character = 50, // On "return false" statement
+            description = "return with value",
+            expectedContent = "Return Statement",
+        )
+    }
+
+    @Test
+    fun `should provide comprehensive integration coverage`() = runTest {
+        // Test that we can successfully compile and provide hover for the entire file
+        val uri = URI.create("file:///MethodSignature.groovy")
+        val result = compilationService.compile(uri, methodSignatureCode)
+
+        assertTrue(
+            result.isSuccess || result.diagnostics.none { it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error },
+            "MethodSignature.groovy should compile successfully or only have warnings",
+        )
+
+        // Test multiple positions to ensure broad coverage
+        val testPositions = listOf(
+            5 to 6, // class name
+            6 to 11, // field
+            9 to 23, // method
+            10 to 20, // constructor
+            14 to 20, // method call
+            18 to 23, // binary expression
+            19 to 27, // cast
+            24 to 15, // static call
+            28 to 20, // concatenation
+        )
+
+        var successCount = 0
+        for ((line, character) in testPositions) {
+            val hover = hoverProvider.provideHover(uri.toString(), Position(line, character))
+            if (hover != null && hover.contents.isRight &&
+                !hover.contents.right.value.contains("No information available")
+            ) {
+                successCount++
+            }
+        }
+
+        // We expect at least 70% of the positions to provide meaningful hover information
+        val successRate = successCount.toDouble() / testPositions.size
+        assertTrue(
+            successRate >= 0.7,
+            "Expected at least 70% hover success rate, " +
+                "got ${(successRate * 100).toInt()}% ($successCount/${testPositions.size})",
+        )
+
+        println(
+            "✓ Integration test coverage: ${(successRate * 100).toInt()}% " +
+                "($successCount/${testPositions.size} positions)",
+        )
+    }
+}

@@ -1,0 +1,475 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.fixtures.HoverTestWithTitleSpec
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.Test
+import java.net.URI
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * Comprehensive tests for all hoverable node types.
+ * This test ensures that every supported AST node type can provide meaningful hover information.
+ */
+class HoverNodeTypesTest {
+
+    private val compilationService = GroovyCompilationService()
+    private val hoverProvider = HoverProvider(compilationService)
+
+    /**
+     * Helper function to test hover at a specific position and validate the response.
+     */
+    private suspend fun testHoverAt(spec: HoverTestWithTitleSpec) = testHoverAt(
+        spec.code,
+        spec.line,
+        spec.character,
+        spec.description,
+        spec.expectedTitle,
+        spec.expectedContent,
+        spec.shouldHaveHover,
+    )
+
+    data class HoverTestParams(
+        val code: String,
+        val line: Int,
+        val character: Int,
+        val description: String,
+        val expectedTitle: String? = null,
+        val expectedContent: String? = null,
+        val shouldHaveHover: Boolean = true,
+    )
+
+    private suspend fun testHoverAt(params: HoverTestParams) = testHoverAtImpl(params)
+
+    private suspend fun testHoverAtImpl(params: HoverTestParams) {
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, params.code)
+        val hover = hoverProvider.provideHover(uri.toString(), Position(params.line, params.character))
+
+        if (params.shouldHaveHover) {
+            assertNotNull(hover, "Expected hover at ${params.line}:${params.character} for ${params.description}")
+            assertTrue(hover.contents.isRight, "Should have markup content for ${params.description}")
+
+            val content = hover.contents.right
+            assertEquals(MarkupKind.MARKDOWN, content.kind, "Should be markdown content for ${params.description}")
+
+            // Should NOT show "No information available"
+            assertFalse(
+                content.value.contains("No information available"),
+                "Should NOT show 'No information available' for ${params.description}, got: ${content.value}",
+            )
+
+            if (params.expectedTitle != null) {
+                assertTrue(
+                    content.value.contains(params.expectedTitle),
+                    "Should contain title '${params.expectedTitle}' for ${params.description}, got: ${content.value}",
+                )
+            }
+
+            if (params.expectedContent != null) {
+                assertTrue(
+                    content.value.contains(params.expectedContent),
+                    "Should contain '${params.expectedContent}' for ${params.description}, got: ${content.value}",
+                )
+            }
+        } else {
+            assertNull(hover, "Should not have hover for ${params.description}")
+        }
+    }
+
+    @Test
+    fun `should provide hover for class declarations`() = runTest {
+        val code = """
+            @CompileStatic
+            class MethodSignature {
+                String name
+                Class[] args
+            }
+        """.trimIndent()
+
+        // Test hover on class name
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 6, // On "MethodSignature"
+            description = "class declaration",
+            expectedTitle = "Class",
+            expectedContent = "MethodSignature",
+        )
+    }
+
+    @Test
+    fun `should provide hover for annotations`() = runTest {
+        val code = """
+            @CompileStatic
+            class TestClass {
+                @Override
+                String toString() { return "test" }
+            }
+        """.trimIndent()
+
+        // Test hover on @CompileStatic annotation
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 1, // On "@CompileStatic"
+            description = "@CompileStatic annotation",
+            expectedTitle = "Annotation",
+            expectedContent = "CompileStatic",
+        )
+
+        // Test hover on @Override annotation
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 4, // On "@Override"
+            description = "@Override annotation",
+            expectedTitle = "Annotation",
+            expectedContent = "Override",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method declarations`() = runTest {
+        val code = """
+            class TestClass {
+                static MethodSignature method(String name, Class... args = []) {
+                    return new MethodSignature(name, args)
+                }
+
+                String argsToString() {
+                    return args.collect { it.toString() }.join(', ')
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on static method
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 23, // On "method"
+            description = "static method declaration",
+            expectedTitle = "Method",
+            expectedContent = "method",
+        )
+
+        // Test hover on instance method
+        testHoverAt(
+            code = code,
+            line = 5,
+            character = 11, // On "argsToString"
+            description = "instance method declaration",
+            expectedTitle = "Method",
+            expectedContent = "argsToString",
+        )
+    }
+
+    @Test
+    fun `should provide hover for field declarations`() = runTest {
+        val code = """
+            class MethodSignature {
+                String name
+                Class[] args
+                private static final String DEFAULT_NAME = "default"
+            }
+        """.trimIndent()
+
+        // Test hover on String field
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 11, // On "name"
+            description = "String field",
+            expectedTitle = "Field",
+            expectedContent = "name",
+        )
+
+        // Test hover on array field
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 12, // On "args"
+            description = "array field",
+            expectedTitle = "Field",
+            expectedContent = "args",
+        )
+
+        // Test hover on static final field
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 38, // On "DEFAULT_NAME"
+            description = "static final field",
+            expectedTitle = "Field",
+            expectedContent = "DEFAULT_NAME",
+        )
+    }
+
+    @Test
+    fun `should provide hover for imports`() = runTest {
+        val code = """
+            import static org.codehaus.groovy.runtime.MetaClassHelper.isAssignableFrom
+            import groovy.transform.CompileStatic
+            import java.util.Arrays
+
+            class TestClass {
+                // class body
+            }
+        """.trimIndent()
+
+        // Test hover on static import
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 20, // On static import
+            description = "static import",
+            expectedTitle = "Import",
+            expectedContent = "static",
+        )
+
+        // Test hover on regular import
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 15, // On regular import
+            description = "regular import",
+            expectedTitle = "Import",
+            expectedContent = "CompileStatic",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method calls`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    println("Hello")
+                    Arrays.toString(args)
+                    isAssignableFrom(String.class, Object.class)
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on println method call
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 8, // On "println"
+            description = "println method call",
+            expectedContent = "Built-in Method",
+        )
+
+        // Test hover on static method call
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 12, // On "toString" in Arrays.toString
+            description = "static method call",
+            expectedContent = "Method Call",
+        )
+    }
+
+    @Test
+    fun `should provide hover for constructor calls`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    def signature = new MethodSignature("test", String.class)
+                    def list = new ArrayList<String>()
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on constructor call
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 24, // On "new MethodSignature"
+            description = "constructor call",
+            expectedTitle = "Constructor Call",
+            expectedContent = "MethodSignature",
+        )
+    }
+
+    @Test
+    fun `should provide hover for property access`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    signature.name
+                    object?.safeProperty
+                    this.property
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on property access
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 14, // On ".name"
+            description = "property access",
+            expectedTitle = "Property Access",
+            expectedContent = "name",
+        )
+
+        // Test hover on safe navigation
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 19, // On "?.safeProperty"
+            description = "safe navigation property access",
+            expectedTitle = "Property Access",
+            expectedContent = "Safe Navigation",
+        )
+    }
+
+    @Test
+    fun `should provide hover for class expressions`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    def clazz = String.class
+                    def type = MethodSignature.class
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on class expression
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 23, // On "String.class"
+            description = "class expression",
+            expectedTitle = "Class Reference",
+            expectedContent = "String.class",
+        )
+    }
+
+    @Test
+    fun `should provide hover for variable expressions`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    String name = "test"
+                    Class[] args = []
+                    println(name)
+                    println(args)
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on variable declaration
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 15, // On "name" in declaration
+            description = "variable declaration",
+            expectedContent = "name",
+        )
+
+        // Test hover on variable reference
+        testHoverAt(
+            code = code,
+            line = 4,
+            character = 16, // On "name" in println
+            description = "variable reference",
+            expectedContent = "String",
+        )
+    }
+
+    @Test
+    fun `should provide hover for closure expressions`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    def closure = { String name ->
+                        return "Hello " + name
+                    }
+                    args.collect { it.toString() }
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on closure
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 18, // On closure definition
+            description = "closure expression",
+            expectedTitle = "Closure",
+        )
+    }
+
+    @Test
+    fun `should NOT provide hover for non-hoverable elements`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    if (true) {
+                        return "test"
+                    }
+                    for (int i = 0; i < 10; i++) {
+                        println(i)
+                    }
+                }
+            }
+        """.trimIndent()
+
+        // Test that keywords don't provide hover
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 8, // On "if" keyword
+            description = "if keyword",
+            shouldHaveHover = false,
+        )
+
+        // Test that operators don't provide hover
+        testHoverAt(
+            code = code,
+            line = 6,
+            character = 25, // On "<" operator
+            description = "less than operator",
+            shouldHaveHover = false,
+        )
+    }
+
+    @Test
+    fun `should provide hover for constant expressions`() = runTest {
+        val code = """
+            class TestClass {
+                def test() {
+                    def string = "Hello World"
+                    def number = 42
+                    def bool = true
+                    def nullValue = null
+                }
+            }
+        """.trimIndent()
+
+        // Test hover on string literal
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 25, // On string literal
+            description = "string constant",
+            expectedContent = "String",
+        )
+
+        // Test hover on number literal
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 21, // On number literal
+            description = "number constant",
+            expectedContent = "42",
+        )
+    }
+}

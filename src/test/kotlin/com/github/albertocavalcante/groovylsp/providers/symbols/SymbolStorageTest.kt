@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.test.runTest
@@ -17,7 +17,7 @@ class SymbolStorageTest {
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
     }
 
     @Test

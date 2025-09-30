@@ -10,6 +10,7 @@ import org.eclipse.lsp4j.Diagnostic
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -130,19 +131,17 @@ class CodeNarcQuickFixRegistryTest {
         ruleName: String,
         priority: Int = 5,
         category: FixerCategory = FixerCategory.FORMATTING,
-        isPreferred: Boolean = false
+        isPreferred: Boolean = false,
     ): CodeNarcQuickFixer {
         return object : CodeNarcQuickFixer {
             override val metadata = FixerMetadata(
                 ruleName = ruleName,
                 category = category,
                 priority = priority,
-                isPreferred = isPreferred
+                isPreferred = isPreferred,
             )
 
-            override fun canFix(diagnostic: Diagnostic, context: FixContext): Boolean {
-                return diagnostic.code.left == ruleName
-            }
+            override fun canFix(diagnostic: Diagnostic, context: FixContext): Boolean = diagnostic.code.left == ruleName
 
             override fun computeAction(diagnostic: Diagnostic, context: FixContext): CodeAction? {
                 if (!canFix(diagnostic, context)) return null

@@ -1,0 +1,410 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.WorkspaceCompilationService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Integration tests for hover functionality within workspace/Gradle project contexts.
+ * These tests verify that the LSP can resolve symbols between classes in the same project.
+ *
+ * Currently FAILING - these tests expose the workspace hover issues that need to be fixed.
+ */
+class WorkspaceHoverIntegrationTest {
+
+    @TempDir
+    lateinit var tempDir: Path
+
+    private lateinit var compilationService: GroovyCompilationService
+    private lateinit var workspaceCompilationService: WorkspaceCompilationService
+    private lateinit var hoverProvider: HoverProvider
+    private lateinit var coroutineScope: CoroutineScope
+
+    @BeforeEach
+    fun setUp() {
+        coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        workspaceCompilationService = WorkspaceCompilationService(coroutineScope)
+        compilationService = GroovyCompilationService().apply {
+            enableWorkspaceMode(workspaceCompilationService)
+        }
+        hoverProvider = HoverProvider(compilationService)
+    }
+
+    @Test
+    fun `should provide hover for class reference in same package`() = runTest {
+        // Given: Two classes in the same package
+        val projectRoot = createGradleProject()
+        val mainSrcDir = projectRoot.resolve("src/main/groovy/com/example")
+        Files.createDirectories(mainSrcDir)
+
+        val baseClassContent = """
+            package com.example
+
+            /**
+             * Base class for testing
+             */
+            class BaseClass {
+                String name
+
+                void initialize() {
+                    // initialization logic
+                }
+            }
+        """.trimIndent()
+
+        val derivedClassContent = """
+            package com.example
+
+            class DerivedClass extends BaseClass {
+                void process() {
+                    initialize() // method from BaseClass
+                }
+            }
+        """.trimIndent()
+
+        val baseClassFile = mainSrcDir.resolve("BaseClass.groovy")
+        val derivedClassFile = mainSrcDir.resolve("DerivedClass.groovy")
+
+        Files.writeString(baseClassFile, baseClassContent)
+        Files.writeString(derivedClassFile, derivedClassContent)
+
+        // Initialize workspace compilation
+        workspaceCompilationService.initializeWorkspace(projectRoot)
+
+        // Compile both files
+        val baseClassUri = baseClassFile.toUri()
+        val derivedClassUri = derivedClassFile.toUri()
+
+        compilationService.compile(baseClassUri, baseClassContent)
+        compilationService.compile(derivedClassUri, derivedClassContent)
+
+        // When: Request hover on BaseClass reference in extends clause
+        val hover = hoverProvider.provideHover(
+            derivedClassUri.toString(),
+            Position(2, 28), // On "BaseClass" in extends clause
+        )
+
+        // Then: Should show BaseClass hover information
+        assertNotNull(hover, "Should provide hover for BaseClass reference")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(content.kind == MarkupKind.MARKDOWN, "Should be markdown content")
+        assertTrue(
+            content.value.contains("BaseClass") || content.value.contains("class"),
+            "Should contain BaseClass information, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should provide hover for method call to class in same directory`() = runTest {
+        // Given: Two classes in same directory, one calling method from another
+        val projectRoot = createGradleProject()
+        val mainSrcDir = projectRoot.resolve("src/main/groovy/com/example")
+        Files.createDirectories(mainSrcDir)
+
+        val serviceClassContent = """
+            package com.example
+
+            class UserService {
+                String findUserById(String id) {
+                    return "User: " + id
+                }
+
+                boolean validateUser(String username) {
+                    return username != null && !username.isEmpty()
+                }
+            }
+        """.trimIndent()
+
+        val controllerClassContent = """
+            package com.example
+
+            class UserController {
+                private UserService userService = new UserService()
+
+                void processUser(String id) {
+                    String user = userService.findUserById(id)
+                    println(user)
+                }
+            }
+        """.trimIndent()
+
+        val serviceFile = mainSrcDir.resolve("UserService.groovy")
+        val controllerFile = mainSrcDir.resolve("UserController.groovy")
+
+        Files.writeString(serviceFile, serviceClassContent)
+        Files.writeString(controllerFile, controllerClassContent)
+
+        // Initialize workspace compilation
+        workspaceCompilationService.initializeWorkspace(projectRoot)
+
+        // Compile both files
+        val serviceUri = serviceFile.toUri()
+        val controllerUri = controllerFile.toUri()
+
+        compilationService.compile(serviceUri, serviceClassContent)
+        compilationService.compile(controllerUri, controllerClassContent)
+
+        // When: Request hover on UserService constructor call
+        val hover = hoverProvider.provideHover(
+            controllerUri.toString(),
+            Position(3, 40), // On "UserService" in new UserService()
+        )
+
+        // Then: Should show UserService hover information
+        assertNotNull(hover, "Should provide hover for UserService reference")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("UserService") || content.value.contains("class"),
+            "Should contain UserService information, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should provide hover for class reference from test to main source set`() = runTest {
+        // Given: Class in main source set and test that references it
+        val projectRoot = createGradleProject()
+        val mainSrcDir = projectRoot.resolve("src/main/groovy/com/example")
+        val testSrcDir = projectRoot.resolve("src/test/groovy/com/example")
+        Files.createDirectories(mainSrcDir)
+        Files.createDirectories(testSrcDir)
+
+        val mainClassContent = """
+            package com.example
+
+            class Calculator {
+                int add(int a, int b) {
+                    return a + b
+                }
+
+                int subtract(int a, int b) {
+                    return a - b
+                }
+            }
+        """.trimIndent()
+
+        val testClassContent = """
+            package com.example
+
+            import org.junit.jupiter.api.Test
+
+            class CalculatorTest {
+                @Test
+                void testAddition() {
+                    Calculator calc = new Calculator()
+                    assert calc.add(2, 3) == 5
+                }
+            }
+        """.trimIndent()
+
+        val mainFile = mainSrcDir.resolve("Calculator.groovy")
+        val testFile = testSrcDir.resolve("CalculatorTest.groovy")
+
+        Files.writeString(mainFile, mainClassContent)
+        Files.writeString(testFile, testClassContent)
+
+        // Initialize workspace compilation
+        workspaceCompilationService.initializeWorkspace(projectRoot)
+
+        // Compile both files
+        val mainUri = mainFile.toUri()
+        val testUri = testFile.toUri()
+
+        compilationService.compile(mainUri, mainClassContent)
+        compilationService.compile(testUri, testClassContent)
+
+        // When: Request hover on Calculator reference in test
+        val hover = hoverProvider.provideHover(
+            testUri.toString(),
+            Position(7, 20), // On "Calculator" in new Calculator()
+        )
+
+        // Then: Should show Calculator hover information
+        assertNotNull(hover, "Should provide hover for Calculator reference from test")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Calculator") || content.value.contains("class"),
+            "Should contain Calculator information, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should provide hover for field reference to class in same package`() = runTest {
+        // Given: Classes with field references in same package
+        val projectRoot = createGradleProject()
+        val mainSrcDir = projectRoot.resolve("src/main/groovy/com/example")
+        Files.createDirectories(mainSrcDir)
+
+        val personClassContent = """
+            package com.example
+
+            class Person {
+                String firstName
+                String lastName
+                int age
+
+                String getFullName() {
+                    return firstName + " " + lastName
+                }
+            }
+        """.trimIndent()
+
+        val companyClassContent = """
+            package com.example
+
+            class Company {
+                String name
+                Person manager
+                List<Person> employees = []
+
+                void addEmployee(Person person) {
+                    employees.add(person)
+                }
+            }
+        """.trimIndent()
+
+        val personFile = mainSrcDir.resolve("Person.groovy")
+        val companyFile = mainSrcDir.resolve("Company.groovy")
+
+        Files.writeString(personFile, personClassContent)
+        Files.writeString(companyFile, companyClassContent)
+
+        // Initialize workspace compilation
+        workspaceCompilationService.initializeWorkspace(projectRoot)
+
+        // Compile both files
+        val personUri = personFile.toUri()
+        val companyUri = companyFile.toUri()
+
+        compilationService.compile(personUri, personClassContent)
+        compilationService.compile(companyUri, companyClassContent)
+
+        // When: Request hover on Person field type
+        val hover = hoverProvider.provideHover(
+            companyUri.toString(),
+            Position(4, 16), // On "Person" in field declaration
+        )
+
+        // Then: Should show Person hover information
+        assertNotNull(hover, "Should provide hover for Person field type")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Person") || content.value.contains("class"),
+            "Should contain Person information, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should provide hover for import statement of project class`() = runTest {
+        // Given: Classes with import statements in different packages
+        val projectRoot = createGradleProject()
+        val modelDir = projectRoot.resolve("src/main/groovy/com/example/model")
+        val serviceDir = projectRoot.resolve("src/main/groovy/com/example/service")
+        Files.createDirectories(modelDir)
+        Files.createDirectories(serviceDir)
+
+        val userModelContent = """
+            package com.example.model
+
+            class User {
+                String username
+                String email
+                boolean active = true
+            }
+        """.trimIndent()
+
+        val userServiceContent = """
+            package com.example.service
+
+            import com.example.model.User
+
+            class UserService {
+                List<User> findActiveUsers() {
+                    // find active users
+                    return []
+                }
+            }
+        """.trimIndent()
+
+        val userModelFile = modelDir.resolve("User.groovy")
+        val userServiceFile = serviceDir.resolve("UserService.groovy")
+
+        Files.writeString(userModelFile, userModelContent)
+        Files.writeString(userServiceFile, userServiceContent)
+
+        // Initialize workspace compilation
+        workspaceCompilationService.initializeWorkspace(projectRoot)
+
+        // Compile both files
+        val modelUri = userModelFile.toUri()
+        val serviceUri = userServiceFile.toUri()
+
+        compilationService.compile(modelUri, userModelContent)
+        compilationService.compile(serviceUri, userServiceContent)
+
+        // When: Request hover on User in import statement
+        val hover = hoverProvider.provideHover(
+            serviceUri.toString(),
+            Position(2, 32), // On "User" in import statement
+        )
+
+        // Then: Should show User hover information
+        assertNotNull(hover, "Should provide hover for User in import statement")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("User") || content.value.contains("class") || content.value.contains("Import"),
+            "Should contain User or Import information, got: ${content.value}",
+        )
+    }
+
+    /**
+     * Creates a basic Gradle project structure with build.gradle file
+     */
+    private fun createGradleProject(): Path {
+        val buildGradleContent = """
+            plugins {
+                id 'groovy'
+                id 'java'
+            }
+
+            repositories {
+                mavenCentral()
+            }
+
+            dependencies {
+                implementation 'org.apache.groovy:groovy:4.0.28'
+                testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+            }
+
+            test {
+                useJUnitPlatform()
+            }
+        """.trimIndent()
+
+        val buildFile = tempDir.resolve("build.gradle")
+        Files.writeString(buildFile, buildGradleContent)
+
+        return tempDir
+    }
+}

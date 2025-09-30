@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.ast.resolution
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ClassNode
@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  */
 class DefinitionResolverTest {
 
-    private val compilationService = GroovyCompilationService()
+    private val compilationService = TestUtils.createCompilationService()
 
     @Test
     fun `should find variable definition from usage`() = runTest {

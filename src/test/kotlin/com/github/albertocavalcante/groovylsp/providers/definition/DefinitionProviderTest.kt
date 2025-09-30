@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -20,7 +20,7 @@ class DefinitionProviderTest {
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
         definitionProvider = DefinitionProvider(compilationService)
     }
 

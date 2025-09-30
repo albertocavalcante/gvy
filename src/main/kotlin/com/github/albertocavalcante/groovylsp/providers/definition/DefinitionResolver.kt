@@ -31,7 +31,9 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
 
         return try {
             val targetNode = validateAndFindNode(uri, position)
+
             val definition = resolveDefinition(targetNode, uri, position)
+
             validateDefinition(definition, uri)
         } catch (e: GroovyLspException) {
             // Re-throw our specific exceptions

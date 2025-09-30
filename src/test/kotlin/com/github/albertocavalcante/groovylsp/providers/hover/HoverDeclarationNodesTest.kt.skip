@@ -1,0 +1,689 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.fixtures.HoverTestWithTitleSpec
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.Test
+import java.net.URI
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Systematic tests for all 12 declaration/core node types.
+ * This test ensures that every declaration AST node type can provide meaningful hover information.
+ * Covers core language constructs like classes, methods, fields, properties, constructors, etc.
+ */
+class HoverDeclarationNodesTest {
+
+    private val compilationService = GroovyCompilationService()
+    private val hoverProvider = HoverProvider(compilationService)
+
+    /**
+     * Helper function to test hover at a specific position and validate the response.
+     */
+    private suspend fun testHoverAtSpec(spec: HoverTestWithTitleSpec) = testHoverAt(
+        HoverTestParams(
+            code = spec.code,
+            line = spec.line,
+            character = spec.character,
+            description = spec.description,
+            expectedTitle = spec.expectedTitle,
+            expectedContent = spec.expectedContent,
+            shouldHaveHover = spec.shouldHaveHover
+        )
+    )
+
+    data class HoverTestParams(
+        val code: String,
+        val line: Int,
+        val character: Int,
+        val description: String,
+        val expectedTitle: String? = null,
+        val expectedContent: String? = null,
+        val shouldHaveHover: Boolean = true,
+    )
+
+    private suspend fun testHoverAt(
+        code: String,
+        line: Int,
+        character: Int,
+        description: String,
+        expectedTitle: String? = null,
+        expectedContent: String? = null,
+        shouldHaveHover: Boolean = true,
+    ) = testHoverAtImpl(HoverTestParams(code, line, character, description, expectedTitle, expectedContent, shouldHaveHover))
+
+    private suspend fun testHoverAtImpl(params: HoverTestParams) {
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, params.code)
+        val hover = hoverProvider.provideHover(uri.toString(), Position(params.line, params.character))
+
+        if (params.shouldHaveHover) {
+            assertNotNull(hover, "Expected hover at ${params.line}:${params.character} for ${params.description}")
+            assertTrue(hover.contents.isRight, "Should have markup content for ${params.description}")
+
+            val content = hover.contents.right
+            assertEquals(MarkupKind.MARKDOWN, content.kind, "Should be markdown content for ${params.description}")
+
+            // Should NOT show "No information available"
+            assertFalse(
+                content.value.contains("No information available"),
+                "Should NOT show 'No information available' for ${params.description}, got: ${content.value}",
+            )
+
+            if (params.expectedTitle != null) {
+                assertTrue(
+                    content.value.contains(params.expectedTitle),
+                    "Should contain title '${params.expectedTitle}' for ${params.description}, got: ${content.value}",
+                )
+            }
+
+            if (params.expectedContent != null) {
+                assertTrue(
+                    content.value.contains(params.expectedContent),
+                    "Should contain '${params.expectedContent}' for ${params.description}, got: ${content.value}",
+                )
+            }
+        } else {
+            assertNotNull(hover, "Should not have hover for ${params.description}")
+        }
+    }
+
+    // ======== CORE DECLARATION NODES ========
+
+    @Test
+    fun `should provide hover for ClassNode - regular class`() = runTest {
+        val code = """
+            package com.example
+
+            import java.util.List
+
+            /**
+             * A sample class for testing
+             */
+            public class PersonService implements Serializable {
+                private String name
+                private int age
+
+                public String getName() { return name }
+                public void setName(String name) { this.name = name }
+
+                public static PersonService create(String name) {
+                    return new PersonService(name: name)
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(HoverTestParams(
+            code = code,
+            line = 7,
+            character = 19, // On "PersonService" class name
+            description = "regular class declaration",
+            expectedTitle = "Class",
+            expectedContent = "PersonService",
+        ))
+    }
+
+    @Test
+    fun `should provide hover for ClassNode - abstract class`() = runTest {
+        val code = """
+            abstract class AbstractProcessor {
+                abstract void process()
+
+                protected void validate() {
+                    // common validation logic
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(HoverTestParams(
+            code = code,
+            line = 0,
+            character = 21, // On "AbstractProcessor" class name
+            description = "abstract class declaration",
+            expectedTitle = "Class",
+            expectedContent = "abstract class AbstractProcessor",
+        ))
+    }
+
+    @Test
+    fun `should provide hover for ClassNode - interface`() = runTest {
+        val code = """
+            interface ProcessorFactory<T> {
+                T createProcessor(String type)
+                boolean supports(Class<T> type)
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 16, // On "ProcessorFactory" interface name
+            description = "interface declaration",
+            expectedTitle = "Class",
+            expectedContent = "interface ProcessorFactory",
+        )
+    }
+
+    @Test
+    fun `should provide hover for ClassNode - enum`() = runTest {
+        val code = """
+            enum Status {
+                PENDING,
+                PROCESSING,
+                COMPLETED,
+                FAILED
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 7, // On "Status" enum name
+            description = "enum declaration",
+            expectedTitle = "Class",
+            expectedContent = "enum Status",
+        )
+    }
+
+    @Test
+    fun `should provide hover for InnerClassNode`() = runTest {
+        val code = """
+            class OuterClass {
+                private static class InnerProcessor {
+                    void process() { }
+                }
+
+                class InstanceInnerClass {
+                    void run() { }
+                }
+
+                def createAnonymous() {
+                    return new Runnable() {
+                        void run() { }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 29, // On "InnerProcessor" inner class name
+            description = "static inner class declaration",
+            expectedTitle = "Inner Class",
+            expectedContent = "OuterClass.InnerProcessor",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 5,
+            character = 22, // On "InstanceInnerClass" inner class name
+            description = "instance inner class declaration",
+            expectedTitle = "Inner Class",
+            expectedContent = "OuterClass.InstanceInnerClass",
+        )
+    }
+
+    @Test
+    fun `should provide hover for MethodNode - instance method`() = runTest {
+        val code = """
+            class Calculator {
+                /**
+                 * Calculates the sum of two numbers
+                 */
+                public double add(double a, double b) {
+                    return a + b
+                }
+
+                protected void validateInputs(double... numbers) {
+                    // validation logic
+                }
+
+                private static String formatResult(double result) {
+                    return String.valueOf(result)
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 4,
+            character = 22, // On "add" method name
+            description = "public instance method",
+            expectedTitle = "Method",
+            expectedContent = "add",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 8,
+            character = 28, // On "validateInputs" method name
+            description = "protected method with varargs",
+            expectedTitle = "Method",
+            expectedContent = "validateInputs",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 12,
+            character = 32, // On "formatResult" method name
+            description = "private static method",
+            expectedTitle = "Method",
+            expectedContent = "formatResult",
+        )
+    }
+
+    @Test
+    fun `should provide hover for MethodNode - abstract method`() = runTest {
+        val code = """
+            abstract class AbstractService {
+                abstract String processData(String input)
+                abstract void initialize()
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 24, // On "processData" abstract method name
+            description = "abstract method",
+            expectedTitle = "Method",
+            expectedContent = "processData",
+        )
+    }
+
+    @Test
+    fun `should provide hover for ConstructorNode`() = runTest {
+        val code = """
+            class Person {
+                String name
+                int age
+
+                Person() {
+                    this("Unknown", 0)
+                }
+
+                Person(String name) {
+                    this(name, 0)
+                }
+
+                Person(String name, int age) {
+                    this.name = name
+                    this.age = age
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 4,
+            character = 4, // On default constructor
+            description = "default constructor",
+            expectedTitle = "Constructor",
+            expectedContent = "Person()",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 8,
+            character = 4, // On single parameter constructor
+            description = "single parameter constructor",
+            expectedTitle = "Constructor",
+            expectedContent = "Person(String name)",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 12,
+            character = 4, // On full constructor
+            description = "full constructor",
+            expectedTitle = "Constructor",
+            expectedContent = "Person(String name, int age)",
+        )
+    }
+
+    @Test
+    fun `should provide hover for FieldNode`() = runTest {
+        val code = """
+            class Configuration {
+                public static final String DEFAULT_ENCODING = "UTF-8"
+                private final Map<String, Object> properties = [:]
+                protected boolean enabled = true
+                String name
+                @Deprecated
+                int timeout = 30
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 39, // On "DEFAULT_ENCODING" field
+            description = "public static final field",
+            expectedTitle = "Field",
+            expectedContent = "DEFAULT_ENCODING",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 48, // On "properties" field
+            description = "private final field with initialization",
+            expectedTitle = "Field",
+            expectedContent = "properties",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 25, // On "enabled" field
+            description = "protected field",
+            expectedTitle = "Field",
+            expectedContent = "enabled",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 5,
+            character = 8, // On "timeout" field with annotation
+            description = "deprecated field",
+            expectedTitle = "Field",
+            expectedContent = "timeout",
+        )
+    }
+
+    @Test
+    fun `should provide hover for PropertyNode`() = runTest {
+        val code = """
+            class Bean {
+                String name
+                int age
+
+                void setCustomName(String name) {
+                    this.name = name.toUpperCase()
+                }
+
+                String getCustomName() {
+                    return this.name?.toLowerCase()
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 11, // On "name" property
+            description = "string property",
+            expectedTitle = "Property",
+            expectedContent = "name",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 8, // On "age" property
+            description = "integer property",
+            expectedTitle = "Property",
+            expectedContent = "age",
+        )
+    }
+
+    @Test
+    fun `should provide hover for Parameter`() = runTest {
+        val code = """
+            class ProcessorService {
+                def processData(String input, Map<String, Object> options, boolean validate = true) {
+                    if (validate) {
+                        validateInput(input)
+                    }
+                    return transformData(input, options)
+                }
+
+                private void validateInput(String data) {
+                    // validation logic
+                }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 28, // On "input" parameter
+            description = "string parameter",
+            expectedContent = "String input",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 65, // On "options" parameter
+            description = "map parameter",
+            expectedContent = "Map options",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 82, // On "validate" parameter with default value
+            description = "boolean parameter with default",
+            expectedContent = "boolean validate",
+        )
+    }
+
+    // ======== METADATA AND IMPORT NODES ========
+
+    @Test
+    fun `should provide hover for ImportNode - regular import`() = runTest {
+        val code = """
+            import java.util.List
+            import java.util.concurrent.ConcurrentHashMap
+            import static java.lang.Math.sqrt
+            import java.time.* as Time
+
+            class TestClass {
+                List<String> items = []
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 7, // On regular import
+            description = "regular import",
+            expectedTitle = "Import",
+            expectedContent = "List",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 7, // On static import
+            description = "static import",
+            expectedTitle = "Import",
+            expectedContent = "static",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 7, // On wildcard import with alias
+            description = "wildcard import with alias",
+            expectedTitle = "Import",
+            expectedContent = "Star Import",
+        )
+    }
+
+    @Test
+    fun `should provide hover for PackageNode`() = runTest {
+        val code = """
+            package com.example.service.processor
+
+            class DataProcessor {
+                // class implementation
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 8, // On package declaration
+            description = "package declaration",
+            expectedTitle = "Package",
+            expectedContent = "com.example.service.processor",
+        )
+    }
+
+    @Test
+    fun `should provide hover for AnnotationNode`() = runTest {
+        val code = """
+            import groovy.transform.CompileStatic
+            import groovy.transform.TypeChecked
+
+            @CompileStatic
+            @TypeChecked
+            @SuppressWarnings(["unchecked", "rawtypes"])
+            class AnnotatedClass {
+
+                @Override
+                @Deprecated("Use newMethod instead")
+                String toString() {
+                    return "AnnotatedClass"
+                }
+
+                @SuppressWarnings("unused")
+                private void helperMethod() { }
+            }
+        """.trimIndent()
+
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 1, // On "@CompileStatic" annotation
+            description = "CompileStatic annotation",
+            expectedTitle = "Annotation",
+            expectedContent = "CompileStatic",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 5,
+            character = 1, // On "@SuppressWarnings" annotation with array parameter
+            description = "SuppressWarnings annotation with parameters",
+            expectedTitle = "Annotation",
+            expectedContent = "SuppressWarnings",
+        )
+
+        testHoverAt(
+            code = code,
+            line = 8,
+            character = 4, // On "@Override" annotation
+            description = "Override annotation",
+            expectedTitle = "Annotation",
+            expectedContent = "Override",
+        )
+    }
+
+    // ======== COMPREHENSIVE INTEGRATION TESTS ========
+
+    @Test
+    fun `should provide hover for complex class hierarchy`() = runTest {
+        val code = createComplexClassHierarchyCode()
+        testComplexClassHierarchyHovers(code)
+    }
+
+    private fun createComplexClassHierarchyCode(): String = """
+        abstract class AbstractDataProcessor<T> implements DataProcessor<T> {
+            protected final Logger logger = LoggerFactory.getLogger(getClass())
+            private final Map<String, T> cache = new ConcurrentHashMap<>()
+
+            protected AbstractDataProcessor() {
+                initialize()
+            }
+
+            abstract T processInternal(T data)
+
+            final T process(T data) {
+                logger.debug("Processing data: {}", data)
+                return processInternal(data)
+            }
+
+            private void initialize() {
+                logger.info("Initializing processor: {}", getClass().getSimpleName())
+            }
+
+            static class ProcessingException extends RuntimeException {
+                ProcessingException(String message, Throwable cause) {
+                    super(message, cause)
+                }
+            }
+        }
+    """.trimIndent()
+
+    private suspend fun testComplexClassHierarchyHovers(code: String) {
+        testAbstractClassHover(code)
+        testLoggerFieldHover(code)
+        testConstructorHover(code)
+        testAbstractMethodHover(code)
+        testStaticInnerClassHover(code)
+    }
+
+    private suspend fun testAbstractClassHover(code: String) {
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 22,
+            description = "abstract generic class",
+            expectedTitle = "Class",
+            expectedContent = "abstract class AbstractDataProcessor",
+        )
+    }
+
+    private suspend fun testLoggerFieldHover(code: String) {
+        testHoverAt(
+            code = code,
+            line = 1,
+            character = 42,
+            description = "logger field",
+            expectedTitle = "Field",
+            expectedContent = "logger",
+        )
+    }
+
+    private suspend fun testConstructorHover(code: String) {
+        testHoverAt(
+            code = code,
+            line = 4,
+            character = 14,
+            description = "protected constructor",
+            expectedTitle = "Constructor",
+            expectedContent = "AbstractDataProcessor()",
+        )
+    }
+
+    private suspend fun testAbstractMethodHover(code: String) {
+        testHoverAt(
+            code = code,
+            line = 8,
+            character = 15,
+            description = "abstract method",
+            expectedTitle = "Method",
+            expectedContent = "processInternal",
+        )
+    }
+
+    private suspend fun testStaticInnerClassHover(code: String) {
+        testHoverAt(
+            code = code,
+            line = 19,
+            character = 22,
+            description = "static inner exception class",
+            expectedTitle = "Inner Class",
+            expectedContent = "AbstractDataProcessor.ProcessingException",
+        )
+    }
+}

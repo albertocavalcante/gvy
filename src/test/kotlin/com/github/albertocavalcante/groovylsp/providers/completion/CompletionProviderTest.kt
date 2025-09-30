@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,7 +13,7 @@ class CompletionProviderTest {
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
     }
 
     @Test

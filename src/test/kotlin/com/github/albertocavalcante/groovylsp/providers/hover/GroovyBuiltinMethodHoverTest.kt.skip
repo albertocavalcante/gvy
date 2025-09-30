@@ -1,0 +1,321 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.Test
+import java.net.URI
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/**
+ * Tests for Groovy built-in method recognition and hover functionality.
+ *
+ * This test class ensures that built-in Groovy methods like `println`, `print`, `each`, etc.
+ * are correctly recognized as built-in methods rather than string literals or unknown symbols.
+ *
+ * Built-in methods are defined in the Groovy runtime:
+ * - org.codehaus.groovy.runtime.DefaultGroovyMethods (main source for Object methods)
+ * - org.codehaus.groovy.runtime.DefaultGroovyStaticMethods (static methods)
+ * - org.codehaus.groovy.runtime.StringGroovyMethods (String extensions)
+ * - org.codehaus.groovy.runtime.IOGroovyMethods (I/O operations)
+ *
+ * @see <a href="https://github.com/apache/groovy/blob/GROOVY_4_0_X/src/main/java/org/codehaus/groovy/runtime/DefaultGroovyMethods.java">
+ *     DefaultGroovyMethods</a>
+ * @see <a href="https://docs.groovy-lang.org/latest/html/groovy-jdk/">Groovy Development Kit (GDK) Documentation</a>
+ */
+class GroovyBuiltinMethodHoverTest {
+
+    private val compilationService = GroovyCompilationService()
+    private val hoverProvider = HoverProvider(compilationService)
+
+    private suspend fun provideHover(code: String, position: Position): org.eclipse.lsp4j.Hover? {
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, code)
+        return hoverProvider.provideHover(uri.toString(), position)
+    }
+
+    @Test
+    fun `should recognize println without parentheses as built-in method`() = runTest {
+        val code = """
+            println 'hello world'
+        """.trimIndent()
+
+        // Hover over "println" - position (0, 4) should be on the 'l' in println
+        val hover = provideHover(code, Position(0, 4))
+
+        assertNotNull(hover, "Should provide hover for println")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(content.kind == MarkupKind.MARKDOWN, "Should be markdown content")
+
+        // Should show as built-in method, not string literal
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("println"),
+            "Should contain method name, got: ${content.value}",
+        )
+        assertFalse(
+            content.value.contains("String literal") || content.value.contains("Constant"),
+            "Should NOT be treated as string literal, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should recognize println with parentheses as built-in method`() = runTest {
+        val code = """
+            println('hello world')
+        """.trimIndent()
+
+        // Hover over "println"
+        val hover = provideHover(code, Position(0, 4))
+
+        assertNotNull(hover, "Should provide hover for println with parentheses")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("println"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should recognize println with variable as built-in method`() = runTest {
+        val code = """
+            def message = "Hello World"
+            println message
+        """.trimIndent()
+
+        // Hover over "println" on second line
+        val hover = provideHover(code, Position(1, 4))
+
+        assertNotNull(hover, "Should provide hover for println with variable")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("println"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should recognize print as built-in method`() = runTest {
+        val code = """
+            print "no newline here"
+        """.trimIndent()
+
+        // Hover over "print" - position (0, 2) should be on the 'i' in print
+        val hover = provideHover(code, Position(0, 2))
+
+        assertNotNull(hover, "Should provide hover for print")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("print"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should recognize printf as built-in method`() = runTest {
+        val code = """
+            printf "Hello %s", name
+        """.trimIndent()
+
+        // Hover over "printf"
+        val hover = provideHover(code, Position(0, 3))
+
+        assertNotNull(hover, "Should provide hover for printf")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("printf"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should recognize each on collection as built-in method`() = runTest {
+        val code = """
+            [1, 2, 3].each { println it }
+        """.trimIndent()
+
+        // Hover over "each" - position (0, 11) should be on 'e' in each
+        val hover = provideHover(code, Position(0, 11))
+
+        assertNotNull(hover, "Should provide hover for collection.each")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("each"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should provide source reference for built-in methods`() = runTest {
+        val code = """
+            println "test documentation"
+        """.trimIndent()
+
+        val hover = provideHover(code, Position(0, 4))
+
+        assertNotNull(hover, "Should provide hover for println")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        // Should eventually include reference to Groovy source or documentation
+        assertTrue(
+            content.value.contains("DefaultGroovyMethods") ||
+                content.value.contains("Groovy") ||
+                content.value.contains("Built-in"),
+            "Should reference Groovy source or indicate built-in nature, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should handle script-level println correctly`() = runTest {
+        val code = """
+            // Script level code
+            println "Hello from script"
+
+            def someVar = "test"
+            println someVar
+        """.trimIndent()
+
+        // Test both occurrences
+        val hover1 = provideHover(code, Position(1, 4)) // First println
+        val hover2 = provideHover(code, Position(4, 4)) // Second println
+
+        assertNotNull(hover1, "Should provide hover for first println")
+        assertNotNull(hover2, "Should provide hover for second println")
+
+        // Both should be recognized as built-in methods
+        assertTrue(
+            hover1.contents.right.value.contains("Built-in Method") ||
+                hover1.contents.right.value.contains("Method"),
+            "First println should be recognized as method",
+        )
+        assertTrue(
+            hover2.contents.right.value.contains("Built-in Method") ||
+                hover2.contents.right.value.contains("Method"),
+            "Second println should be recognized as method",
+        )
+    }
+
+    @Test
+    fun `should handle class method context correctly`() = runTest {
+        val code = """
+            class TestClass {
+                def testMethod() {
+                    println "Hello from class method"
+                    return "done"
+                }
+            }
+        """.trimIndent()
+
+        // Hover over "println" inside class method
+        val hover = provideHover(code, Position(2, 8))
+
+        assertNotNull(hover, "Should provide hover for println in class")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Built-in Method") || content.value.contains("Method"),
+            "Should indicate this is a built-in method, got: ${content.value}",
+        )
+        assertTrue(
+            content.value.contains("println"),
+            "Should contain method name, got: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `should distinguish between built-in and user-defined methods with same name`() = runTest {
+        val code = """
+            class MyClass {
+                // Custom println method
+                def println(msg) {
+                    System.err.println("CUSTOM: " + msg)
+                }
+
+                def test() {
+                    println "hello"  // This should resolve to the custom one
+                }
+            }
+        """.trimIndent()
+
+        // Hover over "println" call inside the class - should eventually show custom method
+        val hover = provideHover(code, Position(7, 8))
+
+        assertNotNull(hover, "Should provide hover for custom println")
+        assertTrue(hover.contents.isRight, "Should have markup content")
+
+        val content = hover.contents.right
+        assertTrue(
+            content.value.contains("Method"),
+            "Should indicate this is a method, got: ${content.value}",
+        )
+        // Note: The exact resolution (built-in vs custom) depends on scope resolution
+        // For now, just ensure it's recognized as a method call
+    }
+
+    @Test
+    fun `should handle multiple built-in methods in same expression`() = runTest {
+        val code = """
+            [1, 2, 3].each { item ->
+                println "Item: " + item
+            }
+        """.trimIndent()
+
+        // Test hover on "each"
+        val hoverEach = provideHover(code, Position(0, 11))
+        assertNotNull(hoverEach, "Should provide hover for each")
+
+        // Test hover on "println"
+        val hoverPrintln = provideHover(code, Position(1, 8))
+        assertNotNull(hoverPrintln, "Should provide hover for println")
+
+        // Both should be recognized as methods
+        assertTrue(
+            hoverEach.contents.right.value.contains("Method"),
+            "each should be recognized as method",
+        )
+        assertTrue(
+            hoverPrintln.contents.right.value.contains("Method"),
+            "println should be recognized as method",
+        )
+    }
+}

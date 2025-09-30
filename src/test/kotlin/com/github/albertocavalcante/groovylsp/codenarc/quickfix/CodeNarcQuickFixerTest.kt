@@ -14,7 +14,9 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -74,7 +76,7 @@ class CodeNarcQuickFixerTest {
         val fixer = TestQuickFixer()
         val diagnostics = listOf(
             createTestDiagnostic("TestRule", line = 1),
-            createTestDiagnostic("TestRule", line = 2)
+            createTestDiagnostic("TestRule", line = 2),
         )
         val context = createTestContext()
 
@@ -86,27 +88,23 @@ class CodeNarcQuickFixerTest {
         assertEquals(diagnostics, action.diagnostics)
     }
 
-    private fun createTestDiagnostic(ruleName: String, line: Int = 0): Diagnostic {
-        return Diagnostic().apply {
-            range = Range(Position(line, 0), Position(line, 10))
-            severity = DiagnosticSeverity.Warning
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(ruleName)
-            source = "codenarc"
-            message = "Test message for $ruleName"
-        }
+    private fun createTestDiagnostic(ruleName: String, line: Int = 0): Diagnostic = Diagnostic().apply {
+        range = Range(Position(line, 0), Position(line, 10))
+        severity = DiagnosticSeverity.Warning
+        code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(ruleName)
+        source = "codenarc"
+        message = "Test message for $ruleName"
     }
 
-    private fun createTestContext(): FixContext {
-        return FixContext(
-            uri = "file:///test.groovy",
-            document = TextDocumentIdentifier("file:///test.groovy"),
-            sourceLines = listOf("def x = 1;", "def y = 2;"),
-            compilationUnit = null,
-            astCache = null,
-            formattingConfig = FormattingConfig(),
-            scope = FixScope.LINE
-        )
-    }
+    private fun createTestContext(): FixContext = FixContext(
+        uri = "file:///test.groovy",
+        document = TextDocumentIdentifier("file:///test.groovy"),
+        sourceLines = listOf("def x = 1;", "def y = 2;"),
+        compilationUnit = null,
+        astCache = null,
+        formattingConfig = FormattingConfig(),
+        scope = FixScope.LINE,
+    )
 
     // Test implementation of CodeNarcQuickFixer
     private class TestQuickFixer : CodeNarcQuickFixer {
@@ -114,12 +112,10 @@ class CodeNarcQuickFixerTest {
             ruleName = "TestRule",
             category = FixerCategory.FORMATTING,
             priority = 1,
-            isPreferred = true
+            isPreferred = true,
         )
 
-        override fun canFix(diagnostic: Diagnostic, context: FixContext): Boolean {
-            return diagnostic.code.left == "TestRule"
-        }
+        override fun canFix(diagnostic: Diagnostic, context: FixContext): Boolean = diagnostic.code.left == "TestRule"
 
         override fun computeAction(diagnostic: Diagnostic, context: FixContext): CodeAction? {
             if (!canFix(diagnostic, context)) return null

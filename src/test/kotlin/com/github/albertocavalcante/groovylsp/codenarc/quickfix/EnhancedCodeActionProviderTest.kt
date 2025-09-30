@@ -40,8 +40,8 @@ class EnhancedCodeActionProviderTest {
         val params = createCodeActionParams(
             listOf(
                 createDiagnostic("UnnecessarySemicolon", line = 0),
-                createDiagnostic("TrailingWhitespace", line = 1)
-            )
+                createDiagnostic("TrailingWhitespace", line = 1),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -68,8 +68,8 @@ class EnhancedCodeActionProviderTest {
         val params = createCodeActionParams(
             listOf(
                 createDiagnostic("UnnecessarySemicolon", source = "eslint"),
-                createDiagnostic("TrailingWhitespace", source = "other")
-            )
+                createDiagnostic("TrailingWhitespace", source = "other"),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -90,8 +90,8 @@ class EnhancedCodeActionProviderTest {
     fun `should handle unknown CodeNarc rules`() {
         val params = createCodeActionParams(
             listOf(
-                createDiagnostic("UnknownRule")
-            )
+                createDiagnostic("UnknownRule"),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -107,8 +107,8 @@ class EnhancedCodeActionProviderTest {
 
         val params = createCodeActionParams(
             listOf(
-                createDiagnostic("UnnecessarySemicolon", line = 0)
-            )
+                createDiagnostic("UnnecessarySemicolon", line = 0),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -126,8 +126,8 @@ class EnhancedCodeActionProviderTest {
             listOf(
                 createDiagnostic("UnnecessarySemicolon", line = 0),
                 createDiagnostic("UnnecessarySemicolon", line = 1),
-                createDiagnostic("TrailingWhitespace", line = 2)
-            )
+                createDiagnostic("TrailingWhitespace", line = 2),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -144,8 +144,8 @@ class EnhancedCodeActionProviderTest {
     fun `should not create fix-all action when no CodeNarc diagnostics exist`() {
         val params = createCodeActionParams(
             listOf(
-                createDiagnostic("SomeRule", source = "eslint")
-            )
+                createDiagnostic("SomeRule", source = "eslint"),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -158,7 +158,7 @@ class EnhancedCodeActionProviderTest {
     fun `should handle diagnostics with missing line in source`() {
         val params = createCodeActionParams(
             diagnostics = listOf(createDiagnostic("UnnecessarySemicolon", line = 10)), // Line out of bounds
-            sourceLines = listOf("def x = 1;") // Only one line
+            sourceLines = listOf("def x = 1;"), // Only one line
         )
 
         val actions = provider.provideCodeActions(params)
@@ -172,8 +172,8 @@ class EnhancedCodeActionProviderTest {
         val params = createCodeActionParams(
             listOf(
                 createDiagnostic("TrailingWhitespace", line = 0),
-                createDiagnostic("UnnecessarySemicolon", line = 1)
-            )
+                createDiagnostic("UnnecessarySemicolon", line = 1),
+            ),
         )
 
         val actions = provider.provideCodeActions(params)
@@ -188,7 +188,7 @@ class EnhancedCodeActionProviderTest {
 
     private fun createCodeActionParams(
         diagnostics: List<Diagnostic>,
-        sourceLines: List<String> = listOf("def x = 1; ", "def y = 2  ")
+        sourceLines: List<String> = listOf("def x = 1; ", "def y = 2  "),
     ): CodeActionParams {
         // Create a test file for the provider to read
         val testFile = createTempFile(sourceLines)
@@ -209,17 +209,12 @@ class EnhancedCodeActionProviderTest {
         return tempFile
     }
 
-    private fun createDiagnostic(
-        rule: String,
-        line: Int = 0,
-        source: String = "codenarc"
-    ): Diagnostic {
-        return Diagnostic().apply {
+    private fun createDiagnostic(rule: String, line: Int = 0, source: String = "codenarc"): Diagnostic =
+        Diagnostic().apply {
             range = Range(Position(line, 0), Position(line, 10))
             severity = DiagnosticSeverity.Warning
             code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(rule)
             this.source = source
             message = "Test message for $rule"
         }
-    }
 }

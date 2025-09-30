@@ -7,7 +7,10 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
@@ -146,14 +149,14 @@ class TrailingWhitespaceFixerTest {
         val diagnostics = listOf(
             createDiagnostic("TrailingWhitespace", line = 0),
             createDiagnostic("TrailingWhitespace", line = 2),
-            createDiagnostic("UnnecessarySemicolon", line = 1) // Should be ignored
+            createDiagnostic("UnnecessarySemicolon", line = 1), // Should be ignored
         )
         val context = createContext(
             listOf(
                 "def x = 1  ",
                 "def y = 2;",
-                "def z = 3\t\t"
-            )
+                "def z = 3\t\t",
+            ),
         )
 
         val action = fixer.computeFixAllAction(diagnostics, context)
@@ -201,25 +204,21 @@ class TrailingWhitespaceFixerTest {
         assertNull(action)
     }
 
-    private fun createDiagnostic(rule: String, line: Int = 0): Diagnostic {
-        return Diagnostic().apply {
-            range = Range(Position(line, 0), Position(line, 10))
-            severity = DiagnosticSeverity.Information
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(rule)
-            source = "codenarc"
-            message = "Line contains trailing whitespace"
-        }
+    private fun createDiagnostic(rule: String, line: Int = 0): Diagnostic = Diagnostic().apply {
+        range = Range(Position(line, 0), Position(line, 10))
+        severity = DiagnosticSeverity.Information
+        code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(rule)
+        source = "codenarc"
+        message = "Line contains trailing whitespace"
     }
 
-    private fun createContext(sourceLines: List<String>): FixContext {
-        return FixContext(
-            uri = "file:///test.groovy",
-            document = TextDocumentIdentifier("file:///test.groovy"),
-            sourceLines = sourceLines,
-            compilationUnit = null,
-            astCache = null,
-            formattingConfig = FormattingConfig(),
-            scope = FixScope.LINE
-        )
-    }
+    private fun createContext(sourceLines: List<String>): FixContext = FixContext(
+        uri = "file:///test.groovy",
+        document = TextDocumentIdentifier("file:///test.groovy"),
+        sourceLines = sourceLines,
+        compilationUnit = null,
+        astCache = null,
+        formattingConfig = FormattingConfig(),
+        scope = FixScope.LINE,
+    )
 }

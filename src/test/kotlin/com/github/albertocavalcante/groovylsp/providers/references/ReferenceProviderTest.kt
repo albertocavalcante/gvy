@@ -1,5 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.references
-
+import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -18,7 +18,7 @@ class ReferenceProviderTest {
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
         referenceProvider = ReferenceProvider(compilationService)
     }
 

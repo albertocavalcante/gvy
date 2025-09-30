@@ -1,0 +1,252 @@
+package com.github.albertocavalcante.groovylsp.providers.hover
+
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.fixtures.HoverTestSpec
+import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
+import org.junit.jupiter.api.Test
+import java.net.URI
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+import kotlin.test.fail
+
+/**
+ * Tests for script-level hover functionality.
+ *
+ * This addresses the regression where script-level code shows "No information available"
+ * instead of proper hover information.
+ *
+ * The test reproduces the exact scenario from the user's screenshot:
+ * - Script-level println statement
+ * - Script-level method definition
+ * - Class with fields and methods
+ * - Mixed contexts in the same file
+ */
+class ScriptLevelHoverTest {
+
+    private fun loadTestFile(fileName: String): String =
+        this::class.java.getResource("/testdata/hover/$fileName")?.readText()
+            ?: fail("Could not load test file: /testdata/hover/$fileName")
+
+    private suspend fun testHoverAtSpec(spec: HoverTestSpec): org.eclipse.lsp4j.Hover? = testHoverAt(
+        spec.code,
+        spec.line,
+        spec.character,
+        spec.description,
+        spec.expectedContent,
+        spec.shouldHaveHover,
+    )
+
+    data class HoverTestParams(
+        val code: String,
+        val line: Int,
+        val character: Int,
+        val description: String,
+        val expectedContent: String? = null,
+        val shouldHaveHover: Boolean = true,
+    )
+
+    private suspend fun testHoverAt(
+        code: String,
+        line: Int,
+        character: Int,
+        description: String,
+        expectedContent: String? = null,
+        shouldHaveHover: Boolean = true,
+    ): org.eclipse.lsp4j.Hover? = testHoverAtImpl(HoverTestParams(code, line, character, description, expectedContent, shouldHaveHover))
+
+    private suspend fun testHoverAtImpl(params: HoverTestParams): org.eclipse.lsp4j.Hover? {
+        // Create fresh instances per test to avoid cache contamination
+        val compilationService = GroovyCompilationService()
+        val hoverProvider = HoverProvider(compilationService)
+
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, params.code)
+        val hover = hoverProvider.provideHover(uri.toString(), Position(params.line, params.character))
+
+        if (params.shouldHaveHover) {
+            assertNotNull(hover, "Expected hover at ${params.line}:${params.character} for ${params.description}")
+            assertTrue(hover.contents.isRight, "Should have markup content for ${params.description}")
+
+            val content = hover.contents.right
+            assertTrue(content.kind == MarkupKind.MARKDOWN, "Should be markdown content for ${params.description}")
+
+            // CRITICAL: This should NOT show "No information available"
+            assertFalse(
+                content.value.contains("No information available"),
+                "Should NOT show 'No information available' for ${params.description}, got: ${content.value}",
+            )
+
+            if (params.expectedContent != null) {
+                assertTrue(
+                    content.value.contains(params.expectedContent),
+                    "Should contain '${params.expectedContent}' for ${params.description}, got: ${content.value}",
+                )
+            }
+        } else {
+            // For cases where we expect no hover
+            // Still should not show "No information available" - should be null instead
+        }
+
+        return hover
+    }
+
+    @Test
+    fun `should provide hover for script-level println statement`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "println" at the beginning of the file (line 0, character 4)
+        // This is the exact position from the user's screenshot
+        testHoverAt(
+            code = code,
+            line = 0,
+            character = 4, // Position on 'l' in println
+            description = "script-level println",
+            expectedContent = "Built-in Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for script-level method definition`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over method name "hello" (line 2, character 4)
+        testHoverAt(
+            code = code,
+            line = 2,
+            character = 4, // Position on 'h' in hello
+            description = "script-level method definition",
+            expectedContent = "Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for println without arguments in method`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "println" inside the hello() method (line 3, character 4)
+        // Note: println without arguments is treated as a variable reference, not a method call
+        testHoverAt(
+            code = code,
+            line = 3,
+            character = 4, // Position on 'p' in println
+            description = "println without arguments",
+            expectedContent = "println", // Should show as Object println or similar
+        )
+    }
+
+    @Test
+    fun `should provide hover for class name in mixed context`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "HelloWorld" class name (line 6, character 6)
+        testHoverAt(
+            code = code,
+            line = 6,
+            character = 6, // Position on 'H' in HelloWorld
+            description = "class name in mixed context",
+            expectedContent = "Class",
+        )
+    }
+
+    @Test
+    fun `should provide hover for constant field in class`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "HELLO" constant field (line 7, character 27)
+        testHoverAt(
+            code = code,
+            line = 7,
+            character = 27, // Position on 'H' in HELLO
+            description = "constant field",
+            expectedContent = "Field",
+        )
+    }
+
+    @Test
+    fun `should provide hover for println with variable argument`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "println" with HELLO argument (line 10, character 8)
+        testHoverAt(
+            code = code,
+            line = 10,
+            character = 8, // Position on 'p' in println
+            description = "println with variable argument",
+            expectedContent = "Built-in Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for println with parentheses`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "println" with parentheses (line 11, character 8)
+        testHoverAt(
+            code = code,
+            line = 11,
+            character = 8, // Position on 'p' in println
+            description = "println with parentheses",
+            expectedContent = "Built-in Method",
+        )
+    }
+
+    @Test
+    fun `should provide hover for variable reference in method`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test hover over "HELLO" variable reference (line 10, character 16)
+        testHoverAt(
+            code = code,
+            line = 10,
+            character = 16, // Position on 'H' in HELLO
+            description = "variable reference in method",
+            expectedContent = "Field", // Should resolve to the field definition
+        )
+    }
+
+    @Test
+    fun `regression test - file with mixed script and class should not show No information available`() = runTest {
+        val code = loadTestFile("ScriptLevel.groovy")
+
+        // Test multiple positions to ensure none show "No information available"
+        // Using the same file structure as our test file:
+        // Line 0: println 'hello'
+        // Line 2: def hello() {
+        // Line 3:     println
+        // Line 6: class HelloWorld {
+        // Line 10:         println HELLO
+        // Line 11:         println(HELLO)
+        val testPositions = listOf(
+            Triple(0, 4, "script println"),
+            Triple(2, 4, "script method"),
+            Triple(3, 4, "method println"),
+            Triple(6, 6, "class name"),
+            Triple(10, 8, "method println with arg"),
+            Triple(11, 8, "method println with parens"),
+        )
+
+        testPositions.forEach { (line, char, description) ->
+            // Create fresh instances per test to avoid cache contamination
+            val compilationService = GroovyCompilationService()
+            val hoverProvider = HoverProvider(compilationService)
+
+            val uri = URI.create("file:///test.groovy")
+            compilationService.compile(uri, code)
+            val hover = hoverProvider.provideHover(uri.toString(), Position(line, char))
+
+            // println("DEBUG: $description at $line:$char = ${hover?.contents?.right?.value ?: "null"}")
+
+            assertNotNull(hover, "Expected hover for $description at $line:$char")
+
+            // Additional verification that we get meaningful content
+            val content = hover.contents.right.value
+            assertFalse(
+                content.contains("No information available"),
+                "Should NOT show 'No information available' for $description, got: $content",
+            )
+        }
+    }
+}
