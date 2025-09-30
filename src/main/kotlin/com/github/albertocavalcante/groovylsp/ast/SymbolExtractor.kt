@@ -7,6 +7,11 @@ import java.lang.reflect.Modifier
 /**
  * Extracts symbols from Groovy AST for IDE features like completion and go-to-definition.
  * This is the core component that enables real language server functionality.
+ *
+ * TODO: Coordinate Conversion Strategy
+ * This file now uses CoordinateSystem for all Groovy->LSP conversions.
+ * Future improvement: Make Symbol classes use CoordinateSystem.LspPosition
+ * directly instead of separate line/column fields.
  */
 object SymbolExtractor {
 
@@ -17,12 +22,13 @@ object SymbolExtractor {
         if (ast !is ModuleNode) return emptyList()
 
         return ast.classes.map { classNode ->
+            val lspPos = CoordinateSystem.groovyToLsp(classNode.lineNumber, classNode.columnNumber)
             ClassSymbol(
                 name = classNode.nameWithoutPackage,
                 packageName = classNode.packageName,
                 astNode = classNode,
-                line = classNode.lineNumber - 1, // Convert to 0-based
-                column = classNode.columnNumber - 1,
+                line = lspPos.line,
+                column = lspPos.character,
             )
         }
     }
@@ -41,12 +47,13 @@ object SymbolExtractor {
                 )
             }
 
+            val lspPos = CoordinateSystem.groovyToLsp(methodNode.lineNumber, methodNode.columnNumber)
             MethodSymbol(
                 name = methodNode.name,
                 returnType = methodNode.returnType.nameWithoutPackage,
                 parameters = parameters,
-                line = methodNode.lineNumber - 1,
-                column = methodNode.columnNumber - 1,
+                line = lspPos.line,
+                column = lspPos.character,
             )
         }
     }
@@ -58,6 +65,7 @@ object SymbolExtractor {
         if (classNode !is ClassNode) return emptyList()
 
         return classNode.fields.map { fieldNode ->
+            val lspPos = CoordinateSystem.groovyToLsp(fieldNode.lineNumber, fieldNode.columnNumber)
             FieldSymbol(
                 name = fieldNode.name,
                 type = fieldNode.type.nameWithoutPackage,
@@ -66,8 +74,8 @@ object SymbolExtractor {
                 isProtected = Modifier.isProtected(fieldNode.modifiers),
                 isStatic = Modifier.isStatic(fieldNode.modifiers),
                 isFinal = Modifier.isFinal(fieldNode.modifiers),
-                line = fieldNode.lineNumber - 1,
-                column = fieldNode.columnNumber - 1,
+                line = lspPos.line,
+                column = lspPos.character,
             )
         }
     }
@@ -96,22 +104,24 @@ object SymbolExtractor {
         }
         val simpleClassName = className.substringAfterLast('.')
 
+        val lspLine = CoordinateSystem.groovyToLsp(importNode.lineNumber, 1).line
         ImportSymbol(
             packageName = packageName,
             className = simpleClassName,
             isStarImport = false,
             isStatic = false,
-            line = importNode.lineNumber - 1,
+            line = lspLine,
         )
     }
 
     private fun processStarImports(ast: ModuleNode): List<ImportSymbol> = ast.starImports.map { importNode ->
+        val lspLine = CoordinateSystem.groovyToLsp(importNode.lineNumber, 1).line
         ImportSymbol(
             packageName = importNode.packageName.trimEnd('.'),
             className = null,
             isStarImport = true,
             isStatic = false,
-            line = importNode.lineNumber - 1,
+            line = lspLine,
         )
     }
 
@@ -123,23 +133,25 @@ object SymbolExtractor {
             ""
         }
 
+        val lspLine = CoordinateSystem.groovyToLsp(importNode.lineNumber, 1).line
         ImportSymbol(
             packageName = packageName,
             className = className.substringAfterLast('.'),
             isStarImport = false,
             isStatic = true,
-            line = importNode.lineNumber - 1,
+            line = lspLine,
         )
     }
 
     private fun processStaticStarImports(ast: ModuleNode): List<ImportSymbol> =
         ast.staticStarImports.map { (className, importNode) ->
+            val lspLine = CoordinateSystem.groovyToLsp(importNode.lineNumber, 1).line
             ImportSymbol(
                 packageName = className.trimEnd('.'),
                 className = null,
                 isStarImport = true,
                 isStatic = true,
-                line = importNode.lineNumber - 1,
+                line = lspLine,
             )
         }
 
@@ -172,6 +184,8 @@ object SymbolExtractor {
 }
 
 // Data classes for symbol information
+// TODO: Consider using CoordinateSystem.LspPosition instead of separate line/column fields
+// This would make the coordinate system explicit in the type system
 data class ClassSymbol(val name: String, val packageName: String?, val astNode: Any, val line: Int, val column: Int)
 
 data class MethodSymbol(

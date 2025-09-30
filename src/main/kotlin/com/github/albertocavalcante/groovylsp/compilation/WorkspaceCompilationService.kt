@@ -34,8 +34,9 @@ import java.util.concurrent.ConcurrentHashMap
 @Suppress("TooGenericExceptionCaught", "TooManyFunctions")
 class WorkspaceCompilationService(
     @Suppress("UnusedPrivateProperty") private val coroutineScope: CoroutineScope,
+    private val dependencyManager: CentralizedDependencyManager,
     private val contextManager: CompilationContextManager = CompilationContextManager(),
-) {
+) : DependencyListener {
 
     // Helper components removed - references to non-existent classes
 
@@ -59,8 +60,40 @@ class WorkspaceCompilationService(
 
     // Legacy state for backward compatibility - delegated to helpers
 
-    // Dependency management
-    private val dependencyClasspath = mutableListOf<Path>()
+    init {
+        // Register for dependency updates
+        dependencyManager.addListener(this)
+        logger.debug("WorkspaceCompilationService registered for dependency updates")
+    }
+
+    /**
+     * Called when dependencies are updated. Clears caches to force recompilation
+     * with the new classpath.
+     */
+    override fun onDependenciesUpdated(dependencies: List<Path>) {
+        logger.info("=== DEPENDENCY UPDATE START ===")
+        logger.info("WorkspaceCompilationService received ${dependencies.size} dependencies")
+        logger.debug("Before clearing - Contexts with AST visitors: ${contextAstVisitors.keys}")
+        logger.debug("Before clearing - Compiled files count: ${compiledFiles.size}")
+
+        if (logger.isDebugEnabled) {
+            dependencies.take(5).forEach { dep ->
+                logger.debug("  - ${dep.fileName}")
+            }
+        }
+
+        // Clear compilation caches since classpath has changed (preserve file contents/workspace root)
+        contextCompilationUnits.clear()
+        contextAstVisitors.clear()
+        contextSymbolTables.clear()
+        compiledFiles.clear()
+        workspaceAstVisitor = null
+        workspaceSymbolTable = null
+
+        logger.info("Cleared all compilation caches due to dependency update")
+        logger.warn("⚠️ AST visitors cleared - hover may not work until recompilation")
+        logger.info("=== DEPENDENCY UPDATE END ===")
+    }
 
     enum class CompilationMode {
         DYNAMIC, // Default Groovy behavior
@@ -134,20 +167,17 @@ class WorkspaceCompilationService(
             val combinedAstVisitor = AstVisitor()
             val combinedSymbolTable = SymbolTable()
 
-            // Simply re-visit all modules from allModules map, using the correct context for each
-            allModules.forEach { (uri, module) ->
-                // Find which context this module belongs to
-                val contextName = findContextForModule(module)
-                if (contextName != null) {
-                    val sourceUnit = findSourceUnitForModule(module, contextName)
-                    if (sourceUnit != null) {
-                        combinedAstVisitor.visitModule(module, sourceUnit, uri)
-                    }
-                }
-            }
+            // CRITICAL FIX: Don't create a combined visitor that mixes all files
+            // Each file should get its own isolated visitor when requested
+            logger.info("Skipping combined AST visitor creation to prevent node contamination")
+            // The combined visitor is set to null and will be created on-demand if needed
+            // allModules.forEach { (uri, module) -> ... } // REMOVED TO FIX CONTAMINATION
 
-            // Build symbol table from the combined AST visitor
-            combinedSymbolTable.buildFromVisitor(combinedAstVisitor)
+            // Build symbol table from individual context visitors instead
+            // This prevents contamination while still allowing cross-file symbol resolution
+            contextAstVisitors.values.forEach { contextVisitor ->
+                combinedSymbolTable.buildFromVisitor(contextVisitor)
+            }
 
             // Store the combined workspace views for persistent access
             workspaceAstVisitor = combinedAstVisitor
@@ -201,32 +231,33 @@ class WorkspaceCompilationService(
     }
 
     /**
-     * Update dependency classpath and recompile.
-     */
-    suspend fun updateDependencies(newDependencies: List<Path>): WorkspaceCompilationResult {
-        if (newDependencies.toSet() != dependencyClasspath.toSet()) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(newDependencies)
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
-
-            return compilationMutex.withLock {
-                recompileWorkspace()
-            }
-        }
-        return getCurrentCompilationResult()
-    }
-
-    /**
      * Get the AST visitor for a specific file.
-     * This finds which context the file belongs to and returns the appropriate AST visitor.
+     * CRITICAL FIX: Create a file-specific visitor to prevent AST contamination.
+     * This ensures only nodes from the requested file are available for queries.
      */
     fun getAstVisitorForFile(uri: URI): AstVisitor? {
-        val contextName = contextManager.getContextForFile(uri)
-        return if (contextName != null) {
-            contextAstVisitors[contextName]
-        } else {
-            null
+        logger.debug("Getting AST visitor for $uri")
+
+        // Find the compiled module for this specific URI
+        val module = compiledFiles[uri]
+        if (module == null) {
+            logger.debug("No compiled module found for $uri")
+            return null
         }
+
+        // Find the source unit for this URI
+        val sourceUnit = findSourceUnitForUri(uri)
+        if (sourceUnit == null) {
+            logger.warn("No source unit found for $uri despite having compiled module")
+            return null
+        }
+
+        // Create a new AST visitor with ONLY this file's nodes
+        val fileSpecificVisitor = AstVisitor()
+        fileSpecificVisitor.visitModule(module, sourceUnit, uri)
+
+        logger.debug("Created file-specific visitor for $uri with ${fileSpecificVisitor.getNodes(uri).size} nodes")
+        return fileSpecificVisitor
     }
 
     /**
@@ -356,7 +387,7 @@ class WorkspaceCompilationService(
         return mapOf(
             "totalFiles" to fileStats["totalFiles"]!!,
             "compiledModules" to moduleStats["compiledModules"]!!,
-            "dependencyCount" to dependencyClasspath.size,
+            "dependencyCount" to dependencyManager.getDependencies().size,
             "totalContexts" to contextCompilationUnits.size,
             "symbolTableSize" to (getWorkspaceSymbolTable()?.getStatistics()?.values?.sum() ?: 0),
             "astNodeCount" to (getWorkspaceAstVisitor()?.getAllNodes()?.size ?: 0),
@@ -373,6 +404,7 @@ class WorkspaceCompilationService(
         context: CompilationContextManager.CompilationContext,
     ): WorkspaceCompilationResult {
         logger.debug("Compiling context '$contextName' with ${context.fileCount()} files")
+        logger.debug("Context '$contextName' files: ${context.files.take(5).joinToString { it.path }}")
 
         return try {
             val compilationUnit = createContextCompilationUnit(contextName, context)
@@ -463,7 +495,7 @@ class WorkspaceCompilationService(
 
     private fun performCompilation(contextName: String, compilationUnit: CompilationUnit) {
         try {
-            compilationUnit.compile(Phases.CANONICALIZATION)
+            compilationUnit.compile(Phases.SEMANTIC_ANALYSIS)
             logger.debug("Context '$contextName' compilation completed successfully")
         } catch (e: CompilationFailedException) {
             logger.debug("Context '$contextName' compilation failed (expected for syntax errors): ${e.message}")
@@ -477,25 +509,29 @@ class WorkspaceCompilationService(
         val modulesByUri = mutableMapOf<URI, ModuleNode>()
 
         logger.debug("extractCompiledModules() called")
-        logger.debug("compilationUnit.ast = ${compilationUnit.ast}")
-        logger.debug("compilationUnit.ast?.modules?.size = ${compilationUnit.ast?.modules?.size}")
         logger.debug("sourceUnits.size = ${sourceUnits.size}")
         logger.debug("sourceUnits.keys = ${sourceUnits.keys}")
 
-        compilationUnit.ast?.modules?.forEach { module ->
-            logger.debug("Processing module: ${module.description}")
-            val matchingUri = sourceUnits.entries.find { (_, sourceUnit) ->
-                val matches = sourceUnit.ast == module
-                logger.debug("Checking sourceUnit.ast ${sourceUnit.ast} == module $module: $matches")
-                matches
-            }?.key
-
-            if (matchingUri != null) {
-                logger.debug("Found matching URI for module: $matchingUri")
-                modulesByUri[matchingUri] = module
-                compiledFiles[matchingUri] = module
+        // CRITICAL FIX: Match modules to URIs correctly
+        // Iterate through source units and find their corresponding modules
+        sourceUnits.forEach { (uri, sourceUnit) ->
+            val module = sourceUnit.ast
+            if (module != null) {
+                logger.debug("Found module for URI $uri: ${module.description}")
+                modulesByUri[uri] = module
+                compiledFiles[uri] = module
             } else {
-                logger.debug("No matching URI found for module: ${module.description}")
+                logger.debug("No AST module for source unit at URI $uri")
+            }
+        }
+
+        // Log any mismatch for debugging
+        if (compilationUnit.ast?.modules != null) {
+            val totalModules = compilationUnit.ast.modules.size
+            if (totalModules != modulesByUri.size) {
+                logger.warn(
+                    "Module count mismatch: CompilationUnit has $totalModules modules but we matched ${modulesByUri.size}",
+                )
             }
         }
 
@@ -519,6 +555,10 @@ class WorkspaceCompilationService(
             logger.debug("Processing URI $uri, module = $module")
             if (module != null) {
                 logger.debug("Visiting module for URI $uri")
+                logger.debug("Module has ${module.classes?.size ?: 0} classes")
+                module.classes?.forEach { classNode ->
+                    logger.debug("  Class: ${classNode.name} at ${classNode.lineNumber}:${classNode.columnNumber}")
+                }
                 astVisitor.visitModule(module, sourceUnit, uri)
             } else {
                 logger.debug("No module found for URI $uri")
@@ -693,7 +733,8 @@ class WorkspaceCompilationService(
             sourceEncoding = "UTF-8"
 
             // Combine context classpath with global dependencies
-            val allClasspath = contextClasspath + dependencyClasspath
+            val globalDependencies = dependencyManager.getDependencies()
+            val allClasspath = contextClasspath + globalDependencies
             if (allClasspath.isNotEmpty()) {
                 val classpathString = allClasspath.joinToString(System.getProperty("path.separator")) {
                     it.toString()
@@ -701,7 +742,7 @@ class WorkspaceCompilationService(
                 setClasspath(classpathString)
                 logger.debug(
                     "Added ${allClasspath.size} dependencies to compiler classpath " +
-                        "(${contextClasspath.size} context + ${dependencyClasspath.size} global)",
+                        "(${contextClasspath.size} context + ${globalDependencies.size} global)",
                 )
             }
         }

@@ -3,8 +3,10 @@ package com.github.albertocavalcante.groovylsp.ast
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.InnerClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PackageNode
@@ -12,17 +14,62 @@ import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.AnnotationConstantExpression
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.ArrayExpression
+import org.codehaus.groovy.ast.expr.AttributeExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.BitwiseNegationExpression
+import org.codehaus.groovy.ast.expr.BooleanExpression
+import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ClosureListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.ElvisOperatorExpression
+import org.codehaus.groovy.ast.expr.EmptyExpression
 import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.FieldExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.LambdaExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapEntryExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.MethodPointerExpression
+import org.codehaus.groovy.ast.expr.MethodReferenceExpression
+import org.codehaus.groovy.ast.expr.NamedArgumentListExpression
+import org.codehaus.groovy.ast.expr.NotExpression
+import org.codehaus.groovy.ast.expr.PostfixExpression
+import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
+import org.codehaus.groovy.ast.expr.TernaryExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.ast.expr.UnaryMinusExpression
+import org.codehaus.groovy.ast.expr.UnaryPlusExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.AssertStatement
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.BreakStatement
+import org.codehaus.groovy.ast.stmt.CaseStatement
+import org.codehaus.groovy.ast.stmt.CatchStatement
+import org.codehaus.groovy.ast.stmt.ContinueStatement
+import org.codehaus.groovy.ast.stmt.DoWhileStatement
+import org.codehaus.groovy.ast.stmt.EmptyStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.codehaus.groovy.ast.stmt.ForStatement
+import org.codehaus.groovy.ast.stmt.IfStatement
+import org.codehaus.groovy.ast.stmt.ReturnStatement
+import org.codehaus.groovy.ast.stmt.SwitchStatement
+import org.codehaus.groovy.ast.stmt.SynchronizedStatement
+import org.codehaus.groovy.ast.stmt.ThrowStatement
+import org.codehaus.groovy.ast.stmt.TryCatchStatement
+import org.codehaus.groovy.ast.stmt.WhileStatement
 /**
  * Kotlin-idiomatic extension functions for position-based AST operations.
  * Provides clean APIs for finding AST nodes at specific positions.
@@ -36,38 +83,20 @@ import org.codehaus.groovy.ast.expr.VariableExpression
  * - Consider splitting into multiple extension files by concern (position, definition, hover)
  */
 
-/**
- * Check if this AST node has invalid position information.
- */
-private fun ASTNode.hasInvalidPosition(): Boolean = lineNumber <= 0 ||
-    columnNumber <= 0 ||
-    lastLineNumber <= 0 ||
-    lastColumnNumber <= 0
+// Position validation moved to CoordinateSystem.isValidNodePosition()
+// This eliminates duplicate validation logic
 
 /**
  * Check if this AST node contains the given position.
- * Public API for tests and external usage.
+ * This extension function expects LSP coordinates (0-based).
+ *
+ * @param line LSP line number (0-based)
+ * @param column LSP column number (0-based)
+ * @return true if the node contains the position
  */
 fun ASTNode.containsPosition(line: Int, column: Int): Boolean {
-    if (hasInvalidPosition()) {
-        return false
-    }
-
-    // Convert to 0-based indexing
-    val startLine = lineNumber - 1
-    val startColumn = columnNumber - 1
-    val endLine = lastLineNumber - 1
-    val endColumn = lastColumnNumber - 1
-
-    return when {
-        line < startLine || line > endLine -> false
-        line == startLine && line == endLine -> {
-            column in startColumn..endColumn
-        }
-        line == startLine -> column >= startColumn
-        line == endLine -> column <= endColumn
-        else -> true // line is between startLine and endLine
-    }
+    // Delegate to CoordinateSystem for consistent and correct position checking
+    return CoordinateSystem.nodeContainsPosition(this, line, column)
 }
 
 /**
@@ -265,12 +294,15 @@ private fun findPropertyInClass(
  * Types that can provide hover information.
  */
 private val HOVERABLE_TYPES = setOf(
+    // Core declaration nodes
     MethodNode::class,
-    Variable::class,
+    ConstructorNode::class,
     ClassNode::class,
+    InnerClassNode::class,
     FieldNode::class,
     PropertyNode::class,
     Parameter::class,
+    Variable::class,
     VariableExpression::class,
     ConstantExpression::class,
     MethodCallExpression::class,
@@ -282,6 +314,59 @@ private val HOVERABLE_TYPES = setOf(
     PackageNode::class,
     AnnotationNode::class,
     AnnotationConstantExpression::class,
+    // Additional expression types for comprehensive hover support
+    ClassExpression::class,
+    PropertyExpression::class,
+    ConstructorCallExpression::class,
+    StaticMethodCallExpression::class,
+    AttributeExpression::class,
+    FieldExpression::class,
+    // Complete expression coverage - Phase 1: High Priority
+    ArgumentListExpression::class,
+    ArrayExpression::class,
+    ListExpression::class,
+    MapExpression::class,
+    MapEntryExpression::class,
+    RangeExpression::class,
+    TernaryExpression::class,
+    CastExpression::class,
+    ElvisOperatorExpression::class,
+    // Phase 2: Medium Priority
+    MethodPointerExpression::class,
+    MethodReferenceExpression::class,
+    PostfixExpression::class,
+    PrefixExpression::class,
+    UnaryMinusExpression::class,
+    UnaryPlusExpression::class,
+    NotExpression::class,
+    BitwiseNegationExpression::class,
+    BooleanExpression::class,
+    // Phase 3: Advanced/Less Common
+    TupleExpression::class,
+    SpreadExpression::class,
+    SpreadMapExpression::class,
+    NamedArgumentListExpression::class,
+    LambdaExpression::class,
+    ClosureListExpression::class,
+    EmptyExpression::class,
+    // Statement nodes (reduced priority but included for completeness)
+    ExpressionStatement::class,
+    BlockStatement::class,
+    ReturnStatement::class,
+    IfStatement::class,
+    ForStatement::class,
+    WhileStatement::class,
+    DoWhileStatement::class,
+    SwitchStatement::class,
+    CaseStatement::class,
+    BreakStatement::class,
+    ContinueStatement::class,
+    ThrowStatement::class,
+    TryCatchStatement::class,
+    CatchStatement::class,
+    AssertStatement::class,
+    SynchronizedStatement::class,
+    EmptyStatement::class,
 )
 
 /**

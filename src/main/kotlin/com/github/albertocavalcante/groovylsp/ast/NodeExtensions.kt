@@ -19,12 +19,53 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
 
+/**
+ * TODO: ARCHITECTURAL CONSOLIDATION REQUIRED
+ *
+ * This file contains a sophisticated coordinate system using:
+ * - Value classes (LineNumber, ColumnNumber) for compile-time type safety
+ * - Result monad (LspResult) for comprehensive error handling
+ * - SafePosition for validated coordinate operations
+ *
+ * CONFLICT: We now have CoordinateSystem as the "single source of truth"
+ * but this SafePosition approach is actually MORE sophisticated!
+ *
+ * FUTURE CONSOLIDATION PLAN:
+ * Phase 1 (NOW): Make SafePosition delegate to CoordinateSystem for consistency
+ * Phase 2: Merge SafePosition's advanced features INTO CoordinateSystem:
+ *    - Move LineNumber/ColumnNumber value classes to CoordinateSystem
+ *    - Adopt Result<T> pattern in CoordinateSystem for all operations
+ *    - Provide both simple APIs (current) and safe APIs (Result-based)
+ * Phase 3: Deprecate this parallel implementation
+ * Phase 4: Keep extension functions but use CoordinateSystem types internally
+ *
+ * Benefits of merger:
+ * - Single source of truth for coordinate logic
+ * - Type safety from value classes
+ * - Error handling from Result pattern
+ * - Backwards compatibility through extension functions
+ *
+ * See CoordinateSystem.kt for the migration tracking.
+ */
+
 // Constants for range size calculations
 private const val COLUMN_WEIGHT_FOR_MULTILINE = 100
 private const val LINE_WEIGHT = 1000
 
 /**
  * Type-safe wrappers for position coordinates
+ *
+ * TODO: MIGRATE TO CoordinateSystem
+ * This value class provides compile-time type safety that prevents:
+ * - Mixing line numbers with column numbers
+ * - Passing arbitrary integers where lines are expected
+ * - Forgetting to validate negative numbers
+ *
+ * Migration strategy:
+ * 1. Copy this to CoordinateSystem.LineNumber with identical API
+ * 2. Add typealiases here: typealias LineNumber = CoordinateSystem.LineNumber
+ * 3. Remove typealiases after all code updated
+ * 4. This approach prevents ANY coordinate type confusion at compile time!
  */
 @JvmInline
 value class LineNumber(val value: Int) {
@@ -41,6 +82,12 @@ value class LineNumber(val value: Int) {
     }
 }
 
+/**
+ * TODO: MIGRATE TO CoordinateSystem
+ * Same benefits as LineNumber - prevents column/line confusion at compile time.
+ * The 'value class' (inline class) has ZERO runtime overhead but provides
+ * complete type safety. This pattern should be adopted throughout the LSP.
+ */
 @JvmInline
 value class ColumnNumber(val value: Int) {
     init {
@@ -58,6 +105,20 @@ value class ColumnNumber(val value: Int) {
 
 /**
  * Type-safe position with validation
+ *
+ * TODO: MERGE INTO CoordinateSystem as SafeLspPosition/SafeGroovyPosition
+ *
+ * Key innovations to preserve:
+ * 1. Value class wrapping - zero runtime cost, full compile-time safety
+ * 2. Factory methods return Result<SafePosition> for safe construction
+ * 3. isWithin() method for elegant range checking
+ * 4. Companion object pattern for static factories
+ *
+ * The merged implementation should offer both APIs:
+ * - Simple: CoordinateSystem.nodeContainsPosition(node, line, char): Boolean
+ * - Safe: CoordinateSystem.safeContainsPosition(node, pos): Result<Boolean>
+ *
+ * This allows gradual migration while improving safety.
  */
 data class SafePosition(val line: LineNumber, val column: ColumnNumber) {
     fun toLspPosition(): Position = Position(line.toLspLine(), column.toLspColumn())
@@ -155,12 +216,12 @@ fun ASTNode.safeRange(): LspResult<Range> = safePosition().flatMapResult { start
 
 /**
  * Checks if a position is within an AST node's range
+ * This overload takes a Position object and delegates to CoordinateSystem for consistency.
  */
-fun ASTNode.containsPosition(position: Position): Boolean = safePosition().flatMapResult { start: SafePosition ->
-    safeEndPosition().map { end: SafePosition ->
-        SafePosition.fromLsp(position).isWithin(start, end)
-    }
-}.getOrDefault(false)
+fun ASTNode.containsPosition(position: Position): Boolean {
+    // Delegate to CoordinateSystem for consistent position checking
+    return CoordinateSystem.nodeContainsPosition(this, position)
+}
 
 /**
  * Calculates the range size of a node for prioritization
