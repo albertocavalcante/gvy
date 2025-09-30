@@ -112,7 +112,7 @@ class RenameProvider(
         val symbolTable = compilationService.getSymbolTable(documentUri)
 
         // Early validation checks
-        val validationError = validateRenameOperation(astVisitor, symbolTable, documentUri, position, newName, uri)
+        val validationError = validateRenameOperation(astVisitor, symbolTable, documentUri, position, newName)
         if (validationError != null) {
             logger.debug(validationError)
             return null
@@ -132,10 +132,9 @@ class RenameProvider(
         documentUri: URI,
         position: Position,
         newName: String,
-        uri: String,
     ): String? {
         if (astVisitor == null || symbolTable == null) {
-            return "No AST visitor or symbol table available for $uri"
+            return "No AST visitor or symbol table available for $documentUri"
         }
 
         val node = astVisitor.getNodeAt(documentUri, position.line, position.character)
@@ -147,7 +146,7 @@ class RenameProvider(
             return "Invalid identifier name: '$newName'"
         }
 
-        val references = referenceProvider.provideReferences(uri, position, includeDeclaration = true).toList()
+        val references = referenceProvider.provideReferences(documentUri.toString(), position, includeDeclaration = true).toList()
         if (references.isEmpty()) {
             return "No references found for symbol"
         }

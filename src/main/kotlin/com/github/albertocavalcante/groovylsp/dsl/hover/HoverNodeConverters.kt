@@ -1366,7 +1366,6 @@ private fun ASTNode.formatBasicExpression(): HoverContent = when (this) {
     else -> HoverContent.Text("Basic expression: ${this::class.simpleName}")
 }
 
-
 private fun ASTNode.formatHighPriorityExpression(): HoverContent = when (this) {
     is ArgumentListExpression -> toHoverContent()
     is ArrayExpression -> toHoverContent()
