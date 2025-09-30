@@ -13,6 +13,16 @@ import kotlin.io.path.exists
  * This is Phase 1 implementation - focuses on getting dependencies
  * on the classpath for compilation. Future phases will add source
  * JAR support and on-demand downloading.
+ *
+ * TODO: Rename this class to better reflect its purpose and scope:
+ *  - Current name "SimpleDependencyResolver" is too generic - not a good name
+ *  - Should be "GradleDependencyResolver" since it only handles Gradle projects
+ *  - Or "GradleToolingApiDependencyResolver" to be more specific
+ *  - Future: Need interface DependencyResolver with implementations for:
+ *    - Gradle (current)
+ *    - Maven (future)
+ *    - Manual classpath (future)
+ *  - This would allow proper abstraction and testing
  */
 class SimpleDependencyResolver {
     private val logger = LoggerFactory.getLogger(SimpleDependencyResolver::class.java)

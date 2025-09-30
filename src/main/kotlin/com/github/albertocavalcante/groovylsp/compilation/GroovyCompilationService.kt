@@ -25,8 +25,13 @@ import java.nio.file.Path
 /**
  * Service for compiling Groovy source code and managing ASTs.
  * Refactored to use composition with cache and error handler components.
+ *
+ * Now uses CentralizedDependencyManager to ensure consistent dependency
+ * management across all compilation modes.
  */
-class GroovyCompilationService {
+class GroovyCompilationService(
+    private val dependencyManager: CentralizedDependencyManager
+) : DependencyListener {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
     private val cache = CompilationCache()
@@ -38,9 +43,31 @@ class GroovyCompilationService {
     private val symbolTableCache = LRUCache<URI, SymbolTable>(maxSize = 100)
     private val symbolStorageCache = LRUCache<URI, SymbolStorage>(maxSize = 100)
 
-    // Dependency classpath management
-    private val dependencyClasspath = mutableListOf<Path>()
-    private var workspaceRoot: Path? = null
+    // Workspace compilation mode
+    private var workspaceCompilationService: WorkspaceCompilationService? = null
+
+    init {
+        // Register for dependency updates
+        dependencyManager.addListener(this)
+        logger.debug("GroovyCompilationService registered for dependency updates")
+    }
+
+    /**
+     * Called when dependencies are updated. Clears caches to force recompilation
+     * with the new classpath.
+     */
+    override fun onDependenciesUpdated(dependencies: List<Path>) {
+        logger.info("GroovyCompilationService received ${dependencies.size} dependencies")
+        if (logger.isDebugEnabled) {
+            dependencies.take(5).forEach { dep ->
+                logger.debug("  - ${dep.fileName}")
+            }
+        }
+
+        // Clear all caches since classpath has changed
+        clearCaches()
+        logger.debug("Cleared compilation caches due to dependency update")
+    }
 
     /**
      * Compiles Groovy source code and returns the result.
@@ -50,6 +77,14 @@ class GroovyCompilationService {
         logger.debug("Compiling: $uri")
 
         return try {
+            // Use workspace compilation if enabled
+            workspaceCompilationService?.let { workspaceService ->
+                logger.debug("Using workspace compilation for: $uri")
+                val result = workspaceService.updateFile(uri, content)
+                return convertWorkspaceResult(uri, result)
+            }
+
+            // Fall back to single-file compilation
             // Check cache first
             val cachedAst = cache.getCachedAst(uri, content)
             if (cachedAst != null) {
@@ -78,9 +113,9 @@ class GroovyCompilationService {
         val sourceUnit = SourceUnit(fileName, source, config, classLoader, compilationUnit.errorCollector)
         compilationUnit.addSource(sourceUnit)
 
-        // Compile to canonicalization phase (sufficient for most LSP features)
+        // Compile to semantic analysis phase (required for proper accessedVariable links)
         try {
-            compilationUnit.compile(Phases.CANONICALIZATION)
+            compilationUnit.compile(Phases.SEMANTIC_ANALYSIS)
         } catch (e: CompilationFailedException) {
             // Expected for files with syntax errors - we still want to extract diagnostics
             logger.debug("Compilation failed for $uri: ${e.message}")
@@ -131,11 +166,13 @@ class GroovyCompilationService {
      * Gets the AST visitor for a URI, or null if not available.
      */
     fun getAstVisitor(uri: URI): AstVisitor? = astVisitorCache.get(uri)
+        ?: workspaceCompilationService?.getAstVisitorForFile(uri)
 
     /**
      * Gets the symbol table for a URI, or null if not available.
      */
     fun getSymbolTable(uri: URI): SymbolTable? = symbolTableCache.get(uri)
+        ?: workspaceCompilationService?.getSymbolTableForFile(uri)
 
     /**
      * Gets the symbol storage for a URI, or null if not available.
@@ -151,8 +188,6 @@ class GroovyCompilationService {
         symbolTableCache.clear()
         symbolStorageCache.clear()
     }
-
-    fun getCacheStatistics() = cache.getStatistics()
 
     /**
      * Initialize the workspace without resolving dependencies (non-blocking).
@@ -187,23 +222,6 @@ class GroovyCompilationService {
     }
 
     /**
-     * Legacy method - Updates the dependency classpath by resolving dependencies from the workspace.
-     * @deprecated Use updateDependencies(List<Path>) with pre-resolved dependencies instead.
-     */
-    @Deprecated("Use updateDependencies(List<Path>) for non-blocking resolution")
-    fun updateDependencies() {
-        val root = workspaceRoot
-        if (root == null) {
-            logger.debug("No workspace root set, skipping dependency resolution")
-            return
-        }
-
-        logger.info("Resolving dependencies for workspace: $root")
-        val newDependencies = dependencyResolver.resolveDependencies(root)
-        updateDependencies(newDependencies)
-    }
-
-    /**
      * Gets the current dependency classpath.
      */
     fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
@@ -211,28 +229,34 @@ class GroovyCompilationService {
     /**
      * Creates a compiler configuration optimized for language server use.
      */
-    private fun createCompilerConfiguration(): CompilerConfiguration = CompilerConfiguration().apply {
-        // We want to compile to AST analysis but not generate bytecode
-        targetDirectory = null
+    private fun createCompilerConfiguration(): CompilerConfiguration {
+        val dependencies = dependencyManager.getDependencies()
 
-        // Enable debugging information for better diagnostics
-        debug = true
+        return CompilerConfiguration().apply {
+            // We want to compile to AST analysis but not generate bytecode
+            targetDirectory = null
 
-        // Set optimization options for better error reporting
-        optimizationOptions = mapOf(
-            CompilerConfiguration.GROOVYDOC to true,
-        )
+            // Enable debugging information for better diagnostics
+            debug = true
 
-        // Set encoding
-        sourceEncoding = "UTF-8"
+            // Set optimization options for better error reporting
+            optimizationOptions = mapOf(
+                CompilerConfiguration.GROOVYDOC to true,
+            )
 
-        // Add dependency JARs to the classpath
-        if (dependencyClasspath.isNotEmpty()) {
-            val classpathString = dependencyClasspath.joinToString(System.getProperty("path.separator")) {
-                it.toString()
+            // Set encoding
+            sourceEncoding = "UTF-8"
+
+            // Add dependency JARs to the classpath
+            if (dependencies.isNotEmpty()) {
+                val classpathString = dependencies.joinToString(System.getProperty("path.separator")) {
+                    it.toString()
+                }
+                setClasspath(classpathString)
+                logger.debug("Added ${dependencies.size} dependencies to compiler classpath")
+            } else {
+                logger.warn("COMPILER CONFIG: No dependencies available - imports will fail!")
             }
-            setClasspath(classpathString)
-            logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
         }
     }
 
@@ -325,4 +349,37 @@ class GroovyCompilationService {
 
     // Expose cache for testing purposes
     internal val astCache get() = cache
+
+    /**
+     * Enables workspace compilation mode with the given service.
+     */
+    fun enableWorkspaceMode(workspaceService: WorkspaceCompilationService) {
+        this.workspaceCompilationService = workspaceService
+        logger.info("Workspace compilation mode enabled")
+    }
+
+    /**
+     * Disables workspace compilation mode and falls back to single-file compilation.
+     */
+    fun disableWorkspaceMode() {
+        workspaceCompilationService = null
+        logger.info("Workspace compilation mode disabled, using single-file compilation")
+    }
+
+    /**
+     * Converts a workspace compilation result to a single-file compilation result.
+     */
+    private fun convertWorkspaceResult(
+        uri: URI,
+        workspaceResult: WorkspaceCompilationService.WorkspaceCompilationResult,
+    ): CompilationResult {
+        val ast = workspaceResult.modulesByUri[uri]
+        val diagnostics = workspaceResult.diagnostics[uri] ?: emptyList()
+
+        return if (ast != null) {
+            CompilationResult.success(ast, diagnostics, "")
+        } else {
+            CompilationResult.failure(diagnostics, "")
+        }
+    }
 }
