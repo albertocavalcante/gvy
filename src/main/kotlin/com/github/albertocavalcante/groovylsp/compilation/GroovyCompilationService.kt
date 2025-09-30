@@ -19,6 +19,7 @@ import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Path
 
@@ -29,6 +30,7 @@ import java.nio.file.Path
  * Now uses CentralizedDependencyManager to ensure consistent dependency
  * management across all compilation modes.
  */
+@Suppress("TooGenericExceptionCaught") // Compilation service needs robust error handling
 class GroovyCompilationService(private val dependencyManager: CentralizedDependencyManager) : DependencyListener {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
@@ -137,7 +139,10 @@ class GroovyCompilationService(private val dependencyManager: CentralizedDepende
                 logger.debug("TODO SCANNER: - ${diagnostic.message} at line ${diagnostic.range.start.line}")
             }
             result
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            logger.error("TODO SCANNER: IO error scanning $uri", e)
+            emptyList()
+        } catch (e: RuntimeException) {
             logger.error("TODO SCANNER: Error scanning $uri", e)
             emptyList()
         }

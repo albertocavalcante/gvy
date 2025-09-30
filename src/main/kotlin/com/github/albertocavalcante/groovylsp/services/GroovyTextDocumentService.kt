@@ -66,7 +66,7 @@ import java.util.concurrent.CompletableFuture
 /**
  * Handles all text document related LSP operations.
  */
-@Suppress("TooGenericExceptionCaught") // LSP entry point needs robust error handling
+@Suppress("TooGenericExceptionCaught", "TooManyFunctions") // LSP service implements full TextDocumentService interface
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,

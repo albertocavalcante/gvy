@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Provides workspace-wide symbol search functionality for Groovy files.
  * Maintains an index of all symbols across the workspace and supports fuzzy search.
  */
+@Suppress("TooGenericExceptionCaught") // Symbol extraction needs robust error handling for various file access issues
 class WorkspaceSymbolProvider(
     private val compilationService: GroovyCompilationService,
     private val workspaceCompilationService: WorkspaceCompilationService?,

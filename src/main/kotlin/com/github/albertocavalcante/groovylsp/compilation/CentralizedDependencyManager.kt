@@ -12,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * the same dependency classpath, eliminating the previous issue where dependencies
  * were not properly propagated to WorkspaceCompilationService.
  */
+@Suppress("TooGenericExceptionCaught") // Dependency notification needs robust error handling
 class CentralizedDependencyManager {
     private val logger = LoggerFactory.getLogger(CentralizedDependencyManager::class.java)
 
@@ -122,8 +123,11 @@ class CentralizedDependencyManager {
             try {
                 listener.onDependenciesUpdated(newDependencies)
                 logger.trace("Successfully notified ${listener::class.simpleName}")
-            } catch (e: Exception) {
-                logger.error("Failed to notify dependency listener ${listener::class.simpleName}", e)
+            } catch (e: IllegalStateException) {
+                logger.error("Listener ${listener::class.simpleName} is in invalid state", e)
+                // Continue notifying other listeners despite this failure
+            } catch (e: UnsupportedOperationException) {
+                logger.error("Listener ${listener::class.simpleName} does not support dependency updates", e)
                 // Continue notifying other listeners despite this failure
             }
         }

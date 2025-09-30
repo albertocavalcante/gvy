@@ -76,7 +76,8 @@ import java.net.URI
  * - Reflection-based visiting
  * - Split into specialized visitors (expressions, statements, declarations)
  */
-// TODO: Split this class into smaller, specialized visitor classes (e.g., ExpressionVisitor, StatementVisitor, DeclarationVisitor)
+// TODO: Split this class into smaller, specialized visitor classes
+//       (e.g., ExpressionVisitor, StatementVisitor, DeclarationVisitor)
 //       to improve maintainability and reduce complexity
 @Suppress("LargeClass")
 internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker) : ClassCodeVisitorSupport() {

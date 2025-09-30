@@ -16,6 +16,7 @@ import java.nio.file.Paths
  * Enhanced code action provider that uses the CodeNarc quickfix registry
  * to provide comprehensive code actions for CodeNarc diagnostics.
  */
+@Suppress("TooGenericExceptionCaught") // Code action generation needs robust error handling
 class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry) {
 
     private val logger = LoggerFactory.getLogger(EnhancedCodeActionProvider::class.java)

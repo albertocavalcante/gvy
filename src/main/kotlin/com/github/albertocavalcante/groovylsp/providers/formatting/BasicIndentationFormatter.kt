@@ -6,6 +6,7 @@ import org.eclipse.lsp4j.FormattingOptions
  * A basic formatter that handles simple indentation based on brace counting.
  * This is a starting point that can be enhanced with AST-based formatting later.
  */
+@Suppress("ReturnCount") // String parsing logic requires multiple validation returns
 class BasicIndentationFormatter {
 
     /**

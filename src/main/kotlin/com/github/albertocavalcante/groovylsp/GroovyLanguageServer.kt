@@ -47,7 +47,8 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 
-@Suppress("TooGenericExceptionCaught") // Main LSP server needs robust error handling
+// TODO: Consider splitting into separate services (DocumentService, WorkspaceService, etc.)
+@Suppress("TooGenericExceptionCaught", "TooManyFunctions") // Main LSP server needs robust error handling
 class GroovyLanguageServer :
     LanguageServer,
     LanguageClientAware,

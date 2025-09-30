@@ -17,7 +17,7 @@ import java.util.concurrent.CompletableFuture
  * that must handle all possible exceptions to prevent LSP protocol disruption.
  * This class bridges LSP protocol messages with the REPL session manager.
  */
-@Suppress("TooGenericExceptionCaught") // All command handlers are LSP entry points requiring generic exception handling
+@Suppress("TooGenericExceptionCaught", "TooManyFunctions") // Command handler needs many LSP entry points
 class ReplCommandHandler(private val sessionManager: ReplSessionManager, private val coroutineScope: CoroutineScope) {
 
     private val logger = LoggerFactory.getLogger(ReplCommandHandler::class.java)

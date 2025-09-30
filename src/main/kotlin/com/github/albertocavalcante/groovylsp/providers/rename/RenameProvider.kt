@@ -28,6 +28,7 @@ import java.net.URI
  * Handles renaming of variables, methods, classes, and properties with proper
  * Groovy-specific behavior including getter/setter updates.
  */
+@Suppress("ReturnCount") // Validation logic requires multiple early returns
 class RenameProvider(
     private val compilationService: GroovyCompilationService,
     private val referenceProvider: ReferenceProvider,
@@ -146,7 +147,11 @@ class RenameProvider(
             return "Invalid identifier name: '$newName'"
         }
 
-        val references = referenceProvider.provideReferences(documentUri.toString(), position, includeDeclaration = true).toList()
+        val references = referenceProvider.provideReferences(
+            documentUri.toString(),
+            position,
+            includeDeclaration = true,
+        ).toList()
         if (references.isEmpty()) {
             return "No references found for symbol"
         }

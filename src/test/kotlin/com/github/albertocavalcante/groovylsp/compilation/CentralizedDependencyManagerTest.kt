@@ -153,7 +153,9 @@ class CentralizedDependencyManagerTest {
 
         override fun onDependenciesUpdated(dependencies: List<Path>) {
             exceptionThrown = true
-            throw RuntimeException("Test exception")
+            throw TestException("Test exception")
         }
     }
+
+    private class TestException(message: String) : Exception(message)
 }

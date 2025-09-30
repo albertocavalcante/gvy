@@ -14,12 +14,14 @@ import org.codehaus.groovy.ast.stmt.WhileStatement
 import org.eclipse.lsp4j.FoldingRange
 import org.eclipse.lsp4j.FoldingRangeKind
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 
 /**
  * Provides folding ranges for Groovy code structures.
  * Supports folding of classes, methods, closures, blocks, comments, and imports.
  */
+@Suppress("TooGenericExceptionCaught", "ReturnCount") // Needs robust error handling and validation returns
 class FoldingRangeProvider(private val compilationService: GroovyCompilationService) {
 
     private val logger = LoggerFactory.getLogger(FoldingRangeProvider::class.java)
@@ -58,7 +60,10 @@ class FoldingRangeProvider(private val compilationService: GroovyCompilationServ
 
             logger.debug("Found ${ranges.size} folding ranges for $uri")
             return ranges.sortedBy { it.startLine }
-        } catch (e: Exception) {
+        } catch (e: IOException) {
+            logger.error("IO error providing folding ranges for $uri", e)
+            return emptyList()
+        } catch (e: RuntimeException) {
             logger.error("Error providing folding ranges for $uri", e)
             return emptyList()
         }
@@ -320,7 +325,7 @@ class FoldingRangeProvider(private val compilationService: GroovyCompilationServ
     /**
      * Creates folding ranges for multi-line comments.
      */
-    private fun createCommentFoldingRanges(ast: ModuleNode): List<FoldingRange> {
+    private fun createCommentFoldingRanges(@Suppress("UNUSED_PARAMETER") ast: ModuleNode): List<FoldingRange> {
         val ranges = mutableListOf<FoldingRange>()
 
         // Note: Groovy AST doesn't preserve comments by default

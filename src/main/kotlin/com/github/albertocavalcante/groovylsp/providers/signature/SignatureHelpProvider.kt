@@ -27,6 +27,7 @@ import java.net.URI
  * - Sophisticated parameter counting with Groovy-specific handling
  * - Integration with existing AST infrastructure
  */
+@Suppress("TooManyFunctions", "LoopWithTooManyJumpStatements") // Signature help needs many utility methods
 class SignatureHelpProvider(private val compilationService: GroovyCompilationService) {
 
     private val logger = LoggerFactory.getLogger(SignatureHelpProvider::class.java)
