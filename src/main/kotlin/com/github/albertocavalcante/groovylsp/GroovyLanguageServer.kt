@@ -76,7 +76,6 @@ class GroovyLanguageServer :
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope,
         compilationService,
-        this, // ConfigurationProvider
         { client }
     )
 
