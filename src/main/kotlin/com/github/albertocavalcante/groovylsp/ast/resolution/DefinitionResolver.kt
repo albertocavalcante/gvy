@@ -43,7 +43,10 @@ class DefinitionResolver {
         return classNode
     }
 
-    private fun findVariableDefinition(varExpr: VariableExpression, strict: Boolean): ASTNode? {
+    private fun findVariableDefinition(
+        varExpr: VariableExpression,
+        @Suppress("UNUSED_PARAMETER") strict: Boolean,
+    ): ASTNode? {
         val variable = varExpr.accessedVariable
         if (variable is ASTNode) {
             return variable
@@ -52,8 +55,11 @@ class DefinitionResolver {
         return if (strict) null else null
     }
 
-    @Suppress("UnusedParameter")
-    private fun findMethodDefinition(methodCall: MethodCallExpression, strict: Boolean): ASTNode? {
+    @Suppress("FunctionOnlyReturningConstant")
+    private fun findMethodDefinition(
+        @Suppress("UNUSED_PARAMETER") methodCall: MethodCallExpression,
+        @Suppress("UNUSED_PARAMETER") strict: Boolean,
+    ): ASTNode? {
         // This is a simplified implementation
         // In reality, we would need to:
         // 1. Determine the type of the object expression
@@ -62,13 +68,19 @@ class DefinitionResolver {
         return null
     }
 
-    private fun findConstructorDefinition(constructorCall: ConstructorCallExpression, strict: Boolean): ASTNode? {
+    private fun findConstructorDefinition(
+        constructorCall: ConstructorCallExpression,
+        @Suppress("UNUSED_PARAMETER") strict: Boolean,
+    ): ASTNode? {
         // Return the class being constructed
         return constructorCall.type
     }
 
-    @Suppress("UnusedParameter")
-    private fun findPropertyDefinition(propertyExpr: PropertyExpression, strict: Boolean): ASTNode? {
+    @Suppress("FunctionOnlyReturningConstant")
+    private fun findPropertyDefinition(
+        @Suppress("UNUSED_PARAMETER") propertyExpr: PropertyExpression,
+        @Suppress("UNUSED_PARAMETER") strict: Boolean,
+    ): ASTNode? {
         // This is a simplified implementation
         // In reality, we would need to:
         // 1. Determine the type of the object expression
