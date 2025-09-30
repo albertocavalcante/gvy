@@ -140,9 +140,6 @@ class TodoCommentScanner {
             val commentStart = matcher.start()
             val commentContent = matcher.group(2) ?: ""
 
-            // Find position in terms of line and column
-            val position = getPositionFromOffset(sourceCode, commentStart)
-
             // Look for TODO patterns within the multi-line comment
             val inlineMatcher = inlineMultiLinePattern.matcher(commentContent)
 

@@ -3,11 +3,9 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
-import com.github.albertocavalcante.groovylsp.codenarc.ConfigurationProvider
 import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
 import com.github.albertocavalcante.groovylsp.errors.ResourceExhaustionException
-import com.github.albertocavalcante.groovylsp.gradle.SimpleDependencyResolver
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
 import com.github.albertocavalcante.groovylsp.scanner.TodoCommentScanner
@@ -31,10 +29,7 @@ import java.nio.file.Path
  * Now uses CentralizedDependencyManager to ensure consistent dependency
  * management across all compilation modes.
  */
-class GroovyCompilationService(
-    private val dependencyManager: CentralizedDependencyManager,
-    private val configurationProvider: ConfigurationProvider? = null,
-) : DependencyListener {
+class GroovyCompilationService(private val dependencyManager: CentralizedDependencyManager) : DependencyListener {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
 
@@ -45,7 +40,6 @@ class GroovyCompilationService(
 
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
-    private val dependencyResolver = SimpleDependencyResolver()
     private val todoScanner = TodoCommentScanner()
 
     // AST visitor and symbol table caches with LRU eviction

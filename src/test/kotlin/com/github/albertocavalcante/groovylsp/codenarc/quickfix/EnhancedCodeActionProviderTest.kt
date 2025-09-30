@@ -2,8 +2,6 @@ package com.github.albertocavalcante.groovylsp.codenarc.quickfix
 
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.TrailingWhitespaceFixer
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.UnnecessarySemicolonFixer
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import io.mockk.mockk
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
@@ -22,13 +20,11 @@ class EnhancedCodeActionProviderTest {
 
     private lateinit var registry: CodeNarcQuickFixRegistry
     private lateinit var provider: EnhancedCodeActionProvider
-    private lateinit var compilationService: GroovyCompilationService
 
     @BeforeEach
     fun setUp() {
         registry = CodeNarcQuickFixRegistry()
-        compilationService = mockk()
-        provider = EnhancedCodeActionProvider(registry, compilationService)
+        provider = EnhancedCodeActionProvider(registry)
 
         // Register our test fixers
         registry.register(UnnecessarySemicolonFixer())

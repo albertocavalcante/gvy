@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovylsp.codenarc.quickfix
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FixContext
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FixScope
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.FormattingConfig
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
@@ -16,10 +15,7 @@ import java.nio.file.Paths
  * Enhanced code action provider that uses the CodeNarc quickfix registry
  * to provide comprehensive code actions for CodeNarc diagnostics.
  */
-class EnhancedCodeActionProvider(
-    private val registry: CodeNarcQuickFixRegistry,
-    private val compilationService: GroovyCompilationService,
-) {
+class EnhancedCodeActionProvider(private val registry: CodeNarcQuickFixRegistry) {
 
     private val logger = LoggerFactory.getLogger(EnhancedCodeActionProvider::class.java)
 

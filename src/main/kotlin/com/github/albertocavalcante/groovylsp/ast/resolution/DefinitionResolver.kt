@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.ast.resolution
 
-import com.github.albertocavalcante.groovylsp.ast.NodeRelationshipTracker
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
@@ -14,7 +13,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
  * This class finds the definitions of symbols referenced in the AST,
  * such as variable declarations, method definitions, class definitions, etc.
  */
-class DefinitionResolver(private val tracker: NodeRelationshipTracker? = null) {
+class DefinitionResolver {
 
     /**
      * Find the definition of a given AST node.
@@ -53,6 +52,7 @@ class DefinitionResolver(private val tracker: NodeRelationshipTracker? = null) {
         return if (strict) null else null
     }
 
+    @Suppress("UnusedParameter")
     private fun findMethodDefinition(methodCall: MethodCallExpression, strict: Boolean): ASTNode? {
         // This is a simplified implementation
         // In reality, we would need to:
@@ -67,6 +67,7 @@ class DefinitionResolver(private val tracker: NodeRelationshipTracker? = null) {
         return constructorCall.type
     }
 
+    @Suppress("UnusedParameter")
     private fun findPropertyDefinition(propertyExpr: PropertyExpression, strict: Boolean): ASTNode? {
         // This is a simplified implementation
         // In reality, we would need to:

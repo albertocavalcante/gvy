@@ -30,7 +30,7 @@ class CodeActionProvider(private val compilationService: GroovyCompilationServic
         logger.debug("Registered ${this.size()} CodeNarc fixers")
     }
 
-    private val codeNarcProvider = EnhancedCodeActionProvider(codeNarcRegistry, compilationService)
+    private val codeNarcProvider = EnhancedCodeActionProvider(codeNarcRegistry)
 
     companion object {
         // Common import candidates for ambiguous classes

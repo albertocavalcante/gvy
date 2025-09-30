@@ -57,7 +57,7 @@ class GroovyLanguageServer :
     private var client: LanguageClient? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val centralizedDependencyManager = CentralizedDependencyManager()
-    private val compilationService = GroovyCompilationService(centralizedDependencyManager, this)
+    private val compilationService = GroovyCompilationService(centralizedDependencyManager)
 
     // Configuration and workspace compilation
     private var configuration = ServerConfiguration()
