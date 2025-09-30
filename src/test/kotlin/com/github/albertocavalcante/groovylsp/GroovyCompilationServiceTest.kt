@@ -21,7 +21,7 @@ class GroovyCompilationServiceTest {
 
     @BeforeEach
     fun setup() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
     }
 
     @Test

@@ -32,7 +32,8 @@ class GradleProjectCompilationTest {
     @BeforeEach
     fun setUp() {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        workspaceCompilationService = WorkspaceCompilationService(coroutineScope)
+        val dependencyManager = com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager()
+        workspaceCompilationService = WorkspaceCompilationService(coroutineScope, dependencyManager)
         gradleSourceSetResolver = GradleSourceSetResolver()
     }
 

@@ -1,5 +1,4 @@
 package com.github.albertocavalcante.groovylsp
-
 import com.github.albertocavalcante.groovylsp.ast.ClassSymbol
 import com.github.albertocavalcante.groovylsp.ast.FieldSymbol
 import com.github.albertocavalcante.groovylsp.ast.ImportSymbol
@@ -24,7 +23,7 @@ class SymbolExtractionTest {
 
     @BeforeEach
     fun setup() {
-        compilationService = GroovyCompilationService()
+        compilationService = TestUtils.createCompilationService()
     }
 
     @Test

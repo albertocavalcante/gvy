@@ -38,7 +38,8 @@ class WorkspaceSymbolProviderTest {
     fun setup() {
         testScope = TestScope()
         compilationService = TestUtils.createCompilationService()
-        workspaceCompilationService = WorkspaceCompilationService(testScope)
+        val dependencyManager = com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager()
+        workspaceCompilationService = WorkspaceCompilationService(testScope, dependencyManager)
         provider = WorkspaceSymbolProvider(
             compilationService,
             workspaceCompilationService,

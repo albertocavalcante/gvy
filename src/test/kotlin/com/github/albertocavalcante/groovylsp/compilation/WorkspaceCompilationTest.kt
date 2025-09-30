@@ -25,7 +25,8 @@ class WorkspaceCompilationTest {
     @BeforeEach
     fun setup() {
         coroutineScope = CoroutineScope(Dispatchers.Default)
-        workspaceService = WorkspaceCompilationService(coroutineScope)
+        val dependencyManager = com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager()
+        workspaceService = WorkspaceCompilationService(coroutineScope, dependencyManager)
     }
 
     @AfterEach
