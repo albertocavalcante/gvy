@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -30,12 +30,12 @@ class WorkspaceCompilationTest {
     }
 
     @AfterEach
-    fun tearDown() = runBlocking {
+    fun tearDown() = runTest {
         workspaceService.clearWorkspace()
     }
 
     @Test
-    fun `should resolve class from same package`() = runBlocking {
+    fun `should resolve class from same package`() = runTest {
         // Create temporary files for cross-file resolution test
         val file1 = tempDir.resolve("ParallelDeclaration.groovy")
         val file2 = tempDir.resolve("StageDeclaration.groovy")
@@ -99,7 +99,7 @@ class WorkspaceCompilationTest {
     }
 
     @Test
-    fun `should handle file updates incrementally`() = runBlocking {
+    fun `should handle file updates incrementally`() = runTest {
         // Create file in temp directory BEFORE workspace initialization
         val file1 = tempDir.resolve("Example.groovy")
         val file1Uri = file1.toUri()
@@ -142,7 +142,7 @@ class WorkspaceCompilationTest {
     }
 
     @Test
-    fun `should handle compilation errors gracefully`() = runBlocking {
+    fun `should handle compilation errors gracefully`() = runTest {
         val fileUri = URI.create("file:///test/Invalid.groovy")
         val invalidContent = """
             package com.example

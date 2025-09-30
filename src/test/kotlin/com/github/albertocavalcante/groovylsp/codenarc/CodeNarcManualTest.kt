@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.codenarc
 
 import com.github.albertocavalcante.groovylsp.test.MockConfigurationProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertTrue
@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 class CodeNarcManualTest {
 
     @Test
-    fun `should detect trailing whitespace violation`() = runBlocking {
+    fun `should detect trailing whitespace violation`() = runTest {
         val service = CodeNarcService(MockConfigurationProvider())
         val uri = URI.create("file:///test.groovy")
 
@@ -37,7 +37,7 @@ class CodeNarcManualTest {
     }
 
     @Test
-    fun `should convert violations to diagnostics`() = runBlocking {
+    fun `should convert violations to diagnostics`() = runTest {
         val service = CodeNarcService(MockConfigurationProvider())
         val uri = URI.create("file:///test.groovy")
 

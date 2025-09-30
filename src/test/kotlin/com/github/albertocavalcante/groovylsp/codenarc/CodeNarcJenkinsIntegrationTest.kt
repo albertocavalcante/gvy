@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.codenarc
 
 import com.github.albertocavalcante.groovylsp.test.MockConfigurationProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -28,7 +28,7 @@ class CodeNarcJenkinsIntegrationTest {
     }
 
     @Test
-    fun `should analyze Jenkins pipeline without JsonException`() = runBlocking {
+    fun `should analyze Jenkins pipeline without JsonException`() = runTest {
         val jenkinsPipeline = createTypicalJenkinsPipeline()
 
         // The fix should prevent JsonException and allow analysis to proceed
@@ -104,7 +104,7 @@ class CodeNarcJenkinsIntegrationTest {
     """.trimIndent()
 
     @Test
-    fun `should analyze simple Jenkins shared library code`() = runBlocking {
+    fun `should analyze simple Jenkins shared library code`() = runTest {
         // Simple Jenkins shared library code
         val sharedLibraryCode = """
             def call(Map config) {
@@ -139,7 +139,7 @@ class CodeNarcJenkinsIntegrationTest {
     }
 
     @Test
-    fun `should analyze simple Jenkins vars script`() = runBlocking {
+    fun `should analyze simple Jenkins vars script`() = runTest {
         // Simple Jenkins vars script
         val varsScript = """
             def call(String environment) {

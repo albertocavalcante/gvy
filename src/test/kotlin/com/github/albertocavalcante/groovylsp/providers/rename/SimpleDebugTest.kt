@@ -1,14 +1,14 @@
 package com.github.albertocavalcante.groovylsp.providers.rename
 
 import com.github.albertocavalcante.groovylsp.TestUtils
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.net.URI
 
 class SimpleDebugTest {
 
     @Test
-    fun `debug rename issue`() = runBlocking {
+    fun `debug rename issue`() = runTest {
         val compilationService = TestUtils.createCompilationService()
         val code = "def props = obj.properties.clone()"
         val uri = URI.create("file:///test.groovy")

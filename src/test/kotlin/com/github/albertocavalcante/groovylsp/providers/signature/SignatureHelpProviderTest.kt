@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.signature
 import com.github.albertocavalcante.groovylsp.compilation.CentralizedDependencyManager
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import io.mockk.mockk
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -28,7 +28,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `should return null when no method call context found`() = runBlocking {
+    fun `should return null when no method call context found`() = runTest {
         val uri = "file:///test.groovy"
         val position = Position(0, 5)
 
@@ -38,7 +38,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `should provide signature help for builtin println method`() = runBlocking {
+    fun `should provide signature help for builtin println method`() = runTest {
         // First compile some content with a method call
         val uri = "file:///test.groovy"
         val content = "println("
@@ -57,7 +57,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `should handle groovy method calls with complete syntax`() = runBlocking {
+    fun `should handle groovy method calls with complete syntax`() = runTest {
         val uri = "file:///test.groovy"
         val content = """
             def list = [1, 2, 3]
@@ -95,7 +95,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `should handle invalid positions gracefully`() = runBlocking {
+    fun `should handle invalid positions gracefully`() = runTest {
         val uri = "file:///test.groovy"
         val content = "def x = 1"
         val position = Position(-1, -1) // Invalid position
@@ -109,7 +109,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `should handle empty content gracefully`() = runBlocking {
+    fun `should handle empty content gracefully`() = runTest {
         val uri = "file:///test.groovy"
         val content = ""
         val position = Position(0, 0)

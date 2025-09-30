@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.rename
 import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -24,7 +24,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should prepare rename for simple variable`() = runBlocking {
+    fun `should prepare rename for simple variable`() = runTest {
         val code = """
             def myVariable = "hello"
             println myVariable
@@ -48,7 +48,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should return null for non-renameable symbols`() = runBlocking {
+    fun `should return null for non-renameable symbols`() = runTest {
         val code = """
             println "hello world"
         """.trimIndent()
@@ -70,7 +70,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should handle simple variable rename`() = runBlocking {
+    fun `should handle simple variable rename`() = runTest {
         val code = """
             def oldName = "hello"
             println oldName
@@ -96,7 +96,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should validate identifier names`() = runBlocking {
+    fun `should validate identifier names`() = runTest {
         val code = """
             def myVar = "hello"
         """.trimIndent()
@@ -125,7 +125,7 @@ class RenameProviderTest {
 
     // TDD: Failing tests that demonstrate the rename issue
     @Test
-    fun `should rename local variable declared with def`() = runBlocking {
+    fun `should rename local variable declared with def`() = runTest {
         val code = """
             def props = obj.properties.clone()
             println props
@@ -151,7 +151,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should rename closure parameter`() = runBlocking {
+    fun `should rename closure parameter`() = runTest {
         val code = """
             [1, 2, 3].each { item ->
                 println item
@@ -178,7 +178,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should rename variable across multiple references in same scope`() = runBlocking {
+    fun `should rename variable across multiple references in same scope`() = runTest {
         val code = """
             def calculate() {
                 def total = 0
@@ -208,7 +208,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `should handle method name rename`() = runBlocking {
+    fun `should handle method name rename`() = runTest {
         val code = """
             def myMethod() {
                 return "hello"

@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.jenkins
 
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -87,7 +87,7 @@ class JenkinsInteropIntegrationTest {
     }
 
     @Test
-    fun `should maintain thread safety in concurrent integration scenarios`() = runBlocking {
+    fun `should maintain thread safety in concurrent integration scenarios`() = runTest {
         val concurrencyLevel = 50
         val resultsMap = ConcurrentHashMap<Int, InteropTestResult>()
 

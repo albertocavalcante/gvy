@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertFalse
@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class MinimalTest {
 
     @Test
-    fun `test basic invalid groovy compilation`() = runBlocking {
+    fun `test basic invalid groovy compilation`() = runTest {
         val compilationService = TestUtils.createCompilationService()
 
         val invalidGroovyContent = """

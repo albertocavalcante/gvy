@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.CompletionParams
@@ -44,7 +44,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `completion should include AST symbols from current file`() = runBlocking {
+    fun `completion should include AST symbols from current file`() = runTest {
         val content = createCalculatorClass()
         val uri = "file:///Calculator.groovy"
 
@@ -72,7 +72,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `completion should work with multiple classes in same file`() = runBlocking {
+    fun `completion should work with multiple classes in same file`() = runTest {
         val content = createGeometryClasses()
         val uri = "file:///Geometry.groovy"
 
@@ -90,7 +90,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `diagnostics should be published for syntax errors with correct positions`() = runBlocking {
+    fun `diagnostics should be published for syntax errors with correct positions`() = runTest {
         val contentWithError = """
             class BrokenClass {
                 void badMethod( {  // Missing closing parenthesis

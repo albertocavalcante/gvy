@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition
 import com.github.albertocavalcante.groovylsp.TestUtils
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -31,7 +31,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test local variable definition`() = runBlocking {
+    fun `test local variable definition`() = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -58,7 +58,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test method definition`() = runBlocking {
+    fun `test method definition`() = runTest {
         // Arrange
         val content = """
             def testMethod() {
@@ -86,7 +86,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test class definition`() = runBlocking {
+    fun `test class definition`() = runTest {
         // Arrange
         val content = """
             class TestClass {
@@ -111,7 +111,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test no definition found`() = runBlocking {
+    fun `test no definition found`() = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -133,7 +133,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test definition with invalid uri`() = runBlocking {
+    fun `test definition with invalid uri`() = runTest {
         // Act - try to find definition with invalid URI
         val definitions = definitionProvider.provideDefinitions("invalid-uri", Position(0, 0)).toList()
 
@@ -142,7 +142,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test definition without compilation`() = runBlocking {
+    fun `test definition without compilation`() = runTest {
         // Act - try to find definition without compiling first
         val definitions = definitionProvider.provideDefinitions("file:///unknown.groovy", Position(0, 0)).toList()
 
@@ -151,7 +151,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test field access definition`() = runBlocking {
+    fun `test field access definition`() = runTest {
         // Arrange
         val content = """
             class TestClass {
