@@ -126,7 +126,7 @@ class GroovyTextDocumentService(
 
     // Formatting provider - created lazily
     private val formattingProvider by lazy {
-        FormattingProvider(compilationService)
+        FormattingProvider()
     }
 
     /**

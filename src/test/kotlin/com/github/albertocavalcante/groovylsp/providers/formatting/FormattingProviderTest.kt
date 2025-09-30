@@ -25,7 +25,7 @@ class FormattingProviderTest {
     fun setUp() {
         val dependencyManager = CentralizedDependencyManager()
         compilationService = GroovyCompilationService(dependencyManager)
-        formattingProvider = FormattingProvider(compilationService)
+        formattingProvider = FormattingProvider()
     }
 
     @Test
@@ -120,7 +120,7 @@ println "method2"
         // Format only the first method (lines 1-3)
         val range = Range(
             Position(1, 0), // Start of "def method1()"
-            Position(3, 1)  // End of first method block
+            Position(3, 1), // End of first method block
         )
 
         val edits = formattingProvider.formatRange(testFile.toUri().toString(), range, options)

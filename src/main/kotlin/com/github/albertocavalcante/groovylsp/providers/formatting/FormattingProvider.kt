@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.providers.formatting
 
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import org.eclipse.lsp4j.FormattingOptions
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
@@ -14,9 +13,7 @@ import java.nio.file.Paths
  * Provides document formatting capabilities for Groovy files.
  * Integrates with the LSP to format entire documents or specific ranges.
  */
-class FormattingProvider(
-    private val compilationService: GroovyCompilationService
-) {
+class FormattingProvider {
     private val logger = LoggerFactory.getLogger(FormattingProvider::class.java)
     private val basicFormatter = BasicIndentationFormatter()
 
@@ -73,14 +70,14 @@ class FormattingProvider(
             if (formatted != rangeContent) {
                 val rangeEnd = Position(
                     endLine,
-                    if (endLine < lines.size) lines[endLine].length else 0
+                    if (endLine < lines.size) lines[endLine].length else 0,
                 )
 
                 return listOf(
                     TextEdit(
                         Range(range.start, rangeEnd),
-                        formatted
-                    )
+                        formatted,
+                    ),
                 )
             }
 
@@ -118,10 +115,10 @@ class FormattingProvider(
                 TextEdit(
                     Range(
                         Position(0, 0),
-                        Position(lastLine, lastChar)
+                        Position(lastLine, lastChar),
                     ),
-                    formatted
-                )
+                    formatted,
+                ),
             )
         }
 
@@ -131,18 +128,16 @@ class FormattingProvider(
     /**
      * Gets the document content, either from the compilation cache or by reading the file.
      */
-    private fun getDocumentContent(uri: String): String {
-        return try {
-            // Try to get content from compilation cache first
-            val parsedUri = URI.create(uri)
+    private fun getDocumentContent(uri: String): String = try {
+        // Try to get content from compilation cache first
+        val parsedUri = URI.create(uri)
 
-            // If we have a cached AST, we can't get the original content from it,
-            // so we read from file. In a full implementation, we'd cache the content too.
-            val path = Paths.get(parsedUri)
-            Files.readString(path)
-        } catch (e: Exception) {
-            logger.error("Failed to read document content for $uri", e)
-            throw IllegalStateException("Cannot read document content for formatting", e)
-        }
+        // If we have a cached AST, we can't get the original content from it,
+        // so we read from file. In a full implementation, we'd cache the content too.
+        val path = Paths.get(parsedUri)
+        Files.readString(path)
+    } catch (e: Exception) {
+        logger.error("Failed to read document content for $uri", e)
+        throw IllegalStateException("Cannot read document content for formatting", e)
     }
 }
