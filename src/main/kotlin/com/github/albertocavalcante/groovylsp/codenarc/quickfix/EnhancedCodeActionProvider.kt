@@ -23,6 +23,11 @@ class EnhancedCodeActionProvider(
 
     private val logger = LoggerFactory.getLogger(EnhancedCodeActionProvider::class.java)
 
+    companion object {
+        // Default priority for code actions when no specific priority is found
+        private const val DEFAULT_ACTION_PRIORITY = 5
+    }
+
     /**
      * Provides code actions for the given parameters.
      *
@@ -113,9 +118,9 @@ class EnhancedCodeActionProvider(
             // Find the fixer that created this action by matching the title pattern
             val ruleName = diagnostics.find { it in (action.diagnostics ?: emptyList()) }?.code?.left
             if (ruleName != null) {
-                registry.getFixers(ruleName).minOfOrNull { it.metadata.priority } ?: 5
+                registry.getFixers(ruleName).minOfOrNull { it.metadata.priority } ?: DEFAULT_ACTION_PRIORITY
             } else {
-                5
+                DEFAULT_ACTION_PRIORITY
             }
         }
     }

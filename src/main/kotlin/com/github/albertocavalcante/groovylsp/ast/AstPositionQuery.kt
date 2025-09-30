@@ -15,6 +15,33 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
     private val logger = LoggerFactory.getLogger(AstPositionQuery::class.java)
 
+    companion object {
+        // Debug output limits
+        private const val MAX_DEBUG_CANDIDATES_TO_SHOW = 3
+        private const val MAX_DEBUG_REJECTED_TO_SHOW = 5
+
+        // Text truncation for debug messages
+        private const val DEBUG_TEXT_PREVIEW_LENGTH = 30
+        private const val DEBUG_TEXT_MAX_LENGTH = 50
+
+        // Node type priorities for position selection (lower = higher priority)
+        private const val VARIABLE_EXPRESSION_PRIORITY = 0
+        private const val DECLARATION_EXPRESSION_PRIORITY = 1
+        private const val METHOD_CALL_EXPRESSION_PRIORITY = 2
+        private const val PROPERTY_EXPRESSION_PRIORITY = 3
+        private const val FIELD_EXPRESSION_PRIORITY = 4
+        private const val METHOD_NODE_PRIORITY = 5
+        private const val FIELD_NODE_PRIORITY = 6
+        private const val PROPERTY_NODE_PRIORITY = 7
+        private const val DEFAULT_NODE_PRIORITY = 500
+        private const val CLASS_NODE_PRIORITY = 1000
+        private const val ARGUMENT_LIST_EXPRESSION_PRIORITY = 2000
+        private const val EXPRESSION_STATEMENT_PRIORITY = 3000
+
+        // Priority calculation
+        private const val TYPE_PRIORITY_MULTIPLIER = 10
+    }
+
     /**
      * Find the AST node at a specific LSP position.
      */
@@ -41,17 +68,17 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
         logger.debug("AstPositionQuery: Found ${candidateNodes.size} candidate nodes")
         if (candidateNodes.isNotEmpty()) {
-            candidateNodes.take(3).forEach { node ->
+            candidateNodes.take(MAX_DEBUG_CANDIDATES_TO_SHOW).forEach { node ->
                 logger.debug(
                     "  Candidate: ${node.javaClass.simpleName} at ${CoordinateSystem.getNodePositionDebugString(
                         node,
-                    )} - text: ${node.text?.take(30)}",
+                    )} - text: ${node.text?.take(DEBUG_TEXT_PREVIEW_LENGTH)}",
                 )
             }
         } else {
             // Debug: Show why no nodes matched by examining first few nodes
-            logger.debug("AstPositionQuery: No candidates found, examining first 5 nodes:")
-            nodes.take(5).forEach { node ->
+            logger.debug("AstPositionQuery: No candidates found, examining first $MAX_DEBUG_REJECTED_TO_SHOW nodes:")
+            nodes.take(MAX_DEBUG_REJECTED_TO_SHOW).forEach { node ->
                 if (CoordinateSystem.isValidNodePosition(node)) {
                     val contains = CoordinateSystem.nodeContainsPosition(node, lspPosition)
                     logger.debug(
@@ -78,27 +105,29 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             // CRITICAL FIX: When nodes have the same size, prefer more specific types
             // Add a priority boost for specific node types that are more meaningful for definitions
             val typePriority = when (node) {
-                is org.codehaus.groovy.ast.expr.VariableExpression -> 0 // Highest priority
-                is org.codehaus.groovy.ast.expr.DeclarationExpression -> 1
-                is org.codehaus.groovy.ast.expr.MethodCallExpression -> 2
-                is org.codehaus.groovy.ast.expr.PropertyExpression -> 3
-                is org.codehaus.groovy.ast.expr.FieldExpression -> 4
-                is org.codehaus.groovy.ast.MethodNode -> 5
-                is org.codehaus.groovy.ast.FieldNode -> 6
-                is org.codehaus.groovy.ast.PropertyNode -> 7
-                is org.codehaus.groovy.ast.ClassNode -> 1000 // Much lower priority
-                is org.codehaus.groovy.ast.expr.ArgumentListExpression -> 2000
-                is org.codehaus.groovy.ast.stmt.ExpressionStatement -> 3000
-                else -> 500
+                is org.codehaus.groovy.ast.expr.VariableExpression -> VARIABLE_EXPRESSION_PRIORITY // Highest priority
+                is org.codehaus.groovy.ast.expr.DeclarationExpression -> DECLARATION_EXPRESSION_PRIORITY
+                is org.codehaus.groovy.ast.expr.MethodCallExpression -> METHOD_CALL_EXPRESSION_PRIORITY
+                is org.codehaus.groovy.ast.expr.PropertyExpression -> PROPERTY_EXPRESSION_PRIORITY
+                is org.codehaus.groovy.ast.expr.FieldExpression -> FIELD_EXPRESSION_PRIORITY
+                is org.codehaus.groovy.ast.MethodNode -> METHOD_NODE_PRIORITY
+                is org.codehaus.groovy.ast.FieldNode -> FIELD_NODE_PRIORITY
+                is org.codehaus.groovy.ast.PropertyNode -> PROPERTY_NODE_PRIORITY
+                is org.codehaus.groovy.ast.ClassNode -> CLASS_NODE_PRIORITY // Much lower priority
+                is org.codehaus.groovy.ast.expr.ArgumentListExpression -> ARGUMENT_LIST_EXPRESSION_PRIORITY
+                is org.codehaus.groovy.ast.stmt.ExpressionStatement -> EXPRESSION_STATEMENT_PRIORITY
+                else -> DEFAULT_NODE_PRIORITY
             }
 
             // Combine base size with type priority (multiply by small factor to maintain size ordering)
-            baseSize + (typePriority * 10)
+            baseSize + (typePriority * TYPE_PRIORITY_MULTIPLIER)
         }
 
         if (result != null) {
             logger.debug(
-                "AstPositionQuery: Selected node: ${result.javaClass.simpleName} - text: ${result.text?.take(50)}",
+                "AstPositionQuery: Selected node: ${result.javaClass.simpleName} - text: ${result.text?.take(
+                    DEBUG_TEXT_MAX_LENGTH,
+                )}",
             )
         } else {
             logger.debug("AstPositionQuery: No node selected")

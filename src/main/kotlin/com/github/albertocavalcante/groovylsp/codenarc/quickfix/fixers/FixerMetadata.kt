@@ -26,13 +26,20 @@ enum class FixerCategory {
 data class FixerMetadata(
     val ruleName: String,
     val category: FixerCategory,
-    val priority: Int = 5,
+    val priority: Int = DEFAULT_PRIORITY,
     val isPreferred: Boolean = false,
     val dependencies: List<String> = emptyList(),
     val triggers: List<String> = emptyList(),
 ) {
+    companion object {
+        // Priority constants for fixer validation
+        private const val MIN_PRIORITY = 1
+        private const val MAX_PRIORITY = 10
+        private const val DEFAULT_PRIORITY = 5
+    }
+
     init {
         require(ruleName.isNotBlank()) { "Rule name cannot be blank" }
-        require(priority in 1..10) { "Priority must be between 1 and 10" }
+        require(priority in MIN_PRIORITY..MAX_PRIORITY) { "Priority must be between $MIN_PRIORITY and $MAX_PRIORITY" }
     }
 }

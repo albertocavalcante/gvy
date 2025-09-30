@@ -37,6 +37,12 @@ class GroovyCompilationService(
 ) : DependencyListener {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
+
+    companion object {
+        // Debug output limit for dependency logging
+        private const val MAX_DEBUG_DEPENDENCIES_TO_LOG = 5
+    }
+
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver = SimpleDependencyResolver()
@@ -63,7 +69,7 @@ class GroovyCompilationService(
     override fun onDependenciesUpdated(dependencies: List<Path>) {
         logger.info("GroovyCompilationService received ${dependencies.size} dependencies")
         if (logger.isDebugEnabled) {
-            dependencies.take(5).forEach { dep ->
+            dependencies.take(MAX_DEBUG_DEPENDENCIES_TO_LOG).forEach { dep ->
                 logger.debug("  - ${dep.fileName}")
             }
         }

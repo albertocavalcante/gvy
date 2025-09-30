@@ -41,6 +41,12 @@ class WorkspaceCompilationService(
     // Helper components removed - references to non-existent classes
 
     private val logger = LoggerFactory.getLogger(WorkspaceCompilationService::class.java)
+
+    companion object {
+        // Debug output limit for dependency and file logging
+        private const val MAX_DEBUG_ITEMS_TO_LOG = 5
+    }
+
     private val compilationMutex = Mutex()
 
     // Context-aware compilation state
@@ -77,7 +83,7 @@ class WorkspaceCompilationService(
         logger.debug("Before clearing - Compiled files count: ${compiledFiles.size}")
 
         if (logger.isDebugEnabled) {
-            dependencies.take(5).forEach { dep ->
+            dependencies.take(MAX_DEBUG_ITEMS_TO_LOG).forEach { dep ->
                 logger.debug("  - ${dep.fileName}")
             }
         }
@@ -404,7 +410,11 @@ class WorkspaceCompilationService(
         context: CompilationContextManager.CompilationContext,
     ): WorkspaceCompilationResult {
         logger.debug("Compiling context '$contextName' with ${context.fileCount()} files")
-        logger.debug("Context '$contextName' files: ${context.files.take(5).joinToString { it.path }}")
+        logger.debug(
+            "Context '$contextName' files: ${context.files.take(MAX_DEBUG_ITEMS_TO_LOG).joinToString {
+                it.path
+            }}",
+        )
 
         return try {
             val compilationUnit = createContextCompilationUnit(contextName, context)

@@ -15,6 +15,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 class CentralizedDependencyManager {
     private val logger = LoggerFactory.getLogger(CentralizedDependencyManager::class.java)
 
+    companion object {
+        // Debug output limit for dependency logging
+        private const val MAX_DEBUG_DEPENDENCIES_TO_LOG = 10
+    }
+
     // Thread-safe lists for concurrent access
     private val dependencies = mutableListOf<Path>()
     private val listeners = CopyOnWriteArrayList<DependencyListener>()
@@ -33,11 +38,11 @@ class CentralizedDependencyManager {
 
             logger.info("Dependency update: ${newDependencies.size} JARs")
             if (logger.isDebugEnabled) {
-                newDependencies.take(10).forEach { dep ->
+                newDependencies.take(MAX_DEBUG_DEPENDENCIES_TO_LOG).forEach { dep ->
                     logger.debug("  - ${dep.fileName}")
                 }
-                if (newDependencies.size > 10) {
-                    logger.debug("  ... and ${newDependencies.size - 10} more")
+                if (newDependencies.size > MAX_DEBUG_DEPENDENCIES_TO_LOG) {
+                    logger.debug("  ... and ${newDependencies.size - MAX_DEBUG_DEPENDENCIES_TO_LOG} more")
                 }
             }
 
