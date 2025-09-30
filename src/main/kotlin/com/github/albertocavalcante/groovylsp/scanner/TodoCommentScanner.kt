@@ -85,7 +85,7 @@ class TodoCommentScanner {
      * @param uri The document URI for the diagnostics
      * @return List of diagnostics for found TODO items
      */
-    fun scanForTodos(sourceCode: String, uri: String): List<Diagnostic> {
+    fun scanForTodos(sourceCode: String, @Suppress("UNUSED_PARAMETER") uri: String): List<Diagnostic> {
         val todos = mutableListOf<TodoItem>()
         val lines = sourceCode.lines()
 
@@ -137,7 +137,6 @@ class TodoCommentScanner {
         val matcher = multiLinePattern.matcher(sourceCode)
 
         while (matcher.find()) {
-            val commentStart = matcher.start()
             val commentContent = matcher.group(2) ?: ""
 
             // Look for TODO patterns within the multi-line comment

@@ -4,7 +4,6 @@ import com.github.albertocavalcante.groovylsp.codenarc.quickfix.CodeNarcQuickFix
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.EnhancedCodeActionProvider
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.TrailingWhitespaceFixer
 import com.github.albertocavalcante.groovylsp.codenarc.quickfix.fixers.UnnecessarySemicolonFixer
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
@@ -18,7 +17,7 @@ import org.slf4j.LoggerFactory
  * Provides code actions (quick fixes) for Groovy source code.
  * Enhanced implementation with CodeNarc quickfix support.
  */
-class CodeActionProvider(private val compilationService: GroovyCompilationService) {
+class CodeActionProvider {
 
     private val logger = LoggerFactory.getLogger(CodeActionProvider::class.java)
 

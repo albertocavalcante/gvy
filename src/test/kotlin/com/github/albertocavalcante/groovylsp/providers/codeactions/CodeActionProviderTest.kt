@@ -23,7 +23,7 @@ class CodeActionProviderTest {
     @BeforeEach
     fun setup() {
         compilationService = TestUtils.createCompilationService()
-        provider = CodeActionProvider(compilationService)
+        provider = CodeActionProvider()
     }
 
     @Test

@@ -417,7 +417,7 @@ class GroovyTextDocumentService(
                 logger.info("  - ${diagnostic.source}: ${diagnostic.code} - ${diagnostic.message}")
             }
 
-            val provider = CodeActionProvider(compilationService)
+            val provider = CodeActionProvider()
             val actions = provider.provideCodeActions(params)
 
             logger.info("Generated ${actions.size} code actions:")
