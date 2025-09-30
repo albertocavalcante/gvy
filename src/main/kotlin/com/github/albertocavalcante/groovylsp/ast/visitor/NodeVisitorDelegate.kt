@@ -859,6 +859,7 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     /**
      * Enhanced module processing to use the new visitor methods
      */
+    @Suppress("UnusedPrivateMember")
     private fun processModuleEnhanced(module: ModuleNode) {
         pushNode(module)
 

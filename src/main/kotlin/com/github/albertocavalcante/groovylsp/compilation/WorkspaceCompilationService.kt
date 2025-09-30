@@ -205,24 +205,25 @@ class WorkspaceCompilationService(
     /**
      * Update a single file and recompile its context incrementally.
      */
-    suspend fun updateFile(uri: URI, content: String): WorkspaceCompilationResult = compilationMutex.withLock {
-        logger.debug("Updating file: $uri")
+    suspend fun updateFile(uri: URI, @Suppress("UNUSED_PARAMETER") content: String): WorkspaceCompilationResult =
+        compilationMutex.withLock {
+            logger.debug("Updating file: $uri")
 
-        // Update file content (simplified - no file manager)
-        // Content is handled through compilation units directly
+            // Update file content (simplified - no file manager)
+            // Content is handled through compilation units directly
 
-        // Find which context this file belongs to
-        val contextName = contextManager.getContextForFile(uri)
+            // Find which context this file belongs to
+            val contextName = contextManager.getContextForFile(uri)
 
-        return if (contextName != null) {
-            logger.debug("Recompiling context '$contextName' for file update: $uri")
-            recompileContext(contextName)
-        } else {
-            // File not in any known context - might be a new standalone file
-            logger.debug("File not in any context, rebuilding workspace: $uri")
-            recompileWorkspace()
+            return if (contextName != null) {
+                logger.debug("Recompiling context '$contextName' for file update: $uri")
+                recompileContext(contextName)
+            } else {
+                // File not in any known context - might be a new standalone file
+                logger.debug("File not in any context, rebuilding workspace: $uri")
+                recompileWorkspace()
+            }
         }
-    }
 
     /**
      * Remove a file and recompile.
@@ -316,7 +317,9 @@ class WorkspaceCompilationService(
     /**
      * Get the AST for a specific file.
      */
-    fun getAstForFile(uri: URI): ModuleNode? = null // Simplified - AST extraction not implemented
+    @Suppress("FunctionOnlyReturningConstant")
+    fun getAstForFile(@Suppress("UNUSED_PARAMETER") uri: URI): ModuleNode? =
+        null // Simplified - AST extraction not implemented
 
     /**
      * Get diagnostics for all files across all contexts.
@@ -376,7 +379,9 @@ class WorkspaceCompilationService(
     /**
      * Check if a file exists in the workspace.
      */
-    fun containsFile(uri: URI): Boolean = false // Simplified - file management not implemented
+    @Suppress("FunctionOnlyReturningConstant")
+    fun containsFile(@Suppress("UNUSED_PARAMETER") uri: URI): Boolean =
+        false // Simplified - file management not implemented
 
     /**
      * Gets all Groovy files in the workspace.
@@ -682,6 +687,7 @@ class WorkspaceCompilationService(
     /**
      * Find the source unit for a specific module within a given context.
      */
+    @Suppress("UnusedPrivateMember")
     private fun findSourceUnitForModule(module: ModuleNode, contextName: String): SourceUnit? {
         val compilationUnit = contextCompilationUnits[contextName]
         if (compilationUnit != null) {
@@ -699,6 +705,7 @@ class WorkspaceCompilationService(
     /**
      * Find which context a given module belongs to.
      */
+    @Suppress("UnusedPrivateMember")
     private fun findContextForModule(module: ModuleNode): String? {
         contextCompilationUnits.forEach { (contextName, compilationUnit) ->
             val iterator = compilationUnit.iterator()
@@ -762,6 +769,7 @@ class WorkspaceCompilationService(
      */
     private fun createCompilerConfiguration(): CompilerConfiguration = createCompilerConfiguration(emptyList())
 
+    @Suppress("UnusedPrivateMember")
     private fun getCurrentCompilationResult(): WorkspaceCompilationResult = WorkspaceCompilationResult.success(
         compiledFiles.toMap(),
         getAllDiagnostics(),

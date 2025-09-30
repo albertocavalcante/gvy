@@ -398,6 +398,7 @@ class GroovyLanguageServer :
     /**
      * Starts asynchronous dependency resolution without blocking the LSP.
      */
+    @Suppress("UnusedPrivateMember")
     private fun startAsyncDependencyResolution() {
         val initParams = savedInitParams
         if (initParams == null) {
