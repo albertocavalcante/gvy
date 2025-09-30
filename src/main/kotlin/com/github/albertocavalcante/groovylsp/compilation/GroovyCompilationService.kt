@@ -3,12 +3,14 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
+import com.github.albertocavalcante.groovylsp.codenarc.ConfigurationProvider
 import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
 import com.github.albertocavalcante.groovylsp.errors.ResourceExhaustionException
 import com.github.albertocavalcante.groovylsp.gradle.SimpleDependencyResolver
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
+import com.github.albertocavalcante.groovylsp.scanner.TodoCommentScanner
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -30,13 +32,15 @@ import java.nio.file.Path
  * management across all compilation modes.
  */
 class GroovyCompilationService(
-    private val dependencyManager: CentralizedDependencyManager
+    private val dependencyManager: CentralizedDependencyManager,
+    private val configurationProvider: ConfigurationProvider? = null,
 ) : DependencyListener {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver = SimpleDependencyResolver()
+    private val todoScanner = TodoCommentScanner()
 
     // AST visitor and symbol table caches with LRU eviction
     private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
@@ -122,7 +126,26 @@ class GroovyCompilationService(
         }
 
         // Extract diagnostics from error collector
-        val diagnostics = DiagnosticConverter.convertErrorCollector(compilationUnit.errorCollector)
+        val compilationDiagnostics = DiagnosticConverter.convertErrorCollector(compilationUnit.errorCollector)
+
+        // Scan for TODO comments and add to diagnostics (ALWAYS ENABLED FOR DEBUGGING)
+        val todoDiagnostics = try {
+            logger.debug("TODO SCANNER: Starting scan for $uri")
+            val result = todoScanner.scanForTodos(content, uri.toString())
+            logger.debug("TODO SCANNER: Found ${result.size} TODO items for $uri")
+            result.forEach { diagnostic ->
+                logger.debug("TODO SCANNER: - ${diagnostic.message} at line ${diagnostic.range.start.line}")
+            }
+            result
+        } catch (e: Exception) {
+            logger.error("TODO SCANNER: Error scanning $uri", e)
+            emptyList()
+        }
+        val diagnostics = compilationDiagnostics + todoDiagnostics
+
+        logger.debug(
+            "Found ${compilationDiagnostics.size} compilation diagnostics and ${todoDiagnostics.size} TODO items for $uri",
+        )
 
         // Get the AST
         val ast = getAstFromCompilationUnit(compilationUnit)
@@ -190,41 +213,9 @@ class GroovyCompilationService(
     }
 
     /**
-     * Initialize the workspace without resolving dependencies (non-blocking).
-     * Dependencies will be updated separately via updateDependencies().
+     * Gets the current dependency classpath from CentralizedDependencyManager.
      */
-    fun initializeWorkspace(workspaceRoot: Path) {
-        logger.info("Initializing workspace (non-blocking): $workspaceRoot")
-        this.workspaceRoot = workspaceRoot
-        // No dependency resolution here - will be done asynchronously
-    }
-
-    /**
-     * Updates the dependency classpath with pre-resolved dependencies.
-     * Clears compilation caches since the classpath has changed.
-     *
-     * @param newDependencies The list of resolved dependency paths
-     */
-    fun updateDependencies(newDependencies: List<Path>) {
-        if (newDependencies.size != dependencyClasspath.size ||
-            newDependencies.toSet() != dependencyClasspath.toSet()
-        ) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(newDependencies)
-
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
-
-            // Clear caches since classpath has changed
-            clearCaches()
-        } else {
-            logger.debug("Dependencies unchanged, no cache clearing needed")
-        }
-    }
-
-    /**
-     * Gets the current dependency classpath.
-     */
-    fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
+    fun getDependencyClasspath(): List<Path> = dependencyManager.getDependencies()
 
     /**
      * Creates a compiler configuration optimized for language server use.

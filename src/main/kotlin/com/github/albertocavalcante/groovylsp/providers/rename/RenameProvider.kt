@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.rename
 
+import com.github.albertocavalcante.groovylsp.ast.AstVisitor
+import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.LocationConverter
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
@@ -109,31 +111,48 @@ class RenameProvider(
         val astVisitor = compilationService.getAstVisitor(documentUri)
         val symbolTable = compilationService.getSymbolTable(documentUri)
 
-        if (astVisitor == null || symbolTable == null) {
-            logger.debug("No AST visitor or symbol table available for $uri")
+        // Early validation checks
+        val validationError = validateRenameOperation(astVisitor, symbolTable, documentUri, position, newName, uri)
+        if (validationError != null) {
+            logger.debug(validationError)
             return null
         }
 
-        val node = astVisitor.getNodeAt(documentUri, position.line, position.character)
-        if (node == null || !isNodeRenameable(node)) {
-            logger.debug("No renameable node found at position")
-            return null
-        }
-
-        if (!isValidIdentifier(newName)) {
-            logger.debug("Invalid identifier name: '$newName'")
-            return null
-        }
-
+        val node = astVisitor!!.getNodeAt(documentUri, position.line, position.character)!!
         val references = referenceProvider.provideReferences(uri, position, includeDeclaration = true).toList()
-        if (references.isEmpty()) {
-            logger.debug("No references found for symbol")
-            return null
-        }
 
         val result = createWorkspaceEdit(node, newName, references, astVisitor)
         logger.debug("Created workspace edit with ${result?.changes?.values?.sumOf { it.size } ?: 0} changes")
         return result
+    }
+
+    private suspend fun validateRenameOperation(
+        astVisitor: AstVisitor?,
+        symbolTable: SymbolTable?,
+        documentUri: URI,
+        position: Position,
+        newName: String,
+        uri: String,
+    ): String? {
+        if (astVisitor == null || symbolTable == null) {
+            return "No AST visitor or symbol table available for $uri"
+        }
+
+        val node = astVisitor.getNodeAt(documentUri, position.line, position.character)
+        if (node == null || !isNodeRenameable(node)) {
+            return "No renameable node found at position"
+        }
+
+        if (!isValidIdentifier(newName)) {
+            return "Invalid identifier name: '$newName'"
+        }
+
+        val references = referenceProvider.provideReferences(uri, position, includeDeclaration = true).toList()
+        if (references.isEmpty()) {
+            return "No references found for symbol"
+        }
+
+        return null // All validations passed
     }
 
     /**

@@ -53,4 +53,9 @@ class CompilationCache {
         "cachedDiagnostics" to diagnosticsCache.size,
         "cachedCompilationUnits" to compilationUnitCache.size,
     )
+
+    /**
+     * Gets all URIs that have cached ASTs.
+     */
+    fun getAllCachedUris(): Set<URI> = compilationUnitCache.keys.toSet()
 }
