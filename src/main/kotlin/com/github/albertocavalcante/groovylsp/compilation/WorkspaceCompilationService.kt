@@ -545,7 +545,8 @@ class WorkspaceCompilationService(
             val totalModules = compilationUnit.ast.modules.size
             if (totalModules != modulesByUri.size) {
                 logger.warn(
-                    "Module count mismatch: CompilationUnit has $totalModules modules but we matched ${modulesByUri.size}",
+                    "Module count mismatch: CompilationUnit has $totalModules modules " +
+                        "but we matched ${modulesByUri.size}",
                 )
             }
         }
