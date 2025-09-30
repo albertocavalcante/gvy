@@ -447,8 +447,8 @@ class CodeNarcServiceTest {
                 }
         } catch (e: Exception) {
             // Fallback if unable to count temp files (expected in many environments)
-            // Swallowing exception is acceptable here as this is a test utility method
-            // and the fallback value of 0 is adequate for test assertions
+            // Log for debugging but continue with fallback value
+            println("Warning: Unable to count temp files: ${e.message}")
             0
         }
     }
