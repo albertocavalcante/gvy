@@ -18,6 +18,7 @@ data class ServerConfiguration(
     val replSessionTimeoutMinutes: Int = 60,
 
     // CodeNarc configuration
+    val codeNarcEnabled: Boolean = true,
     val codeNarcPropertiesFile: String? = null,
     val codeNarcAutoDetect: Boolean = true,
 
@@ -81,6 +82,7 @@ data class ServerConfiguration(
                     replSessionTimeoutMinutes = (map["groovy.repl.sessionTimeoutMinutes"] as? Number)?.toInt() ?: 60,
 
                     // CodeNarc configuration
+                    codeNarcEnabled = (map["groovy.codenarc.enabled"] as? Boolean) ?: true,
                     codeNarcPropertiesFile = map["groovy.codenarc.propertiesFile"] as? String,
                     codeNarcAutoDetect = (map["groovy.codenarc.autoDetect"] as? Boolean) ?: true,
                 )
