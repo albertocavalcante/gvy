@@ -38,14 +38,6 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
             "src/org/", // Common Jenkins shared library structure
         )
 
-        // Grails project indicators (excluding generic build files)
-        private val grailsIndicators = listOf(
-            "grails-app",
-            "application.yml", // When combined with grails-app or Grails-specific files
-            "application.properties", // When combined with grails-app or Grails-specific files
-            "grails.gradle", // Grails-specific
-        )
-
         // Spring Boot indicators
         private val springBootIndicators = listOf(
             "src/main/groovy",

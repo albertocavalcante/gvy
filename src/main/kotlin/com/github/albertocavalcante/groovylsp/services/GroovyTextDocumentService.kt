@@ -157,29 +157,36 @@ class GroovyTextDocumentService(
             logger.debug("Starting compilation for $uri")
             val compilationResult = compilationService.compile(uri, content)
             logger.debug(
-                "Compilation completed for $uri: success=${compilationResult.isSuccess}, diagnostics=${compilationResult.diagnostics.size}",
+                "Compilation completed for $uri: success=${compilationResult.isSuccess}, " +
+                    "diagnostics=${compilationResult.diagnostics.size}",
             )
             allDiagnostics.addAll(compilationResult.diagnostics)
 
-            // Run CodeNarc analysis in parallel (or after compilation for performance)
-            try {
-                logger.debug("Starting CodeNarc analysis for $uri")
-                val codeNarcDiagnostics = codeNarcService.analyzeString(content, uri)
-                allDiagnostics.addAll(codeNarcDiagnostics)
+            // Run CodeNarc analysis if enabled
+            if (configurationProvider.getServerConfiguration().codeNarcEnabled) {
+                try {
+                    logger.debug("Starting CodeNarc analysis for $uri")
+                    val codeNarcDiagnostics = codeNarcService.analyzeString(content, uri)
+                    allDiagnostics.addAll(codeNarcDiagnostics)
 
-                logger.debug("CodeNarc analysis found ${codeNarcDiagnostics.size} diagnostics for $uri")
-            } catch (e: Exception) {
-                logger.warn("CodeNarc analysis failed for $uri", e)
-                // Continue with compilation diagnostics only
+                    logger.debug("CodeNarc analysis found ${codeNarcDiagnostics.size} diagnostics for $uri")
+                } catch (e: Exception) {
+                    logger.warn("CodeNarc analysis failed for $uri", e)
+                    // Continue with compilation diagnostics only
+                }
+            } else {
+                logger.debug("CodeNarc analysis disabled for $uri")
             }
         } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
             logger.error("Compilation failed for $uri", e)
-            // Even if compilation fails, try to run CodeNarc for basic static analysis
-            try {
-                val codeNarcDiagnostics = codeNarcService.analyzeString(content, uri)
-                allDiagnostics.addAll(codeNarcDiagnostics)
-            } catch (codeNarcException: Exception) {
-                logger.warn("CodeNarc analysis also failed for $uri", codeNarcException)
+            // Even if compilation fails, try to run CodeNarc for basic static analysis if enabled
+            if (configurationProvider.getServerConfiguration().codeNarcEnabled) {
+                try {
+                    val codeNarcDiagnostics = codeNarcService.analyzeString(content, uri)
+                    allDiagnostics.addAll(codeNarcDiagnostics)
+                } catch (codeNarcException: Exception) {
+                    logger.warn("CodeNarc analysis also failed for $uri", codeNarcException)
+                }
             }
         } catch (e: Exception) {
             logger.error("Unexpected error during comprehensive analysis for $uri", e)

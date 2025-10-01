@@ -231,13 +231,14 @@ class CodeNarcConfigurationManager {
      */
     private fun loadRulesetFromResource(resourcePath: String): String {
         try {
-            val resourceStream = javaClass.classLoader.getResourceAsStream(resourcePath)
-                ?: throw IllegalStateException("Ruleset resource not found: $resourcePath")
+            val resourceStream = checkNotNull(javaClass.classLoader.getResourceAsStream(resourcePath)) {
+                "Ruleset resource not found: $resourcePath"
+            }
 
             return resourceStream.bufferedReader().use { it.readText() }
         } catch (e: Exception) {
             logger.error("Failed to load ruleset from resource: $resourcePath", e)
-            throw IllegalStateException("Could not load CodeNarc ruleset from $resourcePath", e)
+            error("Could not load CodeNarc ruleset from $resourcePath: ${e.message}")
         }
     }
 }
