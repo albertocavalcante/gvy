@@ -21,7 +21,8 @@ class GradleDependencyIntegrationTest {
      *
      * CURRENT BEHAVIOR:
      * - compilationService.getDependencyClasspath() returns empty list
-     * - Test fails with: "Should find at least one declared dependency (groovy or commons-lang3) in compilation classpath"
+     * - Test fails with: "Should find at least one declared dependency (groovy or commons-lang3) in
+     *   compilation classpath"
      *
      * ROOT CAUSE ANALYSIS:
      * The test creates a basic GroovyCompilationService via TestUtils.createCompilationService(),
