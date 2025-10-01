@@ -52,8 +52,8 @@ class TodoCommentScanner {
         private fun createInlineMultiLinePattern(keywords: Set<String>): Pattern {
             val keywordGroup = keywords.joinToString("|")
             return Pattern.compile(
-                "($keywordGroup):?\\s*(.*?)(?=\\n|\\*/|\$)",
-                Pattern.CASE_INSENSITIVE,
+                "(?:^|\\n)\\s*\\*?\\s*($keywordGroup):?\\s*([^\\n]*)",
+                Pattern.CASE_INSENSITIVE or Pattern.MULTILINE,
             )
         }
     }
@@ -110,7 +110,7 @@ class TodoCommentScanner {
     private fun scanSingleLineComments(lines: List<String>, todos: MutableList<TodoItem>) {
         lines.forEachIndexed { lineIndex, line ->
             val matcher = singleLinePattern.matcher(line)
-            if (matcher.find()) {
+            while (matcher.find()) {
                 val keyword = matcher.group(1).uppercase()
                 val description = matcher.group(2) ?: ""
                 val startColumn = matcher.start()
@@ -134,34 +134,44 @@ class TodoCommentScanner {
     }
 
     private fun scanMultiLineComments(sourceCode: String, todos: MutableList<TodoItem>) {
-        val matcher = multiLinePattern.matcher(sourceCode)
+        // Find all multi-line comment blocks first
+        val multiLineCommentRegex = Pattern.compile("/\\*.*?\\*/", Pattern.DOTALL)
+        val commentMatcher = multiLineCommentRegex.matcher(sourceCode)
 
-        while (matcher.find()) {
-            val commentContent = matcher.group(2) ?: ""
+        while (commentMatcher.find()) {
+            val commentContent = commentMatcher.group()
+            val commentStart = commentMatcher.start()
 
-            // Look for TODO patterns within the multi-line comment
-            val inlineMatcher = inlineMultiLinePattern.matcher(commentContent)
-
-            while (inlineMatcher.find()) {
-                val keyword = inlineMatcher.group(1).uppercase()
-                val description = inlineMatcher.group(2) ?: ""
-                val severity = patterns[keyword] ?: DiagnosticSeverity.Information
-
-                // Calculate the exact position within the comment
-                val keywordStart = matcher.start() + matcher.group(1).length + 2 + inlineMatcher.start()
-                val keywordEnd = matcher.start() + matcher.group(1).length + 2 + inlineMatcher.end()
-
-                val startPos = getPositionFromOffset(sourceCode, keywordStart)
-                val endPos = getPositionFromOffset(sourceCode, keywordEnd)
-
-                todos.add(
-                    TodoItem(
-                        keyword = keyword,
-                        description = description,
-                        range = Range(startPos, endPos),
-                        severity = severity,
-                    ),
+            // Create simple pattern to find all TODO keywords in this comment
+            patterns.keys.forEach { keyword ->
+                val keywordPattern = Pattern.compile(
+                    "\\b$keyword:?\\s*([^\\n*]*(?:\\n[^/*]*)*?)(?=\\*/|\\n\\s*\\*\\s*\\b(?:${patterns.keys.joinToString(
+                        "|",
+                    )})|$)",
+                    Pattern.CASE_INSENSITIVE or Pattern.MULTILINE,
                 )
+                val keywordMatcher = keywordPattern.matcher(commentContent)
+
+                while (keywordMatcher.find()) {
+                    val description = keywordMatcher.group(1)?.trim() ?: ""
+                    val severity = patterns[keyword] ?: DiagnosticSeverity.Information
+
+                    // Calculate the exact position within the source code
+                    val keywordStart = commentStart + keywordMatcher.start()
+                    val keywordEnd = commentStart + keywordMatcher.end()
+
+                    val startPos = getPositionFromOffset(sourceCode, keywordStart)
+                    val endPos = getPositionFromOffset(sourceCode, keywordEnd)
+
+                    todos.add(
+                        TodoItem(
+                            keyword = keyword,
+                            description = description,
+                            range = Range(startPos, endPos),
+                            severity = severity,
+                        ),
+                    )
+                }
             }
         }
     }
