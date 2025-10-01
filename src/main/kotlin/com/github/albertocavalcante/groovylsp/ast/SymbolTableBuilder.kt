@@ -5,6 +5,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.net.URI
@@ -55,6 +56,11 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
                     // Property is handled by its enclosing class
                 }
                 is ImportNode -> registry.addImportDeclaration(uri, node)
+                is Parameter -> {
+                    // Handle closure parameters and method parameters
+                    // Parameter extends Variable in Groovy AST
+                    registry.addVariableDeclaration(uri, node)
+                }
                 is org.codehaus.groovy.ast.expr.DeclarationExpression -> {
                     processDeclarationExpression(node, uri)
                 }

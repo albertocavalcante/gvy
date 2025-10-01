@@ -129,6 +129,9 @@ class CentralizedDependencyManager {
             } catch (e: UnsupportedOperationException) {
                 logger.error("Listener ${listener::class.simpleName} does not support dependency updates", e)
                 // Continue notifying other listeners despite this failure
+            } catch (e: Exception) {
+                logger.error("Listener ${listener::class.simpleName} threw unexpected exception", e)
+                // Continue notifying other listeners despite this failure
             }
         }
     }

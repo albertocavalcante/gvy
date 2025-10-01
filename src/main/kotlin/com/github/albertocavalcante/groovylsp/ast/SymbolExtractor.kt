@@ -17,11 +17,16 @@ object SymbolExtractor {
 
     /**
      * Extract all class symbols from a compilation unit.
+     * Filters out synthetic classes created by Groovy for empty files or scripts.
      */
     fun extractClassSymbols(ast: Any): List<ClassSymbol> {
         if (ast !is ModuleNode) return emptyList()
 
-        return ast.classes.map { classNode ->
+        return ast.classes.filter { classNode ->
+            // Filter out synthetic classes that Groovy creates for empty files or scripts
+            // These classes have invalid position information or are compiler-generated
+            CoordinateSystem.isValidNodePosition(classNode) && !classNode.isSynthetic
+        }.map { classNode ->
             val lspPos = CoordinateSystem.groovyToLsp(classNode.lineNumber, classNode.columnNumber)
             ClassSymbol(
                 name = classNode.nameWithoutPackage,
@@ -34,28 +39,62 @@ object SymbolExtractor {
     }
 
     /**
-     * Extract method symbols from a class node.
+     * Extract method symbols from a class node, including constructors.
      */
     fun extractMethodSymbols(classNode: Any): List<MethodSymbol> {
         if (classNode !is ClassNode) return emptyList()
 
-        return classNode.methods.map { methodNode ->
-            val parameters = methodNode.parameters.map { param ->
-                ParameterInfo(
-                    name = param.name,
-                    type = param.type.nameWithoutPackage,
-                )
-            }
+        val methods = mutableListOf<MethodSymbol>()
 
-            val lspPos = CoordinateSystem.groovyToLsp(methodNode.lineNumber, methodNode.columnNumber)
-            MethodSymbol(
-                name = methodNode.name,
-                returnType = methodNode.returnType.nameWithoutPackage,
-                parameters = parameters,
-                line = lspPos.line,
-                column = lspPos.character,
-            )
-        }
+        // Add regular methods
+        methods.addAll(
+            classNode.methods.filter { methodNode ->
+                // Filter out synthetic methods and ensure valid position
+                CoordinateSystem.isValidNodePosition(methodNode) && !methodNode.isSynthetic
+            }.map { methodNode ->
+                val parameters = methodNode.parameters.map { param ->
+                    ParameterInfo(
+                        name = param.name,
+                        type = param.type.nameWithoutPackage,
+                    )
+                }
+
+                val lspPos = CoordinateSystem.groovyToLsp(methodNode.lineNumber, methodNode.columnNumber)
+                MethodSymbol(
+                    name = methodNode.name,
+                    returnType = methodNode.returnType.nameWithoutPackage,
+                    parameters = parameters,
+                    line = lspPos.line,
+                    column = lspPos.character,
+                )
+            },
+        )
+
+        // Add constructors
+        methods.addAll(
+            classNode.declaredConstructors.filter { constructorNode ->
+                // Filter out synthetic constructors and ensure valid position
+                CoordinateSystem.isValidNodePosition(constructorNode) && !constructorNode.isSynthetic
+            }.map { constructorNode ->
+                val parameters = constructorNode.parameters.map { param ->
+                    ParameterInfo(
+                        name = param.name,
+                        type = param.type.nameWithoutPackage,
+                    )
+                }
+
+                val lspPos = CoordinateSystem.groovyToLsp(constructorNode.lineNumber, constructorNode.columnNumber)
+                MethodSymbol(
+                    name = "<init>", // Use standard constructor name
+                    returnType = "void",
+                    parameters = parameters,
+                    line = lspPos.line,
+                    column = lspPos.character,
+                )
+            },
+        )
+
+        return methods
     }
 
     /**
@@ -102,12 +141,15 @@ object SymbolExtractor {
         } else {
             ""
         }
-        val simpleClassName = className.substringAfterLast('.')
+
+        // Handle import aliases: "import java.util.Date as JDate"
+        // The alias is stored in importNode.alias, use it if available
+        val displayName = importNode.alias ?: className.substringAfterLast('.')
 
         val lspLine = CoordinateSystem.groovyToLsp(importNode.lineNumber, 1).line
         ImportSymbol(
             packageName = packageName,
-            className = simpleClassName,
+            className = displayName,
             isStarImport = false,
             isStatic = false,
             line = lspLine,
