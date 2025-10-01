@@ -34,6 +34,7 @@ class ASTCompletionIntegrationTest {
         // Initialize the server
         val initParams = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
         }
         serverHandle!!.server.initialize(initParams).get()
     }

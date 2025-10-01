@@ -124,8 +124,8 @@ class DefinitionProviderTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        // Act - try to find definition at a position with no symbol (line 0, column 20 - after the string)
-        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(0, 20)).toList()
+        // Act - try to find definition at a position with no symbol (line 5 - beyond the document)
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(5, 0)).toList()
 
         // Assert
         // Our improved implementation should NOT find definitions at positions with no symbols

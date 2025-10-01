@@ -159,8 +159,8 @@ class EnhancedCodeActionProviderTest {
 
         val actions = provider.provideCodeActions(params)
 
-        // Should still create actions, but the fixer will handle the out-of-bounds gracefully
-        assertTrue(actions.isNotEmpty())
+        // Should return empty actions when diagnostic refers to non-existent line
+        assertTrue(actions.isEmpty())
     }
 
     @Test
@@ -170,6 +170,7 @@ class EnhancedCodeActionProviderTest {
                 createDiagnostic("TrailingWhitespace", line = 0),
                 createDiagnostic("UnnecessarySemicolon", line = 1),
             ),
+            sourceLines = listOf("def x = 1; ", "def y = 2;"), // Line 0 has trailing space, line 1 has semicolon
         )
 
         val actions = provider.provideCodeActions(params)

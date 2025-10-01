@@ -36,6 +36,7 @@ class NonBlockingServerTest {
         // Test initialization
         val initParams = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
         }
 
         val initResult = server.initialize(initParams).get()

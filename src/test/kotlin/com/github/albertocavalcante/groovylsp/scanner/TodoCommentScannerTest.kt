@@ -102,7 +102,7 @@ class TodoCommentScannerTest {
         assertEquals(7, diagnostics.size)
 
         val severityMap = diagnostics.associate {
-            it.code.toString().uppercase() to it.severity
+            it.code.left.uppercase() to it.severity
         }
 
         assertEquals(DiagnosticSeverity.Information, severityMap["TODO"])

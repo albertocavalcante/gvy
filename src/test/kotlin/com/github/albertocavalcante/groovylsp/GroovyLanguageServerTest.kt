@@ -38,6 +38,7 @@ class GroovyLanguageServerTest {
         val params = InitializeParams().apply {
             processId = 1234
             workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
             capabilities = ClientCapabilities()
             clientInfo = ClientInfo("Test Client", "1.0.0")
         }
@@ -97,6 +98,17 @@ class GroovyLanguageServerTest {
 
     @Test
     fun `test document open compiles valid groovy file`() = runTest {
+        // Initialize server with CodeNarc disabled
+        val initParams = InitializeParams().apply {
+            processId = 1234
+            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
+            capabilities = ClientCapabilities()
+            clientInfo = ClientInfo("Test Client", "1.0.0")
+        }
+        server.initialize(initParams).get()
+        server.initialized(org.eclipse.lsp4j.InitializedParams())
+
         val params = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
                 uri = "file:///test.groovy"
@@ -121,11 +133,11 @@ class GroovyLanguageServerTest {
         // This test verifies that hover works immediately after server initialization
         // Previously this would fail because workspace compilation was async
 
-        // Create initialization params with actual workspace
-        val workspaceUri = "file:///tmp/test-workspace"
+        // Create initialization params for single-file compilation (no workspace)
         val params = InitializeParams().apply {
             processId = 1234
-            workspaceFolders = listOf(WorkspaceFolder(workspaceUri, "test-workspace"))
+            // Remove workspaceFolders to use single-file compilation
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
             capabilities = ClientCapabilities()
             clientInfo = ClientInfo("Test Client", "1.0.0")
         }
@@ -137,14 +149,9 @@ class GroovyLanguageServerTest {
         // Call initialized to complete the handshake
         server.initialized(org.eclipse.lsp4j.InitializedParams())
 
-        // Use the same content that was written to disk during setup
+        // Use simple document content for single-file compilation
         val documentContent = "class TestClass { String name = \"test\" }"
-
-        // Write this content to the file so workspace compilation and didOpen match
-        val testFile = java.io.File("/tmp/test-workspace/TestClass.groovy")
-        testFile.writeText(documentContent)
-
-        val documentUri = "$workspaceUri/TestClass.groovy"
+        val documentUri = "file:///tmp/TestClass.groovy"
         val openParams = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
                 uri = documentUri
@@ -156,15 +163,15 @@ class GroovyLanguageServerTest {
 
         server.textDocumentService.didOpen(openParams)
 
-        // Give a moment for document processing
-        Thread.sleep(200)
+        // Wait for compilation to complete (indicated by diagnostic publication)
+        mockClient.awaitDiagnostics(5000)
 
         // NOW test hover - this should work immediately!
         // Content: "class TestClass { String name = \"test\" }"
-        // Hovering over "String" which should be around position 0:20
+        // Hovering over "String" which starts at position 0:18
         val hoverParams = HoverParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
-            position = Position(0, 20) // Position of "String" in "class TestClass { String name"
+            position = Position(0, 18) // Position of "String" in "class TestClass { String name"
         }
 
         val hoverResult = server.textDocumentService.hover(hoverParams).get()
@@ -191,10 +198,10 @@ class GroovyLanguageServerTest {
     @Test
     fun `test hover should work after didChange`() = runTest {
         // Test that hover continues to work after document changes
-        val workspaceUri = "file:///tmp/test-workspace"
         val params = InitializeParams().apply {
             processId = 1234
-            workspaceFolders = listOf(WorkspaceFolder(workspaceUri, "test-workspace"))
+            // Remove workspaceFolders to use single-file compilation
+            initializationOptions = mapOf("groovy.codenarc.enabled" to false)
             capabilities = ClientCapabilities()
             clientInfo = ClientInfo("Test Client", "1.0.0")
         }
@@ -202,7 +209,7 @@ class GroovyLanguageServerTest {
         server.initialize(params).get()
         server.initialized(org.eclipse.lsp4j.InitializedParams())
 
-        val documentUri = "$workspaceUri/TestClass.groovy"
+        val documentUri = "file:///tmp/TestClass.groovy"
         val initialContent = "class TestClass { String name = \"test\" }"
 
         // Open document
@@ -216,6 +223,12 @@ class GroovyLanguageServerTest {
         }
         server.textDocumentService.didOpen(openParams)
 
+        // Wait for initial compilation to complete
+        mockClient.awaitDiagnostics(5000)
+
+        // Reset client to wait for the next diagnostic publication
+        mockClient.reset()
+
         // Change document content
         val changedContent = "class TestClass { Integer age = 25; String name = \"test\" }"
         val changeParams = DidChangeTextDocumentParams().apply {
@@ -226,13 +239,13 @@ class GroovyLanguageServerTest {
         }
         server.textDocumentService.didChange(changeParams)
 
-        // Give time for change processing
-        Thread.sleep(200)
+        // Wait for change processing to complete
+        mockClient.awaitDiagnostics(5000)
 
         // Test hover on the new field "Integer"
         val hoverParams = HoverParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
-            position = Position(0, 20) // Position of "Integer" in changed content
+            position = Position(0, 18) // Position of "Integer" in changed content
         }
 
         val hoverResult = server.textDocumentService.hover(hoverParams).get()

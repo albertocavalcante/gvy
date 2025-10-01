@@ -79,16 +79,23 @@ class WorkspaceSymbolProviderTest {
         val compilationResult = compilationService.compile(uri, code)
         assertTrue(compilationResult.isSuccess, "Compilation should succeed")
 
-        provider.updateFileSymbols(uri)
+        // Create provider with this test's scope to ensure coroutines run in test context
+        val testProvider = WorkspaceSymbolProvider(
+            compilationService,
+            workspaceCompilationService,
+            this, // Use this test's CoroutineScope
+        )
+
+        testProvider.updateFileSymbols(uri)
         advanceUntilIdle() // Wait for async symbol extraction to complete
 
         // Debug: Check if AST is available
         val ast = compilationService.getAst(uri)
         logger.debug("AST available: ${ast != null}, AST type: ${ast?.javaClass?.simpleName}")
-        logger.debug("Total indexed symbols: ${provider.getIndexedSymbolCount()}")
+        logger.debug("Total indexed symbols: ${testProvider.getIndexedSymbolCount()}")
 
         // Search for the class
-        val result = provider.searchSymbols("TestClass")
+        val result = testProvider.searchSymbols("TestClass")
 
         assertTrue(result.isNotEmpty(), "Should find TestClass")
         val symbol = result.first()
@@ -118,11 +125,18 @@ class WorkspaceSymbolProviderTest {
         val compilationResult = compilationService.compile(uri, code)
         assertTrue(compilationResult.isSuccess, "Compilation should succeed")
 
-        provider.updateFileSymbols(uri)
+        // Create provider with this test's scope to ensure coroutines run in test context
+        val testProvider = WorkspaceSymbolProvider(
+            compilationService,
+            workspaceCompilationService,
+            this, // Use this test's CoroutineScope
+        )
+
+        testProvider.updateFileSymbols(uri)
         advanceUntilIdle() // Wait for async symbol extraction to complete
 
         // Search for method
-        val result = provider.searchSymbols("findUser")
+        val result = testProvider.searchSymbols("findUser")
 
         assertTrue(result.isNotEmpty(), "Should find method")
         val symbol = result.first()
@@ -171,16 +185,23 @@ class WorkspaceSymbolProviderTest {
         assertTrue(result2.isSuccess, "Second file compilation should succeed")
         assertTrue(result3.isSuccess, "Third file compilation should succeed")
 
+        // Create provider with this test's scope to ensure coroutines run in test context
+        val testProvider = WorkspaceSymbolProvider(
+            compilationService,
+            workspaceCompilationService,
+            this, // Use this test's CoroutineScope
+        )
+
         // Update symbols for all files
-        provider.updateFileSymbols(uri1)
-        provider.updateFileSymbols(uri2)
-        provider.updateFileSymbols(uri3)
+        testProvider.updateFileSymbols(uri1)
+        testProvider.updateFileSymbols(uri2)
+        testProvider.updateFileSymbols(uri3)
         advanceUntilIdle() // Wait for all async symbol extractions to complete
 
         // Search for each class
-        val firstClassResults = provider.searchSymbols("FirstClass")
-        val secondClassResults = provider.searchSymbols("SecondClass")
-        val thirdInterfaceResults = provider.searchSymbols("ThirdInterface")
+        val firstClassResults = testProvider.searchSymbols("FirstClass")
+        val secondClassResults = testProvider.searchSymbols("SecondClass")
+        val thirdInterfaceResults = testProvider.searchSymbols("ThirdInterface")
 
         assertTrue(firstClassResults.isNotEmpty(), "Should find FirstClass")
         assertTrue(secondClassResults.isNotEmpty(), "Should find SecondClass")
@@ -217,13 +238,20 @@ class WorkspaceSymbolProviderTest {
         val compilationResult = compilationService.compile(uri, code)
         assertTrue(compilationResult.isSuccess, "Compilation should succeed")
 
-        provider.updateFileSymbols(uri)
+        // Create provider with this test's scope to ensure coroutines run in test context
+        val testProvider = WorkspaceSymbolProvider(
+            compilationService,
+            workspaceCompilationService,
+            this, // Use this test's CoroutineScope
+        )
+
+        testProvider.updateFileSymbols(uri)
         advanceUntilIdle() // Wait for async symbol extraction to complete
 
         // Search for all symbols
-        val classResults = provider.searchSymbols("LocationTest")
-        val methodResults = provider.searchSymbols("testMethod")
-        val fieldResults = provider.searchSymbols("field")
+        val classResults = testProvider.searchSymbols("LocationTest")
+        val methodResults = testProvider.searchSymbols("testMethod")
+        val fieldResults = testProvider.searchSymbols("field")
 
         // Verify all symbols found
         assertTrue(classResults.isNotEmpty(), "Should find class")
