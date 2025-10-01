@@ -153,7 +153,7 @@ class CodeAnalysisService(
                     Position(lineNumber, endColumn),
                 )
                 severity = mapPriorityToSeverity(violation.rule.priority)
-                source = "CodeNarc"
+                source = violation.rule.name
                 message = violation.message ?: "CodeNarc violation: ${violation.rule.name}"
                 code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(violation.rule.name)
             }

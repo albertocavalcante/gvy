@@ -51,7 +51,7 @@ class WorkspaceSymbolProvider(
     fun searchSymbols(query: String): List<Either<SymbolInformation, WorkspaceSymbol>> {
         logger.debug("Searching workspace symbols for query: '$query'")
 
-        // If indexing isn't complete, trigger it and return limited results
+        // If indexing isn't complete, trigger it in background but still search existing symbols
         if (!indexingComplete) {
             triggerWorkspaceIndexing()
         }
@@ -80,9 +80,19 @@ class WorkspaceSymbolProvider(
 
         coroutineScope.launch {
             try {
+                logger.debug("Async symbol extraction starting for $uri")
                 val symbols = extractSymbolsFromFile(uri)
                 uriToSymbols[uri] = symbols
                 logger.debug("Updated ${symbols.size} symbols for $uri")
+
+                // If no symbols found, try to debug why
+                if (symbols.isEmpty()) {
+                    val ast = compilationService.getAst(uri)
+                    logger.debug("No symbols extracted for $uri. AST available: ${ast != null}")
+                    if (ast != null) {
+                        logger.debug("AST classes: ${(ast as? org.codehaus.groovy.ast.ModuleNode)?.classes?.size ?: 0}")
+                    }
+                }
             } catch (e: Exception) {
                 logger.error("Error updating symbols for $uri", e)
                 uriToSymbols[uri] = emptyList()
@@ -180,8 +190,18 @@ class WorkspaceSymbolProvider(
 
         val symbols = mutableListOf<SymbolInformation>()
 
+        // Debug: Check AST structure
+        logger.debug("Extracting symbols from $uri - AST type: ${ast.javaClass.simpleName}")
+        if (ast is org.codehaus.groovy.ast.ModuleNode) {
+            logger.debug("ModuleNode classes count: ${ast.classes.size}")
+            ast.classes.forEachIndexed { i, classNode ->
+                logger.debug("  Class $i: ${classNode.name} (${classNode.nameWithoutPackage})")
+            }
+        }
+
         // Extract class symbols
         val classSymbols = SymbolExtractor.extractClassSymbols(ast)
+        logger.debug("SymbolExtractor returned ${classSymbols.size} class symbols")
         classSymbols.forEach { classSymbol ->
             val classInfo = createSymbolInformation(
                 name = classSymbol.name,

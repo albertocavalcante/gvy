@@ -123,30 +123,29 @@ class SemanticTokenProvider {
         commentStart: Int,
         tokens: MutableList<Token>,
     ) {
-        val supportedPatterns = todoScanner.getSupportedPatterns()
+        // Pattern to find TODO markers at start of comment content (after // and optional whitespace)
+        val allKeywords = todoScanner.getSupportedPatterns().keys.joinToString("|")
+        val pattern = Pattern.compile("//\\s*($allKeywords):?", Pattern.CASE_INSENSITIVE)
+        val matcher = pattern.matcher(commentText)
 
-        for ((keyword, _) in supportedPatterns) {
-            // Create case-insensitive pattern for the keyword
-            val keywordPattern = Pattern.compile("\\b$keyword\\b:?", Pattern.CASE_INSENSITIVE)
-            val matcher = keywordPattern.matcher(commentText)
+        while (matcher.find()) {
+            val keyword = matcher.group(1).uppercase()
+            val keywordStart = matcher.start(1) // Start of the keyword group, not the whole match
+            val absoluteStart = commentStart + keywordStart
+            val keywordLength = keyword.length
+            val modifier = getModifierForKeyword(keyword)
 
-            while (matcher.find()) {
-                val keywordStart = commentStart + matcher.start()
-                val keywordLength = matcher.end() - matcher.start()
-                val modifier = getModifierForKeyword(keyword)
+            tokens.add(
+                Token(
+                    line = lineIndex,
+                    startChar = absoluteStart,
+                    length = keywordLength,
+                    tokenType = TOKEN_TYPE_COMMENT,
+                    tokenModifiers = 1 shl modifier, // Convert to bitmask
+                ),
+            )
 
-                tokens.add(
-                    Token(
-                        line = lineIndex,
-                        startChar = keywordStart,
-                        length = keywordLength,
-                        tokenType = TOKEN_TYPE_COMMENT,
-                        tokenModifiers = 1 shl modifier, // Convert to bitmask
-                    ),
-                )
-
-                logger.trace("Found $keyword token at line $lineIndex, char $keywordStart")
-            }
+            logger.trace("Found $keyword token at line $lineIndex, char $absoluteStart")
         }
     }
 
@@ -236,7 +235,9 @@ class SemanticTokenProvider {
      * Checks if semantic tokens are needed for the given source code.
      * This can be used for optimization to avoid generating tokens for files without TODO comments.
      */
-    fun hasSemanticTokens(sourceCode: String): Boolean = todoScanner.getSupportedPatterns().keys.any { keyword ->
-        sourceCode.contains(keyword, ignoreCase = true)
+    fun hasSemanticTokens(sourceCode: String): Boolean {
+        val allKeywords = todoScanner.getSupportedPatterns().keys.joinToString("|")
+        val pattern = Pattern.compile("//.*\\b($allKeywords):?", Pattern.CASE_INSENSITIVE)
+        return pattern.matcher(sourceCode).find()
     }
 }
