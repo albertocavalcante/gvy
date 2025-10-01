@@ -207,7 +207,7 @@ class CodeNarcConfigurationManager {
      * Creates the default configuration for general Groovy projects.
      */
     private fun createDefaultConfig(propertiesFile: String? = null): CodeNarcConfig = CodeNarcConfig(
-        ruleSetString = defaultGroovyRuleset,
+        ruleSetString = loadRulesetFromResource("codenarc/rulesets/base/default.groovy"),
         configSource = "default-groovy",
         propertiesFile = propertiesFile,
     )
@@ -216,15 +216,20 @@ class CodeNarcConfigurationManager {
      * Creates a specialized configuration for Jenkins projects.
      */
     private fun createJenkinsConfig(propertiesFile: String? = null): CodeNarcConfig = CodeNarcConfig(
-        ruleSetString = jenkinsRuleset,
+        ruleSetString = loadRulesetFromResource("codenarc/rulesets/frameworks/jenkins.groovy"),
         configSource = "default-jenkins",
         isJenkinsProject = true,
         propertiesFile = propertiesFile,
     )
 
+    // TODO: Remove embedded string configurations below (lines 226-401)
+    // They are no longer used since the system now loads from .groovy files.
+    // Keeping temporarily for reference during transition period.
+
     /**
      * Default ruleset for general Groovy projects.
      * Provides a balanced set of rules that catch common issues without being overly strict.
+     * @deprecated Use .groovy files in resources/codenarc/rulesets/ instead
      */
     private val defaultGroovyRuleset = """
         ruleset {
@@ -257,30 +262,47 @@ class CodeNarcConfigurationManager {
             }
 
             // Formatting (basic subset)
-            rule('TrailingWhitespace')
-            rule('ConsecutiveBlankLines') {
+            ruleset('rulesets/formatting.xml') {
+                include 'TrailingWhitespace'
+                exclude 'ConsecutiveBlankLines'  // Configure separately
+            }
+            // Configured formatting rules
+            ConsecutiveBlankLines {
                 length = 3  // Allow up to 2 blank lines
             }
 
-            // Naming conventions
-            rule('MethodName') {
+            // Naming conventions (exclude from bulk import, configure separately)
+            ruleset('rulesets/naming.xml') {
+                exclude 'MethodName'
+                exclude 'VariableName'
+                exclude 'FieldName'
+            }
+
+            // Configured naming rules
+            MethodName {
                 regex = /^[a-z][a-zA-Z0-9_]*$/
             }
 
-            rule('VariableName') {
+            VariableName {
                 regex = /^[a-z][a-zA-Z0-9_]*$/
             }
 
-            rule('FieldName') {
+            FieldName {
                 regex = /^[a-z][a-zA-Z0-9_]*$/
             }
 
-            // Size and complexity (reasonable limits)
-            rule('MethodSize') {
+            // Size and complexity (exclude from bulk import, configure separately)
+            ruleset('rulesets/size.xml') {
+                exclude 'MethodSize'
+                exclude 'ClassSize'
+            }
+
+            // Configured size rules
+            MethodSize {
                 maxLines = 100
             }
 
-            rule('ClassSize') {
+            ClassSize {
                 maxLines = 500
             }
 
@@ -288,8 +310,10 @@ class CodeNarcConfigurationManager {
             ruleset('rulesets/concurrency.xml')
 
             // Design rules (subset)
-            rule('PublicInstanceField')
-            rule('BuilderMethodWithSideEffects')
+            ruleset('rulesets/design.xml') {
+                include 'PublicInstanceField'
+                include 'BuilderMethodWithSideEffects'
+            }
         }
     """.trimIndent()
 
@@ -322,26 +346,33 @@ class CodeNarcConfigurationManager {
 
             // Unused code (but allow Jenkins implicit variables)
             ruleset('rulesets/unused.xml') {
-                rule('UnusedVariable') {
-                    // Jenkins provides these variables implicitly
-                    ignoreVariableNames = 'env,params,currentBuild,BUILD_NUMBER,JOB_NAME,WORKSPACE,NODE_NAME,scm'
-                }
+                exclude 'UnusedVariable'  // Configure separately
+            }
+
+            // Configure UnusedVariable rule separately with Jenkins-specific exclusions
+            UnusedVariable {
+                // Jenkins provides these variables implicitly
+                ignoreVariableNames = 'env,params,currentBuild,BUILD_NUMBER,JOB_NAME,WORKSPACE,NODE_NAME,scm'
             }
 
             // Exception handling (very lenient for scripts)
-            rule('CatchArrayIndexOutOfBoundsException')
-            rule('CatchNullPointerException')
+            ruleset('rulesets/exceptions.xml') {
+                include 'CatchArrayIndexOutOfBoundsException'
+                include 'CatchNullPointerException'
+            }
 
             // Formatting (minimal)
-            rule('TrailingWhitespace')
+            ruleset('rulesets/formatting.xml') {
+                include 'TrailingWhitespace'
+            }
 
-            // Naming (Jenkins-aware)
-            rule('MethodName') {
+            // Naming (Jenkins-aware) - configure separately
+            MethodName {
                 // Allow Jenkins DSL method patterns and step names
                 regex = /^[a-z][a-zA-Z0-9_]*$|^call$|^pipeline$|^agent$|^stages$|^stage$|^steps$|^sh$|^bat$|^script$|^node$|^build$|^checkout$|^git$|^parallel$/
             }
 
-            rule('VariableName') {
+            VariableName {
                 // More lenient for Jenkins variables
                 regex = /^[a-z][a-zA-Z0-9_]*$|^[A-Z][A-Z0-9_]*$/
                 // Allow common Jenkins variable patterns
@@ -349,31 +380,47 @@ class CodeNarcConfigurationManager {
             }
 
             // Size limits (more generous for pipeline scripts)
-            rule('MethodSize') {
+            MethodSize {
                 maxLines = 150
             }
 
-            rule('ClassSize') {
+            ClassSize {
                 maxLines = 1000
             }
 
-            // Jenkins-specific rules
-            rule('UnnecessaryGetter') {
-                enabled = false  // Jenkins uses property access heavily
+            // Jenkins-specific exclusions (using ruleset exclusions instead of non-existent rules)
+            // Note: Some rules don't exist in current CodeNarc version, so we exclude them from rulesets instead
+
+            // Exclude rules that would conflict with Jenkins DSL patterns
+            ruleset('rulesets/groovyism.xml') {
+                exclude 'ExplicitCallToGetAtMethod'
+                exclude 'ExplicitCallToPutAtMethod'
             }
 
-            rule('UnnecessaryPublicModifier') {
-                enabled = false  // Often explicit in Jenkins for clarity
-            }
-
-            // Allow script-like patterns
-            rule('ScriptNotInClass') {
-                enabled = false  // Jenkinsfiles are scripts
-            }
-
-            rule('VariableTypeRequired') {
-                enabled = false  // Jenkins scripts often use def
+            // Basic formatting and conventions (very minimal for scripts)
+            ruleset('rulesets/convention.xml') {
+                exclude 'CompileStatic'  // Not required for Jenkins scripts
+                exclude 'NoDef'          // Jenkins scripts commonly use 'def'
             }
         }
     """.trimIndent()
+
+    /**
+     * Loads a ruleset from a resource file.
+     *
+     * @param resourcePath Path to the resource file (e.g., "codenarc/rulesets/base/default.groovy")
+     * @return The content of the ruleset file
+     * @throws IllegalStateException if the resource cannot be found or read
+     */
+    private fun loadRulesetFromResource(resourcePath: String): String {
+        try {
+            val resourceStream = javaClass.classLoader.getResourceAsStream(resourcePath)
+                ?: throw IllegalStateException("Ruleset resource not found: $resourcePath")
+
+            return resourceStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            logger.error("Failed to load ruleset from resource: $resourcePath", e)
+            throw IllegalStateException("Could not load CodeNarc ruleset from $resourcePath", e)
+        }
+    }
 }
