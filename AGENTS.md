@@ -112,3 +112,206 @@ lsp/hover, lsp/symbols Priority: P0-critical, P1-must, P2-should, P3-nice Size: 
 
 gh issue list -R albertocavalcante/groovy-lsp -l "P1-must" gh issue edit 31 --add-label "blocked" --remove-label
 "help-wanted" gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-issues>
+
+<lsp-component-testing>
+# Testing LSP Components Individually
+
+For debugging LSP components when unit tests fail, create temporary Kotlin files to test specific functionality:
+
+```bash
+# Write temporary test file
+Write(/tmp/TestComponent.kt)
+  import com.github.albertocavalcante.groovylsp.util.GroovyBuiltinMethods
+  fun main() {
+      println("Testing component...")
+      println("Result: ${GroovyBuiltinMethods.isBuiltinMethod("println")}")
+  }
+
+# Compile and run against the built jar
+kotlinc -cp "build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar" /tmp/TestComponent.kt -include-runtime -d /tmp/TestComponent.jar
+java -cp "/tmp/TestComponent.jar:build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar" TestComponentKt
+
+# Use for: util classes, AST analysis, hover providers, compilation services
+```
+
+This pattern allows testing individual components in isolation without the complexity of full test suite setup.
+</lsp-component-testing>
+
+<test-debugging-with-println>
+# Debug Pattern for Test Failures
+
+When debugging test failures with println statements for immediate visibility:
+
+```bash
+# Add println statements to code for debugging
+println("DEBUG: variable = $value")
+println("DEBUG: Processing context '$contextName' with ${nodes.size} nodes")
+
+# Run tests with output redirection to capture debug messages
+./gradlew test --tests "*TestName*" --console=plain --info 2>&1 | grep -E "(DEBUG:|FAILED|ERROR)"
+
+# Alternative: Filter for specific debug patterns
+./gradlew test --tests "*WorkspaceTest*" --console=plain --info 2>&1 | grep -E "(DEBUG: Found|DEBUG: Processing|AssertionFailedError)"
+
+# Pattern for targeted debugging
+./gradlew test --tests "*SpecificTest*" --console=plain --info 2>&1 | grep -E "(DEBUG: HoverProvider|DEBUG: Node.*found|Should provide hover)"
+```
+
+**Usage notes:**
+
+- Use println() for immediate debug output visibility in tests (logger.debug() won't show)
+- Always redirect with `2>&1 | grep -E "(pattern)"` to capture output
+- Remove println statements after debugging is complete
+- Use targeted grep patterns to filter relevant debug information
+- Combine with `--info` flag for detailed test output
+
+**Example debug workflow:**
+
+1. Add println statements to investigate failing functionality
+2. Run tests with output redirection and grep filtering
+3. Analyze debug output to identify root cause
+4. Fix the issue based on debug findings
+5. Remove debug println statements and verify tests still pass </test-debugging-with-println>
+
+<lsp-server-debugging>
+# Live LSP Server Debugging
+
+For testing the LSP server directly to debug runtime issues, dependency conflicts, or service errors:
+
+```bash
+# Create test file to trigger analysis
+echo 'class TestClass {}' > /path/to/test.groovy
+
+# Test server initialization with timeout and error filtering
+echo '{"method":"initialize","params":{"rootUri":"file:///path/to/workspace","capabilities":{}}}' | \
+  timeout 5s java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar 2>&1 | \
+  grep -E "(visitClassEx|MissingMethodException|CodeNarc|ERROR)" || echo "No errors found"
+
+# Test specific error patterns
+echo '{"method":"initialize","params":{"rootUri":"file:///path/to/workspace","capabilities":{}}}' | \
+  timeout 10s java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar 2>&1 | \
+  grep -E "(Exception|Error|WARN.*failed)"
+```
+
+**Usage notes:**
+
+- Use timeout to prevent hanging on server startup issues
+- Pipe stderr to stdout with `2>&1` to capture all error output
+- Use specific grep patterns to filter for known error types
+- Test with real workspace directories to trigger dependency resolution
+- Create minimal test files to isolate specific analysis features
+
+**Common error patterns to grep for:**
+
+- `visitClassEx|MissingMethodException` - CodeNarc version conflicts
+- `VirtualResults|UnsupportedOperationException.*virtual results` - CodeNarc plugin issues
+- `ClassNotFoundException|NoClassDefFoundError` - Dependency issues
+- `Exception.*groovy` - Groovy compilation problems
+- `WARN.*CodeNarc` - CodeNarc analysis failures
+
+**Testing with real workspace files:**
+
+```bash
+# Test with actual problematic file instead of dummy files
+echo '{"method":"initialize","params":{"rootUri":"file:///path/to/real/workspace","capabilities":{}}}' | \
+  timeout 10s java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar 2>&1 | \
+  grep -E "(VirtualResults|MockClosure\.groovy|specific-error-pattern)"
+
+# Example: Testing JenkinsPipelineUnit workspace that had VirtualResults issues
+echo '{"method":"initialize","params":{"rootUri":"file:///Users/albertocavalcante/dev/workspace/JenkinsPipelineUnit","capabilities":{}}}' | \
+  timeout 10s java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar 2>&1 | \
+  grep -E "(VirtualResults|MockClosure\.groovy)" || echo "✅ No VirtualResults errors"
+```
+
+</lsp-server-debugging>
+
+<vscode-extension-development>
+# VSCode Extension Development Workflow
+
+Complete workflow for updating the Groovy LSP server and deploying changes to VSCode extension.
+
+## 1. Build Updated LSP Server
+
+```bash
+# Build LSP JAR (skip detekt for faster iteration)
+./gradlew shadowJar -x detekt
+
+# Alternative: Full build with quality checks
+./gradlew build
+```
+
+## 2. Update VSCode Extension with New LSP JAR
+
+```bash
+# Copy updated JAR to extension server directory
+cp build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar /path/to/vscode-groovy/server/groovy-lsp.jar
+
+# Navigate to extension directory
+cd /path/to/vscode-groovy
+
+# Package extension with updated server
+npm run package
+```
+
+## 3. Install/Update Extension in VSCode
+
+```bash
+# Install or force-update the extension
+code --install-extension vscode-groovy-0.1.0.vsix --force
+
+# Alternative: Install from specific path
+code --install-extension /full/path/to/vscode-groovy-0.1.0.vsix --force
+```
+
+## 4. Refresh LSP Server
+
+**For LSP capability changes (new features):**
+
+- Restart VSCode completely (Cmd+Q/Ctrl+Q and reopen)
+- Server capabilities are negotiated during initialization
+
+**For LSP implementation changes (bug fixes):**
+
+- Use "Groovy: Restart Language Server" command
+- Or reload window (Cmd+R/Ctrl+R)
+
+## 5. Development Tips
+
+**Quick JAR refresh without extension rebuild:**
+
+```bash
+# For development iteration - just replace JAR and restart LSP
+cp build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar /path/to/vscode-groovy/server/groovy-lsp.jar
+# Then use "Groovy: Restart Language Server" in VSCode
+```
+
+**Verify extension installation:**
+
+```bash
+# List installed extensions
+code --list-extensions | grep groovy
+
+# Check extension details
+code --list-extensions --show-versions | grep groovy
+```
+
+**Debug LSP communication:**
+
+- Enable "groovy.traceServer": "verbose" in VSCode settings
+- Check "Groovy Language Server Trace" output channel
+- Use VSCode Developer Tools (Help > Toggle Developer Tools)
+
+## 6. Testing Checklist
+
+- [ ] LSP server starts without errors
+- [ ] Basic features work (hover, completion, diagnostics)
+- [ ] New features are available (folding ranges, code actions, etc.)
+- [ ] No regression in existing functionality
+- [ ] Check output channels for error messages
+
+**Common Issues:**
+
+- JAR not updated: Verify file timestamps match
+- Capabilities not available: Full VSCode restart required
+- Extension not loading: Check VSCode Extensions view for errors
+- LSP crashes: Check "Groovy Language Server" output channel </vscode-extension-development>

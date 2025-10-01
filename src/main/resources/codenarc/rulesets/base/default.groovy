@@ -32,30 +32,47 @@ ruleset {
     }
 
     // Formatting (basic subset)
-    rule('TrailingWhitespace')
-    rule('ConsecutiveBlankLines') {
-        length = 3  // Allow up to 2 blank lines
+    ruleset('rulesets/formatting.xml') {
+        include 'TrailingWhitespace'
+        exclude 'ConsecutiveBlankLines'  // Configure separately
     }
 
-    // Naming conventions
-    rule('MethodName') {
+    // Configured formatting rules
+    ConsecutiveBlankLines {}
+    // Note: ConsecutiveBlankLines rule has no configurable properties for max lines
+
+    // Naming conventions (exclude from bulk import, configure separately)
+    ruleset('rulesets/naming.xml') {
+        exclude 'MethodName'
+        exclude 'VariableName'
+        exclude 'FieldName'
+    }
+
+    // Configured naming rules
+    MethodName {
         regex = /^[a-z][a-zA-Z0-9_]*$/
     }
 
-    rule('VariableName') {
+    VariableName {
         regex = /^[a-z][a-zA-Z0-9_]*$/
     }
 
-    rule('FieldName') {
+    FieldName {
         regex = /^[a-z][a-zA-Z0-9_]*$/
     }
 
-    // Size and complexity (reasonable limits)
-    rule('MethodSize') {
+    // Size and complexity (exclude from bulk import, configure separately)
+    ruleset('rulesets/size.xml') {
+        exclude 'MethodSize'
+        exclude 'ClassSize'
+    }
+
+    // Configured size rules
+    MethodSize {
         maxLines = 100
     }
 
-    rule('ClassSize') {
+    ClassSize {
         maxLines = 500
     }
 
@@ -63,6 +80,8 @@ ruleset {
     ruleset('rulesets/concurrency.xml')
 
     // Design rules (subset)
-    rule('PublicInstanceField')
-    rule('BuilderMethodWithSideEffects')
+    ruleset('rulesets/design.xml') {
+        include 'PublicInstanceField'
+        include 'BuilderMethodWithSideEffects'
+    }
 }
