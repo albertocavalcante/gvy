@@ -16,6 +16,7 @@ import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.codehaus.groovy.ast.stmt.ReturnStatement
 import org.codehaus.groovy.ast.stmt.Statement
 
 /**
@@ -53,6 +54,11 @@ internal class PositionNodeVisitor(private val visitor: PositionAwareVisitor) {
         // Visit static star imports (returns Map<String, ImportNode>)
         module.staticStarImports?.values?.forEach { importNode ->
             visitor.checkAndUpdateSmallest(importNode)
+        }
+
+        // Visit script-level statements
+        module.statementBlock?.statements?.forEach { statement ->
+            visitStatement(statement)
         }
 
         // Visit all classes in the module
@@ -176,6 +182,10 @@ internal class PositionNodeVisitor(private val visitor: PositionAwareVisitor) {
             is ExpressionStatement -> {
                 // Visit the expression within the statement
                 visitExpression(statement.expression)
+            }
+            is ReturnStatement -> {
+                // Visit the return expression if it exists
+                statement.expression?.let { visitExpression(it) }
             }
             // Add more statement types as needed
         }
