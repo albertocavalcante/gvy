@@ -1,7 +1,12 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.ast.AstVisitor
+import com.github.albertocavalcante.groovylsp.ast.ReferenceCollector
+import com.github.albertocavalcante.groovylsp.ast.ScopeAnalyzer
+import com.github.albertocavalcante.groovylsp.ast.SemanticAnalysisResult
+import com.github.albertocavalcante.groovylsp.ast.SemanticAnalyzer
 import com.github.albertocavalcante.groovylsp.ast.SymbolTable
+import com.github.albertocavalcante.groovylsp.ast.TypeResolver
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
@@ -33,10 +38,17 @@ class GroovyCompilationService {
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver = SimpleDependencyResolver()
 
+    // AST analysis components
+    private val semanticAnalyzer = SemanticAnalyzer()
+    private val scopeAnalyzer = ScopeAnalyzer()
+    private val typeResolver = TypeResolver()
+    private val referenceCollector = ReferenceCollector()
+
     // AST visitor and symbol table caches with LRU eviction
     private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
     private val symbolTableCache = LRUCache<URI, SymbolTable>(maxSize = 100)
     private val symbolStorageCache = LRUCache<URI, SymbolStorage>(maxSize = 100)
+    private val semanticAnalysisCache = LRUCache<URI, SemanticAnalysisResult>(maxSize = 50)
 
     // Dependency classpath management
     private val dependencyClasspath = mutableListOf<Path>()
@@ -143,6 +155,122 @@ class GroovyCompilationService {
     fun getSymbolStorage(uri: URI): SymbolStorage? = symbolStorageCache.get(uri)
 
     /**
+     * Gets the semantic analysis result for a URI, performing analysis if not cached.
+     */
+    suspend fun getSemanticAnalysis(uri: URI, content: String): SemanticAnalysisResult? =
+        semanticAnalysisCache.get(uri) ?: run {
+            val compilationResult = compile(uri, content)
+            if (compilationResult.isSuccess && compilationResult.ast != null) {
+                val moduleNode = compilationResult.ast as? org.codehaus.groovy.ast.ModuleNode
+                if (moduleNode != null) {
+                    val analysis = semanticAnalyzer.analyzeModule(moduleNode)
+                    semanticAnalysisCache.put(uri, analysis)
+                    analysis
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+
+    /**
+     * Finds references to a symbol across the workspace.
+     */
+    suspend fun findReferences(
+        symbolName: String,
+        symbolType: com.github.albertocavalcante.groovylsp.ast.SymbolType,
+        fileUris: List<URI>,
+        fileContents: Map<URI, String>,
+    ): List<org.eclipse.lsp4j.Location> {
+        val allReferences = mutableListOf<org.eclipse.lsp4j.Location>()
+
+        fileUris.forEach { uri ->
+            val content = fileContents[uri] ?: return@forEach
+            val compilationResult = compile(uri, content)
+
+            if (compilationResult.isSuccess && compilationResult.ast != null) {
+                val moduleNode = compilationResult.ast as? org.codehaus.groovy.ast.ModuleNode
+                if (moduleNode != null) {
+                    val references = referenceCollector.findReferences(moduleNode, symbolName, symbolType, uri)
+                    allReferences.addAll(references)
+                }
+            }
+        }
+
+        return allReferences
+    }
+
+    /**
+     * Builds call hierarchy for a method.
+     */
+    suspend fun buildCallHierarchy(
+        methodName: String,
+        declaringClass: String,
+        fileUris: List<URI>,
+        fileContents: Map<URI, String>,
+    ): com.github.albertocavalcante.groovylsp.ast.CallHierarchy? {
+        val modules = mutableListOf<org.codehaus.groovy.ast.ModuleNode>()
+
+        // Compile all files and collect module nodes
+        fileUris.forEach { uri ->
+            val content = fileContents[uri] ?: return@forEach
+            val compilationResult = compile(uri, content)
+
+            if (compilationResult.isSuccess && compilationResult.ast != null) {
+                val moduleNode = compilationResult.ast as? org.codehaus.groovy.ast.ModuleNode
+                if (moduleNode != null) {
+                    modules.add(moduleNode)
+                }
+            }
+        }
+
+        return if (modules.isNotEmpty()) {
+            referenceCollector.buildCallHierarchy(modules, methodName, declaringClass, fileUris)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Gets semantic information at a specific position.
+     */
+    suspend fun getSemanticInfoAtPosition(
+        uri: URI,
+        content: String,
+        line: Int,
+        column: Int,
+    ): com.github.albertocavalcante.groovylsp.ast.SemanticInfo? {
+        val analysis = getSemanticAnalysis(uri, content) ?: return null
+        return semanticAnalyzer.findSemanticInfoAtPosition(analysis, line, column)
+    }
+
+    /**
+     * Gets type information for an expression at a position.
+     */
+    suspend fun getTypeInfoAtPosition(
+        uri: URI,
+        content: String,
+        line: Int,
+        column: Int,
+    ): com.github.albertocavalcante.groovylsp.ast.TypeInfo? {
+        val analysis = getSemanticAnalysis(uri, content) ?: return null
+        val semanticInfo = semanticAnalyzer.findSemanticInfoAtPosition(analysis, line, column)
+
+        // Find the most relevant symbol at this position
+        val symbol = semanticInfo?.symbols?.firstOrNull() ?: return null
+
+        // Try to resolve type information for the symbol
+        return symbol.type?.let { typeName ->
+            com.github.albertocavalcante.groovylsp.ast.TypeInfo(
+                name = typeName,
+                qualifiedName = symbol.qualifiedName ?: typeName,
+                confidence = com.github.albertocavalcante.groovylsp.ast.TypeConfidence.HIGH,
+            )
+        }
+    }
+
+    /**
      * Clears all caches.
      */
     fun clearCaches() {
@@ -150,6 +278,7 @@ class GroovyCompilationService {
         astVisitorCache.clear()
         symbolTableCache.clear()
         symbolStorageCache.clear()
+        semanticAnalysisCache.clear()
     }
 
     fun getCacheStatistics() = cache.getStatistics()
