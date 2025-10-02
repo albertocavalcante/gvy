@@ -1,7 +1,7 @@
 # Groovy LSP Makefile
 # Quick development commands for common tasks
 
-.PHONY: help build jar test clean lint format quality run-stdio run-socket version
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version
 
 # Default target
 help:
@@ -11,7 +11,8 @@ help:
 	@echo "  test       - Run all tests"
 	@echo "  clean      - Clean build artifacts"
 	@echo "  lint       - Run code quality checks"
-	@echo "  format     - Format source code"
+	@echo "  format     - Format source code and fix auto-correctable issues"
+	@echo "  fix-imports - Auto-fix unused imports and other detekt auto-correctable issues"
 	@echo "  quality    - Run all quality checks including coverage"
 	@echo "  run-stdio  - Run server in stdio mode"
 	@echo "  run-socket - Run server in socket mode (port 8080)"
@@ -19,7 +20,7 @@ help:
 
 # Quick JAR build without tests (most common during development)
 jar:
-	./gradlew build -x test
+	./gradlew build -x test -x koverVerify -x detekt -x spotlessKotlinCheck -x spotlessMarkdownCheck
 
 # Full build with tests
 build:
@@ -39,6 +40,10 @@ lint:
 
 format:
 	./gradlew lintFix
+
+# Auto-fix specific issues
+fix-imports:
+	./gradlew detektAutoCorrect --parallel
 
 quality:
 	./gradlew quality
