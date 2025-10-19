@@ -1,19 +1,18 @@
----
-name: "Release Please"
+name: Release Please
 "on":
   push:
     branches:
-    - "main"
+    - main
   workflow_dispatch: null
 permissions:
-  contents: "write"
-  pull-requests: "write"
+  contents: write
+  pull-requests: write
 jobs:
   release-please:
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-latest
     steps:
-    - uses: "googleapis/release-please-action@c2a5a2bd6a758a0937f1ddb1e8950609867ed15c"
+    - uses: googleapis/release-please-action@c2a5a2bd6a758a0937f1ddb1e8950609867ed15c
       with:
         token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
-        config-file: "release-please-config.json"
-        manifest-file: ".release-please-manifest.json"
+        config-file: release-please-config.json
+        manifest-file: .release-please-manifest.json

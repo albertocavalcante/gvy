@@ -158,11 +158,7 @@ spotless {
                 ),
             )
     }
-    yaml {
-        target("**/*.yml", "**/*.yaml")
-        targetExclude("**/build/**/*.yml", "**/build/**/*.yaml", "**/target/**/*.yml", "**/target/**/*.yaml")
-        jackson()
-    }
+
     groovy {
         target("src/**/*.groovy")
         targetExclude("**/build/**/*.groovy", "src/test/resources/**/*.groovy")

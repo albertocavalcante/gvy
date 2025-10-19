@@ -1,120 +1,131 @@
----
-name: "CI"
-"on":
+name: CI
+on:
   push:
     branches:
-    - "main"
-    - "master"
+      - main
+      - master
   pull_request:
     branches:
-    - "main"
-    - "master"
-  workflow_dispatch: null
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      disable_scan:
+        description: Disable Gradle build scan
+        required: false
+        type: boolean
+        default: false
 concurrency:
-  group: "${{ github.workflow }}-${{ github.ref }}"
-  cancel-in-progress: "${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'\
-    \ }}"
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 jobs:
   build:
-    name: "Build and Test"
-    runs-on: "${{ matrix.os }}"
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
     permissions:
-      checks: "write"
-      contents: "read"
+      checks: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: "${{ fromJSON(github.event_name == 'pull_request' && '[\"ubuntu-latest\"\
-          ]' || '[\"ubuntu-latest\", \"macos-latest\"]') }}"
-        java: "${{ fromJSON(github.event_name == 'pull_request' && '[17]' || '[17,\
-          \ 21]') }}"
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
+        java: ${{ fromJSON(github.event_name == 'pull_request' && '[17]' || '[17, 21]') }}
         exclude:
-        - os: "macos-latest"
-          java: 21
+          - os: macos-latest
+            java: 21
     steps:
-    - name: "Checkout code"
-      uses: "actions/checkout@v5"
-      with:
-        fetch-depth: 0
-    - name: "Set up JDK ${{ matrix.java }}"
-      uses: "actions/setup-java@v5"
-      with:
-        distribution: "temurin"
-        java-version: "${{ matrix.java }}"
-    - name: "Setup Gradle"
-      uses: "gradle/actions/setup-gradle@v5"
-      with:
-        cache-read-only: "${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'\
-          \ }}"
-    - name: "Validate Gradle Wrapper"
-      run: "./gradlew --version"
-    - name: "Compile Kotlin"
-      run: "./gradlew compileKotlin compileTestKotlin --stacktrace"
-    - name: "Run Quality Checks"
-      run: "./gradlew lint --stacktrace"
-    - name: "Run Tests"
-      run: "./gradlew test --stacktrace"
-    - name: "Run Code Coverage"
-      run: "./gradlew koverHtmlReport koverXmlReport --stacktrace"
-    - name: "SonarCloud Analysis"
-      if: "matrix.os == 'ubuntu-latest' && matrix.java == 17 &&\n((github.event_name\
-        \ == 'push' && github.ref == 'refs/heads/main') ||\n (github.event_name ==\
-        \ 'pull_request' &&\n  github.event.pull_request.base.ref == 'main' &&\n \
-        \ github.event.pull_request.head.repo.full_name == github.repository))\n"
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        SONAR_TOKEN: "${{ secrets.SONAR_TOKEN }}"
-      run: "./gradlew sonar --info"
-    - name: "Generate Test Report"
-      uses: "dorny/test-reporter@v2"
-      if: "success() || failure()"
-      with:
-        name: "Test Results (${{ matrix.os }} - Java ${{ matrix.java }})"
-        path: "build/test-results/test/*.xml"
-        reporter: "java-junit"
-    - name: "Build Shadow JAR"
-      run: "./gradlew shadowJar --stacktrace"
-    - name: "Verify JAR"
-      run: "echo \"Testing JAR with --help flag...\"\njava -jar build/libs/groovy-lsp-*-SNAPSHOT.jar\
-        \ --help\n"
-    - name: "Upload JAR artifact"
-      if: "matrix.os == 'ubuntu-latest' && matrix.java == 17"
-      uses: "actions/upload-artifact@v4"
-      with:
-        name: "groovy-lsp-jar"
-        path: "build/libs/groovy-lsp-*-SNAPSHOT.jar"
-        retention-days: 7
-    - name: "Upload Test Results"
-      if: "always()"
-      uses: "actions/upload-artifact@v4"
-      with:
-        name: "test-results-${{ matrix.os }}-java${{ matrix.java }}"
-        path: "build/test-results/\nbuild/reports/tests/\n"
-        retention-days: 7
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+      - name: Set Gradle scan flag
+        shell: bash
+        run: |-
+          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
+            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> $GITHUB_ENV
+          else
+            echo "GRADLE_SCAN_FLAG=" >> $GITHUB_ENV
+          fi
+      - name: Validate Gradle Wrapper
+        run: ./gradlew --version
+      - name: Compile Kotlin
+        run: ./gradlew compileKotlin compileTestKotlin --stacktrace $GRADLE_SCAN_FLAG
+      - name: Run Quality Checks
+        run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
+      - name: Run Tests
+        run: ./gradlew test --stacktrace $GRADLE_SCAN_FLAG
+      - name: Run Code Coverage
+        run: ./gradlew koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
+      - name: SonarCloud Analysis
+        if: matrix.os == 'ubuntu-latest' && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
+      - name: Generate Test Report
+        uses: dorny/test-reporter@v2
+        if: success() || failure()
+        with:
+          name: Test Results (${{ matrix.os }} - Java ${{ matrix.java }})
+          path: build/test-results/test/*.xml
+          reporter: java-junit
+      - name: Build Shadow JAR
+        run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+      - name: Verify JAR
+        run: |-
+          echo "Testing JAR with --help flag..."
+          java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar --help
+      - name: Upload JAR artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.java == 17
+        uses: actions/upload-artifact@v4
+        with:
+          name: groovy-lsp-jar
+          path: build/libs/groovy-lsp-*-SNAPSHOT.jar
+          retention-days: 7
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-java${{ matrix.java }}
+          path: |-
+            build/test-results/
+            build/reports/tests/
+          retention-days: 7
   validate:
-    name: "Validation Check"
-    runs-on: "ubuntu-latest"
-    needs: "build"
-    if: "always()"
+    name: Validation Check
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
     steps:
-    - name: "Check build status"
-      run: "if [[ \"${{ needs.build.result }}\" != \"success\" ]]; then\n  echo \"\
-        Build failed or was cancelled\"\n  exit 1\nfi\necho \"✅ All checks passed!\"\
-        \n"
+      - name: Check build status
+        run: |-
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            echo "Build failed or was cancelled"
+            exit 1
+          fi
+          echo "✅ All checks passed!"
   dependency-check:
-    name: "Check Dependencies"
-    runs-on: "ubuntu-latest"
-    if: "github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'"
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:
-    - name: "Checkout code"
-      uses: "actions/checkout@v5"
-    - name: "Set up JDK 17"
-      uses: "actions/setup-java@v5"
-      with:
-        distribution: "temurin"
-        java-version: 17
-    - name: "Setup Gradle"
-      uses: "gradle/actions/setup-gradle@v5"
-    - name: "Check for dependency updates"
-      run: "./gradlew dependencyUpdates --refresh-dependencies || true\n"
-      continue-on-error: true
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+      - name: Check for dependency updates
+        run: ./gradlew dependencyUpdates --refresh-dependencies || true

@@ -1,4 +1,3 @@
----
 build:
   maxIssues: 100
   excludeCorrectable: false
@@ -25,10 +24,10 @@ complexity:
   TooManyFunctions:
     active: true
     excludes:
-    - "**/dsl/**"
-    - "**/test/**"
-    - "**/visitor/**"
-    - "**/AstVisitor.kt"
+    - '**/dsl/**'
+    - '**/test/**'
+    - '**/visitor/**'
+    - '**/AstVisitor.kt'
     thresholdInFiles: 20
     thresholdInClasses: 18
     thresholdInInterfaces: 13
@@ -42,7 +41,7 @@ empty-blocks:
   active: true
   EmptyCatchBlock:
     active: true
-    allowedExceptionNameRegex: "_|(ignore|expected).*"
+    allowedExceptionNameRegex: _|(ignore|expected).*
   EmptyFunctionBlock:
     active: true
 exceptions:
@@ -50,24 +49,24 @@ exceptions:
   TooGenericExceptionCaught:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'
     exceptionNames:
-    - "ArrayIndexOutOfBoundsException"
-    - "Error"
-    - "Exception"
-    - "IllegalMonitorStateException"
-    - "NullPointerException"
-    - "IndexOutOfBoundsException"
-    - "RuntimeException"
-    - "Throwable"
+    - ArrayIndexOutOfBoundsException
+    - Error
+    - Exception
+    - IllegalMonitorStateException
+    - NullPointerException
+    - IndexOutOfBoundsException
+    - RuntimeException
+    - Throwable
   SwallowedException:
     active: true
     ignoredExceptionTypes:
-    - "InterruptedException"
-    - "NumberFormatException"
-    - "ParseException"
-    - "MalformedURLException"
-    allowedExceptionNameRegex: "_|(ignore|expected).*"
+    - InterruptedException
+    - NumberFormatException
+    - ParseException
+    - MalformedURLException
+    allowedExceptionNameRegex: _|(ignore|expected).*
 formatting:
   active: true
   android: false
@@ -113,7 +112,7 @@ naming:
   FunctionNaming:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'
     functionPattern: "^([a-z][a-zA-Z0-9]*)|(`.*`)$"
   PackageNaming:
     active: true
@@ -126,11 +125,11 @@ performance:
   ForEachOnRange:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'
   SpreadOperator:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'
 potential-bugs:
   active: true
   EqualsAlwaysReturnsTrueOrFalse:
@@ -166,12 +165,12 @@ style:
   MagicNumber:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'
     ignoreNumbers:
-    - "-1"
-    - "0"
-    - "1"
-    - "2"
+    - '-1'
+    - '0'
+    - '1'
+    - '2'
     ignoreHashCodeFunction: true
     ignorePropertyDeclaration: false
     ignoreLocalVariableDeclaration: false
@@ -186,7 +185,7 @@ style:
     active: true
     max: 3
     excludedFunctions:
-    - "equals"
+    - equals
     excludeLabeled: false
     excludeReturnFromLambda: true
     excludeGuardClauses: true
@@ -194,7 +193,7 @@ style:
     active: true
   UnusedParameter:
     active: true
-    allowedNames: "ignored|_"
+    allowedNames: ignored|_
   UnusedPrivateClass:
     active: true
   UnusedPrivateMember:
@@ -208,4 +207,4 @@ style:
   WildcardImport:
     active: true
     excludes:
-    - "**/test/**"
+    - '**/test/**'

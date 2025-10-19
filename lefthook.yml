@@ -1,0 +1,5 @@
+pre-commit:
+  commands:
+    yaml-format:
+      glob: "*.{yml,yaml}"
+      run: yq -i -P '.' {staged_files}
