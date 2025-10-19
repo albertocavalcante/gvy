@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovylsp
 
 import org.eclipse.lsp4j.MessageActionItem
 import org.eclipse.lsp4j.MessageParams
+import org.eclipse.lsp4j.ProgressParams
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
+import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.services.LanguageClient
 import java.util.concurrent.CompletableFuture
@@ -61,6 +63,13 @@ class SynchronizingTestLanguageClient : LanguageClient {
     override fun logMessage(message: MessageParams) {
         // Store log messages as regular messages for test verification
         messagesRef.get().add(message)
+    }
+
+    override fun createProgress(params: WorkDoneProgressCreateParams): CompletableFuture<Void> =
+        CompletableFuture.completedFuture(null)
+
+    override fun notifyProgress(params: ProgressParams) {
+        // Progress updates are ignored for tests
     }
 
     override fun workspaceFolders(): CompletableFuture<List<WorkspaceFolder>> =

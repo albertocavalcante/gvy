@@ -149,6 +149,11 @@ class GroovyCompilationService {
     fun getSymbolStorage(uri: URI): SymbolStorage? = symbolStorageCache.get(uri)
 
     /**
+     * Returns all known symbol storages keyed by their URI.
+     */
+    fun getAllSymbolStorages(): Map<URI, SymbolStorage> = symbolStorageCache.snapshot()
+
+    /**
      * Clears all caches.
      */
     fun clearCaches() {

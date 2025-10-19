@@ -53,7 +53,7 @@ class GroovyLanguageServer :
         client = { client },
     )
 
-    private val workspaceService = GroovyWorkspaceService()
+    private val workspaceService = GroovyWorkspaceService(compilationService)
 
     override fun connect(client: LanguageClient) {
         logger.info("Connected to language client")
@@ -91,6 +91,9 @@ class GroovyLanguageServer :
 
             // Workspace symbols
             workspaceSymbolProvider = Either.forLeft(true)
+
+            // Document formatting
+            documentFormattingProvider = Either.forLeft(true)
 
             // References
             referencesProvider = Either.forLeft(true)

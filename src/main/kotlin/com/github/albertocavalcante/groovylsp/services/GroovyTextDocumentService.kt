@@ -9,6 +9,9 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
+import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
+import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
+import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import kotlinx.coroutines.CoroutineScope
@@ -335,8 +338,15 @@ class GroovyTextDocumentService(
 
     override fun documentSymbol(
         params: DocumentSymbolParams,
-    ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> =
-        CompletableFuture.completedFuture(emptyList())
+    ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
+        val uri = java.net.URI.create(params.textDocument.uri)
+        val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
+
+        storage.getSymbols(uri).mapNotNull { symbol ->
+            symbol.toDocumentSymbol()?.let { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
+                ?: symbol.toSymbolInformation()?.let { Either.forLeft<SymbolInformation, DocumentSymbol>(it) }
+        }
+    }
 
     override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> =
         coroutineScope.future {
@@ -361,13 +371,17 @@ class GroovyTextDocumentService(
             val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLISECOND
 
             val formattedContent = formattedResult.getOrElse { throwable ->
-                logger.error("Formatter failed for {}", uriString, throwable)
+                val failureMessage = throwable.message ?: throwable.javaClass.simpleName
+                logger.warn("Formatter failed for {}: {}", uriString, failureMessage)
+                if (logger.isDebugEnabled) {
+                    logger.debug("Formatter failure details for {}", uriString, throwable)
+                }
                 publishTelemetry(
                     uriString,
                     FormatterStatus.ERROR,
                     durationMs = durationMs,
                     ignoredOptions = ignoredOptions,
-                    errorMessage = throwable.message,
+                    errorMessage = failureMessage,
                 )
                 return@future emptyList<TextEdit>()
             }
@@ -418,6 +432,12 @@ class GroovyTextDocumentService(
             ),
         )
     }
+
+    private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolStorage? =
+        compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
+            compilationService.compile(uri, content)
+            compilationService.getSymbolStorage(uri)
+        }
 }
 
 private fun shouldMarkOptionsIgnored(options: FormattingOptions?): Boolean {

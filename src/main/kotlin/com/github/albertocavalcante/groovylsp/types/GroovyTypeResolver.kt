@@ -63,11 +63,34 @@ class GroovyTypeResolver(
 
         // Look for the class in the current compilation unit first
         classNode.module == context.moduleNode -> {
-            LocationConverter.nodeToLocation(classNode, context.astVisitor)
+            val declared = context.moduleNode.classes.firstOrNull { declared ->
+                declared.name == classNode.name || declared.nameWithoutPackage == classNode.nameWithoutPackage
+            }
+            val target = declared ?: classNode
+            LocationConverter.nodeToLocation(target, context.astVisitor)
         }
 
-        // Look for external classes in dependencies
-        else -> findExternalClassLocation(classNode)
+        // Try to match declared classes in the module by fully qualified name
+        else -> {
+            val targetName = classNode.name
+            val candidate = context.moduleNode.classes.firstOrNull { declared ->
+                declared.name == targetName || declared.nameWithoutPackage == classNode.nameWithoutPackage
+            }
+            if (candidate != null) {
+                logger.info(
+                    "Resolved external class ${classNode.name} to candidate at line ${candidate.lineNumber}, URI = " +
+                        "${context.astVisitor.getUri(candidate)}",
+                )
+                LocationConverter.nodeToLocation(candidate, context.astVisitor)
+            } else {
+                logger.info(
+                    "No class match found for ${classNode.name}, available: ${context.moduleNode.classes.map {
+                        it.name
+                    }}",
+                )
+                findExternalClassLocation(classNode)
+            }
+        }
     }
 
     private suspend fun resolveVariableType(variable: VariableExpression, context: CompilationContext): ClassNode? {

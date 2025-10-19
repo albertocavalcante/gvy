@@ -91,6 +91,13 @@ class LRUCache<K, V>(private val maxSize: Int) {
     fun keys(): List<K> = lock.read { accessOrder.toList() }
 
     /**
+     * Returns an immutable snapshot of the current cache contents.
+     */
+    fun snapshot(): Map<K, V> = lock.read {
+        cache.entries.associate { (key, entry) -> key to entry.value }
+    }
+
+    /**
      * Evict least recently used entries if cache exceeds max size
      */
     private fun evictIfNecessary() {

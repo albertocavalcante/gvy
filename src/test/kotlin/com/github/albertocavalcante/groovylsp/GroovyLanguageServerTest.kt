@@ -53,6 +53,7 @@ class GroovyLanguageServerTest {
             assertTrue(capabilities.completionProvider.triggerCharacters?.contains(".") == true)
             assertNotNull(capabilities.hoverProvider)
             assertNotNull(capabilities.definitionProvider)
+            assertTrue(capabilities.documentFormattingProvider?.left == true)
         }
     }
 

@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.providers.symbols.Symbol
+import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.SymbolInformation
@@ -13,7 +16,7 @@ import java.util.concurrent.CompletableFuture
 /**
  * Handles all workspace related LSP operations.
  */
-class GroovyWorkspaceService : WorkspaceService {
+class GroovyWorkspaceService(private val compilationService: GroovyCompilationService) : WorkspaceService {
 
     private val logger = LoggerFactory.getLogger(GroovyWorkspaceService::class.java)
 
@@ -28,7 +31,19 @@ class GroovyWorkspaceService : WorkspaceService {
 
     override fun symbol(
         params: WorkspaceSymbolParams,
-    ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> = CompletableFuture.completedFuture(
-        Either.forLeft(emptyList()),
-    )
+    ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
+        val query = params.query
+        if (query.isNullOrBlank()) {
+            logger.debug("Workspace symbol query blank; returning empty result")
+            return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
+        }
+        val storages = compilationService.getAllSymbolStorages()
+        val results = storages.flatMap { (uri, storage) ->
+            val symbols: List<Symbol> = storage.findMatching(uri, query)
+
+            symbols.mapNotNull { it.toSymbolInformation() }
+        }
+
+        return CompletableFuture.completedFuture(Either.forLeft(results))
+    }
 }
