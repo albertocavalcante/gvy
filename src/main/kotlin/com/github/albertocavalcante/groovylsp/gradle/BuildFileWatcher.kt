@@ -41,6 +41,12 @@ class BuildFileWatcher(
         "settings.gradle.kts",
     )
 
+    private sealed class PollResult {
+        object Timeout : PollResult()
+        object Interrupted : PollResult()
+        data class Success(val watchKey: WatchKey) : PollResult()
+    }
+
     /**
      * Starts watching the given project directory for build file changes.
      */
@@ -109,47 +115,72 @@ class BuildFileWatcher(
 
         try {
             while (coroutineScope.isActive) {
-                // Poll for events with timeout
-                val watchKey = try {
-                    // Use a timeout to allow periodic cancellation checks
-                    watchService.poll(
-                        java.util.concurrent.TimeUnit.SECONDS.toMillis(1),
-                        java.util.concurrent.TimeUnit.MILLISECONDS,
-                    )
-                } catch (e: InterruptedException) {
-                    logger.debug("Watch service interrupted")
-                    break
-                }
-
-                if (watchKey == null) {
-                    continue // Timeout, check if still active
-                }
-
-                val projectDir = watchKeys[watchKey]
-                if (projectDir == null) {
-                    logger.warn("Unknown watch key, skipping events")
-                    watchKey.reset()
-                    continue
-                }
-
-                // Process events
-                for (event in watchKey.pollEvents()) {
-                    processWatchEvent(event, projectDir)
-                }
-
-                // Reset the key for next iteration
-                val valid = watchKey.reset()
-                if (!valid) {
-                    logger.warn("Watch key no longer valid for: $projectDir")
-                    watchKeys.remove(watchKey)
+                val result = pollWatchKey(watchService)
+                val shouldContinue = handlePollResult(result)
+                if (!shouldContinue) {
                     break
                 }
             }
         } catch (e: java.nio.file.ClosedWatchServiceException) {
+            if (watchJob != null) {
+                logger.warn("Watch service closed unexpectedly", e)
+                throw e
+            }
             logger.debug("Watch service closed, terminating watch loop.")
+            return
         } catch (e: Exception) {
             logger.error("Error in build file watch loop", e)
+            throw e
         }
+    }
+
+    private suspend fun pollWatchKey(watchService: WatchService): PollResult = try {
+        val watchKey = watchService.poll(
+            java.util.concurrent.TimeUnit.SECONDS.toMillis(1),
+            java.util.concurrent.TimeUnit.MILLISECONDS,
+        )
+        if (watchKey == null) {
+            PollResult.Timeout
+        } else {
+            PollResult.Success(watchKey)
+        }
+    } catch (e: InterruptedException) {
+        logger.debug("Watch service interrupted")
+        PollResult.Interrupted
+    }
+
+    private fun handleUnknownWatchKey(watchKey: WatchKey) {
+        logger.warn("Unknown watch key, skipping events")
+        watchKey.reset()
+    }
+
+    private suspend fun handlePollResult(result: PollResult): Boolean = when (result) {
+        PollResult.Interrupted -> false
+        PollResult.Timeout -> true
+        is PollResult.Success -> handleWatchKey(result.watchKey)
+    }
+
+    private suspend fun handleWatchKey(watchKey: WatchKey): Boolean {
+        val projectDir = watchKeys[watchKey]
+        if (projectDir == null) {
+            handleUnknownWatchKey(watchKey)
+            return true
+        }
+        return processWatchKeyEvents(watchKey, projectDir)
+    }
+
+    private suspend fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
+        watchKey.pollEvents().forEach { event ->
+            processWatchEvent(event, projectDir)
+        }
+
+        val stillValid = watchKey.reset()
+        if (!stillValid) {
+            logger.warn("Watch key no longer valid for: $projectDir")
+            watchKeys.remove(watchKey)
+        }
+
+        return stillValid
     }
 
     /**
