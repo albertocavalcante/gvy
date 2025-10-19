@@ -2,6 +2,15 @@ plugins {
     id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.2"
 }
 
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        mavenLocal()
+        // Gradle repository for Tooling API
+        maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
+    }
+}
+
 gitHooks {
     preCommit {
         from {
@@ -48,3 +57,5 @@ gitHooks {
 }
 
 rootProject.name = "groovy-lsp"
+
+include("groovy-formatter")

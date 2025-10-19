@@ -34,12 +34,6 @@ version =
         else -> "$baseVersion-SNAPSHOT"
     }
 
-repositories {
-    mavenCentral()
-    // Gradle repository for Tooling API
-    maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
-}
-
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
@@ -88,6 +82,9 @@ dependencies {
 
     // Code Quality Tools
     detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
+
+    // Local Modules
+    implementation(project(":groovy-formatter"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
