@@ -59,8 +59,8 @@ dependencies {
     implementation("org.apache.groovy:groovy-json:4.0.28") // Required for CodeNarc JsonSlurper
 
     // CodeNarc - Static analysis for Groovy (Groovy 4.x compatible version)
-    implementation("org.codenarc:CodeNarc:3.6.0")
-    implementation("org.gmetrics:GMetrics:2.1.0") // Required for complexity rules
+    implementation("org.codenarc:CodeNarc:3.6.0-groovy-4.0")
+    implementation("org.gmetrics:GMetrics-Groovy4:2.1.0") // Required for complexity rules
 
     // Gradle Tooling API - For dependency resolution
     implementation("org.gradle:gradle-tooling-api:9.1.0")

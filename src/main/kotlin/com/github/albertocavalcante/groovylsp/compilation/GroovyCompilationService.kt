@@ -68,8 +68,14 @@ class GroovyCompilationService {
         // Create compiler configuration
         val config = createCompilerConfiguration()
 
-        // Create compilation unit
+        // Create class loader and set classpath
         val classLoader = GroovyClassLoader()
+        if (dependencyClasspath.isNotEmpty()) {
+            dependencyClasspath.forEach { classLoader.addClasspath(it.toString()) }
+            logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
+        }
+
+        // Create compilation unit
         val compilationUnit = CompilationUnit(config, null, classLoader)
 
         // Add source
@@ -225,15 +231,6 @@ class GroovyCompilationService {
 
         // Set encoding
         sourceEncoding = "UTF-8"
-
-        // Add dependency JARs to the classpath
-        if (dependencyClasspath.isNotEmpty()) {
-            val classpathString = dependencyClasspath.joinToString(System.getProperty("path.separator")) {
-                it.toString()
-            }
-            setClasspath(classpathString)
-            logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
-        }
     }
 
     /**

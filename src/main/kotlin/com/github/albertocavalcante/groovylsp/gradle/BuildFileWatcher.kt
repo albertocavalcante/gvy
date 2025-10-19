@@ -145,6 +145,8 @@ class BuildFileWatcher(
                     break
                 }
             }
+        } catch (e: java.nio.file.ClosedWatchServiceException) {
+            logger.debug("Watch service closed, terminating watch loop.")
         } catch (e: Exception) {
             logger.error("Error in build file watch loop", e)
         }

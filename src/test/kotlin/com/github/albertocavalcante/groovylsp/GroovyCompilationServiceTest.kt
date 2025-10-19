@@ -25,8 +25,9 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test compile valid groovy file returns success with no errors`() = runBlocking {
-        val simpleGroovyContent = """
+    fun `test compile valid groovy file returns success with no errors`() {
+        runBlocking {
+            val simpleGroovyContent = """
             package test
 
             class TestClass {
@@ -36,14 +37,15 @@ class GroovyCompilationServiceTest {
                     println "Hello, " + name
                 }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        val uri = URI.create("file:///test/TestClass.groovy")
-        val result = compilationService.compile(uri, simpleGroovyContent)
+            val uri = URI.create("file:///test/TestClass.groovy")
+            val result = compilationService.compile(uri, simpleGroovyContent)
 
-        assertTrue(result.isSuccess)
-        assertTrue(result.diagnostics.isEmpty())
-        assertNotNull(result.ast)
+            assertTrue(result.isSuccess)
+            assertTrue(result.diagnostics.isEmpty())
+            assertNotNull(result.ast)
+        }
     }
 
     @Test
@@ -146,44 +148,48 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `test getDiagnostics handles compilation gracefully for unusual syntax`() = runBlocking {
-        // FIXME: Groovy is extremely tolerant of "invalid" syntax, treating many constructs
-        // as valid DSL or scripting. This test verifies the compilation service handles
-        // unusual syntax gracefully rather than expecting specific error detection.
-        val unusualContent = """
+    fun `test getDiagnostics handles compilation gracefully for unusual syntax`() {
+        runBlocking {
+            // FIXME: Groovy is extremely tolerant of "invalid" syntax, treating many constructs
+            // as valid DSL or scripting. This test verifies the compilation service handles
+            // unusual syntax gracefully rather than expecting specific error detection.
+            val unusualContent = """
             class UnusualClass {
                 // Groovy treats this as valid DSL/scripting syntax
                 void unusualMethod() {
                     @#$%^&*(!
                 }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        val uri = URI.create("file:///test/UnusualClass.groovy")
-        val result = compilationService.compile(uri, unusualContent)
+            val uri = URI.create("file:///test/UnusualClass.groovy")
+            val result = compilationService.compile(uri, unusualContent)
 
-        // The service should handle compilation without crashing
-        assertNotNull(result)
+            // The service should handle compilation without crashing
+            assertNotNull(result)
 
-        val diagnostics = compilationService.getDiagnostics(uri)
-        // Diagnostics list should be present (even if empty due to Groovy's tolerance)
-        assertNotNull(diagnostics)
+            val diagnostics = compilationService.getDiagnostics(uri)
+            // Diagnostics list should be present (even if empty due to Groovy's tolerance)
+            assertNotNull(diagnostics)
+        }
     }
 
     @Test
-    fun `test compile with real test resource files`() = runBlocking {
-        // Load the Simple.groovy test resource
-        val simpleGroovyContent = this::class.java.classLoader
-            .getResource("Simple.groovy")
-            ?.readText()
-            ?: fail("Could not load Simple.groovy test resource")
+    fun `test compile with real test resource files`() {
+        runBlocking {
+            // Load the Simple.groovy test resource
+            val simpleGroovyContent = this::class.java.classLoader
+                .getResource("Simple.groovy")
+                ?.readText()
+                ?: fail("Could not load Simple.groovy test resource")
 
-        val uri = URI.create("file:///test/Simple.groovy")
-        val result = compilationService.compile(uri, simpleGroovyContent)
+            val uri = URI.create("file:///test/Simple.groovy")
+            val result = compilationService.compile(uri, simpleGroovyContent)
 
-        assertTrue(result.isSuccess, "Simple.groovy should compile without errors")
-        assertTrue(result.diagnostics.isEmpty(), "Simple.groovy should have no diagnostics")
-        assertNotNull(result.ast, "Simple.groovy should produce an AST")
+            assertTrue(result.isSuccess, "Simple.groovy should compile without errors")
+            assertTrue(result.diagnostics.isEmpty(), "Simple.groovy should have no diagnostics")
+            assertNotNull(result.ast, "Simple.groovy should produce an AST")
+        }
     }
 
     @Test

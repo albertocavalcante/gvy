@@ -272,7 +272,13 @@ fun SymbolStorage.buildFromVisitor(visitor: AstVisitor): SymbolStorage {
             is FieldNode -> Symbol.Field.from(node, uri)
             is PropertyNode -> Symbol.Property.from(node, uri)
             is ClassNode -> Symbol.Class.from(node, uri)
-            is ImportNode -> Symbol.Import.from(node, uri)
+            is ImportNode -> {
+                if (node.isStatic) {
+                    Symbol.Import.fromStatic(node, uri)
+                } else {
+                    Symbol.Import.from(node, uri)
+                }
+            }
             else -> null
         }
 

@@ -1,14 +1,16 @@
 # Groovy LSP Makefile
 # Quick development commands for common tasks
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild
 
 # Default target
 help:
 	@echo "Available targets:"
 	@echo "  jar        - Build fat JAR without running tests (quick refresh)"
 	@echo "  build      - Full build including tests"
+	@echo "  rebuild    - Force a full rebuild including tests"
 	@echo "  test       - Run all tests"
+	@echo "  retest     - Force re-run of all tests"
 	@echo "  clean      - Clean build artifacts"
 	@echo "  lint       - Run code quality checks"
 	@echo "  format     - Format source code and fix auto-correctable issues"
@@ -26,9 +28,17 @@ jar:
 build:
 	./gradlew build
 
+# Force a full rebuild
+rebuild:
+	./gradlew build --rerun-tasks
+
 # Run tests only
 test:
 	./gradlew test
+
+# Force re-run of tests
+retest:
+	./gradlew test --rerun-tasks
 
 # Clean build artifacts
 clean:

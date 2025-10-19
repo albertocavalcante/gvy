@@ -26,61 +26,63 @@ class NonBlockingServerTest {
     }
 
     @Test
-    fun `test server lifecycle with non-blocking harness`() = runBlocking {
-        val runner = TestLanguageServerRunner()
-        serverHandle = runner.startInMemoryServer()
+    fun `test server lifecycle with non-blocking harness`() {
+        runBlocking {
+            val runner = TestLanguageServerRunner()
+            serverHandle = runner.startInMemoryServer()
 
-        val server = serverHandle!!.server
-        val client = serverHandle!!.client
+            val server = serverHandle!!.server
+            val client = serverHandle!!.client
 
-        // Test initialization
-        val initParams = InitializeParams().apply {
-            workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
-        }
+            // Test initialization
+            val initParams = InitializeParams().apply {
+                workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
+            }
 
-        val initResult = server.initialize(initParams).get()
-        assertNotNull(initResult)
-        assertNotNull(initResult.capabilities)
+            val initResult = server.initialize(initParams).get()
+            assertNotNull(initResult)
+            assertNotNull(initResult.capabilities)
 
-        // Test document operations
-        val textDoc = TextDocumentItem().apply {
-            uri = "file:///test.groovy"
-            languageId = "groovy"
-            version = 1
-            text = """
+            // Test document operations
+            val textDoc = TextDocumentItem().apply {
+                uri = "file:///test.groovy"
+                languageId = "groovy"
+                version = 1
+                text = """
                 class TestClass {
                     void method() {
                         println "Hello from test"
                     }
                 }
-            """.trimIndent()
+                """.trimIndent()
+            }
+
+            val didOpenParams = DidOpenTextDocumentParams().apply {
+                textDocument = textDoc
+            }
+
+            server.textDocumentService.didOpen(didOpenParams)
+
+            // Wait for compilation to complete
+            client.awaitSuccessfulCompilation("file:///test.groovy")
+
+            // Test completion
+            val completionParams = CompletionParams().apply {
+                textDocument = TextDocumentIdentifier("file:///test.groovy")
+                position = Position(3, 12) // Inside the method
+            }
+
+            val completions = server.textDocumentService.completion(completionParams).get()
+            assertNotNull(completions)
+            assertTrue(completions.isLeft) // Should return list, not CompletionList
+
+            val items = completions.left
+            assertTrue(items.isNotEmpty())
+            assertTrue(items.any { it.label == "println" })
+
+            // Test shutdown
+            val shutdownResult = server.shutdown().get()
+            assertNotNull(shutdownResult)
         }
-
-        val didOpenParams = DidOpenTextDocumentParams().apply {
-            textDocument = textDoc
-        }
-
-        server.textDocumentService.didOpen(didOpenParams)
-
-        // Wait for compilation to complete
-        client.awaitSuccessfulCompilation("file:///test.groovy")
-
-        // Test completion
-        val completionParams = CompletionParams().apply {
-            textDocument = TextDocumentIdentifier("file:///test.groovy")
-            position = Position(3, 12) // Inside the method
-        }
-
-        val completions = server.textDocumentService.completion(completionParams).get()
-        assertNotNull(completions)
-        assertTrue(completions.isLeft) // Should return list, not CompletionList
-
-        val items = completions.left
-        assertTrue(items.isNotEmpty())
-        assertTrue(items.any { it.label == "println" })
-
-        // Test shutdown
-        val shutdownResult = server.shutdown().get()
-        assertNotNull(shutdownResult)
     }
 }

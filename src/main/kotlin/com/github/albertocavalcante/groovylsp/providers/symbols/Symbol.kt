@@ -203,7 +203,7 @@ sealed class Symbol {
         override val name: SymbolName,
         override val uri: URI,
         override val node: ImportNode,
-        val importedName: String,
+        val importedName: String?,
         val alias: String?,
         val isStatic: Boolean,
         val isStarImport: Boolean,
@@ -213,7 +213,7 @@ sealed class Symbol {
 
         companion object {
             fun from(importNode: ImportNode, uri: URI): Import = Import(
-                name = importNode.alias ?: importNode.className,
+                name = importNode.alias ?: importNode.className ?: importNode.packageName,
                 uri = uri,
                 node = importNode,
                 importedName = importNode.className,

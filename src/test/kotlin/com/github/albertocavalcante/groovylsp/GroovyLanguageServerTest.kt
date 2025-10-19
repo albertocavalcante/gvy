@@ -31,27 +31,29 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test server initialization`() = runBlocking {
-        val params = InitializeParams().apply {
-            processId = 1234
-            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
-            capabilities = ClientCapabilities()
-            clientInfo = ClientInfo("Test Client", "1.0.0")
+    fun `test server initialization`() {
+        runBlocking {
+            val params = InitializeParams().apply {
+                processId = 1234
+                workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
+                capabilities = ClientCapabilities()
+                clientInfo = ClientInfo("Test Client", "1.0.0")
+            }
+
+            val result = server.initialize(params).get()
+
+            assertNotNull(result)
+            assertNotNull(result.capabilities)
+            assertEquals("Groovy Language Server", result.serverInfo?.name)
+            assertEquals("0.1.0-SNAPSHOT", result.serverInfo?.version)
+
+            // Check capabilities
+            val capabilities = result.capabilities
+            assertNotNull(capabilities.completionProvider)
+            assertTrue(capabilities.completionProvider.triggerCharacters?.contains(".") == true)
+            assertNotNull(capabilities.hoverProvider)
+            assertNotNull(capabilities.definitionProvider)
         }
-
-        val result = server.initialize(params).get()
-
-        assertNotNull(result)
-        assertNotNull(result.capabilities)
-        assertEquals("Groovy Language Server", result.serverInfo?.name)
-        assertEquals("0.1.0-SNAPSHOT", result.serverInfo?.version)
-
-        // Check capabilities
-        val capabilities = result.capabilities
-        assertNotNull(capabilities.completionProvider)
-        assertTrue(capabilities.completionProvider.triggerCharacters?.contains(".") == true)
-        assertNotNull(capabilities.hoverProvider)
-        assertNotNull(capabilities.definitionProvider)
     }
 
     @Test
@@ -114,9 +116,11 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test shutdown and exit`() = runBlocking {
-        val result = server.shutdown().get()
-        assertNotNull(result)
-        // Note: We don't actually call exit() in tests as it would terminate the test JVM
+    fun `test shutdown and exit`() {
+        runBlocking {
+            val result = server.shutdown().get()
+            assertNotNull(result)
+            // Note: We don't actually call exit() in tests as it would terminate the test JVM
+        }
     }
 }
