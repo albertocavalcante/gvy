@@ -38,14 +38,12 @@ class LocationConverterTest {
             assertNotNull(visitor, "Should have AST visitor after compilation")
 
             // Find a node in the AST
-            val allNodes = visitor!!.getAllNodes()
-            assertTrue(allNodes.isNotEmpty(), "Should have nodes in the AST")
-
-            val nodeWithPosition = allNodes.find { it.lineNumber > 0 && it.columnNumber > 0 }
-            assertNotNull(nodeWithPosition, "Should find node with valid position")
+            val targetNode = visitor!!.getNodeAt(uri, 1, 8)
+                ?: visitor.getAllNodes().find { it.lineNumber > 0 && it.columnNumber > 0 }
+            assertNotNull(targetNode, "Should find node with valid position")
 
             // Act
-            val location = LocationConverter.nodeToLocation(nodeWithPosition!!, visitor)
+            val location = LocationConverter.nodeToLocation(targetNode!!, visitor)
 
             // Assert - For nodes with valid positions, we should get a location
             // In some CI environments, the URI mapping might not be established properly
@@ -57,7 +55,7 @@ class LocationConverterTest {
                 assertTrue(it.range.end.line >= it.range.start.line, "End line should be >= start line")
             } ?: run {
                 // If no location is returned, check if it's due to missing URI mapping
-                val nodeUri = visitor.getUri(nodeWithPosition)
+                val nodeUri = visitor.getUri(targetNode)
                 if (nodeUri == null) {
                     // This is acceptable in CI environments where URI mapping might not be established
                     assertTrue(true, "No URI mapping found for node - this is acceptable in some test environments")
