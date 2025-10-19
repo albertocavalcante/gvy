@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
+import com.github.albertocavalcante.groovylsp.ast.AstVisitor
+import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.LocationConverter
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
@@ -15,7 +18,10 @@ import java.net.URI
  * Main provider for go-to-definition functionality.
  * Uses Flow pattern inspired by kotlin-lsp for clean async handling.
  */
-class DefinitionProvider(private val compilationService: GroovyCompilationService) {
+class DefinitionProvider(
+    private val compilationService: GroovyCompilationService,
+    private val telemetrySink: DefinitionTelemetrySink = DefinitionTelemetrySink.NO_OP,
+) {
 
     private val logger = LoggerFactory.getLogger(DefinitionProvider::class.java)
 
@@ -27,64 +33,10 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
     fun provideDefinitions(uri: String, position: Position): Flow<Location> = flow {
         logger.debug("Providing definitions for $uri at ${position.line}:${position.character}")
 
-        val documentUri = try {
-            URI.create(uri)
-        } catch (e: IllegalArgumentException) {
-            logger.error("Invalid URI format: $uri", e)
-            return@flow
-        }
+        val documentUri = parseUriOrReport(uri) ?: return@flow
+        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        // Get the AST for the document
-        val ast = compilationService.getAst(documentUri)
-        if (ast == null) {
-            logger.warn("No AST available for $uri - this might indicate compilation service cache issue")
-            return@flow
-        }
-
-        // Get the visitor and symbol table from compilation service
-        // Note: We need to update GroovyCompilationService to provide these
-        val visitor = compilationService.getAstVisitor(documentUri)
-        if (visitor == null) {
-            logger.warn("No AST visitor available for $uri - this might indicate visitor cache issue")
-            return@flow
-        }
-
-        val symbolTable = compilationService.getSymbolTable(documentUri)
-        if (symbolTable == null) {
-            logger.warn("No symbol table available for $uri - this might indicate symbol table cache issue")
-            return@flow
-        }
-
-        // Create resolver and find definition
-        val resolver = DefinitionResolver(visitor, symbolTable)
-        try {
-            val definitionNode = resolver.findDefinitionAt(documentUri, position)
-
-            if (definitionNode != null) {
-                // Convert to Location and emit
-                val location = LocationConverter.nodeToLocation(definitionNode, visitor)
-                if (location != null) {
-                    logger.debug(
-                        "Found definition at ${location.uri}:${location.range} " +
-                            "(node: ${definitionNode.javaClass.simpleName})",
-                    )
-                    emit(location)
-                } else {
-                    logger.debug("Could not convert definition node to location")
-                }
-            } else {
-                logger.debug("No definition found at position")
-            }
-        } catch (e: GroovyLspException) {
-            // Handle expected LSP exceptions by not emitting anything (empty result)
-            logger.debug("Definition resolution failed: ${e.message}")
-        } catch (e: IllegalArgumentException) {
-            logger.warn("Invalid arguments during definition resolution", e)
-        } catch (e: IllegalStateException) {
-            logger.warn("Invalid state during definition resolution", e)
-        } catch (e: Exception) {
-            logger.warn("Unexpected error during definition resolution", e)
-        }
+        emitDefinitions(uri, documentUri, position, context)
     }
 
     /**
@@ -94,12 +46,7 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
     fun provideDefinitionLinks(uri: String, position: Position): Flow<LocationLink> = flow {
         logger.debug("Providing definition links for $uri at ${position.line}:${position.character}")
 
-        val documentUri = try {
-            URI.create(uri)
-        } catch (e: IllegalArgumentException) {
-            logger.error("Invalid URI format: $uri", e)
-            return@flow
-        }
+        val documentUri = parseUriOrReport(uri) ?: return@flow
 
         val ast = compilationService.getAst(documentUri) ?: return@flow
         val visitor = compilationService.getAstVisitor(documentUri) ?: return@flow
@@ -180,4 +127,161 @@ class DefinitionProvider(private val compilationService: GroovyCompilationServic
      */
     fun findReferencesOnly(uri: String, position: Position): Flow<Location> =
         findTargetsAt(uri, position, setOf(TargetKind.REFERENCE))
+
+    private data class DefinitionContext(val visitor: AstVisitor, val symbolTable: SymbolTable)
+
+    @Suppress("ReturnCount")
+    private fun obtainDefinitionContext(documentUri: URI, originalUri: String): DefinitionContext? {
+        val ast = compilationService.getAst(documentUri)
+        if (ast == null) {
+            logger.warn("No AST available for $originalUri - this might indicate compilation service cache issue")
+            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.AST_MISSING))
+            return null
+        }
+
+        val visitor = compilationService.getAstVisitor(documentUri)
+        if (visitor == null) {
+            logger.warn("No AST visitor available for $originalUri - this might indicate visitor cache issue")
+            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.VISITOR_MISSING))
+            return null
+        }
+
+        val symbolTable = compilationService.getSymbolTable(documentUri)
+        if (symbolTable == null) {
+            logger.warn("No symbol table available for $originalUri - this might indicate symbol table cache issue")
+            telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.SYMBOL_TABLE_MISSING))
+            return null
+        }
+
+        return DefinitionContext(visitor = visitor, symbolTable = symbolTable)
+    }
+
+    @Suppress("LongMethod", "TooGenericExceptionCaught")
+    private suspend fun FlowCollector<Location>.emitDefinitions(
+        uri: String,
+        documentUri: URI,
+        position: Position,
+        context: DefinitionContext,
+    ) {
+        val resolver = DefinitionResolver(context.visitor, context.symbolTable)
+        var definitionFound = false
+        try {
+            val definitionNode = resolver.findDefinitionAt(documentUri, position)
+
+            if (definitionNode != null) {
+                val location = LocationConverter.nodeToLocation(definitionNode, context.visitor)
+                if (location != null) {
+                    logger.debug(
+                        "Found definition at ${location.uri}:${location.range} " +
+                            "(node: ${definitionNode.javaClass.simpleName})",
+                    )
+                    telemetrySink.report(
+                        DefinitionTelemetryEvent(
+                            uri = uri,
+                            status = DefinitionStatus.SUCCESS,
+                        ),
+                    )
+                    definitionFound = true
+                    emit(location)
+                } else {
+                    logger.debug("Could not convert definition node to location")
+                }
+            } else {
+                logger.debug("No definition found at position")
+            }
+        } catch (e: GroovyLspException) {
+            logger.debug("Definition resolution failed: ${e.message}")
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.RESOLUTION_FAILED,
+                    reason = e.message,
+                ),
+            )
+        } catch (e: IllegalArgumentException) {
+            logger.warn("Invalid arguments during definition resolution", e)
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.ERROR,
+                    reason = e.message,
+                ),
+            )
+        } catch (e: IllegalStateException) {
+            logger.warn("Invalid state during definition resolution", e)
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.ERROR,
+                    reason = e.message,
+                ),
+            )
+        } catch (e: Exception) {
+            logger.warn("Unexpected error during definition resolution", e)
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.ERROR,
+                    reason = e.message,
+                ),
+            )
+        }
+
+        if (!definitionFound) {
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.NO_DEFINITION,
+                ),
+            )
+        }
+    }
+
+    private fun parseUriOrReport(uri: String): URI? = try {
+        val parsed = URI.create(uri)
+        if (!parsed.isAbsolute) {
+            logger.warn("URI is not absolute: $uri")
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.INVALID_URI,
+                    reason = "URI must be absolute",
+                ),
+            )
+            null
+        } else {
+            parsed
+        }
+    } catch (e: IllegalArgumentException) {
+        logger.error("Invalid URI format: $uri", e)
+        telemetrySink.report(
+            DefinitionTelemetryEvent(
+                uri = uri,
+                status = DefinitionStatus.INVALID_URI,
+                reason = e.message,
+            ),
+        )
+        null
+    }
+}
+
+data class DefinitionTelemetryEvent(val uri: String, val status: DefinitionStatus, val reason: String? = null)
+
+enum class DefinitionStatus {
+    SUCCESS,
+    NO_DEFINITION,
+    INVALID_URI,
+    AST_MISSING,
+    VISITOR_MISSING,
+    SYMBOL_TABLE_MISSING,
+    RESOLUTION_FAILED,
+    ERROR,
+}
+
+fun interface DefinitionTelemetrySink {
+    fun report(event: DefinitionTelemetryEvent)
+
+    companion object {
+        val NO_OP: DefinitionTelemetrySink = DefinitionTelemetrySink { _ -> }
+    }
 }

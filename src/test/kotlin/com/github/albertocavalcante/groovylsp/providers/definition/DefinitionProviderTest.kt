@@ -17,17 +17,22 @@ class DefinitionProviderTest {
 
     private lateinit var compilationService: GroovyCompilationService
     private lateinit var definitionProvider: DefinitionProvider
+    private val telemetryEvents = mutableListOf<DefinitionTelemetryEvent>()
 
     @BeforeEach
     fun setUp() {
         compilationService = GroovyCompilationService()
-        definitionProvider = DefinitionProvider(compilationService)
+        definitionProvider = DefinitionProvider(
+            compilationService = compilationService,
+            telemetrySink = DefinitionTelemetrySink { event -> telemetryEvents.add(event) },
+        )
     }
 
     @AfterEach
     fun tearDown() {
         // Clear all caches to prevent test contamination
         compilationService.clearCaches()
+        telemetryEvents.clear()
     }
 
     @Test
@@ -55,6 +60,9 @@ class DefinitionProviderTest {
 
         // The definition should point to line 0 (where 'localVar' is declared)
         assertEquals(0, definition.range.start.line)
+
+        val successEvent = telemetryEvents.lastOrNull()
+        assertEquals(DefinitionStatus.SUCCESS, successEvent?.status)
     }
 
     @Test
@@ -139,6 +147,8 @@ class DefinitionProviderTest {
 
         // Assert
         assertTrue(definitions.isEmpty(), "Should not find definition with invalid URI")
+        val event = telemetryEvents.lastOrNull()
+        assertEquals(DefinitionStatus.INVALID_URI, event?.status)
     }
 
     @Test
@@ -148,6 +158,8 @@ class DefinitionProviderTest {
 
         // Assert
         assertTrue(definitions.isEmpty(), "Should not find definition without compilation")
+        val event = telemetryEvents.lastOrNull()
+        assertEquals(DefinitionStatus.AST_MISSING, event?.status)
     }
 
     @Test

@@ -7,7 +7,7 @@ plugins {
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     id("com.diffplug.spotless") version "8.0.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.2"
-    id("org.sonarqube") version "6.3.1.5724"
+    id("org.sonarqube") version "7.0.0.6105"
     application
 }
 
@@ -33,12 +33,6 @@ version =
         // All other builds (development)
         else -> "$baseVersion-SNAPSHOT"
     }
-
-repositories {
-    mavenCentral()
-    // Gradle repository for Tooling API
-    maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
-}
 
 java {
     toolchain {
@@ -88,6 +82,9 @@ dependencies {
 
     // Code Quality Tools
     detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
+
+    // Local Modules
+    implementation(project(":groovy-formatter"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
@@ -252,26 +249,31 @@ tasks.register("generateVersionProperties") {
     description = "Generate version.properties file from build version"
     group = "build"
 
-    val outputDir =
-        layout.buildDirectory
-            .dir("generated/resources")
-            .get()
-            .asFile
-    val propertiesFile = File(outputDir, "version.properties")
+    val outputDir = layout.buildDirectory.dir("generated/resources")
+    val propertiesFile = outputDir.map { it.file("version.properties") }
 
-    inputs.property("version", version)
-    inputs.property("baseVersion", baseVersion)
+    val versionProvider = providers.provider { project.version.toString() }
+    val baseVersionProvider = providers.provider { baseVersion }
+
+    inputs.property("version", versionProvider)
+    inputs.property("baseVersion", baseVersionProvider)
     outputs.file(propertiesFile)
 
     doLast {
-        outputDir.mkdirs()
-        propertiesFile.writeText(
+        val outDirFile = outputDir.get().asFile
+        val propsFile = propertiesFile.get().asFile
+        outDirFile.mkdirs()
+        propsFile.writeText(
             """
-            version=$version
-            baseVersion=$baseVersion
+            version=${versionProvider.get()}
+            baseVersion=${baseVersionProvider.get()}
             """.trimIndent(),
         )
-        println("Generated version.properties: version=$version, baseVersion=$baseVersion")
+        logger.lifecycle(
+            "Generated version.properties: version={}, baseVersion={}",
+            versionProvider.get(),
+            baseVersionProvider.get(),
+        )
     }
 }
 
@@ -353,4 +355,10 @@ sonar {
         property("sonar.host.url", "https://sonarcloud.io")
         property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/kover/report.xml")
     }
+}
+
+tasks.named("sonar") {
+    notCompatibleWithConfigurationCache(
+        "SonarQube task resolves configurations outside of configuration cache-safe boundaries",
+    )
 }

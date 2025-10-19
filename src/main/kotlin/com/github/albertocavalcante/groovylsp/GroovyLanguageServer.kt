@@ -48,9 +48,10 @@ class GroovyLanguageServer :
 
     // Service instances - initialized immediately to prevent UninitializedPropertyAccessException in tests
     private val textDocumentService = GroovyTextDocumentService(
-        coroutineScope,
-        compilationService,
-    ) { client }
+        coroutineScope = coroutineScope,
+        compilationService = compilationService,
+        client = { client },
+    )
 
     private val workspaceService = GroovyWorkspaceService()
 

@@ -4,12 +4,15 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
+import com.github.albertocavalcante.groovylsp.formatter.OpenRewriteFormatter
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
+import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CompletionItem
@@ -21,34 +24,65 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
+import org.eclipse.lsp4j.DocumentFormattingParams
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.DocumentSymbolParams
+import org.eclipse.lsp4j.FormattingOptions
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PublishDiagnosticsParams
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.coroutineContext
+import kotlin.math.max
 
-/**
- * Handles all text document related LSP operations.
- */
+fun interface Formatter {
+    fun format(text: String): String
+}
+
+internal enum class FormatterStatus {
+    SUCCESS,
+    NO_OP,
+    ERROR,
+    NOT_FOUND,
+}
+
+internal data class FormatterTelemetryEvent(
+    val uri: String,
+    val status: FormatterStatus,
+    val durationMs: Long,
+    val ignoredOptions: Boolean,
+    val errorMessage: String? = null,
+)
+
+private const val NANOS_PER_MILLISECOND = 1_000_000L
+private const val DEFAULT_TAB_SIZE = 4
+private val KNOWN_FORMATTING_OPTION_KEYS = setOf("tabSize", "insertSpaces")
+
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
     private val client: () -> LanguageClient?,
+    private val documentProvider: DocumentProvider = DocumentProvider(),
+    private val formatter: Formatter = OpenRewriteFormatterAdapter(),
 ) : TextDocumentService {
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
+    private val optionsWarningLogged = AtomicBoolean(false)
 
     // Type definition provider - created lazily
     private val typeDefinitionProvider by lazy {
@@ -102,12 +136,14 @@ class GroovyTextDocumentService(
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
         logger.info("Document opened: ${params.textDocument.uri}")
+        val uri = java.net.URI.create(params.textDocument.uri)
+        val content = params.textDocument.text
+        documentProvider.put(uri, content)
 
         // Compile the document and publish diagnostics
         coroutineScope.launch {
             try {
-                val uri = java.net.URI.create(params.textDocument.uri)
-                val result = compilationService.compile(uri, params.textDocument.text)
+                val result = compilationService.compile(uri, content)
 
                 publishDiagnostics(params.textDocument.uri, result.diagnostics)
 
@@ -128,11 +164,12 @@ class GroovyTextDocumentService(
         // For full sync, we get the entire document content
         if (params.contentChanges.isNotEmpty()) {
             val newContent = params.contentChanges.first().text
+            val uri = java.net.URI.create(params.textDocument.uri)
+            documentProvider.put(uri, newContent)
 
             // Compile the document and publish diagnostics
             coroutineScope.launch {
                 try {
-                    val uri = java.net.URI.create(params.textDocument.uri)
                     val result = compilationService.compile(uri, newContent)
 
                     publishDiagnostics(params.textDocument.uri, result.diagnostics)
@@ -153,6 +190,7 @@ class GroovyTextDocumentService(
 
     override fun didClose(params: DidCloseTextDocumentParams) {
         logger.info("Document closed: ${params.textDocument.uri}")
+        documentProvider.remove(java.net.URI.create(params.textDocument.uri))
         // Clear diagnostics for closed document
         publishDiagnostics(params.textDocument.uri, emptyList())
     }
@@ -217,9 +255,16 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
+            val telemetrySink = DefinitionTelemetrySink { event ->
+                client()?.telemetryEvent(event)
+            }
+
             try {
                 // Create definition provider
-                val definitionProvider = DefinitionProvider(compilationService)
+                val definitionProvider = DefinitionProvider(
+                    compilationService = compilationService,
+                    telemetrySink = telemetrySink,
+                )
 
                 // Get definitions using Flow pattern
                 val locations = definitionProvider.provideDefinitions(
@@ -292,4 +337,126 @@ class GroovyTextDocumentService(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> =
         CompletableFuture.completedFuture(emptyList())
+
+    override fun formatting(params: DocumentFormattingParams): CompletableFuture<List<TextEdit>> =
+        coroutineScope.future {
+            val uriString = params.textDocument.uri
+            logger.debug("Formatting requested for {}", uriString)
+            val startNanos = System.nanoTime()
+            val uri = java.net.URI.create(uriString)
+
+            val options = params.options
+            val ignoredOptions = shouldMarkOptionsIgnored(options)
+            maybeLogIgnoredOptions(ignoredOptions)
+
+            val currentContent = documentProvider.get(uri)
+            if (currentContent == null) {
+                publishTelemetry(uriString, FormatterStatus.NOT_FOUND, durationMs = 0, ignoredOptions = ignoredOptions)
+                return@future emptyList<TextEdit>()
+            }
+
+            coroutineContext.ensureActive()
+
+            val formattedResult = runCatching { formatter.format(currentContent) }
+            val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLISECOND
+
+            val formattedContent = formattedResult.getOrElse { throwable ->
+                logger.error("Formatter failed for {}", uriString, throwable)
+                publishTelemetry(
+                    uriString,
+                    FormatterStatus.ERROR,
+                    durationMs = durationMs,
+                    ignoredOptions = ignoredOptions,
+                    errorMessage = throwable.message,
+                )
+                return@future emptyList<TextEdit>()
+            }
+
+            coroutineContext.ensureActive()
+
+            if (formattedContent == currentContent) {
+                publishTelemetry(
+                    uriString,
+                    FormatterStatus.NO_OP,
+                    durationMs = durationMs,
+                    ignoredOptions = ignoredOptions,
+                )
+                return@future emptyList<TextEdit>()
+            }
+
+            publishTelemetry(
+                uriString,
+                FormatterStatus.SUCCESS,
+                durationMs = durationMs,
+                ignoredOptions = ignoredOptions,
+            )
+
+            val range = currentContent.toFullDocumentRange()
+            listOf(TextEdit(range, formattedContent))
+        }
+
+    private fun maybeLogIgnoredOptions(ignoredOptions: Boolean) {
+        if (ignoredOptions && optionsWarningLogged.compareAndSet(false, true)) {
+            logger.info("DocumentFormattingOptions are not yet supported; using OpenRewrite defaults.")
+        }
+    }
+
+    private fun publishTelemetry(
+        uri: String,
+        status: FormatterStatus,
+        durationMs: Long,
+        ignoredOptions: Boolean,
+        errorMessage: String? = null,
+    ) {
+        client()?.telemetryEvent(
+            FormatterTelemetryEvent(
+                uri = uri,
+                status = status,
+                durationMs = durationMs,
+                ignoredOptions = ignoredOptions,
+                errorMessage = errorMessage,
+            ),
+        )
+    }
+}
+
+private fun shouldMarkOptionsIgnored(options: FormattingOptions?): Boolean {
+    if (options == null) {
+        return false
+    }
+    if (options.tabSize != DEFAULT_TAB_SIZE || !options.isInsertSpaces) {
+        return true
+    }
+    if (options.isTrimTrailingWhitespace || options.isInsertFinalNewline || options.isTrimFinalNewlines) {
+        return true
+    }
+    return options.keys.any { it !in KNOWN_FORMATTING_OPTION_KEYS }
+}
+
+private fun String.toFullDocumentRange(): Range {
+    var line = 0
+    var lastLineStart = 0
+    this.indices.forEach { index ->
+        if (this[index] == '\n') {
+            line++
+            lastLineStart = index + 1
+        }
+    }
+
+    var column = length - lastLineStart
+    if (column > 0 && this[length - 1] == '\r') {
+        column--
+    }
+    column = max(column, 0)
+
+    return Range(
+        Position(0, 0),
+        Position(line, column),
+    )
+}
+
+private class OpenRewriteFormatterAdapter : Formatter {
+    private val delegate = OpenRewriteFormatter()
+
+    override fun format(text: String): String = delegate.format(text)
 }
