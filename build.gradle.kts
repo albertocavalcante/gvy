@@ -356,3 +356,9 @@ sonar {
         property("sonar.coverage.jacoco.xmlReportPaths", "build/reports/kover/report.xml")
     }
 }
+
+tasks.named("sonar") {
+    notCompatibleWithConfigurationCache(
+        "SonarQube task resolves configurations outside of configuration cache-safe boundaries",
+    )
+}
