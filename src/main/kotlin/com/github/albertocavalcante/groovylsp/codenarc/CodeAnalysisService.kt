@@ -111,24 +111,29 @@ class CodeAnalysisService(
         )
 
         if (results.children.isEmpty()) {
-            // This is a leaf node - process its violations
-            logger.debug("Processing leaf node with ${results.violations.size} violations")
-            results.violations.forEach { violation ->
-                if (violation is Violation) {
-                    val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
-                    if (diagnostic != null) {
-                        diagnostics.add(diagnostic)
-                        logger.debug("Added diagnostic for violation: ${violation.rule.name}")
-                    }
-                }
+            processLeafViolations(results.violations, diagnostics, sourceLines)
+            return
+        }
+
+        logger.debug("Recursing into ${results.children.size} child results")
+        results.children
+            .filterIsInstance<Results>()
+            .forEach { childResult ->
+                collectViolationsFromLeafNodes(childResult, diagnostics, sourceLines)
             }
-        } else {
-            // This is a parent node - recurse into children, ignore its violations
-            logger.debug("Recursing into ${results.children.size} child results")
-            results.children.forEach { childResult ->
-                if (childResult is Results) {
-                    collectViolationsFromLeafNodes(childResult, diagnostics, sourceLines)
-                }
+    }
+
+    private fun processLeafViolations(
+        violations: Collection<Violation>,
+        diagnostics: MutableList<Diagnostic>,
+        sourceLines: List<String>,
+    ) {
+        logger.debug("Processing leaf node with ${violations.size} violations")
+        violations.filterIsInstance<Violation>().forEach { violation ->
+            val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
+            if (diagnostic != null) {
+                diagnostics.add(diagnostic)
+                logger.debug("Added diagnostic for violation: ${violation.rule.name}")
             }
         }
     }
