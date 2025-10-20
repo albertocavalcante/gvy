@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
@@ -21,7 +22,8 @@ class HoverProviderTest {
 
     private val logger = LoggerFactory.getLogger(HoverProviderTest::class.java)
     private val compilationService = GroovyCompilationService()
-    private val hoverProvider = HoverProvider(compilationService)
+    private val documentProvider = DocumentProvider()
+    private val hoverProvider = HoverProvider(compilationService, documentProvider)
 
     @Test
     fun `provideHover returns hover for method declaration`() = runTest {
@@ -704,5 +706,31 @@ class HoverProviderTest {
             assertTrue(content.contains("Method") || content.contains("findAll"))
             assertFalse(content.contains("No information available"))
         }
+    }
+
+    @Test
+    fun `provideHover returns method call details instead of literal metadata`() = runTest {
+        val groovyCode = """
+            class Sample {
+                void run() {
+                    String opa = 'hello'
+                    println(opa)
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///hover.groovy")
+        compilationService.compile(uri, groovyCode)
+
+        val hover = hoverProvider.provideHover(uri.toString(), Position(3, 10)) // On "println"
+
+        assertNotNull(hover, "Expected hover content for method call")
+        assertTrue(hover.contents.isRight)
+
+        val content = hover.contents.right
+        assertEquals(MarkupKind.MARKDOWN, content.kind)
+        assertTrue(content.value.contains("Method"), "Expected method metadata in hover")
+        assertTrue(content.value.contains("println("), "Expected method signature in hover")
+        assertFalse(content.value.contains("String literal"), "Should not report literal metadata")
     }
 }

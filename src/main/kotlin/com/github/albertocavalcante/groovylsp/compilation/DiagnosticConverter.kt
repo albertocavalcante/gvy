@@ -14,20 +14,43 @@ import org.eclipse.lsp4j.DiagnosticSeverity
  */
 object DiagnosticConverter {
 
+    private val logger = org.slf4j.LoggerFactory.getLogger(DiagnosticConverter::class.java)
+
     /**
      * Converts an ErrorCollector from Groovy compilation to a list of LSP diagnostics.
      */
-    fun convertErrorCollector(errorCollector: ErrorCollector): List<Diagnostic> {
+    fun convertErrorCollector(
+        errorCollector: ErrorCollector,
+        allowedLocators: Set<String> = emptySet(),
+    ): List<Diagnostic> {
         val diagnostics = mutableListOf<Diagnostic>()
 
         // Convert errors
         errorCollector.errors?.forEach { message ->
             when (message) {
                 is SyntaxErrorMessage -> {
-                    val diagnostic = convertSyntaxError(message.cause)
+                    val syntaxException = message.cause
+                    if (allowedLocators.isNotEmpty() &&
+                        !matchesLocator(syntaxException.sourceLocator, allowedLocators)
+                    ) {
+                        return@forEach
+                    }
+                    logger.debug(
+                        "Diagnostic from sourceLocator='{}', message='{}', range=({}, {})-({}, {})",
+                        syntaxException.sourceLocator,
+                        syntaxException.originalMessage,
+                        syntaxException.line,
+                        syntaxException.startColumn,
+                        syntaxException.line,
+                        syntaxException.endColumn,
+                    )
+                    val diagnostic = convertSyntaxError(syntaxException)
                     diagnostics.add(diagnostic)
                 }
                 else -> {
+                    if (allowedLocators.isNotEmpty()) {
+                        return@forEach
+                    }
                     // Handle other message types generically
                     val diagnostic = convertGenericMessage(message)
                     diagnostics.add(diagnostic)
@@ -37,6 +60,9 @@ object DiagnosticConverter {
 
         // Convert warnings
         errorCollector.warnings?.forEach { warning ->
+            if (allowedLocators.isNotEmpty()) {
+                return@forEach
+            }
             val diagnostic = convertGenericMessage(warning, DiagnosticSeverity.Warning)
             diagnostics.add(diagnostic)
         }
@@ -75,5 +101,14 @@ object DiagnosticConverter {
         }
         source("groovy-lsp")
         code("compilation-error")
+    }
+
+    private fun matchesLocator(sourceLocator: String?, allowedLocators: Set<String>): Boolean {
+        if (sourceLocator == null) {
+            return false
+        }
+        return allowedLocators.any { candidate ->
+            candidate.equals(sourceLocator, ignoreCase = false)
+        }
     }
 }

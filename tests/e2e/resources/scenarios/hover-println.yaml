@@ -1,0 +1,36 @@
+name: hover-println
+description: Hovering over println should surface method call information, not literal metadata.
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: sample.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        String opa = 'hello'
+        println(opa)
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}sample.groovy"
+        position:
+          line: 1
+          character: 2
+      saveAs: hoverResult
+  - assert:
+      source: hoverResult
+      checks:
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "Method"
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "println("
+  - shutdown: {}
+  - exit: {}

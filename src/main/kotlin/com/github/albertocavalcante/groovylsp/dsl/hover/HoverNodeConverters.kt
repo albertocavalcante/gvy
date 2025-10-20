@@ -11,12 +11,16 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.MapEntryExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
 
@@ -119,19 +123,39 @@ fun Parameter.toHoverContent(): HoverContent.Code = HoverContent.Code("${type.na
 /**
  * Format a MethodCallExpression for hover
  */
-fun MethodCallExpression.toHoverContent(): HoverContent = HoverContent.Section(
-    title = "Method Call",
-    content = listOf(
-        HoverContent.Code("$method(${argumentsString()})"),
-        HoverContent.KeyValue(
-            listOf(
-                "Method" to method.toString(),
-                "Object" to (objectExpression?.toString() ?: "this"),
-                "Arguments" to argumentsString(),
+fun MethodCallExpression.toHoverContent(): HoverContent {
+    val methodName = displayMethodName()
+    val receiver = displayReceiver()
+    val arguments = displayArguments()
+    val callOperator = displayCallOperator()
+
+    val signature = buildString {
+        if (!isImplicitThis) {
+            append(receiver)
+            append(callOperator)
+        }
+        append(methodName)
+        append("(")
+        append(arguments)
+        append(")")
+    }
+
+    val argumentSummary = arguments.ifBlank { "none" }
+
+    return HoverContent.Section(
+        title = "Method Call",
+        content = listOf(
+            HoverContent.Code(signature),
+            HoverContent.KeyValue(
+                listOf(
+                    "Method" to methodName,
+                    "Receiver" to receiver,
+                    "Arguments" to argumentSummary,
+                ),
             ),
         ),
-    ),
-)
+    )
+}
 
 /**
  * Format a BinaryExpression for hover
@@ -365,7 +389,45 @@ private fun MethodNode.parametersString(): String =
 private fun ClosureExpression.parametersString(): String =
     parameters?.joinToString(", ") { "${it.type.nameWithoutPackage} ${it.name}" } ?: ""
 
-private fun MethodCallExpression.argumentsString(): String = arguments.toString()
+private fun MethodCallExpression.displayMethodName(): String =
+    methodAsString ?: method.text.takeUnless { it.isNullOrBlank() } ?: "<dynamic>"
+
+private fun MethodCallExpression.displayReceiver(): String = when {
+    isImplicitThis -> "this"
+    else -> objectExpression?.text?.takeUnless { it.isNullOrBlank() } ?: "this"
+}
+
+private fun MethodCallExpression.displayCallOperator(): String = when {
+    isSafe -> "?."
+    isSpreadSafe -> "*."
+    else -> "."
+}
+
+private fun MethodCallExpression.displayArguments(): String {
+    val expression = arguments
+    val values = when (expression) {
+        is ArgumentListExpression -> expression.expressions.map { it.displayArgument() }
+        is TupleExpression -> expression.expressions.map { it.displayArgument() }
+        is MapExpression -> expression.mapEntryExpressions.map { it.displayNamedArgument() }
+        else -> listOf(expression.text.takeIf { it.isNotBlank() } ?: "")
+    }
+
+    return values.filter { it.isNotBlank() }.joinToString(", ")
+}
+
+private fun org.codehaus.groovy.ast.expr.Expression.displayArgument(): String = when (this) {
+    is ConstantExpression -> text
+    is GStringExpression -> text
+    is VariableExpression -> name
+    is ClosureExpression -> "{ ... }"
+    else -> text.takeIf { it.isNotBlank() } ?: toString()
+}
+
+private fun MapEntryExpression.displayNamedArgument(): String {
+    val key = keyExpression.displayArgument()
+    val value = valueExpression.displayArgument()
+    return "$key: $value"
+}
 
 private fun ImportNode.formatImport(): String = buildString {
     append("import ")

@@ -15,4 +15,6 @@ class DocumentProvider {
     fun remove(uri: URI) {
         documents.remove(uri)
     }
+
+    fun snapshot(): Map<URI, String> = documents.toMap()
 }

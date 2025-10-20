@@ -1,0 +1,11 @@
+name: initialize-basic
+description: Basic lifecycle handshake that exercises initialize/shutdown over stdio.
+server:
+  mode: stdio
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - shutdown: {}
+  - exit: {}

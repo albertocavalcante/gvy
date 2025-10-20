@@ -1,0 +1,14 @@
+plugins {
+    id 'groovy'
+}
+
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    implementation name: 'pipeline-unit-stubs'
+    implementation localGroovy()
+}

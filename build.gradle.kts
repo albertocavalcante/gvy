@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.compile.GroovyCompile
+import org.gradle.language.base.plugins.LifecycleBasePlugin
 
 plugins {
     kotlin("jvm") version "2.2.20"
@@ -163,6 +164,77 @@ spotless {
         leadingTabsToSpaces()
         trimTrailingWhitespace()
         endWithNewline()
+    }
+}
+
+val mainSourceSet = sourceSets.named("main")
+val e2eScenarioDir = "tests/e2e/resources/scenarios"
+
+testing {
+    suites {
+        register<JvmTestSuite>("e2eTest") {
+            useJUnitJupiter()
+
+            sources {
+                kotlin {
+                    setSrcDirs(
+                        listOf(
+                            "tests/e2e/kotlin",
+                            "tests/lsp-client/kotlin",
+                        ),
+                    )
+                }
+                resources {
+                    setSrcDirs(listOf("tests/e2e/resources"))
+                }
+            }
+
+            dependencies {
+                implementation(sourceSets.main.get().output)
+                implementation(sourceSets.main.get().runtimeClasspath)
+                implementation(project(":groovy-formatter"))
+                implementation("org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0")
+                implementation(platform("com.fasterxml.jackson:jackson-bom:2.17.3"))
+                implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
+                implementation("com.fasterxml.jackson.core:jackson-databind")
+                implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+                implementation("com.jayway.jsonpath:json-path:2.9.0")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+                implementation("org.junit.jupiter:junit-jupiter:5.14.0")
+                implementation("org.assertj:assertj-core:3.26.3")
+                implementation("org.slf4j:slf4j-api:2.0.17")
+            }
+
+            targets {
+                all {
+                    testTask.configure {
+                        description = "Runs end-to-end LSP scenarios."
+                        group = LifecycleBasePlugin.VERIFICATION_GROUP
+                        shouldRunAfter(tasks.test)
+                        systemProperty(
+                            "groovy.lsp.e2e.scenarioDir",
+                            e2eScenarioDir,
+                        )
+                        systemProperty(
+                            "groovy.lsp.e2e.serverClasspath",
+                            mainSourceSet.get().runtimeClasspath.asPath,
+                        )
+                        systemProperty(
+                            "groovy.lsp.e2e.mainClass",
+                            application.mainClass.get(),
+                        )
+                        systemProperty(
+                            "groovy.lsp.e2e.execJar",
+                            tasks.shadowJar
+                                .get()
+                                .archiveFile
+                                .get()
+                                .asFile.absolutePath,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

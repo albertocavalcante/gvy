@@ -1,0 +1,45 @@
+name: completion-basic
+description: Request completion for println in a simple Groovy class.
+workspace:
+  fixture: completion-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Main {
+            def run() {
+                prin
+            }
+        }
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Main.groovy"
+        position:
+          line: 2
+          character: 16
+      saveAs: completion
+      extract:
+        - variable: completion.items
+          jsonPath: $.items
+  - assert:
+      source: completion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: println
+  - assert:
+      source: completion.items
+      checks:
+        - jsonPath: $[*].detail
+          expect:
+            type: CONTAINS
+            value: "void println(Object)"
+  - shutdown: {}
+  - exit: {}

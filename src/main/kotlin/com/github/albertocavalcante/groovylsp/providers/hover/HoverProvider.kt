@@ -10,10 +10,13 @@ import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
+import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.Position
@@ -25,7 +28,10 @@ import java.net.URI
  * Kotlin-idiomatic hover provider for Groovy symbols.
  * Uses coroutines, extension functions, and null safety for clean async processing.
  */
-class HoverProvider(private val compilationService: GroovyCompilationService) {
+class HoverProvider(
+    private val compilationService: GroovyCompilationService,
+    private val documentProvider: DocumentProvider,
+) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
 
     /**
@@ -38,6 +44,8 @@ class HoverProvider(private val compilationService: GroovyCompilationService) {
             logger.debug("Providing hover for $uri at ${position.line}:${position.character}")
 
             val documentUri = URI.create(uri)
+            ensureAstPrepared(documentUri)
+
             val hoverNode = resolveHoverNode(documentUri, position) ?: return@withContext null
 
             // Only provide hover for hoverable nodes
@@ -77,6 +85,23 @@ class HoverProvider(private val compilationService: GroovyCompilationService) {
         } catch (e: Exception) {
             logger.error("Unexpected error providing hover for $uri at ${position.line}:${position.character}", e)
             null
+        }
+    }
+
+    private suspend fun ensureAstPrepared(documentUri: URI) {
+        val hasAst = compilationService.getAst(documentUri) != null
+        val hasVisitor = compilationService.getAstVisitor(documentUri) != null
+
+        if (hasAst && hasVisitor) {
+            return
+        }
+
+        val content = documentProvider.get(documentUri) ?: return
+
+        runCatching {
+            compilationService.compile(documentUri, content)
+        }.onFailure { error ->
+            logger.debug("HoverProvider: failed to compile $documentUri before hover", error)
         }
     }
 
@@ -121,11 +146,28 @@ class HoverProvider(private val compilationService: GroovyCompilationService) {
                         ) ?: nodeAtPosition
                     }
                 }
+                is ConstantExpression -> {
+                    val parent = astVisitor.getParent(nodeAtPosition)
+                    if (parent is MethodCallExpression && parent.method == nodeAtPosition) {
+                        parent
+                    } else {
+                        nodeAtPosition
+                    }
+                }
                 // For most other nodes (constants, GStrings, etc.), show the node itself
                 else -> nodeAtPosition
             }
         } else {
-            nodeAtPosition
+            if (nodeAtPosition is ConstantExpression) {
+                val parent = compilationService.getAstVisitor(documentUri)?.getParent(nodeAtPosition)
+                if (parent is MethodCallExpression && parent.method == nodeAtPosition) {
+                    parent
+                } else {
+                    nodeAtPosition
+                }
+            } else {
+                nodeAtPosition
+            }
         }
     }
 

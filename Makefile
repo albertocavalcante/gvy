@@ -1,7 +1,7 @@
 # Groovy LSP Makefile
 # Quick development commands for common tasks
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e
 
 # Default target
 help:
@@ -16,6 +16,7 @@ help:
 	@echo "  format     - Format source code and fix auto-correctable issues"
 	@echo "  fix-imports - Auto-fix unused imports and other detekt auto-correctable issues"
 	@echo "  quality    - Run all quality checks including coverage"
+	@echo "  e2e        - Run end-to-end LSP scenarios"
 	@echo "  run-stdio  - Run server in stdio mode"
 	@echo "  run-socket - Run server in socket mode (port 8080)"
 	@echo "  version    - Show version information"
@@ -57,6 +58,9 @@ fix-imports:
 
 quality:
 	./gradlew quality
+
+e2e:
+	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain e2eTest
 
 # Run the language server
 run-stdio: jar

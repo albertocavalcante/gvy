@@ -101,6 +101,7 @@ class GroovyTextDocumentService(
      * Helper function to publish diagnostics with better readability
      */
     private fun publishDiagnostics(uri: String, diagnostics: List<Diagnostic>) {
+        logger.debug("Publishing ${diagnostics.size} diagnostics for $uri")
         client()?.publishDiagnostics(
             PublishDiagnosticsParams().apply {
                 this.uri = uri
@@ -129,7 +130,7 @@ class GroovyTextDocumentService(
                 moduleNode = ast,
                 compilationUnit = compilationUnit,
                 astVisitor = astVisitor,
-                workspaceRoot = null, // TODO: Get from compilation service
+                workspaceRoot = compilationService.getWorkspaceRoot(),
                 classpath = compilationService.getDependencyClasspath(),
             )
         }
@@ -203,6 +204,20 @@ class GroovyTextDocumentService(
         // Could trigger additional processing if needed
     }
 
+    fun refreshOpenDocuments() {
+        coroutineScope.launch {
+            documentProvider.snapshot().forEach { (uri, content) ->
+                runCatching {
+                    val result = compilationService.compile(uri, content)
+                    publishDiagnostics(uri.toString(), result.diagnostics)
+                    logger.info("Refreshed diagnostics for $uri after dependency update")
+                }.onFailure { throwable ->
+                    logger.warn("Failed to refresh $uri after dependency update", throwable)
+                }
+            }
+        }
+    }
+
     override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> =
         coroutineScope.future {
             logger.debug(
@@ -236,7 +251,10 @@ class GroovyTextDocumentService(
         )
 
         // Use the new HoverProvider for actual symbol information
-        val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(compilationService)
+        val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(
+            compilationService,
+            documentProvider,
+        )
         val hover = hoverProvider.provideHover(params.textDocument.uri, params.position)
 
         // Return the hover if found, otherwise return an empty hover

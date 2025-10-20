@@ -1,0 +1,59 @@
+name: diagnostics-dedup
+description: Diagnostics should only report issues for the currently compiled document.
+workspace:
+  fixture: diagnostics-dedup
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Main {
+            String message = "hello"
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: mainDiagnostics
+  - assert:
+      source: mainDiagnostics
+      checks:
+        - jsonPath: $.diagnostics
+          expect:
+            type: EMPTY
+  - openDocument:
+      path: Problem.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Problem {
+            String message =
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: mainRefresh
+  - assert:
+      source: mainRefresh
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: MATCHES_REGEX
+            value: ".*Main\\.groovy$"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: problemDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: MATCHES_REGEX
+            value: ".*Problem\\.groovy$"
+        - jsonPath: $.diagnostics
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $.diagnostics[0].message
+          expect:
+            type: CONTAINS
+            value: "Unexpected input"
+  - shutdown: {}
+  - exit: {}

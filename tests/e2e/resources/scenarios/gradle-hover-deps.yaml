@@ -1,0 +1,74 @@
+name: gradle-hover-deps
+description: Gradle workspace should resolve external dependencies referenced by source files.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/main/groovy/PortMappingDeclaration.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.lesfurets.jenkins.unit.declarative.kubernetes
+
+        import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+        import groovy.transform.Memoized
+        import groovy.transform.ToString
+
+        import static com.lesfurets.jenkins.unit.declarative.ObjectUtils.printNonNullProperties
+
+        @ToString(includePackage = false, includeNames = true, ignoreNulls = true)
+        class PortMappingDeclaration extends GenericPipelineDeclaration {
+            String name
+            int containerPort
+            int hostPort
+
+            def name(final String name) {
+                this.name = name
+            }
+
+            def containerPort(final int containerPort) {
+                this.containerPort = containerPort
+            }
+
+            def hostPort(final int hostPort) {
+                this.hostPort = hostPort
+            }
+
+            @Memoized
+            String toString() {
+                return printNonNullProperties(this)
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: initialDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/main/groovy/PortMappingDeclaration.groovy"
+  - assert:
+      source: initialDiagnostics
+      checks:
+        - jsonPath: $.diagnostics
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $.diagnostics[0].message
+          expect:
+            type: CONTAINS
+            value: "unable to resolve class"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: resolvedDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/main/groovy/PortMappingDeclaration.groovy"
+        - jsonPath: $.diagnostics
+          expect:
+            type: EMPTY
+  - shutdown: {}
+  - exit: {}

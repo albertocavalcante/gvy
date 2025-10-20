@@ -52,14 +52,14 @@ class GradleDependencyIntegrationTest {
         val groovyCode = """
             import org.apache.commons.lang3.StringUtils
 
-            class TestClass {
+            class DependencyHarness {
                 def reverseString(String input) {
                     return StringUtils.reverse(input)
                 }
             }
         """.trimIndent()
 
-        val uri = URI.create("file:///tmp/TestClass.groovy")
+        val uri = URI.create("file:///tmp/DependencyHarness.groovy")
         val result = compilationService.compile(uri, groovyCode)
 
         println("Compilation result: success=${result.isSuccess}, diagnostics=${result.diagnostics.size}")

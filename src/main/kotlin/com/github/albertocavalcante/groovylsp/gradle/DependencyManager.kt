@@ -17,7 +17,7 @@ private const val PROGRESS_COMPLETE = 100
  * Manages asynchronous dependency resolution to prevent blocking LSP initialization.
  * Allows for non-blocking dependency discovery with state tracking and callback support.
  */
-class DependencyManager(private val resolver: SimpleDependencyResolver, private val scope: CoroutineScope) {
+class DependencyManager(private val resolver: DependencyResolver, private val scope: CoroutineScope) {
     /**
      * States of dependency resolution process.
      */
@@ -32,6 +32,7 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
 
     private val state = AtomicReference(State.NOT_STARTED)
     private val dependencies = AtomicReference<List<Path>>(emptyList())
+    private val sourceDirs = AtomicReference<List<Path>>(emptyList())
     private var resolutionJob: Job? = null
     private var currentWorkspaceRoot: Path? = null
 
@@ -51,7 +52,7 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
     fun startAsyncResolution(
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)? = null,
-        onComplete: (List<Path>) -> Unit,
+        onComplete: (WorkspaceResolution) -> Unit,
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
     ) {
@@ -71,19 +72,20 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
                 try {
                     onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to Gradle...")
 
-                    val resolvedDeps = resolver.resolveDependencies(workspaceRoot)
+                    val resolution = resolver.resolve(workspaceRoot)
 
-                    onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolvedDeps.size} dependencies")
+                    onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
 
                     // Update atomic state
-                    dependencies.set(resolvedDeps)
+                    dependencies.set(resolution.dependencies)
+                    sourceDirs.set(resolution.sourceDirectories)
                     state.set(State.COMPLETED)
 
-                    onProgress?.invoke(PROGRESS_COMPLETE, "Dependencies resolved: ${resolvedDeps.size} JARs")
+                    onProgress?.invoke(PROGRESS_COMPLETE, "Dependencies resolved: ${resolution.dependencies.size} JARs")
 
                     // Call completion callback on Default dispatcher
                     withContext(Dispatchers.Default) {
-                        onComplete(resolvedDeps)
+                        onComplete(resolution)
                     }
 
                     // Start build file watching if enabled
@@ -91,7 +93,10 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
                         startBuildFileWatching(workspaceRoot, onProgress, onComplete, onError)
                     }
 
-                    logger.info("Async dependency resolution completed: ${resolvedDeps.size} dependencies")
+                    logger.info(
+                        "Async dependency resolution completed: ${resolution.dependencies.size} dependencies, " +
+                            "${resolution.sourceDirectories.size} source directories",
+                    )
                 } catch (e: Exception) {
                     logger.error("Async dependency resolution failed for $workspaceRoot", e)
                     state.set(State.FAILED)
@@ -112,6 +117,8 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
      * Gets the currently resolved dependencies (may be empty if not ready).
      */
     fun getCurrentDependencies(): List<Path> = dependencies.get()
+
+    fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
 
     /**
      * Gets the current state of dependency resolution.
@@ -147,6 +154,7 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
     fun reset() {
         cancel()
         dependencies.set(emptyList())
+        sourceDirs.set(emptyList())
         state.set(State.NOT_STARTED)
         currentWorkspaceRoot = null
         buildFileWatcher = null
@@ -159,9 +167,11 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
     fun getStatusSummary(): String {
         val currentState = state.get()
         val depCount = dependencies.get().size
+        val sourceCount = sourceDirs.get().size
         val workspace = currentWorkspaceRoot?.fileName ?: "none"
 
-        return "DependencyManager[state=$currentState, dependencies=$depCount, workspace=$workspace]"
+        return "DependencyManager[state=$currentState, dependencies=$depCount, sources=$sourceCount, " +
+            "workspace=$workspace]"
     }
 
     /**
@@ -172,7 +182,7 @@ class DependencyManager(private val resolver: SimpleDependencyResolver, private 
     private fun startBuildFileWatching(
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)? = null,
-        onComplete: (List<Path>) -> Unit,
+        onComplete: (WorkspaceResolution) -> Unit,
         onError: ((Exception) -> Unit)? = null,
     ) {
         try {

@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.gradle.GradleConnectionPool
-import com.github.albertocavalcante.groovylsp.gradle.SimpleDependencyResolver
+import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
@@ -43,7 +43,7 @@ class GroovyLanguageServer :
     private val compilationService = GroovyCompilationService()
 
     // Async dependency management
-    private val dependencyManager = DependencyManager(SimpleDependencyResolver(), coroutineScope)
+    private val dependencyManager = DependencyManager(GradleDependencyResolver(), coroutineScope)
     private var savedInitParams: InitializeParams? = null
 
     // Service instances - initialized immediately to prevent UninitializedPropertyAccessException in tests
@@ -149,24 +149,36 @@ class GroovyLanguageServer :
 
         val progressReporter = ProgressReporter(client)
 
+        compilationService.initializeWorkspace(workspaceRoot)
+
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
             onProgress = { percentage, message ->
                 progressReporter.updateProgress(message, percentage)
             },
-            onComplete = { dependencies ->
-                logger.info("Dependencies resolved: ${dependencies.size} JARs")
+            onComplete = { resolution ->
+                logger.info(
+                    "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
+                        "${resolution.sourceDirectories.size} source directories",
+                )
 
                 // Update compilation service with resolved dependencies
-                compilationService.updateDependencies(dependencies)
+                compilationService.updateWorkspaceModel(
+                    workspaceRoot = workspaceRoot,
+                    dependencies = resolution.dependencies,
+                    sourceDirectories = resolution.sourceDirectories,
+                )
+                textDocumentService.refreshOpenDocuments()
 
-                progressReporter.complete("✅ Ready: ${dependencies.size} dependencies loaded")
+                progressReporter.complete(
+                    "✅ Ready: ${resolution.dependencies.size} dependencies loaded",
+                )
 
                 // Notify client of successful resolution
                 client?.showMessage(
                     MessageParams().apply {
                         type = MessageType.Info
-                        message = "Dependencies loaded: ${dependencies.size} JARs from Gradle cache"
+                        message = "Dependencies loaded: ${resolution.dependencies.size} JARs from Gradle cache"
                     },
                 )
             },
