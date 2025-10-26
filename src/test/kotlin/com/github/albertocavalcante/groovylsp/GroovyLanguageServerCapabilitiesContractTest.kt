@@ -60,9 +60,9 @@ class GroovyLanguageServerCapabilitiesContractTest {
         // Features not yet implemented must remain disabled
         assertNull(capabilities.renameProvider, "Rename is not implemented and should not be advertised.")
         assertNull(capabilities.codeActionProvider, "Code actions are not implemented and should not be advertised.")
-        assertNull(
-            capabilities.signatureHelpProvider,
-            "Signature help is not implemented and should not be advertised.",
-        )
+
+        val signatureHelp = capabilities.signatureHelpProvider
+        assertNotNull(signatureHelp, "Signature help should be advertised when implemented.")
+        assertEquals(listOf("(", ","), signatureHelp.triggerCharacters)
     }
 }

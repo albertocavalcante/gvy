@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.formatter.OpenRewriteFormatter
+import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
@@ -95,6 +96,23 @@ class GroovyTextDocumentService(
             typeResolver = typeResolver,
             contextProvider = { uri -> createCompilationContext(uri) },
         )
+    }
+
+    private val signatureHelpProvider by lazy {
+        SignatureHelpProvider(
+            compilationService = compilationService,
+            documentProvider = documentProvider,
+        )
+    }
+
+    override fun signatureHelp(
+        params: org.eclipse.lsp4j.SignatureHelpParams,
+    ): CompletableFuture<org.eclipse.lsp4j.SignatureHelp> = coroutineScope.future {
+        logger.debug(
+            "Signature help requested for ${params.textDocument.uri} at " +
+                "${params.position.line}:${params.position.character}",
+        )
+        signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
     }
 
     /**

@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.ServerCapabilities
 import org.eclipse.lsp4j.ServerInfo
+import org.eclipse.lsp4j.SignatureHelpOptions
 import org.eclipse.lsp4j.TextDocumentSyncKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
@@ -100,6 +101,11 @@ class GroovyLanguageServer :
 
             // Type definition support
             typeDefinitionProvider = Either.forLeft(true)
+
+            // Signature help support
+            signatureHelpProvider = SignatureHelpOptions().apply {
+                triggerCharacters = listOf("(", ",")
+            }
 
             // Diagnostics will be pushed
         }

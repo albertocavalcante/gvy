@@ -1,0 +1,51 @@
+
+name: signature-help
+description: Request signature help for a simple method call.
+workspace:
+  fixture: signature-help
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Main {
+            def myMethod(String arg1, int arg2) {}
+            def run() {
+                myMethod()
+            }
+        }
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Main.groovy"
+        position:
+          line: 3
+          character: 17
+      saveAs: signatureHelp
+  - assert:
+      source: signatureHelp
+      checks:
+        - jsonPath: $.signatures[0].label
+          expect:
+            type: EQUALS
+            value: "myMethod(String arg1, int arg2)"
+        - jsonPath: $.signatures[0].parameters[*].label.left
+          expect:
+            type: EQUALS
+            value:
+              - "String arg1"
+              - "int arg2"
+        - jsonPath: $.activeSignature
+          expect:
+            type: EQUALS
+            value: 0
+        - jsonPath: $.activeParameter
+          expect:
+            type: EQUALS
+            value: 0
+  - shutdown: {}
+  - exit: {}

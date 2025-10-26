@@ -44,6 +44,7 @@ steps:
   - waitNotification:
       method: textDocument/publishDiagnostics
       saveAs: initialDiagnostics
+      timeoutMs: 15000
       checks:
         - jsonPath: $.uri
           expect:
@@ -62,6 +63,7 @@ steps:
   - waitNotification:
       method: textDocument/publishDiagnostics
       saveAs: resolvedDiagnostics
+      timeoutMs: 15000
       checks:
         - jsonPath: $.uri
           expect:
