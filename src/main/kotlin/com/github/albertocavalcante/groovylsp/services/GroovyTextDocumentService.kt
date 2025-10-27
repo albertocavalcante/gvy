@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.formatter.OpenRewriteFormatter
+import com.github.albertocavalcante.groovylsp.providers.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
@@ -105,6 +106,13 @@ class GroovyTextDocumentService(
         )
     }
 
+    private val renameProvider by lazy {
+        RenameProvider(
+            compilationService = compilationService,
+            documentProvider = documentProvider,
+        )
+    }
+
     override fun signatureHelp(
         params: org.eclipse.lsp4j.SignatureHelpParams,
     ): CompletableFuture<org.eclipse.lsp4j.SignatureHelp> = coroutineScope.future {
@@ -114,6 +122,36 @@ class GroovyTextDocumentService(
         )
         signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
     }
+
+    override fun prepareRename(
+        params: org.eclipse.lsp4j.PrepareRenameParams,
+    ): CompletableFuture<
+        org.eclipse.lsp4j.jsonrpc.messages.Either3<
+            org.eclipse.lsp4j.Range,
+            org.eclipse.lsp4j.PrepareRenameResult,
+            org.eclipse.lsp4j.PrepareRenameDefaultBehavior,
+            >,
+        > =
+        coroutineScope.future {
+            logger.debug(
+                "Prepare rename requested for ${params.textDocument.uri} at " +
+                    "${params.position.line}:${params.position.character}",
+            )
+            val result = renameProvider.prepareRename(params.textDocument.uri, params.position)
+            result?.let { org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(it) }
+                ?: org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(
+                    org.eclipse.lsp4j.Range(params.position, params.position),
+                )
+        }
+
+    override fun rename(params: org.eclipse.lsp4j.RenameParams): CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> =
+        coroutineScope.future {
+            logger.debug(
+                "Rename requested for ${params.textDocument.uri} at " +
+                    "${params.position.line}:${params.position.character}",
+            )
+            renameProvider.rename(params.textDocument.uri, params.position, params.newName)
+        }
 
     /**
      * Helper function to publish diagnostics with better readability

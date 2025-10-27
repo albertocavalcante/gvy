@@ -1,0 +1,41 @@
+name: rename-basic
+description: Renaming a local variable should update all references in the document.
+workspace:
+  fixture: rename-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Main {
+            def run() {
+                def value = 1
+                def copy = value + 1
+                println value + copy
+            }
+        }
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Main.groovy"
+        position:
+          line: 2
+          character: 16
+        newName: total
+      saveAs: renameEdit
+  - assert:
+      source: renameEdit
+      checks:
+        - jsonPath: $.changes
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $.changes.*[*].newText
+          expect:
+            type: CONTAINS
+            value: total
+  - shutdown: {}
+  - exit: {}

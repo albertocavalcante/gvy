@@ -23,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -158,19 +157,18 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `rename operation is unsupported`() {
-        runBlocking {
-            val params = RenameParams().apply {
-                textDocument = TextDocumentIdentifier(documentUri)
-                position = Position(8, 2)
-                newName = "updatedGreeter"
-            }
-
-            val error = assertFailsWith<UnsupportedOperationException> {
-                server.textDocumentService.rename(params).get()
-            }
-            assertNotNull(error)
+    fun `rename operation updates variable`() = runBlocking {
+        val params = RenameParams().apply {
+            textDocument = TextDocumentIdentifier(documentUri)
+            position = Position(8, 2)
+            newName = "updatedGreeter"
         }
+
+        val workspaceEdit = server.textDocumentService.rename(params).get()
+        val changes = workspaceEdit.changes?.get(documentUri)
+        assertNotNull(changes)
+        assertTrue(changes.size >= 3, "Rename should update declaration and usages")
+        assertTrue(changes.all { it.newText == "updatedGreeter" })
     }
 
     @Test
