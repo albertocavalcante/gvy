@@ -130,7 +130,7 @@ class GroovyTextDocumentService(
             org.eclipse.lsp4j.Range,
             org.eclipse.lsp4j.PrepareRenameResult,
             org.eclipse.lsp4j.PrepareRenameDefaultBehavior,
-            >,
+            >?,
         > =
         coroutineScope.future {
             logger.debug(
@@ -139,9 +139,6 @@ class GroovyTextDocumentService(
             )
             val result = renameProvider.prepareRename(params.textDocument.uri, params.position)
             result?.let { org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(it) }
-                ?: org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(
-                    org.eclipse.lsp4j.Range(params.position, params.position),
-                )
         }
 
     override fun rename(params: org.eclipse.lsp4j.RenameParams): CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> =

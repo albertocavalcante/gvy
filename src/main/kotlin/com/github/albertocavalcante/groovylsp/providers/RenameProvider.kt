@@ -7,7 +7,6 @@ import com.github.albertocavalcante.groovylsp.ast.safeName
 import com.github.albertocavalcante.groovylsp.ast.safeRange
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
-import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -22,7 +21,7 @@ class RenameProvider(
 ) {
     private val logger = LoggerFactory.getLogger(RenameProvider::class.java)
 
-    fun prepareRename(uri: String, position: Position): PrepareRenameResult? {
+    suspend fun prepareRename(uri: String, position: Position): PrepareRenameResult? {
         val context = findContext(uri, position) ?: return null
         val target = context.targetNode
 
@@ -31,7 +30,7 @@ class RenameProvider(
         }
     }
 
-    fun rename(uri: String, position: Position, newName: String): WorkspaceEdit {
+    suspend fun rename(uri: String, position: Position, newName: String): WorkspaceEdit {
         logger.info("Rename requested for $uri at ${position.line}:${position.character} -> $newName")
         val context = findContext(uri, position) ?: run {
             logger.warn("Rename aborted: unable to resolve context for $uri")
@@ -61,7 +60,7 @@ class RenameProvider(
             .mapNotNull { node -> node.safeRange().getOrNull()?.let { TextEdit(it, newName) } }
     }
 
-    private fun findContext(uri: String, position: Position): RenameContext? {
+    private suspend fun findContext(uri: String, position: Position): RenameContext? {
         val documentUri = URI.create(uri)
         ensurePrepared(documentUri)
         val visitor = compilationService.getAstVisitor(documentUri) ?: return null
@@ -98,7 +97,7 @@ class RenameProvider(
         val position: Position,
     )
 
-    private fun ensurePrepared(uri: URI) {
+    private suspend fun ensurePrepared(uri: URI) {
         val hasVisitor = compilationService.getAstVisitor(uri) != null
         val hasSymbols = compilationService.getSymbolTable(uri) != null
         if (hasVisitor && hasSymbols) {
@@ -106,8 +105,6 @@ class RenameProvider(
         }
 
         val content = documentProvider.get(uri) ?: return
-        runBlocking {
-            compilationService.compile(uri, content)
-        }
+        compilationService.compile(uri, content)
     }
 }

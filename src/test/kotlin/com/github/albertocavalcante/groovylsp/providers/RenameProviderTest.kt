@@ -5,6 +5,8 @@ import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RenameProviderTest {
@@ -36,8 +38,9 @@ class RenameProviderTest {
         )
 
         val edits = workspaceEdit.changes?.get(uri.toString())
-        assertTrue(edits != null && edits.size == 3, "Should update declaration and two references")
-        assertTrue(edits!!.all { it.newText == "total" }, "All edits should use new name")
+        assertNotNull(edits, "Should find edits for the given URI")
+        assertEquals(3, edits.size, "Should update declaration and two references")
+        assertTrue(edits.all { it.newText == "total" }, "All edits should use new name")
     }
 }
 
