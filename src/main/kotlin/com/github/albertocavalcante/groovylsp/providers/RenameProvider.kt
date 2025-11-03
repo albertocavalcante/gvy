@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.providers
 
 import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.ast.isReferenceableSymbol
-import com.github.albertocavalcante.groovylsp.ast.resolveToDefinition
 import com.github.albertocavalcante.groovylsp.ast.safeName
 import com.github.albertocavalcante.groovylsp.ast.safeRange
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
@@ -46,9 +45,7 @@ class RenameProvider(
 
         val edits = collectEdits(context, newName)
 
-        return WorkspaceEdit().apply {
-            changes = mutableMapOf(uri to edits.toMutableList())
-        }
+        return WorkspaceEdit(mapOf(uri to edits))
     }
 
     private fun collectEdits(context: RenameContext, newName: String): List<TextEdit> {
@@ -64,8 +61,6 @@ class RenameProvider(
         val documentUri = URI.create(uri)
         ensurePrepared(documentUri)
         val visitor = compilationService.getAstVisitor(documentUri) ?: return null
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return null
-
         val targetNode = visitor.getNodeAt(documentUri, position.line, position.character)
             ?.takeIf { it.isReferenceableSymbol() }
             ?: run {
@@ -73,15 +68,12 @@ class RenameProvider(
                 return null
             }
 
-        val definition = targetNode.resolveToDefinition(visitor, symbolTable, strict = false)
         val targetVariable = (targetNode as? org.codehaus.groovy.ast.expr.VariableExpression)?.accessedVariable
 
         return RenameContext(
             documentUri = documentUri,
             visitor = visitor,
-            symbolTable = symbolTable,
             targetNode = targetNode,
-            definitionNode = definition,
             targetVariable = targetVariable,
             position = position,
         )
@@ -90,9 +82,7 @@ class RenameProvider(
     private data class RenameContext(
         val documentUri: URI,
         val visitor: AstVisitor,
-        val symbolTable: com.github.albertocavalcante.groovylsp.ast.SymbolTable,
         val targetNode: ASTNode,
-        val definitionNode: ASTNode?,
         val targetVariable: org.codehaus.groovy.ast.Variable?,
         val position: Position,
     )

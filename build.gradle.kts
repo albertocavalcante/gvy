@@ -168,7 +168,12 @@ spotless {
 }
 
 val mainSourceSet = sourceSets.named("main")
-val e2eScenarioDir = "tests/e2e/resources/scenarios"
+val e2eScenarioDir =
+    layout
+        .projectDirectory
+        .dir("tests/e2e/resources/scenarios")
+        .asFile
+        .absolutePath
 
 testing {
     suites {
