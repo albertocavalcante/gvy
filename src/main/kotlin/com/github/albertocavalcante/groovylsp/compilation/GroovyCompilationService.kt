@@ -10,14 +10,11 @@ import com.github.albertocavalcante.groovylsp.gradle.DependencyResolver
 import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
-import groovy.lang.GroovyClassLoader
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import org.codehaus.groovy.ast.ASTNode
-import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
-import org.codehaus.groovy.control.io.StringReaderSource
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -37,6 +34,7 @@ class GroovyCompilationService {
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver: DependencyResolver = GradleDependencyResolver()
+    private val parser = GroovyParserFacade()
 
     // AST visitor and symbol table caches with LRU eviction
     private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
@@ -72,45 +70,23 @@ class GroovyCompilationService {
     }
 
     private suspend fun performCompilation(uri: URI, content: String): CompilationResult {
-        // Create compiler configuration
-        val config = createCompilerConfiguration()
-
-        // Create class loader and set classpath
-        val classLoader = GroovyClassLoader()
-        if (dependencyClasspath.isNotEmpty()) {
-            dependencyClasspath.forEach { classLoader.addClasspath(it.toString()) }
-            logger.debug("Added ${dependencyClasspath.size} dependencies to compiler classpath")
-        }
-        if (sourceRoots.isNotEmpty()) {
-            sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
-            logger.debug("Added ${sourceRoots.size} source roots to compiler classpath")
-        }
-
-        // Create compilation unit
-        val compilationUnit = CompilationUnit(config, null, classLoader)
-
-        // Add source
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-        val sourceUnitName = sourcePath?.toAbsolutePath()?.toString() ?: uri.toString()
-        val source = StringReaderSource(content, config)
-        val sourceUnit = SourceUnit(sourceUnitName, source, config, classLoader, compilationUnit.errorCollector)
-        compilationUnit.addSource(sourceUnit)
-        addWorkspaceSources(compilationUnit, uri)
 
-        // Compile to canonicalization phase (sufficient for most LSP features)
-        try {
-            compilationUnit.compile(Phases.CANONICALIZATION)
-        } catch (e: CompilationFailedException) {
-            // Expected for files with syntax errors - we still want to extract diagnostics
-            logger.debug("Compilation failed for $uri: ${e.message}")
-        }
+        val parseResult = parser.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = dependencyClasspath.toList(),
+                sourceRoots = sourceRoots.toList(),
+                workspaceSources = workspaceSources,
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+            ),
+        )
 
-        // Extract diagnostics from error collector
-        val locatorCandidates = buildLocatorCandidates(uri, sourcePath)
-        val diagnostics = DiagnosticConverter.convertErrorCollector(compilationUnit.errorCollector, locatorCandidates)
-
-        // Get the AST
-        val ast = getAstFromCompilationUnit(compilationUnit)
+        val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
+        val ast = parseResult.ast
+        val compilationUnit = parseResult.compilationUnit
+        val sourceUnit = parseResult.sourceUnit
 
         val result = if (ast != null) {
             // We have an AST, cache it and the diagnostics.
@@ -120,7 +96,7 @@ class GroovyCompilationService {
             buildAstVisitorAndSymbolTable(uri, compilationUnit, sourceUnit)
 
             // Success is true only if there are no error-level diagnostics.
-            val isSuccess = diagnostics.none { it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error }
+            val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
             // No AST, compilation definitely failed.
@@ -289,13 +265,6 @@ class GroovyCompilationService {
         logger.info("Indexed ${workspaceSources.size} Groovy sources from workspace roots")
     }
 
-    private fun addWorkspaceSources(compilationUnit: CompilationUnit, currentUri: URI) {
-        workspaceSources.forEach { path ->
-            if (path.toUri() == currentUri) return@forEach
-            compilationUnit.addSource(path.toFile())
-        }
-    }
-
     private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
         val candidates = mutableSetOf<String>()
         candidates += uri.toString()
@@ -305,42 +274,6 @@ class GroovyCompilationService {
             candidates += path.toAbsolutePath().toString()
         }
         return candidates
-    }
-
-    /**
-     * Creates a compiler configuration optimized for language server use.
-     */
-    private fun createCompilerConfiguration(): CompilerConfiguration = CompilerConfiguration().apply {
-        // We want to compile to AST analysis but not generate bytecode
-        targetDirectory = null
-
-        // Enable debugging information for better diagnostics
-        debug = true
-
-        // Set optimization options for better error reporting
-        optimizationOptions = mapOf(
-            CompilerConfiguration.GROOVYDOC to true,
-        )
-
-        // Set encoding
-        sourceEncoding = "UTF-8"
-    }
-
-    /**
-     * Extracts the AST from a CompilationUnit.
-     */
-    private fun getAstFromCompilationUnit(compilationUnit: CompilationUnit): ASTNode? = try {
-        // Get the AST from the compilation unit
-        val ast = compilationUnit.ast
-        if (ast != null && ast.modules.isNotEmpty()) {
-            ast.modules.first()
-        } else {
-            logger.debug("No modules found in compilation unit AST")
-            null
-        }
-    } catch (e: CompilationFailedException) {
-        logger.debug("Failed to extract AST from compilation unit: ${e.message}")
-        null
     }
 
     /**

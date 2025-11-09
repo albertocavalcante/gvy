@@ -86,6 +86,7 @@ dependencies {
 
     // Local Modules
     implementation(project(":groovy-formatter"))
+    implementation(project(":groovy-parser"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;

@@ -59,3 +59,4 @@ gitHooks {
 rootProject.name = "groovy-lsp"
 
 include("groovy-formatter")
+include("groovy-parser")
