@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.types
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ClassHelper

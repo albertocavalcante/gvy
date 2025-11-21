@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp
 
-import com.github.albertocavalcante.groovylsp.ast.ClassSymbol
-import com.github.albertocavalcante.groovylsp.ast.FieldSymbol
-import com.github.albertocavalcante.groovylsp.ast.ImportSymbol
-import com.github.albertocavalcante.groovylsp.ast.MethodSymbol
-import com.github.albertocavalcante.groovylsp.ast.SymbolExtractor
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
+import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
+import com.github.albertocavalcante.groovyparser.ast.ImportSymbol
+import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
+import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

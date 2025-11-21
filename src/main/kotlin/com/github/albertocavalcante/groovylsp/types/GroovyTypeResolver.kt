@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.types
 
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
-import com.github.albertocavalcante.groovylsp.converters.LocationConverter
+import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -67,7 +67,7 @@ class GroovyTypeResolver(
                 declared.name == classNode.name || declared.nameWithoutPackage == classNode.nameWithoutPackage
             }
             val target = declared ?: classNode
-            LocationConverter.nodeToLocation(target, context.astVisitor)
+            target.toLspLocation(context.astVisitor)
         }
 
         // Try to match declared classes in the module by fully qualified name
@@ -81,7 +81,7 @@ class GroovyTypeResolver(
                     "Resolved external class ${classNode.name} to candidate at line ${candidate.lineNumber}, URI = " +
                         "${context.astVisitor.getUri(candidate)}",
                 )
-                LocationConverter.nodeToLocation(candidate, context.astVisitor)
+                candidate.toLspLocation(context.astVisitor)
             } else {
                 logger.info(
                     "No class match found for ${classNode.name}, available: ${context.moduleNode.classes.map {

@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
 
-import com.github.albertocavalcante.groovylsp.ast.SafePosition
-import com.github.albertocavalcante.groovylsp.ast.safePosition
-import com.github.albertocavalcante.groovylsp.errors.LspResult
+import com.github.albertocavalcante.groovyparser.ast.SafePosition
+import com.github.albertocavalcante.groovyparser.ast.safePosition
+import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -24,7 +24,7 @@ typealias SymbolName = String
 sealed class Symbol {
     abstract val name: SymbolName
     abstract val uri: URI
-    abstract val position: LspResult<SafePosition>
+    abstract val position: GroovyParserResult<SafePosition>
     abstract val node: ASTNode
 
     /**
@@ -37,7 +37,7 @@ sealed class Symbol {
         val type: ClassNode?,
         val isParameter: Boolean = false,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         companion object {
             fun from(variable: org.codehaus.groovy.ast.Variable, uri: URI): Variable = Variable(
@@ -64,7 +64,7 @@ sealed class Symbol {
         val isAbstract: Boolean,
         val visibility: Visibility,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         val signature: String
             get() = buildString {
@@ -106,7 +106,7 @@ sealed class Symbol {
         val visibility: Visibility,
         val initialValue: String?,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         companion object {
             fun from(field: FieldNode, uri: URI): Field = Field(
@@ -137,7 +137,7 @@ sealed class Symbol {
         val getter: MethodNode?,
         val setter: MethodNode?,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         companion object {
             fun from(property: PropertyNode, uri: URI): Property = Property(
@@ -172,7 +172,7 @@ sealed class Symbol {
         val fields: List<FieldNode>,
         val properties: List<PropertyNode>,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         val fullyQualifiedName: String
             get() = if (packageName?.isNotEmpty() == true) "$packageName.$name" else name
@@ -209,7 +209,7 @@ sealed class Symbol {
         val isStarImport: Boolean,
         val packageName: String?,
     ) : Symbol() {
-        override val position: LspResult<SafePosition> = node.safePosition()
+        override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         companion object {
             fun from(importNode: ImportNode, uri: URI): Import = Import(

@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
-import com.github.albertocavalcante.groovylsp.ast.SymbolExtractor
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
+import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.slf4j.LoggerFactory

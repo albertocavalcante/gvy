@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import java.net.URI

@@ -132,28 +132,16 @@ class GroovyTextDocumentService(
      * Creates a CompilationContext from cached compilation data.
      */
     private fun createCompilationContext(uri: java.net.URI): CompilationContext? {
-        val ast = compilationService.getAst(uri)
-        val astVisitor = compilationService.getAstVisitor(uri)
-        val diagnostics = compilationService.getDiagnostics(uri)
+        val parseResult = compilationService.getParseResult(uri) ?: return null
 
-        if (ast is org.codehaus.groovy.ast.ModuleNode && astVisitor != null) {
-            // Use the actual compilation unit from the compilation service
-            val compilationUnit = compilationService.getCompilationUnit(uri)
-            if (compilationUnit == null) {
-                return null
-            }
-
-            return CompilationContext(
-                uri = uri,
-                moduleNode = ast,
-                compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
-                workspaceRoot = compilationService.getWorkspaceRoot(),
-                classpath = compilationService.getDependencyClasspath(),
-            )
-        }
-
-        return null
+        return CompilationContext(
+            uri = uri,
+            moduleNode = parseResult.ast!!,
+            compilationUnit = parseResult.compilationUnit,
+            astVisitor = parseResult.astVisitor,
+            workspaceRoot = compilationService.getWorkspaceRoot(),
+            classpath = compilationService.getDependencyClasspath(),
+        )
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {

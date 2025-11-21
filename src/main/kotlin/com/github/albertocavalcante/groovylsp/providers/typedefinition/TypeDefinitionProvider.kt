@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.typedefinition
 
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
+import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.types.TypeResolver
 import kotlinx.coroutines.CoroutineScope
 import org.eclipse.lsp4j.Location
@@ -74,7 +75,7 @@ class TypeDefinitionProvider(
         }
 
         // Find the AST node at the given position
-        val node = context.astVisitor.getNodeAt(uri, position) ?: run {
+        val node = context.astVisitor.getNodeAt(uri, position.toGroovyPosition()) ?: run {
             logger.debug("No AST node found at position $position")
             return null
         }

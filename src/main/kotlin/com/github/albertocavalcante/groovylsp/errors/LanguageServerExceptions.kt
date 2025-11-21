@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.errors
+package com.github.albertocavalcante.groovyparser.errors
 
 import java.net.URI
 

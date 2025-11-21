@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.types
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit

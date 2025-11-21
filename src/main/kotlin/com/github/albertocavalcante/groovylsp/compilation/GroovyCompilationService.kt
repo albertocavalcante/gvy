@@ -1,20 +1,14 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
-import com.github.albertocavalcante.groovylsp.ast.SymbolTable
-import com.github.albertocavalcante.groovylsp.cache.LRUCache
-import com.github.albertocavalcante.groovylsp.errors.CacheCorruptionException
-import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
-import com.github.albertocavalcante.groovylsp.errors.ResourceExhaustionException
 import com.github.albertocavalcante.groovylsp.gradle.DependencyResolver
 import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import org.codehaus.groovy.ast.ASTNode
-import org.codehaus.groovy.control.CompilationUnit
-import org.codehaus.groovy.control.SourceUnit
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -24,10 +18,6 @@ import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 import kotlin.streams.toList
 
-/**
- * Service for compiling Groovy source code and managing ASTs.
- * Refactored to use composition with cache and error handler components.
- */
 class GroovyCompilationService {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
@@ -35,11 +25,6 @@ class GroovyCompilationService {
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver: DependencyResolver = GradleDependencyResolver()
     private val parser = GroovyParserFacade()
-
-    // AST visitor and symbol table caches with LRU eviction
-    private val astVisitorCache = LRUCache<URI, AstVisitor>(maxSize = 100)
-    private val symbolTableCache = LRUCache<URI, SymbolTable>(maxSize = 100)
-    private val symbolStorageCache = LRUCache<URI, SymbolStorage>(maxSize = 100)
 
     // Dependency classpath management
     private val dependencyClasspath = mutableListOf<Path>()
@@ -56,11 +41,12 @@ class GroovyCompilationService {
 
         return try {
             // Check cache first
-            val cachedAst = cache.getCachedAst(uri, content)
-            if (cachedAst != null) {
-                logger.debug("Using cached AST for: $uri")
-                val cachedDiagnostics = cache.getCachedDiagnostics(uri)
-                CompilationResult.success(cachedAst, cachedDiagnostics, content)
+            val cachedResult = cache.get(uri, content)
+            if (cachedResult != null) {
+                logger.debug("Using cached parse result for: $uri")
+                val ast = cachedResult.ast!!
+                val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
+                return CompilationResult.success(ast, diagnostics, content)
             } else {
                 performCompilation(uri, content)
             }
@@ -85,21 +71,12 @@ class GroovyCompilationService {
 
         val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
         val ast = parseResult.ast
-        val compilationUnit = parseResult.compilationUnit
-        val sourceUnit = parseResult.sourceUnit
 
         val result = if (ast != null) {
-            // We have an AST, cache it and the diagnostics.
-            cache.cacheResult(uri, content, ast, diagnostics, compilationUnit)
-
-            // Build AST visitor and symbol table for go-to-definition
-            buildAstVisitorAndSymbolTable(uri, compilationUnit, sourceUnit)
-
-            // Success is true only if there are no error-level diagnostics.
+            cache.put(uri, content, parseResult)
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
-            // No AST, compilation definitely failed.
             CompilationResult.failure(diagnostics, content)
         }
 
@@ -107,50 +84,36 @@ class GroovyCompilationService {
         return result
     }
 
-    /**
-     * Gets the cached AST for a URI, or null if not cached.
-     * Note: This method doesn't validate cache freshness - use compile() for that.
-     */
-    fun getAst(uri: URI): ASTNode? = cache.getCachedAst(uri)
+    fun getParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? = cache.get(uri)
 
-    /**
-     * Gets the cached diagnostics for a URI.
-     */
-    fun getDiagnostics(uri: URI): List<Diagnostic> = cache.getCachedDiagnostics(uri)
+    fun getAst(uri: URI): ASTNode? = getParseResult(uri)?.ast
 
-    /**
-     * Gets the cached CompilationUnit for a URI.
-     */
-    fun getCompilationUnit(uri: URI): CompilationUnit? = cache.getCachedCompilationUnit(uri)
+    fun getDiagnostics(uri: URI): List<Diagnostic> =
+        getParseResult(uri)?.diagnostics?.map { it.toLspDiagnostic() } ?: emptyList()
 
-    /**
-     * Gets the AST visitor for a URI, or null if not available.
-     */
-    fun getAstVisitor(uri: URI): AstVisitor? = astVisitorCache.get(uri)
+    fun getAstVisitor(uri: URI): AstVisitor? = getParseResult(uri)?.astVisitor
 
-    /**
-     * Gets the symbol table for a URI, or null if not available.
-     */
-    fun getSymbolTable(uri: URI): SymbolTable? = symbolTableCache.get(uri)
+    fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
-    /**
-     * Gets the symbol storage for a URI, or null if not available.
-     */
-    fun getSymbolStorage(uri: URI): SymbolStorage? = symbolStorageCache.get(uri)
+    fun getSymbolStorage(uri: URI): SymbolStorage? {
+        val visitor = getAstVisitor(uri) ?: return null
+        return SymbolStorage().buildFromVisitor(visitor)
+    }
 
-    /**
-     * Returns all known symbol storages keyed by their URI.
-     */
-    fun getAllSymbolStorages(): Map<URI, SymbolStorage> = symbolStorageCache.snapshot()
+    fun getAllSymbolStorages(): Map<URI, SymbolStorage> {
+        // This is inefficient, but will do for now.
+        val allStorages = mutableMapOf<URI, SymbolStorage>()
+        for (uri in cache.keys()) {
+            val visitor = getAstVisitor(uri)
+            if (visitor != null) {
+                allStorages[uri] = SymbolStorage().buildFromVisitor(visitor)
+            }
+        }
+        return allStorages
+    }
 
-    /**
-     * Clears all caches.
-     */
     fun clearCaches() {
         cache.clear()
-        astVisitorCache.clear()
-        symbolTableCache.clear()
-        symbolStorageCache.clear()
     }
 
     fun getCacheStatistics() = cache.getStatistics()
@@ -280,71 +243,6 @@ class GroovyCompilationService {
      * Build AST visitor and symbol table for go-to-definition functionality
      */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - final fallback for AST building
-    private fun buildAstVisitorAndSymbolTable(uri: URI, compilationUnit: CompilationUnit, sourceUnit: SourceUnit) {
-        try {
-            // Create and configure AST visitor
-            val astVisitor = AstVisitor()
-
-            // Get the module from the compilation unit
-            val ast = compilationUnit.ast
-            if (ast?.modules?.isNotEmpty() == true) {
-                val module = ast.modules.first()
-
-                // Visit the module to build the AST relationships
-                astVisitor.visitModule(module, sourceUnit, uri)
-
-                // Cache the visitor
-                astVisitorCache.put(uri, astVisitor)
-
-                // Create and build symbol table
-                val symbolTable = SymbolTable()
-                symbolTable.buildFromVisitor(astVisitor)
-
-                // Cache the symbol table
-                symbolTableCache.put(uri, symbolTable)
-
-                // Create and build type-safe symbol storage
-                val symbolStorage = SymbolStorage()
-                val updatedSymbolStorage = symbolStorage.buildFromVisitor(astVisitor)
-
-                // Cache the symbol storage
-                symbolStorageCache.put(uri, updatedSymbolStorage)
-
-                logger.debug("Built AST visitor and symbol table for $uri with ${astVisitor.getAllNodes().size} nodes")
-            } else {
-                logger.debug("No modules available for AST visitor creation: $uri")
-            }
-        } catch (e: OutOfMemoryError) {
-            logger.error("Out of memory building AST visitor and symbol table for $uri", e)
-            val specificException = ResourceExhaustionException("Memory", -1, -1)
-            logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        } catch (e: StackOverflowError) {
-            logger.error("Stack overflow building AST visitor and symbol table for $uri", e)
-            val specificException = CircularReferenceException(
-                "AST traversal",
-                listOf("visitModule", "buildSymbolTable"),
-            )
-            logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments building AST visitor and symbol table for $uri", e)
-            val specificException = CacheCorruptionException(
-                "AST visitor/symbol table",
-                e.message ?: "Invalid arguments",
-                e,
-            )
-            logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        } catch (e: IllegalStateException) {
-            logger.error("Invalid state building AST visitor and symbol table for $uri", e)
-            val specificException =
-                CacheCorruptionException("AST visitor/symbol table", e.message ?: "Invalid state", e)
-            logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        } catch (e: Exception) {
-            logger.error("Unexpected error building AST visitor and symbol table for $uri", e)
-            val specificException =
-                CacheCorruptionException("AST visitor/symbol table", e.message ?: "Unexpected error", e)
-            logger.warn("Specific exception type: ${specificException.javaClass.simpleName}")
-        }
-    }
 
     // Expose cache for testing purposes
     internal val astCache get() = cache

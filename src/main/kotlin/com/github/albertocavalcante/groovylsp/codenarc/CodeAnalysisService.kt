@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.codenarc
 
-import com.github.albertocavalcante.groovylsp.ast.CoordinateSystem
+import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
 import org.codenarc.results.Results
 import org.codenarc.rule.Violation
 import org.eclipse.lsp4j.Diagnostic
