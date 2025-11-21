@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 import kotlin.streams.toList
@@ -25,6 +26,7 @@ class GroovyCompilationService {
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver: DependencyResolver = GradleDependencyResolver()
     private val parser = GroovyParserFacade()
+    private val symbolStorageCache = ConcurrentHashMap<URI, SymbolStorage>()
 
     // Dependency classpath management
     private val dependencyClasspath = mutableListOf<Path>()
@@ -74,9 +76,11 @@ class GroovyCompilationService {
 
         val result = if (ast != null) {
             cache.put(uri, content, parseResult)
+            symbolStorageCache[uri] = SymbolStorage().buildFromVisitor(parseResult.astVisitor)
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
+            symbolStorageCache.remove(uri)
             CompilationResult.failure(diagnostics, content)
         }
 
@@ -96,24 +100,24 @@ class GroovyCompilationService {
     fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
     fun getSymbolStorage(uri: URI): SymbolStorage? {
+        symbolStorageCache[uri]?.let { return it }
         val visitor = getAstVisitor(uri) ?: return null
-        return SymbolStorage().buildFromVisitor(visitor)
+        val storage = SymbolStorage().buildFromVisitor(visitor)
+        symbolStorageCache[uri] = storage
+        return storage
     }
 
     fun getAllSymbolStorages(): Map<URI, SymbolStorage> {
-        // This is inefficient, but will do for now.
         val allStorages = mutableMapOf<URI, SymbolStorage>()
-        for (uri in cache.keys()) {
-            val visitor = getAstVisitor(uri)
-            if (visitor != null) {
-                allStorages[uri] = SymbolStorage().buildFromVisitor(visitor)
-            }
+        cache.keys().forEach { uri ->
+            getSymbolStorage(uri)?.let { allStorages[uri] = it }
         }
         return allStorages
     }
 
     fun clearCaches() {
         cache.clear()
+        symbolStorageCache.clear()
     }
 
     fun getCacheStatistics() = cache.getStatistics()

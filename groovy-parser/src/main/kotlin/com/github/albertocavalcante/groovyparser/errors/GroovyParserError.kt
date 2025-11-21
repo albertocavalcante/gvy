@@ -119,9 +119,5 @@ fun URI.compilationFailedError(
     cause: Throwable? = null,
 ): GroovyParserError.CompilationFailed = GroovyParserError.CompilationFailed(this, reason, line, column, cause)
 
-fun URI.syntaxErrorError(
-    line: Int,
-    column: Int,
-    reason: String,
-    cause: Throwable? = null,
-): GroovyParserError.SyntaxError = GroovyParserError.SyntaxError(this, line, column, reason, cause)
+fun URI.syntaxError(line: Int, column: Int, reason: String, cause: Throwable? = null): GroovyParserError.SyntaxError =
+    GroovyParserError.SyntaxError(this, line, column, reason, cause)

@@ -59,10 +59,8 @@ value class ColumnNumber(val value: Int) {
 /**
  * Type-safe position with validation
  */
-fun SafePosition.toGroovyPosition(): Position = Position(this.line.value, this.column.value)
-
 data class SafePosition(val line: LineNumber, val column: ColumnNumber) {
-    fun toLspPosition(): Position = Position(line.toLspLine(), column.toLspColumn())
+    fun toParserPosition(): Position = Position(line.value, column.value)
 
     fun isWithin(start: SafePosition, end: SafePosition): Boolean = when {
         line.value < start.line.value -> false
@@ -73,7 +71,7 @@ data class SafePosition(val line: LineNumber, val column: ColumnNumber) {
     }
 
     companion object {
-        fun fromLsp(position: Position): SafePosition = SafePosition(
+        fun fromGroovyPosition(position: Position): SafePosition = SafePosition(
             LineNumber.fromLsp(position.line),
             ColumnNumber.fromLsp(position.character),
         )
@@ -151,7 +149,7 @@ fun ASTNode.safeEndPosition(): GroovyParserResult<SafePosition> = SafePosition.f
  */
 fun ASTNode.safeRange(): GroovyParserResult<Range> = safePosition().flatMapResult { start: SafePosition ->
     safeEndPosition().map { end: SafePosition ->
-        Range(start.toLspPosition(), end.toLspPosition())
+        Range(start.toParserPosition(), end.toParserPosition())
     }
 }
 
@@ -160,7 +158,7 @@ fun ASTNode.safeRange(): GroovyParserResult<Range> = safePosition().flatMapResul
  */
 fun ASTNode.containsPosition(position: Position): Boolean = safePosition().flatMapResult { start: SafePosition ->
     safeEndPosition().map { end: SafePosition ->
-        SafePosition.fromLsp(position).isWithin(start, end)
+        SafePosition.fromGroovyPosition(position).isWithin(start, end)
     }
 }.getOrDefault(false)
 

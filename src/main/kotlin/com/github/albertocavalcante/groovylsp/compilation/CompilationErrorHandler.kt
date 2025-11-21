@@ -2,8 +2,8 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.dsl.RangeBuilder
 import com.github.albertocavalcante.groovylsp.dsl.diagnostic
-import com.github.albertocavalcante.groovyparser.errors.GroovyLspException
-import com.github.albertocavalcante.groovyparser.errors.syntaxError
+import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
+import com.github.albertocavalcante.groovylsp.errors.syntaxError
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity

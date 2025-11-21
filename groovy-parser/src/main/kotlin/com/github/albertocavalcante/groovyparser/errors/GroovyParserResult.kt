@@ -95,18 +95,6 @@ inline fun <T> GroovyParserResult<T>.recoverFrom(
 }
 
 /**
- * Recovers from SymbolNotFound errors
- */
-inline fun <T> GroovyParserResult<T>.recoverFromSymbolNotFound(
-    recovery: (GroovyParserError.SymbolNotFound) -> T,
-): GroovyParserResult<T> = recoverCatching { error ->
-    when (error) {
-        is GroovyParserError.SymbolNotFound -> recovery(error)
-        else -> throw error
-    }
-}
-
-/**
  * Logs errors while preserving the result chain
  */
 inline fun <T> GroovyParserResult<T>.logError(

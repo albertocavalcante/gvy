@@ -6,7 +6,6 @@ import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
-import com.github.albertocavalcante.groovyparser.ast.toGroovyPosition
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
@@ -157,7 +156,7 @@ class SignatureHelpProvider(
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): Int {
         arguments.forEachIndexed { index, argument ->
-            val start = argument.safePosition().getOrNull()?.toGroovyPosition()
+            val start = argument.safePosition().getOrNull()?.toParserPosition()
             if (start != null && isBefore(position, start)) {
                 return index
             }

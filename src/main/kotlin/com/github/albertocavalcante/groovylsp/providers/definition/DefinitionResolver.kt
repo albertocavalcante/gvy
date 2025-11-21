@@ -1,13 +1,13 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
+import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
+import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
+import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
+import com.github.albertocavalcante.groovylsp.errors.invalidPosition
+import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
-import com.github.albertocavalcante.groovyparser.errors.CircularReferenceException
-import com.github.albertocavalcante.groovyparser.errors.GroovyLspException
-import com.github.albertocavalcante.groovyparser.errors.SymbolNotFoundException
-import com.github.albertocavalcante.groovyparser.errors.invalidPosition
-import com.github.albertocavalcante.groovyparser.errors.nodeNotFoundAtPosition
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Position
 import org.slf4j.LoggerFactory

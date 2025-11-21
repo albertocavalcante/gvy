@@ -16,3 +16,15 @@ inline fun <T> GroovyParserResult<T>.recoverFromNodeNotFound(
         else -> throw error
     }
 }
+
+/**
+ * Recovers from SymbolNotFound errors
+ */
+inline fun <T> GroovyParserResult<T>.recoverFromSymbolNotFound(
+    recovery: (GroovyParserError.SymbolNotFound) -> T,
+): GroovyParserResult<T> = recoverCatching { error ->
+    when (error) {
+        is GroovyParserError.SymbolNotFound -> recovery(error)
+        else -> throw error
+    }
+}

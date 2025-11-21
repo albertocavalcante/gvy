@@ -30,5 +30,10 @@ fun ASTNode.toLspLocationLink(targetNode: ASTNode, visitor: AstVisitor): Locatio
     val targetRange = targetNode.safeRange().getOrNull()?.toLspRange() ?: return null
     val targetUri = visitor.getUri(targetNode)?.toString() ?: return null
     val originRange = this.safeRange().getOrNull()?.toLspRange() ?: return null
-    return LocationLink(targetUri, targetRange, originRange)
+    return LocationLink(
+        targetUri,
+        targetRange,
+        targetRange,
+        originRange,
+    )
 }

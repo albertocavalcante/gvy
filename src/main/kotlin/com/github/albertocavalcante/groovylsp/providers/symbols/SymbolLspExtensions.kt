@@ -1,11 +1,10 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
 
-import com.github.albertocavalcante.groovylsp.converters.toLspPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovyparser.ast.safeRange
-import com.github.albertocavalcante.groovyparser.ast.toGroovyPosition
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.SymbolKind
@@ -63,6 +62,6 @@ private fun Symbol.toLspRange(): Range? {
         return range.toLspRange()
     }
 
-    val start = position.getOrNull()?.toGroovyPosition()?.toLspPosition() ?: return null
+    val start = position.getOrNull()?.let { Position(it.line.value, it.column.value) } ?: return null
     return Range(start, start)
 }
