@@ -40,7 +40,7 @@ dependencies {
     implementation("org.gmetrics:GMetrics-Groovy4:2.1.0") // Required for complexity rules
 
     // Gradle Tooling API - For dependency resolution
-    implementation("org.gradle:gradle-tooling-api:9.1.0")
+    implementation("org.gradle:gradle-tooling-api:9.2.1")
 
     // Kotlin Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
