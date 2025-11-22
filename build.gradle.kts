@@ -7,7 +7,7 @@ plugins {
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     id("com.diffplug.spotless") version "8.1.0"
     id("org.jetbrains.kotlinx.kover") version "0.9.3"
-    id("org.sonarqube") version "7.0.0.6105"
+    id("org.sonarqube") version "7.1.0.6387"
     application
 }
 
