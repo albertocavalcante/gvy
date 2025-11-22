@@ -2,7 +2,7 @@ import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 
 plugins {
-    kotlin("jvm") version "2.2.20" apply false
+    kotlin("jvm") version "2.2.21" apply false
     id("com.gradleup.shadow") version "9.2.2" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     id("com.diffplug.spotless") version "8.0.0"
