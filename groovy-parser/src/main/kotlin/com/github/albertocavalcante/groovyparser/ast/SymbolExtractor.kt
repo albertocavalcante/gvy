@@ -2,6 +2,8 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
 import java.lang.reflect.Modifier
 
 /**
@@ -9,6 +11,52 @@ import java.lang.reflect.Modifier
  * This is the core component that enables real language server functionality.
  */
 object SymbolExtractor {
+
+    // ... existing extractClassSymbols ...
+
+    /**
+     * Extract variable symbols from a method node (parameters and local variables).
+     */
+    fun extractVariableSymbols(methodNode: Any): List<VariableSymbol> {
+        if (methodNode !is org.codehaus.groovy.ast.MethodNode) return emptyList()
+
+        val variables = mutableListOf<VariableSymbol>()
+
+        // 1. Add parameters
+        methodNode.parameters?.forEach { param ->
+            variables.add(
+                VariableSymbol(
+                    name = param.name,
+                    type = param.type.nameWithoutPackage,
+                    kind = VariableKind.PARAMETER,
+                    line = param.lineNumber - 1,
+                ),
+            )
+        }
+
+        // 2. Add local variables (simple scan of the code block)
+        val code = methodNode.code
+        if (code is BlockStatement) {
+            code.statements.forEach { stmt ->
+                if (stmt is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
+                    stmt.expression is DeclarationExpression
+                ) {
+                    val decl = stmt.expression as DeclarationExpression
+                    val variable = decl.variableExpression
+                    variables.add(
+                        VariableSymbol(
+                            name = variable.name,
+                            type = variable.type.nameWithoutPackage,
+                            kind = VariableKind.LOCAL_VARIABLE,
+                            line = stmt.lineNumber - 1,
+                        ),
+                    )
+                }
+            }
+        }
+
+        return variables
+    }
 
     /**
      * Extract all class symbols from a compilation unit.
@@ -161,11 +209,24 @@ object SymbolExtractor {
         val methods = currentClass?.let { extractMethodSymbols(it.astNode) } ?: emptyList()
         val fields = currentClass?.let { extractFieldSymbols(it.astNode) } ?: emptyList()
 
+        // Find current method and extract variables
+        var variables: List<VariableSymbol> = emptyList()
+        if (currentClass != null) {
+            val classNode = currentClass.astNode as org.codehaus.groovy.ast.ClassNode
+            val methodNode = classNode.methods.find { method ->
+                line >= method.lineNumber - 1 && line <= method.lastLineNumber - 1
+            }
+            if (methodNode != null) {
+                variables = extractVariableSymbols(methodNode)
+            }
+        }
+
         return CompletionContext(
             classes = classes,
             methods = methods,
             fields = fields,
             imports = imports,
+            variables = variables,
             currentClass = currentClass,
         )
     }
@@ -196,6 +257,10 @@ data class FieldSymbol(
     val column: Int,
 )
 
+enum class VariableKind { PARAMETER, LOCAL_VARIABLE }
+
+data class VariableSymbol(val name: String, val type: String, val kind: VariableKind, val line: Int)
+
 data class ImportSymbol(
     val packageName: String,
     val className: String?,
@@ -212,9 +277,10 @@ data class CompletionContext(
     val methods: List<MethodSymbol>,
     val fields: List<FieldSymbol>,
     val imports: List<ImportSymbol>,
+    val variables: List<VariableSymbol> = emptyList(),
     val currentClass: ClassSymbol?,
 ) {
     companion object {
-        val EMPTY = CompletionContext(emptyList(), emptyList(), emptyList(), emptyList(), null)
+        val EMPTY = CompletionContext(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
     }
 }

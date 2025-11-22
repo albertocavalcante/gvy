@@ -93,13 +93,17 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
      * Push a node onto the stack and track relationships
      */
     private fun pushNode(node: ASTNode) {
-        // Skip synthetic nodes (following fork-groovy pattern)
+        // Check if node is synthetic but allow it if it has valid source coordinates
         val isSynthetic = when (node) {
             is AnnotatedNode -> node.isSynthetic
             else -> false
         }
 
-        if (!isSynthetic) {
+        // Critical fix: VariableExpression in implicit access (like 'println name')
+        // is often marked synthetic but has valid coordinates and should be hoverable.
+        val hasSource = node.lineNumber > 0
+
+        if (!isSynthetic || hasSource) {
             tracker.pushNode(node, currentUri)
         }
     }
@@ -188,7 +192,18 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     override fun visitMethodCallExpression(call: MethodCallExpression) {
         pushNode(call)
         try {
-            super.visitMethodCallExpression(call)
+            // Manually visit arguments to ensure they are tracked, as standard visitor support seems flaky for ArgumentList
+            val args = call.arguments
+            if (args is org.codehaus.groovy.ast.expr.TupleExpression) {
+                args.expressions?.forEach { it.visit(this) }
+            } else {
+                args?.visit(this)
+            }
+
+            // Manually visit the method expression (object and method name) instead of calling super
+            // to avoid potential duplicate visitation of arguments if super were to visit them.
+            call.objectExpression?.visit(this)
+            call.method?.visit(this)
         } finally {
             popNode()
         }
@@ -234,6 +249,15 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         pushNode(call)
         try {
             super.visitConstructorCallExpression(call)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitTupleExpression(expression: org.codehaus.groovy.ast.expr.TupleExpression) {
+        pushNode(expression)
+        try {
+            super.visitTupleExpression(expression)
         } finally {
             popNode()
         }
@@ -351,6 +375,55 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         pushNode(statement)
         try {
             super.visitThrowStatement(statement)
+        } finally {
+            popNode()
+        }
+    }
+
+    /**
+     * Override visitSwitch to ensure SwitchStatement nodes are tracked.
+     * This fixes issues where switch statements were not hoverable or discoverable.
+     */
+    override fun visitSwitch(statement: org.codehaus.groovy.ast.stmt.SwitchStatement) {
+        pushNode(statement)
+        try {
+            super.visitSwitch(statement)
+        } finally {
+            popNode()
+        }
+    }
+
+    /**
+     * Override visitCaseStatement to ensure CaseStatement nodes are tracked.
+     */
+    override fun visitCaseStatement(statement: org.codehaus.groovy.ast.stmt.CaseStatement) {
+        pushNode(statement)
+        try {
+            super.visitCaseStatement(statement)
+        } finally {
+            popNode()
+        }
+    }
+
+    /**
+     * Override visitBreakStatement to ensure BreakStatement nodes are tracked.
+     */
+    override fun visitBreakStatement(statement: org.codehaus.groovy.ast.stmt.BreakStatement) {
+        pushNode(statement)
+        try {
+            super.visitBreakStatement(statement)
+        } finally {
+            popNode()
+        }
+    }
+
+    /**
+     * Override visitContinueStatement to ensure ContinueStatement nodes are tracked.
+     */
+    override fun visitContinueStatement(statement: org.codehaus.groovy.ast.stmt.ContinueStatement) {
+        pushNode(statement)
+        try {
+            super.visitContinueStatement(statement)
         } finally {
             popNode()
         }

@@ -78,6 +78,55 @@ object CompletionProvider {
                     doc = "Field: ${fieldSymbol.type} ${fieldSymbol.name}",
                 )
             }
+
+            // Add variable completions (parameters and local variables)
+            context.variables.forEach { varSymbol ->
+                val kind = varSymbol.kind.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
+                val docString = "$kind: ${varSymbol.type} ${varSymbol.name}"
+                variable(
+                    name = varSymbol.name,
+                    type = varSymbol.type,
+                    doc = docString,
+                )
+            }
+
+            // Add imported classes
+            context.imports.forEach { importSymbol ->
+                if (!importSymbol.isStarImport) {
+                    val name = importSymbol.className
+                        ?: importSymbol.packageName.substringAfterLast('.')
+
+                    clazz(
+                        name = name,
+                        packageName = importSymbol.packageName,
+                        doc = "Imported: ${importSymbol.packageName}.$name",
+                    )
+                }
+            }
+
+            // Add common Groovy keywords/types
+            // List includes types, control flow, modifiers, and special values
+            val keywords = listOf(
+                // Types
+                "def", "void", "int", "boolean", "char", "byte",
+                "short", "long", "float", "double", "String", "Object",
+                // Control flow
+                "if", "else", "for", "while", "do", "switch", "case", "default",
+                "break", "continue", "return", "try", "catch", "finally", "throw",
+                // Structure
+                "class", "interface", "trait", "enum", "package", "import",
+                // Modifiers
+                "public", "protected", "private", "static", "final", "abstract",
+                "synchronized", "transient", "volatile", "native",
+                // Values/Other
+                "true", "false", "null", "this", "super", "new", "in", "as", "assert",
+            )
+            keywords.forEach { k ->
+                keyword(
+                    keyword = k,
+                    doc = "Keyword/Type: $k",
+                )
+            }
         }
     }
 }

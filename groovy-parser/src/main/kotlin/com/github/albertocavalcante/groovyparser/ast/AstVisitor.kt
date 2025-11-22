@@ -71,6 +71,8 @@ class AstVisitor : ClassCodeVisitorSupport() {
     override fun visitPropertyExpression(expression: PropertyExpression) = delegate.visitPropertyExpression(expression)
     override fun visitConstructorCallExpression(call: ConstructorCallExpression) =
         delegate.visitConstructorCallExpression(call)
+    override fun visitTupleExpression(expression: org.codehaus.groovy.ast.expr.TupleExpression) =
+        delegate.visitTupleExpression(expression)
     override fun visitClassExpression(expression: ClassExpression) = delegate.visitClassExpression(expression)
     override fun visitClosureExpression(expression: ClosureExpression) = delegate.visitClosureExpression(expression)
     override fun visitGStringExpression(expression: org.codehaus.groovy.ast.expr.GStringExpression) =
@@ -88,4 +90,11 @@ class AstVisitor : ClassCodeVisitorSupport() {
         delegate.visitReturnStatement(statement)
     override fun visitThrowStatement(statement: org.codehaus.groovy.ast.stmt.ThrowStatement) =
         delegate.visitThrowStatement(statement)
+    override fun visitSwitch(statement: org.codehaus.groovy.ast.stmt.SwitchStatement) = delegate.visitSwitch(statement)
+    override fun visitCaseStatement(statement: org.codehaus.groovy.ast.stmt.CaseStatement) =
+        delegate.visitCaseStatement(statement)
+    override fun visitBreakStatement(statement: org.codehaus.groovy.ast.stmt.BreakStatement) =
+        delegate.visitBreakStatement(statement)
+    override fun visitContinueStatement(statement: org.codehaus.groovy.ast.stmt.ContinueStatement) =
+        delegate.visitContinueStatement(statement)
 }

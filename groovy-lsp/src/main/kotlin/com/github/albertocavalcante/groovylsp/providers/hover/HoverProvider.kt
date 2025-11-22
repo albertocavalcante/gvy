@@ -114,66 +114,72 @@ class HoverProvider(
         documentUri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): ASTNode? {
-        // Try to get the AST visitor and symbol table for enhanced functionality
         val astVisitor = compilationService.getAstVisitor(documentUri)
         val symbolTable = compilationService.getSymbolTable(documentUri)
 
+        // 1. Find the node at position
         val nodeAtPosition = if (astVisitor != null) {
-            // Use enhanced AST visitor-based approach
             astVisitor.getNodeAt(documentUri, position)
         } else {
-            // Fallback to original AST-based approach
             val ast = compilationService.getAst(documentUri) as? ModuleNode
             ast?.findNodeAt(position.line, position.character)
         } ?: return null
 
         logger.debug("Found node at position: ${nodeAtPosition.javaClass.simpleName}")
 
-        // For hover, we usually want the node the user is actually hovering over,
-        // not its definition (except for references to see what they point to)
-        return if (astVisitor != null && symbolTable != null) {
-            when (nodeAtPosition) {
-                // For variable references, resolve to definition to show what they point to
-                is VariableExpression -> {
-                    // But only if it's not part of a declaration
-                    val parent = astVisitor.getParent(nodeAtPosition)
-                    if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression &&
-                        parent.leftExpression == nodeAtPosition
-                    ) {
-                        // This is a variable being declared, show the declaration itself
-                        nodeAtPosition
-                    } else {
-                        // This is a variable reference, resolve to definition
-                        nodeAtPosition.resolveToDefinition(
-                            astVisitor,
-                            symbolTable,
-                            strict = false,
-                        ) ?: nodeAtPosition
-                    }
-                }
-                is ConstantExpression -> {
-                    val parent = astVisitor.getParent(nodeAtPosition)
-                    if (parent is MethodCallExpression && parent.method == nodeAtPosition) {
-                        parent
-                    } else {
-                        nodeAtPosition
-                    }
-                }
-                // For most other nodes (constants, GStrings, etc.), show the node itself
-                else -> nodeAtPosition
-            }
-        } else {
-            if (nodeAtPosition is ConstantExpression) {
-                val parent = compilationService.getAstVisitor(documentUri)?.getParent(nodeAtPosition)
-                if (parent is MethodCallExpression && parent.method == nodeAtPosition) {
-                    parent
-                } else {
-                    nodeAtPosition
-                }
-            } else {
-                nodeAtPosition
+        // 2. If we have visitor/symbol table, try enhanced resolution
+        if (astVisitor != null && symbolTable != null) {
+            return resolveWithVisitor(nodeAtPosition, astVisitor, symbolTable)
+        }
+
+        // 3. Fallback resolution
+        return resolveFallback(nodeAtPosition, documentUri)
+    }
+
+    private fun resolveWithVisitor(
+        node: ASTNode,
+        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+    ): ASTNode = when (node) {
+        is VariableExpression -> resolveVariable(node, visitor, symbolTable)
+        is ConstantExpression -> resolveConstant(node, visitor)
+        else -> node
+    }
+
+    private fun resolveVariable(
+        node: VariableExpression,
+        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+    ): ASTNode {
+        // If it's a declaration, show the node itself
+        val parent = visitor.getParent(node)
+        if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
+            return node
+        }
+
+        // Otherwise resolve to definition
+        return node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
+    }
+
+    private fun resolveConstant(
+        node: ConstantExpression,
+        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+    ): ASTNode {
+        val parent = visitor.getParent(node)
+        if (parent is MethodCallExpression && parent.method == node) {
+            return parent
+        }
+        return node
+    }
+
+    private fun resolveFallback(node: ASTNode, documentUri: URI): ASTNode {
+        if (node is ConstantExpression) {
+            val parent = compilationService.getAstVisitor(documentUri)?.getParent(node)
+            if (parent is MethodCallExpression && parent.method == node) {
+                return parent
             }
         }
+        return node
     }
 
     /**

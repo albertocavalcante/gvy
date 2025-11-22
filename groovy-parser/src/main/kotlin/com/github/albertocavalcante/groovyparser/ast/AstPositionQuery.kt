@@ -34,45 +34,67 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
         // Filter nodes that contain the position and find the smallest one
         return nodes.filter { node ->
-            node.hasValidPosition() && node.containsPosition(groovyLine, groovyCharacter)
-        }.minByOrNull { node ->
-            // Calculate node size to find the smallest containing node - use Long to prevent overflow
-            val lineSpan = node.lastLineNumber - node.lineNumber
-            val charSpan = if (lineSpan == 0) {
-                node.lastColumnNumber - node.columnNumber
-            } else {
-                PositionConstants.MAX_RANGE_SIZE // Multi-line nodes are considered larger
-            }
-            // CRITICAL FIX: Use Long to prevent integer overflow that was causing ClassNode to have negative size
-            lineSpan.toLong() * PositionConstants.LINE_WEIGHT + charSpan.toLong()
-        }
+            val valid = node.hasValidPosition()
+            val contains = node.containsPosition(groovyLine, groovyCharacter)
+            valid && contains
+        }.minWithOrNull(
+            compareBy<ASTNode> { node ->
+                // 1. Sort by size (smallest first)
+                val effectiveLastLine = if (node.lastLineNumber > 0) node.lastLineNumber else node.lineNumber
+                val effectiveLastCol = if (node.lastColumnNumber > 0) node.lastColumnNumber else node.columnNumber + 1
+
+                val lineSpan = effectiveLastLine - node.lineNumber
+                val charSpan = if (lineSpan == 0) {
+                    effectiveLastCol - node.columnNumber
+                } else {
+                    PositionConstants.MAX_RANGE_SIZE
+                }
+                lineSpan.toLong() * PositionConstants.LINE_WEIGHT + charSpan.toLong()
+            }.thenBy { node ->
+                // 2. Tie-breaker: Prefer specific atomic expressions over containers
+                when (node) {
+                    is org.codehaus.groovy.ast.expr.VariableExpression -> 0
+                    is org.codehaus.groovy.ast.expr.ConstantExpression -> 0
+                    is org.codehaus.groovy.ast.expr.GStringExpression -> 0
+                    is org.codehaus.groovy.ast.expr.Expression -> 1 // Generic expressions (ArgumentList, MethodCall)
+                    is org.codehaus.groovy.ast.stmt.Statement -> 2
+                    is org.codehaus.groovy.ast.MethodNode -> 3
+                    is org.codehaus.groovy.ast.ClassNode -> 4
+                    else -> 5
+                }
+            },
+        )
     }
 
     /**
      * Check if a node has valid position information.
+     * Relaxed validation: Some nodes (like VariableExpression) might only have start coordinates.
      */
-    private fun ASTNode.hasValidPosition(): Boolean =
-        lineNumber > 0 && columnNumber > 0 && lastLineNumber > 0 && lastColumnNumber > 0
+    private fun ASTNode.hasValidPosition(): Boolean = lineNumber > 0 && columnNumber > 0
 
     /**
      * Check if this node contains the given position using Groovy coordinates.
      * NB: This expects 1-based Groovy coordinates, not 0-based LSP coordinates.
      */
     private fun ASTNode.containsPosition(line: Int, character: Int): Boolean {
+        // If we don't have end coordinates, assume it's a single point or small range
+        val endLine = if (lastLineNumber > 0) lastLineNumber else lineNumber
+        val endColumn = if (lastColumnNumber > 0) lastColumnNumber else columnNumber + 1 // Minimum 1 char width
+
         // Check if position is within the node's bounds using Groovy 1-based coordinates
         return when {
-            line < lineNumber || line > lastLineNumber -> false
-            line == lineNumber && line == lastLineNumber -> {
+            line < lineNumber || line > endLine -> false
+            line == lineNumber && line == endLine -> {
                 // Single line: check column bounds
-                character >= columnNumber && character <= lastColumnNumber
+                character >= columnNumber && character <= endColumn
             }
             line == lineNumber -> {
                 // First line: check from column to end of line
                 character >= columnNumber
             }
-            line == lastLineNumber -> {
+            line == endLine -> {
                 // Last line: check from beginning to column
-                character <= lastColumnNumber
+                character <= endColumn
             }
             else -> {
                 // Middle lines: always valid
