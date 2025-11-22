@@ -1,0 +1,217 @@
+[
+  {
+    "name": "bug",
+    "color": "d73a49",
+    "description": "Something isn't working"
+  },
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "New feature or request"
+  },
+  {
+    "name": "documentation",
+    "color": "0075ca",
+    "description": "Documentation improvements"
+  },
+  {
+    "name": "architecture",
+    "color": "5319e7",
+    "description": "Design decisions and patterns"
+  },
+  {
+    "name": "tech-debt",
+    "color": "e99695",
+    "description": "Refactoring and code quality"
+  },
+  {
+    "name": "lsp/lifecycle",
+    "color": "c2e0c6",
+    "description": "Initialize, shutdown, capabilities"
+  },
+  {
+    "name": "lsp/textSync",
+    "color": "c2e0c6",
+    "description": "Document sync, file watching"
+  },
+  {
+    "name": "lsp/completion",
+    "color": "c2e0c6",
+    "description": "Completion, signatures, snippets"
+  },
+  {
+    "name": "lsp/signatureHelp",
+    "color": "c2e0c6",
+    "description": "Parameter hints while typing"
+  },
+  {
+    "name": "lsp/navigation",
+    "color": "c2e0c6",
+    "description": "Definition, references, symbols"
+  },
+  {
+    "name": "lsp/diagnostics",
+    "color": "c2e0c6",
+    "description": "Errors, warnings, linting"
+  },
+  {
+    "name": "lsp/pullDiagnostics",
+    "color": "c2e0c6",
+    "description": "Pull-based diagnostics"
+  },
+  {
+    "name": "lsp/hover",
+    "color": "c2e0c6",
+    "description": "Hover info and documentation"
+  },
+  {
+    "name": "lsp/symbols",
+    "color": "c2e0c6",
+    "description": "Document and workspace symbols"
+  },
+  {
+    "name": "lsp/refactor",
+    "color": "c2e0c6",
+    "description": "Rename, code actions, fixes"
+  },
+  {
+    "name": "lsp/codeAction",
+    "color": "c2e0c6",
+    "description": "Quick fixes and refactorings"
+  },
+  {
+    "name": "lsp/codeLens",
+    "color": "c2e0c6",
+    "description": "Inline actionable commands"
+  },
+  {
+    "name": "lsp/semantic",
+    "color": "c2e0c6",
+    "description": "Semantic tokens, highlighting"
+  },
+  {
+    "name": "lsp/formatting",
+    "color": "c2e0c6",
+    "description": "Format document and range"
+  },
+  {
+    "name": "lsp/folding",
+    "color": "c2e0c6",
+    "description": "Code folding ranges"
+  },
+  {
+    "name": "lsp/selection",
+    "color": "c2e0c6",
+    "description": "Smart selection ranges"
+  },
+  {
+    "name": "lsp/documentLink",
+    "color": "c2e0c6",
+    "description": "Clickable links in documents"
+  },
+  {
+    "name": "lsp/workspace",
+    "color": "c2e0c6",
+    "description": "Workspace folders and configuration"
+  },
+  {
+    "name": "lsp/window",
+    "color": "c2e0c6",
+    "description": "Window notifications and progress"
+  },
+  {
+    "name": "lsp/inlayHints",
+    "color": "c2e0c6",
+    "description": "Inline hints - LSP 3.17"
+  },
+  {
+    "name": "lsp/typeHierarchy",
+    "color": "c2e0c6",
+    "description": "Type hierarchy - LSP 3.17"
+  },
+  {
+    "name": "lsp/callHierarchy",
+    "color": "c2e0c6",
+    "description": "Call hierarchy"
+  },
+  {
+    "name": "lsp/inlineValue",
+    "color": "c2e0c6",
+    "description": "Inline values - LSP 3.17"
+  },
+  {
+    "name": "lsp/moniker",
+    "color": "c2e0c6",
+    "description": "Cross-repository references"
+  },
+  {
+    "name": "lsp/notebook",
+    "color": "c2e0c6",
+    "description": "Notebook support - LSP 3.17"
+  },
+  {
+    "name": "P0-critical",
+    "color": "b60205",
+    "description": "🔥 Must fix immediately"
+  },
+  {
+    "name": "P1-must",
+    "color": "d93f0b",
+    "description": "Core functionality needed"
+  },
+  {
+    "name": "P2-should",
+    "color": "fbca04",
+    "description": "Important improvements"
+  },
+  {
+    "name": "P3-nice",
+    "color": "0e8a16",
+    "description": "Nice to have"
+  },
+  {
+    "name": "size/XS",
+    "color": "ffffff",
+    "description": "Few hours"
+  },
+  {
+    "name": "size/S",
+    "color": "bfd4f2",
+    "description": "1-2 days"
+  },
+  {
+    "name": "size/M",
+    "color": "7057ff",
+    "description": "3-5 days"
+  },
+  {
+    "name": "size/L",
+    "color": "2f1b69",
+    "description": "1-2 weeks"
+  },
+  {
+    "name": "size/XL",
+    "color": "000000",
+    "description": "2+ weeks"
+  },
+  {
+    "name": "good-first-issue",
+    "color": "bfe5bf",
+    "description": "Good for newcomers"
+  },
+  {
+    "name": "help-wanted",
+    "color": "008672",
+    "description": "Extra attention needed"
+  },
+  {
+    "name": "blocked",
+    "color": "b60205",
+    "description": "Blocked by dependency"
+  },
+  {
+    "name": "decision-needed",
+    "color": "d876e3",
+    "description": "Requires architectural decision"
+  }
+]
