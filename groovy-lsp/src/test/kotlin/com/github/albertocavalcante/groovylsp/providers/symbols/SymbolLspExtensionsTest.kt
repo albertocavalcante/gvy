@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
 
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode

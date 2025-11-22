@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.providers.symbols
+package com.github.albertocavalcante.groovyparser.ast.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovyparser.errors.symbolNotFoundError
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
+import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toPersistentMap
@@ -20,18 +21,19 @@ import kotlin.reflect.KClass
 import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 /**
- * Immutable, type-safe symbol storage using persistent data structures
+ * Immutable, type-safe symbol storage using persistent data structures.
+ * Renamed from SymbolStorage to SymbolIndex to avoid conflict with legacy mutable storage.
  */
-data class SymbolStorage(
+data class SymbolIndex(
     val symbols: PersistentMap<URI, PersistentList<Symbol>> = persistentMapOf(),
     val symbolsByName: PersistentMap<Pair<URI, SymbolName>, PersistentList<Symbol>> = persistentMapOf(),
     val symbolsByCategory: PersistentMap<Pair<URI, SymbolCategory>, PersistentList<Symbol>> = persistentMapOf(),
 ) {
 
     /**
-     * Adds a symbol and returns a new SymbolStorage instance
+     * Adds a symbol and returns a new SymbolIndex instance
      */
-    fun add(symbol: Symbol): SymbolStorage {
+    fun add(symbol: Symbol): SymbolIndex {
         val uri = symbol.uri
         val name = symbol.name
         val category = symbol.category()
@@ -52,7 +54,31 @@ data class SymbolStorage(
     /**
      * Adds multiple symbols at once
      */
-    fun addAll(symbols: List<Symbol>): SymbolStorage = symbols.fold(this) { storage, symbol -> storage.add(symbol) }
+    fun addAll(symbolsToAdd: List<Symbol>): SymbolIndex {
+        if (symbolsToAdd.isEmpty()) return this
+
+        val newSymbolsByUri = symbolsToAdd.groupBy { it.uri }
+        val newSymbolsByName = symbolsToAdd.groupBy { it.uri to it.name }
+        val newSymbolsByCategory = symbolsToAdd.groupBy { it.uri to it.category() }
+
+        return copy(
+            symbols = symbols.mutate { mut ->
+                newSymbolsByUri.forEach { (uri, syms) ->
+                    mut[uri] = (mut[uri] ?: persistentListOf()).addAll(syms)
+                }
+            },
+            symbolsByName = symbolsByName.mutate { mut ->
+                newSymbolsByName.forEach { (key, syms) ->
+                    mut[key] = (mut[key] ?: persistentListOf()).addAll(syms)
+                }
+            },
+            symbolsByCategory = symbolsByCategory.mutate { mut ->
+                newSymbolsByCategory.forEach { (key, syms) ->
+                    mut[key] = (mut[key] ?: persistentListOf()).addAll(syms)
+                }
+            },
+        )
+    }
 
     /**
      * Type-safe symbol lookup by name and type
@@ -108,12 +134,12 @@ data class SymbolStorage(
     /**
      * Clears all symbols and returns empty storage
      */
-    fun clear(): SymbolStorage = SymbolStorage()
+    fun clear(): SymbolIndex = SymbolIndex()
 
     /**
      * Clears symbols for a specific URI
      */
-    fun clearUri(uri: URI): SymbolStorage {
+    fun clearUri(uri: URI): SymbolIndex {
         if (symbols[uri] == null) return this
 
         return copy(
@@ -163,8 +189,8 @@ class SymbolQuery {
 
     inline fun <reified T : Symbol> type(): KClass<T> = T::class
 
-    fun execute(storage: SymbolStorage): List<Symbol> {
-        val baseSymbols = uri?.let { storage.getSymbols(it) } ?: storage.symbols.values.flatten()
+    fun execute(index: SymbolIndex): List<Symbol> {
+        val baseSymbols = uri?.let { index.getSymbols(it) } ?: index.symbols.values.flatten()
 
         return baseSymbols
             .filter(createNameFilter())
@@ -213,10 +239,10 @@ class SymbolQuery {
 /**
  * DSL function for querying symbols
  */
-fun SymbolStorage.query(block: SymbolQuery.() -> Unit): List<Symbol> = SymbolQuery().apply(block).execute(this)
+fun SymbolIndex.query(block: SymbolQuery.() -> Unit): List<Symbol> = SymbolQuery().apply(block).execute(this)
 
 /**
- * Builder for creating SymbolStorage from AST nodes
+ * Builder for creating SymbolIndex from AST nodes
  */
 class SymbolBuilder(private val uri: URI) {
     private val symbols = mutableListOf<Symbol>()
@@ -258,20 +284,20 @@ class SymbolBuilder(private val uri: URI) {
 fun buildSymbols(uri: URI, block: SymbolBuilder.() -> Unit): List<Symbol> = SymbolBuilder(uri).apply(block).build()
 
 /**
- * Extension function to build SymbolStorage from AstVisitor
+ * Extension function to build SymbolIndex from AstVisitor
  */
-fun SymbolStorage.buildFromVisitor(visitor: AstVisitor): SymbolStorage {
-    var storage = this
+fun SymbolIndex.buildFromVisitor(visitor: AstVisitor): SymbolIndex {
+    var index = this
 
     visitor.getAllNodes().forEach { node ->
         val uri = visitor.getUri(node) ?: return@forEach
 
         val symbol = when (node) {
-            is Variable -> Symbol.Variable.from(node, uri)
             is MethodNode -> Symbol.Method.from(node, uri)
             is FieldNode -> Symbol.Field.from(node, uri)
             is PropertyNode -> Symbol.Property.from(node, uri)
             is ClassNode -> Symbol.Class.from(node, uri)
+            is Variable -> Symbol.Variable.from(node, uri)
             is ImportNode -> {
                 if (node.isStatic) {
                     Symbol.Import.fromStatic(node, uri)
@@ -282,52 +308,8 @@ fun SymbolStorage.buildFromVisitor(visitor: AstVisitor): SymbolStorage {
             else -> null
         }
 
-        symbol?.let { storage = storage.add(it) }
+        symbol?.let { index = index.add(it) }
     }
 
-    return storage
-}
-
-/**
- * Compatibility layer for the old SymbolTable interface
- */
-@Deprecated("Use SymbolStorage directly", ReplaceWith("SymbolStorage"))
-class TypeSafeSymbolTable(private var storage: SymbolStorage = SymbolStorage()) {
-
-    fun addVariableDeclaration(uri: URI, variable: Variable) {
-        storage = storage.add(Symbol.Variable.from(variable, uri))
-    }
-
-    fun addMethodDeclaration(uri: URI, method: MethodNode) {
-        storage = storage.add(Symbol.Method.from(method, uri))
-    }
-
-    fun addClassDeclaration(uri: URI, classNode: ClassNode) {
-        storage = storage.add(Symbol.Class.from(classNode, uri))
-    }
-
-    fun findVariableDeclaration(uri: URI, name: String): Variable? = storage.find<Symbol.Variable>(uri, name)
-        .getOrNull()
-        ?.node as? Variable
-
-    fun buildFromVisitor(visitor: AstVisitor) {
-        storage = storage.buildFromVisitor(visitor)
-    }
-
-    fun clear() {
-        storage = storage.clear()
-    }
-
-    fun getStatistics(): Map<String, Any> = with(storage.getStatistics()) {
-        mapOf(
-            "totalSymbols" to totalSymbols,
-            "variables" to (symbolsByCategory[SymbolCategory.VARIABLE] ?: 0),
-            "methods" to (symbolsByCategory[SymbolCategory.METHOD] ?: 0),
-            "classes" to (symbolsByCategory[SymbolCategory.CLASS] ?: 0),
-            "fields" to (symbolsByCategory[SymbolCategory.FIELD] ?: 0),
-            "properties" to (symbolsByCategory[SymbolCategory.PROPERTY] ?: 0),
-            "imports" to (symbolsByCategory[SymbolCategory.IMPORT] ?: 0),
-            "uniqueNames" to uniqueNames,
-        )
-    }
+    return index
 }

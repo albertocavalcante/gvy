@@ -3,12 +3,12 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.gradle.DependencyResolver
 import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
-import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
-import com.github.albertocavalcante.groovylsp.providers.symbols.buildFromVisitor
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
@@ -26,7 +26,7 @@ class GroovyCompilationService {
     private val errorHandler = CompilationErrorHandler()
     private val dependencyResolver: DependencyResolver = GradleDependencyResolver()
     private val parser = GroovyParserFacade()
-    private val symbolStorageCache = LRUCache<URI, SymbolStorage>(maxSize = 100)
+    private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
 
     // Dependency classpath management
     private val dependencyClasspath = mutableListOf<Path>()
@@ -76,7 +76,7 @@ class GroovyCompilationService {
 
         val result = if (ast != null) {
             cache.put(uri, content, parseResult)
-            symbolStorageCache.put(uri, SymbolStorage().buildFromVisitor(parseResult.astVisitor))
+            symbolStorageCache.put(uri, SymbolIndex().buildFromVisitor(parseResult.astVisitor))
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
@@ -99,16 +99,16 @@ class GroovyCompilationService {
 
     fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
-    fun getSymbolStorage(uri: URI): SymbolStorage? {
+    fun getSymbolStorage(uri: URI): SymbolIndex? {
         symbolStorageCache.get(uri)?.let { return it }
         val visitor = getAstVisitor(uri) ?: return null
-        val storage = SymbolStorage().buildFromVisitor(visitor)
+        val storage = SymbolIndex().buildFromVisitor(visitor)
         symbolStorageCache.put(uri, storage)
         return storage
     }
 
-    fun getAllSymbolStorages(): Map<URI, SymbolStorage> {
-        val allStorages = mutableMapOf<URI, SymbolStorage>()
+    fun getAllSymbolStorages(): Map<URI, SymbolIndex> {
+        val allStorages = mutableMapOf<URI, SymbolIndex>()
         cache.keys().forEach { uri ->
             getSymbolStorage(uri)?.let { allStorages[uri] = it }
         }

@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.providers.symbols.Symbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.SymbolInformation

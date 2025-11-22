@@ -1,10 +1,8 @@
-package com.github.albertocavalcante.groovylsp.providers.symbols
+package com.github.albertocavalcante.groovyparser.ast.symbols
 
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
-import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import kotlinx.collections.immutable.persistentListOf
-import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
@@ -13,17 +11,17 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
 
-class SymbolStorageTest {
+class SymbolExtractionTest {
 
-    private lateinit var compilationService: GroovyCompilationService
+    private lateinit var parser: GroovyParserFacade
 
     @BeforeEach
     fun setUp() {
-        compilationService = GroovyCompilationService()
+        parser = GroovyParserFacade()
     }
 
     @Test
-    fun `test buildFromVisitor creates symbol storage`() = runTest {
+    fun `test buildFromVisitor creates symbol storage`() {
         // Arrange
         val content = """
             class TestClass {
@@ -36,16 +34,19 @@ class SymbolStorageTest {
 
         val uri = URI.create("file:///test.groovy")
 
-        // Compile the content to build AST
-        val result = compilationService.compile(uri, content)
-        assertTrue(result.isSuccess, "Compilation should succeed")
+        // Act
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
 
-        // Get visitor to build symbols
-        val visitor = compilationService.getAstVisitor(uri)
-        assertNotNull(visitor, "Should have AST visitor after compilation")
+        // Assert compilation
+        val ast = result.ast
+        assertNotNull(ast, "AST should not be null")
 
-        // Act - Build symbols from visitor using extension function
-        val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
+        // Get visitor
+        val visitor = result.astVisitor
+        assertNotNull(visitor, "Should have AST visitor")
+
+        // Build symbols
+        val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
 
         // Assert - Should have symbols in the new storage
         assertTrue(symbolIndex.symbols.isNotEmpty(), "Should have symbols after building from visitor")
@@ -57,7 +58,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test symbol lookup by name`() = runTest {
+    fun `test symbol lookup by name`() {
         // Arrange
         val content = """
             def variable = "test"
@@ -70,14 +71,12 @@ class SymbolStorageTest {
 
         val uri = URI.create("file:///test.groovy")
 
-        // Compile and build symbol storage
-        val result = compilationService.compile(uri, content)
-        assertTrue(result.isSuccess, "Compilation should succeed")
-
-        val visitor = compilationService.getAstVisitor(uri)
+        // Act
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
+        val visitor = result.astVisitor
         assertNotNull(visitor, "Should have AST visitor")
 
-        val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
+        val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
 
         // Act - Search for symbols by name using the immutable API
         val allSymbols = symbolIndex.symbols[uri] ?: persistentListOf()
@@ -93,7 +92,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test search non-existent symbol`() = runTest {
+    fun `test search non-existent symbol`() {
         // Arrange
         val content = """
             def variable = "test"
@@ -101,14 +100,12 @@ class SymbolStorageTest {
 
         val uri = URI.create("file:///test.groovy")
 
-        // Compile and build symbol storage
-        val result = compilationService.compile(uri, content)
-        assertTrue(result.isSuccess, "Compilation should succeed")
-
-        val visitor = compilationService.getAstVisitor(uri)
+        // Act
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
+        val visitor = result.astVisitor
         assertNotNull(visitor, "Should have AST visitor")
 
-        val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
+        val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
 
         // Act - Search for non-existent symbol
         val allSymbols = symbolIndex.symbols[uri] ?: persistentListOf()
@@ -119,7 +116,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test immutable nature of SymbolStorage`() = runTest {
+    fun `test immutable nature of SymbolIndex`() {
         // Arrange
         val content = """
             def variable = "test"
@@ -127,15 +124,13 @@ class SymbolStorageTest {
 
         val uri = URI.create("file:///test.groovy")
 
-        // Compile and build symbol storage
-        val result = compilationService.compile(uri, content)
-        assertTrue(result.isSuccess, "Compilation should succeed")
-
-        val visitor = compilationService.getAstVisitor(uri)
+        // Act
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
+        val visitor = result.astVisitor
         assertNotNull(visitor, "Should have AST visitor")
 
         val originalIndex = SymbolIndex()
-        val newIndex = originalIndex.buildFromVisitor(visitor!!)
+        val newIndex = originalIndex.buildFromVisitor(visitor)
 
         // Assert - Original storage should be unchanged (immutability)
         assertTrue(originalIndex.symbols.isEmpty(), "Original storage should remain empty")
@@ -146,7 +141,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test empty storage behavior`() = runTest {
+    fun `test empty storage behavior`() {
         // Arrange
         val emptyIndex = SymbolIndex()
 

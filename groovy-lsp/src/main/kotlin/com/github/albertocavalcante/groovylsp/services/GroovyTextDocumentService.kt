@@ -10,11 +10,11 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
-import com.github.albertocavalcante.groovylsp.providers.symbols.SymbolStorage
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
+import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
@@ -458,7 +458,7 @@ class GroovyTextDocumentService(
         )
     }
 
-    private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolStorage? =
+    private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
             compilationService.compile(uri, content)
             compilationService.getSymbolStorage(uri)

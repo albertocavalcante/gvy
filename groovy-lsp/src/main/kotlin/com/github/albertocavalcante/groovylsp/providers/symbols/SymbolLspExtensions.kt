@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.symbols
 
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovyparser.ast.safeRange
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
