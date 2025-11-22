@@ -12,7 +12,7 @@ java {
 }
 
 dependencies {
-    api("org.apache.groovy:groovy:4.0.28")
+    api("org.apache.groovy:groovy:4.0.29")
 
     implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
     implementation("org.slf4j:slf4j-api:2.0.17")

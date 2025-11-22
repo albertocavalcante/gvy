@@ -29,11 +29,11 @@ dependencies {
     implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0")
 
     // Groovy - For AST parsing and analysis
-    implementation("org.apache.groovy:groovy:4.0.28")
+    implementation("org.apache.groovy:groovy:4.0.29")
     // Add additional Groovy modules that might be needed for compilation
-    implementation("org.apache.groovy:groovy-ant:4.0.28")
-    implementation("org.apache.groovy:groovy-console:4.0.28")
-    implementation("org.apache.groovy:groovy-json:4.0.28") // Required for CodeNarc JsonSlurper
+    implementation("org.apache.groovy:groovy-ant:4.0.29")
+    implementation("org.apache.groovy:groovy-console:4.0.29")
+    implementation("org.apache.groovy:groovy-json:4.0.29") // Required for CodeNarc JsonSlurper
 
     // CodeNarc - Static analysis for Groovy (Groovy 4.x compatible version)
     implementation("org.codenarc:CodeNarc:3.6.0-groovy-4.0")
