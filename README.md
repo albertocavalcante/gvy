@@ -6,22 +6,39 @@ A Language Server Protocol (LSP) implementation for Apache Groovy.
 
 ⚠️ **Work in Progress** - This is an early development version with basic LSP functionality.
 
-## Features
+## LSP Feature Support
 
-Currently implemented:
+We target **LSP Specification 3.17** and use `lsp4j` 0.24.0.
 
-- Basic LSP lifecycle (initialize/shutdown)
-- Simple completions (println, def, class)
-- Hover support
-- Diagnostics for TODO comments
-
-Planned:
-
-- Full Groovy AST integration
-- Go-to definition
-- Find references
-- Refactoring support
-- Gradle build file support
+| LSP Method | Feature | Status | Notes |
+| :--- | :--- | :---: | :--- |
+| **Lifecycle** | | | |
+| `initialize` | Initialize | ✅ | |
+| `shutdown` | Shutdown | ✅ | |
+| `exit` | Exit | ✅ | |
+| **Text Synchronization** | | | |
+| `textDocument/didOpen` | Open | ✅ | Triggers compilation & diagnostics |
+| `textDocument/didChange` | Change | ✅ | Full sync; triggers re-compilation |
+| `textDocument/didSave` | Save | ✅ | |
+| `textDocument/didClose` | Close | ✅ | Clears diagnostics |
+| **Language Features** | | | |
+| `textDocument/completion` | Completion | ✅ | Keywords + AST-based variables/methods |
+| `textDocument/hover` | Hover | ✅ | Type info & documentation |
+| `textDocument/signatureHelp` | Signature Help | ✅ | Method parameter hints |
+| `textDocument/formatting` | Formatting | ✅ | Via OpenRewrite |
+| `textDocument/publishDiagnostics` | Diagnostics | ✅ | Groovy compiler errors |
+| `textDocument/codeAction` | Code Actions | ⏳ | Planned (Quick fixes) |
+| `textDocument/rename` | Rename | ⏳ | Planned |
+| `textDocument/semanticTokens` | Semantic Tokens | ⏳ | Planned (Syntax highlighting) |
+| `textDocument/inlayHint` | Inlay Hints | ⏳ | Planned (LSP 3.17) |
+| **Navigation** | | | |
+| `textDocument/definition` | Go to Definition | ✅ | Symbols & Types |
+| `textDocument/typeDefinition` | Type Definition | ✅ | |
+| `textDocument/references` | Find References | ✅ | |
+| `textDocument/documentSymbol` | Document Symbols | ✅ | Outline view |
+| `workspace/symbol` | Workspace Symbols | ✅ | Global search |
+| `textDocument/foldingRange` | Folding | ⏳ | Planned |
+| `textDocument/implementation` | Implementation | ⏳ | Planned |
 
 ## Requirements
 
