@@ -91,7 +91,7 @@ jobs:
           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
         fi
     - name: Upload release artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: "release-artifacts-${{ matrix.os }}"
         path: dist/*
@@ -107,7 +107,7 @@ jobs:
       with:
         fetch-depth: 0
     - name: Download all artifacts
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v6
       with:
         merge-multiple: true
         path: artifacts

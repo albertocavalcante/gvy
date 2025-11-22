@@ -86,14 +86,14 @@ jobs:
           java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
       - name: Upload JAR artifact
         if: matrix.os == 'ubuntu-latest' && matrix.java == 17
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: groovy-lsp-jar
           path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
           retention-days: 7
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-results-${{ matrix.os }}-java${{ matrix.java }}
           path: |-
