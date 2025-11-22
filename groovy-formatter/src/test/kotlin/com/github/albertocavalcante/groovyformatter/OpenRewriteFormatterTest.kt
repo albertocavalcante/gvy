@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.formatter
+package com.github.albertocavalcante.groovyformatter
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Disabled

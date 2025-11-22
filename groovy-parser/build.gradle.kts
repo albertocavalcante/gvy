@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.2.20"
+    kotlin("jvm")
 }
 
 group = "com.github.albertocavalcante"
@@ -24,4 +24,14 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(40) // Minimum line coverage: 40% for parser module
+            }
+        }
+    }
 }

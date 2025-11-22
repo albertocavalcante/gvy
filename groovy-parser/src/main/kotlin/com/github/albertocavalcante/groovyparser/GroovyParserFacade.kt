@@ -15,7 +15,6 @@ import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
-import java.nio.file.Files
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
 

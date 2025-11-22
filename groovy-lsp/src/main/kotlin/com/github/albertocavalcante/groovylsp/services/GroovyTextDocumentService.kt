@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovyformatter.OpenRewriteFormatter
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
-import com.github.albertocavalcante.groovylsp.formatter.OpenRewriteFormatter
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider

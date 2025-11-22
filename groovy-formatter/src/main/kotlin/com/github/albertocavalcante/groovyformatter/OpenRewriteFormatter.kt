@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.formatter
+package com.github.albertocavalcante.groovyformatter
 
 import org.openrewrite.ExecutionContext
 import org.openrewrite.InMemoryExecutionContext

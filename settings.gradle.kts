@@ -56,7 +56,9 @@ gitHooks {
     createHooks(true) // Allow overwriting existing hooks
 }
 
-rootProject.name = "groovy-lsp"
+rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
 include("groovy-parser")
+include("groovy-lsp")
+include("tests")

@@ -2,6 +2,9 @@ plugins {
     kotlin("jvm")
 }
 
+group = "com.github.albertocavalcante"
+version = rootProject.version
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)

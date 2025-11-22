@@ -232,7 +232,8 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         val timeout = step.timeoutMs ?: DEFAULT_NOTIFICATION_TIMEOUT_MS
         val envelope = context.session.client.awaitNotification(step.method, timeout) { payload ->
             step.checks.all { check ->
-                runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }.isSuccess
+                val result = runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
+                result.getOrDefault(false)
             }
         } ?: throw TimeoutException("Timeout waiting for notification '${step.method}'")
 

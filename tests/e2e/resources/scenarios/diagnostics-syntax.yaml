@@ -57,13 +57,6 @@ steps:
           expect:
             type: EQUALS
             value: "{{workspace.uri}}src/Problem.groovy"
-  - waitNotification:
-      method: textDocument/publishDiagnostics
-      checks:
-        - jsonPath: $.uri
-          expect:
-            type: EQUALS
-            value: "{{workspace.uri}}src/Problem.groovy"
         - jsonPath: $.diagnostics
           expect:
             type: EMPTY

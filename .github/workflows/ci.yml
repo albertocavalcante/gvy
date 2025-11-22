@@ -76,20 +76,20 @@ jobs:
         if: success() || failure()
         with:
           name: Test Results (${{ matrix.os }} - Java ${{ matrix.java }})
-          path: build/test-results/test/*.xml
+          path: '**/build/test-results/test/*.xml'
           reporter: java-junit
       - name: Build Shadow JAR
         run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
       - name: Verify JAR
         run: |-
           echo "Testing JAR with --help flag..."
-          java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar --help
+          java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
       - name: Upload JAR artifact
         if: matrix.os == 'ubuntu-latest' && matrix.java == 17
         uses: actions/upload-artifact@v4
         with:
           name: groovy-lsp-jar
-          path: build/libs/groovy-lsp-*-SNAPSHOT.jar
+          path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
           retention-days: 7
       - name: Upload Test Results
         if: always()
@@ -97,8 +97,8 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}-java${{ matrix.java }}
           path: |-
-            build/test-results/
-            build/reports/tests/
+            **/build/test-results/
+            **/build/reports/tests/
           retention-days: 7
   validate:
     name: Validation Check
