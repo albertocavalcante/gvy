@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
 import org.slf4j.LoggerFactory
 import java.nio.file.Path

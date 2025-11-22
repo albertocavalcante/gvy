@@ -1,6 +1,3 @@
-import org.gradle.api.tasks.compile.GroovyCompile
-import org.gradle.language.base.plugins.LifecycleBasePlugin
-
 plugins {
     kotlin("jvm")
     groovy
@@ -8,20 +5,14 @@ plugins {
     application
 }
 
-tasks.withType<org.gradle.api.tasks.compile.GroovyCompile>().configureEach {
-    // Keep Groovy sources aligned with the Java 17 toolchain
-    groovyOptions.encoding = "UTF-8"
-}
-
-group = "com.github.albertocavalcante"
-version = rootProject.version
 val baseVersion: String by rootProject.extra
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+version =
+    when {
+        System.getenv("GITHUB_REF_TYPE") == "tag" -> baseVersion
+        System.getenv("GITHUB_HEAD_REF")?.contains("release-please") == true -> baseVersion
+        else -> "$baseVersion-SNAPSHOT"
     }
-}
 
 dependencies {
     // LSP4J - Language Server Protocol implementation
@@ -36,6 +27,8 @@ dependencies {
     implementation("org.apache.groovy:groovy-json:4.0.29") // Required for CodeNarc JsonSlurper
 
     // CodeNarc - Static analysis for Groovy (Groovy 4.x compatible version)
+    // CodeNarc is now a transitive dependency of the diagnostics module, but kept here for
+    // backward compatibility if any direct usages remain during refactoring
     implementation("org.codenarc:CodeNarc:3.6.0-groovy-4.0")
     implementation("org.gmetrics:GMetrics-Groovy4:2.1.0") // Required for complexity rules
 
@@ -69,6 +62,8 @@ dependencies {
     // Local Modules
     implementation(project(":groovy-formatter"))
     implementation(project(":groovy-parser"))
+    implementation(project(":groovy-diagnostics:api"))
+    implementation(project(":groovy-diagnostics:codenarc"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
@@ -93,9 +88,10 @@ tasks.test {
 val mainSourceSet = sourceSets.named("main")
 
 // Configure Kotlin-Groovy interop: Groovy compiles first, then Kotlin
-tasks.named<GroovyCompile>("compileGroovy") {
+tasks.named<org.gradle.api.tasks.compile.GroovyCompile>("compileGroovy") {
     // Groovy compiles with declared dependencies only
     classpath = sourceSets.main.get().compileClasspath
+    groovyOptions.encoding = "UTF-8"
 }
 
 tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
@@ -105,7 +101,7 @@ tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
 }
 
 // Ensure proper compilation order for tests too
-tasks.named<GroovyCompile>("compileTestGroovy") {
+tasks.named<org.gradle.api.tasks.compile.GroovyCompile>("compileTestGroovy") {
     classpath = sourceSets.test.get().compileClasspath
 }
 
@@ -117,6 +113,8 @@ tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlin"
 // Fix Kover task dependencies for Gradle 9
 afterEvaluate {
     tasks.findByName("koverGenerateArtifactJvm")?.dependsOn(tasks.compileGroovy)
+    // Use lifecycle logging for build information
+    logger.lifecycle("Configured version for groovy-lsp: ${project.version}")
 }
 
 application {
@@ -214,5 +212,11 @@ tasks.register("printVersion") {
         println("GITHUB_REF_TYPE: ${System.getenv("GITHUB_REF_TYPE") ?: "not set"}")
         println("GITHUB_HEAD_REF: ${System.getenv("GITHUB_HEAD_REF") ?: "not set"}")
         println("Is release build: ${version == baseVersion}")
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
     }
 }

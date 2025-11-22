@@ -1,5 +1,6 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
+import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
@@ -26,7 +27,7 @@ interface RulesetResolver {
      * @param context The workspace configuration context
      * @return The resolved ruleset configuration
      */
-    fun resolve(context: WorkspaceConfiguration): RulesetConfiguration
+    fun resolve(context: WorkspaceContext): RulesetConfiguration
 }
 
 /**
@@ -59,7 +60,7 @@ class HierarchicalRulesetResolver(
         )
     }
 
-    override fun resolve(context: WorkspaceConfiguration): RulesetConfiguration {
+    override fun resolve(context: WorkspaceContext): RulesetConfiguration {
         logger.debug("Resolving ruleset configuration for context: $context")
 
         // Find properties file first
@@ -80,10 +81,10 @@ class HierarchicalRulesetResolver(
     /**
      * Resolves the ruleset content from various sources.
      */
-    private fun resolveRulesetContent(context: WorkspaceConfiguration): ResolvedRuleset {
+    private fun resolveRulesetContent(context: WorkspaceContext): ResolvedRuleset {
         // 1. Try explicit workspace configuration files
-        if (context.hasWorkspace()) {
-            val workspaceRuleset = loadFromWorkspaceFiles(context.requireWorkspace())
+        if (context.root != null) {
+            val workspaceRuleset = loadFromWorkspaceFiles(context.root!!)
             if (workspaceRuleset != null) {
                 return workspaceRuleset
             }
@@ -99,22 +100,22 @@ class HierarchicalRulesetResolver(
     /**
      * Resolves the properties file to use.
      */
-    private fun resolvePropertiesFile(context: WorkspaceConfiguration): String? {
-        val serverConfig = context.serverConfig
+    private fun resolvePropertiesFile(context: WorkspaceContext): String? {
+        val config = context.getConfiguration()
 
         // Check if auto-detection is disabled
-        if (!serverConfig.codeNarcAutoDetect) {
+        if (!config.autoDetectConfig) {
             return null
         }
 
         // Check for explicit override in server configuration
-        serverConfig.codeNarcPropertiesFile?.let { explicitPath ->
-            return resolveExplicitPropertiesPath(explicitPath, context.workspaceRoot)
+        config.propertiesFile?.let { explicitPath ->
+            return resolveExplicitPropertiesPath(explicitPath, context.root)
         }
 
         // Fall back to auto-detection in workspace
-        return if (context.hasWorkspace()) {
-            findPropertiesFile(context.requireWorkspace())
+        return if (context.root != null) {
+            findPropertiesFile(context.root!!)
         } else {
             null
         }
@@ -200,11 +201,11 @@ class HierarchicalRulesetResolver(
     /**
      * Loads the appropriate default ruleset based on project type.
      */
-    private fun loadProjectTypeDefault(context: WorkspaceConfiguration): ResolvedRuleset {
-        val projectType = if (context.hasWorkspace()) {
-            projectTypeDetector.detect(context.requireWorkspace())
+    private fun loadProjectTypeDefault(context: WorkspaceContext): ResolvedRuleset {
+        val projectType = if (context.root != null) {
+            projectTypeDetector.detect(context.root!!)
         } else {
-            context.projectType
+            ProjectType.PlainGroovy
         }
 
         val resourcePath = when (projectType) {

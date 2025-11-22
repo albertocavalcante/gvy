@@ -156,6 +156,7 @@ class ASTCompletionIntegrationTest {
 
             void describe() {
                 // Cursor here for testing
+                println "Rectangle"
             }
         }
     """.trimIndent()
@@ -184,6 +185,7 @@ class ASTCompletionIntegrationTest {
 
             void calculate() {
                 // Cursor here - should get completions for class members
+                println result
             }
         }
     """.trimIndent()

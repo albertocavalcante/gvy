@@ -1,5 +1,7 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
+import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
+import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
 import org.codenarc.results.Results
 import org.codenarc.rule.Violation
@@ -8,6 +10,8 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.slf4j.LoggerFactory
+import java.net.URI
+import java.nio.file.Paths
 
 /**
  * Service that orchestrates CodeNarc analysis and converts results to LSP diagnostics.
@@ -17,17 +21,37 @@ import org.slf4j.LoggerFactory
  * violations are only processed from leaf nodes in the CodeNarc Results hierarchy.
  */
 @Suppress("TooGenericExceptionCaught") // CodeNarc interop layer handles all analysis errors
-class CodeAnalysisService(
-    private val configurationProvider: ConfigurationProvider,
+class CodeNarcDiagnosticProvider(
+    private val workspaceContext: WorkspaceContext,
     private val rulesetResolver: RulesetResolver = HierarchicalRulesetResolver(),
     private val codeAnalyzer: CodeAnalyzer = DefaultCodeAnalyzer(),
-) {
+) : DiagnosticProvider {
 
     companion object {
-        private val logger = LoggerFactory.getLogger(CodeAnalysisService::class.java)
+        private val logger = LoggerFactory.getLogger(CodeNarcDiagnosticProvider::class.java)
         private const val CODENARC_HIGH_PRIORITY = 1
         private const val CODENARC_MEDIUM_PRIORITY = 2
         private const val CODENARC_LOW_PRIORITY = 3
+    }
+
+    override suspend fun analyze(source: String, uri: URI): List<Diagnostic> {
+        val config = workspaceContext.getConfiguration()
+        if (!config.isEnabled) {
+            return emptyList()
+        }
+        val fileName = extractFileName(uri)
+        return analyzeAndGetDiagnostics(source, fileName)
+    }
+
+    /**
+     * Extracts the file name from a URI for reporting purposes.
+     */
+    private fun extractFileName(uri: URI): String = try {
+        val path = Paths.get(uri)
+        path.fileName?.toString() ?: uri.toString()
+    } catch (e: Exception) {
+        logger.debug("Failed to extract file name from URI: $uri", e)
+        uri.toString()
     }
 
     /**
@@ -40,11 +64,8 @@ class CodeAnalysisService(
     fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String): List<Diagnostic> = try {
         logger.debug("Starting CodeNarc analysis for: $fileName")
 
-        // Get current workspace configuration
-        val workspaceConfig = createWorkspaceConfiguration()
-
         // Resolve the appropriate ruleset configuration
-        val rulesetConfig = rulesetResolver.resolve(workspaceConfig)
+        val rulesetConfig = rulesetResolver.resolve(workspaceContext)
         logger.debug("Using ruleset from: ${rulesetConfig.source}")
 
         // Execute CodeNarc analysis directly with ruleset content
@@ -65,14 +86,6 @@ class CodeAnalysisService(
         // Return empty list on failure - LSP should continue functioning
         emptyList()
     }
-
-    /**
-     * Creates workspace configuration from the current provider state.
-     */
-    private fun createWorkspaceConfiguration(): WorkspaceConfiguration = WorkspaceConfiguration(
-        workspaceRoot = configurationProvider.getWorkspaceRoot(),
-        serverConfig = configurationProvider.getServerConfiguration(),
-    )
 
     /**
      * CRITICAL BUG FIX: Converts CodeNarc Results to LSP Diagnostics without triplication.

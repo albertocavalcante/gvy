@@ -99,7 +99,7 @@ class GroovyLanguageServerTest {
     fun `test document open compiles valid groovy file`() = runBlocking {
         val params = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
-                uri = "file:///test.groovy"
+                uri = "file:///TestClass.groovy"
                 languageId = "groovy"
                 version = 1
                 text = "class TestClass {\n    void hello() {\n        println 'Hello World'\n    }\n}"
@@ -109,9 +109,9 @@ class GroovyLanguageServerTest {
         server.textDocumentService.didOpen(params)
 
         // Wait for compilation to complete and diagnostics to be published
-        val publishedDiagnostics = mockClient.awaitSuccessfulCompilation("file:///test.groovy")
+        val publishedDiagnostics = mockClient.awaitSuccessfulCompilation("file:///TestClass.groovy")
 
-        assertEquals("file:///test.groovy", publishedDiagnostics.uri)
+        assertEquals("file:///TestClass.groovy", publishedDiagnostics.uri)
         // Valid Groovy code should have no errors (already verified by awaitSuccessfulCompilation)
         assertTrue(publishedDiagnostics.diagnostics.isEmpty())
     }

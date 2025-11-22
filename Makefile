@@ -1,6 +1,9 @@
 # Groovy LSP Makefile
 # Quick development commands for common tasks
 
+# Allow injecting Gradle arguments (e.g. make build GRADLE_ARGS="--info")
+GRADLE_ARGS ?=
+
 .PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e
 
 # Default target
@@ -23,44 +26,44 @@ help:
 
 # Quick JAR build without tests (most common during development)
 jar:
-	./gradlew build -x test -x koverVerify -x detekt -x spotlessKotlinCheck -x spotlessMarkdownCheck
+	./gradlew build -x test -x koverVerify -x detekt -x spotlessKotlinCheck -x spotlessMarkdownCheck $(GRADLE_ARGS)
 
 # Full build with tests
 build:
-	./gradlew build
+	./gradlew build $(GRADLE_ARGS)
 
 # Force a full rebuild
 rebuild:
-	./gradlew build --rerun-tasks
+	./gradlew build --rerun-tasks $(GRADLE_ARGS)
 
 # Run tests only
 test:
-	./gradlew test
+	./gradlew test $(GRADLE_ARGS)
 
 # Force re-run of tests
 retest:
-	./gradlew test --rerun-tasks
+	./gradlew test --rerun-tasks $(GRADLE_ARGS)
 
 # Clean build artifacts
 clean:
-	./gradlew clean
+	./gradlew clean $(GRADLE_ARGS)
 
 # Code quality
 lint:
-	./gradlew lint
+	./gradlew lint $(GRADLE_ARGS)
 
 format:
-	./gradlew lintFix
+	./gradlew lintFix $(GRADLE_ARGS)
 
 # Auto-fix specific issues
 fix-imports:
-	./gradlew detektAutoCorrect --parallel
+	./gradlew detektAutoCorrect --parallel $(GRADLE_ARGS)
 
 quality:
-	./gradlew quality
+	./gradlew quality $(GRADLE_ARGS)
 
 e2e:
-	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain e2eTest
+	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain e2eTest $(GRADLE_ARGS)
 
 # Run the language server
 run-stdio: jar
@@ -71,4 +74,4 @@ run-socket: jar
 
 # Version information
 version:
-	./gradlew printVersion
+	./gradlew printVersion $(GRADLE_ARGS)

@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir

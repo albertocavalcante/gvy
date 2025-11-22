@@ -47,6 +47,7 @@ class GroovyCompilationService {
             if (cachedResult != null) {
                 logger.debug("Using cached parse result for: $uri")
                 val ast = cachedResult.ast!!
+                // Convert compilation diagnostics (errors)
                 val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
                 return CompilationResult.success(ast, diagnostics, content)
             } else {

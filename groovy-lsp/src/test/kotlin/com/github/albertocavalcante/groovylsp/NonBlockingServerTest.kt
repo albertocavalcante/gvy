@@ -45,7 +45,7 @@ class NonBlockingServerTest {
 
             // Test document operations
             val textDoc = TextDocumentItem().apply {
-                uri = "file:///test.groovy"
+                uri = "file:///TestClass.groovy"
                 languageId = "groovy"
                 version = 1
                 text = """
@@ -64,11 +64,11 @@ class NonBlockingServerTest {
             server.textDocumentService.didOpen(didOpenParams)
 
             // Wait for compilation to complete
-            client.awaitSuccessfulCompilation("file:///test.groovy")
+            client.awaitSuccessfulCompilation("file:///TestClass.groovy")
 
             // Test completion
             val completionParams = CompletionParams().apply {
-                textDocument = TextDocumentIdentifier("file:///test.groovy")
+                textDocument = TextDocumentIdentifier("file:///TestClass.groovy")
                 position = Position(3, 12) // Inside the method
             }
 

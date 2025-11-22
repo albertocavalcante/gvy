@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
 /**
  * Represents the type of a Groovy project, which influences the ruleset selection.

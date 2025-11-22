@@ -1,8 +1,10 @@
-package com.github.albertocavalcante.groovylsp.codenarc
+package com.github.albertocavalcante.diagnostics.codenarc
 
-import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.diagnostics.api.DiagnosticConfiguration
+import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -40,14 +42,18 @@ class CodeNarcDiagnosticFixTest {
         """.trimIndent()
 
         // Mock configuration provider that returns our test ruleset
-        val configProvider = object : ConfigurationProvider {
-            override fun getServerConfiguration() = ServerConfiguration()
-            override fun getWorkspaceRoot() = Paths.get(".")
+        val workspaceContext = object : WorkspaceContext {
+            override val root: Path? = Paths.get(".")
+            override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
+                override val isEnabled: Boolean = true
+                override val propertiesFile: String? = null
+                override val autoDetectConfig: Boolean = false
+            }
         }
 
         // Use a custom ruleset resolver for testing
         val testRulesetResolver = object : RulesetResolver {
-            override fun resolve(context: WorkspaceConfiguration): RulesetConfiguration = RulesetConfiguration(
+            override fun resolve(context: WorkspaceContext): RulesetConfiguration = RulesetConfiguration(
                 rulesetContent = testRuleset,
                 propertiesFile = null,
                 source = "test-ruleset",
@@ -55,8 +61,8 @@ class CodeNarcDiagnosticFixTest {
         }
 
         // When: We analyze the code using our test ruleset
-        val analysisService = CodeAnalysisService(configProvider, testRulesetResolver)
-        val diagnostics = analysisService.analyzeAndGetDiagnostics(groovyCodeWithViolations, "TestClass.groovy")
+        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext, testRulesetResolver)
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(groovyCodeWithViolations, "TestClass.groovy")
 
         // Then: Each violation should appear exactly once (no triplication)
         // We expect some diagnostics but they should be unique
@@ -81,13 +87,17 @@ class CodeNarcDiagnosticFixTest {
 
     @Test
     fun `should handle empty source code gracefully`() = runTest {
-        val configProvider = object : ConfigurationProvider {
-            override fun getServerConfiguration() = ServerConfiguration()
-            override fun getWorkspaceRoot() = Paths.get(".")
+        val workspaceContext = object : WorkspaceContext {
+            override val root: Path? = Paths.get(".")
+            override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
+                override val isEnabled: Boolean = true
+                override val propertiesFile: String? = null
+                override val autoDetectConfig: Boolean = false
+            }
         }
 
-        val analysisService = CodeAnalysisService(configProvider)
-        val diagnostics = analysisService.analyzeAndGetDiagnostics("", "empty.groovy")
+        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext)
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics("", "empty.groovy")
 
         // Should not crash and should return empty diagnostics
         assertTrue(diagnostics.isEmpty(), "Empty source should produce no diagnostics")
@@ -103,13 +113,17 @@ class CodeNarcDiagnosticFixTest {
             }
         """.trimIndent()
 
-        val configProvider = object : ConfigurationProvider {
-            override fun getServerConfiguration() = ServerConfiguration()
-            override fun getWorkspaceRoot() = Paths.get(".")
+        val workspaceContext = object : WorkspaceContext {
+            override val root: Path? = Paths.get(".")
+            override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
+                override val isEnabled: Boolean = true
+                override val propertiesFile: String? = null
+                override val autoDetectConfig: Boolean = false
+            }
         }
 
-        val analysisService = CodeAnalysisService(configProvider)
-        val diagnostics = analysisService.analyzeAndGetDiagnostics(cleanGroovyCode, "CleanClass.groovy")
+        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext)
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(cleanGroovyCode, "CleanClass.groovy")
 
         // Clean code might still have some style violations, but should not crash
         println("Clean code analysis found ${diagnostics.size} diagnostics")
