@@ -1,13 +1,13 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
-import com.github.albertocavalcante.groovylsp.ast.SymbolTable
-import com.github.albertocavalcante.groovylsp.ast.resolveToDefinition
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Position
 import org.slf4j.LoggerFactory
@@ -26,7 +26,7 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
      * Throws specific exceptions for different failure scenarios.
      */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    fun findDefinitionAt(uri: URI, position: Position): ASTNode? {
+    fun findDefinitionAt(uri: URI, position: com.github.albertocavalcante.groovyparser.ast.types.Position): ASTNode? {
         logger.debug("Finding definition at $uri:${position.line}:${position.character}")
 
         return try {
@@ -46,7 +46,10 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
     /**
      * Validate position and find the target node.
      */
-    private fun validateAndFindNode(uri: URI, position: Position): ASTNode {
+    private fun validateAndFindNode(
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): ASTNode {
         // Validate position
         if (position.line < 0 || position.character < 0) {
             handleValidationError("invalidPosition", uri, ValidationContext.PositionContext(position))
@@ -63,7 +66,11 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
     /**
      * Resolve the target node to its definition.
      */
-    private fun resolveDefinition(targetNode: ASTNode, uri: URI, position: Position): ASTNode {
+    private fun resolveDefinition(
+        targetNode: ASTNode,
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): ASTNode {
         val definition = try {
             targetNode.resolveToDefinition(astVisitor, symbolTable, strict = false)
         } catch (e: StackOverflowError) {
@@ -106,8 +113,11 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
     /**
      * Create a SymbolNotFoundException with consistent parameters.
      */
-    private fun createSymbolNotFoundException(symbol: String, uri: URI, position: Position) =
-        SymbolNotFoundException(symbol, uri, position.line, position.character)
+    private fun createSymbolNotFoundException(
+        symbol: String,
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ) = SymbolNotFoundException(symbol, uri, position.line, position.character)
 
     /**
      * Handle resolution errors by throwing appropriate exceptions.
@@ -118,7 +128,7 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
         originalException: Throwable?,
         targetNode: ASTNode,
         uri: URI,
-        position: Position,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): Nothing = when (originalException) {
         is StackOverflowError -> throw CircularReferenceException(
             targetNode.javaClass.simpleName,
@@ -131,7 +141,8 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
      * Validation context for different error scenarios.
      */
     private sealed class ValidationContext {
-        data class PositionContext(val position: Position) : ValidationContext()
+        data class PositionContext(val position: com.github.albertocavalcante.groovyparser.ast.types.Position) :
+            ValidationContext()
         data class NodeContext(val node: ASTNode) : ValidationContext()
     }
 
@@ -146,12 +157,15 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
             is ValidationContext.NodeContext -> handleNodeValidationError(errorType, uri, context.node)
         }
 
-    private fun handlePositionValidationError(errorType: String, uri: URI, position: Position): Nothing =
-        when (errorType) {
-            "invalidPosition" -> throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
-            "nodeNotFound" -> throw uri.nodeNotFoundAtPosition(position.line, position.character)
-            else -> throw createSymbolNotFoundException("unknown", uri, position)
-        }
+    private fun handlePositionValidationError(
+        errorType: String,
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): Nothing = when (errorType) {
+        "invalidPosition" -> throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
+        "nodeNotFound" -> throw uri.nodeNotFoundAtPosition(position.line, position.character)
+        else -> throw createSymbolNotFoundException("unknown", uri, position)
+    }
 
     private fun handleNodeValidationError(errorType: String, uri: URI, node: ASTNode): Nothing = when (errorType) {
         "invalidDefinitionPosition" -> throw uri.invalidPosition(
@@ -162,7 +176,7 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
         else -> throw createSymbolNotFoundException(
             node.toString(),
             uri,
-            org.eclipse.lsp4j.Position(node.lineNumber, node.columnNumber),
+            com.github.albertocavalcante.groovyparser.ast.types.Position(node.lineNumber, node.columnNumber),
         )
     }
 
@@ -170,10 +184,14 @@ class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolT
      * Find all targets at the given position for the specified target kinds.
      * Based on kotlin-lsp's getTargetsAtPosition pattern.
      */
-    fun findTargetsAt(uri: URI, position: Position, targetKinds: Set<TargetKind>): List<ASTNode> {
+    fun findTargetsAt(
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        targetKinds: Set<TargetKind>,
+    ): List<ASTNode> {
         logger.debug("Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds")
 
-        val targetNode = astVisitor.getNodeAt(uri, position.line, position.character)
+        val targetNode = astVisitor.getNodeAt(uri, position)
             ?: return emptyList()
 
         val results = mutableListOf<ASTNode>()

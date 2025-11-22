@@ -38,12 +38,13 @@ class LocationConverterTest {
             assertNotNull(visitor, "Should have AST visitor after compilation")
 
             // Find a node in the AST
-            val targetNode = visitor!!.getNodeAt(uri, 1, 8)
-                ?: visitor.getAllNodes().find { it.lineNumber > 0 && it.columnNumber > 0 }
+            val targetNode =
+                visitor!!.getNodeAt(uri, com.github.albertocavalcante.groovyparser.ast.types.Position(1, 8))
+                    ?: visitor.getAllNodes().find { it.lineNumber > 0 && it.columnNumber > 0 }
             assertNotNull(targetNode, "Should find node with valid position")
 
             // Act
-            val location = LocationConverter.nodeToLocation(targetNode!!, visitor)
+            val location = targetNode!!.toLspLocation(visitor)
 
             // Assert - For nodes with valid positions, we should get a location
             // In some CI environments, the URI mapping might not be established properly
@@ -89,7 +90,7 @@ class LocationConverterTest {
 
             // Act & Assert - Test behavior with nodes that don't have valid positions
             if (nodeWithoutPosition != null) {
-                val location = LocationConverter.nodeToLocation(nodeWithoutPosition, visitor)
+                val location = nodeWithoutPosition.toLspLocation(visitor)
                 // For nodes without valid positions, LocationConverter should return null
                 // This is the correct null-safe behavior
                 assertNull(location, "Should return null for nodes without valid positions")
@@ -122,7 +123,7 @@ class LocationConverterTest {
             assertNotNull(nodeWithPosition, "Should find node with valid position")
 
             // Act
-            val range = LocationConverter.nodeToRange(nodeWithPosition!!)
+            val range = nodeWithPosition!!.toLspRange()
 
             // Assert - For nodes with valid positions, we should get a range
             range?.let {

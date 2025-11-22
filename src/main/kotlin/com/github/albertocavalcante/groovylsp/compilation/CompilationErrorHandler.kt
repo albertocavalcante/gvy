@@ -17,7 +17,7 @@ class CompilationErrorHandler {
 
     fun handleException(e: Exception, uri: URI): CompilationResult = when (e) {
         is CompilationFailedException -> handleCompilationFailed(e, uri)
-        is GroovyLspException -> handleLspError(e)
+        is GroovyLspException -> handleGroovyParserError(e)
         is IllegalArgumentException -> handleInvalidArgs(e)
         is IllegalStateException -> handleInvalidState(e)
         is java.io.IOException -> handleIOError(e)
@@ -33,7 +33,7 @@ class CompilationErrorHandler {
         return CompilationResult.failure(listOf(diagnostic))
     }
 
-    private fun handleLspError(e: GroovyLspException): CompilationResult {
+    private fun handleGroovyParserError(e: GroovyLspException): CompilationResult {
         val diagnostic = createDiagnostic("LSP error: ${e.message}", DiagnosticSeverity.Error)
         return CompilationResult.failure(listOf(diagnostic))
     }

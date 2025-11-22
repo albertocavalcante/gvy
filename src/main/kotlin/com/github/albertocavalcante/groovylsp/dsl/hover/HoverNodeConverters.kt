@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.dsl.hover
 
-import com.github.albertocavalcante.groovylsp.errors.LspResult
-import com.github.albertocavalcante.groovylsp.errors.toLspResult
+import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
+import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
@@ -462,7 +462,7 @@ private fun ASTNode.modifiersString(): String = buildString {
 /**
  * Main entry point for creating hover from any AST node
  */
-fun createHoverFor(node: ASTNode): LspResult<Hover> = hover {
+fun createHoverFor(node: ASTNode): GroovyParserResult<Hover> = hover {
     when (val nodeContent = node.toHoverContent()) {
         is HoverContent.Text -> text(nodeContent.value)
         is HoverContent.Code -> code(nodeContent.language, nodeContent.value)
@@ -482,4 +482,4 @@ fun createHoverFor(node: ASTNode): LspResult<Hover> = hover {
         is HoverContent.List -> list(nodeContent.items)
         is HoverContent.KeyValue -> keyValue(nodeContent.pairs)
     }
-}.toLspResult()
+}.toGroovyParserResult()

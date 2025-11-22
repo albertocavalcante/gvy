@@ -1,7 +1,8 @@
 package com.github.albertocavalcante.groovylsp.types
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
+import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -50,7 +51,7 @@ class TypeDefinitionDiagnosticTest {
         // 3. Try position-based lookup
         val testPosition = Position(4, 10) // Should be around "person.name"
         logger.debug("Looking for node at position $testPosition...")
-        val nodeAtPosition = context.astVisitor.getNodeAt(context.uri, testPosition)
+        val nodeAtPosition = context.astVisitor.getNodeAt(context.uri, testPosition.toGroovyPosition())
         logger.debug("Node at position: $nodeAtPosition")
         logger.debug("Node type: {}", nodeAtPosition?.javaClass?.simpleName)
 

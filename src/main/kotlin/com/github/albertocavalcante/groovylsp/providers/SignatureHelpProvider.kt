@@ -1,10 +1,11 @@
 package com.github.albertocavalcante.groovylsp.providers
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
-import com.github.albertocavalcante.groovylsp.ast.containsPosition
-import com.github.albertocavalcante.groovylsp.ast.safePosition
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.containsPosition
+import com.github.albertocavalcante.groovyparser.ast.safePosition
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
@@ -43,13 +44,13 @@ class SignatureHelpProvider(
             return emptySignatureHelp()
         }
 
-        val nodeAtPosition = astVisitor.getNodeAt(documentUri, position) ?: run {
+        val nodeAtPosition = astVisitor.getNodeAt(documentUri, position.toGroovyPosition()) ?: run {
             logger.debug("No AST node found at $position for $uri")
             return emptySignatureHelp()
         }
         logger.debug("Node at $position is ${nodeAtPosition.javaClass.simpleName}")
 
-        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, position) ?: run {
+        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, position.toGroovyPosition()) ?: run {
             logger.debug("No method call expression near $position for $uri")
             return emptySignatureHelp()
         }
@@ -66,7 +67,8 @@ class SignatureHelpProvider(
         }
 
         val signatures = declarations.map { it.toSignatureInformation() }.toMutableList()
-        val activeParameter = determineActiveParameter(methodCall, nodeAtPosition, position, astVisitor)
+        val activeParameter =
+            determineActiveParameter(methodCall, nodeAtPosition, position.toGroovyPosition(), astVisitor)
         val normalizedActiveParameter = signatures.firstOrNull()
             ?.parameters
             ?.lastIndex
@@ -132,7 +134,7 @@ class SignatureHelpProvider(
     private fun determineActiveParameter(
         methodCall: MethodCallExpression,
         nodeAtPosition: ASTNode,
-        position: Position,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         astVisitor: AstVisitor,
     ): Int {
         val arguments = methodCall.argumentExpressions()
@@ -149,9 +151,12 @@ class SignatureHelpProvider(
         return estimateParameterIndex(arguments, position)
     }
 
-    private fun estimateParameterIndex(arguments: List<Expression>, position: Position): Int {
+    private fun estimateParameterIndex(
+        arguments: List<Expression>,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): Int {
         arguments.forEachIndexed { index, argument ->
-            val start = argument.safePosition().getOrNull()?.toLspPosition()
+            val start = argument.safePosition().getOrNull()?.toParserPosition()
             if (start != null && isBefore(position, start)) {
                 return index
             }
@@ -159,7 +164,10 @@ class SignatureHelpProvider(
         return arguments.size
     }
 
-    private fun isBefore(position: Position, other: Position): Boolean {
+    private fun isBefore(
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        other: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): Boolean {
         if (position.line != other.line) {
             return position.line < other.line
         }
@@ -170,7 +178,7 @@ class SignatureHelpProvider(
         astVisitor: AstVisitor,
         documentUri: URI,
         nodeAtPosition: ASTNode,
-        position: Position,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): MethodCallExpression? {
         var current: ASTNode? = nodeAtPosition
         while (current != null && current !is MethodCallExpression) {

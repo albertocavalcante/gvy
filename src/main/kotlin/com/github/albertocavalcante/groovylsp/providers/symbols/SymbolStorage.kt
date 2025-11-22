@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.symbols
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
-import com.github.albertocavalcante.groovylsp.errors.LspResult
-import com.github.albertocavalcante.groovylsp.errors.symbolNotFoundError
-import com.github.albertocavalcante.groovylsp.errors.toLspResult
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
+import com.github.albertocavalcante.groovyparser.errors.symbolNotFoundError
+import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentListOf
@@ -15,9 +15,9 @@ import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
-import org.eclipse.lsp4j.Position
 import java.net.URI
 import kotlin.reflect.KClass
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 /**
  * Immutable, type-safe symbol storage using persistent data structures
@@ -57,11 +57,11 @@ data class SymbolStorage(
     /**
      * Type-safe symbol lookup by name and type
      */
-    inline fun <reified T : Symbol> find(uri: URI, name: SymbolName): LspResult<T> = symbolsByName[uri to name]
+    inline fun <reified T : Symbol> find(uri: URI, name: SymbolName): GroovyParserResult<T> = symbolsByName[uri to name]
         ?.filterIsInstance<T>()
         ?.firstOrNull()
-        ?.toLspResult()
-        ?: uri.symbolNotFoundError(name, Position(0, 0), T::class.java.simpleName).toLspResult()
+        ?.toGroovyParserResult()
+        ?: uri.symbolNotFoundError(name, GroovyPosition(0, 0), T::class.java.simpleName).toGroovyParserResult()
 
     /**
      * Finds all symbols of a specific type

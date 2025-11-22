@@ -1,9 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
-import com.github.albertocavalcante.groovylsp.ast.findNodeAt
-import com.github.albertocavalcante.groovylsp.ast.isHoverable
-import com.github.albertocavalcante.groovylsp.ast.resolveToDefinition
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
@@ -11,6 +9,9 @@ import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionExcep
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovyparser.ast.findNodeAt
+import com.github.albertocavalcante.groovyparser.ast.isHoverable
+import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
@@ -45,8 +46,9 @@ class HoverProvider(
 
             val documentUri = URI.create(uri)
             ensureAstPrepared(documentUri)
+            val groovyPosition = position.toGroovyPosition()
 
-            val hoverNode = resolveHoverNode(documentUri, position) ?: return@withContext null
+            val hoverNode = resolveHoverNode(documentUri, groovyPosition) ?: return@withContext null
 
             // Only provide hover for hoverable nodes
             if (!hoverNode.isHoverable()) {
@@ -108,7 +110,10 @@ class HoverProvider(
     /**
      * Resolve the appropriate node for hover display.
      */
-    private fun resolveHoverNode(documentUri: URI, position: Position): ASTNode? {
+    private fun resolveHoverNode(
+        documentUri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): ASTNode? {
         // Try to get the AST visitor and symbol table for enhanced functionality
         val astVisitor = compilationService.getAstVisitor(documentUri)
         val symbolTable = compilationService.getSymbolTable(documentUri)

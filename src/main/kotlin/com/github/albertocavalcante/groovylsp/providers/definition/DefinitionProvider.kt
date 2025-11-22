@@ -1,10 +1,12 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
-import com.github.albertocavalcante.groovylsp.ast.AstVisitor
-import com.github.albertocavalcante.groovylsp.ast.SymbolTable
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.converters.LocationConverter
+import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
+import com.github.albertocavalcante.groovylsp.converters.toLspLocation
+import com.github.albertocavalcante.groovylsp.converters.toLspLocationLink
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
@@ -36,7 +38,7 @@ class DefinitionProvider(
         val documentUri = parseUriOrReport(uri) ?: return@flow
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        emitDefinitions(uri, documentUri, position, context)
+        emitDefinitions(uri, documentUri, position.toGroovyPosition(), context)
     }
 
     /**
@@ -55,7 +57,7 @@ class DefinitionProvider(
         val resolver = DefinitionResolver(visitor, symbolTable)
 
         // Find the origin node at the position
-        val originNode = visitor.getNodeAt(documentUri, position.line, position.character)
+        val originNode = visitor.getNodeAt(documentUri, position.toGroovyPosition())
         if (originNode == null) {
             logger.debug("No origin node found at position")
             return@flow
@@ -63,10 +65,10 @@ class DefinitionProvider(
 
         // Find the definition
         try {
-            val definitionNode = resolver.findDefinitionAt(documentUri, position)
+            val definitionNode = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
             if (definitionNode != null) {
                 // Convert to LocationLink and emit
-                val locationLink = LocationConverter.nodeToLocationLink(originNode, definitionNode, visitor)
+                val locationLink = originNode.toLspLocationLink(definitionNode, visitor)
                 if (locationLink != null) {
                     logger.debug("Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}")
                     emit(locationLink)
@@ -105,11 +107,11 @@ class DefinitionProvider(
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
         val resolver = DefinitionResolver(visitor, symbolTable)
-        val targets = resolver.findTargetsAt(documentUri, position, targetKinds)
+        val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
 
         // Convert each target to Location and emit
         targets.forEach { targetNode ->
-            val location = LocationConverter.nodeToLocation(targetNode, visitor)
+            val location = targetNode.toLspLocation(visitor)
             if (location != null) {
                 emit(location)
             }
@@ -160,7 +162,7 @@ class DefinitionProvider(
     private suspend fun FlowCollector<Location>.emitDefinitions(
         uri: String,
         documentUri: URI,
-        position: Position,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         context: DefinitionContext,
     ) {
         val resolver = DefinitionResolver(context.visitor, context.symbolTable)
@@ -169,7 +171,7 @@ class DefinitionProvider(
             val definitionNode = resolver.findDefinitionAt(documentUri, position)
 
             if (definitionNode != null) {
-                val location = LocationConverter.nodeToLocation(definitionNode, context.visitor)
+                val location = definitionNode.toLspLocation(context.visitor)
                 if (location != null) {
                     logger.debug(
                         "Found definition at ${location.uri}:${location.range} " +

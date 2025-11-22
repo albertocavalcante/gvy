@@ -3,6 +3,8 @@ package com.github.albertocavalcante.groovyparser
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
+import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
@@ -48,6 +50,11 @@ class GroovyParserFacade {
         val ast = extractAst(compilationUnit)
         val diagnostics = ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates)
 
+        val astVisitor = AstVisitor()
+        ast?.let { astVisitor.visitModule(it, sourceUnit, request.uri) }
+        val symbolTable = SymbolTable()
+        symbolTable.buildFromVisitor(astVisitor)
+
         logger.debug(
             "Parsed {} -> success={}, diagnostics={}",
             request.uri,
@@ -60,6 +67,8 @@ class GroovyParserFacade {
             compilationUnit = compilationUnit,
             sourceUnit = sourceUnit,
             diagnostics = diagnostics,
+            symbolTable = symbolTable,
+            astVisitor = astVisitor,
         )
     }
 
