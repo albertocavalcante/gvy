@@ -13,7 +13,7 @@ java {
 
 dependencies {
     implementation(kotlin("stdlib"))
-    implementation("org.openrewrite:rewrite-groovy:8.66.1")
+    implementation("org.openrewrite:rewrite-groovy:8.67.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.14.0")
     testImplementation("org.assertj:assertj-core:3.27.6")
