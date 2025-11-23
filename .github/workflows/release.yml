@@ -5,6 +5,14 @@ name: Release
     - v*
   workflow_dispatch:
     inputs:
+      runner_label:
+        description: 'Runner label to use'
+        required: false
+        type: choice
+        options:
+          - 'cloud'
+          - 'self-hosted'
+        default: 'cloud'
       version:
         description: "Release version (e.g., v1.0.0)"
         required: false
@@ -30,10 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - ubuntu-latest
-        - macos-latest
-        - windows-latest
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
         java:
         - 17
     steps:
@@ -96,7 +101,13 @@ jobs:
       run: |
         mkdir -p dist
         # Copy JAR with version in filename
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+        if [ "${{ matrix.os }}" = "self-hosted" ]; then
+           # On self-hosted, we assume the JAR is portable and generate all platform variants
+           echo "Generating all platform artifacts from single build..."
+           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
+           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
+           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+        elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
         elif [ "${{ matrix.os }}" = "macos-latest" ]; then
           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar

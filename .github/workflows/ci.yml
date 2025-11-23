@@ -9,10 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       runner_label:
-        description: 'Runner label: set to "self-hosted" to enable, anything else uses cloud runners'
+        description: 'Runner label to use'
         required: false
-        type: string
-        default: 'cloud'
+        type: choice
+        options:
+          - 'self-hosted'
+          - 'cloud'
+        default: 'self-hosted'
       disable_scan:
         description: Disable Gradle build scan
         required: false
