@@ -1,5 +1,6 @@
 import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.language.base.plugins.LifecycleBasePlugin
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -162,6 +163,15 @@ subprojects {
     // Make check task depend on quality checks
     tasks.check {
         dependsOn("detekt", "spotlessCheck")
+    }
+
+    // Force sequential test execution on GitHub Actions to avoid resource contention/flakiness
+    afterEvaluate {
+        if (System.getenv("GITHUB_ACTIONS") == "true") {
+            tasks.withType<Test>().configureEach {
+                maxParallelForks = 1
+            }
+        }
     }
 }
 
