@@ -1,8 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
-import com.github.albertocavalcante.groovylsp.gradle.DependencyResolver
-import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
@@ -13,31 +11,22 @@ import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.extension
-import kotlin.io.path.isDirectory
-import kotlin.streams.toList
 
 class GroovyCompilationService {
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
-    private val dependencyResolver: DependencyResolver = GradleDependencyResolver()
     private val parser = GroovyParserFacade()
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
 
-    // Dependency classpath management
-    private val dependencyClasspath = mutableListOf<Path>()
-    private var workspaceRoot: Path? = null
-    private val sourceRoots = mutableSetOf<Path>()
-    private var workspaceSources: List<Path> = emptyList()
+    val workspaceManager = WorkspaceManager()
 
     /**
      * Compiles Groovy source code and returns the result.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - final fallback
+    @Suppress("TooGenericExceptionCaught") // Final fallback
     suspend fun compile(uri: URI, content: String): CompilationResult {
         logger.debug("Compiling: $uri")
 
@@ -65,9 +54,9 @@ class GroovyCompilationService {
             ParseRequest(
                 uri = uri,
                 content = content,
-                classpath = dependencyClasspath.toList(),
-                sourceRoots = sourceRoots.toList(),
-                workspaceSources = workspaceSources,
+                classpath = workspaceManager.getDependencyClasspath(),
+                sourceRoots = workspaceManager.getSourceRoots(),
+                workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
             ),
         )
@@ -123,114 +112,25 @@ class GroovyCompilationService {
 
     fun getCacheStatistics() = cache.getStatistics()
 
-    /**
-     * Initialize the workspace without resolving dependencies (non-blocking).
-     * Dependencies will be updated separately via updateDependencies().
-     */
-    fun initializeWorkspace(workspaceRoot: Path) {
-        logger.info("Initializing workspace (non-blocking): $workspaceRoot")
-        this.workspaceRoot = workspaceRoot
-        refreshSourceRoots(workspaceRoot)
-        refreshWorkspaceSources()
-    }
-
-    /**
-     * Updates the dependency classpath with pre-resolved dependencies.
-     * Clears compilation caches since the classpath has changed.
-     *
-     * @param newDependencies The list of resolved dependency paths
-     */
-    fun updateDependencies(newDependencies: List<Path>) {
-        if (newDependencies.size != dependencyClasspath.size ||
-            newDependencies.toSet() != dependencyClasspath.toSet()
-        ) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(newDependencies)
-
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
-
-            // Clear caches since classpath has changed
-            clearCaches()
-        } else {
-            logger.debug("Dependencies unchanged, no cache clearing needed")
-        }
-    }
-
-    /**
-     * Legacy method - Updates the dependency classpath by resolving dependencies from the workspace.
-     * @deprecated Use updateDependencies(List<Path>) with pre-resolved dependencies instead.
-     */
-    @Deprecated("Use updateDependencies(List<Path>) for non-blocking resolution")
-    fun updateDependencies() {
-        val root = workspaceRoot
-        if (root == null) {
-            logger.debug("No workspace root set, skipping dependency resolution")
-            return
-        }
-
-        logger.info("Resolving dependencies for workspace: $root")
-        val resolution = dependencyResolver.resolve(root)
-        updateWorkspaceModel(root, resolution.dependencies, resolution.sourceDirectories)
-    }
-
-    /**
-     * Gets the current dependency classpath.
-     */
-    fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
-
-    fun getWorkspaceRoot(): Path? = workspaceRoot
-
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
-        this.workspaceRoot = workspaceRoot
-
-        val depsChanged = dependencies.toSet() != dependencyClasspath.toSet()
-        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
-        if (depsChanged) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(dependencies)
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
-        }
-
-        sourceRoots.clear()
-        if (sourceDirectories.isNotEmpty()) {
-            sourceDirectories.forEach(sourceRoots::add)
-            logger.info("Received ${sourceRoots.size} source roots from build model")
-        } else {
-            refreshSourceRoots(workspaceRoot)
-        }
-
-        refreshWorkspaceSources()
-
-        if (depsChanged || sourcesChanged) {
+        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
+        if (changed) {
             clearCaches()
         }
     }
 
-    private fun refreshSourceRoots(root: Path) {
-        if (sourceRoots.isEmpty()) {
-            val candidates = listOf(
-                root.resolve("src/main/groovy"),
-                root.resolve("src/main/java"),
-                root.resolve("src/main/kotlin"),
-                root.resolve("src/test/groovy"),
-            )
+    fun createContext(uri: URI): CompilationContext? {
+        val parseResult = getParseResult(uri) ?: return null
+        val ast = parseResult.ast ?: return null
 
-            candidates.filter { Files.exists(it) && it.isDirectory() }.forEach(sourceRoots::add)
-
-            logger.info("Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}")
-        }
-    }
-
-    private fun refreshWorkspaceSources() {
-        workspaceSources = sourceRoots.flatMap { sourceRoot ->
-            if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            Files.walk(sourceRoot).use { stream ->
-                stream.filter { Files.isRegularFile(it) && it.extension.equals("groovy", ignoreCase = true) }
-                    .toList()
-            }
-        }
-
-        logger.info("Indexed ${workspaceSources.size} Groovy sources from workspace roots")
+        return CompilationContext(
+            uri = uri,
+            moduleNode = ast,
+            compilationUnit = parseResult.compilationUnit,
+            astVisitor = parseResult.astVisitor,
+            workspaceRoot = workspaceManager.getWorkspaceRoot(),
+            classpath = workspaceManager.getDependencyClasspath(),
+        )
     }
 
     private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
@@ -243,11 +143,6 @@ class GroovyCompilationService {
         }
         return candidates
     }
-
-    /**
-     * Build AST visitor and symbol table for go-to-definition functionality
-     */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - final fallback for AST building
 
     // Expose cache for testing purposes
     internal val astCache get() = cache

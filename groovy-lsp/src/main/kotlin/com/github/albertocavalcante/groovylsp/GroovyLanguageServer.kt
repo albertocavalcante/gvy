@@ -155,7 +155,7 @@ class GroovyLanguageServer :
 
         val progressReporter = ProgressReporter(client)
 
-        compilationService.initializeWorkspace(workspaceRoot)
+        compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,

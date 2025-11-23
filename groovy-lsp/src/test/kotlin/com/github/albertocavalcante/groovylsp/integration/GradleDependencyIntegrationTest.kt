@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.integration
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import kotlinx.coroutines.test.runTest
 import java.net.URI
 import java.nio.file.Paths
@@ -17,12 +18,18 @@ class GradleDependencyIntegrationTest {
 
         // Initialize the workspace and trigger dependency resolution for the test
         // Use our test project which has known dependencies
-        compilationService.initializeWorkspace(testProjectPath)
-        @Suppress("DEPRECATION")
-        compilationService.updateDependencies()
+        compilationService.workspaceManager.initializeWorkspace(testProjectPath)
+
+        val resolver = GradleDependencyResolver()
+        val resolution = resolver.resolve(testProjectPath)
+        compilationService.workspaceManager.updateWorkspaceModel(
+            testProjectPath,
+            resolution.dependencies,
+            resolution.sourceDirectories,
+        )
 
         // Check that dependencies were resolved
-        val dependencies = compilationService.getDependencyClasspath()
+        val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         assertTrue(dependencies.isNotEmpty(), "Dependencies should be resolved")
 
         println("Resolved ${dependencies.size} dependencies for compilation:")
@@ -44,9 +51,15 @@ class GradleDependencyIntegrationTest {
         val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
         // Initialize workspace with dependencies using test project
-        compilationService.initializeWorkspace(testProjectPath)
-        @Suppress("DEPRECATION")
-        compilationService.updateDependencies()
+        compilationService.workspaceManager.initializeWorkspace(testProjectPath)
+
+        val resolver = GradleDependencyResolver()
+        val resolution = resolver.resolve(testProjectPath)
+        compilationService.workspaceManager.updateWorkspaceModel(
+            testProjectPath,
+            resolution.dependencies,
+            resolution.sourceDirectories,
+        )
 
         // Test compilation of Groovy code that uses dependencies our test project declares
         val groovyCode = """
@@ -72,7 +85,7 @@ class GradleDependencyIntegrationTest {
         assertNotNull(result.ast, "AST should be generated even if compilation has errors")
 
         // Let's just verify the dependency resolution worked
-        val dependencies = compilationService.getDependencyClasspath()
+        val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         assertTrue(dependencies.isNotEmpty(), "Dependencies should still be resolved")
     }
 }

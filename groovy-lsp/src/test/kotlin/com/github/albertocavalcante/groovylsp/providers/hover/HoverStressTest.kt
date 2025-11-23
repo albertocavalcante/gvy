@@ -43,7 +43,8 @@ class HoverStressTest {
 
         // 4. Hover Field Usage (Line 5, 'name')
         // Should resolve to field definition
-        // TODO: Fix hover for implicit field access in method call (currently returns BlockStatement due to missing position info)
+        // TODO: Fix hover for implicit field access in method call (currently returns BlockStatement
+        // due to missing position info)
         // fixture.assertHoverContains(5, 24, "String name")
 
         // 5. Hover Variable Definition (Line 9, 'p')

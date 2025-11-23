@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.gradle
 
+import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
 import org.slf4j.LoggerFactory
@@ -40,28 +41,7 @@ class GradleDependencyResolver : DependencyResolver {
             val sourceDirectories = mutableSetOf<Path>()
 
             ideaProject.modules.forEach { module ->
-                logger.debug("Processing module: ${module.name}")
-
-                module.dependencies
-                    .filterIsInstance<IdeaSingleEntryLibraryDependency>()
-                    .forEach { dependency ->
-                        val jarPath = dependency.file.toPath()
-                        if (jarPath.exists()) {
-                            logger.debug("Found dependency: ${dependency.file.name}")
-                            dependencies.add(jarPath)
-                        } else {
-                            logger.warn("Dependency JAR not found: $jarPath")
-                        }
-                    }
-
-                module.contentRoots?.forEach { root ->
-                    root.sourceDirectories?.forEach { dir ->
-                        dir.directory?.toPath()?.takeIf { it.exists() }?.let(sourceDirectories::add)
-                    }
-                    root.testDirectories?.forEach { dir ->
-                        dir.directory?.toPath()?.takeIf { it.exists() }?.let(sourceDirectories::add)
-                    }
-                }
+                processModule(module, dependencies, sourceDirectories)
             }
 
             logger.info("Resolved ${dependencies.size} dependencies and ${sourceDirectories.size} source directories")
@@ -78,6 +58,35 @@ class GradleDependencyResolver : DependencyResolver {
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid project directory or configuration: ${e.message}", e)
             WorkspaceResolution(emptyList(), emptyList())
+        }
+    }
+
+    private fun processModule(
+        module: IdeaModule,
+        dependencies: MutableSet<Path>,
+        sourceDirectories: MutableSet<Path>,
+    ) {
+        logger.debug("Processing module: ${module.name}")
+
+        module.dependencies
+            .filterIsInstance<IdeaSingleEntryLibraryDependency>()
+            .forEach { dependency ->
+                val jarPath = dependency.file.toPath()
+                if (jarPath.exists()) {
+                    logger.debug("Found dependency: ${dependency.file.name}")
+                    dependencies.add(jarPath)
+                } else {
+                    logger.warn("Dependency JAR not found: $jarPath")
+                }
+            }
+
+        module.contentRoots?.forEach { root ->
+            root.sourceDirectories?.forEach { dir ->
+                dir.directory?.toPath()?.takeIf { it.exists() }?.let(sourceDirectories::add)
+            }
+            root.testDirectories?.forEach { dir ->
+                dir.directory?.toPath()?.takeIf { it.exists() }?.let(sourceDirectories::add)
+            }
         }
     }
 

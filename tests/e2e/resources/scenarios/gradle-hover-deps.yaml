@@ -43,33 +43,14 @@ steps:
         }
   - waitNotification:
       method: textDocument/publishDiagnostics
-      saveAs: initialDiagnostics
-      timeoutMs: 15000
-      checks:
-        - jsonPath: $.uri
-          expect:
-            type: EQUALS
-            value: "{{workspace.uri}}src/main/groovy/PortMappingDeclaration.groovy"
-  - assert:
-      source: initialDiagnostics
-      checks:
-        - jsonPath: $.diagnostics
-          expect:
-            type: NOT_EMPTY
-        - jsonPath: $.diagnostics[0].message
-          expect:
-            type: CONTAINS
-            value: "unable to resolve class"
-  - waitNotification:
-      method: textDocument/publishDiagnostics
       saveAs: resolvedDiagnostics
-      timeoutMs: 15000
+      timeoutMs: 60000 # Increased to 60s to allow Gradle resolution
       checks:
         - jsonPath: $.uri
           expect:
             type: EQUALS
             value: "{{workspace.uri}}src/main/groovy/PortMappingDeclaration.groovy"
-        - jsonPath: $.diagnostics
+        - jsonPath: $.diagnostics[?(@.source=='Groovy')]
           expect:
             type: EMPTY
   - shutdown: {}

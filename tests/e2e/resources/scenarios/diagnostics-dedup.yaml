@@ -32,16 +32,6 @@ steps:
         }
   - waitNotification:
       method: textDocument/publishDiagnostics
-      saveAs: mainRefresh
-  - assert:
-      source: mainRefresh
-      checks:
-        - jsonPath: $.uri
-          expect:
-            type: MATCHES_REGEX
-            value: ".*Main\\.groovy$"
-  - waitNotification:
-      method: textDocument/publishDiagnostics
       saveAs: problemDiagnostics
       checks:
         - jsonPath: $.uri

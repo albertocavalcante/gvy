@@ -88,7 +88,9 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         val interpolatedOptions = step.initializationOptions?.let { context.interpolateNode(it) }
         val params = InitializeParams().apply {
             processId = ProcessHandle.current().pid().toInt()
+            @Suppress("DEPRECATION")
             rootUri = step.rootUri ?: context.workspace.rootUri
+            @Suppress("DEPRECATION")
             workspaceFolders = if (rootUri != null) {
                 listOf(WorkspaceFolder(rootUri, context.workspace.rootDir.name))
             } else {
@@ -160,7 +162,14 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
                     Position(it.end.line, it.end.character),
                 )
             }
-            TextDocumentContentChangeEvent(range, change.rangeLength, text)
+            TextDocumentContentChangeEvent().apply {
+                this.range = range
+                if (change.rangeLength != null) {
+                    @Suppress("DEPRECATION")
+                    this.rangeLength = change.rangeLength
+                }
+                this.text = text
+            }
         }
 
         context.session.server.textDocumentService.didChange(
@@ -233,7 +242,11 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         val envelope = context.session.client.awaitNotification(step.method, timeout) { payload ->
             step.checks.all { check ->
                 val result = runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
-                result.getOrDefault(false)
+                val success = result.getOrDefault(false)
+                if (!success) {
+                    logger.debug("Notification check failed: {}", result.exceptionOrNull()?.message)
+                }
+                success
             }
         } ?: throw TimeoutException("Timeout waiting for notification '${step.method}'")
 
@@ -255,7 +268,13 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
             else -> error("Unknown result or variable '${step.source}' referenced in assert step")
         }
         step.checks.forEach { check ->
-            context.evaluateCheck(sourceNode, check)
+            try {
+                context.evaluateCheck(sourceNode, check)
+            } catch (e: AssertionError) {
+                logger.error("Assertion failed in step: {}", step)
+                logger.error("Source node: {}", sourceNode)
+                throw e
+            }
         }
     }
 

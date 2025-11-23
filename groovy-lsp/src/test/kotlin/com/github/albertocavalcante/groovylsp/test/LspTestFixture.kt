@@ -23,7 +23,7 @@ class LspTestFixture {
         documentProvider.put(uri, content)
         val result = compilationService.compile(uri, content)
         if (!result.isSuccess) {
-            throw RuntimeException("Compilation failed: ${result.diagnostics}")
+            throw AssertionError("Compilation failed: ${result.diagnostics}")
         }
     }
 

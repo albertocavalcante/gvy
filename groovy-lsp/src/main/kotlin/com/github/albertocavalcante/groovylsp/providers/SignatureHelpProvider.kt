@@ -35,40 +35,63 @@ class SignatureHelpProvider(
         val documentUri = URI.create(uri)
         ensureAstPrepared(documentUri)
 
+        val context = resolveSignatureContext(documentUri, position) ?: return emptySignatureHelp()
+
+        return buildSignatureHelp(context, position)
+    }
+
+    private data class SignatureContext(
+        val methodCall: MethodCallExpression,
+        val nodeAtPosition: ASTNode,
+        val declarations: List<MethodNode>,
+        val astVisitor: AstVisitor,
+    )
+
+    @Suppress("ReturnCount")
+    private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
         val astVisitor = compilationService.getAstVisitor(documentUri) ?: run {
-            logger.debug("No AST visitor available for {}", uri)
-            return emptySignatureHelp()
+            logger.debug("No AST visitor available for {}", documentUri)
+            return null
         }
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: run {
-            logger.debug("No symbol table available for {}", uri)
-            return emptySignatureHelp()
+            logger.debug("No symbol table available for {}", documentUri)
+            return null
         }
 
-        val nodeAtPosition = astVisitor.getNodeAt(documentUri, position.toGroovyPosition()) ?: run {
-            logger.debug("No AST node found at $position for $uri")
-            return emptySignatureHelp()
+        val groovyPos = position.toGroovyPosition()
+        val nodeAtPosition = astVisitor.getNodeAt(documentUri, groovyPos) ?: run {
+            logger.debug("No AST node found at $position for $documentUri")
+            return null
         }
         logger.debug("Node at $position is ${nodeAtPosition.javaClass.simpleName}")
 
-        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, position.toGroovyPosition()) ?: run {
-            logger.debug("No method call expression near $position for $uri")
-            return emptySignatureHelp()
+        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos) ?: run {
+            logger.debug("No method call expression near $position for $documentUri")
+            return null
         }
 
         val methodName = methodCall.extractMethodName() ?: run {
-            logger.debug("Could not resolve method name for call at $position in $uri")
-            return emptySignatureHelp()
+            logger.debug("Could not resolve method name for call at $position in $documentUri")
+            return null
         }
 
         val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
         if (declarations.isEmpty()) {
-            logger.debug("No matching declarations found for method $methodName in $uri")
-            return emptySignatureHelp()
+            logger.debug("No matching declarations found for method $methodName in $documentUri")
+            return null
         }
 
-        val signatures = declarations.map { it.toSignatureInformation() }.toMutableList()
-        val activeParameter =
-            determineActiveParameter(methodCall, nodeAtPosition, position.toGroovyPosition(), astVisitor)
+        return SignatureContext(methodCall, nodeAtPosition, declarations, astVisitor)
+    }
+
+    private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
+        val signatures = context.declarations.map { it.toSignatureInformation() }.toMutableList()
+        val activeParameter = determineActiveParameter(
+            context.methodCall,
+            context.nodeAtPosition,
+            position.toGroovyPosition(),
+            context.astVisitor,
+        )
         val normalizedActiveParameter = signatures.firstOrNull()
             ?.parameters
             ?.lastIndex
