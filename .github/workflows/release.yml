@@ -15,6 +15,11 @@ name: Release
         required: false
         type: boolean
         default: false
+      disable_scan:
+        description: Disable Gradle build scan
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: write
   id-token: write
@@ -45,6 +50,14 @@ jobs:
       uses: gradle/actions/setup-gradle@v5
       with:
         cache-read-only: false
+    - name: Set Gradle scan flag
+      shell: bash
+      run: |-
+        if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
+          echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> $GITHUB_ENV
+        else
+          echo "GRADLE_SCAN_FLAG=" >> $GITHUB_ENV
+        fi
     - name: Set build environment variables
       shell: bash
       run: |
@@ -70,9 +83,9 @@ jobs:
         ./gradlew printVersion
         echo "Expected release version (without SNAPSHOT): ${BUILD_VERSION#v}"
     - name: Compile and Test
-      run: ./gradlew compileKotlin compileTestKotlin test --stacktrace
+      run: ./gradlew compileKotlin compileTestKotlin test --stacktrace $GRADLE_SCAN_FLAG
     - name: Build Shadow JAR
-      run: ./gradlew shadowJar --stacktrace
+      run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
     - name: Test JAR
       shell: bash
       run: |

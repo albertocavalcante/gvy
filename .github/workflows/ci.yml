@@ -19,6 +19,7 @@ concurrency:
 jobs:
   build:
     name: Build and Test
+    timeout-minutes: 120
     runs-on: ${{ matrix.os }}
     permissions:
       checks: write
@@ -65,6 +66,7 @@ jobs:
         run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Run Tests
+        timeout-minutes: 45
         run: ./gradlew test --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Run Code Coverage
