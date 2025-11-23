@@ -8,6 +8,11 @@ on:
       - main
   workflow_dispatch:
     inputs:
+      runner_label:
+        description: 'Runner label: set to "self-hosted" to enable, anything else uses cloud runners'
+        required: false
+        type: string
+        default: 'cloud'
       disable_scan:
         description: Disable Gradle build scan
         required: false
@@ -36,10 +41,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') }}
-        java: ${{ fromJSON(github.event_name == 'pull_request' && '[17]' || '[17, 21]') }}
+        # Use self-hosted if requested via input or variable, otherwise follow standard logic
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || (github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') ) }}
+        java: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
         exclude:
           - os: macos-latest
+            java: 21
+          - os: self-hosted
             java: 21
     steps:
       - name: Checkout code
@@ -100,7 +108,7 @@ jobs:
         run: ./gradlew koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
       
       - name: SonarCloud Analysis
-        if: matrix.os == 'ubuntu-latest' && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
+        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'self-hosted') && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -116,20 +124,20 @@ jobs:
           
       # Heavy tasks (ShadowJar) run on main OR the specific job that creates the artifact (Ubuntu/Java17)
       - name: Build Shadow JAR
-        if: github.ref == 'refs/heads/main' || (matrix.os == 'ubuntu-latest' && matrix.java == 17)
+        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
         
       - name: Verify JAR
-        if: github.ref == 'refs/heads/main' || (matrix.os == 'ubuntu-latest' && matrix.java == 17)
+        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: |-
           echo "Testing JAR with --help flag..."
           java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
           
       - name: Upload JAR artifact
-        if: matrix.os == 'ubuntu-latest' && matrix.java == 17
+        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         uses: actions/upload-artifact@v5
         with:
-          name: groovy-lsp-jar
+          name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
           path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
           retention-days: 7
           

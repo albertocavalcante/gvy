@@ -57,3 +57,6 @@ Thumbs.db
 *.bak
 *.swp
 *~
+
+# GitHub Actions Runner Cache
+.github/.cache/
