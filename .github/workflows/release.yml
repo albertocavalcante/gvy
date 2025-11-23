@@ -12,7 +12,7 @@ name: Release
         options:
           - 'cloud'
           - 'self-hosted'
-        default: 'cloud'
+        default: 'self-hosted'
       version:
         description: "Release version (e.g., v1.0.0)"
         required: false
@@ -34,6 +34,7 @@ permissions:
 jobs:
   build-release:
     name: Build Release Artifacts
+    timeout-minutes: 60
     runs-on: "${{ matrix.os }}"
     strategy:
       fail-fast: false
@@ -95,7 +96,7 @@ jobs:
       shell: bash
       run: |
         echo "Testing JAR with --help flag..."
-        java -jar build/libs/groovy-lsp*.jar --help
+        java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
     - name: Prepare artifacts
       shell: bash
       run: |
@@ -104,15 +105,15 @@ jobs:
         if [ "${{ matrix.os }}" = "self-hosted" ]; then
            # On self-hosted, we assume the JAR is portable and generate all platform variants
            echo "Generating all platform artifacts from single build..."
-           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
-           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
-           cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
+           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
+           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
         elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
+          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
         elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-          cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
+          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
         elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-          cp build/libs/groovy-lsp*.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
         fi
     - name: Upload release artifacts
       uses: actions/upload-artifact@v5
