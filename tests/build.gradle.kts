@@ -99,6 +99,22 @@ testing {
                         )
 
                         dependsOn(groovyLspProject.tasks.named("shadowJar"))
+
+                        // E2E tests are heavy, give them more memory
+                        maxHeapSize = "2G"
+
+                        // Run sequentially to avoid port conflicts and resource contention
+                        maxParallelForks = 1
+
+                        // Fail tests that take too long (5 minutes default)
+                        systemProperty("junit.jupiter.execution.timeout.default", "300s")
+
+                        testLogging {
+                            showStandardStreams = true
+                            events("passed", "skipped", "failed")
+                            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                            showStackTraces = true
+                        }
                     }
                 }
             }

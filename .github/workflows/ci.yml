@@ -13,6 +13,15 @@ on:
         required: false
         type: boolean
         default: false
+      test_log_level:
+        description: 'Gradle log level for test tasks'
+        required: false
+        type: choice
+        options:
+          - 'default'
+          - 'info'
+          - 'debug'
+        default: 'debug'  # TODO: Revert to 'default' after initial debugging phase
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -48,14 +57,28 @@ jobs:
           # Allow writing to cache for main OR PRs from the same repository
           # Read-only for forks to prevent cache poisoning
           cache-read-only: ${{ github.ref != 'refs/heads/main' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
-      - name: Set Gradle scan flag
+      - name: Set Gradle flags
         shell: bash
         run: |-
+          # Set scan flag
           if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
             echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> $GITHUB_ENV
           else
             echo "GRADLE_SCAN_FLAG=" >> $GITHUB_ENV
           fi
+          
+          # Set test log level flag
+          case "${{ github.event.inputs.test_log_level }}" in
+            "info")
+              echo "TEST_LOG_FLAG=--info" >> $GITHUB_ENV
+              ;;
+            "debug")
+              echo "TEST_LOG_FLAG=--debug" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "TEST_LOG_FLAG=" >> $GITHUB_ENV
+              ;;
+          esac
       - name: Validate Gradle Wrapper
         run: ./gradlew --version
       
@@ -65,9 +88,13 @@ jobs:
       - name: Run Quality Checks
         run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
 
-      - name: Run Tests
-        timeout-minutes: 45
-        run: ./gradlew test --stacktrace $GRADLE_SCAN_FLAG
+      - name: Run Unit Tests
+        timeout-minutes: 20
+        run: ./gradlew test --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+
+      - name: Run E2E Tests
+        timeout-minutes: 30
+        run: ./gradlew :tests:e2eTest --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
 
       - name: Run Code Coverage
         run: ./gradlew koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG

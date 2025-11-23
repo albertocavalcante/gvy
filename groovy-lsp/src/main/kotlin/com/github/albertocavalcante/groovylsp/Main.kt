@@ -9,6 +9,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.PrintStream
 import java.net.BindException
 import java.net.ServerSocket
 import kotlin.system.exitProcess
@@ -34,6 +35,7 @@ fun main(args: Array<String>) {
                 val mode = commandArgs.firstOrNull() ?: "stdio"
                 runServe(mode, commandArgs.drop(1))
             }
+
             "execute" -> runExecute(commandArgs)
             "check" -> runCheck(commandArgs)
             "version" -> runVersion()
@@ -67,6 +69,7 @@ private fun runServe(mode: String, args: List<String>) {
             val port = args.firstOrNull()?.toIntOrNull() ?: DEFAULT_PORT
             runSocket(port)
         }
+
         else -> {
             logger.error("Unknown serve mode: $mode")
             println("Usage: groovy-lsp serve [stdio|socket] [options]")
@@ -75,10 +78,10 @@ private fun runServe(mode: String, args: List<String>) {
     }
 }
 
-private fun runExecute(args: List<String>) {
+fun runExecute(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        println("Usage: groovy-lsp execute <command> [arguments]")
-        println("Example: groovy-lsp execute groovy.version")
+        out.println("Usage: groovy-lsp execute <command> [arguments]")
+        out.println("Example: groovy-lsp execute groovy.version")
         exitProcess(1)
     }
 
@@ -97,7 +100,7 @@ private fun runExecute(args: List<String>) {
         val future = server.workspaceService.executeCommand(params)
         val result = future.get()
         if (result != null) {
-            println(result)
+            out.println(result)
         }
     } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
         logger.error("Error executing command '$commandName'", e)
@@ -105,9 +108,9 @@ private fun runExecute(args: List<String>) {
     }
 }
 
-private fun runCheck(args: List<String>) {
+fun runCheck(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        println("Usage: groovy-lsp check <file> [file...]")
+        out.println("Usage: groovy-lsp check <file> [file...]")
         exitProcess(1)
     }
 
@@ -135,7 +138,7 @@ private fun runCheck(args: List<String>) {
 
                 for (d in diagnostics) {
                     val severity = d.severity?.toString()?.uppercase() ?: "UNKNOWN"
-                    println(
+                    out.println(
                         "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
                     )
                 }
@@ -146,8 +149,8 @@ private fun runCheck(args: List<String>) {
     }
 }
 
-private fun runVersion() {
-    println("groovy-lsp version ${Version.current}")
+fun runVersion(out: PrintStream = System.out) {
+    out.println("groovy-lsp version ${Version.current}")
 }
 
 private fun runStdio() {
@@ -229,8 +232,8 @@ private fun startServer(input: InputStream, output: OutputStream) {
     launcher.startListening().get()
 }
 
-private fun printHelp() {
-    println(
+fun printHelp(out: PrintStream = System.out) {
+    out.println(
         """
         Groovy Language Server
 

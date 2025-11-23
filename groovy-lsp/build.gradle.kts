@@ -76,11 +76,20 @@ configurations.configureEach {
 tasks.test {
     useJUnitPlatform()
     // execute tests in parallel to speed up the build
-    maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+    // Use half of available processors to avoid resource contention, but at least 1
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
+    // Set memory limits to avoid OOMs and ensure consistent environment
+    maxHeapSize = "1G"
+
+    // Fail tests that take too long (5 minutes default)
+    systemProperty("junit.jupiter.execution.timeout.default", "300s")
+
     testLogging {
         showStandardStreams = true
         events("passed", "skipped", "failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
     }
     reports {
         junitXml.required.set(true)
