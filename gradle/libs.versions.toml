@@ -25,6 +25,7 @@ mockk = "1.14.6"
 spock = "2.3-groovy-4.0"
 
 jackson = "2.17.3"
+jqwik = "1.9.1"
 jsonPath = "2.10.0"
 
 [libraries]
@@ -68,6 +69,7 @@ assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 spock-core = { module = "org.spockframework:spock-core", version.ref = "spock" }
 json-path = { module = "com.jayway.jsonpath:json-path", version.ref = "jsonPath" }
+jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 
 # Jackson
 jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }

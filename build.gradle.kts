@@ -111,7 +111,7 @@ subprojects {
         reports {
             verify {
                 rule {
-                    minBound(0) // Disable coverage check for now to unblock build
+                    minBound(54)
                 }
             }
         }

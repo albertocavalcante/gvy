@@ -55,6 +55,7 @@ dependencies {
 
     // Testing - Groovy (Spock Framework) - JUnit 5 platform native
     testImplementation(libs.spock.core)
+    testImplementation(libs.jqwik)
 
     // Code Quality Tools
     detektPlugins(libs.detekt.formatting)

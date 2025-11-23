@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovylsp.test.LspTestFixture
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-class CompletionStressTest {
+class CompletionComplexTest {
 
     private lateinit var fixture: LspTestFixture
 

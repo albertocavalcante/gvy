@@ -105,6 +105,10 @@ internal class PositionNodeVisitor(private val visitor: PositionAwareVisitor) {
 
     fun visitMethodCallExpression(expr: MethodCallExpression) {
         visitExpression(expr.objectExpression)
+
+        // Method name itself is an expression (ConstantExpression usually)
+        visitExpression(expr.method)
+
         (expr.arguments as? ArgumentListExpression)?.expressions?.forEach {
             visitExpression(it)
         }
