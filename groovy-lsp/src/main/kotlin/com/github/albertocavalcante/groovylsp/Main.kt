@@ -105,6 +105,8 @@ fun runExecute(args: List<String>, out: PrintStream = System.out) {
     } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
         logger.error("Error executing command '$commandName'", e)
         exitProcess(1)
+    } finally {
+        server.shutdown().get()
     }
 }
 
@@ -115,37 +117,41 @@ fun runCheck(args: List<String>, out: PrintStream = System.out) {
     }
 
     val server = GroovyLanguageServer()
-    // Cast safely or assume it's our implementation
-    val service = server.getTextDocumentService() as? GroovyTextDocumentService
+    try {
+        // Cast safely or assume it's our implementation
+        val service = server.getTextDocumentService() as? GroovyTextDocumentService
 
-    if (service == null) {
-        logger.error("Failed to retrieve GroovyTextDocumentService")
-        exitProcess(1)
-    }
+        if (service == null) {
+            logger.error("Failed to retrieve GroovyTextDocumentService")
+            exitProcess(1)
+        }
 
-    runBlocking {
-        for (arg in args) {
-            try {
-                val file = File(arg)
-                if (!file.exists()) {
-                    System.err.println("File not found: $arg")
-                    continue
+        runBlocking {
+            for (arg in args) {
+                try {
+                    val file = File(arg)
+                    if (!file.exists()) {
+                        System.err.println("File not found: $arg")
+                        continue
+                    }
+
+                    val uri = file.toURI()
+                    val content = file.readText()
+                    val diagnostics = service.diagnose(uri, content)
+
+                    for (d in diagnostics) {
+                        val severity = d.severity?.toString()?.uppercase() ?: "UNKNOWN"
+                        out.println(
+                            "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
+                        )
+                    }
+                } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                    logger.error("Error checking file $arg", e)
                 }
-
-                val uri = file.toURI()
-                val content = file.readText()
-                val diagnostics = service.diagnose(uri, content)
-
-                for (d in diagnostics) {
-                    val severity = d.severity?.toString()?.uppercase() ?: "UNKNOWN"
-                    out.println(
-                        "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
-                    )
-                }
-            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-                logger.error("Error checking file $arg", e)
             }
         }
+    } finally {
+        server.shutdown().get()
     }
 }
 
