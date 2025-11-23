@@ -209,12 +209,17 @@ tasks.register("printClasspath") {
 
 // Debug task to print version information
 tasks.register("printVersion") {
+    val currentBaseVersion = baseVersion
+    val currentVersion = version.toString()
+    val refType = System.getenv("GITHUB_REF_TYPE")
+    val headRef = System.getenv("GITHUB_HEAD_REF")
+
     doLast {
-        println("Base version: $baseVersion")
-        println("Final version: $version")
-        println("GITHUB_REF_TYPE: ${System.getenv("GITHUB_REF_TYPE") ?: "not set"}")
-        println("GITHUB_HEAD_REF: ${System.getenv("GITHUB_HEAD_REF") ?: "not set"}")
-        println("Is release build: ${version == baseVersion}")
+        println("Base version: $currentBaseVersion")
+        println("Final version: $currentVersion")
+        println("GITHUB_REF_TYPE: ${refType ?: "not set"}")
+        println("GITHUB_HEAD_REF: ${headRef ?: "not set"}")
+        println("Is release build: ${currentVersion == currentBaseVersion}")
     }
 }
 
