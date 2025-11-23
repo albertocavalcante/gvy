@@ -3,11 +3,9 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
     branches:
       - main
-      - master
   workflow_dispatch:
     inputs:
       disable_scan:
@@ -17,7 +15,7 @@ on:
         default: false
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   build:
     name: Build and Test
@@ -46,7 +44,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+          # Allow writing to cache for main OR PRs from the same repository
+          # Read-only for forks to prevent cache poisoning
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
       - name: Set Gradle scan flag
         shell: bash
         run: |-
@@ -57,20 +57,26 @@ jobs:
           fi
       - name: Validate Gradle Wrapper
         run: ./gradlew --version
+      
       - name: Compile Kotlin
         run: ./gradlew compileKotlin compileTestKotlin --stacktrace $GRADLE_SCAN_FLAG
+        
       - name: Run Quality Checks
         run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
+
       - name: Run Tests
         run: ./gradlew test --stacktrace $GRADLE_SCAN_FLAG
+
       - name: Run Code Coverage
         run: ./gradlew koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
+      
       - name: SonarCloud Analysis
         if: matrix.os == 'ubuntu-latest' && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
+        
       - name: Generate Test Report
         uses: dorny/test-reporter@v2
         if: success() || failure()
@@ -78,12 +84,18 @@ jobs:
           name: Test Results (${{ matrix.os }} - Java ${{ matrix.java }})
           path: '**/build/test-results/test/*.xml'
           reporter: java-junit
+          
+      # Heavy tasks (ShadowJar) run on main OR the specific job that creates the artifact (Ubuntu/Java17)
       - name: Build Shadow JAR
+        if: github.ref == 'refs/heads/main' || (matrix.os == 'ubuntu-latest' && matrix.java == 17)
         run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+        
       - name: Verify JAR
+        if: github.ref == 'refs/heads/main' || (matrix.os == 'ubuntu-latest' && matrix.java == 17)
         run: |-
           echo "Testing JAR with --help flag..."
           java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
+          
       - name: Upload JAR artifact
         if: matrix.os == 'ubuntu-latest' && matrix.java == 17
         uses: actions/upload-artifact@v5
@@ -91,6 +103,7 @@ jobs:
           name: groovy-lsp-jar
           path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
           retention-days: 7
+          
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v5
@@ -118,7 +131,7 @@ jobs:
   dependency-check:
     name: Check Dependencies
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6

@@ -75,6 +75,8 @@ configurations.configureEach {
 
 tasks.test {
     useJUnitPlatform()
+    // execute tests in parallel to speed up the build
+    maxParallelForks = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
     testLogging {
         showStandardStreams = true
         events("passed", "skipped", "failed")
