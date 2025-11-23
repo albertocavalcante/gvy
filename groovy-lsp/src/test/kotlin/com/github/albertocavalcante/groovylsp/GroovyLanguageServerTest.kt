@@ -45,7 +45,7 @@ class GroovyLanguageServerTest {
             assertNotNull(result)
             assertNotNull(result.capabilities)
             assertEquals("Groovy Language Server", result.serverInfo?.name)
-            assertEquals("0.1.0-SNAPSHOT", result.serverInfo?.version)
+            assertEquals(Version.current, result.serverInfo?.version)
 
             // Check capabilities
             val capabilities = result.capabilities

@@ -69,14 +69,27 @@ class CompilationErrorHandler {
         return createDiagnostic(
             "${specificException.javaClass.simpleName}: ${specificException.message}",
             DiagnosticSeverity.Error,
+            lineColumn,
         )
     }
 
     private fun createGeneralErrorDiagnostic(e: CompilationFailedException): Diagnostic =
         createDiagnostic("Compilation failed: ${e.message ?: "Unknown compilation error"}", DiagnosticSeverity.Error)
 
-    fun createDiagnostic(message: String, severity: DiagnosticSeverity): Diagnostic = diagnostic {
-        range(RangeBuilder.at(0, 0))
+    fun createDiagnostic(
+        message: String,
+        severity: DiagnosticSeverity,
+        lineColumn: Pair<Int, Int>? = null,
+    ): Diagnostic = diagnostic {
+        if (lineColumn != null) {
+            val (line, column) = lineColumn
+            // LSP uses 0-based indexing, Groovy uses 1-based
+            val startLine = (line - 1).coerceAtLeast(0)
+            val startChar = (column - 1).coerceAtLeast(0)
+            range(RangeBuilder.at(startLine, startChar))
+        } else {
+            range(RangeBuilder.at(0, 0))
+        }
         when (severity) {
             DiagnosticSeverity.Error -> error(message)
             DiagnosticSeverity.Warning -> warning(message)

@@ -162,10 +162,7 @@ class GroovyTextDocumentService(
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
             try {
-                // Compile the document and publish diagnostics
-                val result = compilationService.compile(uri, content)
-                val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                val allDiagnostics = result.diagnostics + codenarcDiagnostics
+                val allDiagnostics = diagnose(uri, content)
 
                 ensureActive() // Ensure job wasn't cancelled before publishing
                 publishDiagnostics(uri.toString(), allDiagnostics)
@@ -189,6 +186,16 @@ class GroovyTextDocumentService(
         }
 
         diagnosticJobs[uri] = job
+    }
+
+    /**
+     * Public method to get diagnostics for a file, useful for CLI "check" command.
+     */
+    suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
+        // Compile the document and return diagnostics (does not publish them)
+        val result = compilationService.compile(uri, content)
+        val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+        return result.diagnostics + codenarcDiagnostics
     }
 
     fun refreshOpenDocuments() {
