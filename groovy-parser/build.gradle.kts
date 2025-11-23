@@ -12,14 +12,16 @@ java {
 }
 
 dependencies {
-    api("org.apache.groovy:groovy:4.0.29")
+    api(libs.groovy.core)
 
-    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
-    implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation(libs.kotlin.collections.immutable)
+    implementation(libs.slf4j.api)
 
-    testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.14.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    detektPlugins(libs.detekt.formatting)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlin.coroutines.test)
 }
 
 tasks.test {

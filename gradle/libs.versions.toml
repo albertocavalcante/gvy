@@ -1,0 +1,86 @@
+[versions]
+kotlin = "2.2.21"
+detekt = "1.23.8"
+spotless = "8.1.0"
+kover = "0.9.3"
+sonarqube = "7.1.0.6387"
+shadow = "9.2.2"
+gitHooks = "2.1.5"
+
+groovy = "4.0.29"
+lsp4j = "0.24.0"
+codenarc = "3.6.0-groovy-4.0"
+gmetrics = "2.1.0"
+gradleTooling = "9.2.1"
+coroutines = "1.10.2"
+collectionsImmutable = "0.4.0"
+slf4j = "2.0.17"
+logback = "1.5.21"
+rewriteGroovy = "8.67.0"
+
+junit = "5.14.0"
+junitPlatform = "1.11.0"
+assertj = "3.27.6"
+mockk = "1.14.6"
+spock = "2.3-groovy-4.0"
+
+jackson = "2.17.3"
+jsonPath = "2.9.0"
+
+[libraries]
+# Plugins (libraries for plugins block)
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+
+# Groovy
+groovy-core = { module = "org.apache.groovy:groovy", version.ref = "groovy" }
+groovy-ant = { module = "org.apache.groovy:groovy-ant", version.ref = "groovy" }
+groovy-console = { module = "org.apache.groovy:groovy-console", version.ref = "groovy" }
+groovy-json = { module = "org.apache.groovy:groovy-json", version.ref = "groovy" }
+
+# LSP
+lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
+lsp4j-jsonrpc = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4j" }
+
+# Code Quality & Analysis
+codenarc = { module = "org.codenarc:CodeNarc", version.ref = "codenarc" }
+gmetrics = { module = "org.gmetrics:GMetrics-Groovy4", version.ref = "gmetrics" }
+rewrite-groovy = { module = "org.openrewrite:rewrite-groovy", version.ref = "rewriteGroovy" }
+
+# Gradle Tooling
+gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "gradleTooling" }
+
+# Kotlin
+kotlin-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlin-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlin-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "collectionsImmutable" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+
+# Logging
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+# Testing
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+spock-core = { module = "org.spockframework:spock-core", version.ref = "spock" }
+json-path = { module = "com.jayway.jsonpath:json-path", version.ref = "jsonPath" }
+
+# Jackson
+jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }
+jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml" } # Version managed by BOM
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" } # Version managed by BOM
+jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" } # Version managed by BOM
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
+sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref = "gitHooks" }
+

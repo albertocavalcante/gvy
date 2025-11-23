@@ -12,13 +12,15 @@ java {
 }
 
 dependencies {
-    implementation(kotlin("stdlib"))
-    implementation("org.openrewrite:rewrite-groovy:8.67.0")
+    implementation(libs.kotlin.stdlib)
+    implementation(libs.rewrite.groovy)
 
-    testImplementation("org.junit.jupiter:junit-jupiter:5.14.0")
-    testImplementation("org.assertj:assertj-core:3.27.6")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.14.0")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.0")
+    detektPlugins(libs.detekt.formatting)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testRuntimeOnly(libs.junit.jupiter.engine)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {

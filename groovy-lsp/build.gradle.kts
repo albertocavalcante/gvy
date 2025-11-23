@@ -16,48 +16,48 @@ version =
 
 dependencies {
     // LSP4J - Language Server Protocol implementation
-    implementation("org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0")
-    implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0")
+    implementation(libs.lsp4j)
+    implementation(libs.lsp4j.jsonrpc)
 
     // Groovy - For AST parsing and analysis
-    implementation("org.apache.groovy:groovy:4.0.29")
+    implementation(libs.groovy.core)
     // Add additional Groovy modules that might be needed for compilation
-    implementation("org.apache.groovy:groovy-ant:4.0.29")
-    implementation("org.apache.groovy:groovy-console:4.0.29")
-    implementation("org.apache.groovy:groovy-json:4.0.29") // Required for CodeNarc JsonSlurper
+    implementation(libs.groovy.ant)
+    implementation(libs.groovy.console)
+    implementation(libs.groovy.json) // Required for CodeNarc JsonSlurper
 
     // CodeNarc - Static analysis for Groovy (Groovy 4.x compatible version)
     // CodeNarc is now a transitive dependency of the diagnostics module, but kept here for
     // backward compatibility if any direct usages remain during refactoring
-    implementation("org.codenarc:CodeNarc:3.6.0-groovy-4.0")
-    implementation("org.gmetrics:GMetrics-Groovy4:2.1.0") // Required for complexity rules
+    implementation(libs.codenarc)
+    implementation(libs.gmetrics) // Required for complexity rules
 
     // Gradle Tooling API - For dependency resolution
-    implementation("org.gradle:gradle-tooling-api:9.2.1")
+    implementation(libs.gradle.tooling.api)
 
     // Kotlin Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation(libs.kotlin.coroutines.core)
 
     // Kotlin Immutable Collections for functional data structures
-    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
+    implementation(libs.kotlin.collections.immutable)
 
     // Logging
-    implementation("org.slf4j:slf4j-api:2.0.17")
-    implementation("ch.qos.logback:logback-classic:1.5.21")
+    implementation(libs.slf4j.api)
+    implementation(libs.logback.classic)
 
     // Testing - Kotlin/Java
-    testImplementation(kotlin("test"))
-    testImplementation("org.junit.jupiter:junit-jupiter:5.14.0")
-    testImplementation("org.assertj:assertj-core:3.27.6")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    testImplementation("io.mockk:mockk:1.14.6")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testImplementation(libs.kotlin.coroutines.test)
+    testImplementation(libs.mockk)
+    testRuntimeOnly(libs.junit.platform.launcher)
 
     // Testing - Groovy (Spock Framework) - JUnit 5 platform native
-    testImplementation("org.spockframework:spock-core:2.3-groovy-4.0")
+    testImplementation(libs.spock.core)
 
     // Code Quality Tools
-    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
+    detektPlugins(libs.detekt.formatting)
 
     // Local Modules
     implementation(project(":groovy-formatter"))

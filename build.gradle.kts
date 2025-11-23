@@ -2,12 +2,12 @@ import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 
 plugins {
-    kotlin("jvm") version "2.2.21" apply false
-    id("com.gradleup.shadow") version "9.2.2" apply false
-    id("io.gitlab.arturbosch.detekt") version "1.23.8"
-    id("com.diffplug.spotless") version "8.1.0"
-    id("org.jetbrains.kotlinx.kover") version "0.9.3"
-    id("org.sonarqube") version "7.1.0.6387"
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.shadow) apply false
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.kover)
+    alias(libs.plugins.sonarqube)
     application
 }
 
@@ -39,11 +39,6 @@ subprojects {
         mavenCentral()
         mavenLocal()
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
-    }
-
-    dependencies {
-        // Add detekt-formatting plugin to the detekt configuration for all subprojects
-        "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
     }
 
     // Code Quality Configuration

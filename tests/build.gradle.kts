@@ -12,6 +12,10 @@ repositories {
 // Ensure groovy-lsp is evaluated so we can access its tasks
 evaluationDependsOn(":groovy-lsp")
 
+dependencies {
+    "detektPlugins"(libs.detekt.formatting)
+}
+
 testing {
     suites {
         register<JvmTestSuite>("e2eTest") {
@@ -30,22 +34,22 @@ testing {
                 implementation(project(":groovy-lsp"))
                 implementation(project(":groovy-formatter"))
 
-                implementation("org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0")
-                implementation(platform("com.fasterxml.jackson:jackson-bom:2.17.3"))
-                implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml")
-                implementation("com.fasterxml.jackson.core:jackson-databind")
-                implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-                implementation("com.jayway.jsonpath:json-path:2.9.0")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-                implementation("org.slf4j:slf4j-api:2.0.17")
-                implementation("ch.qos.logback:logback-classic:1.5.18")
+                implementation(libs.lsp4j)
+                implementation(platform(libs.jackson.bom))
+                implementation(libs.jackson.dataformat.yaml)
+                implementation(libs.jackson.databind)
+                implementation(libs.jackson.module.kotlin)
+                implementation(libs.json.path)
+                implementation(libs.kotlin.coroutines.core)
+                implementation(libs.slf4j.api)
+                implementation(libs.logback.classic)
 
-                implementation("org.jetbrains.kotlin:kotlin-test")
-                implementation("org.junit.jupiter:junit-jupiter:5.14.0")
-                implementation("org.assertj:assertj-core:3.26.3")
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-                implementation("io.mockk:mockk:1.14.6")
-                implementation("org.spockframework:spock-core:2.3-groovy-4.0")
+                implementation(libs.kotlin.test)
+                implementation(libs.junit.jupiter)
+                implementation(libs.assertj.core)
+                implementation(libs.kotlin.coroutines.test)
+                implementation(libs.mockk)
+                implementation(libs.spock.core)
             }
 
             targets {
