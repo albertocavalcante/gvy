@@ -1,0 +1,74 @@
+{
+	"name": "Groovy LSP Dev Container",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			// Check for latest versions at: https://github.com/Kotlin/kotlin-lsp/releases
+			// Verify checksums from the release page (click "SHA-256 Checksum" for the VSIX)
+			"KOTLIN_LSP_VERSION": "0.253.10629",
+			"KOTLIN_LSP_SHA256": "638ec1552fde7e5158f8c7df06443cfb97c5c09957273790586cbd59115bf11c",
+			// Tool versions
+			"JQ_VERSION": "1.8.1",
+			"RG_VERSION": "15.1.0",
+			"FD_VERSION": "10.3.0",
+			"BAT_VERSION": "0.26.0",
+			"FZF_VERSION": "0.67.0",
+			// SHA256 Checksums (optional override, defaults in Dockerfile)
+			// JQ
+			"JQ_SHA256_X64": "020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d",
+			"JQ_SHA256_ARM64": "6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4",
+			// Ripgrep
+			"RG_SHA256_X64": "1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599",
+			"RG_SHA256_ARM64": "2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e",
+			// FD
+			"FD_SHA256_X64": "2b6bfaae8c48f12050813c2ffe1884c61ea26e750d803df9c9114550a314cd14",
+			"FD_SHA256_ARM64": "66f297e404400a3358e9a0c0b2f3f4725956e7e4435427a9ae56e22adbe73a68",
+			// Bat
+			"BAT_SHA256_X64": "26a683b038fbc526c6df4166db693ddc9e431e5bdc285d45ccd6b72f3cff5ffd",
+			"BAT_SHA256_ARM64": "eb8c96a2d9aaaf81cf7d8c3b7918a7336a06a1dec08878887963dc2cdd7db354",
+			// FZF
+			"FZF_SHA256_X64": "4be08018ca37b32518c608741933ea335a406de3558242b60619e98f25be2be1",
+			"FZF_SHA256_ARM64": "7071f48c2ac0f2bc992d6d33cc36fd675a579a98cc976dda699eea07dd5e9c58",
+			// Starship
+			"STARSHIP_VERSION": "1.24.1",
+			"STARSHIP_SHA256_X64": "44a729c34aea5b0451fba49108cdc5ef6b1ae68db65e7623cc244a52efcd23d1",
+			"STARSHIP_SHA256_ARM64": "a01ac37aa5993b78ecd6761c5ff4f805032b8ba566357ffbb2227980216f2216",
+			// GitHub CLI
+			"GH_VERSION": "2.83.1",
+			"GH_SHA256_X64": "1c5252d4ce3db07b51c01ff0b909583da6364ff3fdc06d0c2e75e62dc0380a34",
+			"GH_SHA256_ARM64": "36af472f8e96fd67253f813f71d9610624cc4e3c7a5b148459e42ffa1a933f64"
+		}
+	},
+	"remoteUser": "vscode",
+	"postCreateCommand": "chmod +x .devcontainer/post-create.sh && .devcontainer/post-create.sh",
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"configureZshAsDefaultShell": "true",
+			"username": "vscode",
+			"upgradePackages": "false"
+		}
+		// "ghcr.io/devcontainers/features/github-cli:1": {}
+		// The official feature is currently incompatible with RHEL UBI9 (uses apt-get).
+		// Installing manually in Dockerfile until upstream supports dnf/microdnf.
+	},
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"java.configuration.updateBuildConfiguration": "automatic",
+				"java.import.gradle.enabled": true
+			},
+			"extensions": [
+				"vscjava.vscode-java-pack",
+				"naco-siren.gradle-language",
+				"esbenp.prettier-vscode",
+				"eamodio.gitlens",
+				"mhutchie.git-graph",
+				"tamasfe.even-better-toml",
+				"redhat.vscode-yaml",
+				"ms-azuretools.vscode-docker"
+			]
+		}
+	}
+}
+
