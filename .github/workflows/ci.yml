@@ -44,14 +44,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Use self-hosted if requested via input or variable, otherwise follow standard logic
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || (github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') ) }}
-        java: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
-        exclude:
-          - os: macos-latest
-            java: 21
-          - os: self-hosted
-            java: 21
+        # FIXME: Temporary self-hosted-only matrix for PR/main
+        # Original runner matrix (keep for quick rollback):
+        # os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || (github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') ) }}
+        # java: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
+        # exclude:
+        #   - os: macos-latest
+        #     java: 21
+        #   - os: self-hosted
+        #     java: 21
+        os:
+          - self-hosted
+        java:
+          - 17
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -157,7 +162,9 @@ jobs:
           retention-days: 7
   validate:
     name: Validation Check
-    runs-on: ubuntu-latest
+    # FIXME: Temporary; original runs-on preserved below
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     if: always()
     steps:
@@ -170,7 +177,9 @@ jobs:
           echo "✅ All checks passed!"
   dependency-check:
     name: Check Dependencies
-    runs-on: ubuntu-latest
+    # FIXME: Temporary; original runs-on preserved below
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code

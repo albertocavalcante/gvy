@@ -39,9 +39,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        # FIXME: Temporary self-hosted-only release build
+        # Original runner matrix (kept for quick rollback):
+        # os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        # java:
+        # - 17
+        os:
+          - self-hosted
         java:
-        - 17
+          - 17
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
@@ -124,7 +130,9 @@ jobs:
   create-release:
     name: Create Release
     needs: build-release
-    runs-on: ubuntu-latest
+    # FIXME: Temporary; original runs-on preserved below
+    # runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: "${{ !inputs.dry_run }}"
     steps:
     - name: Checkout code
