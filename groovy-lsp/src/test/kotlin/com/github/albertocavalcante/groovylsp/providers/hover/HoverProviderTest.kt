@@ -23,6 +23,13 @@ class HoverProviderTest {
     private val logger = LoggerFactory.getLogger(HoverProviderTest::class.java)
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
+
+    init {
+        // Reset DocumentationProvider singleton to ensure it uses our documentProvider instance
+        // TODO: Refactor DocumentationProvider to avoid singleton reset in tests (e.g. dependency injection)
+        com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.reset()
+    }
+
     private val hoverProvider = HoverProvider(compilationService, documentProvider)
 
     @Test
@@ -191,6 +198,63 @@ class HoverProviderTest {
             // Should contain method information
             assertTrue(content.value.isNotEmpty())
         }
+    }
+
+    @Test
+    fun `provideHover includes GroovyDoc documentation in response`() = runTest {
+        val groovyCode = """
+class Calculator {
+    /**
+     * Adds two numbers together.
+     * @param a the first number
+     * @param b the second number
+     * @return the sum of a and b
+     */
+    int add(int a, int b) {
+        return a + b
+    }
+    
+    /**
+     * Multiplies two numbers.
+     * @param x first operand
+     * @param y second operand
+     * @return product of x and y
+     */
+    int multiply(int x, int y) {
+        return x * y
+    }
+}
+        """.trimIndent()
+
+        val uri = URI.create("file:///calculator.groovy")
+        // Populate document provider so DocumentationProvider can find the source text
+        documentProvider.put(uri, groovyCode)
+
+        val result = compilationService.compile(uri, groovyCode)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Test hover on add method - line 7 (0-indexed), character 8 is on "add"
+        val addHover = hoverProvider.provideHover(uri.toString(), Position(7, 8))
+        assertNotNull(addHover, "Should have hover for add method")
+
+        val addContent = addHover.contents.right.value
+        logger.info("Hover content for add method:\n$addContent")
+
+        // Validate documentation appears
+        assertTrue(addContent.contains("Adds two numbers together"), "Should include summary. Got: $addContent")
+        assertTrue(addContent.contains("first number"), "Should include @param a description")
+        assertTrue(addContent.contains("second number"), "Should include @param b description")
+        assertTrue(addContent.contains("sum of a and b"), "Should include @return description")
+
+        // Test hover on multiply method - line 17, character 8 is on "multiply"
+        val multiplyHover = hoverProvider.provideHover(uri.toString(), Position(17, 8))
+        assertNotNull(multiplyHover, "Should have hover for multiply method")
+
+        val multiplyContent = multiplyHover.contents.right.value
+        logger.info("Hover content for multiply method:\n$multiplyContent")
+        assertTrue(multiplyContent.contains("Multiplies two numbers"), "Should include summary")
+        assertTrue(multiplyContent.contains("first operand"), "Should include @param x description")
+        assertTrue(multiplyContent.contains("product of x and y"), "Should include @return description")
     }
 
     @Test

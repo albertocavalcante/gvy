@@ -25,6 +25,7 @@ dependencies {
     implementation(libs.groovy.ant)
     implementation(libs.groovy.console)
     implementation(libs.groovy.json) // Required for CodeNarc JsonSlurper
+    implementation(libs.groovy.groovydoc)
 
     // CodeNarc - Static analysis for Groovy (Groovy 4.x compatible version)
     // CodeNarc is now a transitive dependency of the diagnostics module, but kept here for

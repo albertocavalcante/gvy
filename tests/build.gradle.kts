@@ -81,19 +81,10 @@ testing {
                                 @get:Input
                                 val scenarios = scenarioDirPath
 
-                                @get:InputFiles
-                                @get:PathSensitive(PathSensitivity.RELATIVE)
-                                val classpathProvider = runtimeClasspath
-
-                                @get:Input
-                                val main = "com.github.albertocavalcante.groovylsp.MainKt"
-
                                 override fun asArguments() =
                                     listOf(
                                         "-Dgroovy.lsp.e2e.execJar=${jarFileProvider.get().absolutePath}",
                                         "-Dgroovy.lsp.e2e.scenarioDir=$scenarios",
-                                        "-Dgroovy.lsp.e2e.serverClasspath=${classpathProvider.get().asPath}",
-                                        "-Dgroovy.lsp.e2e.mainClass=$main",
                                     )
                             },
                         )

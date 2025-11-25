@@ -1,0 +1,98 @@
+name: hover-documentation
+description: Validates that GroovyDoc documentation appears in hover responses
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: Calculator.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Calculator {
+            /**
+             * Adds two numbers together.
+             * @param a the first number
+             * @param b the second number
+             * @return the sum of a and b
+             */
+            int add(int a, int b) {
+                return a + b
+            }
+            
+            /**
+             * Multiplies two numbers.
+             * @param x first operand
+             * @param y second operand
+             * @return product of x and y
+             */
+            int multiply(int x, int y) {
+                return x * y
+            }
+        }
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}Calculator.groovy"
+        position:
+          line: 7
+          character: 9  # On "add" method name
+      saveAs: addHoverResult
+  - assert:
+      source: addHoverResult
+      checks:
+        # Validate method signature shows
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "add("
+        # Validate doc summary shows
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "Adds two numbers together"
+        # Validate @param documentation
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "first number"
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "second number"
+        # Validate @return documentation
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "sum of a and b"
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}Calculator.groovy"
+        position:
+          line: 17
+          character: 9  # On "multiply" method name (Line 17 because of comments)
+      saveAs: multiplyHoverResult
+  - assert:
+      source: multiplyHoverResult
+      checks:
+        # Validate doc summary shows
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "Multiplies two numbers"
+        # Validate @param documentation
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "first operand"
+        # Validate @return documentation
+        - jsonPath: $.contents.right.value
+          expect:
+            type: CONTAINS
+            value: "product of x and y"
+  - shutdown: {}
+  - exit: {}

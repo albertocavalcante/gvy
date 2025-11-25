@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
+import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -15,6 +16,8 @@ import java.net.URI
  * - Invalid positions: Groovy uses -1 for synthetic/invalid nodes
  */
 class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
+    // TODO: Consider removing this logger once stabilization is complete
+    private val logger = LoggerFactory.getLogger(AstPositionQuery::class.java)
 
     /**
      * Find the AST node at a specific LSP position.
@@ -31,6 +34,10 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         // Convert LSP coordinates (0-based) to Groovy coordinates (1-based)
         val groovyLine = lspLine + 1
         val groovyCharacter = lspCharacter + 1
+
+        if (logger.isDebugEnabled) {
+            logger.debug("Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes")
+        }
 
         // Filter nodes that contain the position and find the smallest one
         return nodes.filter { node ->
@@ -52,15 +59,17 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 lineSpan.toLong() * PositionConstants.LINE_WEIGHT + charSpan.toLong()
             }.thenBy { node ->
                 // 2. Tie-breaker: Prefer specific atomic expressions over containers
+                // Lower numbers = higher priority (prefer more specific nodes)
                 when (node) {
                     is org.codehaus.groovy.ast.expr.VariableExpression -> 0
                     is org.codehaus.groovy.ast.expr.ConstantExpression -> 0
                     is org.codehaus.groovy.ast.expr.GStringExpression -> 0
                     is org.codehaus.groovy.ast.expr.Expression -> 1 // Generic expressions (ArgumentList, MethodCall)
                     is org.codehaus.groovy.ast.stmt.Statement -> 2
-                    is org.codehaus.groovy.ast.MethodNode -> 3
-                    is org.codehaus.groovy.ast.ClassNode -> 4
-                    else -> 5
+                    is org.codehaus.groovy.ast.FieldNode -> 3 // Fields are more specific than methods/classes
+                    is org.codehaus.groovy.ast.MethodNode -> 4 // Methods are more specific than classes
+                    is org.codehaus.groovy.ast.ClassNode -> 5 // Classes are broad containers
+                    else -> 6
                 }
             },
         )
@@ -88,14 +97,17 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 // Single line: check column bounds
                 character >= columnNumber && character <= endColumn
             }
+
             line == lineNumber -> {
                 // First line: check from column to end of line
                 character >= columnNumber
             }
+
             line == endLine -> {
                 // Last line: check from beginning to column
                 character <= endColumn
             }
+
             else -> {
                 // Middle lines: always valid
                 true

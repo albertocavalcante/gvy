@@ -135,6 +135,9 @@ class GroovyTextDocumentService(
             val uri = java.net.URI.create(params.textDocument.uri)
             documentProvider.put(uri, newContent)
 
+            // Invalidate documentation cache for this document
+            com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.invalidateDocument(uri)
+
             triggerDiagnostics(uri, newContent)
         }
     }

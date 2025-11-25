@@ -35,6 +35,10 @@ class HoverProvider(
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
 
+    // Documentation provider for extracting groovydoc - use shared instance for cache consistency
+    private val documentationProvider = com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
+        .getInstance(documentProvider)
+
     /**
      * Provide hover information for the symbol at the given position.
      * Returns null if no hover information is available.
@@ -55,8 +59,8 @@ class HoverProvider(
                 return@withContext null
             }
 
-            // Create hover using DSL
-            createHoverContent(hoverNode)
+            // Create hover using DSL with documentation
+            createHoverContent(hoverNode, documentUri)
         } catch (e: NodeNotFoundAtPositionException) {
             logger.debug("No node found at position for hover: $e")
             null
@@ -183,7 +187,55 @@ class HoverProvider(
     }
 
     /**
-     * Create hover content using the DSL.
+     * Create hover content using the DSL with documentation.
      */
-    private fun createHoverContent(node: ASTNode): Hover? = createHoverFor(node).getOrNull()
+    private fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
+        val baseHover = createHoverFor(node).getOrNull() ?: return null
+
+        // Try to get documentation for the node
+        val doc = try {
+            documentationProvider.getDocumentation(node, documentUri)
+        } catch (e: Exception) {
+            logger.debug("Failed to get documentation for node", e)
+            com.github.albertocavalcante.groovylsp.documentation.Documentation.EMPTY
+        }
+
+        if (doc.isEmpty()) {
+            return baseHover
+        }
+
+        // Enhance hover with documentation
+        return enhanceHoverWithDocumentation(baseHover, doc)
+    }
+
+    /**
+     * Enhance existing hover content with documentation.
+     */
+    private fun enhanceHoverWithDocumentation(
+        baseHover: Hover,
+        doc: com.github.albertocavalcante.groovylsp.documentation.Documentation,
+    ): Hover {
+        val existingContent = baseHover.contents.right?.value ?: return baseHover
+        val docMarkdown = com.github.albertocavalcante.groovylsp.documentation.DocFormatter.formatAsMarkdown(doc)
+
+        if (docMarkdown.isBlank()) {
+            return baseHover
+        }
+
+        // Combine existing hover content with documentation
+        val enhancedContent = buildString {
+            append(existingContent)
+            append("\n\n---\n\n")
+            append(docMarkdown)
+        }
+
+        val markupContent = org.eclipse.lsp4j.MarkupContent().apply {
+            kind = org.eclipse.lsp4j.MarkupKind.MARKDOWN
+            value = enhancedContent
+        }
+
+        return Hover().apply {
+            contents = org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(markupContent)
+        }
+    }
 }
