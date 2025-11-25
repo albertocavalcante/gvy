@@ -84,16 +84,16 @@ jobs:
         run: |
           set -euo pipefail
           BASE_VERSION=$(python3 - <<'PY'
-import re
-from pathlib import Path
+          import re
+          from pathlib import Path
 
-text = Path("build.gradle.kts").read_text()
-match = re.search(r'val\s+baseVersion\s*=\s*"([^"]+)"', text)
-if not match:
-    raise SystemExit("baseVersion not found in build.gradle.kts")
-print(match.group(1))
-PY
-)
+          text = Path("build.gradle.kts").read_text()
+          match = re.search(r'val\s+baseVersion\s*=\s*"([^"]+)"', text)
+          if not match:
+              raise SystemExit("baseVersion not found in build.gradle.kts")
+          print(match.group(1))
+          PY
+          )
           NIGHTLY_VERSION="${BASE_VERSION}-nightly.$(date -u +%Y%m%d%H%M)"
           echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "nightly_version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
