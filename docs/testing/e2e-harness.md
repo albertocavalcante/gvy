@@ -17,9 +17,14 @@ Gradle sets the following system properties for the runner:
 | `groovy.lsp.e2e.execJar`         | Path to the shaded `groovy-lsp` JAR used for process launches.         |
 | `groovy.lsp.e2e.serverClasspath` | Fallback classpath if the JAR is unavailable.                          |
 | `groovy.lsp.e2e.mainClass`       | Fully-qualified entry point (`MainKt`).                                |
+| `groovy.lsp.e2e.gradleUserHome`  | Optional override for the isolated Gradle user home used by the LSP.   |
 
 If Gradle cannot download the wrapper because of network limits, point `GRADLE_USER_HOME` to a writeable directory or
 pre-install the distribution.
+
+The harness launches the language server with an isolated Gradle user home (`build/e2e-gradle-home` by default, or
+`GROOVY_LSP_E2E_GRADLE_USER_HOME` / `groovy.lsp.e2e.gradleUserHome` if set) to avoid cache lock contention with the
+outer Gradle build.
 
 ## YAML DSL (initial slice)
 
@@ -61,6 +66,9 @@ see step-by-step progress like:
 ```
 16:45:11.234 INFO  c.g.a.g.e.ScenarioExecutor - Running step 1 (Initialize) for scenario 'initialize-basic'
 ```
+
+Shutdown requests use a dedicated timeout (`groovy.lsp.e2e.shutdownTimeoutMs`, default 30s) to let Gradle daemons close
+cleanly on busy runners.
 
 ## Next Steps
 

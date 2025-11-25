@@ -33,6 +33,10 @@ import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
+private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 
 class GroovyLanguageServer :
     LanguageServer,
@@ -213,11 +217,22 @@ class GroovyLanguageServer :
             dependencyManager.cancel()
 
             // Shutdown Gradle connection pool
-            GradleConnectionPool.shutdown()
+            val poolShutdown = CompletableFuture.runAsync { GradleConnectionPool.shutdown() }
+            try {
+                poolShutdown.get(GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            } catch (e: TimeoutException) {
+                logger.warn(
+                    "Gradle connection pool shutdown exceeded {} seconds; continuing shutdown",
+                    GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS,
+                )
+                poolShutdown.cancel(true)
+            }
 
             coroutineScope.cancel()
         } catch (e: CancellationException) {
             logger.debug("Coroutine scope cancelled during shutdown", e)
+        } catch (e: Exception) {
+            logger.warn("Error during shutdown", e)
         }
         Any()
     }

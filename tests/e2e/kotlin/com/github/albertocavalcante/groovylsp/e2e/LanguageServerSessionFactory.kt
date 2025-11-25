@@ -10,6 +10,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.time.Duration
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -23,6 +24,7 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")
     private val mainClass: String? = System.getProperty("groovy.lsp.e2e.mainClass")
+    private val gradleUserHome: Path? = resolveGradleUserHome()
 
     fun start(serverConfig: ServerConfig, scenarioName: String): LanguageServerSession {
         val launchMode = serverConfig.mode
@@ -37,9 +39,15 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
             command.joinToString(" "),
         )
 
-        val process = ProcessBuilder(command)
+        val processBuilder = ProcessBuilder(command)
             .redirectErrorStream(false)
-            .start()
+
+        gradleUserHome?.let {
+            processBuilder.environment()["GRADLE_USER_HOME"] = it.toAbsolutePath().toString()
+            logger.info("Using isolated Gradle user home for scenario '{}': {}", scenarioName, it)
+        }
+
+        val process = processBuilder.start()
 
         val client = HarnessLanguageClient(mapper)
         val launcher = LSPLauncher.createClientLauncher(
@@ -75,6 +83,23 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
             ServerLaunchMode.Stdio -> listOf("stdio")
             ServerLaunchMode.Socket -> error("Socket mode is not yet implemented in the e2e harness")
         }
+    }
+
+    private fun resolveGradleUserHome(): Path? {
+        val override = System.getProperty("groovy.lsp.e2e.gradleUserHome")
+            ?: System.getenv("GROOVY_LSP_E2E_GRADLE_USER_HOME")
+
+        val target = when {
+            !override.isNullOrBlank() -> Paths.get(override)
+            else -> Paths.get("").toAbsolutePath().resolve("build/e2e-gradle-home")
+        }
+
+        return runCatching {
+            Files.createDirectories(target)
+            target
+        }.onFailure {
+            logger.warn("Failed to prepare isolated Gradle user home at {}: {}", target, it.message)
+        }.getOrNull()
     }
 
     private fun startErrorPump(process: Process, scenarioName: String): Thread {

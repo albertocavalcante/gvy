@@ -118,7 +118,14 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
     }
 
     private fun performShutdown(context: ScenarioContext) {
-        context.session.server.shutdown().get(DEFAULT_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        val timeout = System.getProperty("groovy.lsp.e2e.shutdownTimeoutMs")
+            ?.toLongOrNull()
+            ?: DEFAULT_SHUTDOWN_TIMEOUT_MS
+
+        val start = System.nanoTime()
+        context.session.server.shutdown().get(timeout, TimeUnit.MILLISECONDS)
+        val elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis()
+        logger.info("Shutdown completed in {} ms", elapsedMs)
     }
 
     private fun performExit(context: ScenarioContext) {
@@ -288,6 +295,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
     companion object {
         private const val DEFAULT_REQUEST_TIMEOUT_MS = 5_000L
         private const val DEFAULT_NOTIFICATION_TIMEOUT_MS = 5_000L
+        private const val DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000L
     }
 }
 
