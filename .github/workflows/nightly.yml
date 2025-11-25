@@ -1,0 +1,152 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref to build from"
+        required: false
+        default: "main"
+      runner_label:
+        description: "Runner label to use"
+        required: false
+        type: choice
+        options:
+          - "self-hosted"
+          - "ubuntu-latest"
+        default: "self-hosted"
+      skip_tests:
+        description: "Skip test suite"
+        required: false
+        type: boolean
+        default: false
+      publish_prerelease:
+        description: "Publish a GitHub prerelease with nightly artifacts"
+        required: false
+        type: boolean
+        default: false
+      disable_scan:
+        description: "Disable Gradle build scan"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: nightly-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    name: Nightly
+    permissions:
+      contents: write
+    runs-on: ${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'self-hosted' }}
+    env:
+      SKIP_TESTS_INPUT: ${{ github.event.inputs.skip_tests || 'false' }}
+      PUBLISH_PRERELEASE_INPUT: ${{ github.event.inputs.publish_prerelease || 'false' }}
+      DISABLE_SCAN_INPUT: ${{ github.event.inputs.disable_scan || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.ref || 'main' }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Configure Gradle flags
+        shell: bash
+        run: |
+          if [[ "${{ env.DISABLE_SCAN_INPUT }}" == "true" ]]; then
+            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
+          else
+            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Validate Gradle Wrapper
+        run: ./gradlew --version
+
+      - name: Compute nightly version
+        id: nightly_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_VERSION=$(python3 - <<'PY'
+import re
+from pathlib import Path
+
+text = Path("build.gradle.kts").read_text()
+match = re.search(r'val\s+baseVersion\s*=\s*"([^"]+)"', text)
+if not match:
+    raise SystemExit("baseVersion not found in build.gradle.kts")
+print(match.group(1))
+PY
+)
+          NIGHTLY_VERSION="${BASE_VERSION}-nightly.$(date -u +%Y%m%d%H%M)"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "nightly_version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Run lint checks
+        run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
+
+      - name: Run tests
+        if: env.SKIP_TESTS_INPUT != 'true'
+        run: ./gradlew test :tests:e2eTest --stacktrace $GRADLE_SCAN_FLAG
+
+      - name: Build Shadow JAR
+        run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+
+      - name: Verify JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR_PATH=$(ls groovy-lsp/build/libs/groovy-lsp-*-all.jar | head -n 1)
+          echo "Found JAR: $JAR_PATH"
+          java -jar "$JAR_PATH" --help
+
+      - name: Prepare nightly artifacts
+        id: prepare_artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          JAR_PATH=$(ls groovy-lsp/build/libs/groovy-lsp-*-all.jar | head -n 1)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          NIGHTLY_NAME="groovy-lsp-${{ steps.nightly_version.outputs.nightly_version }}-${SHORT_SHA}.jar"
+          cp "$JAR_PATH" "dist/${NIGHTLY_NAME}"
+          (cd dist && sha256sum "${NIGHTLY_NAME}" > checksums.txt)
+          echo "artifact_name=${NIGHTLY_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: groovy-lsp-nightly-${{ steps.nightly_version.outputs.nightly_version }}
+          path: dist/*
+          retention-days: 7
+
+      - name: Publish prerelease
+        if: env.PUBLISH_PRERELEASE_INPUT == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.nightly_version.outputs.nightly_tag }}
+          name: Nightly ${{ steps.nightly_version.outputs.nightly_version }}
+          prerelease: true
+          generate_release_notes: false
+          files: |
+            dist/${{ steps.prepare_artifacts.outputs.artifact_name }}
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
