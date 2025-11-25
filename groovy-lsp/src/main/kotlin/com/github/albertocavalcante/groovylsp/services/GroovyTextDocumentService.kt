@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
+import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
@@ -39,9 +40,11 @@ import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ReferenceParams
+import org.eclipse.lsp4j.RenameParams
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
+import org.eclipse.lsp4j.WorkspaceEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
@@ -359,6 +362,44 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             formattingService.format(params)
         }
+
+    @Suppress("TooGenericExceptionCaught")
+    override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> = coroutineScope.future {
+        logger.debug(
+            "Rename requested for ${params.textDocument.uri} at " +
+                "${params.position.line}:${params.position.character} to '${params.newName}'",
+        )
+
+        try {
+            val renameProvider = RenameProvider(compilationService)
+            renameProvider.provideRename(
+                params.textDocument.uri,
+                params.position,
+                params.newName,
+            )
+        } catch (e: org.eclipse.lsp4j.jsonrpc.ResponseErrorException) {
+            logger.error("Rename failed: ${e.message}")
+            throw e
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid arguments for rename", e)
+            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
+                    e.message ?: "Invalid arguments for rename",
+                    null,
+                ),
+            )
+        } catch (e: Exception) {
+            logger.error("Unexpected error during rename", e)
+            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                    e.message ?: "Unexpected error during rename",
+                    null,
+                ),
+            )
+        }
+    }
 
     private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
