@@ -1,0 +1,6 @@
+def ctx = context(filetypes: ["gson"])
+
+contributor(ctx) {
+    property(name: "model", type: "java.util.Map")
+    method(name: "json", type: "void", params: [closure: "groovy.lang.Closure"])
+}

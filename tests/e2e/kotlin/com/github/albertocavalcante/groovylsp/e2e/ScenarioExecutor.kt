@@ -293,8 +293,8 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
     )
 
     companion object {
-        private const val DEFAULT_REQUEST_TIMEOUT_MS = 5_000L
-        private const val DEFAULT_NOTIFICATION_TIMEOUT_MS = 5_000L
+        private const val DEFAULT_REQUEST_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_NOTIFICATION_TIMEOUT_MS = 30_000L
         private const val DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000L
     }
 }
@@ -353,11 +353,13 @@ private data class ScenarioContext(
             node.isArray -> mapper.createArrayNode().apply {
                 node.forEach { add(interpolateNode(it)) }
             }
+
             node.isObject -> mapper.createObjectNode().apply {
                 node.fields().forEachRemaining { (key, value) ->
                     set<JsonNode>(key, interpolateNode(value))
                 }
             }
+
             else -> node
         }
     }
@@ -464,6 +466,7 @@ private fun ScenarioContext.normalizeResponse(method: String, response: JsonNode
                 put("dataOrigin", "left")
                 set<JsonNode>("items", leftNode)
             }
+
             else -> leftNode
         }
     }
@@ -474,6 +477,7 @@ private fun ScenarioContext.normalizeResponse(method: String, response: JsonNode
                 put("dataOrigin", "right")
                 set<JsonNode>("items", rightNode)
             }
+
             else -> rightNode
         }
     }

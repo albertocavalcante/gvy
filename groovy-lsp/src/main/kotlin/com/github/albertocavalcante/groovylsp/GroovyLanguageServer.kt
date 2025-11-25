@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.gradle.GradleConnectionPool
 import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
@@ -50,6 +51,7 @@ class GroovyLanguageServer :
     // Async dependency management
     private val dependencyManager = DependencyManager(GradleDependencyResolver(), coroutineScope)
     private var savedInitParams: InitializeParams? = null
+    private var savedInitOptionsMap: Map<String, Any>? = null
 
     // Service instances - initialized immediately to prevent UninitializedPropertyAccessException in tests
     private val textDocumentService = GroovyTextDocumentService(
@@ -74,6 +76,14 @@ class GroovyLanguageServer :
 
         // Save params for later use in initialized()
         savedInitParams = params
+
+        // Parse initialization options for Jenkins configuration
+        val initOptions = params.initializationOptions
+        @Suppress("UNCHECKED_CAST")
+        savedInitOptionsMap = when (initOptions) {
+            is Map<*, *> -> initOptions as? Map<String, Any>
+            else -> null
+        }
 
         val capabilities = ServerCapabilities().apply {
             // Text synchronization
@@ -163,6 +173,10 @@ class GroovyLanguageServer :
         val progressReporter = ProgressReporter(client)
 
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
+
+        // Initialize Jenkins workspace with configuration from init options
+        val config = ServerConfiguration.fromMap(savedInitOptionsMap)
+        compilationService.workspaceManager.initializeJenkinsWorkspace(config)
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,

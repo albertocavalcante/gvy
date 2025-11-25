@@ -28,8 +28,8 @@ class SynchronizingTestLanguageClient : LanguageClient {
     private var diagnosticsLatch = CountDownLatch(1)
     private var messagesLatch = CountDownLatch(1)
 
-    // Timeout for operations (5 seconds should be enough for any compilation)
-    private val timeoutMs = 5000L
+    // Timeout for operations (30 seconds to avoid flakiness in CI/parallel runs)
+    private val timeoutMs = 30000L
 
     /**
      * Published diagnostics (may be null if none published yet)

@@ -1,0 +1,6 @@
+def ctx = context(ctype: "spock.lang.Specification")
+
+contributor(ctx) {
+    method(name: "expect", type: "void", params: [condition: "boolean"])
+    property(name: "mock", type: "java.lang.Object")
+}

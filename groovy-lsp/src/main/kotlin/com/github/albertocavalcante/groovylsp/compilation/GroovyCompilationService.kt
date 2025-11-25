@@ -50,11 +50,14 @@ class GroovyCompilationService {
     private suspend fun performCompilation(uri: URI, content: String): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
+        // Get file-specific classpath (may be Jenkins-specific or standard)
+        val classpath = workspaceManager.getClasspathForFile(uri, content)
+
         val parseResult = parser.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
-                classpath = workspaceManager.getDependencyClasspath(),
+                classpath = classpath,
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),

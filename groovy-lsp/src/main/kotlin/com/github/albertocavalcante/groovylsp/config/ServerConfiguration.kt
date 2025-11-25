@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.config
 
+import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.slf4j.LoggerFactory
 
@@ -34,6 +35,9 @@ data class ServerConfiguration(
         "OPTIMIZE" to DiagnosticSeverity.Hint,
     ),
     val todoSemanticTokensEnabled: Boolean = true,
+
+    // Jenkins configuration
+    val jenkinsConfig: JenkinsConfiguration = JenkinsConfiguration(),
 ) {
 
     enum class CompilationMode {
@@ -85,6 +89,9 @@ data class ServerConfiguration(
                     codeNarcEnabled = (map["groovy.codenarc.enabled"] as? Boolean) ?: true,
                     codeNarcPropertiesFile = map["groovy.codenarc.propertiesFile"] as? String,
                     codeNarcAutoDetect = (map["groovy.codenarc.autoDetect"] as? Boolean) ?: true,
+
+                    // Jenkins configuration
+                    jenkinsConfig = JenkinsConfiguration.fromMap(map),
                 )
             } catch (e: Exception) {
                 logger.warn("Error parsing configuration, using defaults", e)

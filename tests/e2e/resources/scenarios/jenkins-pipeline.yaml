@@ -1,0 +1,28 @@
+name: "Jenkins Pipeline Support"
+description: "Verify Jenkins pipeline support"
+server:
+  mode: "stdio"
+steps:
+  - initialize:
+      initializationOptions:
+        jenkins:
+          filePatterns: ["Jenkinsfile"]
+          sharedLibraries:
+            - name: "utils"
+              jar: "/tmp/utils.jar"
+  - initialized: {}
+  - openDocument:
+      path: "Jenkinsfile"
+      languageId: "groovy"
+      version: 1
+      text: |
+        @Library('utils') _
+        pipeline { agent any }
+  - request:
+      method: "textDocument/hover"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 0
+          character: 1

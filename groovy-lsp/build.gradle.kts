@@ -65,6 +65,7 @@ dependencies {
     implementation(project(":groovy-parser"))
     implementation(project(":groovy-diagnostics:api"))
     implementation(project(":groovy-diagnostics:codenarc"))
+    implementation(project(":groovy-jenkins"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;

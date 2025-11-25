@@ -1,0 +1,67 @@
+package com.github.albertocavalcante.groovyjenkins
+
+import org.slf4j.LoggerFactory
+
+/**
+ * Configuration for Jenkins pipeline support.
+ */
+data class JenkinsConfiguration(
+    val filePatterns: List<String> = listOf("Jenkinsfile"),
+    val sharedLibraries: List<SharedLibrary> = emptyList(),
+    val gdslPaths: List<String> = emptyList(),
+) {
+    companion object {
+        private val logger = LoggerFactory.getLogger(JenkinsConfiguration::class.java)
+
+        /**
+         * Parses Jenkins configuration from a map.
+         */
+        @Suppress("TooGenericExceptionCaught", "UNCHECKED_CAST")
+        fun fromMap(map: Map<String, Any>): JenkinsConfiguration = try {
+            JenkinsConfiguration(
+                filePatterns = parseFilePatterns(map),
+                sharedLibraries = parseSharedLibraries(map),
+                gdslPaths = parseGdslPaths(map),
+            )
+        } catch (e: Exception) {
+            logger.warn("Error parsing Jenkins configuration, using defaults", e)
+            JenkinsConfiguration()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseFilePatterns(map: Map<String, Any>): List<String> {
+            val patterns = map["jenkins.filePatterns"] as? List<*>
+            return patterns?.mapNotNull { it as? String } ?: listOf("Jenkinsfile")
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseSharedLibraries(map: Map<String, Any>): List<SharedLibrary> {
+            val libraries = map["jenkins.sharedLibraries"] as? List<*> ?: return emptyList()
+
+            return libraries.mapNotNull { lib ->
+                try {
+                    val libMap = lib as? Map<String, Any> ?: return@mapNotNull null
+                    SharedLibrary(
+                        name = libMap["name"] as? String ?: return@mapNotNull null,
+                        jar = libMap["jar"] as? String ?: return@mapNotNull null,
+                        sourcesJar = libMap["sourcesJar"] as? String,
+                    )
+                } catch (e: Exception) {
+                    logger.warn("Failed to parse shared library entry: $lib", e)
+                    null
+                }
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun parseGdslPaths(map: Map<String, Any>): List<String> {
+            val paths = map["jenkins.gdslPaths"] as? List<*>
+            return paths?.mapNotNull { it as? String } ?: emptyList()
+        }
+    }
+}
+
+/**
+ * Represents a Jenkins shared library configuration.
+ */
+data class SharedLibrary(val name: String, val jar: String, val sourcesJar: String? = null)
