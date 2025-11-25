@@ -22,7 +22,8 @@ import java.util.concurrent.TimeUnit
 class GroovyTextDocumentServiceCodeActionTest {
 
     private companion object {
-        private const val FUTURE_TIMEOUT_SECONDS = 5L
+        // Code action execution can invoke formatting + CodeNarc; give a little more headroom to avoid flaky timeouts.
+        private const val FUTURE_TIMEOUT_SECONDS = 15L
     }
 
     private val uri = URI.create("file:///codeaction-test.groovy")

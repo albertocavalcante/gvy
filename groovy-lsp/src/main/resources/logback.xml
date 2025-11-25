@@ -8,9 +8,19 @@
         </encoder>
     </appender>
 
+    <!-- File appender for persistent logs -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>build/logs/groovy-lsp.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
     <!-- Root logger configuration -->
     <root level="INFO">
         <appender-ref ref="STDERR" />
+        <appender-ref ref="FILE" />
     </root>
 
     <!-- Groovy LSP specific logger -->

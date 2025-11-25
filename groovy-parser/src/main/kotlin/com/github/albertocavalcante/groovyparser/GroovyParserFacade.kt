@@ -43,18 +43,27 @@ class GroovyParserFacade {
         try {
             compilationUnit.compile(Phases.CANONICALIZATION)
         } catch (e: CompilationFailedException) {
-            logger.debug("Compilation failed for ${request.uri}: ${e.message}")
+            logger.warn("Compilation failed for ${request.uri}: ${e.message}", e)
         }
 
         val ast = extractAst(compilationUnit)
         val diagnostics = ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates)
+
+        if (diagnostics.isNotEmpty()) {
+            logger.info("Diagnostics for ${request.uri}:")
+            diagnostics.forEach { d ->
+                logger.info("  - [${d.severity}] ${d.message} at line ${d.range.start.line}")
+            }
+        } else {
+            logger.info("No diagnostics generated for ${request.uri}")
+        }
 
         val astVisitor = AstVisitor()
         ast?.let { astVisitor.visitModule(it, sourceUnit, request.uri) }
         val symbolTable = SymbolTable()
         symbolTable.buildFromVisitor(astVisitor)
 
-        logger.debug(
+        logger.info(
             "Parsed {} -> success={}, diagnostics={}",
             request.uri,
             ast != null && diagnostics.none { it.severity == ParserSeverity.ERROR },

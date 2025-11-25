@@ -215,9 +215,18 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
     }
 
     private fun performSendRequest(step: ScenarioStep.SendRequest, context: ScenarioContext) {
-        val paramsNode = context.interpolateNode(step.params)
+        val paramsNode = context.interpolateNode(step.params)?.let { node ->
+            if (step.method == "textDocument/codeAction" && node is com.fasterxml.jackson.databind.node.ObjectNode) {
+                normalizeCodeActionParams(node)
+            }
+            node
+        }
         val paramsObject = paramsNode?.let { mapper.convertValue(it, Any::class.java) }
         val timeout = step.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS
+
+        if (logger.isInfoEnabled) {
+            logger.info("Sending request {} with params {}", step.method, paramsNode)
+        }
 
         val response = context.session.endpoint.request(step.method, paramsObject)
             .get(timeout, TimeUnit.MILLISECONDS)
@@ -240,6 +249,48 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
                     throw AssertionError("Extraction jsonPath '${extraction.jsonPath}' not found in response", ex)
                 }
                 context.setVariable(extraction.variable, mapper.valueToTree(value))
+            }
+        }
+    }
+
+    private fun normalizeCodeActionParams(params: com.fasterxml.jackson.databind.node.ObjectNode) {
+        val contextNode = params["context"] as? com.fasterxml.jackson.databind.node.ObjectNode ?: return
+        val diagnosticsNode = contextNode["diagnostics"] as? com.fasterxml.jackson.databind.node.ArrayNode ?: return
+
+        diagnosticsNode.forEach { diagnosticNode ->
+            if (diagnosticNode !is com.fasterxml.jackson.databind.node.ObjectNode) return@forEach
+            // LSP4J expects wire-format primitives here; the server rejects Either-style code and textual severities.
+
+            // Flatten code field from Either {left,right} into a primitive as expected by LSP4J
+            val codeNode = diagnosticNode["code"]
+            if (codeNode != null && codeNode.isObject) {
+                val left = codeNode["left"]
+                val right = codeNode["right"]
+                when {
+                    left != null && !left.isNull -> diagnosticNode.put("code", left.asText())
+                    right != null && !right.isNull -> {
+                        if (right.isNumber) {
+                            diagnosticNode.set<com.fasterxml.jackson.databind.JsonNode>("code", right)
+                        } else {
+                            diagnosticNode.put("code", right.asText())
+                        }
+                    }
+
+                    else -> diagnosticNode.remove("code")
+                }
+            }
+
+            // Convert severity strings (e.g., "Error") to numeric enum values expected on the wire
+            val severityNode = diagnosticNode["severity"]
+            if (severityNode != null && severityNode.isTextual) {
+                val severityValue = when (severityNode.asText().lowercase()) {
+                    "error" -> 1
+                    "warning" -> 2
+                    "information", "info" -> 3
+                    "hint" -> 4
+                    else -> null
+                }
+                severityValue?.let { diagnosticNode.put("severity", it) }
             }
         }
     }
@@ -349,7 +400,17 @@ private data class ScenarioContext(
     fun interpolateNode(node: JsonNode?): JsonNode? {
         if (node == null) return null
         return when {
-            node.isTextual -> mapper.valueToTree(interpolateString(node.asText()))
+            node.isTextual -> {
+                // If the entire value is a single placeholder, inject the resolved node directly so
+                // arrays/objects are preserved (e.g., diagnostics list), otherwise fall back to string interpolation.
+                val match = PLACEHOLDER_REGEX.matchEntire(node.asText())
+                if (match != null) {
+                    resolveExpressionNode(match.groupValues[1].trim())
+                } else {
+                    mapper.valueToTree(interpolateString(node.asText()))
+                }
+            }
+
             node.isArray -> mapper.createArrayNode().apply {
                 node.forEach { add(interpolateNode(it)) }
             }
@@ -364,7 +425,7 @@ private data class ScenarioContext(
         }
     }
 
-    private fun resolveExpression(expr: String): String {
+    private fun resolveExpressionNode(expr: String): JsonNode {
         val (variableName, jsonPath) = if (expr.contains(".")) {
             val firstDot = expr.indexOf('.')
             expr.substring(0, firstDot) to expr.substring(firstDot + 1)
@@ -387,6 +448,11 @@ private data class ScenarioContext(
             variableNode
         }
 
+        return targetNode
+    }
+
+    private fun resolveExpression(expr: String): String {
+        val targetNode = resolveExpressionNode(expr)
         return when {
             targetNode.isTextual -> targetNode.asText()
             targetNode.isNumber -> targetNode.numberValue().toString()
@@ -533,10 +599,15 @@ private class JsonExpectationEvaluator(private val mapper: ObjectMapper) {
     private fun matchesRegex(actual: JsonNode?, expected: JsonNode?): Boolean {
         if (actual == null || expected == null) return false
         val pattern = expected.asText()
-        return try {
-            Regex(pattern).containsMatchIn(actual.asText())
+        val regex = try {
+            Regex(pattern)
         } catch (ex: Exception) {
-            false
+            return false
+        }
+
+        return when {
+            actual.isArray -> actual.any { regex.containsMatchIn(it.asText()) }
+            else -> regex.containsMatchIn(actual.asText())
         }
     }
 

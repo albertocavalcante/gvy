@@ -103,14 +103,31 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
     }
 
     private fun startErrorPump(process: Process, scenarioName: String): Thread {
+        val logFile = resolveGradleUserHome()?.parent?.resolve("e2e-logs")?.resolve("$scenarioName.log")
+            ?: Paths.get("build/e2e-logs/$scenarioName.log")
+
+        Files.createDirectories(logFile.parent)
+
         val thread = Thread(
             {
-                BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
-                    var line = reader.readLine()
-                    while (line != null) {
-                        logger.info("[server:{}] {}", scenarioName, line)
-                        line = reader.readLine()
+                try {
+                    Files.newBufferedWriter(logFile).use { writer ->
+                        BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
+                            var line = reader.readLine()
+                            while (line != null) {
+                                // Write to file
+                                writer.write(line)
+                                writer.newLine()
+
+                                // Also log to test runner logger for visibility (optional, maybe reduce level)
+                                logger.info("[server:{}] {}", scenarioName, line)
+
+                                line = reader.readLine()
+                            }
+                        }
                     }
+                } catch (e: Exception) {
+                    logger.error("Error pumping stderr to file $logFile", e)
                 }
             },
             "groovy-lsp-e2e-stderr",

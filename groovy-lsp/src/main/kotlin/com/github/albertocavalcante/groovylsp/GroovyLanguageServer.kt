@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CompletionOptions
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
@@ -199,6 +200,11 @@ class GroovyLanguageServer :
                     sourceDirectories = resolution.sourceDirectories,
                 )
                 textDocumentService.refreshOpenDocuments()
+
+                // Trigger workspace indexing
+                coroutineScope.launch {
+                    compilationService.indexWorkspaceSources()
+                }
 
                 progressReporter.complete(
                     "✅ Ready: ${resolution.dependencies.size} dependencies loaded",

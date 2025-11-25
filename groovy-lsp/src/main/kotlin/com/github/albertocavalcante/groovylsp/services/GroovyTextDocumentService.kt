@@ -17,10 +17,12 @@ import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefin
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.Command
@@ -116,7 +118,7 @@ class GroovyTextDocumentService(
      * Helper function to publish diagnostics with better readability
      */
     private fun publishDiagnostics(uri: String, diagnostics: List<Diagnostic>) {
-        logger.debug("Publishing ${diagnostics.size} diagnostics for $uri")
+        logger.info("Publishing ${diagnostics.size} diagnostics for $uri")
         client()?.publishDiagnostics(
             PublishDiagnosticsParams().apply {
                 this.uri = uri
@@ -181,9 +183,12 @@ class GroovyTextDocumentService(
                 ensureActive() // Ensure job wasn't cancelled before publishing
                 publishDiagnostics(uri.toString(), allDiagnostics)
 
-                logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
+                logger.info("Published ${allDiagnostics.size} diagnostics for $uri")
             } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
                 logger.error("Compilation failed for: $uri", e)
+                val errorHandler = com.github.albertocavalcante.groovylsp.compilation.CompilationErrorHandler()
+                val result = errorHandler.handleException(e, uri)
+                publishDiagnostics(uri.toString(), result.diagnostics)
             } catch (e: IllegalArgumentException) {
                 logger.error("Invalid arguments for: $uri", e)
             } catch (e: java.io.IOException) {
@@ -205,11 +210,14 @@ class GroovyTextDocumentService(
     /**
      * Public method to get diagnostics for a file, useful for CLI "check" command.
      */
-    suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
+    suspend fun diagnose(uri: URI, content: String): List<Diagnostic> = withContext(Dispatchers.IO) {
+        logger.info("Starting diagnostics for $uri")
         // Compile the document and return diagnostics (does not publish them)
         val result = compilationService.compile(uri, content)
+        logger.info("Compilation diagnostics for $uri: ${result.diagnostics.size}")
         val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return result.diagnostics + codenarcDiagnostics
+        logger.info("CodeNarc diagnostics for $uri: ${codenarcDiagnostics.size}")
+        result.diagnostics + codenarcDiagnostics
     }
 
     fun refreshOpenDocuments() {
@@ -419,10 +427,13 @@ class GroovyTextDocumentService(
                     "${params.range.start.line}:${params.range.start.character}",
             )
 
-            val actions = codeActionProvider.provideCodeActions(params)
+            val actions = withContext(Dispatchers.IO) {
+                codeActionProvider.provideCodeActions(params)
+            }
             logger.debug("Returning ${actions.size} code actions")
 
             actions.map { Either.forRight<Command, CodeAction>(it) }
+            // emptyList()
         }
 
     private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =

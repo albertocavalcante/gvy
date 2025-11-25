@@ -20,11 +20,22 @@ class ScenarioRunnerTest {
         val scenarioDir = resolveScenarioDirectory()
         val definitions = loader.loadAll(scenarioDir)
 
-        if (definitions.isEmpty()) {
-            fail("No scenarios discovered under $scenarioDir")
+        val filter = System.getProperty("groovy.lsp.e2e.filter")
+        val filteredDefinitions = if (filter.isNullOrBlank()) {
+            definitions
+        } else {
+            definitions.filter { it.scenario.name.contains(filter, ignoreCase = true) }
         }
 
-        return definitions.map { definition ->
+        if (filteredDefinitions.isEmpty()) {
+            if (filter != null) {
+                fail("No scenarios matched filter '$filter'")
+            } else {
+                fail("No scenarios discovered under $scenarioDir")
+            }
+        }
+
+        return filteredDefinitions.map { definition ->
             DynamicTest.dynamicTest(definition.scenario.name) {
                 executor.execute(definition)
             }

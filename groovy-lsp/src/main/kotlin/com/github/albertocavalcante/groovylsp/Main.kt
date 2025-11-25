@@ -163,10 +163,11 @@ private fun runStdio() {
     val input = System.`in`
     val output = System.out
 
-    // Redirect System.out to System.err IMMEDIATELY to prevent pollution of LSP messages
-    System.setOut(System.err)
+    // Do NOT redirect System.out to System.err.
+    // Instead, we rely on the fact that we pass 'output' (System.out) explicitly to the LSP launcher
+    // and we configure our logging framework (Logback) to write ONLY to System.err.
 
-    // Now safe to log (will go to stderr)
+    // Log to stderr (via SLF4J)
     logger.info("Starting Groovy Language Server in stdio mode")
 
     startServer(input, output)

@@ -7,10 +7,13 @@ import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 
 class GroovyCompilationService {
@@ -149,4 +152,22 @@ class GroovyCompilationService {
 
     // Expose cache for testing purposes
     internal val astCache get() = cache
+
+    suspend fun indexWorkspaceSources() = withContext(Dispatchers.IO) {
+        val sources = workspaceManager.getWorkspaceSources()
+        logger.info("Indexing ${sources.size} workspace sources")
+        sources.forEach { path ->
+            try {
+                val uri = path.toUri()
+                // Skip if already cached
+                if (cache.get(uri) == null) {
+                    val content = Files.readString(path)
+                    compile(uri, content)
+                }
+            } catch (e: Exception) {
+                logger.error("Failed to index $path", e)
+            }
+        }
+        logger.info("Workspace indexing complete")
+    }
 }

@@ -8,7 +8,6 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
 import org.slf4j.LoggerFactory
-import kotlin.math.max
 
 /**
  * Provides formatting code actions using the existing formatter.
@@ -58,20 +57,9 @@ class FormattingAction(private val formatter: Formatter) {
  * Convert a string to a full document range.
  */
 private fun String.toFullDocumentRange(): Range {
-    var line = 0
-    var lastLineStart = 0
-    this.indices.forEach { index ->
-        if (this[index] == '\n') {
-            line++
-            lastLineStart = index + 1
-        }
-    }
-
-    var column = length - lastLineStart
-    column = max(column, 0)
-
+    val lines = this.lines()
     return Range(
         Position(0, 0),
-        Position(line, column),
+        Position(lines.lastIndex, lines.last().length),
     )
 }

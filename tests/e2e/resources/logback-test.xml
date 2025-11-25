@@ -12,7 +12,20 @@
         <appender-ref ref="STDOUT" />
     </logger>
 
-    <root level="WARN">
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>build/e2e-client.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{40} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.eclipse.lsp4j.jsonrpc" level="TRACE">
+        <appender-ref ref="FILE" />
+    </logger>
+
+    <root level="INFO">
         <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
     </root>
 </configuration>

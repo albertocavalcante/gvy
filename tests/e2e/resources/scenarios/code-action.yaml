@@ -1,0 +1,92 @@
+name: code-action
+description: Validates code actions for formatting and missing imports
+workspace:
+  fixture: code-action
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Scenario 1: Formatting Code Action
+  - openDocument:
+      path: Unformatted.groovy
+      languageId: groovy
+      version: 1
+      text: "class Unformatted{def x=1}"
+  
+  - request:
+      method: textDocument/codeAction
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}Unformatted.groovy"
+        range:
+          start: { line: 0, character: 0 }
+          end: { line: 0, character: 24 }
+        context:
+          diagnostics: []
+      saveAs: formattingActions
+      
+  - assert:
+      source: formattingActions
+      checks:
+        - jsonPath: $[*].right.title
+          expect:
+            type: CONTAINS
+            value: "Format document"
+        - jsonPath: $[*].right.kind
+          expect:
+            type: CONTAINS
+            value: "source.fixAll"
+  
+  - closeDocument:
+      path: Unformatted.groovy
+
+  # Scenario 2: Missing Import Code Action
+  - openDocument:
+      path: src/main/groovy/MissingImport.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        @groovy.transform.CompileStatic
+        class MissingImport {
+            Helper h
+        }
+
+  # Wait for diagnostics to ensure the missing symbol is detected
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.diagnostics[*].message
+          expect:
+            type: MATCHES_REGEX
+            value: ".*Helper.*"
+      saveAs: diagnosticsParams
+
+  # Request code actions at the location of the missing symbol (line 2, "Helper")
+  - request:
+      method: textDocument/codeAction
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/MissingImport.groovy"
+        range:
+          start: { line: 2, character: 4 }
+          end: { line: 2, character: 10 }
+        context:
+          diagnostics: "{{diagnosticsParams.diagnostics}}"
+      saveAs: importActions
+
+  - assert:
+      source: importActions
+      checks:
+        - jsonPath: $[*].right.title
+          expect:
+            type: CONTAINS
+            value: "Import 'com.example.Helper'"
+        - jsonPath: $[0].right.edit.changes
+          expect:
+            type: EXISTS
+        # Verify the edit adds the import statement
+        # JSON path for changes key might be dynamic (uri), so we might need flexible assertion
+        # or just check if 'import com.example.Helper' is present in the text edit
+  
+  - shutdown: {}
+  - exit: {}

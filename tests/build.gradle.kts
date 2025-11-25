@@ -81,11 +81,19 @@ testing {
                                 @get:Input
                                 val scenarios = scenarioDirPath
 
-                                override fun asArguments() =
-                                    listOf(
-                                        "-Dgroovy.lsp.e2e.execJar=${jarFileProvider.get().absolutePath}",
-                                        "-Dgroovy.lsp.e2e.scenarioDir=$scenarios",
-                                    )
+                                override fun asArguments(): List<String> {
+                                    val args =
+                                        mutableListOf(
+                                            "-Dgroovy.lsp.e2e.execJar=${jarFileProvider.get().absolutePath}",
+                                            "-Dgroovy.lsp.e2e.scenarioDir=$scenarios",
+                                        )
+
+                                    // Pass filter property if present
+                                    System.getProperty("groovy.lsp.e2e.filter")?.let { filterValue ->
+                                        args.add("-Dgroovy.lsp.e2e.filter=$filterValue")
+                                    }
+                                    return args
+                                }
                             },
                         )
 
