@@ -433,7 +433,6 @@ class GroovyTextDocumentService(
             logger.debug("Returning ${actions.size} code actions")
 
             actions.map { Either.forRight<Command, CodeAction>(it) }
-            // emptyList()
         }
 
     private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
