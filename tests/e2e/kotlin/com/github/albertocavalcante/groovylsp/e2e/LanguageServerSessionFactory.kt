@@ -118,6 +118,7 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
                                 // Write to file
                                 writer.write(line)
                                 writer.newLine()
+                                writer.flush()
 
                                 // Also log to test runner logger for visibility (optional, maybe reduce level)
                                 logger.info("[server:{}] {}", scenarioName, line)
