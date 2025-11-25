@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GroovyLanguageServerCapabilitiesContractTest {
@@ -57,9 +56,7 @@ class GroovyLanguageServerCapabilitiesContractTest {
         assertTrue(capabilities.typeDefinitionProvider?.left == true)
         assertTrue(capabilities.documentFormattingProvider?.left == true)
         assertTrue(capabilities.renameProvider?.left == true)
-
-        // Features not yet implemented must remain disabled
-        assertNull(capabilities.codeActionProvider, "Code actions are not implemented and should not be advertised.")
+        assertTrue(capabilities.codeActionProvider?.left == true, "Code actions should be advertised.")
 
         val signatureHelp = capabilities.signatureHelpProvider
         assertNotNull(signatureHelp, "Signature help should be advertised when implemented.")

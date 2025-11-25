@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
+import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
@@ -20,6 +21,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.CodeAction
+import org.eclipse.lsp4j.CodeActionParams
+import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
@@ -92,6 +96,10 @@ class GroovyTextDocumentService(
 
     private val formattingService by lazy {
         GroovyFormattingService(formatter, documentProvider, client)
+    }
+
+    private val codeActionProvider by lazy {
+        CodeActionProvider(compilationService, documentProvider, formatter)
     }
 
     override fun signatureHelp(
@@ -403,6 +411,19 @@ class GroovyTextDocumentService(
             )
         }
     }
+
+    override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
+        coroutineScope.future {
+            logger.debug(
+                "Code action requested for ${params.textDocument.uri} at " +
+                    "${params.range.start.line}:${params.range.start.character}",
+            )
+
+            val actions = codeActionProvider.provideCodeActions(params)
+            logger.debug("Returning ${actions.size} code actions")
+
+            actions.map { Either.forRight<Command, CodeAction>(it) }
+        }
 
     private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->

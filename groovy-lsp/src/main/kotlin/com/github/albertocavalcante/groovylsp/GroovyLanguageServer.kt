@@ -124,6 +124,9 @@ class GroovyLanguageServer :
             // Rename support
             renameProvider = Either.forLeft(true)
 
+            // Code actions
+            codeActionProvider = Either.forLeft(true)
+
             // Diagnostics will be pushed
         }
 
