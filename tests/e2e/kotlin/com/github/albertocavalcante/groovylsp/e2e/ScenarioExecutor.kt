@@ -123,9 +123,16 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
             ?: DEFAULT_SHUTDOWN_TIMEOUT_MS
 
         val start = System.nanoTime()
-        context.session.server.shutdown().get(timeout, TimeUnit.MILLISECONDS)
-        val elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis()
-        logger.info("Shutdown completed in {} ms", elapsedMs)
+        try {
+            context.session.server.shutdown().get(timeout, TimeUnit.MILLISECONDS)
+            val elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis()
+            logger.info("Shutdown completed in {} ms", elapsedMs)
+        } catch (e: TimeoutException) {
+            // Surface a clear message instead of letting the test hang; the session.close() below will forcibly kill.
+            throw TimeoutException(
+                "Server shutdown exceeded ${timeout}ms for scenario '${context.definition.scenario.name}'",
+            )
+        }
     }
 
     private fun performExit(context: ScenarioContext) {

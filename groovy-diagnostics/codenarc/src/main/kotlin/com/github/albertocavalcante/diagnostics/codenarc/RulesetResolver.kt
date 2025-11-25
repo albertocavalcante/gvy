@@ -216,6 +216,7 @@ class HierarchicalRulesetResolver(
                 if (projectType.hasSpock) {
                     "codenarc/rulesets/frameworks/gradle-spock.groovy" // Future
                 } else {
+                    // Fall back to generic defaults for Gradle projects when no specific ruleset is bundled.
                     "codenarc/rulesets/base/default.groovy"
                 }
             }

@@ -214,7 +214,7 @@ class GroovyLanguageServer :
                 client?.showMessage(
                     MessageParams().apply {
                         type = MessageType.Info
-                        message = "Dependencies loaded: ${resolution.dependencies.size} JARs from Gradle cache"
+                        message = "Dependencies loaded: ${resolution.dependencies.size} JARs"
                     },
                 )
             },

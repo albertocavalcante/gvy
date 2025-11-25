@@ -46,6 +46,11 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
             processBuilder.environment()["GRADLE_USER_HOME"] = it.toAbsolutePath().toString()
             logger.info("Using isolated Gradle user home for scenario '{}': {}", scenarioName, it)
         }
+        // Keep Gradle model resolution from stalling e2e runs; the server reads this for its timeout.
+        processBuilder.environment().putIfAbsent(
+            "GROOVY_LSP_GRADLE_TIMEOUT_MS",
+            System.getProperty("groovy.lsp.e2e.gradleTimeoutMs") ?: "15000",
+        )
 
         val process = processBuilder.start()
 

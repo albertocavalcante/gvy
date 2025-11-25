@@ -41,6 +41,25 @@ steps:
                 return printNonNullProperties(this)
             }
         }
+
+  # Wait for dependency resolution to complete before asserting diagnostics.
+  - waitNotification:
+      method: window/showMessage
+      timeoutMs: 30000
+      saveAs: depsMessage
+      checks:
+        - jsonPath: $.message
+          expect:
+            type: MATCHES_REGEX
+            value: "(Dependencies loaded: .*)|(Could not load Gradle dependencies.*)|(Gradle dependency resolution returned no JARs.*)"
+
+  - assert:
+      source: depsMessage
+      checks:
+        - jsonPath: $.message
+          expect:
+            type: MATCHES_REGEX
+            value: "Dependencies loaded: .*"
   - waitNotification:
       method: textDocument/publishDiagnostics
       saveAs: resolvedDiagnostics
