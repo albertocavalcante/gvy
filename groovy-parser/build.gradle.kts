@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm")
+    alias(libs.plugins.jmh)
 }
 
 group = "com.github.albertocavalcante"
@@ -23,6 +24,15 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.jqwik)
+}
+
+jmh {
+    warmupIterations.set(2)
+    iterations.set(5)
+    fork.set(1)
+    failOnError.set(true)
+    resultFormat.set("JSON")
+    profilers.add("gc")
 }
 
 tasks.test {

@@ -6,6 +6,7 @@ kover = "0.9.3"
 sonarqube = "7.1.0.6387"
 shadow = "9.2.2"
 gitHooks = "2.1.5"
+jmh = "0.7.3"
 
 groovy = "4.0.29"
 lsp4j = "0.24.0"
@@ -86,4 +87,5 @@ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref = "gitHooks" }
+jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
 
