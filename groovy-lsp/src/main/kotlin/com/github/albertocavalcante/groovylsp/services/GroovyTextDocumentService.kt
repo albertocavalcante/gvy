@@ -236,11 +236,16 @@ class GroovyTextDocumentService(
             val basicCompletions = GroovyCompletions.basic()
 
             // Try to get contextual completions from AST
+            // Try to get contextual completions from AST
+            val uri = java.net.URI.create(params.textDocument.uri)
+            val content = documentProvider.get(uri) ?: ""
+
             val contextualCompletions = CompletionProvider.getContextualCompletions(
                 params.textDocument.uri,
                 params.position.line,
                 params.position.character,
                 compilationService,
+                content,
             )
 
             val allCompletions = basicCompletions + contextualCompletions

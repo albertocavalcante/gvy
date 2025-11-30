@@ -28,12 +28,16 @@ class LspTestFixture {
     }
 
     fun assertCompletionContains(line: Int, char: Int, vararg expectedLabels: String) {
-        val completions = CompletionProvider.getContextualCompletions(
-            uri.toString(),
-            line,
-            char,
-            compilationService,
-        )
+        val content = documentProvider.get(uri) ?: ""
+        val completions = runBlocking {
+            CompletionProvider.getContextualCompletions(
+                uri.toString(),
+                line,
+                char,
+                compilationService,
+                content,
+            )
+        }
 
         val labels = completions.map { it.label }.toSet()
         val missing = expectedLabels.filter { it !in labels }
@@ -42,12 +46,16 @@ class LspTestFixture {
     }
 
     fun assertCompletionDoesNotContain(line: Int, char: Int, vararg unexpectedLabels: String) {
-        val completions = CompletionProvider.getContextualCompletions(
-            uri.toString(),
-            line,
-            char,
-            compilationService,
-        )
+        val content = documentProvider.get(uri) ?: ""
+        val completions = runBlocking {
+            CompletionProvider.getContextualCompletions(
+                uri.toString(),
+                line,
+                char,
+                compilationService,
+                content,
+            )
+        }
 
         val labels = completions.map { it.label }.toSet()
         val present = unexpectedLabels.filter { it in labels }

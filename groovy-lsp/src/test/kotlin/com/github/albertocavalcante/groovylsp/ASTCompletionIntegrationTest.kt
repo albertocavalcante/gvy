@@ -49,7 +49,8 @@ class ASTCompletionIntegrationTest {
         val uri = "file:///Calculator.groovy"
 
         openDocument(uri, content)
-        val items = requestCompletionsAt(uri, Position(21, 8))
+        // Use line 23 (inside method body) instead of 21 (method definition)
+        val items = requestCompletionsAt(uri, Position(23, 8))
 
         assertCompletionContains(items, "println", CompletionItemKind.Method)
         assertCompletionContains(items, "Calculator", CompletionItemKind.Class)

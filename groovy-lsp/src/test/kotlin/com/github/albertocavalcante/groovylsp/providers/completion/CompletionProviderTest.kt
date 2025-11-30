@@ -40,6 +40,7 @@ class CompletionProviderTest {
             2, // Line within class
             8, // Character position
             compilationService,
+            content,
         )
 
         // Assert - Should return some completions (could be empty if no context matches)
@@ -54,10 +55,11 @@ class CompletionProviderTest {
             0,
             0,
             compilationService,
+            "def x = 1",
         )
 
-        // Assert - Should return empty list for invalid URI
-        assertTrue(completions.isEmpty(), "Should return empty completions for invalid URI")
+        // Assert - Should return completions now because we compile transiently
+        assertTrue(completions.isNotEmpty(), "Should return completions even for invalid URI")
     }
 
     @Test
@@ -68,9 +70,10 @@ class CompletionProviderTest {
             0,
             0,
             compilationService,
+            "def x = 1",
         )
 
-        // Assert - Should return empty list when no compilation exists
-        assertTrue(completions.isEmpty(), "Should return empty completions without compilation")
+        // Assert - Should return completions now because we compile transiently
+        assertTrue(completions.isNotEmpty(), "Should return completions even without prior compilation")
     }
 }

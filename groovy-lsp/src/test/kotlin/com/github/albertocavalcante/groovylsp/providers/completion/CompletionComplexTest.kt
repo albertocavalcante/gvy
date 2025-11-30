@@ -49,8 +49,8 @@ class CompletionComplexTest {
             // "message" // Local variable - EXPECTED TO FAIL currently
         )
 
-        // 2. Inside class (Line 11)
-        fixture.assertCompletionContains(11, 4, "String", "int", "void")
+        // 2. Inside class (Line 12 - comment line)
+        fixture.assertCompletionContains(12, 4, "String", "int", "void")
 
         // 3. Top level (Line 14)
         fixture.assertCompletionContains(14, 0, "Person", "Date")

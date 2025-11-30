@@ -28,6 +28,7 @@ spock = "2.3-groovy-4.0"
 jackson = "2.20.1"
 jqwik = "1.9.3"
 jsonPath = "2.10.0"
+classgraph = "4.8.184"
 
 [libraries]
 # Plugins (libraries for plugins block)
@@ -78,6 +79,9 @@ jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jac
 jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml" } # Version managed by BOM
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" } # Version managed by BOM
 jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" } # Version managed by BOM
+
+# Classpath Scanning
+classgraph = { module = "io.github.classgraph:classgraph", version.ref = "classgraph" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

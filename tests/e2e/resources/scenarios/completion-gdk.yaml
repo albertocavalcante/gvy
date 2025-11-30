@@ -1,0 +1,69 @@
+name: completion-gdk
+description: Request completion for GDK methods and type parameters.
+workspace:
+  fixture: completion-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Test GDK completion
+  - openDocument:
+      path: src/GdkTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        def myList = [1, 2, 3]
+        myList.
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/GdkTest.groovy"
+        position:
+          line: 1
+          character: 7
+      saveAs: completion_gdk
+      extract:
+        - variable: completion_gdk.items
+          jsonPath: $.items
+  - assert:
+      source: completion_gdk
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: each
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: collect
+
+  # Test Type Parameter completion
+  - openDocument:
+      path: src/TypeParamTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        List<Str
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/TypeParamTest.groovy"
+        position:
+          line: 0
+          character: 8
+      saveAs: completion_type
+      extract:
+        - variable: completion_type.items
+          jsonPath: $.items
+  - assert:
+      source: completion_type
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: String
+
+  - shutdown: {}
+  - exit: {}

@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
+import com.github.albertocavalcante.groovylsp.services.ClasspathService
+import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -30,6 +32,10 @@ class GroovyCompilationService {
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 
     val workspaceManager = WorkspaceManager()
+
+    // Services for GDK and classpath-based completion
+    val classpathService = ClasspathService()
+    val gdkProvider = GroovyGdkProvider(classpathService)
 
     /**
      * Compiles Groovy source code and returns the result.
@@ -88,6 +94,28 @@ class GroovyCompilationService {
 
         logger.debug("Compilation result for $uri: success=${result.isSuccess}, diagnostics=${diagnostics.size}")
         return result
+    }
+
+    /**
+     * Compiles code without updating the cache.
+     * Useful for completion where we insert a dummy identifier.
+     */
+    suspend fun compileTransient(uri: URI, content: String): com.github.albertocavalcante.groovyparser.api.ParseResult {
+        logger.debug("Transient compilation for: $uri")
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+        val classpath = workspaceManager.getClasspathForFile(uri, content)
+
+        return parser.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = classpath,
+                sourceRoots = workspaceManager.getSourceRoots(),
+                workspaceSources = workspaceManager.getWorkspaceSources(),
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                useRecursiveVisitor = true,
+            ),
+        )
     }
 
     fun getParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? = cache.get(uri)
@@ -185,6 +213,11 @@ class GroovyCompilationService {
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
         if (changed) {
+            logger.info("Workspace model changed, updating classpath services")
+            // Update classpath service with new dependencies
+            classpathService.updateClasspath(dependencies)
+            // Initialize GDK provider (indexes GDK classes)
+            gdkProvider.initialize()
             clearCaches()
         }
     }

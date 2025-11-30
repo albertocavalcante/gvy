@@ -46,6 +46,9 @@ dependencies {
     implementation(libs.slf4j.api)
     implementation(libs.logback.classic)
 
+    // Classpath Scanning - For indexing all classes in the project and dependencies
+    implementation(libs.classgraph)
+
     // Testing - Kotlin/Java
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
