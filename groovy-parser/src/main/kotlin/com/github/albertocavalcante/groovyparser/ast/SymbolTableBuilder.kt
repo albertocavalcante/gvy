@@ -16,9 +16,9 @@ import java.net.URI
 class SymbolTableBuilder(private val registry: SymbolRegistry) {
 
     /**
-     * Build symbol table from an AST visitor.
+     * Build symbol table from an AST model.
      */
-    fun buildFromVisitor(visitor: AstVisitor) {
+    fun buildFromVisitor(visitor: GroovyAstModel) {
         val allNodes = visitor.getAllNodes()
 
         // Group nodes by URI for efficient processing

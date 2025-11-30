@@ -5,7 +5,7 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.converters.toLspLocationLink
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -51,7 +51,7 @@ class DefinitionProvider(
         val documentUri = parseUriOrReport(uri) ?: return@flow
 
         val ast = compilationService.getAst(documentUri) ?: return@flow
-        val visitor = compilationService.getAstVisitor(documentUri) ?: return@flow
+        val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
         val resolver = DefinitionResolver(visitor, symbolTable)
@@ -103,7 +103,7 @@ class DefinitionProvider(
         }
 
         val ast = compilationService.getAst(documentUri) ?: return@flow
-        val visitor = compilationService.getAstVisitor(documentUri) ?: return@flow
+        val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
         val resolver = DefinitionResolver(visitor, symbolTable)
@@ -130,7 +130,7 @@ class DefinitionProvider(
     fun findReferencesOnly(uri: String, position: Position): Flow<Location> =
         findTargetsAt(uri, position, setOf(TargetKind.REFERENCE))
 
-    private data class DefinitionContext(val visitor: AstVisitor, val symbolTable: SymbolTable)
+    private data class DefinitionContext(val visitor: GroovyAstModel, val symbolTable: SymbolTable)
 
     @Suppress("ReturnCount")
     private fun obtainDefinitionContext(documentUri: URI, originalUri: String): DefinitionContext? {
@@ -141,7 +141,7 @@ class DefinitionProvider(
             return null
         }
 
-        val visitor = compilationService.getAstVisitor(documentUri)
+        val visitor = compilationService.getAstModel(documentUri)
         if (visitor == null) {
             logger.warn("No AST visitor available for $originalUri - this might indicate visitor cache issue")
             telemetrySink.report(DefinitionTelemetryEvent(originalUri, DefinitionStatus.VISITOR_MISSING))

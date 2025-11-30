@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast.symbols
 
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.symbolNotFoundError
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
@@ -284,9 +284,9 @@ class SymbolBuilder(private val uri: URI) {
 fun buildSymbols(uri: URI, block: SymbolBuilder.() -> Unit): List<Symbol> = SymbolBuilder(uri).apply(block).build()
 
 /**
- * Extension function to build SymbolIndex from AstVisitor
+ * Extension function to build SymbolIndex from a GroovyAstModel implementation.
  */
-fun SymbolIndex.buildFromVisitor(visitor: AstVisitor): SymbolIndex {
+fun SymbolIndex.buildFromVisitor(visitor: GroovyAstModel): SymbolIndex {
     var index = this
 
     visitor.getAllNodes().forEach { node ->

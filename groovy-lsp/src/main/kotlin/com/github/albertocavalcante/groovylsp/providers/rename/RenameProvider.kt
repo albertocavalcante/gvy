@@ -68,7 +68,7 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         val groovyPosition = position.toGroovyPosition()
 
         // Get the node at the position
-        val visitor = compilationService.getAstVisitor(documentUri)
+        val visitor = compilationService.getAstModel(documentUri)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No AST visitor available for $uri")
 
         val symbolTable = compilationService.getSymbolTable(documentUri)

@@ -306,7 +306,7 @@ class TypeDefinitionIntegrationTest {
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
+                astModel = astVisitor,
                 workspaceRoot = null,
             )
         } catch (e: Exception) {
@@ -320,7 +320,7 @@ class TypeDefinitionIntegrationTest {
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
+                astModel = astVisitor,
                 workspaceRoot = null,
             )
         }

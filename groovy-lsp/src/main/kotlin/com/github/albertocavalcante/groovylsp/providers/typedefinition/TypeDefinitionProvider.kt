@@ -75,7 +75,7 @@ class TypeDefinitionProvider(
         }
 
         // Find the AST node at the given position
-        val node = context.astVisitor.getNodeAt(uri, position.toGroovyPosition()) ?: run {
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
             logger.debug("No AST node found at position $position")
             return null
         }

@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
@@ -54,7 +55,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
      */
     private data class ReferenceContext(
         val documentUri: URI,
-        val visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        val visitor: GroovyAstModel,
         val symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         val targetNode: ASTNode,
     )
@@ -65,7 +66,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     private data class ProcessNodeParams(
         val node: ASTNode,
         val definition: ASTNode,
-        val visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        val visitor: GroovyAstModel,
         val symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         val includeDeclaration: Boolean,
         val emittedLocations: MutableSet<String>,
@@ -85,7 +86,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): ReferenceContext? {
         val documentUri = URI.create(uri)
-        return compilationService.getAstVisitor(documentUri)?.let { visitor ->
+        return compilationService.getAstModel(documentUri)?.let { visitor ->
             compilationService.getSymbolTable(documentUri)?.let { symbolTable ->
                 visitor.getNodeAt(documentUri, position)
                     ?.takeIf { it.isReferenceableSymbol() }
@@ -156,7 +157,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
      */
     private suspend fun ProducerScope<Location>.findReferences(
         definition: ASTNode,
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         includeDeclaration: Boolean,
     ) {
@@ -226,9 +227,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     /**
      * Check if a node is part of a declaration.
      */
-    private fun ASTNode.isPartOfDeclaration(
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
-    ): Boolean = when {
+    private fun ASTNode.isPartOfDeclaration(visitor: GroovyAstModel): Boolean = when {
         this is org.codehaus.groovy.ast.Parameter -> true
         this is org.codehaus.groovy.ast.MethodNode -> true
         this is org.codehaus.groovy.ast.FieldNode -> true
@@ -283,7 +282,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
      */
     private suspend fun ProducerScope<Location>.emitUniqueLocation(
         node: ASTNode,
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        visitor: GroovyAstModel,
         seen: MutableSet<String>,
     ) {
         val location = node.toLspLocation(visitor) ?: return

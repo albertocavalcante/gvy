@@ -16,7 +16,7 @@ class SymbolTable {
     val builder = SymbolTableBuilder(registry)
 
     // Keep only coordination methods (8 functions max)
-    fun buildFromVisitor(visitor: AstVisitor) {
+    fun buildFromVisitor(visitor: GroovyAstModel) {
         clear()
         builder.buildFromVisitor(visitor)
     }
@@ -29,7 +29,7 @@ class SymbolTable {
 
     fun getStatistics(): Map<String, Int> = registry.getStatistics()
 
-    fun resolveSymbol(node: ASTNode, visitor: AstVisitor): Variable? = resolver.resolveSymbol(node, visitor)
+    fun resolveSymbol(node: ASTNode, visitor: GroovyAstModel): Variable? = resolver.resolveSymbol(node, visitor)
 
     fun refresh() {
         // Coordinate refresh across components

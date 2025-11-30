@@ -34,8 +34,8 @@ class LocationConverterTest {
             val result = compilationService.compile(uri, content)
             assertTrue(result.isSuccess, "Compilation should succeed")
 
-            val visitor = compilationService.getAstVisitor(uri)
-            assertNotNull(visitor, "Should have AST visitor after compilation")
+            val visitor = compilationService.getAstModel(uri)
+            assertNotNull(visitor, "Should have AST model after compilation")
 
             // Find a node in the AST
             val targetNode =
@@ -81,8 +81,8 @@ class LocationConverterTest {
             val result = compilationService.compile(uri, content)
             assertTrue(result.isSuccess, "Compilation should succeed")
 
-            val visitor = compilationService.getAstVisitor(uri)
-            assertNotNull(visitor, "Should have AST visitor")
+            val visitor = compilationService.getAstModel(uri)
+            assertNotNull(visitor, "Should have AST model")
 
             // Find nodes that might not have valid positions
             val allNodes = visitor!!.getAllNodes()
@@ -115,8 +115,8 @@ class LocationConverterTest {
             val result = compilationService.compile(uri, content)
             assertTrue(result.isSuccess, "Compilation should succeed")
 
-            val visitor = compilationService.getAstVisitor(uri)
-            assertNotNull(visitor, "Should have AST visitor")
+            val visitor = compilationService.getAstModel(uri)
+            assertNotNull(visitor, "Should have AST model")
 
             val allNodes = visitor!!.getAllNodes()
             val nodeWithPosition = allNodes.find { it.lineNumber > 0 && it.columnNumber > 0 }

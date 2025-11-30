@@ -63,7 +63,8 @@ class GroovyParserFacade {
         val astVisitor = AstVisitor()
         ast?.let { astVisitor.visitModule(it, sourceUnit, request.uri) }
         val symbolTable = SymbolTable()
-        symbolTable.buildFromVisitor(astVisitor)
+        val visitorForSymbols = recursiveVisitor ?: astVisitor
+        symbolTable.buildFromVisitor(visitorForSymbols)
 
         logger.debug(
             "Parsed {} -> success={}, diagnostics={}",

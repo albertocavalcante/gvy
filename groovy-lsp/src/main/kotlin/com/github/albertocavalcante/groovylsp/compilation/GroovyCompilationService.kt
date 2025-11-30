@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
@@ -69,7 +70,7 @@ class GroovyCompilationService {
 
         val result = if (ast != null) {
             cache.put(uri, content, parseResult)
-            symbolStorageCache.put(uri, SymbolIndex().buildFromVisitor(parseResult.astVisitor))
+            symbolStorageCache.put(uri, SymbolIndex().buildFromVisitor(parseResult.astModel))
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
@@ -88,13 +89,16 @@ class GroovyCompilationService {
     fun getDiagnostics(uri: URI): List<Diagnostic> =
         getParseResult(uri)?.diagnostics?.map { it.toLspDiagnostic() } ?: emptyList()
 
+    fun getAstModel(uri: URI): GroovyAstModel? = getParseResult(uri)?.astModel
+
+    @Deprecated("Use getAstModel instead")
     fun getAstVisitor(uri: URI): AstVisitor? = getParseResult(uri)?.astVisitor
 
     fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
     fun getSymbolStorage(uri: URI): SymbolIndex? {
         symbolStorageCache.get(uri)?.let { return it }
-        val visitor = getAstVisitor(uri) ?: return null
+        val visitor = getAstModel(uri) ?: return null
         val storage = SymbolIndex().buildFromVisitor(visitor)
         symbolStorageCache.put(uri, storage)
         return storage
@@ -130,7 +134,7 @@ class GroovyCompilationService {
             uri = uri,
             moduleNode = ast,
             compilationUnit = parseResult.compilationUnit,
-            astVisitor = parseResult.astVisitor,
+            astModel = parseResult.astModel,
             workspaceRoot = workspaceManager.getWorkspaceRoot(),
             classpath = workspaceManager.getDependencyClasspath(),
         )

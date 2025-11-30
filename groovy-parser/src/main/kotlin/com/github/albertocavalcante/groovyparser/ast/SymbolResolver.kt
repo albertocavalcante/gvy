@@ -14,7 +14,7 @@ class SymbolResolver(private val registry: SymbolRegistry) {
     /**
      * Resolve a symbol to its definition.
      */
-    fun resolveSymbol(node: ASTNode, visitor: AstVisitor): Variable? {
+    fun resolveSymbol(node: ASTNode, visitor: GroovyAstModel): Variable? {
         val uri = visitor.getUri(node) ?: return null
 
         return when (node) {
@@ -31,7 +31,7 @@ class SymbolResolver(private val registry: SymbolRegistry) {
     /**
      * Find a field in the current scope.
      */
-    private fun findFieldInScope(variableExpr: VariableExpression, visitor: AstVisitor): Variable? {
+    private fun findFieldInScope(variableExpr: VariableExpression, visitor: GroovyAstModel): Variable? {
         val searchContext = getFieldSearchContext(variableExpr, visitor) ?: return null
 
         return searchContext.entries
@@ -42,7 +42,7 @@ class SymbolResolver(private val registry: SymbolRegistry) {
     /**
      * Find a field in the enclosing class.
      */
-    private fun findFieldInEnclosingClass(variableExpr: VariableExpression, visitor: AstVisitor): Variable? {
+    private fun findFieldInEnclosingClass(variableExpr: VariableExpression, visitor: GroovyAstModel): Variable? {
         // Walk up the AST to find the enclosing class
         var current = visitor.getParent(variableExpr)
         while (current != null && current !is ClassNode) {
@@ -58,7 +58,10 @@ class SymbolResolver(private val registry: SymbolRegistry) {
     /**
      * Get the field search context for a variable expression.
      */
-    private fun getFieldSearchContext(variableExpr: VariableExpression, visitor: AstVisitor): Map<String, ClassNode>? {
+    private fun getFieldSearchContext(
+        variableExpr: VariableExpression,
+        visitor: GroovyAstModel,
+    ): Map<String, ClassNode>? {
         val uri = visitor.getUri(variableExpr) ?: return null
         val classDeclarations = registry.getClassDeclarations(uri)
         return if (classDeclarations.isNotEmpty()) classDeclarations else null

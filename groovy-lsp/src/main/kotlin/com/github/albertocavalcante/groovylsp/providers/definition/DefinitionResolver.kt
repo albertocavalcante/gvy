@@ -5,19 +5,14 @@ import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import org.codehaus.groovy.ast.ASTNode
-import org.eclipse.lsp4j.Position
 import org.slf4j.LoggerFactory
 import java.net.URI
 
-/**
- * Resolves symbols to their definitions using AST analysis.
- * Combines patterns from fork-groovy-language-server and kotlin-lsp.
- */
-class DefinitionResolver(private val astVisitor: AstVisitor, private val symbolTable: SymbolTable) {
+class DefinitionResolver(private val astVisitor: GroovyAstModel, private val symbolTable: SymbolTable) {
 
     private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
 

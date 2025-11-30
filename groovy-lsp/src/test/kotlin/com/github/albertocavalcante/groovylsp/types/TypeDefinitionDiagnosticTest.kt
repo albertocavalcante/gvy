@@ -90,7 +90,7 @@ class TypeDefinitionDiagnosticTest {
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
+                astModel = astVisitor,
                 workspaceRoot = null,
             )
         } catch (e: Exception) {
@@ -103,7 +103,7 @@ class TypeDefinitionDiagnosticTest {
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
+                astModel = astVisitor,
                 workspaceRoot = null,
             )
         }

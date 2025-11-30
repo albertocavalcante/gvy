@@ -41,8 +41,8 @@ class SymbolStorageTest {
         assertTrue(result.isSuccess, "Compilation should succeed")
 
         // Get visitor to build symbols
-        val visitor = compilationService.getAstVisitor(uri)
-        assertNotNull(visitor, "Should have AST visitor after compilation")
+        val visitor = compilationService.getAstModel(uri)
+        assertNotNull(visitor, "Should have AST model after compilation")
 
         // Act - Build symbols from visitor using extension function
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
@@ -74,8 +74,8 @@ class SymbolStorageTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        val visitor = compilationService.getAstVisitor(uri)
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = compilationService.getAstModel(uri)
+        assertNotNull(visitor, "Should have AST model")
 
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
 
@@ -105,8 +105,8 @@ class SymbolStorageTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        val visitor = compilationService.getAstVisitor(uri)
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = compilationService.getAstModel(uri)
+        assertNotNull(visitor, "Should have AST model")
 
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor!!)
 
@@ -131,8 +131,8 @@ class SymbolStorageTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        val visitor = compilationService.getAstVisitor(uri)
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = compilationService.getAstModel(uri)
+        assertNotNull(visitor, "Should have AST model")
 
         val originalIndex = SymbolIndex()
         val newIndex = originalIndex.buildFromVisitor(visitor!!)

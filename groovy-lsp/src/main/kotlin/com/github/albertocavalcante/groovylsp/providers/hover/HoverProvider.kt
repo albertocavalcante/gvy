@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionExcep
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
@@ -96,7 +97,7 @@ class HoverProvider(
 
     private suspend fun ensureAstPrepared(documentUri: URI) {
         val hasAst = compilationService.getAst(documentUri) != null
-        val hasVisitor = compilationService.getAstVisitor(documentUri) != null
+        val hasVisitor = compilationService.getAstModel(documentUri) != null
 
         if (hasAst && hasVisitor) {
             return
@@ -118,7 +119,7 @@ class HoverProvider(
         documentUri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): ASTNode? {
-        val astVisitor = compilationService.getAstVisitor(documentUri)
+        val astVisitor = compilationService.getAstModel(documentUri)
         val symbolTable = compilationService.getSymbolTable(documentUri)
 
         // 1. Find the node at position
@@ -142,7 +143,7 @@ class HoverProvider(
 
     private fun resolveWithVisitor(
         node: ASTNode,
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
     ): ASTNode = when (node) {
         is VariableExpression -> resolveVariable(node, visitor, symbolTable)
@@ -152,7 +153,7 @@ class HoverProvider(
 
     private fun resolveVariable(
         node: VariableExpression,
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
+        visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
     ): ASTNode {
         // If it's a declaration, show the node itself
@@ -165,10 +166,7 @@ class HoverProvider(
         return node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
     }
 
-    private fun resolveConstant(
-        node: ConstantExpression,
-        visitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
-    ): ASTNode {
+    private fun resolveConstant(node: ConstantExpression, visitor: GroovyAstModel): ASTNode {
         val parent = visitor.getParent(node)
         if (parent is MethodCallExpression && parent.method == node) {
             return parent
@@ -178,7 +176,7 @@ class HoverProvider(
 
     private fun resolveFallback(node: ASTNode, documentUri: URI): ASTNode {
         if (node is ConstantExpression) {
-            val parent = compilationService.getAstVisitor(documentUri)?.getParent(node)
+            val parent = compilationService.getAstModel(documentUri)?.getParent(node)
             if (parent is MethodCallExpression && parent.method == node) {
                 return parent
             }

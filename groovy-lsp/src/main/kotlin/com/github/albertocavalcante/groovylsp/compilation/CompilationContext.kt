@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import java.net.URI
@@ -27,9 +28,9 @@ data class CompilationContext(
     val compilationUnit: CompilationUnit,
 
     /**
-     * AST visitor for navigating and querying the AST.
+     * AST model for navigating and querying the AST.
      */
-    val astVisitor: AstVisitor,
+    val astModel: GroovyAstModel,
 
     /**
      * Workspace root path for resolving relative imports and dependencies.
@@ -41,6 +42,11 @@ data class CompilationContext(
      */
     val classpath: List<Path> = emptyList(),
 ) {
+    @Deprecated("Use astModel instead")
+    val astVisitor: AstVisitor
+        get() = astModel as? AstVisitor
+            ?: throw IllegalStateException("Using legacy AstVisitor access with RecursiveAstVisitor")
+
     companion object {
         /**
          * Creates a CompilationContext from a CompilationResult and additional info.
@@ -48,7 +54,7 @@ data class CompilationContext(
         fun from(
             uri: URI,
             result: CompilationResult,
-            astVisitor: AstVisitor,
+            astModel: GroovyAstModel,
             workspaceRoot: Path?,
             classpath: List<Path> = emptyList(),
         ): CompilationContext? {
@@ -64,7 +70,7 @@ data class CompilationContext(
                 uri = uri,
                 moduleNode = moduleNode,
                 compilationUnit = compilationUnit,
-                astVisitor = astVisitor,
+                astModel = astModel,
                 workspaceRoot = workspaceRoot,
                 classpath = classpath,
             )

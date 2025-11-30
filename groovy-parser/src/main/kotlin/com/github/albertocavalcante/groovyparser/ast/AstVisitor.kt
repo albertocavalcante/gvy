@@ -34,7 +34,9 @@ import java.net.URI
  * - Use method dispatch tables instead of individual override methods
  * - Split into multiple specialized visitors (expression visitor, statement visitor, etc.)
  */
-class AstVisitor : ClassCodeVisitorSupport() {
+class AstVisitor :
+    ClassCodeVisitorSupport(),
+    GroovyAstModel {
 
     private val tracker = NodeRelationshipTracker()
     private val positionQuery = AstPositionQuery(tracker)
@@ -48,15 +50,15 @@ class AstVisitor : ClassCodeVisitorSupport() {
     }
 
     fun clear() = tracker.clear()
-    fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
-    fun getUri(node: ASTNode): URI? = tracker.getUri(node)
-    fun getNodes(uri: URI): List<ASTNode> = tracker.getNodes(uri)
-    fun getAllNodes(): List<ASTNode> = tracker.getAllNodes()
-    fun getAllClassNodes(): List<ClassNode> = tracker.getAllClassNodes()
-    fun getNodeAt(uri: URI, lspPosition: Position): ASTNode? = positionQuery.getNodeAt(uri, lspPosition)
-    fun getNodeAt(uri: URI, lspLine: Int, lspCharacter: Int): ASTNode? =
-        positionQuery.getNodeAt(uri, lspLine, lspCharacter)
-    fun contains(ancestor: ASTNode, descendant: ASTNode): Boolean = tracker.contains(ancestor, descendant)
+    override fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
+    override fun getUri(node: ASTNode): URI? = tracker.getUri(node)
+    override fun getNodes(uri: URI): List<ASTNode> = tracker.getNodes(uri)
+    override fun getAllNodes(): List<ASTNode> = tracker.getAllNodes()
+    override fun getAllClassNodes(): List<ClassNode> = tracker.getAllClassNodes()
+    override fun getNodeAt(uri: URI, position: Position): ASTNode? = positionQuery.getNodeAt(uri, position)
+    override fun getNodeAt(uri: URI, line: Int, character: Int): ASTNode? =
+        positionQuery.getNodeAt(uri, line, character)
+    override fun contains(ancestor: ASTNode, descendant: ASTNode): Boolean = tracker.contains(ancestor, descendant)
 
     // Delegate all visit methods to NodeVisitorDelegate
     override fun visitClass(node: ClassNode) = delegate.visitClass(node)

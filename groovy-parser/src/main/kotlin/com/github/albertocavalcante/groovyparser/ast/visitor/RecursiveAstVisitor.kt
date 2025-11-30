@@ -1,6 +1,9 @@
 package com.github.albertocavalcante.groovyparser.ast.visitor
 
+import com.github.albertocavalcante.groovyparser.ast.AstPositionQuery
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
@@ -42,47 +45,21 @@ import org.codehaus.groovy.ast.stmt.ThrowStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
 import java.net.URI
-
-/**
- * Recursive AST visitor using composition over inheritance for improved control and testability.
- *
- * Unlike the legacy [NodeVisitorDelegate] which inherits from Groovy's ClassCodeVisitorSupport,
- * this visitor manually traverses the AST using recursive functions. This approach provides:
- *
- * - **Full control** over parent-child relationship tracking
- * - **No coupling** to Groovy's internal visitor hierarchy
- * - **Easier testing** of edge cases and subtle parent relationships
- * - **Better performance** through reduced virtual dispatch overhead
- *
- * ## Key Design Decisions
- *
- * 1. **Synthetic Node Filtering**: Only tracks nodes with valid positions (lineNumber > 0 && columnNumber > 0)
- * 2. **Explicit Traversal**: Uses [CodeVisitorSupport] for statement/expression traversal but wraps each visit with tracking
- * 3. **Special Handling**: Try-catch and method call expressions require custom traversal to match expected parent relationships
- *
- * ## Usage
- *
- * Enable via [ParseRequest.useRecursiveVisitor] flag. When enabled, this visitor runs in parallel
- * with the legacy delegate, allowing gradual migration and validation.
- *
- * ```kotlin
- * val request = ParseRequest(uri, content, useRecursiveVisitor = true)
- * val result = parser.parse(request)
- * val nodes = result.recursiveVisitor?.getAllNodes() ?: emptyList()
- * ```
- *
- * ## Parity Status
- *
- * See docs/RECURSIVE_VISITOR_PARITY.md for detailed parity analysis and known differences.
- * Current parity score: 98% (remaining differences are intentional improvements over delegate).
- *
- * @property tracker The relationship tracker that maintains parent-child mappings
- * @see NodeVisitorDelegate for the legacy inheritance-based implementation
- * @see NodeRelationshipTracker for parent-child relationship storage
- */
-class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
+// ...
+class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : GroovyAstModel {
 
     private lateinit var currentUri: URI
+    private val positionQuery = AstPositionQuery(tracker)
+
+    override fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
+    override fun getUri(node: ASTNode): URI? = tracker.getUri(node)
+    override fun getNodes(uri: URI): List<ASTNode> = tracker.getNodes(uri)
+    override fun getAllNodes(): List<ASTNode> = tracker.getAllNodes()
+    override fun getAllClassNodes(): List<ClassNode> = tracker.getAllClassNodes()
+    override fun contains(ancestor: ASTNode, descendant: ASTNode): Boolean = tracker.contains(ancestor, descendant)
+    override fun getNodeAt(uri: URI, position: Position): ASTNode? = positionQuery.getNodeAt(uri, position)
+    override fun getNodeAt(uri: URI, line: Int, character: Int): ASTNode? =
+        positionQuery.getNodeAt(uri, line, character)
 
     fun visitModule(module: ModuleNode, uri: URI) {
         currentUri = uri
@@ -166,35 +143,6 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
     }
 
     private fun shouldTrack(node: ASTNode): Boolean = node.lineNumber > 0 && node.columnNumber > 0
-
-    /**
-     * Returns all AST nodes tracked during the last module visit.
-     *
-     * Only nodes with valid source positions (lineNumber > 0 && columnNumber > 0) are included.
-     * Synthetic compiler-generated nodes are automatically filtered out.
-     *
-     * @return List of all tracked AST nodes in visitation order
-     */
-    fun getAllNodes(): List<ASTNode> = tracker.getAllNodes()
-
-    /**
-     * Returns the parent node of the given AST node.
-     *
-     * Parent relationships are established during AST traversal based on the visitor call stack.
-     * Top-level nodes (e.g., ModuleNode) have null parents.
-     *
-     * @param node The AST node to query
-     * @return The parent node, or null if this is a root node or not tracked
-     */
-    fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
-
-    /**
-     * Returns the source URI associated with the given AST node.
-     *
-     * @param node The AST node to query
-     * @return The source file URI, or null if node is not tracked
-     */
-    fun getUri(node: ASTNode): URI? = tracker.getUri(node)
 
     private inline fun track(node: ASTNode, block: () -> Unit) {
         if (shouldTrack(node)) {

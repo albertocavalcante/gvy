@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
 import org.codehaus.groovy.ast.ASTNode
@@ -44,12 +44,12 @@ class SignatureHelpProvider(
         val methodCall: MethodCallExpression,
         val nodeAtPosition: ASTNode,
         val declarations: List<MethodNode>,
-        val astVisitor: AstVisitor,
+        val astVisitor: GroovyAstModel,
     )
 
     @Suppress("ReturnCount")
     private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
-        val astVisitor = compilationService.getAstVisitor(documentUri) ?: run {
+        val astVisitor = compilationService.getAstModel(documentUri) ?: run {
             logger.debug("No AST visitor available for {}", documentUri)
             return null
         }
@@ -108,7 +108,7 @@ class SignatureHelpProvider(
 
     private suspend fun ensureAstPrepared(uri: URI) {
         val hasAst = compilationService.getAst(uri) != null
-        val hasVisitor = compilationService.getAstVisitor(uri) != null
+        val hasVisitor = compilationService.getAstModel(uri) != null
         val hasSymbols = compilationService.getSymbolTable(uri) != null
 
         if (hasAst && hasVisitor && hasSymbols) {
@@ -158,7 +158,7 @@ class SignatureHelpProvider(
         methodCall: MethodCallExpression,
         nodeAtPosition: ASTNode,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-        astVisitor: AstVisitor,
+        astVisitor: GroovyAstModel,
     ): Int {
         val arguments = methodCall.argumentExpressions()
 
@@ -198,7 +198,7 @@ class SignatureHelpProvider(
     }
 
     private fun findMethodCall(
-        astVisitor: AstVisitor,
+        astVisitor: GroovyAstModel,
         documentUri: URI,
         nodeAtPosition: ASTNode,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,

@@ -113,7 +113,7 @@ fun ModuleNode.findNodeAt(line: Int, column: Int): ASTNode? {
  * Get the definition node for a reference node using the visitor and symbol table.
  * For example, if hovering over a variable reference, return the variable declaration.
  */
-fun ASTNode.getDefinition(visitor: AstVisitor, symbolTable: SymbolTable): ASTNode? = when (this) {
+fun ASTNode.getDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable): ASTNode? = when (this) {
     is VariableExpression -> {
         // First try to get the accessed variable directly
         (accessedVariable as? ASTNode) ?: (symbolTable.resolveSymbol(this, visitor) as? ASTNode)
@@ -136,7 +136,7 @@ fun ASTNode.getDefinition(visitor: AstVisitor, symbolTable: SymbolTable): ASTNod
 /**
  * Get the original definition node for a reference, similar to fork-groovy-language-server's getDefinition
  */
-fun ASTNode.resolveToDefinition(visitor: AstVisitor, symbolTable: SymbolTable, strict: Boolean = true): ASTNode? =
+fun ASTNode.resolveToDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable, strict: Boolean = true): ASTNode? =
     when (this) {
         is VariableExpression -> resolveVariableDefinition(this, visitor, symbolTable)
         is MethodCallExpression -> resolveMethodDefinition(this, symbolTable, visitor)
@@ -159,7 +159,7 @@ fun ASTNode.resolveToDefinition(visitor: AstVisitor, symbolTable: SymbolTable, s
  */
 private fun resolveVariableDefinition(
     expr: VariableExpression,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
     symbolTable: SymbolTable,
 ): ASTNode? {
     // First try the accessedVariable directly if it's an ASTNode
@@ -179,7 +179,7 @@ private fun resolveVariableDefinition(
 private fun resolveMethodDefinition(
     call: MethodCallExpression,
     symbolTable: SymbolTable,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
 ): ASTNode? = visitor.getUri(call)?.let { uri ->
     symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull()
 }
@@ -205,7 +205,7 @@ private fun resolveDeclarationDefinition(expr: DeclarationExpression): ASTNode? 
  */
 private fun resolvePropertyExpression(
     propertyExpr: org.codehaus.groovy.ast.expr.PropertyExpression,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
     symbolTable: SymbolTable,
 ): ASTNode? {
     val propertyName = propertyExpr.propertyAsString
@@ -223,7 +223,7 @@ private fun resolvePropertyExpression(
  */
 private fun resolveTargetClass(
     objectExpr: org.codehaus.groovy.ast.expr.Expression,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
     symbolTable: SymbolTable,
     context: ASTNode,
 ): org.codehaus.groovy.ast.ClassNode? = when (objectExpr) {
@@ -239,7 +239,7 @@ private fun resolveTargetClass(
  */
 private fun resolveVariableType(
     varExpr: org.codehaus.groovy.ast.expr.VariableExpression,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
     symbolTable: SymbolTable,
     context: ASTNode,
 ): org.codehaus.groovy.ast.ClassNode? = when (varExpr.name) {
@@ -251,7 +251,7 @@ private fun resolveVariableType(
 /**
  * Find the enclosing class of a given node.
  */
-private fun findEnclosingClass(node: ASTNode, visitor: AstVisitor): org.codehaus.groovy.ast.ClassNode? {
+private fun findEnclosingClass(node: ASTNode, visitor: GroovyAstModel): org.codehaus.groovy.ast.ClassNode? {
     var current = visitor.getParent(node)
     var depth = 0
     while (current != null && current !is org.codehaus.groovy.ast.ClassNode) {
@@ -279,7 +279,7 @@ private const val MAX_PARENT_SEARCH_DEPTH = 10
 private fun getVariableTypeFromSymbol(
     varExpr: org.codehaus.groovy.ast.expr.VariableExpression,
     symbolTable: SymbolTable,
-    visitor: AstVisitor,
+    visitor: GroovyAstModel,
 ): org.codehaus.groovy.ast.ClassNode? {
     val resolvedVar = symbolTable.resolveSymbol(varExpr, visitor)
     return when (resolvedVar) {

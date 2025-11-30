@@ -67,7 +67,7 @@ class GroovyTypeResolver(
                 declared.name == classNode.name || declared.nameWithoutPackage == classNode.nameWithoutPackage
             }
             val target = declared ?: classNode
-            target.toLspLocation(context.astVisitor)
+            target.toLspLocation(context.astModel)
         }
 
         // Try to match declared classes in the module by fully qualified name
@@ -79,9 +79,9 @@ class GroovyTypeResolver(
             if (candidate != null) {
                 logger.info(
                     "Resolved external class ${classNode.name} to candidate at line ${candidate.lineNumber}, URI = " +
-                        "${context.astVisitor.getUri(candidate)}",
+                        "${context.astModel.getUri(candidate)}",
                 )
-                candidate.toLspLocation(context.astVisitor)
+                candidate.toLspLocation(context.astModel)
             } else {
                 logger.info(
                     "No class match found for ${classNode.name}, available: ${context.moduleNode.classes.map {
@@ -93,6 +93,7 @@ class GroovyTypeResolver(
         }
     }
 
+    @Suppress("DEPRECATION") // Groovy's DYNAMIC_TYPE is deprecated in newer APIs but still required here
     private suspend fun resolveVariableType(variable: VariableExpression, context: CompilationContext): ClassNode? {
         // Follow IntelliJ pattern: Variable -> originType -> resolved type
         val accessedVariable = variable.accessedVariable
@@ -118,7 +119,7 @@ class GroovyTypeResolver(
 
     private suspend fun findVariableInitializerType(variableName: String, context: CompilationContext): ClassNode? {
         // Search through all nodes in the module to find declaration with initializer
-        val allNodes = context.astVisitor.getAllNodes()
+        val allNodes = context.astModel.getAllNodes()
         for (node in allNodes) {
             if (node is DeclarationExpression) {
                 val leftExpression = node.leftExpression

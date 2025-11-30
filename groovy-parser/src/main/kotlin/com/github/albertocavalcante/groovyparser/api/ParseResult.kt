@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.api
 
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import org.codehaus.groovy.ast.ModuleNode
@@ -18,6 +19,7 @@ data class ParseResult(
     val symbolTable: SymbolTable,
     val astVisitor: AstVisitor,
     val recursiveVisitor: RecursiveAstVisitor? = null,
+    val astModel: GroovyAstModel = recursiveVisitor ?: astVisitor,
 ) {
     val isSuccessful: Boolean = diagnostics.none { it.severity == ParserSeverity.ERROR }
 }
