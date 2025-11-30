@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
@@ -90,9 +89,6 @@ class GroovyCompilationService {
         getParseResult(uri)?.diagnostics?.map { it.toLspDiagnostic() } ?: emptyList()
 
     fun getAstModel(uri: URI): GroovyAstModel? = getParseResult(uri)?.astModel
-
-    @Deprecated("Use getAstModel instead")
-    fun getAstVisitor(uri: URI): AstVisitor? = getParseResult(uri)?.astVisitor
 
     fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
