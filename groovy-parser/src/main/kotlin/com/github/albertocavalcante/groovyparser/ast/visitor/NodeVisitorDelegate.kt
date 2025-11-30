@@ -14,8 +14,14 @@ import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
+import org.codehaus.groovy.ast.expr.TernaryExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
@@ -296,6 +302,62 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         pushNode(expression)
         try {
             super.visitConstantExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitListExpression(expression: ListExpression) {
+        pushNode(expression)
+        try {
+            super.visitListExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitMapExpression(expression: MapExpression) {
+        pushNode(expression)
+        try {
+            super.visitMapExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitRangeExpression(expression: RangeExpression) {
+        pushNode(expression)
+
+        try {
+            super.visitRangeExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitTernaryExpression(expression: TernaryExpression) {
+        pushNode(expression)
+
+        try {
+            super.visitTernaryExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitSpreadExpression(expression: SpreadExpression) {
+        pushNode(expression)
+        try {
+            super.visitSpreadExpression(expression)
+        } finally {
+            popNode()
+        }
+    }
+
+    override fun visitSpreadMapExpression(expression: SpreadMapExpression) {
+        pushNode(expression)
+        try {
+            super.visitSpreadMapExpression(expression)
         } finally {
             popNode()
         }

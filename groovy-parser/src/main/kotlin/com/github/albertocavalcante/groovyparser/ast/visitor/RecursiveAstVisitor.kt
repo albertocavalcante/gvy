@@ -17,8 +17,14 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
+import org.codehaus.groovy.ast.expr.TernaryExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -339,6 +345,30 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
 
         override fun visitTupleExpression(expression: TupleExpression) {
             track(expression) { super.visitTupleExpression(expression) }
+        }
+
+        override fun visitListExpression(expression: ListExpression) {
+            track(expression) { super.visitListExpression(expression) }
+        }
+
+        override fun visitMapExpression(expression: MapExpression) {
+            track(expression) { super.visitMapExpression(expression) }
+        }
+
+        override fun visitRangeExpression(expression: RangeExpression) {
+            track(expression) { super.visitRangeExpression(expression) }
+        }
+
+        override fun visitTernaryExpression(expression: TernaryExpression) {
+            track(expression) { super.visitTernaryExpression(expression) }
+        }
+
+        override fun visitSpreadExpression(expression: SpreadExpression) {
+            track(expression) { super.visitSpreadExpression(expression) }
+        }
+
+        override fun visitSpreadMapExpression(expression: SpreadMapExpression) {
+            track(expression) { super.visitSpreadMapExpression(expression) }
         }
     }
 }

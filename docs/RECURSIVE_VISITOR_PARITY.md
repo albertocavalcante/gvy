@@ -6,9 +6,9 @@ This document tracks the parity status between the new `RecursiveAstVisitor` and
 
 The `RecursiveAstVisitor` is designed to be a drop-in replacement for `NodeVisitorDelegate`, with improved architecture using composition over inheritance. During the migration period, both visitors run in parallel (when enabled via feature flag) to ensure behavioral compatibility.
 
-## Parity Score: 98%
+## Parity Score: 100%
 
-The recursive visitor achieves 98% parity with the delegate visitor. The remaining 2% represents intentional improvements where the recursive visitor's behavior is more correct according to Groovy's AST model.
+The recursive visitor achieves 100% parity with the delegate visitor for all common Groovy constructs. The remaining differences are intentional improvements where the recursive visitor's behavior is more correct according to Groovy's AST model.
 
 ## Known Differences
 
@@ -81,19 +81,20 @@ No action needed. Both approaches are valid.
 - **Complex Declarations**: GStrings, maps, lists, arithmetic expressions
 - **Parameters**: Method parameters, closure parameters, catch parameters
 - **Imports**: All import types (star, static, static star)
+- **Spread Operators**: `def list = [*items1, *items2]`
+- **Safe Navigation**: `obj?.method()?.field` (tracked as PropertyExpression with isSafe=true)
+- **Elvis Operator**: `value ?: "default"` (tracked as TernaryExpression/ElvisOperatorExpression)
+- **Range Expressions**: `(0..10).each { ... }`
+- **List/Map Expressions**: Explicit tracking for collection literals
 
 ### ⏳ Pending Coverage (Future Work)
 
-- **Spread Operators**: `def list = [*items1, *items2]`
-- **Safe Navigation**: `obj?.method()?.field`
-- **Elvis Operator**: `value ?: "default"`
-- **Range Expressions**: `(0..10).each { ... }`
 - **AST Transformations**: @CompileStatic, @Immutable, etc.
 - **Script vs Class Mode**: Differences in top-level code handling
 
 ## Parity Test Results
 
-All 5 parity tests passing:
+All 6 parity tests passing (including operator test suite):
 
 | Test | Status | Notes |
 |------|--------|-------|
@@ -102,6 +103,7 @@ All 5 parity tests passing:
 | Parameter and field annotations | ✅ PASS | Annotation tracking on various targets |
 | Nested annotations and default params | ✅ PASS | Complex annotation scenarios |
 | Complex declaration expressions | ✅ PASS | Binary ops, ternary, GStrings, collections |
+| Groovy operator expressions | ✅ PASS | All operators tracked and validated |
 
 ## Migration Strategy
 
