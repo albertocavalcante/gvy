@@ -17,8 +17,14 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
+import org.codehaus.groovy.ast.expr.TernaryExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -207,36 +213,39 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
      * Visitor that walks statements/expressions recursively while tracking parents.
      */
     private val codeVisitor = object : CodeVisitorSupport() {
+        private fun <T : ASTNode> visitWithTracking(node: T, visitSuper: (T) -> Unit) {
+            track(node) { visitSuper(node) }
+        }
         override fun visitBlockStatement(block: BlockStatement) {
-            track(block) { super.visitBlockStatement(block) }
+            visitWithTracking(block) { super.visitBlockStatement(it) }
         }
 
         override fun visitExpressionStatement(statement: ExpressionStatement) {
-            track(statement) { super.visitExpressionStatement(statement) }
+            visitWithTracking(statement) { super.visitExpressionStatement(it) }
         }
 
         override fun visitReturnStatement(statement: ReturnStatement) {
-            track(statement) { super.visitReturnStatement(statement) }
+            visitWithTracking(statement) { super.visitReturnStatement(it) }
         }
 
         override fun visitThrowStatement(statement: ThrowStatement) {
-            track(statement) { super.visitThrowStatement(statement) }
+            visitWithTracking(statement) { super.visitThrowStatement(it) }
         }
 
         override fun visitIfElse(ifElse: IfStatement) {
-            track(ifElse) { super.visitIfElse(ifElse) }
+            visitWithTracking(ifElse) { super.visitIfElse(it) }
         }
 
         override fun visitForLoop(forLoop: ForStatement) {
-            track(forLoop) { super.visitForLoop(forLoop) }
+            visitWithTracking(forLoop) { super.visitForLoop(it) }
         }
 
         override fun visitWhileLoop(loop: WhileStatement) {
-            track(loop) { super.visitWhileLoop(loop) }
+            visitWithTracking(loop) { super.visitWhileLoop(it) }
         }
 
         override fun visitDoWhileLoop(loop: DoWhileStatement) {
-            track(loop) { super.visitDoWhileLoop(loop) }
+            visitWithTracking(loop) { super.visitDoWhileLoop(it) }
         }
 
         override fun visitTryCatchFinally(statement: TryCatchStatement) {
@@ -266,19 +275,19 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
         }
 
         override fun visitSwitch(statement: SwitchStatement) {
-            track(statement) { super.visitSwitch(statement) }
+            visitWithTracking(statement) { super.visitSwitch(it) }
         }
 
         override fun visitCaseStatement(statement: CaseStatement) {
-            track(statement) { super.visitCaseStatement(statement) }
+            visitWithTracking(statement) { super.visitCaseStatement(it) }
         }
 
         override fun visitBreakStatement(statement: BreakStatement) {
-            track(statement) { super.visitBreakStatement(statement) }
+            visitWithTracking(statement) { super.visitBreakStatement(it) }
         }
 
         override fun visitContinueStatement(statement: ContinueStatement) {
-            track(statement) { super.visitContinueStatement(statement) }
+            visitWithTracking(statement) { super.visitContinueStatement(it) }
         }
 
         override fun visitDeclarationExpression(expression: DeclarationExpression) {
@@ -289,7 +298,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
         }
 
         override fun visitBinaryExpression(expression: org.codehaus.groovy.ast.expr.BinaryExpression) {
-            track(expression) { super.visitBinaryExpression(expression) }
+            visitWithTracking(expression) { super.visitBinaryExpression(it) }
         }
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
@@ -307,38 +316,62 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
         }
 
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-            track(call) { super.visitConstructorCallExpression(call) }
+            visitWithTracking(call) { super.visitConstructorCallExpression(it) }
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
-            track(expression) { super.visitPropertyExpression(expression) }
+            visitWithTracking(expression) { super.visitPropertyExpression(it) }
         }
 
         override fun visitVariableExpression(expression: VariableExpression) {
-            track(expression) { super.visitVariableExpression(expression) }
+            visitWithTracking(expression) { super.visitVariableExpression(it) }
         }
 
         override fun visitConstantExpression(expression: ConstantExpression) {
-            track(expression) { super.visitConstantExpression(expression) }
+            visitWithTracking(expression) { super.visitConstantExpression(it) }
         }
 
         override fun visitClosureExpression(expression: ClosureExpression) {
-            track(expression) {
+            visitWithTracking(expression) {
                 expression.parameters?.forEach { visitParameter(it) }
-                super.visitClosureExpression(expression)
+                super.visitClosureExpression(it)
             }
         }
 
         override fun visitGStringExpression(expression: GStringExpression) {
-            track(expression) { super.visitGStringExpression(expression) }
+            visitWithTracking(expression) { super.visitGStringExpression(it) }
         }
 
         override fun visitClassExpression(expression: ClassExpression) {
-            track(expression) { super.visitClassExpression(expression) }
+            visitWithTracking(expression) { super.visitClassExpression(it) }
         }
 
         override fun visitTupleExpression(expression: TupleExpression) {
-            track(expression) { super.visitTupleExpression(expression) }
+            visitWithTracking(expression) { super.visitTupleExpression(it) }
+        }
+
+        override fun visitListExpression(expression: ListExpression) {
+            visitWithTracking(expression) { super.visitListExpression(it) }
+        }
+
+        override fun visitMapExpression(expression: MapExpression) {
+            visitWithTracking(expression) { super.visitMapExpression(it) }
+        }
+
+        override fun visitRangeExpression(expression: RangeExpression) {
+            visitWithTracking(expression) { super.visitRangeExpression(it) }
+        }
+
+        override fun visitTernaryExpression(expression: TernaryExpression) {
+            visitWithTracking(expression) { super.visitTernaryExpression(it) }
+        }
+
+        override fun visitSpreadExpression(expression: SpreadExpression) {
+            visitWithTracking(expression) { super.visitSpreadExpression(it) }
+        }
+
+        override fun visitSpreadMapExpression(expression: SpreadMapExpression) {
+            visitWithTracking(expression) { super.visitSpreadMapExpression(it) }
         }
     }
 }
