@@ -121,6 +121,15 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         tracker.popNode()
     }
 
+    private fun <T : ASTNode> visitWithTracking(node: T, visitSuper: (T) -> Unit) {
+        pushNode(node)
+        try {
+            visitSuper(node)
+        } finally {
+            popNode()
+        }
+    }
+
     /**
      * Visit annotations on an annotated node
      */
@@ -149,44 +158,26 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     // Override visitor methods to track nodes
 
     override fun visitClass(node: ClassNode) {
-        pushNode(node)
-        try {
-            super.visitClass(node)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(node) { super.visitClass(it) }
     }
 
     override fun visitMethod(node: MethodNode) {
-        pushNode(node)
-        try {
+        visitWithTracking(node) {
             // Visit parameters
             node.parameters?.forEach { param ->
                 pushNode(param)
                 popNode()
             }
-            super.visitMethod(node)
-        } finally {
-            popNode()
+            super.visitMethod(it)
         }
     }
 
     override fun visitField(node: FieldNode) {
-        pushNode(node)
-        try {
-            super.visitField(node)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(node) { super.visitField(it) }
     }
 
     override fun visitProperty(node: PropertyNode) {
-        pushNode(node)
-        try {
-            super.visitProperty(node)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(node) { super.visitProperty(it) }
     }
 
     // Expression visitors
@@ -212,12 +203,7 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     }
 
     override fun visitVariableExpression(expression: VariableExpression) {
-        pushNode(expression)
-        try {
-            super.visitVariableExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitVariableExpression(it) }
     }
 
     override fun visitDeclarationExpression(expression: DeclarationExpression) {
@@ -231,197 +217,97 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     }
 
     override fun visitBinaryExpression(expression: BinaryExpression) {
-        pushNode(expression)
-        try {
-            super.visitBinaryExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitBinaryExpression(it) }
     }
 
     override fun visitPropertyExpression(expression: PropertyExpression) {
-        pushNode(expression)
-        try {
-            super.visitPropertyExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitPropertyExpression(it) }
     }
 
     override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-        pushNode(call)
-        try {
-            super.visitConstructorCallExpression(call)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(call) { super.visitConstructorCallExpression(it) }
     }
 
     override fun visitTupleExpression(expression: org.codehaus.groovy.ast.expr.TupleExpression) {
-        pushNode(expression)
-        try {
-            super.visitTupleExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitTupleExpression(it) }
     }
 
     override fun visitClassExpression(expression: ClassExpression) {
-        pushNode(expression)
-        try {
-            super.visitClassExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitClassExpression(it) }
     }
 
     override fun visitClosureExpression(expression: ClosureExpression) {
-        pushNode(expression)
-        try {
+        visitWithTracking(expression) {
             // Visit closure parameters
             expression.parameters?.forEach { param ->
                 pushNode(param)
                 popNode()
             }
-            super.visitClosureExpression(expression)
-        } finally {
-            popNode()
+            super.visitClosureExpression(it)
         }
     }
 
     override fun visitGStringExpression(expression: org.codehaus.groovy.ast.expr.GStringExpression) {
-        pushNode(expression)
-        try {
-            super.visitGStringExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitGStringExpression(it) }
     }
 
     override fun visitConstantExpression(expression: org.codehaus.groovy.ast.expr.ConstantExpression) {
-        pushNode(expression)
-        try {
-            super.visitConstantExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitConstantExpression(it) }
     }
 
     override fun visitListExpression(expression: ListExpression) {
-        pushNode(expression)
-        try {
-            super.visitListExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitListExpression(it) }
     }
 
     override fun visitMapExpression(expression: MapExpression) {
-        pushNode(expression)
-        try {
-            super.visitMapExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitMapExpression(it) }
     }
 
     override fun visitRangeExpression(expression: RangeExpression) {
-        pushNode(expression)
-
-        try {
-            super.visitRangeExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitRangeExpression(it) }
     }
 
     override fun visitTernaryExpression(expression: TernaryExpression) {
-        pushNode(expression)
-
-        try {
-            super.visitTernaryExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitTernaryExpression(it) }
     }
 
     override fun visitSpreadExpression(expression: SpreadExpression) {
-        pushNode(expression)
-        try {
-            super.visitSpreadExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitSpreadExpression(it) }
     }
 
     override fun visitSpreadMapExpression(expression: SpreadMapExpression) {
-        pushNode(expression)
-        try {
-            super.visitSpreadMapExpression(expression)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(expression) { super.visitSpreadMapExpression(it) }
     }
 
     // Statement visitors
 
     override fun visitBlockStatement(block: BlockStatement) {
-        pushNode(block)
-        try {
-            super.visitBlockStatement(block)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(block) { super.visitBlockStatement(it) }
     }
 
     override fun visitExpressionStatement(statement: ExpressionStatement) {
-        pushNode(statement)
-        try {
-            super.visitExpressionStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitExpressionStatement(it) }
     }
 
     // Additional statement visitors for complete coverage
 
     override fun visitForLoop(loop: org.codehaus.groovy.ast.stmt.ForStatement) {
-        pushNode(loop)
-        try {
-            super.visitForLoop(loop)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(loop) { super.visitForLoop(it) }
     }
 
     override fun visitWhileLoop(loop: org.codehaus.groovy.ast.stmt.WhileStatement) {
-        pushNode(loop)
-        try {
-            super.visitWhileLoop(loop)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(loop) { super.visitWhileLoop(it) }
     }
 
     /**
      * Override visitDoWhileLoop to ensure DoWhileStatement nodes are tracked.
      */
     override fun visitDoWhileLoop(loop: org.codehaus.groovy.ast.stmt.DoWhileStatement) {
-        pushNode(loop)
-        try {
-            super.visitDoWhileLoop(loop)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(loop) { super.visitDoWhileLoop(it) }
     }
 
     override fun visitIfElse(ifElse: org.codehaus.groovy.ast.stmt.IfStatement) {
-        pushNode(ifElse)
-        try {
-            super.visitIfElse(ifElse)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(ifElse) { super.visitIfElse(it) }
     }
 
     /**
@@ -461,21 +347,11 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
     }
 
     override fun visitReturnStatement(statement: org.codehaus.groovy.ast.stmt.ReturnStatement) {
-        pushNode(statement)
-        try {
-            super.visitReturnStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitReturnStatement(it) }
     }
 
     override fun visitThrowStatement(statement: org.codehaus.groovy.ast.stmt.ThrowStatement) {
-        pushNode(statement)
-        try {
-            super.visitThrowStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitThrowStatement(it) }
     }
 
     /**
@@ -506,35 +382,20 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
      * Override visitCaseStatement to ensure CaseStatement nodes are tracked.
      */
     override fun visitCaseStatement(statement: org.codehaus.groovy.ast.stmt.CaseStatement) {
-        pushNode(statement)
-        try {
-            super.visitCaseStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitCaseStatement(it) }
     }
 
     /**
      * Override visitBreakStatement to ensure BreakStatement nodes are tracked.
      */
     override fun visitBreakStatement(statement: org.codehaus.groovy.ast.stmt.BreakStatement) {
-        pushNode(statement)
-        try {
-            super.visitBreakStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitBreakStatement(it) }
     }
 
     /**
      * Override visitContinueStatement to ensure ContinueStatement nodes are tracked.
      */
     override fun visitContinueStatement(statement: org.codehaus.groovy.ast.stmt.ContinueStatement) {
-        pushNode(statement)
-        try {
-            super.visitContinueStatement(statement)
-        } finally {
-            popNode()
-        }
+        visitWithTracking(statement) { super.visitContinueStatement(it) }
     }
 }
