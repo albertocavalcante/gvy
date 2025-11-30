@@ -4,7 +4,9 @@ import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
@@ -49,6 +51,15 @@ class GroovyParserFacade {
         val ast = extractAst(compilationUnit)
         val diagnostics = ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates)
 
+        val recursiveVisitor = if (request.useRecursiveVisitor && ast != null) {
+            val tracker = NodeRelationshipTracker()
+            val visitor = RecursiveAstVisitor(tracker)
+            visitor.visitModule(ast, request.uri)
+            visitor
+        } else {
+            null
+        }
+
         val astVisitor = AstVisitor()
         ast?.let { astVisitor.visitModule(it, sourceUnit, request.uri) }
         val symbolTable = SymbolTable()
@@ -68,6 +79,7 @@ class GroovyParserFacade {
             diagnostics = diagnostics,
             symbolTable = symbolTable,
             astVisitor = astVisitor,
+            recursiveVisitor = recursiveVisitor,
         )
     }
 

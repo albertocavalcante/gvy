@@ -82,4 +82,32 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast)
         assertEquals(0, result.diagnostics.size)
     }
+
+    @Test
+    fun `parse with recursive visitor flag populates recursive visitor`() {
+        val code = """
+            class Sample {
+                def method(int x) {
+                    if (x > 0) {
+                        println x
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Sample.groovy"),
+                content = code,
+                useRecursiveVisitor = true,
+            ),
+        )
+
+        assertTrue(result.isSuccessful)
+        assertNotNull(result.recursiveVisitor, "Recursive visitor should be created when flag is enabled")
+        val recursiveNodes = result.recursiveVisitor!!.getAllNodes()
+        assertTrue(recursiveNodes.isNotEmpty(), "Recursive visitor should collect nodes")
+        val classCount = recursiveNodes.count { it is org.codehaus.groovy.ast.ClassNode }
+        assertTrue(classCount >= 1, "Recursive visitor should track class nodes")
+    }
 }
