@@ -196,7 +196,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
      */
     fun getUri(node: ASTNode): URI? = tracker.getUri(node)
 
-    private fun track(node: ASTNode, block: () -> Unit) {
+    private inline fun track(node: ASTNode, block: () -> Unit) {
         if (shouldTrack(node)) {
             tracker.pushNode(node, currentUri)
             try {
@@ -213,7 +213,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) {
      * Visitor that walks statements/expressions recursively while tracking parents.
      */
     private val codeVisitor = object : CodeVisitorSupport() {
-        private fun <T : ASTNode> visitWithTracking(node: T, visitSuper: (T) -> Unit) {
+        private inline fun <T : ASTNode> visitWithTracking(node: T, visitSuper: (T) -> Unit) {
             track(node) { visitSuper(node) }
         }
         override fun visitBlockStatement(block: BlockStatement) {
