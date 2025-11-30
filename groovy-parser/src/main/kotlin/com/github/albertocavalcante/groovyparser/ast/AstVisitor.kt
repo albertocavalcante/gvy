@@ -34,6 +34,7 @@ import java.net.URI
  * - Use method dispatch tables instead of individual override methods
  * - Split into multiple specialized visitors (expression visitor, statement visitor, etc.)
  */
+@Deprecated("Use `RecursiveAstVisitor` instead, which implements `GroovyAstModel`.")
 class AstVisitor :
     ClassCodeVisitorSupport(),
     GroovyAstModel {

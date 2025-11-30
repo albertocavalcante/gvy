@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyparser.api
 
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
@@ -17,7 +16,8 @@ data class ParseResult(
     val sourceUnit: SourceUnit,
     val diagnostics: List<ParserDiagnostic>,
     val symbolTable: SymbolTable,
-    val astVisitor: AstVisitor,
+    @Deprecated("Use `astModel` instead", replaceWith = ReplaceWith("astModel"))
+    val astVisitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
     val recursiveVisitor: RecursiveAstVisitor? = null,
     val astModel: GroovyAstModel = recursiveVisitor ?: astVisitor,
 ) {
