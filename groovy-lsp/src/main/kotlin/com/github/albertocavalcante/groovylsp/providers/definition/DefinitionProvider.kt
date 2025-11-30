@@ -54,7 +54,7 @@ class DefinitionProvider(
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
-        val resolver = DefinitionResolver(visitor, symbolTable)
+        val resolver = DefinitionResolver(visitor, symbolTable, compilationService)
 
         // Find the origin node at the position
         val originNode = visitor.getNodeAt(documentUri, position.toGroovyPosition())
@@ -106,7 +106,7 @@ class DefinitionProvider(
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
-        val resolver = DefinitionResolver(visitor, symbolTable)
+        val resolver = DefinitionResolver(visitor, symbolTable, compilationService)
         val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
 
         // Convert each target to Location and emit
@@ -165,7 +165,7 @@ class DefinitionProvider(
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         context: DefinitionContext,
     ) {
-        val resolver = DefinitionResolver(context.visitor, context.symbolTable)
+        val resolver = DefinitionResolver(context.visitor, context.symbolTable, compilationService)
         var definitionFound = false
         try {
             val definitionNode = resolver.findDefinitionAt(documentUri, position)

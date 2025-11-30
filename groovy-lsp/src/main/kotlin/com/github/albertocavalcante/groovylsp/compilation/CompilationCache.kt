@@ -14,6 +14,8 @@ class CompilationCache {
 
     fun get(uri: URI): ParseResult? = cache[uri]?.second
 
+    fun getWithContent(uri: URI): Pair<String, ParseResult>? = cache[uri]
+
     fun put(uri: URI, content: String, parseResult: ParseResult) {
         cache[uri] = content to parseResult
     }

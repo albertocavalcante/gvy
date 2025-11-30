@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.errors.CircularReferenceException
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
@@ -8,11 +9,20 @@ import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.slf4j.LoggerFactory
 import java.net.URI
 
-class DefinitionResolver(private val astVisitor: GroovyAstModel, private val symbolTable: SymbolTable) {
+class DefinitionResolver(
+    private val astVisitor: GroovyAstModel,
+    private val symbolTable: SymbolTable,
+    private val compilationService: GroovyCompilationService? = null,
+) {
 
     private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
 
@@ -66,7 +76,7 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
         uri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): ASTNode {
-        val definition = try {
+        val initialDefinition = try {
             targetNode.resolveToDefinition(astVisitor, symbolTable, strict = false)
         } catch (e: StackOverflowError) {
             logger.debug("Stack overflow during definition resolution, likely circular reference", e)
@@ -79,6 +89,25 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
             handleResolutionError(e, targetNode, uri, position)
         }
 
+        // Refine ClassNode resolution: prefer local declaration over reference
+        // If we found a ClassNode, check if there's a specific declaration in the AST with the same name.
+        // This handles cases where resolveToDefinition returns a reference ClassNode (e.g. from a constructor call)
+        // but the class is actually defined in the same file.
+        val definition = if (initialDefinition is ClassNode) {
+            astVisitor.getAllClassNodes().find { it.name == initialDefinition.name } ?: initialDefinition
+        } else {
+            initialDefinition
+        }
+
+        // Check if we need to try global lookup (e.g. for class references across files)
+        if (shouldTryGlobalLookup(targetNode, definition)) {
+            val globalDef = findGlobalDefinition(targetNode)
+            if (globalDef != null) {
+                logger.debug("Found global definition for ${targetNode.text}: ${globalDef.javaClass.simpleName}")
+                return globalDef
+            }
+        }
+
         // FIXME: Filter out non-definition nodes that shouldn't be treated as symbols
         val filteredDefinition = when (definition) {
             is org.codehaus.groovy.ast.expr.ConstantExpression -> null // String literals aren't definitions
@@ -86,6 +115,69 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
         }
 
         return filteredDefinition ?: handleResolutionError(null, targetNode, uri, position)
+    }
+
+    /**
+     * Check if we should attempt global lookup.
+     * This is needed when local resolution returns the reference itself (common for ClassNode)
+     * or when no definition was found.
+     */
+    private fun shouldTryGlobalLookup(targetNode: ASTNode, definition: ASTNode?): Boolean {
+        // If no definition found locally, try global
+        if (definition == null) return true
+
+        // If definition is a ClassNode, check if it's a real declaration in the current file
+        if (definition is ClassNode) {
+            // Check if this specific ClassNode instance is one of the classes declared in the AST
+            // If it's not in the list of declared classes, it's likely a reference/placeholder
+            val isDeclaredInFile = astVisitor.getAllClassNodes().any {
+                it === definition || it.name == definition.name
+            }
+            if (!isDeclaredInFile) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Attempt to find definition globally using the compilation service.
+     */
+    private fun findGlobalDefinition(targetNode: ASTNode): ASTNode? {
+        if (compilationService == null) return null
+
+        val className = when (targetNode) {
+            is ClassNode -> targetNode.name
+            is ConstructorCallExpression -> targetNode.type.name
+            is ClassExpression -> targetNode.type.name
+            else -> return null
+        }
+
+        logger.debug("Attempting global lookup for class: $className")
+
+        // Search all symbol indices
+        compilationService.getAllSymbolStorages().values.forEach { index ->
+            index.getUris().forEach { uri ->
+                // Look for Class symbol with matching name
+                val symbol = index.find<Symbol.Class>(uri, className)
+                if (symbol != null) {
+                    // Found it! Load the AST node
+                    val classNode = loadClassNodeFromAst(uri, className)
+                    if (classNode != null) {
+                        return classNode
+                    } else {
+                        logger.warn("Symbol found in index but ClassNode not found in AST for $className at $uri")
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun loadClassNodeFromAst(uri: URI, className: String): ASTNode? {
+        val ast = compilationService?.getAst(uri) ?: return null
+        // Find ClassNode in the AST
+        return (ast as? ModuleNode)?.classes?.find { it.name == className }
     }
 
     /**
@@ -129,6 +221,7 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
             targetNode.javaClass.simpleName,
             listOf("resolveToDefinition", targetNode.toString()),
         )
+
         else -> throw createSymbolNotFoundException(targetNode.toString(), uri, position)
     }
 
@@ -138,6 +231,7 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
     private sealed class ValidationContext {
         data class PositionContext(val position: com.github.albertocavalcante.groovyparser.ast.types.Position) :
             ValidationContext()
+
         data class NodeContext(val node: ASTNode) : ValidationContext()
     }
 
@@ -168,6 +262,7 @@ class DefinitionResolver(private val astVisitor: GroovyAstModel, private val sym
             node.columnNumber,
             "Definition node has invalid position information",
         )
+
         else -> throw createSymbolNotFoundException(
             node.toString(),
             uri,

@@ -7,11 +7,16 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 class GroovyCompilationService {
 
@@ -20,6 +25,9 @@ class GroovyCompilationService {
     private val errorHandler = CompilationErrorHandler()
     private val parser = GroovyParserFacade()
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
+
+    // Track ongoing compilation per URI for proper async coordination
+    private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 
     val workspaceManager = WorkspaceManager()
 
@@ -109,9 +117,66 @@ class GroovyCompilationService {
         return allStorages
     }
 
+    /**
+     * Start async compilation and return Deferred for coordination.
+     * Reuses existing compilation if already in progress for the same URI.
+     */
+    fun compileAsync(scope: CoroutineScope, uri: URI, content: String): Deferred<CompilationResult> {
+        // Check if already compiling this document
+        compilationJobs[uri]?.let { existing ->
+            if (existing.isActive) {
+                logger.debug("Reusing active compilation for $uri")
+                return existing
+            }
+        }
+
+        // Start new compilation
+        val deferred = scope.async(Dispatchers.IO) {
+            try {
+                compile(uri, content)
+            } finally {
+                compilationJobs.remove(uri)
+            }
+        }
+
+        compilationJobs[uri] = deferred
+        return deferred
+    }
+
+    /**
+     * Ensure document is compiled, awaiting if compilation is in progress.
+     * Returns immediately if document is already cached.
+     * Returns null if document is not cached and not currently compiling.
+     */
+    suspend fun ensureCompiled(uri: URI): CompilationResult? {
+        // If currently compiling, await it
+        compilationJobs[uri]?.let { deferred ->
+            logger.debug("Awaiting active compilation for $uri")
+            return deferred.await()
+        }
+
+        // Check if already in cache
+        cache.getWithContent(uri)?.let { (cachedContent, parseResult) ->
+            logger.debug("Using cached compilation for $uri")
+            val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
+            val ast = parseResult.ast
+            val sourceText = cachedContent
+            return if (ast != null) {
+                CompilationResult.success(ast, diagnostics, sourceText)
+            } else {
+                CompilationResult.failure(diagnostics, sourceText)
+            }
+        }
+
+        // Not compiling and not cached
+        logger.debug("No compilation found for $uri (not cached, not compiling)")
+        return null
+    }
+
     fun clearCaches() {
         cache.clear()
         symbolStorageCache.clear()
+        compilationJobs.clear()
     }
 
     fun getCacheStatistics() = cache.getStatistics()

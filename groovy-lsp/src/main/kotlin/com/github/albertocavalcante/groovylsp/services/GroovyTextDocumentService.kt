@@ -176,7 +176,12 @@ class GroovyTextDocumentService(
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
             try {
-                val allDiagnostics = diagnose(uri, content)
+                // Use compileAsync for proper coordination
+                val result = compilationService.compileAsync(this, uri, content).await()
+
+                // Get CodeNarc diagnostics
+                val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                val allDiagnostics = result.diagnostics + codenarcDiagnostics
 
                 ensureActive() // Ensure job wasn't cancelled before publishing
                 publishDiagnostics(uri.toString(), allDiagnostics)
@@ -278,6 +283,15 @@ class GroovyTextDocumentService(
                 "Definition requested for ${params.textDocument.uri} at " +
                     "${params.position.line}:${params.position.character}",
             )
+
+            val uri = java.net.URI.create(params.textDocument.uri)
+
+            // CRITICAL: Ensure compilation completes before proceeding
+            val compilationResult = compilationService.ensureCompiled(uri)
+            if (compilationResult == null) {
+                logger.warn("Document $uri not compiled, cannot provide definitions")
+                return@future Either.forLeft(emptyList())
+            }
 
             val telemetrySink = DefinitionTelemetrySink { event ->
                 client()?.telemetryEvent(event)

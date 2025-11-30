@@ -1,0 +1,45 @@
+name: 'definition-class-reference'
+description: 'Goto definition for class reference should jump to class definition'
+workspace:
+  fixture: 'definition-basic'
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: 'Classes.groovy'
+      languageId: 'groovy'
+      version: 1
+      text: |
+        class Calculator {
+            int add(int a, int b) {
+                return a + b
+            }
+        }
+        
+        def calc = new Calculator()
+        calc.add(5, 3)
+  - request:
+      method: 'textDocument/definition'
+      params:
+        textDocument:
+          uri: '{{workspace.uri}}Classes.groovy'
+        position:
+          line: 6
+          character: 16
+      saveAs: 'classDefinitionResult'
+  - assert:
+      source: 'classDefinitionResult'
+      checks:
+        - jsonPath: '$.items'
+          expect:
+            type: 'NOT_EMPTY'
+        - jsonPath: '$.items[0].uri'
+          expect:
+            type: 'CONTAINS'
+            value: 'Classes.groovy'
+        - jsonPath: '$.items[0].range.start.line'
+          expect:
+            type: 'EQUALS'
+            value: 0
+  - shutdown: {}
+  - exit: {}

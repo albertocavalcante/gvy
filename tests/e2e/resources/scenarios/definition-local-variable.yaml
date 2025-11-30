@@ -1,0 +1,40 @@
+name: 'definition-local-variable'
+description: 'Goto definition for local variable should jump to declaration'
+workspace:
+  fixture: 'definition-basic'
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: 'Sample.groovy'
+      languageId: 'groovy'
+      version: 1
+      text: |
+        def myVariable = 'hello world'
+        def anotherVar = 123
+        println myVariable
+  - request:
+      method: 'textDocument/definition'
+      params:
+        textDocument:
+          uri: '{{workspace.uri}}Sample.groovy'
+        position:
+          line: 2
+          character: 10
+      saveAs: 'definitionResult'
+  - assert:
+      source: 'definitionResult'
+      checks:
+        - jsonPath: '$.items'
+          expect:
+            type: 'NOT_EMPTY'
+        - jsonPath: '$.items[0].uri'
+          expect:
+            type: 'CONTAINS'
+            value: 'Sample.groovy'
+        - jsonPath: '$.items[0].range.start.line'
+          expect:
+            type: 'EQUALS'
+            value: 0
+  - shutdown: {}
+  - exit: {}

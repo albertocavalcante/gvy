@@ -241,4 +241,23 @@ class GroovyCompilationServiceTest {
         // The syntax error should be on line 1 (0-indexed), where the method declaration is
         assertEquals(1, diagnostic.range.start.line)
     }
+
+    @Test
+    fun `test ensureCompiled returns correct sourceText from cache`() = runBlocking {
+        val content = """
+            class SourceTest {
+                String value
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test/SourceTest.groovy")
+
+        // Initial compilation to populate cache
+        compilationService.compile(uri, content)
+
+        // ensureCompiled should retrieve from cache
+        val result = compilationService.ensureCompiled(uri)
+
+        assertNotNull(result)
+        assertEquals(content, result.sourceText, "Source text should be preserved in cached result")
+    }
 }
