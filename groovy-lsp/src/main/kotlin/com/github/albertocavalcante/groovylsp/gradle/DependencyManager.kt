@@ -72,7 +72,14 @@ class DependencyManager(private val resolver: DependencyResolver, private val sc
                 try {
                     onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to Gradle...")
 
-                    val resolution = resolver.resolve(workspaceRoot)
+                    // Pass download progress through to resolver (e.g., Gradle distribution download)
+                    val resolution = resolver.resolve(
+                        projectDir = workspaceRoot,
+                        onDownloadProgress = { message ->
+                            // Forward download progress to the onProgress callback
+                            onProgress?.invoke(PROGRESS_CONNECTING, message)
+                        },
+                    )
 
                     onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
 

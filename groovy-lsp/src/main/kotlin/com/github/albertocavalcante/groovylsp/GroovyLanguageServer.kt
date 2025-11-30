@@ -172,6 +172,12 @@ class GroovyLanguageServer :
         }
 
         logger.info("Starting background dependency resolution for: $workspaceRoot")
+        client?.showMessage(
+            MessageParams().apply {
+                type = MessageType.Info
+                message = "Resolving Gradle dependencies..."
+            },
+        )
 
         val progressReporter = ProgressReporter(client)
 
@@ -185,6 +191,17 @@ class GroovyLanguageServer :
             workspaceRoot = workspaceRoot,
             onProgress = { percentage, message ->
                 progressReporter.updateProgress(message, percentage)
+
+                // Send window/showMessage for Gradle distribution download (cold start scenario)
+                // This ensures e2e tests get the notification they're waiting for
+                if (message.contains("Downloading Gradle distribution")) {
+                    client?.showMessage(
+                        MessageParams().apply {
+                            type = MessageType.Info
+                            this.message = message
+                        },
+                    )
+                }
             },
             onComplete = { resolution ->
                 logger.info(

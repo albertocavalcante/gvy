@@ -81,6 +81,16 @@ class CodeNarcDiagnosticProvider(
 
         logger.info("CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics")
         diagnostics
+    } catch (e: IllegalStateException) {
+        // Gracefully handle missing rulesets (e.g., when running as fat JAR without resources)
+        if (e.message?.contains("Failed to load any ruleset") == true) {
+            logger.info("CodeNarc rulesets not available for {} - skipping analysis", fileName)
+            emptyList()
+        } else {
+            // Re-throw other IllegalStateExceptions
+            logger.error("Failed to analyze file: $fileName", e)
+            emptyList()
+        }
     } catch (e: Exception) {
         logger.error("Failed to analyze file: $fileName", e)
         // Return empty list on failure - LSP should continue functioning

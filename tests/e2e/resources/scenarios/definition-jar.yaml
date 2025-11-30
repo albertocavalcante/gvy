@@ -1,0 +1,93 @@
+name: 'definition-jar'
+description: 'Goto definition for class in JAR dependency'
+workspace:
+  fixture: 'gradle-dependency'
+  files:
+    - path: 'src/main/groovy/DependencyTest.groovy'
+      content: |
+        package com.example
+
+        import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+
+        class DependencyTest {
+            def test() {
+                // Should resolve to the JAR class
+                new GenericPipelineDeclaration()
+            }
+        }
+
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: 'src/main/groovy/DependencyTest.groovy'
+      languageId: 'groovy'
+      version: 1
+      text: |
+        package com.example
+
+        import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+
+        class DependencyTest {
+            def test() {
+                // Should resolve to the JAR class
+                new GenericPipelineDeclaration()
+            }
+        }
+
+  - waitNotification:
+      method: window/showMessage
+      checks:
+        - jsonPath: '$.message'
+          expect:
+            type: 'CONTAINS'
+            value: 'Resolving Gradle dependencies'
+      timeoutMs: 10000
+
+  # Optional: Gradle distribution download (only on cold CI, can take 60-180s)
+  # Skips early if "Dependencies loaded" arrives (warm cache scenario)
+  - waitNotification:
+      method: window/showMessage
+      checks:
+        - jsonPath: '$.message'
+          expect:
+            type: 'CONTAINS'
+            value: 'Downloading Gradle distribution'
+      timeoutMs: 180000
+      optional: true
+
+  # After download notification (or skipped), wait for download + resolution to complete
+  # If download is happening, this can take 60-180s for the download itself
+  - waitNotification:
+      method: window/showMessage
+      checks:
+        - jsonPath: '$.message'
+          expect:
+            type: 'CONTAINS'
+            value: 'Dependencies loaded'
+      timeoutMs: 180000
+
+  - request:
+      method: 'textDocument/definition'
+      params:
+        textDocument:
+          uri: '{{workspace.uri}}src/main/groovy/DependencyTest.groovy'
+        position:
+          line: 7
+          character: 20
+      saveAs: 'definitionResult'
+
+  - assert:
+      source: 'definitionResult'
+      checks:
+        - jsonPath: '$.items[0].uri'
+          expect:
+            type: 'MATCHES_REGEX'
+            value: 'jar:file:.*pipeline-unit-stubs.jar!/com/lesfurets/jenkins/unit/declarative/GenericPipelineDeclaration.class'
+        - jsonPath: '$.items[0].range.start.line'
+          expect:
+            type: 'EQUALS'
+            value: 0
+
+  - shutdown: {}
+  - exit: {}

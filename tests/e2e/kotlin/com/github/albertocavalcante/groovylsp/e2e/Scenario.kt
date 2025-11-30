@@ -63,6 +63,7 @@ sealed interface ScenarioStep {
         val checks: List<JsonCheck> = emptyList(),
         val saveAs: String? = null,
         val timeoutMs: Long? = null,
+        val optional: Boolean = false,
     ) : ScenarioStep
 
     data class Assert(val source: String? = null, val checks: List<JsonCheck>) : ScenarioStep

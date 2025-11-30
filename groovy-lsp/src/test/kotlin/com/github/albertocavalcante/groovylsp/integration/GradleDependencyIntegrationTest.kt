@@ -21,7 +21,7 @@ class GradleDependencyIntegrationTest {
         compilationService.workspaceManager.initializeWorkspace(testProjectPath)
 
         val resolver = GradleDependencyResolver()
-        val resolution = resolver.resolve(testProjectPath)
+        val resolution = resolver.resolve(testProjectPath, null)
         compilationService.workspaceManager.updateWorkspaceModel(
             testProjectPath,
             resolution.dependencies,
@@ -54,7 +54,7 @@ class GradleDependencyIntegrationTest {
         compilationService.workspaceManager.initializeWorkspace(testProjectPath)
 
         val resolver = GradleDependencyResolver()
-        val resolution = resolver.resolve(testProjectPath)
+        val resolution = resolver.resolve(testProjectPath, null)
         compilationService.workspaceManager.updateWorkspaceModel(
             testProjectPath,
             resolution.dependencies,

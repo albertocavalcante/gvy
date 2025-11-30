@@ -30,14 +30,34 @@ class DefinitionResolver(
      * Find the definition of the symbol at the given position.
      * Throws specific exceptions for different failure scenarios.
      */
+
+    /**
+     * Result of a definition lookup.
+     */
+    sealed class DefinitionResult {
+        data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
+        data class Binary(val uri: URI, val name: String) : DefinitionResult()
+    }
+
+    /**
+     * Find the definition of the symbol at the given position.
+     * Throws specific exceptions for different failure scenarios.
+     */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    fun findDefinitionAt(uri: URI, position: com.github.albertocavalcante.groovyparser.ast.types.Position): ASTNode? {
+    fun findDefinitionAt(
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+    ): DefinitionResult? {
         logger.debug("Finding definition at $uri:${position.line}:${position.character}")
 
         return try {
             val targetNode = validateAndFindNode(uri, position)
-            val definition = resolveDefinition(targetNode, uri, position)
-            validateDefinition(definition, uri)
+            val result = resolveDefinition(targetNode, uri, position)
+
+            if (result is DefinitionResult.Source) {
+                validateDefinition(result.node, uri)
+            }
+            result
         } catch (e: GroovyLspException) {
             // Re-throw our specific exceptions
             logger.debug("Specific error finding definition: $e")
@@ -75,7 +95,7 @@ class DefinitionResolver(
         targetNode: ASTNode,
         uri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): ASTNode {
+    ): DefinitionResult? {
         val initialDefinition = try {
             targetNode.resolveToDefinition(astVisitor, symbolTable, strict = false)
         } catch (e: StackOverflowError) {
@@ -103,8 +123,15 @@ class DefinitionResolver(
         if (shouldTryGlobalLookup(targetNode, definition)) {
             val globalDef = findGlobalDefinition(targetNode)
             if (globalDef != null) {
-                logger.debug("Found global definition for ${targetNode.text}: ${globalDef.javaClass.simpleName}")
+                logger.debug("Found global definition for ${targetNode.text}: ${globalDef.node.javaClass.simpleName}")
                 return globalDef
+            }
+
+            // Fallback: Try classpath lookup for binary dependencies
+            val classpathDef = findClasspathDefinition(targetNode)
+            if (classpathDef != null) {
+                logger.debug("Found classpath definition for ${targetNode.text}: $classpathDef")
+                return classpathDef
             }
         }
 
@@ -114,7 +141,11 @@ class DefinitionResolver(
             else -> definition
         }
 
-        return filteredDefinition ?: handleResolutionError(null, targetNode, uri, position)
+        return if (filteredDefinition != null) {
+            DefinitionResult.Source(filteredDefinition, uri)
+        } else {
+            handleResolutionError(null, targetNode, uri, position)
+        }
     }
 
     /**
@@ -130,9 +161,7 @@ class DefinitionResolver(
         if (definition is ClassNode) {
             // Check if this specific ClassNode instance is one of the classes declared in the AST
             // If it's not in the list of declared classes, it's likely a reference/placeholder
-            val isDeclaredInFile = astVisitor.getAllClassNodes().any {
-                it === definition || it.name == definition.name
-            }
+            val isDeclaredInFile = astVisitor.getAllClassNodes().any { it === definition }
             if (!isDeclaredInFile) {
                 return true
             }
@@ -143,15 +172,10 @@ class DefinitionResolver(
     /**
      * Attempt to find definition globally using the compilation service.
      */
-    private fun findGlobalDefinition(targetNode: ASTNode): ASTNode? {
+    private fun findGlobalDefinition(targetNode: ASTNode): DefinitionResult.Source? {
         if (compilationService == null) return null
 
-        val className = when (targetNode) {
-            is ClassNode -> targetNode.name
-            is ConstructorCallExpression -> targetNode.type.name
-            is ClassExpression -> targetNode.type.name
-            else -> return null
-        }
+        val className = getClassName(targetNode) ?: return null
 
         logger.debug("Attempting global lookup for class: $className")
 
@@ -164,7 +188,7 @@ class DefinitionResolver(
                     // Found it! Load the AST node
                     val classNode = loadClassNodeFromAst(uri, className)
                     if (classNode != null) {
-                        return classNode
+                        return DefinitionResult.Source(classNode, uri)
                     } else {
                         logger.warn("Symbol found in index but ClassNode not found in AST for $className at $uri")
                     }
@@ -174,11 +198,44 @@ class DefinitionResolver(
         return null
     }
 
+    /**
+     * Attempt to find definition on the classpath (JARs).
+     */
+    private fun findClasspathDefinition(targetNode: ASTNode): DefinitionResult.Binary? {
+        if (compilationService == null) return null
+
+        val className = getClassName(targetNode) ?: return null
+
+        val uri = compilationService.findClasspathClass(className)
+        return if (uri != null) {
+            DefinitionResult.Binary(uri, className)
+        } else {
+            null
+        }
+    }
+
+    private fun getClassName(targetNode: ASTNode): String? = when (targetNode) {
+        is ClassNode -> targetNode.name
+        is ConstructorCallExpression -> targetNode.type.name
+        is ClassExpression -> targetNode.type.name
+        else -> null
+    }
+
     private fun loadClassNodeFromAst(uri: URI, className: String): ASTNode? {
         val ast = compilationService?.getAst(uri) ?: return null
         // Find ClassNode in the AST
         return (ast as? ModuleNode)?.classes?.find { it.name == className }
     }
+
+    /**
+     * Check if we should attempt global lookup.
+     * This is needed when local resolution returns the reference itself (common for ClassNode)
+     * or when no definition was found.
+     */
+
+    /**
+     * Attempt to find definition globally using the compilation service.
+     */
 
     /**
      * Validate the definition node has proper position information.

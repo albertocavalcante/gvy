@@ -99,6 +99,7 @@ testing {
 
                         // Fail tests that take too long (5 minutes default)
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")
+                        systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
 
                         testLogging {
                             showStandardStreams = true

@@ -65,6 +65,9 @@ quality:
 e2e:
 	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain e2eTest $(GRADLE_ARGS)
 
+e2e-single:
+	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain :tests:e2eTest -Dgroovy.lsp.e2e.filter="$(SCENARIO)" $(GRADLE_ARGS)
+
 # Run the language server
 run-stdio: jar
 	java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar

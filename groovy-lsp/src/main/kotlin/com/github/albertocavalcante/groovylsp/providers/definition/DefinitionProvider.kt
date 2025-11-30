@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.converters.toLspLocationLink
+import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
@@ -65,15 +66,33 @@ class DefinitionProvider(
 
         // Find the definition
         try {
-            val definitionNode = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
-            if (definitionNode != null) {
-                // Convert to LocationLink and emit
-                val locationLink = originNode.toLspLocationLink(definitionNode, visitor)
-                if (locationLink != null) {
-                    logger.debug("Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}")
-                    emit(locationLink)
-                } else {
-                    logger.debug("Could not convert to LocationLink")
+            val result = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
+            if (result != null) {
+                when (result) {
+                    is DefinitionResolver.DefinitionResult.Source -> {
+                        // Convert to LocationLink and emit
+                        val locationLink = originNode.toLspLocationLink(result.node, visitor)
+                        if (locationLink != null) {
+                            logger.debug(
+                                "Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}",
+                            )
+                            emit(locationLink)
+                        } else {
+                            logger.debug("Could not convert to LocationLink")
+                        }
+                    }
+
+                    is DefinitionResolver.DefinitionResult.Binary -> {
+                        // Handle binary definition
+                        val locationLink = LocationLink().apply {
+                            targetUri = result.uri.toString()
+                            targetRange = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+                            targetSelectionRange = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+                            originSelectionRange = originNode.toLspRange()
+                        }
+                        logger.debug("Found binary definition link to ${locationLink.targetUri}")
+                        emit(locationLink)
+                    }
                 }
             }
         } catch (e: GroovyLspException) {
@@ -168,25 +187,43 @@ class DefinitionProvider(
         val resolver = DefinitionResolver(context.visitor, context.symbolTable, compilationService)
         var definitionFound = false
         try {
-            val definitionNode = resolver.findDefinitionAt(documentUri, position)
+            val result = resolver.findDefinitionAt(documentUri, position)
 
-            if (definitionNode != null) {
-                val location = definitionNode.toLspLocation(context.visitor)
-                if (location != null) {
-                    logger.debug(
-                        "Found definition at ${location.uri}:${location.range} " +
-                            "(node: ${definitionNode.javaClass.simpleName})",
-                    )
-                    telemetrySink.report(
-                        DefinitionTelemetryEvent(
-                            uri = uri,
-                            status = DefinitionStatus.SUCCESS,
-                        ),
-                    )
-                    definitionFound = true
-                    emit(location)
-                } else {
-                    logger.debug("Could not convert definition node to location")
+            if (result != null) {
+                when (result) {
+                    is DefinitionResolver.DefinitionResult.Source -> {
+                        val location = result.node.toLspLocation(context.visitor)
+                        if (location != null) {
+                            logger.debug(
+                                "Found definition at ${location.uri}:${location.range} " +
+                                    "(node: ${result.node.javaClass.simpleName})",
+                            )
+                            telemetrySink.report(
+                                DefinitionTelemetryEvent(
+                                    uri = uri,
+                                    status = DefinitionStatus.SUCCESS,
+                                ),
+                            )
+                            definitionFound = true
+                            emit(location)
+                        } else {
+                            logger.debug("Could not convert definition node to location")
+                        }
+                    }
+
+                    is DefinitionResolver.DefinitionResult.Binary -> {
+                        val location =
+                            Location(result.uri.toString(), org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0)))
+                        logger.debug("Found binary definition at ${location.uri}")
+                        telemetrySink.report(
+                            DefinitionTelemetryEvent(
+                                uri = uri,
+                                status = DefinitionStatus.SUCCESS,
+                            ),
+                        )
+                        definitionFound = true
+                        emit(location)
+                    }
                 }
             } else {
                 logger.debug("No definition found at position")

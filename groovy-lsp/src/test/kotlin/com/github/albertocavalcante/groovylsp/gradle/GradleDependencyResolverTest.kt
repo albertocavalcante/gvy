@@ -13,7 +13,7 @@ class GradleDependencyResolverTest {
         val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
         // Use our test project which has known dependencies
-        val resolution = resolver.resolve(testProjectPath)
+        val resolution = resolver.resolve(testProjectPath, null)
         val dependencies = resolution.dependencies
         val sourceDirs = resolution.sourceDirectories
 
@@ -45,7 +45,7 @@ class GradleDependencyResolverTest {
         val resolver = GradleDependencyResolver()
         val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
 
-        val resolution = resolver.resolve(nonGradleProject)
+        val resolution = resolver.resolve(nonGradleProject, null)
 
         assertTrue(resolution.dependencies.isEmpty(), "Should return empty list for non-Gradle project")
         assertTrue(resolution.sourceDirectories.isEmpty(), "Should return no source directories for non-Gradle project")
@@ -56,7 +56,7 @@ class GradleDependencyResolverTest {
         val resolver = GradleDependencyResolver()
         val nonExistentProject = Paths.get("non-existent-project")
 
-        val resolution = resolver.resolve(nonExistentProject)
+        val resolution = resolver.resolve(nonExistentProject, null)
 
         assertTrue(resolution.dependencies.isEmpty(), "Should return empty list for non-existent project")
         assertTrue(

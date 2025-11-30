@@ -177,6 +177,7 @@ class GroovyCompilationService {
         cache.clear()
         symbolStorageCache.clear()
         compilationJobs.clear()
+        invalidateClassLoader()
     }
 
     fun getCacheStatistics() = cache.getStatistics()
@@ -215,4 +216,47 @@ class GroovyCompilationService {
 
     // Expose cache for testing purposes
     internal val astCache get() = cache
+
+    private val classLoaderLock = Any()
+    private var cachedClassLoader: java.net.URLClassLoader? = null
+
+    /**
+     * Find a class on the dependency classpath and return its URI.
+     * Returns a 'jar:file:...' URI if found in a JAR, or 'file:...' if in a directory.
+     */
+    fun findClasspathClass(className: String): URI? {
+        val loader = getOrCreateClassLoader()
+        val resourcePath = className.replace('.', '/') + ".class"
+        val resource = loader.getResource(resourcePath) ?: return null
+
+        return try {
+            resource.toURI()
+        } catch (e: Exception) {
+            logger.warn("Failed to convert resource URL to URI: $resource", e)
+            null
+        }
+    }
+
+    private fun getOrCreateClassLoader(): java.net.URLClassLoader {
+        synchronized(classLoaderLock) {
+            cachedClassLoader?.let { return it }
+
+            val classpath = workspaceManager.getDependencyClasspath()
+            val urls = classpath.map { it.toUri().toURL() }.toTypedArray()
+            val loader = java.net.URLClassLoader(urls, null) // Parent null to only search dependencies
+            cachedClassLoader = loader
+            return loader
+        }
+    }
+
+    private fun invalidateClassLoader() {
+        synchronized(classLoaderLock) {
+            try {
+                cachedClassLoader?.close()
+            } catch (e: Exception) {
+                logger.warn("Error closing class loader", e)
+            }
+            cachedClassLoader = null
+        }
+    }
 }

@@ -59,7 +59,10 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
                     step::class.simpleName,
                     scenario.name,
                 )
-                executeStep(step, context)
+                context.currentStepIndex = index
+                context.totalSteps = scenario.steps.size
+                val nextStep = scenario.steps.getOrNull(index + 1)
+                executeStep(step, nextStep, context)
             }
         } finally {
             session.close()
@@ -67,7 +70,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         }
     }
 
-    private fun executeStep(step: ScenarioStep, context: ScenarioContext) {
+    private fun executeStep(step: ScenarioStep, nextStep: ScenarioStep?, context: ScenarioContext) {
         when (step) {
             is ScenarioStep.Initialize -> performInitialize(step, context)
             ScenarioStep.Initialized -> performInitialized(context)
@@ -79,7 +82,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
             is ScenarioStep.CloseDocument -> performCloseDocument(step, context)
             is ScenarioStep.SendRequest -> performSendRequest(step, context)
             is ScenarioStep.SendNotification -> performSendNotification(step, context)
-            is ScenarioStep.WaitNotification -> performWaitNotification(step, context)
+            is ScenarioStep.WaitNotification -> performWaitNotification(step, nextStep, context)
             is ScenarioStep.Assert -> performAssert(step, context)
         }
     }
@@ -244,18 +247,107 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         }
     }
 
-    private fun performWaitNotification(step: ScenarioStep.WaitNotification, context: ScenarioContext) {
-        val timeout = step.timeoutMs ?: DEFAULT_NOTIFICATION_TIMEOUT_MS
-        val envelope = context.session.client.awaitNotification(step.method, timeout) { payload ->
-            step.checks.all { check ->
-                val result = runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
-                val success = result.getOrDefault(false)
-                if (!success) {
-                    logger.debug("Notification check failed: {}", result.exceptionOrNull()?.message)
+    private fun performWaitNotification(
+        step: ScenarioStep.WaitNotification,
+        nextStep: ScenarioStep?,
+        context: ScenarioContext,
+    ) {
+        // If this step is optional and the next step is a WaitNotification,
+        // peek ahead to see if the next notification has already arrived
+        if (step.optional && nextStep is ScenarioStep.WaitNotification) {
+            val nextStepPredicate: (JsonNode?) -> Boolean = { payload ->
+                nextStep.checks.all { check ->
+                    runCatching {
+                        context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true)
+                    }.getOrDefault(false)
                 }
-                success
             }
-        } ?: throw TimeoutException("Timeout waiting for notification '${step.method}'")
+
+            if (context.session.client.peekNotification(nextStep.method, nextStepPredicate)) {
+                logger.info(
+                    "Skipping optional step '{}' - next step's notification '{}' already available",
+                    step.method,
+                    nextStep.method,
+                )
+                return
+            }
+        }
+
+        val timeout = step.timeoutMs ?: DEFAULT_NOTIFICATION_TIMEOUT_MS
+        val checkFailureReasons = mutableListOf<String>() // Capture detailed check failure reasons
+
+        val waitResult = try {
+            context.session.client.awaitNotificationDetailed(step.method, timeout) { payload ->
+                checkFailureReasons.clear() // Clear for each notification evaluation
+                val allChecksPassed = step.checks.all { check ->
+                    val result =
+                        runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
+                    val success = result.getOrDefault(false)
+                    if (!success) {
+                        val failureReason = result.exceptionOrNull()?.message ?: "Check failed"
+                        checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
+                        logger.debug("Notification check failed: {}", failureReason)
+                    }
+                    success
+                }
+                allChecksPassed
+            }
+        } catch (e: TimeoutException) {
+            // If optional, log and return early instead of failing the test
+            if (step.optional) {
+                logger.info("Optional step '{}' timed out after {}ms - continuing", step.method, timeout)
+                return
+            }
+            throw e
+        }
+
+        val envelope = waitResult.envelope ?: run {
+            val scenarioName = context.definition.scenario.name
+            val stepNum = context.currentStepIndex + 1
+            val totalSteps = context.totalSteps
+
+            throw TimeoutException(
+                buildString {
+                    append("Timeout waiting for notification '${step.method}'")
+                    append("\nScenario: $scenarioName (step $stepNum/$totalSteps: WaitNotification)")
+                    append("\nTimeout: ${timeout}ms (elapsed: ${waitResult.elapsedMs}ms)")
+
+                    if (waitResult.receivedDuringWait.isNotEmpty()) {
+                        append("\n\nNotifications received during wait (${waitResult.receivedDuringWait.size} total):")
+                        waitResult.receivedDuringWait.forEachIndexed { index, snapshot ->
+                            val timestamp = snapshot.timestamp.toString().substringAfter('T').substringBefore('.')
+                            append("\n  ${index + 1}. [$timestamp] ${snapshot.method}")
+
+                            // Check if this notification matched method but failed predicate
+                            val failed = waitResult.matchedMethodButFailed.find {
+                                it.envelope.method == snapshot.method &&
+                                    it.envelope.timestamp == snapshot.timestamp
+                            }
+                            if (failed != null) {
+                                append("\n     → Failed check: ${failed.reason ?: "predicate returned false"}")
+
+                                // Try to extract message content for window/showMessage notifications
+                                if (snapshot.method == "window/showMessage" && snapshot.payload != null) {
+                                    val message = snapshot.payload.get("message")?.asText()
+                                    if (message != null) {
+                                        append("\n     → Actual message: \"$message\"")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        append("\n\nNo notifications received during wait period.")
+                    }
+
+                    // Add total notification count from client
+                    val totalNotifications = context.session.client.messages.size +
+                        context.session.client.diagnostics.size
+                    if (totalNotifications > 0) {
+                        append("\n\nTotal notifications since scenario start: $totalNotifications")
+                    }
+                },
+            )
+        }
 
         val payloadNode = envelope.payload ?: NullNode.instance
         context.lastResult = payloadNode
@@ -310,6 +402,8 @@ private data class ScenarioContext(
     val variables: MutableMap<String, JsonNode> = mutableMapOf()
     val savedResults: MutableMap<String, JsonNode> = mutableMapOf()
     var lastResult: JsonNode? = null
+    var currentStepIndex: Int = 0
+    var totalSteps: Int = 0
 
     fun registerBuiltInVariables() {
         val workspaceObject = mapper.createObjectNode().apply {

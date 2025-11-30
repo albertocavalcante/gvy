@@ -18,7 +18,10 @@ class ScenarioRunnerTest {
     @TestFactory
     fun endToEndScenarios(): List<DynamicTest> {
         val scenarioDir = resolveScenarioDirectory()
-        val definitions = loader.loadAll(scenarioDir)
+        val definitions = loader.loadAll(scenarioDir).filter { definition ->
+            val filter = System.getProperty("groovy.lsp.e2e.filter")
+            filter.isNullOrBlank() || definition.scenario.name.contains(filter)
+        }
 
         if (definitions.isEmpty()) {
             fail("No scenarios discovered under $scenarioDir")
