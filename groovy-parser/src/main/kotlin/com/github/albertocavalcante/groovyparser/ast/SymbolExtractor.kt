@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast
 
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -43,10 +44,18 @@ object SymbolExtractor {
                 ) {
                     val decl = stmt.expression as DeclarationExpression
                     val variable = decl.variableExpression
+
+                    // Use TypeInferencer to determine the best type
+                    val inferredType = try {
+                        TypeInferencer.inferType(decl)
+                    } catch (e: Exception) {
+                        "java.lang.Object"
+                    }
+
                     variables.add(
                         VariableSymbol(
                             name = variable.name,
-                            type = variable.type.nameWithoutPackage,
+                            type = inferredType,
                             kind = VariableKind.LOCAL_VARIABLE,
                             line = stmt.lineNumber - 1,
                         ),
@@ -192,10 +201,10 @@ object SymbolExtractor {
         }
 
     /**
-     * Extract all symbols that could be used for code completion at a given position.
+     * Extract all symbols relevant for code completion at a given cursor position.
      */
-    fun extractCompletionSymbols(ast: Any, line: Int, @Suppress("UNUSED_PARAMETER") character: Int): CompletionContext {
-        if (ast !is ModuleNode) return CompletionContext.EMPTY
+    fun extractCompletionSymbols(ast: ASTNode, line: Int, character: Int): SymbolCompletionContext {
+        if (ast !is ModuleNode) return SymbolCompletionContext.EMPTY
 
         val classes = extractClassSymbols(ast)
         val imports = extractImportSymbols(ast)
@@ -203,7 +212,8 @@ object SymbolExtractor {
         // Find the class we're currently in (if any)
         val currentClass = classes.find { classSymbol ->
             val classNode = classSymbol.astNode as org.codehaus.groovy.ast.ClassNode
-            line >= classSymbol.line && line < classNode.lastLineNumber
+            // println("DEBUG: Checking class ${classNode.name}, line=${classNode.lineNumber}-${classNode.lastLineNumber}, cursor=$line")
+            line >= classSymbol.line && line <= classNode.lastLineNumber // Relaxed check
         }
 
         val methods = currentClass?.let { extractMethodSymbols(it.astNode) } ?: emptyList()
@@ -213,20 +223,26 @@ object SymbolExtractor {
         var variables: List<VariableSymbol> = emptyList()
         if (currentClass != null) {
             val classNode = currentClass.astNode as org.codehaus.groovy.ast.ClassNode
-            val methodNode = classNode.methods.find { method ->
+            var methodNode = classNode.methods.find { method ->
                 line >= method.lineNumber - 1 && line <= method.lastLineNumber - 1
             }
+
+            // Fallback for scripts: use 'run' method if no specific method matches and 'run' has no line info
+            if (methodNode == null) {
+                methodNode = classNode.methods.find { it.name == "run" && it.lineNumber == -1 }
+            }
+
             if (methodNode != null) {
                 variables = extractVariableSymbols(methodNode)
             }
         }
 
-        return CompletionContext(
+        return SymbolCompletionContext(
             classes = classes,
             methods = methods,
             fields = fields,
-            imports = imports,
             variables = variables,
+            imports = imports,
             currentClass = currentClass,
         )
     }
@@ -272,7 +288,7 @@ data class ImportSymbol(
 /**
  * Contains all symbols available for completion at a specific position.
  */
-data class CompletionContext(
+data class SymbolCompletionContext(
     val classes: List<ClassSymbol>,
     val methods: List<MethodSymbol>,
     val fields: List<FieldSymbol>,
@@ -281,6 +297,6 @@ data class CompletionContext(
     val currentClass: ClassSymbol?,
 ) {
     companion object {
-        val EMPTY = CompletionContext(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
+        val EMPTY = SymbolCompletionContext(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
     }
 }

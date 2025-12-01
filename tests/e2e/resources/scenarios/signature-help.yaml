@@ -1,6 +1,6 @@
-
+# FIXME: Flaky test due to timeout
 name: signature-help
-description: Request signature help for a simple method call.
+description: "Verify signature help functionality"
 workspace:
   fixture: signature-help
 steps:

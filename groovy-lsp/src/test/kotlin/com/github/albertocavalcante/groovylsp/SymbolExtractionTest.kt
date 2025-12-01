@@ -48,9 +48,10 @@ class SymbolExtractionTest {
 
         assertTrue(result.isSuccess)
         assertNotNull(result.ast)
+        val ast = result.ast
 
         // Extract class symbols - this should drive implementation
-        val classSymbols = extractClassSymbols(result.ast!!)
+        val classSymbols = extractClassSymbols(ast)
 
         assertEquals(2, classSymbols.size)
 
@@ -86,8 +87,9 @@ class SymbolExtractionTest {
 
         assertTrue(result.isSuccess)
         assertNotNull(result.ast)
+        val ast = result.ast
 
-        val classSymbols = extractClassSymbols(result.ast!!)
+        val classSymbols = extractClassSymbols(ast)
         assertEquals(1, classSymbols.size)
 
         val calculator = classSymbols.first()
@@ -134,8 +136,9 @@ class SymbolExtractionTest {
 
         assertTrue(result.isSuccess)
         assertNotNull(result.ast)
+        val ast = result.ast
 
-        val classSymbols = extractClassSymbols(result.ast!!)
+        val classSymbols = extractClassSymbols(ast)
         val dataModel = classSymbols.first()
 
         val fields = extractFieldSymbols(dataModel.astNode)
@@ -180,8 +183,9 @@ class SymbolExtractionTest {
 
         assertTrue(result.isSuccess)
         assertNotNull(result.ast)
+        val ast = result.ast
 
-        val importSymbols = extractImportSymbols(result.ast!!)
+        val importSymbols = extractImportSymbols(ast)
         assertTrue(importSymbols.size >= 4)
 
         val utilImport = importSymbols.find { it.packageName == "java.util" && it.isStarImport }
@@ -193,6 +197,46 @@ class SymbolExtractionTest {
 
         val staticImports = importSymbols.filter { it.isStatic }
         assertTrue(staticImports.size >= 2)
+    }
+
+    @Test
+    fun `extract local variable symbols with type inference`() = runBlocking {
+        val content = """
+            class Test {
+                def method() {
+                    def myVar = "hello"
+                    def number = 123
+                    def list = ["a", "b"]
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///Test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess)
+
+        assertNotNull(result.ast)
+        val ast = result.ast
+        val classSymbols = extractClassSymbols(ast)
+        val testClass = classSymbols.first()
+        val classNode = testClass.astNode as org.codehaus.groovy.ast.ClassNode
+        val methodNode = classNode.methods.first()
+
+        val variables = SymbolExtractor.extractVariableSymbols(methodNode)
+
+        assertEquals(3, variables.size)
+
+        val myVar = variables.find { it.name == "myVar" }
+        assertNotNull(myVar)
+        assertEquals("java.lang.String", myVar.type)
+
+        val number = variables.find { it.name == "number" }
+        assertNotNull(number)
+        assertEquals("int", number.type)
+
+        val list = variables.find { it.name == "list" }
+        assertNotNull(list)
+        assertEquals("java.util.ArrayList<java.lang.String>", list.type)
     }
 
     // Using the actual SymbolExtractor implementation

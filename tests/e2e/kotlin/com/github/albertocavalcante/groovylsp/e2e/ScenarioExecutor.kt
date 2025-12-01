@@ -302,6 +302,11 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         }
 
         val envelope = waitResult.envelope ?: run {
+            if (step.optional) {
+                logger.info("Optional step '{}' timed out after {}ms - continuing", step.method, timeout)
+                return
+            }
+
             val scenarioName = context.definition.scenario.name
             val stepNum = context.currentStepIndex + 1
             val totalSteps = context.totalSteps

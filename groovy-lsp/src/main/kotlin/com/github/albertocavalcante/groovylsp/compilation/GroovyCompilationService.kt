@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -176,29 +177,45 @@ class GroovyCompilationService {
      * Returns immediately if document is already cached.
      * Returns null if document is not cached and not currently compiling.
      */
+
+    /**
+     * Ensure document is compiled, awaiting if compilation is in progress.
+     * Returns immediately if document is already cached.
+     * Returns null if document is not cached and not currently compiling.
+     */
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
-        // If currently compiling, await it
-        compilationJobs[uri]?.let { deferred ->
-            logger.debug("Awaiting active compilation for $uri")
-            return deferred.await()
-        }
-
-        // Check if already in cache
-        cache.getWithContent(uri)?.let { (cachedContent, parseResult) ->
-            logger.debug("Using cached compilation for $uri")
-            val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
-            val ast = parseResult.ast
-            val sourceText = cachedContent
-            return if (ast != null) {
-                CompilationResult.success(ast, diagnostics, sourceText)
-            } else {
-                CompilationResult.failure(diagnostics, sourceText)
+        while (true) {
+            // If currently compiling, await it
+            val deferred = compilationJobs[uri]
+            if (deferred != null) {
+                try {
+                    logger.debug("Awaiting active compilation for $uri")
+                    return deferred.await()
+                } catch (e: CancellationException) {
+                    logger.debug("Compilation cancelled for $uri while awaiting - retrying ensureCompiled")
+                    // Give a small grace period for the new compilation to start if this was a restart
+                    kotlinx.coroutines.delay(50)
+                    continue
+                }
             }
-        }
 
-        // Not compiling and not cached
-        logger.debug("No compilation found for $uri (not cached, not compiling)")
-        return null
+            // Check if already in cache
+            cache.getWithContent(uri)?.let { (cachedContent, parseResult) ->
+                logger.debug("Using cached compilation for $uri")
+                val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
+                val ast = parseResult.ast
+                val sourceText = cachedContent
+                return if (ast != null) {
+                    CompilationResult.success(ast, diagnostics, sourceText)
+                } else {
+                    CompilationResult.failure(diagnostics, sourceText)
+                }
+            }
+
+            // Not compiling and not cached
+            logger.debug("No compilation found for $uri (not cached, not compiling)")
+            return null
+        }
     }
 
     fun clearCaches() {

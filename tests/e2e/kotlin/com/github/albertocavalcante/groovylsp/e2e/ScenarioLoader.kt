@@ -353,11 +353,14 @@ class ScenarioLoader(private val mapper: ObjectMapper) {
             }
         } ?: emptyList()
 
+        val optional = node["optional"]?.asBoolean(false) ?: false
+
         return ScenarioStep.WaitNotification(
             method = method,
             checks = checks,
             saveAs = saveAs,
             timeoutMs = timeoutMs,
+            optional = optional,
         )
     }
 

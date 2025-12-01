@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
 import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
 import com.github.albertocavalcante.groovyparser.ast.ImportSymbol
 import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
+import com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext
 import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import org.codehaus.groovy.control.CompilationFailedException
@@ -61,7 +62,7 @@ object CompletionProvider {
                 if (result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size) {
                     val ast = result2.ast
                     val astModel = result2.astModel
-                    if (ast != null && astModel != null) {
+                    if (ast != null) {
                         return buildCompletionsList(ast, astModel, line, character, compilationService, uriObj)
                     }
                 }
@@ -71,7 +72,7 @@ object CompletionProvider {
             val ast = result1.ast
             val astModel = result1.astModel
 
-            if (ast == null || astModel == null) {
+            if (ast == null) {
                 emptyList()
             } else {
                 buildCompletionsList(ast, astModel, line, character, compilationService, uriObj)
@@ -127,7 +128,7 @@ object CompletionProvider {
 
         // Try to detect member access (e.g., "myList.")
         val nodeAtCursor = astModel.getNodeAt(uri, line, character)
-        val completionContext = detectCompletionContext(nodeAtCursor, astModel)
+        val completionContext = detectCompletionContext(nodeAtCursor, astModel, context)
 
         return completions {
             // Add local symbol completions
@@ -140,13 +141,17 @@ object CompletionProvider {
 
             // Handle contextual completions
             when (completionContext) {
-                is CompletionContext.MemberAccess -> {
+                is ContextType.MemberAccess -> {
                     logger.debug("Adding GDK/Classpath methods for {}", completionContext.qualifierType)
-                    addGdkMethods(completionContext.qualifierType, compilationService)
-                    addClasspathMethods(completionContext.qualifierType, compilationService)
+                    // Strip generics for method lookup (e.g. "ArrayList<String>" -> "ArrayList")
+                    // Note: substringBefore('<') is safe even for nested generics (e.g. Map<String, List<Integer>>)
+                    // because we only need the raw outer type to look up methods on the class itself.
+                    val rawType = completionContext.qualifierType.substringBefore('<')
+                    addGdkMethods(rawType, compilationService)
+                    addClasspathMethods(rawType, compilationService)
                 }
 
-                is CompletionContext.TypeParameter -> {
+                is ContextType.TypeParameter -> {
                     logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
                     addTypeParameterClasses(completionContext.prefix, compilationService)
                 }
@@ -164,7 +169,8 @@ object CompletionProvider {
     private fun detectCompletionContext(
         nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
         astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-    ): CompletionContext? {
+        context: SymbolCompletionContext,
+    ): ContextType? {
         if (nodeAtCursor == null) {
             return null
         }
@@ -175,22 +181,39 @@ object CompletionProvider {
         return when (nodeAtCursor) {
             // Case 1: Direct PropertyExpression (e.g., "myList.ea|")
             is org.codehaus.groovy.ast.expr.PropertyExpression -> {
-                val qualifierType = nodeAtCursor.objectExpression.type?.name
-                qualifierType?.let { CompletionContext.MemberAccess(it) }
+                val objectExpr = nodeAtCursor.objectExpression
+                var qualifierType = objectExpr.type?.name
+
+                // If object is a variable, try to get inferred type from context
+                if (objectExpr is org.codehaus.groovy.ast.expr.VariableExpression) {
+                    val inferredType = resolveVariableType(objectExpr.name, context)
+                    if (inferredType != null) {
+                        qualifierType = inferredType
+                    }
+                }
+
+                qualifierType?.let { ContextType.MemberAccess(it) }
             }
 
             // Case 2: VariableExpression that's part of a PropertyExpression or BinaryExpression
             // (e.g., cursor is on "myList" in "myList.")
             is org.codehaus.groovy.ast.expr.VariableExpression -> {
                 if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
-                    val qualifierType = nodeAtCursor.type?.name
-                    qualifierType?.let { CompletionContext.MemberAccess(it) }
+                    var qualifierType = nodeAtCursor.type?.name
+
+                    // Try to get inferred type from context
+                    val inferredType = resolveVariableType(nodeAtCursor.name, context)
+                    if (inferredType != null) {
+                        qualifierType = inferredType
+                    }
+
+                    qualifierType?.let { ContextType.MemberAccess(it) }
                 } else if (parent is org.codehaus.groovy.ast.expr.BinaryExpression &&
                     parent.operation.text == "<" &&
                     nodeAtCursor.name.contains(DUMMY_IDENTIFIER)
                 ) {
                     val prefix = nodeAtCursor.name.substringBefore(DUMMY_IDENTIFIER)
-                    CompletionContext.TypeParameter(prefix)
+                    ContextType.TypeParameter(prefix)
                 } else {
                     null
                 }
@@ -200,8 +223,18 @@ object CompletionProvider {
             // (e.g., cursor lands on the dummy identifier "IntelliJIdeaRulezzz" in "myList.IntelliJIde aRulezzz")
             is org.codehaus.groovy.ast.expr.ConstantExpression -> {
                 if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
-                    val qualifierType = parent.objectExpression.type?.name
-                    qualifierType?.let { CompletionContext.MemberAccess(it) }
+                    val objectExpr = parent.objectExpression
+                    var qualifierType = objectExpr.type?.name
+
+                    // If object is a variable, try to get inferred type from context
+                    if (objectExpr is org.codehaus.groovy.ast.expr.VariableExpression) {
+                        val inferredType = resolveVariableType(objectExpr.name, context)
+                        if (inferredType != null) {
+                            qualifierType = inferredType
+                        }
+                    }
+
+                    qualifierType?.let { ContextType.MemberAccess(it) }
                 } else {
                     null
                 }
@@ -216,7 +249,7 @@ object CompletionProvider {
                     if (dummyGeneric != null) {
                         // Extract prefix (everything before the dummy identifier)
                         val prefix = dummyGeneric.name.substringBefore(DUMMY_IDENTIFIER)
-                        CompletionContext.TypeParameter(prefix)
+                        ContextType.TypeParameter(prefix)
                     } else {
                         null
                     }
@@ -236,9 +269,14 @@ object CompletionProvider {
         }
     }
 
-    private sealed interface CompletionContext {
-        data class MemberAccess(val qualifierType: String) : CompletionContext
-        data class TypeParameter(val prefix: String) : CompletionContext
+    private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
+        val inferredVar = context.variables.find { it.name == variableName }
+        return inferredVar?.type
+    }
+
+    private sealed interface ContextType {
+        data class MemberAccess(val qualifierType: String) : ContextType
+        data class TypeParameter(val prefix: String) : ContextType
     }
 
     private fun CompletionsBuilder.addClasses(classes: List<ClassSymbol>) {

@@ -110,5 +110,9 @@ lsp/hover, lsp/symbols Priority: P0-critical, P1-must, P2-should, P3-nice Size: 
 
 # Common Commands
 
-gh issue list -R albertocavalcante/groovy-lsp -l "P1-must" gh issue edit 31 --add-label "blocked" --remove-label
-"help-wanted" gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-issues>
+gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-issues>
+
+<flaky-tests>
+  When a test fails due to a timeout or non-deterministic behavior, add a FIXME comment to the test file indicating it is flaky.
+  Example: // FIXME: Flaky test due to timeout
+</flaky-tests>

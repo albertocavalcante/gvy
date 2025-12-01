@@ -57,6 +57,24 @@ class ClasspathServiceTest {
     }
 
     @Test
+    fun `should include default methods like forEach for ArrayList`() {
+        val methods = classpathService.getMethods("java.util.ArrayList")
+
+        val forEach = methods.find { it.name == "forEach" }
+        assertThat(forEach).isNotNull
+        assertThat(forEach?.parameters).contains("Consumer")
+    }
+
+    @Test
+    fun `should include default methods like forEach for List interface`() {
+        val methods = classpathService.getMethods("java.util.List")
+
+        val forEach = methods.find { it.name == "forEach" }
+        assertThat(forEach).isNotNull
+        assertThat(forEach?.parameters).contains("Consumer")
+    }
+
+    @Test
     fun `should distinguish static and instance methods`() {
         val methods = classpathService.getMethods("java.lang.Integer")
 
