@@ -32,6 +32,50 @@
         }
       },
       "documentation": "Shell Script step - Execute a shell command"
+    },
+    "echo": {
+      "plugin": "workflow-basic-steps:1000.v2f5c09b_74cf6",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": true,
+          "documentation": "Message to print"
+        }
+      },
+      "documentation": "Print a message to the build log"
+    },
+    "git": {
+      "plugin": "git:5.2.1",
+      "parameters": {
+        "url": {
+          "type": "String",
+          "required": true,
+          "documentation": "Repository URL"
+        },
+        "branch": {
+          "type": "String",
+          "required": false,
+          "documentation": "Branch or ref to checkout"
+        },
+        "credentialsId": {
+          "type": "String",
+          "required": false,
+          "documentation": "Credentials ID for authentication"
+        },
+        "changelog": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Include changelog"
+        },
+        "poll": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Enable SCM polling"
+        }
+      },
+      "documentation": "Checkout from Git"
     }
   },
   "globalVariables": {

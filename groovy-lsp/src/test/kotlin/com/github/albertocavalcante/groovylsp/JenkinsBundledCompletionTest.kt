@@ -64,6 +64,27 @@ class JenkinsBundledCompletionTest {
         assertTrue(sh.detail?.contains("workflow-durable-task-step") == true)
     }
 
+    @Test
+    fun `jenkinsfile should suggest map keys for bundled steps`() = runBlocking {
+        val uri = "file:///tmp/jenkins-test/Jenkinsfile"
+        val content = """
+            node {
+              sh(
+                
+              )
+            }
+        """.trimIndent()
+
+        openDocument(uri, content)
+
+        // Position inside the sh map literal area
+        val items = requestCompletionsAt(uri, Position(2, 4))
+
+        val returnStdout = items.find { it.label == "returnStdout:" }
+        assertNotNull(returnStdout, "Should suggest returnStdout map key for sh")
+        assertEquals(CompletionItemKind.Property, returnStdout.kind)
+    }
+
     private suspend fun openDocument(uri: String, content: String) {
         val textDoc = TextDocumentItem().apply {
             this.uri = uri

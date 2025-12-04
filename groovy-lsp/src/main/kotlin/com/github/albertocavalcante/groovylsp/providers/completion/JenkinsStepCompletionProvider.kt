@@ -35,4 +35,22 @@ object JenkinsStepCompletionProvider {
             }
         }
     }
+
+    fun getBundledParameterCompletions(stepName: String, existingKeys: Set<String>): List<CompletionItem> {
+        val metadata = bundledMetadata ?: return emptyList()
+        val step = metadata.getStep(stepName) ?: return emptyList()
+
+        return step.parameters
+            .filterKeys { key -> key !in existingKeys }
+            .map { (key, param) ->
+                CompletionItem().apply {
+                    label = "$key:"
+                    kind = CompletionItemKind.Property
+                    detail = param.type
+                    documentation = param.documentation?.let {
+                        Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))
+                    }
+                }
+            }
+    }
 }
