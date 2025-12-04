@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
@@ -248,7 +249,14 @@ class GroovyTextDocumentService(
                 content,
             )
 
-            val allCompletions = basicCompletions + contextualCompletions
+            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
+            val jenkinsCompletions = if (isJenkinsFile) {
+                JenkinsStepCompletionProvider.getBundledStepCompletions()
+            } else {
+                emptyList()
+            }
+
+            val allCompletions = basicCompletions + contextualCompletions + jenkinsCompletions
 
             logger.debug("Returning ${allCompletions.size} completions")
             Either.forLeft(allCompletions)
