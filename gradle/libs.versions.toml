@@ -15,6 +15,7 @@ gmetrics = "2.1.0"
 gradleTooling = "9.2.1"
 coroutines = "1.10.2"
 collectionsImmutable = "0.4.0"
+serialization = "1.8.0"
 slf4j = "2.0.17"
 logback = "1.5.21"
 rewriteGroovy = "8.67.0"
@@ -57,6 +58,7 @@ gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "
 kotlin-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlin-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlin-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "collectionsImmutable" }
+kotlin-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 
@@ -85,6 +87,7 @@ classgraph = { module = "io.github.classgraph:classgraph", version.ref = "classg
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

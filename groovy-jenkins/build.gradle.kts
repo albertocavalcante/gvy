@@ -1,11 +1,15 @@
 plugins {
     kotlin("jvm")
+    alias(libs.plugins.kotlin.serialization)
     groovy
 }
 
 dependencies {
     // Groovy
     implementation(libs.groovy.core)
+
+    // Kotlin
+    implementation(libs.kotlin.serialization.json)
 
     // Logging
     implementation(libs.slf4j.api)
