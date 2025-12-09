@@ -23,7 +23,7 @@ rewriteGroovy = "8.67.0"
 junit = "5.14.1"
 junitPlatform = "1.14.1"
 assertj = "3.27.6"
-mockk = "1.14.6"
+mockk = "1.14.7"
 spock = "2.3-groovy-4.0"
 
 jackson = "2.20.1"
