@@ -64,6 +64,21 @@ class BundledJenkinsMetadataLoaderTest {
     }
 
     @Test
+    fun `should load metadata for echo and git steps`() {
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val echo = metadata.getStep("echo")
+        assertNotNull(echo)
+        assertEquals("workflow-basic-steps:1000.v2f5c09b_74cf6", echo.plugin)
+        assertTrue(echo.parameters.containsKey("message"))
+
+        val git = metadata.getStep("git")
+        assertNotNull(git)
+        assertEquals("git:5.2.1", git.plugin)
+        assertTrue(git.parameters.keys.containsAll(listOf("url", "branch", "credentialsId")))
+    }
+
+    @Test
     fun `should load global variable metadata`() {
         // RED: Testing global variables like 'env', 'params', 'currentBuild'
         val loader = BundledJenkinsMetadataLoader()

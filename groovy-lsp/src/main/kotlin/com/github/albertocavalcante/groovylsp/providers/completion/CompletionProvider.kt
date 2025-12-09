@@ -125,6 +125,7 @@ object CompletionProvider {
     ): List<CompletionItem> {
         // Extract completion context
         val context = SymbolExtractor.extractCompletionSymbols(ast, line, character)
+        val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
 
         // Try to detect member access (e.g., "myList.")
         val nodeAtCursor = astModel.getNodeAt(uri, line, character)
@@ -158,9 +159,53 @@ object CompletionProvider {
 
                 null -> {
                     /* No special context */
+                    if (isJenkinsFile) {
+                        // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
+                        addJenkinsMapKeyCompletions(nodeAtCursor, astModel)
+                    }
                 }
             }
         }
+    }
+
+    private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
+        nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+    ) {
+        val methodCall = findEnclosingMethodCall(nodeAtCursor, astModel)
+        val callName = methodCall?.methodAsString ?: return
+
+        // Collect already specified argument map keys if present
+        val existingKeys = mutableSetOf<String>()
+        val args = methodCall.arguments
+        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
+            args.expressions.filterIsInstance<org.codehaus.groovy.ast.expr.MapExpression>().forEach { mapExpr ->
+                mapExpr.mapEntryExpressions.forEach { entry ->
+                    val key = entry.keyExpression.text.removeSuffix(":")
+                    existingKeys.add(key)
+                }
+            }
+        }
+
+        val bundledParamCompletions = JenkinsStepCompletionProvider.getBundledParameterCompletions(
+            callName,
+            existingKeys,
+        )
+        bundledParamCompletions.forEach { add(it) }
+    }
+
+    private fun findEnclosingMethodCall(
+        node: org.codehaus.groovy.ast.ASTNode?,
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+    ): org.codehaus.groovy.ast.expr.MethodCallExpression? {
+        var current: org.codehaus.groovy.ast.ASTNode? = node
+        while (current != null) {
+            if (current is org.codehaus.groovy.ast.expr.MethodCallExpression) {
+                return current
+            }
+            current = astModel.getParent(current)
+        }
+        return null
     }
 
     /**
