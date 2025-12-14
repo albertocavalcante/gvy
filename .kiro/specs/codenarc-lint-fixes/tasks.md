@@ -82,24 +82,24 @@
 
 ## Phase 2: Import Cleanup Fixes
 
-- [ ] 7. Implement import line removal fixes with TDD
-  - [ ] 7.1 Write property test for import line removal
+- [x] 7. Implement import line removal fixes with TDD
+  - [x] 7.1 Write property test for import line removal
     - **Property 6: Import Line Removal**
     - **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
-  - [ ] 7.2 Write unit tests for import removal handlers
+  - [x] 7.2 Write unit tests for import removal handlers
     - Test UnusedImport removes entire line including newline
     - Test DuplicateImport removes entire line
     - Test UnnecessaryGroovyImport removes entire line
     - Test ImportFromSamePackage removes entire line
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
-  - [ ] 7.3 Implement fixRemoveImportLine handler
+  - [x] 7.3 Implement fixRemoveImportLine handler
     - Create shared handler for all import removal rules
     - Register for UnusedImport, DuplicateImport, UnnecessaryGroovyImport, ImportFromSamePackage
     - Handler removes entire line including newline character
     - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 8. Checkpoint - Phase 2 Complete
+- [x] 8. Checkpoint - Phase 2 Complete
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Phase 3: Convention Fixes

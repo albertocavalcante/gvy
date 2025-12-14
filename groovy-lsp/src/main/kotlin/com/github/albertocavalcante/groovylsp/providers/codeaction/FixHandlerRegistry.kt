@@ -303,12 +303,59 @@ private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? {
     return TextEdit(range, "")
 }
 
+/**
+ * Fix handler for import removal rules (UnusedImport, DuplicateImport, UnnecessaryGroovyImport, ImportFromSamePackage).
+ * Removes the entire import line including the newline character.
+ *
+ * **Feature: codenarc-lint-fixes, Property 6: Import Line Removal**
+ * **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes the import line, or null if the fix cannot be applied
+ */
+private fun fixRemoveImportLine(context: FixContext): TextEdit? {
+    val lineNumber = context.diagnostic.range.start.line
+
+    // Validate line number is within bounds
+    if (lineNumber < 0 || lineNumber >= context.lines.size) {
+        return null
+    }
+
+    val isLastLine = lineNumber == context.lines.size - 1
+    val isSingleLine = context.lines.size == 1
+
+    return when {
+        // Single line file: remove entire content
+        isSingleLine -> {
+            val range = Range(
+                Position(0, 0),
+                Position(0, context.lines[0].length),
+            )
+            TextEdit(range, "")
+        }
+        // Last line: remove from end of previous line (including newline) to end of this line
+        isLastLine -> {
+            val previousLineLength = context.lines[lineNumber - 1].length
+            val range = Range(
+                Position(lineNumber - 1, previousLineLength),
+                Position(lineNumber, context.lines[lineNumber].length),
+            )
+            TextEdit(range, "")
+        }
+        // First line or middle line: remove from start of line to start of next line
+        else -> {
+            val range = Range(
+                Position(lineNumber, 0),
+                Position(lineNumber + 1, 0),
+            )
+            TextEdit(range, "")
+        }
+    }
+}
+
 // Placeholder fix handler implementations - will be implemented in later tasks
 // These functions return null until their respective implementation tasks are completed.
 // The FunctionOnlyReturningConstant warning is expected for placeholders.
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixRemoveImportLine(context: FixContext): TextEdit? = null
 
 @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
 private fun fixUnnecessaryPublicModifier(context: FixContext): TextEdit? = null
