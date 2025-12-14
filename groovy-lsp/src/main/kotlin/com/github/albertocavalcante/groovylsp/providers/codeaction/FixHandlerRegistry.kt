@@ -353,12 +353,51 @@ private fun fixRemoveImportLine(context: FixContext): TextEdit? {
     }
 }
 
+// ============================================================================
+// Phase 3: Convention Fix Handler Implementations
+// ============================================================================
+
+/**
+ * Fix handler for UnnecessaryPublicModifier rule.
+ * Removes the unnecessary `public` keyword from declarations.
+ *
+ * In Groovy, the `public` modifier is implicit for classes, methods, and fields,
+ * so it's considered unnecessary and can be removed.
+ *
+ * **Feature: codenarc-lint-fixes, Property 7: Public Modifier Removal**
+ * **Validates: Requirements 4.1**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes "public ", or null if the fix cannot be applied
+ */
+private fun fixUnnecessaryPublicModifier(context: FixContext): TextEdit? {
+    val range = context.diagnostic.range
+    val lineNumber = range.start.line
+
+    // Validate line number is within bounds
+    if (lineNumber < 0 || lineNumber >= context.lines.size) {
+        return null
+    }
+
+    val line = context.lines[lineNumber]
+    val startIndex = range.start.character
+    val endIndex = range.end.character
+
+    // Validate that the diagnostic's range is within the line's bounds
+    if (startIndex < 0 || endIndex > line.length || startIndex > endIndex) {
+        return null
+    }
+
+    // Use the diagnostic's range directly to ensure the fix is applied
+    // to the correct location, even if "public" appears multiple times on the line
+    // (e.g., in a string literal before the actual modifier).
+    // CodeNarc provides the precise location of the violation.
+    return TextEdit(range, "")
+}
+
 // Placeholder fix handler implementations - will be implemented in later tasks
 // These functions return null until their respective implementation tasks are completed.
 // The FunctionOnlyReturningConstant warning is expected for placeholders.
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixUnnecessaryPublicModifier(context: FixContext): TextEdit? = null
 
 @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
 private fun fixUnnecessaryDef(context: FixContext): TextEdit? = null

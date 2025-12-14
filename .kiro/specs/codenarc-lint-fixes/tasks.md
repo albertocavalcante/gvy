@@ -104,16 +104,16 @@
 
 ## Phase 3: Convention Fixes
 
-- [ ] 9. Implement UnnecessaryPublicModifier fix with TDD
-  - [ ] 9.1 Write property test for public modifier removal
+- [x] 9. Implement UnnecessaryPublicModifier fix with TDD
+  - [x] 9.1 Write property test for public modifier removal
     - **Property 7: Public Modifier Removal**
     - **Validates: Requirements 4.1**
     - _Requirements: 4.1_
-  - [ ] 9.2 Write unit test for UnnecessaryPublicModifier handler
+  - [x] 9.2 Write unit test for UnnecessaryPublicModifier handler
     - Test "public class Foo" becomes "class Foo"
     - Test "public void method()" becomes "void method()"
     - _Requirements: 4.1_
-  - [ ] 9.3 Implement fixUnnecessaryPublicModifier handler
+  - [x] 9.3 Implement fixUnnecessaryPublicModifier handler
     - Register handler in FixHandlerRegistry
     - Handler removes "public " from declaration
     - _Requirements: 4.1_
