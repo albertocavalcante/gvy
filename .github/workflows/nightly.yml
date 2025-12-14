@@ -131,7 +131,7 @@ jobs:
           echo "artifact_name=${NIGHTLY_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: groovy-lsp-nightly-${{ steps.nightly_version.outputs.nightly_version }}
           path: dist/*
