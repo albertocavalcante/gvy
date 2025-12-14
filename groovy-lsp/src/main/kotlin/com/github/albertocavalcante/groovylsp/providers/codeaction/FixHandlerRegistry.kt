@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.codeaction
 
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 
 /**
@@ -132,12 +134,43 @@ object FixHandlerRegistry {
     fun getRegisteredRulesWithTitles(): Map<String, String> = registeredFixes.mapValues { it.value.title }
 }
 
+// ============================================================================
+// Fix Handler Implementations
+// ============================================================================
+
+/**
+ * Fix handler for TrailingWhitespace rule.
+ * Removes trailing whitespace from the affected line.
+ *
+ * **Feature: codenarc-lint-fixes, Property 3: Trailing Whitespace Removal**
+ * **Validates: Requirements 2.1**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes trailing whitespace, or null if the fix cannot be applied
+ */
+private fun fixTrailingWhitespace(context: FixContext): TextEdit? {
+    val lineNumber = context.diagnostic.range.start.line
+
+    // Validate line number is within bounds
+    if (lineNumber < 0 || lineNumber >= context.lines.size) {
+        return null
+    }
+
+    val line = context.lines[lineNumber]
+    val trimmedLine = line.trimEnd()
+
+    // Create TextEdit to replace the entire line with the trimmed version
+    val range = Range(
+        Position(lineNumber, 0),
+        Position(lineNumber, line.length),
+    )
+
+    return TextEdit(range, trimmedLine)
+}
+
 // Placeholder fix handler implementations - will be implemented in later tasks
 // These functions return null until their respective implementation tasks are completed.
 // The FunctionOnlyReturningConstant warning is expected for placeholders.
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixTrailingWhitespace(context: FixContext): TextEdit? = null
 
 @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
 private fun fixUnnecessarySemicolon(context: FixContext): TextEdit? = null
