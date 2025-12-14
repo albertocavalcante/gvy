@@ -170,16 +170,16 @@ class LintFixActionTest {
 
     @Test
     fun `returns empty list when handler returns null`() {
-        // All current handlers return null (placeholders)
+        // Use a rule with a placeholder handler that returns null
         val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
-            code = "TrailingWhitespace",
-            message = "Found trailing whitespace",
+            code = "UnnecessarySemicolon", // This handler still returns null
+            message = "Found unnecessary semicolon",
         )
 
         val actions = lintFixAction.createLintFixActions(
             testUri,
             listOf(diagnostic),
-            "def x = 1   \n",
+            "def x = 1;\n",
         )
 
         // Handler returns null, so no actions
@@ -195,6 +195,8 @@ class LintFixActionTest {
                 code = "TrailingWhitespace",
                 message = "Found trailing whitespace",
                 line = 0,
+                startChar = 0,
+                endChar = 12, // "def x = 1   " length (9 chars + 3 spaces)
             ),
             TestDiagnosticFactory.createCodeNarcDiagnostic(
                 code = "UnnecessarySemicolon",
@@ -214,18 +216,15 @@ class LintFixActionTest {
             ),
         )
 
-        val content = """
-            def x = 1
-            def y = 2;
-            def z = 3
-            def w = 4
-        """.trimIndent()
+        val content = "def x = 1   \ndef y = 2;\ndef z = 3\ndef w = 4"
 
         val actions = lintFixAction.createLintFixActions(testUri, diagnostics, content)
 
-        // Currently all handlers return null, so expect empty
-        // When handlers implemented: expect actions for first 2 only
-        assertTrue(actions.isEmpty())
+        // TrailingWhitespace handler is implemented, so expect 1 action
+        // UnnecessarySemicolon handler returns null (placeholder)
+        // UnknownRule has no handler
+        // PMD source is filtered out
+        assertTrue(actions.size == 1, "Expected 1 action for TrailingWhitespace, got ${actions.size}")
     }
 
     @Test
@@ -235,6 +234,8 @@ class LintFixActionTest {
                 code = "TrailingWhitespace",
                 message = "Found trailing whitespace",
                 source = "CodeNarc",
+                startChar = 0,
+                endChar = 12, // "def x = 1   " length
             ),
             TestDiagnosticFactory.createCodeNarcDiagnostic(
                 code = "SomeRule",
@@ -248,10 +249,12 @@ class LintFixActionTest {
             ),
         )
 
-        val actions = lintFixAction.createLintFixActions(testUri, diagnostics, "def x = 1")
+        val actions = lintFixAction.createLintFixActions(testUri, diagnostics, "def x = 1   ")
 
-        // Only first diagnostic might produce action (but handler returns null)
-        assertTrue(actions.isEmpty())
+        // TrailingWhitespace handler is implemented, so expect 1 action
+        // SomeOtherTool source is filtered out
+        // UnknownRule has no handler
+        assertTrue(actions.size == 1, "Expected 1 action for TrailingWhitespace, got ${actions.size}")
     }
 
     // === Content Handling Tests ===
