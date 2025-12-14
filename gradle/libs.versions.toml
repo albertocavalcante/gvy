@@ -2,7 +2,7 @@
 kotlin = "2.2.21"
 detekt = "1.23.8"
 spotless = "8.1.0"
-kover = "0.9.3"
+kover = "0.9.4"
 sonarqube = "7.1.0.6387"
 shadow = "9.2.2"
 gitHooks = "2.1.5"
