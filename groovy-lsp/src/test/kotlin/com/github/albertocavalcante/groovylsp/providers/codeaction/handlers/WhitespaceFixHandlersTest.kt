@@ -12,9 +12,9 @@ import net.jqwik.api.Provide
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import kotlin.test.assertNotNull
 
 /**
  * Tests for whitespace-related fix handlers.
@@ -51,11 +51,13 @@ class WhitespaceFixHandlersTest {
             endChar = lineWithWhitespace.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
-        assertNotNull(handler, "TrailingWhitespace handler should be registered")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
 
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = handler(context)
 
         // If handler returns a TextEdit, the newText should be the trimmed version
         return if (textEdit != null) {
@@ -90,9 +92,12 @@ class WhitespaceFixHandlersTest {
             endChar = lineWithWhitespace.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = handler(context)
 
         return if (textEdit != null) {
             // Range should start at beginning of line and end at end of line
@@ -146,14 +151,15 @@ class WhitespaceFixHandlersTest {
             endChar = content.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
-        assertNotNull(handler, "TrailingWhitespace handler should be registered")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
 
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = assertNotNull(handler(context), "Handler should return a TextEdit")
 
-        assertNotNull(textEdit, "Handler should return a TextEdit")
-        assertEquals("def x = 1", textEdit!!.newText, "Trailing whitespace should be removed")
+        assertEquals("def x = 1", textEdit.newText, "Trailing whitespace should be removed")
         assertEquals(Range(Position(0, 0), Position(0, content.length)), textEdit.range)
     }
 
@@ -169,12 +175,14 @@ class WhitespaceFixHandlersTest {
             endChar = content.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = assertNotNull(handler(context), "Handler should return a TextEdit")
 
-        assertNotNull(textEdit, "Handler should return a TextEdit")
-        assertEquals("def x = 1", textEdit!!.newText, "Trailing tabs should be removed")
+        assertEquals("def x = 1", textEdit.newText, "Trailing tabs should be removed")
     }
 
     @Test
@@ -189,13 +197,17 @@ class WhitespaceFixHandlersTest {
             endChar = content.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = assertNotNull(
+            handler(context),
+            "Handler should return a TextEdit for whitespace-only lines",
+        )
 
-        // For lines with only whitespace, handler should return empty string
-        assertNotNull(textEdit, "Handler should return a TextEdit for whitespace-only lines")
-        assertEquals("", textEdit!!.newText, "Whitespace-only line should become empty")
+        assertEquals("", textEdit.newText, "Whitespace-only line should become empty")
     }
 
     @Test
@@ -210,12 +222,14 @@ class WhitespaceFixHandlersTest {
             endChar = content.length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = assertNotNull(handler(context), "Handler should return a TextEdit")
 
-        assertNotNull(textEdit, "Handler should return a TextEdit")
-        assertEquals("println 'test'", textEdit!!.newText, "Mixed trailing whitespace should be removed")
+        assertEquals("println 'test'", textEdit.newText, "Mixed trailing whitespace should be removed")
     }
 
     @Test
@@ -230,9 +244,12 @@ class WhitespaceFixHandlersTest {
             endChar = 10,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = handler(context)
 
         assertNull(textEdit, "Handler should return null for out of bounds line")
     }
@@ -249,12 +266,14 @@ class WhitespaceFixHandlersTest {
             endChar = lines[1].length,
         )
 
-        val handler = FixHandlerRegistry.getHandler("TrailingWhitespace")
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("TrailingWhitespace"),
+            "TrailingWhitespace handler should be registered",
+        )
         val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
-        val textEdit = handler!!(context)
+        val textEdit = assertNotNull(handler(context), "Handler should return a TextEdit")
 
-        assertNotNull(textEdit, "Handler should return a TextEdit")
-        assertEquals("def y = 2", textEdit!!.newText, "Trailing whitespace should be removed from line 1")
+        assertEquals("def y = 2", textEdit.newText, "Trailing whitespace should be removed from line 1")
         assertEquals(1, textEdit.range.start.line, "Range should be on line 1")
     }
 }

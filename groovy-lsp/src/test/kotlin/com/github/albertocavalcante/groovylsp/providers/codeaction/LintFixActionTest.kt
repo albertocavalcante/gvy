@@ -196,7 +196,7 @@ class LintFixActionTest {
                 message = "Found trailing whitespace",
                 line = 0,
                 startChar = 0,
-                endChar = 13, // "def x = 1   " length
+                endChar = 12, // "def x = 1   " length (9 chars + 3 spaces)
             ),
             TestDiagnosticFactory.createCodeNarcDiagnostic(
                 code = "UnnecessarySemicolon",

@@ -159,6 +159,11 @@ private fun fixTrailingWhitespace(context: FixContext): TextEdit? {
     val line = context.lines[lineNumber]
     val trimmedLine = line.trimEnd()
 
+    // Return null if no trailing whitespace to remove (no-op case)
+    if (line == trimmedLine) {
+        return null
+    }
+
     // Create TextEdit to replace the entire line with the trimmed version
     val range = Range(
         Position(lineNumber, 0),
