@@ -170,19 +170,21 @@ class LintFixActionTest {
 
     @Test
     fun `returns empty list when handler returns null`() {
-        // Use a rule with a placeholder handler that returns null
+        // Use ConsecutiveBlankLines with content that has only 1 blank line (not consecutive)
+        // The handler returns null when there are no consecutive blank lines to fix
         val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
-            code = "UnnecessarySemicolon", // This handler still returns null
-            message = "Found unnecessary semicolon",
+            code = "ConsecutiveBlankLines",
+            message = "Found consecutive blank lines",
+            line = 1, // Point to the single blank line
         )
 
         val actions = lintFixAction.createLintFixActions(
             testUri,
             listOf(diagnostic),
-            "def x = 1;\n",
+            "def x = 1\n\ndef y = 2", // Only 1 blank line, not consecutive
         )
 
-        // Handler returns null, so no actions
+        // Handler returns null when there's only 1 blank line (nothing to reduce)
         assertTrue(actions.isEmpty())
     }
 
@@ -202,6 +204,8 @@ class LintFixActionTest {
                 code = "UnnecessarySemicolon",
                 message = "Found unnecessary semicolon",
                 line = 1,
+                startChar = 9, // Position of ';' in "def y = 2;"
+                endChar = 10,
             ),
             TestDiagnosticFactory.createCodeNarcDiagnostic(
                 code = "UnknownRule",
@@ -221,10 +225,13 @@ class LintFixActionTest {
         val actions = lintFixAction.createLintFixActions(testUri, diagnostics, content)
 
         // TrailingWhitespace handler is implemented, so expect 1 action
-        // UnnecessarySemicolon handler returns null (placeholder)
+        // UnnecessarySemicolon handler is now implemented, so expect 1 action
         // UnknownRule has no handler
         // PMD source is filtered out
-        assertTrue(actions.size == 1, "Expected 1 action for TrailingWhitespace, got ${actions.size}")
+        assertTrue(
+            actions.size == 2,
+            "Expected 2 actions for TrailingWhitespace and UnnecessarySemicolon, got ${actions.size}",
+        )
     }
 
     @Test

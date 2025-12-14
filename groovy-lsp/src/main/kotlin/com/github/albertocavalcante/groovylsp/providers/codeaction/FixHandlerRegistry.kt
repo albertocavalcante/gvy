@@ -173,18 +173,139 @@ private fun fixTrailingWhitespace(context: FixContext): TextEdit? {
     return TextEdit(range, "")
 }
 
+/**
+ * Fix handler for UnnecessarySemicolon rule.
+ * Removes the unnecessary semicolon from the end of a statement.
+ *
+ * **Feature: codenarc-lint-fixes, Property 4: Semicolon Removal**
+ * **Validates: Requirements 2.2**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes the semicolon, or null if the fix cannot be applied
+ */
+private fun fixUnnecessarySemicolon(context: FixContext): TextEdit? {
+    val lineNumber = context.diagnostic.range.start.line
+
+    // Validate line number is within bounds
+    if (lineNumber < 0 || lineNumber >= context.lines.size) {
+        return null
+    }
+
+    val line = context.lines[lineNumber]
+
+    // Find the semicolon position - it should be at the end of the trimmed content
+    val trimmedLine = line.trimEnd()
+    if (trimmedLine.isEmpty() || trimmedLine.last() != ';') {
+        return null
+    }
+
+    val semicolonIndex = trimmedLine.length - 1
+
+    // Create TextEdit to remove only the semicolon (preserving any trailing whitespace)
+    val range = Range(
+        Position(lineNumber, semicolonIndex),
+        Position(lineNumber, semicolonIndex + 1),
+    )
+
+    return TextEdit(range, "")
+}
+
+/**
+ * Fix handler for ConsecutiveBlankLines rule.
+ * Reduces multiple consecutive blank lines to a single blank line.
+ *
+ * **Feature: codenarc-lint-fixes, Property 5: Consecutive Blank Lines Reduction**
+ * **Validates: Requirements 2.3**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes extra blank lines, or null if the fix cannot be applied
+ */
+private fun fixConsecutiveBlankLines(context: FixContext): TextEdit? {
+    val startLine = context.diagnostic.range.start.line
+
+    // Validate line number is within bounds
+    if (startLine < 0 || startLine >= context.lines.size) {
+        return null
+    }
+
+    // Count consecutive blank lines starting from the diagnostic line
+    var blankLineCount = 0
+    var currentLine = startLine
+    while (currentLine < context.lines.size && context.lines[currentLine].isBlank()) {
+        blankLineCount++
+        currentLine++
+    }
+
+    // If there's only 1 or 0 blank lines, nothing to fix
+    if (blankLineCount <= 1) {
+        return null
+    }
+
+    // We want to keep 1 blank line and remove the rest
+    // So we remove from (startLine + 1) to (startLine + blankLineCount)
+    // The range should start at the beginning of the second blank line
+    // and end at the beginning of the line after the last blank line
+    val removeStartLine = startLine + 1
+    val removeEndLine = startLine + blankLineCount
+
+    // Create TextEdit to remove the extra blank lines
+    val range = Range(
+        Position(removeStartLine, 0),
+        Position(removeEndLine, 0),
+    )
+
+    return TextEdit(range, "")
+}
+
+/**
+ * Fix handler for BlankLineBeforePackage rule.
+ * Removes blank lines before the package statement.
+ *
+ * **Feature: codenarc-lint-fixes**
+ * **Validates: Requirements 2.4**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that removes blank lines before package, or null if the fix cannot be applied
+ */
+private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? {
+    val packageLine = context.diagnostic.range.start.line
+
+    // Validate line number is within bounds
+    if (packageLine < 0 || packageLine >= context.lines.size) {
+        return null
+    }
+
+    // If package is at line 0, there are no blank lines before it
+    if (packageLine == 0) {
+        return null
+    }
+
+    // Count consecutive blank lines before the package statement
+    var firstBlankLine = packageLine - 1
+    while (firstBlankLine >= 0 && context.lines[firstBlankLine].isBlank()) {
+        firstBlankLine--
+    }
+    // firstBlankLine is now the last non-blank line before the blank lines, or -1 if all lines before package are blank
+    val blankLinesStartLine = firstBlankLine + 1
+
+    // If there are no blank lines before package (the line before package is not blank)
+    if (blankLinesStartLine == packageLine) {
+        return null
+    }
+
+    // Create TextEdit to remove all blank lines before package
+    // Range from start of first blank line to start of package line
+    val range = Range(
+        Position(blankLinesStartLine, 0),
+        Position(packageLine, 0),
+    )
+
+    return TextEdit(range, "")
+}
+
 // Placeholder fix handler implementations - will be implemented in later tasks
 // These functions return null until their respective implementation tasks are completed.
 // The FunctionOnlyReturningConstant warning is expected for placeholders.
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixUnnecessarySemicolon(context: FixContext): TextEdit? = null
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixConsecutiveBlankLines(context: FixContext): TextEdit? = null
-
-@Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? = null
 
 @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
 private fun fixRemoveImportLine(context: FixContext): TextEdit? = null
