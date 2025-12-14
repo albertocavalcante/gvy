@@ -10,7 +10,7 @@ jmh = "0.7.3"
 
 groovy = "4.0.29"
 lsp4j = "0.24.0"
-codenarc = "3.6.0-groovy-4.0"
+codenarc = "3.7.0-groovy-4.0"
 gmetrics = "2.1.0"
 gradleTooling = "9.2.1"
 coroutines = "1.10.2"
