@@ -132,3 +132,17 @@ gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-i
   When a test fails due to a timeout or non-deterministic behavior, add a FIXME comment to the test file indicating it is flaky.
   Example: // FIXME: Flaky test due to timeout
 </flaky-tests>
+
+<test-naming>
+  ALWAYS use backtick style with descriptive sentences for test names.
+  NEVER use camelCase for test function names.
+
+  Examples:
+  ✅ Good:  @Test fun `FixContext stores diagnostic correctly`()
+  ✅ Good:  @Property fun `property - unregistered random rule names return null handler`()
+  ❌ Bad:   @Test fun fixContextStoresDiagnosticCorrectly()
+  ❌ Bad:   @Property fun nonCodeNarcDiagnosticsReturnEmptyActions()
+
+  Rationale: Backtick style with spaces is more readable, self-documenting, and follows BDD principles.
+  Applies to ALL test types: unit tests, integration tests, and property-based tests.
+</test-naming>
