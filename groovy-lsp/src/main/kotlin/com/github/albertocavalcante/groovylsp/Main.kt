@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovyformatter.OpenRewriteFormatter
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ExecuteCommandParams
@@ -37,6 +38,7 @@ fun main(args: Array<String>) {
             }
 
             "execute" -> runExecute(commandArgs)
+            "format" -> runFormat(commandArgs)
             "check" -> runCheck(commandArgs)
             "version" -> runVersion()
             "--help", "-h", "help" -> {
@@ -152,6 +154,26 @@ fun runCheck(args: List<String>, out: PrintStream = System.out) {
         }
     } finally {
         server.shutdown().get()
+    }
+}
+
+fun runFormat(args: List<String>, out: PrintStream = System.out) {
+    if (args.isEmpty()) {
+        out.println("Usage: groovy-lsp format <file> [file...]")
+        exitProcess(1)
+    }
+
+    val formatter = OpenRewriteFormatter()
+    for (arg in args) {
+        val file = File(arg)
+        if (!file.exists()) {
+            System.err.println("File not found: $arg")
+            continue
+        }
+        val input = file.readText()
+        val formatted = formatter.format(input)
+        out.print(formatted)
+        if (!formatted.endsWith("\n")) out.println()
     }
 }
 

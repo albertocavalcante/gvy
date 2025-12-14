@@ -5,6 +5,7 @@ import org.gradle.api.tasks.testing.Test
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.shadow) apply false
+    alias(libs.plugins.dependency.analysis) apply false
     alias(libs.plugins.detekt)
     alias(libs.plugins.spotless)
     alias(libs.plugins.kover)
@@ -32,6 +33,7 @@ version =
 extra["baseVersion"] = baseVersion
 
 subprojects {
+    apply(plugin = "com.autonomousapps.dependency-analysis")
     apply(plugin = "io.gitlab.arturbosch.detekt")
     apply(plugin = "com.diffplug.spotless")
     apply(plugin = "org.jetbrains.kotlinx.kover")
@@ -214,5 +216,4 @@ tasks.register("quality") {
     group = "verification"
     dependsOn(subprojects.map { it.tasks.named("quality") })
 }
-
 

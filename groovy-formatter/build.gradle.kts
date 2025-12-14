@@ -13,7 +13,13 @@ java {
 
 dependencies {
     implementation(libs.kotlin.stdlib)
-    implementation(libs.rewrite.groovy)
+    implementation(libs.rewrite.groovy) {
+        // Keep formatter functionality, but avoid shipping OpenRewrite's Git integration and native dependencies
+        // unless we explicitly prove we need them at runtime.
+        exclude(group = "org.openrewrite.tools", module = "jgit")
+        exclude(group = "net.java.dev.jna", module = "jna")
+        exclude(group = "net.java.dev.jna", module = "jna-platform")
+    }
 
     detektPlugins(libs.detekt.formatting)
 
