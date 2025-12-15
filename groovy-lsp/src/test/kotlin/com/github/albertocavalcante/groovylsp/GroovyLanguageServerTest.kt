@@ -106,6 +106,14 @@ class GroovyLanguageServerTest {
             }
         }
 
+        // Initialize server first
+        val initParams = InitializeParams().apply {
+            rootUri = "file:///test/project"
+            capabilities = ClientCapabilities()
+        }
+        server.initialize(initParams).get()
+        server.initialized(org.eclipse.lsp4j.InitializedParams())
+
         server.textDocumentService.didOpen(params)
 
         // Wait for compilation to complete and diagnostics to be published

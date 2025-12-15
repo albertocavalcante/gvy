@@ -1,5 +1,6 @@
-package com.github.albertocavalcante.groovylsp.gradle
+package com.github.albertocavalcante.groovylsp.buildtool.maven
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,25 +22,19 @@ import kotlin.io.path.name
 private const val FILE_CHANGE_DELAY_MS = 500L
 
 /**
- * Watches Gradle build files for changes and triggers dependency re-resolution.
- * Monitors build.gradle, build.gradle.kts, settings.gradle, and settings.gradle.kts files.
+ * Watches Maven pom.xml files for changes and triggers dependency re-resolution.
  */
-class BuildFileWatcher(
+class MavenBuildFileWatcher(
     private val coroutineScope: CoroutineScope,
     private val onBuildFileChanged: (Path) -> Unit,
     private val debounceDelayMs: Long = FILE_CHANGE_DELAY_MS,
-) {
-    private val logger = LoggerFactory.getLogger(BuildFileWatcher::class.java)
+) : BuildToolFileWatcher {
+    private val logger = LoggerFactory.getLogger(MavenBuildFileWatcher::class.java)
     private var watchService: WatchService? = null
     private var watchJob: Job? = null
     private val watchKeys = ConcurrentHashMap<WatchKey, Path>()
 
-    private val buildFileNames = setOf(
-        "build.gradle",
-        "build.gradle.kts",
-        "settings.gradle",
-        "settings.gradle.kts",
-    )
+    private val buildFileNames = setOf("pom.xml")
 
     private sealed class PollResult {
         object Timeout : PollResult()
@@ -47,21 +42,16 @@ class BuildFileWatcher(
         data class Success(val watchKey: WatchKey) : PollResult()
     }
 
-    /**
-     * Starts watching the given project directory for build file changes.
-     */
-    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
     @Suppress("TooGenericExceptionCaught")
-    fun startWatching(projectDir: Path) {
+    override fun startWatching(projectDir: Path) {
         if (watchJob?.isActive == true) {
-            logger.debug("Build file watcher already active for project")
+            logger.debug("Maven build file watcher already active for project")
             return
         }
 
         try {
             watchService = FileSystems.getDefault().newWatchService()
 
-            // Watch the project directory for build file changes
             val watchKey = projectDir.register(
                 watchService,
                 StandardWatchEventKinds.ENTRY_MODIFY,
@@ -70,49 +60,37 @@ class BuildFileWatcher(
             )
             watchKeys[watchKey] = projectDir
 
-            logger.info("Started watching build files in: $projectDir")
+            logger.info("Started watching Maven build files in: $projectDir")
 
-            // Start the watch loop in a coroutine
             watchJob = coroutineScope.launch(Dispatchers.IO) {
                 watchLoop()
             }
         } catch (e: Exception) {
-            logger.error("Failed to start build file watcher", e)
+            logger.error("Failed to start Maven build file watcher", e)
         }
     }
 
-    /**
-     * Stops watching for build file changes.
-     */
-    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
     @Suppress("TooGenericExceptionCaught")
-    fun stopWatching() {
+    override fun stopWatching() {
         try {
             watchJob?.cancel()
             watchJob = null
 
-            watchKeys.keys.forEach { key ->
-                key.cancel()
-            }
+            watchKeys.keys.forEach { key -> key.cancel() }
             watchKeys.clear()
 
             watchService?.close()
             watchService = null
 
-            logger.info("Stopped build file watcher")
+            logger.info("Stopped Maven build file watcher")
         } catch (e: Exception) {
-            logger.warn("Error stopping build file watcher", e)
+            logger.warn("Error stopping Maven build file watcher", e)
         }
     }
 
-    /**
-     * Main watch loop that processes file system events.
-     */
-    // FIXME: Replace with specific exception types (IOException, ClosedWatchServiceException)
     @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
     private suspend fun watchLoop() {
         val watchService = this.watchService ?: return
-
         try {
             while (coroutineScope.isActive) {
                 val result = pollWatchKey(watchService)
@@ -129,7 +107,7 @@ class BuildFileWatcher(
             logger.debug("Watch service closed, terminating watch loop.")
             return
         } catch (e: Exception) {
-            logger.error("Error in build file watch loop", e)
+            logger.error("Error in Maven build file watch loop", e)
             throw e
         }
     }
@@ -149,11 +127,6 @@ class BuildFileWatcher(
         PollResult.Interrupted
     }
 
-    private fun handleUnknownWatchKey(watchKey: WatchKey) {
-        logger.warn("Unknown watch key, skipping events")
-        watchKey.reset()
-    }
-
     private suspend fun handlePollResult(result: PollResult): Boolean = when (result) {
         PollResult.Interrupted -> false
         PollResult.Timeout -> true
@@ -163,12 +136,13 @@ class BuildFileWatcher(
     private suspend fun handleWatchKey(watchKey: WatchKey): Boolean {
         val projectDir = watchKeys[watchKey]
         if (projectDir == null) {
-            handleUnknownWatchKey(watchKey)
+            watchKey.reset()
             return true
         }
         return processWatchKeyEvents(watchKey, projectDir)
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
         watchKey.pollEvents().forEach { event ->
             processWatchEvent(event, projectDir)
@@ -176,33 +150,18 @@ class BuildFileWatcher(
 
         val stillValid = watchKey.reset()
         if (!stillValid) {
-            logger.warn("Watch key no longer valid for: $projectDir")
             watchKeys.remove(watchKey)
         }
-
         return stillValid
     }
 
-    /**
-     * Processes a single file system watch event.
-     */
-    // FIXME: Replace with specific exception types (IOException, CancellationException)
     @Suppress("TooGenericExceptionCaught")
     private suspend fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
         val kind = event.kind()
-
-        if (kind == StandardWatchEventKinds.OVERFLOW) {
-            logger.warn("File system watch overflow - some events may have been lost")
-            return
-        }
+        if (kind == StandardWatchEventKinds.OVERFLOW) return
 
         val filename = event.context() as? Path ?: return
-        val filenameStr = filename.name
-
-        // Check if this is a build file we care about
-        if (!buildFileNames.contains(filenameStr)) {
-            return
-        }
+        if (!buildFileNames.contains(filename.name)) return
 
         val fullPath = projectDir.resolve(filename)
 
@@ -211,30 +170,21 @@ class BuildFileWatcher(
             StandardWatchEventKinds.ENTRY_MODIFY,
             -> {
                 if (fullPath.exists()) {
-                    logger.info("Build file changed: $filenameStr")
-
-                    // Add configurable delay to handle rapid successive changes
-                    if (debounceDelayMs > 0) {
-                        delay(debounceDelayMs)
-                    }
-
-                    // Trigger dependency re-resolution
+                    logger.info("Maven build file changed: ${filename.name}")
+                    if (debounceDelayMs > 0) delay(debounceDelayMs)
                     try {
                         onBuildFileChanged(projectDir)
                     } catch (e: Exception) {
-                        logger.error("Error handling build file change for $filenameStr", e)
+                        logger.error("Error handling Maven build file change", e)
                     }
                 }
             }
+
             StandardWatchEventKinds.ENTRY_DELETE -> {
-                logger.info("Build file deleted: $filenameStr")
-                // Could trigger cleanup of cached dependencies here
+                logger.info("Maven build file deleted: ${filename.name}")
             }
         }
     }
 
-    /**
-     * Checks if the watcher is currently active.
-     */
-    fun isWatching(): Boolean = watchJob?.isActive == true
+    override fun isWatching(): Boolean = watchJob?.isActive == true
 }

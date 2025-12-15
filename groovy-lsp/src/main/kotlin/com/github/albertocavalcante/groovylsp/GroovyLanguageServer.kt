@@ -1,10 +1,12 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionPool
+import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
-import com.github.albertocavalcante.groovylsp.gradle.GradleConnectionPool
-import com.github.albertocavalcante.groovylsp.gradle.GradleDependencyResolver
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
@@ -49,7 +51,13 @@ class GroovyLanguageServer :
     private val compilationService = GroovyCompilationService()
 
     // Async dependency management
-    private val dependencyManager = DependencyManager(GradleDependencyResolver(), coroutineScope)
+    private val buildToolManager = BuildToolManager(
+        listOf(
+            GradleBuildTool(),
+            MavenBuildTool(),
+        ),
+    )
+    private val dependencyManager = DependencyManager(buildToolManager, coroutineScope)
     private var savedInitParams: InitializeParams? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
 
@@ -175,7 +183,7 @@ class GroovyLanguageServer :
         client?.showMessage(
             MessageParams().apply {
                 type = MessageType.Info
-                message = "Resolving Gradle dependencies..."
+                message = "Resolving build dependencies..."
             },
         )
 
@@ -194,6 +202,7 @@ class GroovyLanguageServer :
 
                 // Send window/showMessage for Gradle distribution download (cold start scenario)
                 // This ensures e2e tests get the notification they're waiting for
+                // Also applicable if Maven downloads internet...
                 if (message.contains("Downloading Gradle distribution")) {
                     client?.showMessage(
                         MessageParams().apply {
@@ -221,11 +230,14 @@ class GroovyLanguageServer :
                     "✅ Ready: ${resolution.dependencies.size} dependencies loaded",
                 )
 
+                // Get tool name for friendly message
+                val toolName = dependencyManager.getCurrentBuildToolName() ?: "Build Tool"
+
                 // Notify client of successful resolution
                 client?.showMessage(
                     MessageParams().apply {
                         type = MessageType.Info
-                        message = "Dependencies loaded: ${resolution.dependencies.size} JARs from Gradle cache"
+                        message = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
                     },
                 )
             },
@@ -237,7 +249,7 @@ class GroovyLanguageServer :
                 client?.showMessage(
                     MessageParams().apply {
                         type = MessageType.Warning
-                        message = "Could not load Gradle dependencies - LSP will work with project files only"
+                        message = "Could not load build dependencies - LSP will work with project files only"
                     },
                 )
             },

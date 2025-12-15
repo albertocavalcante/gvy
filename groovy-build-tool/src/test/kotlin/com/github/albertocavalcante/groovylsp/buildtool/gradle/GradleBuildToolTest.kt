@@ -1,15 +1,14 @@
-package com.github.albertocavalcante.groovylsp.gradle
+package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
-import kotlinx.coroutines.test.runTest
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
-class GradleDependencyResolverTest {
+class GradleBuildToolTest {
 
     @Test
-    fun `should resolve dependencies from gradle project using test resources`() = runTest {
-        val resolver = GradleDependencyResolver()
+    fun `should resolve dependencies from gradle project using test resources`() {
+        val resolver = GradleBuildTool()
         val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
         // Use our test project which has known dependencies
@@ -37,12 +36,23 @@ class GradleDependencyResolverTest {
             "Should find at least one of the declared dependencies (groovy or commons-lang3): $dependencyNames",
         )
 
-        assertTrue(sourceDirs.any { it.toString().contains("src/main/groovy") }, "Should include main source directory")
+        assertTrue(
+            sourceDirs.any {
+                it.endsWith(Paths.get("src", "main", "groovy")) || it.endsWith(
+                    Paths.get(
+                        "src",
+                        "main",
+                        "java",
+                    ),
+                )
+            },
+            "Should include main source directory (src/main/groovy or src/main/java). Found: $sourceDirs",
+        )
     }
 
     @Test
-    fun `should handle non-gradle project gracefully`() = runTest {
-        val resolver = GradleDependencyResolver()
+    fun `should handle non-gradle project gracefully`() {
+        val resolver = GradleBuildTool()
         val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
 
         val resolution = resolver.resolve(nonGradleProject, null)
@@ -52,8 +62,8 @@ class GradleDependencyResolverTest {
     }
 
     @Test
-    fun `should handle non-existent project gracefully`() = runTest {
-        val resolver = GradleDependencyResolver()
+    fun `should handle non-existent project gracefully`() {
+        val resolver = GradleBuildTool()
         val nonExistentProject = Paths.get("non-existent-project")
 
         val resolution = resolver.resolve(nonExistentProject, null)

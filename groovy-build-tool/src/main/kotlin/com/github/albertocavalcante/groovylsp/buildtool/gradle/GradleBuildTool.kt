@@ -1,5 +1,7 @@
-package com.github.albertocavalcante.groovylsp.gradle
+package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import org.gradle.tooling.events.OperationType
 import org.gradle.tooling.events.download.FileDownloadStartEvent
 import org.gradle.tooling.model.idea.IdeaModule
@@ -20,27 +22,48 @@ import kotlin.io.path.exists
  * on the classpath for compilation. Future phases will add source
  * JAR support and on-demand downloading.
  */
-class GradleDependencyResolver(private val connectionFactory: GradleConnectionFactory = GradleConnectionPool) :
-    DependencyResolver {
-    private val logger = LoggerFactory.getLogger(GradleDependencyResolver::class.java)
+class GradleBuildTool(private val connectionFactory: GradleConnectionFactory = GradleConnectionPool) : BuildTool {
+
+    private val logger = LoggerFactory.getLogger(GradleBuildTool::class.java)
+
+    override val name: String = "Gradle"
+
+    /**
+     * Checks if the given directory is a Gradle project.
+     */
+    override fun canHandle(workspaceRoot: Path): Boolean {
+        val gradleFiles = listOf(
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+        )
+
+        return gradleFiles.any { fileName ->
+            val candidate = workspaceRoot.resolve(fileName)
+            val present = candidate.exists()
+            logger.debug("Gradle probe: {} present={}", candidate, present)
+            present
+        }
+    }
 
     /**
      * Resolves all binary JAR dependencies from a Gradle project.
      *
-     * @param projectDir The root directory of the Gradle project
-     * @param onDownloadProgress Optional callback for download progress updates (e.g., Gradle distribution download)
-     * @return List of paths to dependency JAR files
+     * @param workspaceRoot The root directory of the Gradle project
+     * @param onProgress Optional callback for progress updates (e.g., Gradle distribution download)
+     * @return List of paths to dependency JAR files and source directories
      */
-    override fun resolve(projectDir: Path, onDownloadProgress: ((String) -> Unit)?): WorkspaceResolution {
-        if (!isGradleProject(projectDir)) {
-            logger.info("Not a Gradle project: $projectDir")
+    override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
+        if (!canHandle(workspaceRoot)) {
+            logger.info("Not a Gradle project: $workspaceRoot")
             return WorkspaceResolution(emptyList(), emptyList())
         }
 
-        logger.info("Resolving Gradle dependencies for: $projectDir")
+        logger.info("Resolving Gradle dependencies for: $workspaceRoot")
 
         val defaultAttempt = runCatching {
-            resolveWithGradleUserHome(projectDir, gradleUserHomeDir = null, onDownloadProgress = onDownloadProgress)
+            resolveWithGradleUserHome(workspaceRoot, gradleUserHomeDir = null, onDownloadProgress = onProgress)
         }
 
         if (defaultAttempt.isSuccess) {
@@ -60,7 +83,7 @@ class GradleDependencyResolver(private val connectionFactory: GradleConnectionFa
 
         val isolatedUserHome = isolatedGradleUserHomeDir()
         val retryAttempt = runCatching {
-            resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile(), onDownloadProgress)
+            resolveWithGradleUserHome(workspaceRoot, isolatedUserHome.toFile(), onProgress)
         }
 
         if (retryAttempt.isSuccess) {
@@ -80,6 +103,7 @@ class GradleDependencyResolver(private val connectionFactory: GradleConnectionFa
         onDownloadProgress: ((String) -> Unit)?,
     ): WorkspaceResolution {
         val connection = connectionFactory.getConnection(projectDir, gradleUserHomeDir)
+
         val modelBuilder = connection.model(IdeaProject::class.java)
             .withArguments(
                 "-Dorg.gradle.daemon=true",
@@ -199,22 +223,9 @@ class GradleDependencyResolver(private val connectionFactory: GradleConnectionFa
         }
     }
 
-    /**
-     * Checks if the given directory is a Gradle project.
-     */
-    private fun isGradleProject(projectDir: Path): Boolean {
-        val gradleFiles = listOf(
-            "build.gradle",
-            "build.gradle.kts",
-            "settings.gradle",
-            "settings.gradle.kts",
-        )
-
-        return gradleFiles.any { fileName ->
-            val candidate = projectDir.resolve(fileName)
-            val present = candidate.exists()
-            logger.debug("Gradle probe: {} present={}", candidate, present)
-            present
-        }
-    }
+    override fun createWatcher(
+        coroutineScope: kotlinx.coroutines.CoroutineScope,
+        onChange: (java.nio.file.Path) -> Unit,
+    ): com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher =
+        GradleBuildFileWatcher(coroutineScope, onChange)
 }

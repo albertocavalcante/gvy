@@ -36,6 +36,7 @@ class ASTCompletionIntegrationTest {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
         }
         serverHandle!!.server.initialize(initParams).get()
+        serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
     }
 
     @AfterEach

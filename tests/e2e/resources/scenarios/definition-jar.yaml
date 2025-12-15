@@ -41,7 +41,7 @@ steps:
         - jsonPath: '$.message'
           expect:
             type: 'CONTAINS'
-            value: 'Resolving Gradle dependencies'
+            value: 'Resolving build dependencies'
       timeoutMs: 10000
 
   # Optional: Gradle distribution download (only on cold CI, can take 60-180s)

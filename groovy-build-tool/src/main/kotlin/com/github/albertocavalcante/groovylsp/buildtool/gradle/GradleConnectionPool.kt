@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.gradle
+package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection

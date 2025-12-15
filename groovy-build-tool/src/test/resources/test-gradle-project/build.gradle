@@ -1,0 +1,13 @@
+plugins {
+    id 'groovy'
+    id 'idea'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.groovy:groovy:4.0.28'
+    implementation 'org.apache.commons:commons-lang3:3.17.0'
+}

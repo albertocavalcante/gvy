@@ -392,7 +392,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
     companion object {
         private const val DEFAULT_REQUEST_TIMEOUT_MS = 30_000L
         private const val DEFAULT_NOTIFICATION_TIMEOUT_MS = 30_000L
-        private const val DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000L
+        private const val DEFAULT_SHUTDOWN_TIMEOUT_MS = 60_000L
     }
 }
 
