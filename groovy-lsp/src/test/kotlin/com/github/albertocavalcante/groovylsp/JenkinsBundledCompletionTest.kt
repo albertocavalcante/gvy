@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -85,6 +86,57 @@ class JenkinsBundledCompletionTest {
         assertEquals(CompletionItemKind.Property, returnStdout.kind)
     }
 
+    @Test
+    fun `jenkinsfile should provide rich hover for Jenkins steps`() = runBlocking {
+        val uri = "file:///tmp/jenkins-test/Jenkinsfile"
+        val content = """
+            stage('Build') {
+                echo 'Building...'
+                sh 'make build'
+            }
+        """.trimIndent()
+
+        openDocument(uri, content)
+
+        // Hover on 'stage' step - line 0, character 0
+        val stageHover = requestHoverAt(uri, Position(0, 2))
+        assertNotNull(stageHover, "Should have hover for 'stage' step")
+
+        val stageContent = stageHover.contents.right.value
+        assertTrue(
+            stageContent.contains("Jenkins Step"),
+            "Stage hover should show 'Jenkins Step' header. Got: $stageContent",
+        )
+        assertTrue(
+            stageContent.contains("stage"),
+            "Stage hover should contain step name. Got: $stageContent",
+        )
+
+        // Hover on 'echo' step - line 1
+        val echoHover = requestHoverAt(uri, Position(1, 6))
+        assertNotNull(echoHover, "Should have hover for 'echo' step")
+
+        val echoContent = echoHover.contents.right.value
+        assertTrue(
+            echoContent.contains("Jenkins Step") && echoContent.contains("echo"),
+            "Echo hover should show Jenkins step documentation. Got: $echoContent",
+        )
+
+        // Hover on 'sh' step - line 2
+        val shHover = requestHoverAt(uri, Position(2, 6))
+        assertNotNull(shHover, "Should have hover for 'sh' step")
+
+        val shContent = shHover.contents.right.value
+        assertTrue(
+            shContent.contains("Jenkins Step") && shContent.contains("sh"),
+            "Sh hover should show Jenkins step documentation. Got: $shContent",
+        )
+        assertTrue(
+            shContent.contains("script"),
+            "Sh hover should include script parameter. Got: $shContent",
+        )
+    }
+
     private suspend fun openDocument(uri: String, content: String) {
         val textDoc = TextDocumentItem().apply {
             this.uri = uri
@@ -108,5 +160,14 @@ class JenkinsBundledCompletionTest {
 
         val result = serverHandle!!.server.textDocumentService.completion(params).get()
         return result.left
+    }
+
+    private suspend fun requestHoverAt(uri: String, position: Position): org.eclipse.lsp4j.Hover? {
+        val params = HoverParams().apply {
+            textDocument = TextDocumentIdentifier(uri)
+            this.position = position
+        }
+
+        return serverHandle!!.server.textDocumentService.hover(params).get()
     }
 }

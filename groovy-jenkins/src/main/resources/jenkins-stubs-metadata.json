@@ -1,7 +1,7 @@
 {
   "steps": {
     "sh": {
-      "plugin": "workflow-durable-task-step:1400.v7fd76b_8b_6b_9a",
+      "plugin": "workflow-durable-task-step",
       "parameters": {
         "script": {
           "type": "String",
@@ -31,10 +31,56 @@
           "documentation": "Label for this step in Blue Ocean"
         }
       },
-      "documentation": "Shell Script step - Execute a shell command"
+      "documentation": "Execute a shell script. On Unix-like systems, this runs the script using /bin/sh."
+    },
+    "bat": {
+      "plugin": "workflow-durable-task-step",
+      "parameters": {
+        "script": {
+          "type": "String",
+          "required": true,
+          "documentation": "Batch script to execute"
+        },
+        "returnStdout": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Return standard output instead of exit code"
+        },
+        "returnStatus": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Return exit code instead of throwing exception on non-zero"
+        }
+      },
+      "documentation": "Execute a Windows batch script."
+    },
+    "powershell": {
+      "plugin": "workflow-durable-task-step",
+      "parameters": {
+        "script": {
+          "type": "String",
+          "required": true,
+          "documentation": "PowerShell script to execute"
+        },
+        "returnStdout": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Return standard output instead of exit code"
+        },
+        "returnStatus": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Return exit code instead of throwing exception on non-zero"
+        }
+      },
+      "documentation": "Execute a PowerShell script."
     },
     "echo": {
-      "plugin": "workflow-basic-steps:1000.v2f5c09b_74cf6",
+      "plugin": "workflow-basic-steps",
       "parameters": {
         "message": {
           "type": "String",
@@ -42,10 +88,126 @@
           "documentation": "Message to print"
         }
       },
-      "documentation": "Print a message to the build log"
+      "documentation": "Print a message to the build log."
+    },
+    "error": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": true,
+          "documentation": "Error message"
+        }
+      },
+      "documentation": "Signal an error and fail the build."
+    },
+    "unstable": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": true,
+          "documentation": "Message explaining why the build is unstable"
+        }
+      },
+      "documentation": "Mark the build as unstable with a message."
+    },
+    "warnError": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": true,
+          "documentation": "Warning message"
+        }
+      },
+      "documentation": "Catch errors and mark build as unstable instead of failing."
+    },
+    "stage": {
+      "plugin": "pipeline-stage-step",
+      "parameters": {
+        "name": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the stage for visualization in the pipeline view"
+        }
+      },
+      "documentation": "Define a stage in the pipeline. Stages provide logical grouping and can be visualized in the Blue Ocean interface and the classic pipeline stage view."
+    },
+    "node": {
+      "plugin": "workflow-durable-task-step",
+      "parameters": {
+        "label": {
+          "type": "String",
+          "required": false,
+          "documentation": "Label expression to select the node (agent) to run on"
+        }
+      },
+      "documentation": "Allocate a node (agent/executor) to run the enclosed steps. The node provides a workspace on the agent machine."
+    },
+    "lock": {
+      "plugin": "lockable-resources",
+      "parameters": {
+        "resource": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of the resource to lock"
+        },
+        "label": {
+          "type": "String",
+          "required": false,
+          "documentation": "Label of the resource to lock"
+        },
+        "quantity": {
+          "type": "int",
+          "required": false,
+          "default": "1",
+          "documentation": "Number of resources to lock"
+        },
+        "inversePrecedence": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "If true, newer builds get priority"
+        }
+      },
+      "documentation": "Acquire a lock on a shared resource for exclusive access. Prevents concurrent builds from using the same resource."
+    },
+    "parallel": {
+      "plugin": "workflow-cps",
+      "parameters": {},
+      "documentation": "Execute multiple branches in parallel. Each branch runs concurrently on available executors."
+    },
+    "script": {
+      "plugin": "workflow-cps",
+      "parameters": {},
+      "documentation": "Execute a block of scripted pipeline code within a declarative pipeline. Allows using Groovy code inside declarative syntax."
+    },
+    "checkout": {
+      "plugin": "workflow-scm-step",
+      "parameters": {
+        "scm": {
+          "type": "SCM",
+          "required": true,
+          "documentation": "SCM configuration"
+        },
+        "changelog": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Include changelog"
+        },
+        "poll": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Enable SCM polling"
+        }
+      },
+      "documentation": "Check out source code from SCM. Supports Git, Subversion, Mercurial and other SCM systems."
     },
     "git": {
-      "plugin": "git:5.2.1",
+      "plugin": "git",
       "parameters": {
         "url": {
           "type": "String",
@@ -75,22 +237,454 @@
           "documentation": "Enable SCM polling"
         }
       },
-      "documentation": "Checkout from Git"
+      "documentation": "Checkout from a Git repository. Simplified syntax for the checkout step with Git SCM."
+    },
+    "archiveArtifacts": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "artifacts": {
+          "type": "String",
+          "required": true,
+          "documentation": "Ant-style pattern of files to archive (e.g., '**/target/*.jar')"
+        },
+        "allowEmptyArchive": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "If true, don't fail if no files match"
+        },
+        "fingerprint": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Record fingerprints for archived files"
+        },
+        "onlyIfSuccessful": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Only archive if build is successful"
+        }
+      },
+      "documentation": "Archive build artifacts for later retrieval. Artifacts are stored on the Jenkins master and can be downloaded from the build page."
+    },
+    "junit": {
+      "plugin": "junit",
+      "parameters": {
+        "testResults": {
+          "type": "String",
+          "required": true,
+          "documentation": "Ant-style pattern for JUnit XML test results (e.g., '**/target/surefire-reports/*.xml')"
+        },
+        "allowEmptyResults": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "If true, don't fail if no test results"
+        },
+        "skipPublishingChecks": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Skip publishing to GitHub Checks"
+        }
+      },
+      "documentation": "Publish JUnit test results. Parses XML test reports and displays them in the build page."
+    },
+    "stash": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "name": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the stash for later retrieval"
+        },
+        "includes": {
+          "type": "String",
+          "required": false,
+          "documentation": "Ant-style pattern of files to include"
+        },
+        "excludes": {
+          "type": "String",
+          "required": false,
+          "documentation": "Ant-style pattern of files to exclude"
+        },
+        "allowEmpty": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Allow stashing with no files"
+        }
+      },
+      "documentation": "Stash files for use later in the same build. Stashed files can be retrieved on a different node using unstash."
+    },
+    "unstash": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "name": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the stash to retrieve"
+        }
+      },
+      "documentation": "Restore files previously stashed. Retrieves files from a named stash into the current workspace."
+    },
+    "input": {
+      "plugin": "pipeline-input-step",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": true,
+          "documentation": "Message to display to the user"
+        },
+        "id": {
+          "type": "String",
+          "required": false,
+          "documentation": "Unique identifier for this input"
+        },
+        "ok": {
+          "type": "String",
+          "required": false,
+          "documentation": "Text for the OK button"
+        },
+        "submitter": {
+          "type": "String",
+          "required": false,
+          "documentation": "Comma-separated list of users/groups who can approve"
+        },
+        "submitterParameter": {
+          "type": "String",
+          "required": false,
+          "documentation": "Environment variable to store the submitter's ID"
+        }
+      },
+      "documentation": "Pause the pipeline for human input. The build waits until someone clicks the proceed button."
+    },
+    "timeout": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "time": {
+          "type": "int",
+          "required": true,
+          "documentation": "Timeout duration"
+        },
+        "unit": {
+          "type": "String",
+          "required": false,
+          "default": "MINUTES",
+          "documentation": "Time unit: NANOSECONDS, MICROSECONDS, MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS"
+        },
+        "activity": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Reset timeout on activity"
+        }
+      },
+      "documentation": "Set a timeout for the enclosed steps. If the timeout is exceeded, the build is aborted."
+    },
+    "retry": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "count": {
+          "type": "int",
+          "required": true,
+          "documentation": "Maximum number of retry attempts"
+        }
+      },
+      "documentation": "Retry the enclosed steps if they fail. Useful for flaky operations."
+    },
+    "sleep": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "time": {
+          "type": "int",
+          "required": true,
+          "documentation": "Duration to sleep"
+        },
+        "unit": {
+          "type": "String",
+          "required": false,
+          "default": "SECONDS",
+          "documentation": "Time unit: NANOSECONDS, MICROSECONDS, MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS"
+        }
+      },
+      "documentation": "Pause the pipeline for a specified duration."
+    },
+    "catchError": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "message": {
+          "type": "String",
+          "required": false,
+          "documentation": "Message to display on error"
+        },
+        "buildResult": {
+          "type": "String",
+          "required": false,
+          "default": "FAILURE",
+          "documentation": "Build result on error: SUCCESS, UNSTABLE, FAILURE, NOT_BUILT, ABORTED"
+        },
+        "stageResult": {
+          "type": "String",
+          "required": false,
+          "default": "FAILURE",
+          "documentation": "Stage result on error"
+        },
+        "catchInterruptions": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Catch FlowInterruptedException (abort, timeout)"
+        }
+      },
+      "documentation": "Catch errors in the enclosed steps and set the build/stage result instead of failing."
+    },
+    "withEnv": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "overrides": {
+          "type": "List<String>",
+          "required": true,
+          "documentation": "List of environment variables in KEY=VALUE format"
+        }
+      },
+      "documentation": "Set environment variables for the enclosed steps. Variables are restored after the block."
+    },
+    "withCredentials": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "bindings": {
+          "type": "List<Binding>",
+          "required": true,
+          "documentation": "List of credential bindings"
+        }
+      },
+      "documentation": "Bind credentials to environment variables for the enclosed steps. Credentials are masked in logs."
+    },
+    "dir": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "path": {
+          "type": "String",
+          "required": true,
+          "documentation": "Directory path (relative to workspace or absolute)"
+        }
+      },
+      "documentation": "Change the current directory for the enclosed steps."
+    },
+    "deleteDir": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {},
+      "documentation": "Delete the current directory and its contents. Typically used to clean the workspace."
+    },
+    "writeFile": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "file": {
+          "type": "String",
+          "required": true,
+          "documentation": "File path to write"
+        },
+        "text": {
+          "type": "String",
+          "required": true,
+          "documentation": "Content to write"
+        },
+        "encoding": {
+          "type": "String",
+          "required": false,
+          "default": "UTF-8",
+          "documentation": "Character encoding"
+        }
+      },
+      "documentation": "Write content to a file in the workspace."
+    },
+    "readFile": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "file": {
+          "type": "String",
+          "required": true,
+          "documentation": "File path to read"
+        },
+        "encoding": {
+          "type": "String",
+          "required": false,
+          "default": "UTF-8",
+          "documentation": "Character encoding"
+        }
+      },
+      "documentation": "Read content from a file in the workspace."
+    },
+    "fileExists": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "file": {
+          "type": "String",
+          "required": true,
+          "documentation": "File path to check"
+        }
+      },
+      "documentation": "Check if a file exists in the workspace. Returns true or false."
+    },
+    "isUnix": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {},
+      "documentation": "Check if running on a Unix-like system. Returns true for Linux/macOS, false for Windows."
+    },
+    "pwd": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "tmp": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Return the temporary directory instead of workspace"
+        }
+      },
+      "documentation": "Get the current working directory path."
+    },
+    "properties": {
+      "plugin": "workflow-multibranch",
+      "parameters": {},
+      "documentation": "Set job properties declaratively. Used to configure build triggers, parameters, and other job settings."
+    },
+    "build": {
+      "plugin": "pipeline-build-step",
+      "parameters": {
+        "job": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the job to build"
+        },
+        "parameters": {
+          "type": "List",
+          "required": false,
+          "documentation": "Parameters to pass to the job"
+        },
+        "wait": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Wait for the build to complete"
+        },
+        "propagate": {
+          "type": "boolean",
+          "required": false,
+          "default": "true",
+          "documentation": "Propagate failure of downstream build"
+        },
+        "quietPeriod": {
+          "type": "int",
+          "required": false,
+          "documentation": "Seconds to wait before starting the build"
+        }
+      },
+      "documentation": "Trigger another job and optionally wait for it to complete."
+    },
+    "emailext": {
+      "plugin": "email-ext",
+      "parameters": {
+        "subject": {
+          "type": "String",
+          "required": true,
+          "documentation": "Email subject"
+        },
+        "body": {
+          "type": "String",
+          "required": true,
+          "documentation": "Email body content"
+        },
+        "to": {
+          "type": "String",
+          "required": false,
+          "documentation": "Recipient email addresses"
+        },
+        "attachLog": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Attach the build log"
+        }
+      },
+      "documentation": "Send an email notification with extended options."
+    },
+    "cleanWs": {
+      "plugin": "ws-cleanup",
+      "parameters": {
+        "deleteDirs": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Delete directories too"
+        },
+        "patterns": {
+          "type": "List",
+          "required": false,
+          "documentation": "Ant-style patterns to include/exclude"
+        }
+      },
+      "documentation": "Clean the workspace. More flexible than deleteDir with pattern support."
+    },
+    "timestamps": {
+      "plugin": "timestamper",
+      "parameters": {},
+      "documentation": "Add timestamps to console output for the enclosed steps."
+    },
+    "ansiColor": {
+      "plugin": "ansicolor",
+      "parameters": {
+        "colorMapName": {
+          "type": "String",
+          "required": false,
+          "default": "xterm",
+          "documentation": "Color map name: xterm, vga, css, gnome-terminal"
+        }
+      },
+      "documentation": "Enable ANSI color output in the console for the enclosed steps."
+    },
+    "sshagent": {
+      "plugin": "ssh-agent",
+      "parameters": {
+        "credentials": {
+          "type": "List<String>",
+          "required": true,
+          "documentation": "List of SSH credential IDs"
+        }
+      },
+      "documentation": "Provide SSH credentials for the enclosed steps via ssh-agent."
+    },
+    "wrap": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {},
+      "documentation": "Execute a build wrapper. Used internally by other wrapper steps."
     }
   },
   "globalVariables": {
     "env": {
       "type": "org.jenkinsci.plugins.workflow.cps.EnvActionImpl",
-      "documentation": "Environment variables available in the build"
+      "documentation": "Environment variables available in the build. Access with env.VARIABLE_NAME or env['VARIABLE_NAME']. Contains both Jenkins-defined and custom environment variables."
     },
     "params": {
       "type": "Map<String, Object>",
-      "documentation": "Build parameters defined in the pipeline"
+      "documentation": "Build parameters defined in the pipeline. Access with params.PARAM_NAME. Read-only map of parameter names to values."
     },
     "currentBuild": {
       "type": "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper",
-      "documentation": "Information about the current build"
+      "documentation": "Information about the current build. Properties include: number, result, currentResult, displayName, description, duration, startTimeInMillis, etc."
+    },
+    "scm": {
+      "type": "hudson.scm.SCM",
+      "documentation": "The SCM configuration for the current build. Available when using Multibranch Pipeline or Pipeline from SCM."
+    },
+    "docker": {
+      "type": "org.jenkinsci.plugins.docker.workflow.Docker",
+      "documentation": "Docker integration object. Provides methods: image(), build(), withRegistry(), withServer(), withTool()."
+    },
+    "pipeline": {
+      "type": "org.jenkinsci.plugins.workflow.cps.CpsScript",
+      "documentation": "Reference to the pipeline script object. Rarely needed directly."
     }
-  },
-  "_comment": "TODO: This is a minimal stub with only 'sh' step. Phase 0 requires adding top 10-20 plugins with all their steps. See BUNDLED_STUBS_TODO.md for expansion plan."
+  }
 }

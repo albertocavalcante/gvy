@@ -69,12 +69,12 @@ class BundledJenkinsMetadataLoaderTest {
 
         val echo = metadata.getStep("echo")
         assertNotNull(echo)
-        assertEquals("workflow-basic-steps:1000.v2f5c09b_74cf6", echo.plugin)
+        assertEquals("workflow-basic-steps", echo.plugin)
         assertTrue(echo.parameters.containsKey("message"))
 
         val git = metadata.getStep("git")
         assertNotNull(git)
-        assertEquals("git:5.2.1", git.plugin)
+        assertEquals("git", git.plugin)
         assertTrue(git.parameters.keys.containsAll(listOf("url", "branch", "credentialsId")))
     }
 

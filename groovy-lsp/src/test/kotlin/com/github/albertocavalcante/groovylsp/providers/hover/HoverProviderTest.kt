@@ -816,4 +816,7 @@ class Calculator {
         assertFalse(content.value.contains("String literal"), "Should not report literal metadata")
          */
     }
+
+    // TODO: Add integration test for Jenkins step hover in JenkinsBundledCompletionTest
+    // Unit tests here won't work because JenkinsWorkspaceManager isn't initialized
 }

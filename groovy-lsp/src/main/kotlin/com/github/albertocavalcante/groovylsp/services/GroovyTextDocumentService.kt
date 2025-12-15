@@ -268,7 +268,8 @@ class GroovyTextDocumentService(
 
             val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
             val jenkinsCompletions = if (isJenkinsFile) {
-                JenkinsStepCompletionProvider.getBundledStepCompletions()
+                JenkinsStepCompletionProvider.getBundledStepCompletions() +
+                    JenkinsStepCompletionProvider.getBundledGlobalVariableCompletions()
             } else {
                 emptyList()
             }
