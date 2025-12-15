@@ -45,6 +45,7 @@ groovy-ant = { module = "org.apache.groovy:groovy-ant", version.ref = "groovy" }
 groovy-console = { module = "org.apache.groovy:groovy-console", version.ref = "groovy" }
 groovy-json = { module = "org.apache.groovy:groovy-json", version.ref = "groovy" }
 groovy-groovydoc = { module = "org.apache.groovy:groovy-groovydoc", version.ref = "groovy" }
+groovy-macro = { module = "org.apache.groovy:groovy-macro", version.ref = "groovy" }
 
 # LSP
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }

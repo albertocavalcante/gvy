@@ -14,6 +14,7 @@ java {
 
 dependencies {
     api(libs.groovy.core)
+    implementation(libs.groovy.macro)
 
     implementation(libs.kotlin.collections.immutable)
     implementation(libs.slf4j.api)
