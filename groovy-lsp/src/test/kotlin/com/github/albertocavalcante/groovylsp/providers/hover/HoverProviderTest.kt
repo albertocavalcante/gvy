@@ -641,10 +641,20 @@ class Calculator {
         assertNotNull(hover1, "Import hover should not be null")
         assertTrue(hover1.contents.right.value.contains("import java.util.List"))
 
+        // Hover on the imported type name itself ("List") should still show the import statement.
+        val hover1Type = hoverProvider.provideHover(uri.toString(), Position(0, 17)) // On "List"
+        assertNotNull(hover1Type, "Import type hover should not be null")
+        assertTrue(hover1Type.contents.right.value.contains("import java.util.List"))
+
         // Test aliased import - hover over "java.util.Date as JDate"
         val hover2 = hoverProvider.provideHover(uri.toString(), Position(1, 10)) // On "java"
         assertNotNull(hover2, "Aliased import hover should not be null")
         assertTrue(hover2.contents.right.value.contains("import java.util.Date as JDate"))
+
+        // Hover on the imported type name itself ("Date") should still show the import statement.
+        val hover2Type = hoverProvider.provideHover(uri.toString(), Position(1, 17)) // On "Date"
+        assertNotNull(hover2Type, "Aliased import type hover should not be null")
+        assertTrue(hover2Type.contents.right.value.contains("import java.util.Date as JDate"))
 
         // Test static import - hover over "static java.lang.System.out"
         val hover3 = hoverProvider.provideHover(uri.toString(), Position(2, 15)) // On "java"

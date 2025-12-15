@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.ast.visitor
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -289,10 +290,22 @@ class RecursiveVisitorParityTest {
     }
 
     private fun assertNodeSetsMatch(delegateNodes: Set<ASTNode>, recursiveNodes: Set<ASTNode>) {
+        // RecursiveAstVisitor intentionally tracks extra ClassNode references for navigation:
+        // 1. Constructor call types (e.g., `new RuntimeException(...)` → tracks RuntimeException)
+        // 2. Import types (e.g., `import org.junit.Test` → tracks Test)
+        // 3. Superclass/interface types (e.g., `extends Foo` → tracks Foo)
+        // These extra nodes enable go-to-definition on imports and class headers.
+        val extraClassNodes = (recursiveNodes - delegateNodes).filterIsInstance<ClassNode>()
+        val nonClassExtras = (recursiveNodes - delegateNodes) - extraClassNodes.toSet()
+
         val missing = delegateNodes - recursiveNodes
-        val extra = recursiveNodes - delegateNodes
+
         assertEquals(emptySet<ASTNode>(), missing, "Recursive visitor is missing nodes: ${missing.describe()}")
-        assertEquals(emptySet<ASTNode>(), extra, "Recursive visitor has extra nodes: ${extra.describe()}")
+        assertEquals(
+            emptySet<ASTNode>(),
+            nonClassExtras,
+            "Recursive visitor has unexpected extra nodes (non-ClassNode): ${nonClassExtras.describe()}",
+        )
     }
 
     private fun Set<ASTNode>.describe(): String =

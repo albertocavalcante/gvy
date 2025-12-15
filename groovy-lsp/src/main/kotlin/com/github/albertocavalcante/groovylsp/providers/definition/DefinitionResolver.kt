@@ -8,10 +8,12 @@ import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
@@ -80,13 +82,29 @@ class DefinitionResolver(
             handleValidationError("invalidPosition", uri, ValidationContext.PositionContext(position))
         }
 
-        // Find the node at the given LSP position
-        val targetNode = astVisitor.getNodeAt(uri, position)
-            ?: handleValidationError("nodeNotFound", uri, ValidationContext.PositionContext(position))
+        val trackedNode = astVisitor.getNodeAt(uri, position)
+
+        // Fallback: the visitor-based tracker only records nodes with valid start coordinates and may return
+        // broad container nodes for positions inside untracked expressions. Use a direct AST walk as a backup.
+        val fallbackNode = (compilationService?.getAst(uri) as? ModuleNode)
+            ?.findNodeAt(position.line, position.character)
+
+        val targetNode =
+            when {
+                trackedNode == null && fallbackNode != null -> fallbackNode
+                trackedNode != null && fallbackNode != null && isBroadContainer(trackedNode) &&
+                    !isBroadContainer(fallbackNode) -> fallbackNode
+                else -> trackedNode
+            } ?: handleValidationError("nodeNotFound", uri, ValidationContext.PositionContext(position))
 
         logger.debug("Found target node: ${targetNode.javaClass.simpleName}")
         return targetNode
     }
+
+    private fun isBroadContainer(node: ASTNode): Boolean = node is org.codehaus.groovy.ast.ClassNode ||
+        node is org.codehaus.groovy.ast.MethodNode ||
+        node is org.codehaus.groovy.ast.stmt.BlockStatement ||
+        node is org.codehaus.groovy.ast.stmt.Statement
 
     /**
      * Resolve the target node to its definition.
@@ -114,13 +132,15 @@ class DefinitionResolver(
         // This handles cases where resolveToDefinition returns a reference ClassNode (e.g. from a constructor call)
         // but the class is actually defined in the same file.
         val definition = if (initialDefinition is ClassNode) {
-            astVisitor.getAllClassNodes().find { it.name == initialDefinition.name } ?: initialDefinition
+            resolveDeclaredClassNode(uri, initialDefinition)
+                ?: astVisitor.getAllClassNodes().find { it.name == initialDefinition.name }
+                ?: initialDefinition
         } else {
             initialDefinition
         }
 
         // Check if we need to try global lookup (e.g. for class references across files)
-        if (shouldTryGlobalLookup(targetNode, definition)) {
+        if (shouldTryGlobalLookup(targetNode, definition, uri)) {
             val globalDef = findGlobalDefinition(targetNode)
             if (globalDef != null) {
                 logger.debug("Found global definition for ${targetNode.text}: ${globalDef.node.javaClass.simpleName}")
@@ -148,23 +168,31 @@ class DefinitionResolver(
         }
     }
 
+    private fun resolveDeclaredClassNode(uri: URI, referenced: ClassNode): ClassNode? {
+        val module = compilationService?.getAst(uri) as? ModuleNode ?: return null
+        return module.classes.find { it.name == referenced.name }
+    }
+
     /**
      * Check if we should attempt global lookup.
      * This is needed when local resolution returns the reference itself (common for ClassNode)
      * or when no definition was found.
      */
-    private fun shouldTryGlobalLookup(targetNode: ASTNode, definition: ASTNode?): Boolean {
+    private fun shouldTryGlobalLookup(targetNode: ASTNode, definition: ASTNode?, uri: URI): Boolean {
         // If no definition found locally, try global
         if (definition == null) return true
 
+        // Import nodes represent a reference to an external type and should resolve via global/classpath lookup.
+        if (targetNode is ImportNode || definition is ImportNode) return true
+
         // If definition is a ClassNode, check if it's a real declaration in the current file
         if (definition is ClassNode) {
-            // Check if this specific ClassNode instance is one of the classes declared in the AST
-            // If it's not in the list of declared classes, it's likely a reference/placeholder
-            val isDeclaredInFile = astVisitor.getAllClassNodes().any { it === definition }
-            if (!isDeclaredInFile) {
-                return true
-            }
+            // Prefer module declarations over visitor tracking:
+            // the visitor may also track referenced types (e.g., `new Foo()`), which should still resolve
+            // via classpath/global lookup.
+            val module = compilationService?.getAst(uri) as? ModuleNode
+            val declaredInFile = module?.classes?.any { it.name == definition.name } == true
+            return !declaredInFile
         }
         return false
     }
@@ -218,6 +246,7 @@ class DefinitionResolver(
         is ClassNode -> targetNode.name
         is ConstructorCallExpression -> targetNode.type.name
         is ClassExpression -> targetNode.type.name
+        is ImportNode -> targetNode.type?.name ?: targetNode.className
         else -> null
     }
 

@@ -11,6 +11,12 @@ import kotlin.test.assertTrue
 
 class DocExtractorTest {
 
+    private fun lineOf(source: String, contains: String): Int {
+        val idx = source.lines().indexOfFirst { it.contains(contains) }
+        require(idx >= 0) { "Could not find line containing '$contains'" }
+        return idx + 1 // Groovy AST is 1-based
+    }
+
     @Test
     fun `extracts simple summary from groovydoc`() {
         val source = """
@@ -25,6 +31,7 @@ class DocExtractorTest {
 
         // Create a dummy node to match the class name
         val node = ClassNode("SimpleClass", 0, null)
+        node.lineNumber = lineOf(source, "class SimpleClass")
         val doc = DocExtractor.extractDocumentation(source, node)
 
         assertEquals("This is a simple class.", doc.summary)
@@ -55,6 +62,7 @@ class DocExtractorTest {
         val classNode = ClassNode("Script", 0, null)
         val node = MethodNode("add", 0, ClassHelper.DYNAMIC_TYPE, params, null, BlockStatement())
         node.declaringClass = classNode
+        node.lineNumber = lineOf(source, "def add")
 
         val doc = DocExtractor.extractDocumentation(source, node)
 
@@ -85,6 +93,7 @@ class DocExtractorTest {
         val classNode = ClassNode("Script", 0, null)
         val node = MethodNode("oldMethod", 0, ClassHelper.VOID_TYPE, params, null, BlockStatement())
         node.declaringClass = classNode
+        node.lineNumber = lineOf(source, "void oldMethod")
 
         val doc = DocExtractor.extractDocumentation(source, node)
 
@@ -108,6 +117,7 @@ class DocExtractorTest {
         """.trimIndent()
 
         val node = ClassNode("NoDocClass", 0, null)
+        node.lineNumber = lineOf(source, "class NoDocClass")
         val doc = DocExtractor.extractDocumentation(source, node)
 
         assertTrue(doc.isEmpty())
@@ -134,6 +144,7 @@ class DocExtractorTest {
         val classNode = ClassNode("Script", 0, null)
         val node = MethodNode("greet", 0, ClassHelper.STRING_TYPE, params, null, BlockStatement())
         node.declaringClass = classNode
+        node.lineNumber = lineOf(source, "String greet")
 
         val doc = DocExtractor.extractDocumentation(source, node)
 

@@ -52,6 +52,7 @@ internal class NodeVisitorDelegate(private val tracker: NodeRelationshipTracker)
         this._sourceUnit = sourceUnit
         this.currentUri = uri
         tracker.clear()
+        tracker.setModuleNode(uri, module)
         processModule(module)
     }
 

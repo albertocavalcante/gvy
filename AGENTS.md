@@ -80,6 +80,19 @@ instead)
   NEVER expose absolute home directory paths in docs, specs, commits, or PRs. Use `$HOME` or `~` instead.
 </privacy>
 
+<engineering-notes>
+  <heuristics-and-tradeoffs>
+    When introducing ANY heuristic (regex parsing, string matching on error messages, token-length widening, line-based
+    fallbacks, etc.), ALWAYS annotate the code with an explicit tag:
+    - `NOTE:` explain the trade-off and why we’re doing it now
+    - `TODO:` describe the deterministic/robust approach we’d prefer long-term (what would remove the heuristic)
+    - `FIXME:` if the heuristic is known to be flaky/incorrect in some cases
+    - `HACK:` only if it’s a last-resort workaround (and must include a clear exit plan)
+
+    The goal is to make heuristics visible, reviewable, and easy to revisit over time.
+  </heuristics-and-tradeoffs>
+</engineering-notes>
+
 <test-debugging>
   For test debugging with println: MUST run with --info flag
   Example: ./gradlew test --tests "*SomeTest*" --console=plain --info

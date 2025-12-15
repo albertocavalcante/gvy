@@ -437,7 +437,18 @@ private fun ImportNode.formatImport(): String = buildString {
         append(".$fieldName")
     }
     if (isStar) append(".*")
-    alias?.let { append(" as $it") }
+
+    // NOTE: Groovy AST quirk / tradeoff:
+    // When there's no explicit alias (e.g., `import java.util.List`), Groovy sets
+    // ImportNode.alias to the simple class name ("List"). To avoid showing redundant
+    // "as List" in hover text, we only display the alias if it differs from the simple name.
+    // This correctly distinguishes `import java.util.List` from `import java.util.List as MyList`.
+    val simpleClassName = className.substringAfterLast('.')
+    alias?.let {
+        if (it != simpleClassName) {
+            append(" as $it")
+        }
+    }
 }
 
 private fun ASTNode.modifiersString(): String = buildString {

@@ -30,6 +30,7 @@ import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -126,6 +127,8 @@ class GroovyTextDocumentService(
         )
     }
 
+    private fun List<Diagnostic>.containsErrors(): Boolean = any { it.severity == DiagnosticSeverity.Error }
+
     override fun didOpen(params: DidOpenTextDocumentParams) {
         logger.info("Document opened: ${params.textDocument.uri}")
         val uri = java.net.URI.create(params.textDocument.uri)
@@ -180,12 +183,26 @@ class GroovyTextDocumentService(
                 // Use compileAsync for proper coordination
                 val result = compilationService.compileAsync(this, uri, content).await()
 
-                // Get CodeNarc diagnostics
+                ensureActive() // Ensure job wasn't cancelled before publishing
+
+                // Publish compilation diagnostics first to keep UX responsive.
+                // NOTE: Tradeoff:
+                // This can result in two diagnostics publications (compile first, then CodeNarc merge),
+                // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
+                publishDiagnostics(uri.toString(), result.diagnostics)
+
+                // Skip CodeNarc when disabled or when compilation already has errors.
+                if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
+                    return@launch
+                }
+
                 val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
                 val allDiagnostics = result.diagnostics + codenarcDiagnostics
 
-                ensureActive() // Ensure job wasn't cancelled before publishing
-                publishDiagnostics(uri.toString(), allDiagnostics)
+                ensureActive()
+                if (codenarcDiagnostics.isNotEmpty()) {
+                    publishDiagnostics(uri.toString(), allDiagnostics)
+                }
 
                 logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
             } catch (e: org.codehaus.groovy.control.CompilationFailedException) {

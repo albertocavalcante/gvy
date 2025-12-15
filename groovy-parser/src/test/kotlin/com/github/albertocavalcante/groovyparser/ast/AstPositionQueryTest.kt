@@ -16,6 +16,96 @@ class AstPositionQueryTest {
     private val fixture = ParserTestFixture()
 
     @Test
+    fun `find constructor call type name`() {
+        val code = """
+            package com.example
+
+            import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+
+            class DependencyTest {
+                def test() {
+                    new GenericPipelineDeclaration()
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
+        val visitor = result.astVisitor!!
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        val targetLine = code.lines().indexOfFirst { it.contains("new GenericPipelineDeclaration") }
+        assertTrue(targetLine >= 0, "Expected constructor call line to exist")
+
+        val col = code.lines()[targetLine].indexOf("GenericPipelineDeclaration")
+        assertTrue(col >= 0, "Expected type name on constructor call line")
+
+        val node = visitor.getNodeAt(uri, targetLine, col + 5) // inside identifier
+        assertNotNull(node, "Should find node at constructor type position")
+
+        val isConstructorOrType =
+            node is org.codehaus.groovy.ast.expr.ConstructorCallExpression ||
+                (node is org.codehaus.groovy.ast.ClassNode && node.nameWithoutPackage == "GenericPipelineDeclaration")
+
+        assertTrue(
+            isConstructorOrType,
+            "Expected ConstructorCallExpression or referenced ClassNode but got ${node?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
+    fun `find node at import class name`() {
+        val code = """
+            import org.junit.Test
+            
+            class C { }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
+        val visitor = result.astVisitor!!
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        val importLine = code.lines()[0]
+        val col = importLine.indexOf("Test")
+        assertTrue(col >= 0, "Expected to find imported class name on import line")
+
+        val node = visitor.getNodeAt(uri, 0, col + 2) // inside the identifier, not just the first char
+        assertNotNull(node, "Should find node at import class name position")
+        assertTrue(
+            node is org.codehaus.groovy.ast.ClassNode || node is org.codehaus.groovy.ast.ImportNode,
+            "Expected ClassNode or ImportNode but got ${node?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
+    fun `find node at extends type name`() {
+        val code = """
+            import com.lesfurets.jenkins.unit.BasePipelineTest
+            
+            class TestExampleJob extends BasePipelineTest { }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
+        val visitor = result.astVisitor!!
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        val extendsLine = code.lines()[2]
+        val col = extendsLine.indexOf("BasePipelineTest")
+        assertTrue(col >= 0, "Expected to find extends type name on class line")
+
+        val node = visitor.getNodeAt(uri, 2, col + 4) // inside the identifier, not just the first char
+        assertNotNull(node, "Should find node at extends type name position")
+
+        // We specifically want the referenced type node (ClassNode) so definition can resolve it.
+        assertTrue(
+            node is org.codehaus.groovy.ast.ClassNode,
+            "Expected ClassNode at extends type name but got ${node?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
     fun `find binary expression at position`() {
         val code = """
             def x = 1 + 2

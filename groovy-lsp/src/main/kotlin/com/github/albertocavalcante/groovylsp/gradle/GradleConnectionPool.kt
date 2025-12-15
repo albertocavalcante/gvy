@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.gradle
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
 import org.slf4j.LoggerFactory
+import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -11,22 +12,34 @@ import java.util.concurrent.ConcurrentHashMap
  * Reuses existing connections and provides warm-up capabilities to reduce
  * cold start times when resolving dependencies.
  */
-object GradleConnectionPool {
+object GradleConnectionPool : GradleConnectionFactory {
     private val logger = LoggerFactory.getLogger(GradleConnectionPool::class.java)
 
-    // Thread-safe map of project directories to their connections
-    private val connections = ConcurrentHashMap<Path, ProjectConnection>()
+    private data class ConnectionKey(val projectDir: Path, val gradleUserHomeDir: Path?)
+
+    // Thread-safe map of project directories (and optional user home) to their connections
+    private val connections = ConcurrentHashMap<ConnectionKey, ProjectConnection>()
 
     /**
      * Gets or creates a Gradle project connection for the given directory.
      * Reuses existing connections for better performance.
      *
      * @param projectDir The project directory to connect to
+     * @param gradleUserHomeDir Optional Gradle user home directory to isolate from user init scripts
      * @return A connected ProjectConnection
      */
-    fun getConnection(projectDir: Path): ProjectConnection = connections.computeIfAbsent(projectDir) { dir ->
-        logger.debug("Creating new Gradle connection for: $dir")
-        createConnection(dir)
+    override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
+        val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
+        val normalizedUserHome = gradleUserHomeDir?.toPath()?.toAbsolutePath()?.normalize()
+        val key = ConnectionKey(projectDir = normalizedProjectDir, gradleUserHomeDir = normalizedUserHome)
+
+        return connections.computeIfAbsent(key) { createdKey ->
+            logger.debug(
+                "Creating new Gradle connection for: ${createdKey.projectDir} " +
+                    "(userHome=${createdKey.gradleUserHomeDir?.fileName ?: "default"})",
+            )
+            createConnection(createdKey.projectDir, createdKey.gradleUserHomeDir)
+        }
     }
 
     /**
@@ -37,12 +50,20 @@ object GradleConnectionPool {
     // FIXME: Replace with specific exception types (IOException, GradleConnectionException)
     @Suppress("TooGenericExceptionCaught")
     fun closeConnection(projectDir: Path) {
-        connections.remove(projectDir)?.let { connection ->
+        val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
+        val keys = connections.keys.filter { it.projectDir == normalizedProjectDir }
+        keys.forEach { key ->
+            closeConnection(key)
+        }
+    }
+
+    private fun closeConnection(key: ConnectionKey) {
+        connections.remove(key)?.let { connection ->
             try {
                 connection.close()
-                logger.debug("Closed Gradle connection for: $projectDir")
+                logger.debug("Closed Gradle connection for: ${key.projectDir}")
             } catch (e: Exception) {
-                logger.warn("Error closing Gradle connection for $projectDir", e)
+                logger.warn("Error closing Gradle connection for ${key.projectDir}", e)
             }
         }
     }
@@ -54,8 +75,8 @@ object GradleConnectionPool {
     fun shutdown() {
         logger.info("Shutting down Gradle connection pool (${connections.size} connections)")
 
-        connections.keys.toList().forEach { projectDir ->
-            closeConnection(projectDir)
+        connections.keys.toList().forEach { key ->
+            closeConnection(key)
         }
 
         connections.clear()
@@ -71,14 +92,14 @@ object GradleConnectionPool {
      * Gets connection statistics for debugging.
      */
     fun getStats(): String {
-        val projects = connections.keys.map { it.fileName }
+        val projects = connections.keys.map { it.projectDir.fileName }
         return "GradleConnectionPool[connections=${connections.size}, projects=$projects]"
     }
 
     /**
      * Creates a new optimized Gradle connection for the project directory.
      */
-    private fun createConnection(projectDir: Path): ProjectConnection {
+    private fun createConnection(projectDir: Path, gradleUserHomeDir: Path?): ProjectConnection {
         val projectFile = projectDir.toFile()
 
         require(projectFile.exists() && projectFile.isDirectory) {
@@ -87,6 +108,10 @@ object GradleConnectionPool {
 
         val connector = GradleConnector.newConnector()
             .forProjectDirectory(projectFile)
+
+        if (gradleUserHomeDir != null) {
+            connector.useGradleUserHomeDir(gradleUserHomeDir.toFile())
+        }
 
         // Note: Gradle connector optimizations are handled by the Gradle daemon automatically
 

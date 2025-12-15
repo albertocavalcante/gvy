@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position
 import io.mockk.every
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,7 +23,7 @@ class DefinitionResolverFallbackTest {
 
         val astVisitor = mockk<GroovyAstModel>()
         val symbolTable = mockk<SymbolTable>()
-        val compilationService = mockk<GroovyCompilationService>()
+        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
 
         // Mock AST visitor to return a ClassNode at the position
         val targetNode = ClassNode("com.example.ExternalClass", 0, null)
@@ -37,6 +38,7 @@ class DefinitionResolverFallbackTest {
 
         // Mock compilationService to return null for global symbol index lookup
         every { compilationService.getAllSymbolStorages() } returns emptyMap()
+        every { compilationService.getAst(uri) } returns null
 
         // Mock compilationService to return a URI for classpath lookup
         val classpathUri = URI.create("jar:file:///libs/lib.jar!/com/example/ExternalClass.class")
@@ -55,6 +57,35 @@ class DefinitionResolverFallbackTest {
     }
 
     @Test
+    fun `findDefinitionAt resolves import nodes via classpath lookup`() {
+        val uri = URI.create("file:///test/Test.groovy")
+        val position = Position(0, 0)
+
+        val astVisitor = mockk<GroovyAstModel>()
+        val symbolTable = mockk<SymbolTable>()
+        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
+
+        val importedType = ClassNode("com.example.ExternalClass", 0, null)
+        val importNode = ImportNode(importedType, null)
+
+        every { astVisitor.getNodeAt(uri, position) } returns importNode
+        every { astVisitor.getAllClassNodes() } returns emptyList()
+        every { compilationService.getAllSymbolStorages() } returns emptyMap()
+
+        val classpathUri = URI.create("jar:file:///libs/lib.jar!/com/example/ExternalClass.class")
+        every { compilationService.findClasspathClass("com.example.ExternalClass") } returns classpathUri
+
+        val resolver = DefinitionResolver(astVisitor, symbolTable, compilationService)
+
+        val result = resolver.findDefinitionAt(uri, position)
+
+        assertTrue(result is DefinitionResolver.DefinitionResult.Binary, "Result should be Binary")
+        val binaryResult = result as DefinitionResolver.DefinitionResult.Binary
+        assertEquals(classpathUri, binaryResult.uri)
+        assertEquals("com.example.ExternalClass", binaryResult.name)
+    }
+
+    @Test
     fun `findDefinitionAt returns correct URI for global source definition`() {
         // Setup mocks
         val currentUri = URI.create("file:///test/Current.groovy")
@@ -63,7 +94,7 @@ class DefinitionResolverFallbackTest {
 
         val astVisitor = mockk<GroovyAstModel>()
         val symbolTable = mockk<SymbolTable>()
-        val compilationService = mockk<GroovyCompilationService>()
+        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
 
         // Mock AST visitor to return a ClassNode (reference)
         val targetNode = ClassNode("OtherClass", 0, null)
@@ -83,6 +114,7 @@ class DefinitionResolverFallbackTest {
 
         // Mock compilationService to find symbol in other URI
         every { compilationService.getAllSymbolStorages() } returns mapOf(otherUri to symbolIndex)
+        every { compilationService.getAst(currentUri) } returns null
 
         // Mock AST retrieval for other URI
         val otherAst = mockk<org.codehaus.groovy.ast.ModuleNode>()
