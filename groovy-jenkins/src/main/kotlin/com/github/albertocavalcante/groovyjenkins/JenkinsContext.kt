@@ -64,6 +64,13 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
             }
         }
 
+        // Add 'src' folder if it exists (standard Jenkins Shared Library structure)
+        val srcDir = workspaceRoot.resolve("src")
+        if (Files.exists(srcDir) && Files.isDirectory(srcDir)) {
+            classpath.add(srcDir)
+            logger.debug("Added Jenkins Shared Library 'src' directory to classpath: $srcDir")
+        }
+
         return classpath
     }
 

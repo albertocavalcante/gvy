@@ -162,9 +162,27 @@ object CompletionProvider {
                     if (isJenkinsFile) {
                         // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
                         addJenkinsMapKeyCompletions(nodeAtCursor, astModel)
+
+                        // Suggest global variables from vars/ directory
+                        addJenkinsGlobalVariables(compilationService)
                     }
                 }
             }
+        }
+    }
+
+    private fun CompletionsBuilder.addJenkinsGlobalVariables(compilationService: GroovyCompilationService) {
+        val vars = compilationService.workspaceManager.getJenkinsGlobalVariables()
+        vars.forEach { globalVar ->
+            variable(
+                name = globalVar.name,
+                // We don't know the exact type without deeper analysis, usually it's a script/singleton
+                type = "Object",
+                doc = "Jenkins Global Variable: ${globalVar.name}\n${globalVar.documentation}",
+            )
+
+            // Also suggest 'call' method if present implicitly?
+            // For now, simpler is better. The variable itself is callable.
         }
     }
 

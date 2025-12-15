@@ -172,4 +172,10 @@ class WorkspaceManager {
             logger.info("Reloaded ${results.successful.size} Jenkins GDSL files")
         }
     }
+
+    /**
+     * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
+     */
+    fun getJenkinsGlobalVariables(): List<com.github.albertocavalcante.groovyjenkins.GlobalVariable> =
+        jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
 }

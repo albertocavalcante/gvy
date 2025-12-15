@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
 class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, private val workspaceRoot: Path) {
     private val logger = LoggerFactory.getLogger(JenkinsWorkspaceManager::class.java)
     private val jenkinsContext = JenkinsContext(configuration, workspaceRoot)
+    private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
 
     // Cache for parsed library references to avoid redundant AST parsing
     private data class CacheEntry(val contentHash: Int, val libraries: List<LibraryReference>)
@@ -101,4 +102,9 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
         logger.info("Updating Jenkins configuration")
         return JenkinsWorkspaceManager(newConfig, workspaceRoot)
     }
+
+    /**
+     * Gets global variables defined in the workspace (e.g. vars/ directory).
+     */
+    fun getGlobalVariables(): List<GlobalVariable> = varsProvider.getGlobalVariables()
 }

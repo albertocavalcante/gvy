@@ -132,4 +132,19 @@ class JenkinsContextTest {
         assertEquals(0, gdslContent.successful.size)
         assertEquals(1, gdslContent.failed.size)
     }
+
+    @Test
+    fun `should include src directory in classpath if present`() {
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectory(srcDir)
+        val someClass = srcDir.resolve("SomeClass.groovy")
+        Files.writeString(someClass, "class SomeClass {}")
+
+        val config = JenkinsConfiguration()
+        val context = JenkinsContext(config, tempDir)
+        val classpath = context.buildClasspath(emptyList())
+
+        // Should include src directory
+        assertTrue(classpath.any { it == srcDir })
+    }
 }
