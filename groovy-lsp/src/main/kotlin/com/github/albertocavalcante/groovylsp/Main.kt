@@ -114,12 +114,63 @@ fun runExecute(args: List<String>, out: PrintStream = System.out) {
 
 fun runCheck(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        out.println("Usage: groovy-lsp check <file> [file...]")
+        out.println("Usage: groovy-lsp check [--workspace <dir>] <file> [file...]")
+        exitProcess(1)
+    }
+
+    var workspace: File? = null
+    val filesToCheck = mutableListOf<String>()
+
+    var i = 0
+    while (i < args.size) {
+        val arg = args[i]
+        if (arg == "--workspace") {
+            if (i + 1 < args.size) {
+                workspace = File(args[i + 1])
+                i += 2
+            } else {
+                out.println("Error: --workspace requires an argument")
+                exitProcess(1)
+            }
+        } else {
+            filesToCheck.add(arg)
+            i++
+        }
+    }
+
+    if (filesToCheck.isEmpty()) {
+        out.println("Error: No files specified to check")
         exitProcess(1)
     }
 
     val server = GroovyLanguageServer()
     try {
+        if (workspace != null) {
+            if (!workspace.exists() || !workspace.isDirectory) {
+                out.println("Error: Workspace directory not found: $workspace")
+                exitProcess(1)
+            }
+
+            // Initialize server with workspace
+            val params = org.eclipse.lsp4j.InitializeParams().apply {
+                rootUri = workspace.toURI().toString()
+                capabilities = org.eclipse.lsp4j.ClientCapabilities()
+            }
+
+            // Wait for initialize
+            server.initialize(params).get()
+
+            // Trigger initialized (starts dependency resolution)
+            server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+            out.println("Resolving dependencies for ${workspace.absolutePath}...")
+            if (server.waitForDependencies()) {
+                out.println("Dependencies resolved successfully.")
+            } else {
+                out.println("Warning: Dependency resolution failed or timed out. Checking with limited context.")
+            }
+        }
+
         // Cast safely or assume it's our implementation
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
 
@@ -129,7 +180,7 @@ fun runCheck(args: List<String>, out: PrintStream = System.out) {
         }
 
         runBlocking {
-            for (arg in args) {
+            for (arg in filesToCheck) {
                 try {
                     val file = File(arg)
                     if (!file.exists()) {
@@ -139,13 +190,19 @@ fun runCheck(args: List<String>, out: PrintStream = System.out) {
 
                     val uri = file.toURI()
                     val content = file.readText()
+                    // If workspace is set, ensure we use the same URI normalization
+                    // Ideally, relative references should work
                     val diagnostics = service.diagnose(uri, content)
 
-                    for (d in diagnostics) {
-                        val severity = d.severity?.toString()?.uppercase() ?: "UNKNOWN"
-                        out.println(
-                            "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
-                        )
+                    if (diagnostics.isEmpty()) {
+                        out.println("OK: $arg")
+                    } else {
+                        for (d in diagnostics) {
+                            val severity = d.severity?.toString()?.uppercase() ?: "UNKNOWN"
+                            out.println(
+                                "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
+                            )
+                        }
                     }
                 } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                     logger.error("Error checking file $arg", e)

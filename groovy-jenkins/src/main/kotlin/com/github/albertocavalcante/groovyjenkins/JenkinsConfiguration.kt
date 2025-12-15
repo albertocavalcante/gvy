@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory
  * Configuration for Jenkins pipeline support.
  */
 data class JenkinsConfiguration(
-    val filePatterns: List<String> = listOf("Jenkinsfile"),
+    val filePatterns: List<String> = listOf("Jenkinsfile", "vars/*.groovy"),
     val sharedLibraries: List<SharedLibrary> = emptyList(),
     val gdslPaths: List<String> = emptyList(),
 ) {

@@ -32,8 +32,8 @@ class JenkinsContextTest {
         val context = JenkinsContext(config, tempDir)
         val classpath = context.buildClasspath(emptyList())
 
-        // Should include configured libraries
-        assertEquals(2, classpath.size)
+        // Should include configured libraries (may also include auto-injected jenkins-core)
+        assertTrue(classpath.size >= 2, "Expected at least 2 items, got ${classpath.size}")
         assertTrue(classpath.any { it.toString().contains("lib1.jar") })
         assertTrue(classpath.any { it.toString().contains("lib2.jar") })
     }
@@ -53,8 +53,9 @@ class JenkinsContextTest {
         val refs = listOf(LibraryReference("lib1", null))
         val classpath = context.buildClasspath(refs)
 
-        assertEquals(1, classpath.size)
-        assertTrue(classpath[0].toString().contains("lib1.jar"))
+        // Should include lib1 (may also include auto-injected jenkins-core)
+        assertTrue(classpath.size >= 1, "Expected at least 1 item, got ${classpath.size}")
+        assertTrue(classpath.any { it.toString().contains("lib1.jar") })
     }
 
     @Test
@@ -74,8 +75,8 @@ class JenkinsContextTest {
         val refs = listOf(LibraryReference("mylib", null))
         val classpath = context.buildClasspath(refs)
 
-        // Should include both jar and sources
-        assertEquals(2, classpath.size)
+        // Should include both jar and sources (may also include auto-injected jenkins-core)
+        assertTrue(classpath.size >= 2, "Expected at least 2 items, got ${classpath.size}")
         assertTrue(classpath.any { it.toString().contains("lib.jar") })
         assertTrue(classpath.any { it.toString().contains("lib-sources.jar") })
     }

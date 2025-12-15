@@ -56,7 +56,7 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
      * Returns Jenkins classpath if it's a Jenkinsfile, empty otherwise.
      * Uses caching to avoid redundant AST parsing when content hasn't changed.
      */
-    fun getClasspathForFile(uri: URI, content: String): List<Path> {
+    fun getClasspathForFile(uri: URI, content: String, projectDependencies: List<Path> = emptyList()): List<Path> {
         if (!isJenkinsFile(uri)) {
             return emptyList()
         }
@@ -74,8 +74,8 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
             parsed
         }
 
-        // Build classpath from referenced libraries
-        val classpath = jenkinsContext.buildClasspath(libraries)
+        // Build classpath from references AND project dependencies
+        val classpath = jenkinsContext.buildClasspath(libraries, projectDependencies)
 
         logger.debug("Built Jenkins classpath for $uri: ${classpath.size} entries")
         return classpath

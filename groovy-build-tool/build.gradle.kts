@@ -16,6 +16,12 @@ dependencies {
     // Gradle Tooling API
     implementation(libs.gradle.tooling.api)
 
+    // Maven Embedder (for programmatic dependency resolution)
+    implementation(libs.maven.embedder)
+    implementation(libs.maven.compat)
+    implementation(libs.maven.resolver.connector.basic)
+    implementation(libs.maven.resolver.transport.http)
+
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.coroutines.test)

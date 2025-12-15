@@ -24,6 +24,8 @@ class MavenBuildTool : BuildTool {
     ): com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher =
         MavenBuildFileWatcher(coroutineScope, onChange)
 
+    private val dependencyResolver = MavenDependencyResolver()
+
     override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
         if (!canHandle(workspaceRoot)) {
             return WorkspaceResolution(emptyList(), emptyList())
@@ -32,12 +34,45 @@ class MavenBuildTool : BuildTool {
         onProgress?.invoke("Resolving Maven dependencies...")
         logger.info("Resolving Maven dependencies for: $workspaceRoot")
 
+        val pomPath = workspaceRoot.resolve("pom.xml")
+
+        // Try embedded resolver first (faster, no subprocess)
+        val embeddedDeps = tryEmbeddedResolution(pomPath)
+        val dependencies = if (embeddedDeps.isNotEmpty()) {
+            embeddedDeps
+        } else {
+            // Fallback to CLI-based resolution
+            logger.info("Embedded resolution returned no results, falling back to CLI")
+            resolveViaCli(workspaceRoot)
+        }
+
+        // Standard Maven layout assumption for now
+        val sourceDirs = listOf(
+            workspaceRoot.resolve("src/main/java"),
+            workspaceRoot.resolve("src/main/groovy"),
+            workspaceRoot.resolve("src/test/java"),
+            workspaceRoot.resolve("src/test/groovy"),
+        ).filter { it.exists() }
+
+        logger.info("Resolved ${dependencies.size} Maven dependencies")
+        return WorkspaceResolution(dependencies, sourceDirs)
+    }
+
+    private fun tryEmbeddedResolution(pomPath: Path): List<Path> = try {
+        dependencyResolver.resolveDependencies(pomPath)
+    } catch (e: Exception) {
+        logger.warn("Embedded Maven resolution failed, will try CLI fallback", e)
+        emptyList()
+    }
+
+    private fun resolveViaCli(workspaceRoot: Path): List<Path> {
         val cpFile = Files.createTempFile("mvn-classpath", ".txt")
         try {
             val mvnCommand = getMvnCommand(workspaceRoot)
             val command = listOf(
                 mvnCommand,
                 "dependency:build-classpath",
+                "-DincludeScope=test",
                 "-Dmdep.outputFile=${cpFile.toAbsolutePath()}",
             )
 
@@ -56,29 +91,17 @@ class MavenBuildTool : BuildTool {
             val exitCode = process.waitFor()
 
             if (exitCode != 0) {
-                logger.error("Maven dependency resolution failed. Output:\n$output")
-                // Don't throw, just return empty so we don't crash LSP
-                return WorkspaceResolution(emptyList(), emptyList())
+                logger.error("Maven CLI dependency resolution failed. Output:\n$output")
+                return emptyList()
             }
 
             val classpathString = Files.readString(cpFile)
-            val dependencies = classpathString.split(File.pathSeparator)
+            return classpathString.split(File.pathSeparator)
                 .map { Paths.get(it.trim()) }
                 .filter { it.exists() }
-
-            // Standard Maven layout assumption for now
-            val sourceDirs = listOf(
-                workspaceRoot.resolve("src/main/java"),
-                workspaceRoot.resolve("src/main/groovy"),
-                workspaceRoot.resolve("src/test/java"),
-                workspaceRoot.resolve("src/test/groovy"),
-            ).filter { it.exists() }
-
-            logger.info("Resolved ${dependencies.size} Maven dependencies")
-            return WorkspaceResolution(dependencies, sourceDirs)
         } catch (e: Exception) {
-            logger.error("Failed to resolve Maven dependencies", e)
-            return WorkspaceResolution(emptyList(), emptyList())
+            logger.error("Failed to resolve Maven dependencies via CLI", e)
+            return emptyList()
         } finally {
             Files.deleteIfExists(cpFile)
         }

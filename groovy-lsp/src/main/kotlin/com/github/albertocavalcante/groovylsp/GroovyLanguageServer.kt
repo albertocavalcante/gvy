@@ -342,4 +342,28 @@ class GroovyLanguageServer :
     override fun getTextDocumentService(): TextDocumentService = textDocumentService
 
     override fun getWorkspaceService(): WorkspaceService = workspaceService
+
+    /**
+     * Waits for dependency resolution to complete, useful for CLI/testing.
+     */
+    fun waitForDependencies(timeoutSeconds: Long = 60): Boolean {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutSeconds * 1000) {
+            if (dependencyManager.isDependenciesReady()) {
+                return true
+            }
+            if (dependencyManager.getState() ==
+                com.github.albertocavalcante.groovylsp.gradle.DependencyManager.State.FAILED
+            ) {
+                return false
+            }
+            try {
+                Thread.sleep(100)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return false
+    }
 }

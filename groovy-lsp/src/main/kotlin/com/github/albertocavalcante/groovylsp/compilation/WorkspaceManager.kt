@@ -134,8 +134,8 @@ class WorkspaceManager {
     fun getClasspathForFile(uri: URI, content: String): List<Path> {
         val jenkinsManager = jenkinsWorkspaceManager
         if (jenkinsManager != null && jenkinsManager.isJenkinsFile(uri)) {
-            // Return Jenkins-specific classpath
-            return jenkinsManager.getClasspathForFile(uri, content)
+            // Return Jenkins-specific classpath, but ALSO include project dependencies
+            return jenkinsManager.getClasspathForFile(uri, content, dependencyClasspath)
         }
         // Return standard dependency classpath for non-Jenkins files
         return dependencyClasspath.toList()
