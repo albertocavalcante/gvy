@@ -6,7 +6,7 @@ import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
-import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
@@ -25,7 +25,7 @@ class DefinitionResolver(
     private val astVisitor: GroovyAstModel,
     private val symbolTable: SymbolTable,
     private val compilationService: GroovyCompilationService? = null,
-    private val sourceNavigationService: SourceNavigationService? = null,
+    private val sourceNavigator: SourceNavigator? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
@@ -255,12 +255,12 @@ class DefinitionResolver(
 
         val classpathUri = compilationService.findClasspathClass(className) ?: return null
 
-        // Try to navigate to source code if SourceNavigationService is available
-        if (sourceNavigationService != null) {
+        // Try to navigate to source code if SourceNavigator is available
+        if (sourceNavigator != null) {
             try {
-                val result = sourceNavigationService.navigateToSource(classpathUri, className)
+                val result = sourceNavigator.navigateToSource(classpathUri, className)
                 when (result) {
-                    is SourceNavigationService.SourceResult.SourceLocation -> {
+                    is SourceNavigator.SourceResult.SourceLocation -> {
                         // Return Binary result pointing to the extracted source file location.
                         // The client will open this file: URI directly.
                         logger.debug("Found source for $className at ${result.uri}")
@@ -278,7 +278,7 @@ class DefinitionResolver(
 
                         return DefinitionResult.Binary(result.uri, className, range)
                     }
-                    is SourceNavigationService.SourceResult.BinaryOnly -> {
+                    is SourceNavigator.SourceResult.BinaryOnly -> {
                         logger.debug("No source available for $className: ${result.reason}")
                         // Fall through to check if URI is resolvable
                     }
@@ -292,7 +292,7 @@ class DefinitionResolver(
         }
 
         // Only return binary result for URIs that VS Code can actually open
-        // jrt: and jar: URIs are handled above by SourceNavigationService
+        // jrt: and jar: URIs are handled above by SourceNavigator
         // If we reach here, source resolution failed and we cannot open these URIs
         return when (classpathUri.scheme) {
             "file" -> DefinitionResult.Binary(classpathUri, className)

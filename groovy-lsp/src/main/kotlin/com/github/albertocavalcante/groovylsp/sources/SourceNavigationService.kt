@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
-import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -19,38 +18,20 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * This enables "Go to Definition" to navigate directly to source code
  * rather than showing "binary class from JAR".
+ *
+ * Implements [SourceNavigator] interface for testability and dependency injection.
  */
 class SourceNavigationService(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
     private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
     private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
-) {
+) : SourceNavigator {
 
     private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
 
     // Cache: jar URI -> source JAR path (already downloaded)
     private val sourceJarCache = ConcurrentHashMap<String, Path?>()
-
-    /**
-     * Result of source navigation - either found source or binary fallback.
-     */
-    sealed class SourceResult {
-        /**
-         * Source code location found.
-         */
-        data class SourceLocation(
-            val uri: URI,
-            val className: String,
-            val lineNumber: Int? = null,
-            val documentation: Documentation? = null,
-        ) : SourceResult()
-
-        /**
-         * No source available - binary reference only.
-         */
-        data class BinaryOnly(val uri: URI, val className: String, val reason: String) : SourceResult()
-    }
 
     /**
      * Navigate to source code for a class found in the classpath.
@@ -63,7 +44,7 @@ class SourceNavigationService(
      * @param className Fully qualified class name
      * @return SourceResult indicating where to navigate
      */
-    suspend fun navigateToSource(classpathUri: URI, className: String): SourceResult {
+    override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult {
         logger.debug("Navigating to source for: {} from {}", className, classpathUri)
 
         // Handle JDK classes (jrt: scheme)
@@ -76,7 +57,7 @@ class SourceNavigationService(
         if (existingSource != null) {
             logger.debug("Found cached source for: {}", className)
             val inspection = javaSourceInspector.inspectClass(existingSource, className)
-            return SourceResult.SourceLocation(
+            return SourceNavigator.SourceResult.SourceLocation(
                 uri = existingSource.toUri(),
                 className = className,
                 lineNumber = inspection?.lineNumber,
@@ -85,14 +66,14 @@ class SourceNavigationService(
         }
 
         // Step 2: Derive Maven coordinates from JAR path
-        val jarPath = extractJarPath(classpathUri) ?: return SourceResult.BinaryOnly(
+        val jarPath = extractJarPath(classpathUri) ?: return SourceNavigator.SourceResult.BinaryOnly(
             uri = classpathUri,
             className = className,
             reason = "Could not extract JAR path from URI",
         )
 
         // Step 3: Try to resolve source JAR (Maven or adjacent)
-        val sourceJarPath = resolveSourceJar(jarPath) ?: return SourceResult.BinaryOnly(
+        val sourceJarPath = resolveSourceJar(jarPath) ?: return SourceNavigator.SourceResult.BinaryOnly(
             uri = classpathUri,
             className = className,
             reason = "Source JAR not available for ${jarPath.fileName}",
@@ -105,14 +86,14 @@ class SourceNavigationService(
         val sourcePath = sourceExtractor.findSourceForClass(className)
         return if (sourcePath != null) {
             val inspection = javaSourceInspector.inspectClass(sourcePath, className)
-            SourceResult.SourceLocation(
+            SourceNavigator.SourceResult.SourceLocation(
                 uri = sourcePath.toUri(),
                 className = className,
                 lineNumber = inspection?.lineNumber,
                 documentation = inspection?.documentation,
             )
         } else {
-            SourceResult.BinaryOnly(
+            SourceNavigator.SourceResult.BinaryOnly(
                 uri = classpathUri,
                 className = className,
                 reason = "Class $className not found in extracted sources",

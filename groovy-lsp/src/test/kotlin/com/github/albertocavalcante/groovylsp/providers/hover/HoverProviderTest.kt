@@ -1,7 +1,11 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
@@ -819,4 +823,124 @@ class Calculator {
 
     // TODO: Add integration test for Jenkins step hover in JenkinsBundledCompletionTest
     // Unit tests here won't work because JenkinsWorkspaceManager isn't initialized
+
+    // ========== External Java Class Documentation Tests ==========
+
+    @Test
+    fun `hover on import statement shows external class documentation`() = runTest {
+        // Create a mock SourceNavigator that returns documentation for SimpleDateFormat
+        val mockSourceNavigator = mockk<SourceNavigator>()
+
+        val simpleDateFormatUri = URI.create("file:///extracted/java/text/SimpleDateFormat.java")
+        coEvery {
+            mockSourceNavigator.navigateToSource(any(), eq("java.text.SimpleDateFormat"))
+        } returns SourceNavigator.SourceResult.SourceLocation(
+            uri = simpleDateFormatUri,
+            className = "java.text.SimpleDateFormat",
+            lineNumber = 100,
+            documentation = Documentation(
+                summary = "SimpleDateFormat is a concrete class for formatting and parsing dates.",
+                description = "SimpleDateFormat allows you to start by choosing any user-defined " +
+                    "patterns for date-time formatting.",
+            ),
+        )
+
+        // Return BinaryOnly for other classes
+        coEvery {
+            mockSourceNavigator.navigateToSource(any(), neq("java.text.SimpleDateFormat"))
+        } returns SourceNavigator.SourceResult.BinaryOnly(
+            uri = URI.create("jrt:/java.base/java/lang/Object.class"),
+            className = "java.lang.Object",
+            reason = "Test fallback",
+        )
+
+        // Create HoverProvider with the mock
+        val hoverProviderWithMock = HoverProvider(compilationService, documentProvider, mockSourceNavigator)
+
+        val groovyCode = """
+            import java.text.SimpleDateFormat
+            
+            class Test {
+                def formatter = new SimpleDateFormat()
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test-import-hover.groovy")
+        compilationService.compile(uri, groovyCode)
+
+        // Hover on "SimpleDateFormat" in the import statement (line 0, position somewhere on the class name)
+        val hover = hoverProviderWithMock.provideHover(uri.toString(), Position(0, 20)) // On "SimpleDateFormat"
+
+        assertNotNull(hover, "Expected hover content for import statement")
+        assertTrue(hover.contents.isRight, "Expected MarkupContent")
+
+        val content = hover.contents.right
+        assertEquals(MarkupKind.MARKDOWN, content.kind)
+
+        // The hover should contain documentation about SimpleDateFormat
+        logger.info("Import hover content: ${content.value}")
+
+        // Verify that we got the Javadoc from our mock (not just basic import info)
+        assertTrue(
+            content.value.contains("concrete class for formatting"),
+            "Expected hover to contain Javadoc from source navigation service. Actual: ${content.value}",
+        )
+    }
+
+    @Test
+    fun `hover on JDK class in code shows documentation when sourceNavigator is provided`() = runTest {
+        // Create a mock SourceNavigator that returns documentation for ArrayList
+        val mockSourceNavigator = mockk<SourceNavigator>()
+
+        val arrayListUri = URI.create("file:///extracted/java/util/ArrayList.java")
+        coEvery {
+            mockSourceNavigator.navigateToSource(any(), eq("java.util.ArrayList"))
+        } returns SourceNavigator.SourceResult.SourceLocation(
+            uri = arrayListUri,
+            className = "java.util.ArrayList",
+            lineNumber = 117,
+            documentation = Documentation(
+                summary = "Resizable-array implementation of the List interface.",
+                description = "Implements all optional list operations, and permits all elements, " +
+                    "including null.",
+            ),
+        )
+
+        // Return BinaryOnly for other classes
+        coEvery {
+            mockSourceNavigator.navigateToSource(any(), neq("java.util.ArrayList"))
+        } returns SourceNavigator.SourceResult.BinaryOnly(
+            uri = URI.create("jrt:/java.base/java/lang/Object.class"),
+            className = "java.lang.Object",
+            reason = "Test fallback",
+        )
+
+        // Create HoverProvider with the mock
+        val hoverProviderWithMock = HoverProvider(compilationService, documentProvider, mockSourceNavigator)
+
+        val groovyCode = """
+            import java.util.ArrayList
+            
+            class Test {
+                def list = new ArrayList()
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test-class-hover.groovy")
+        compilationService.compile(uri, groovyCode)
+
+        // Hover on "ArrayList" in the import (line 0)
+        val hover = hoverProviderWithMock.provideHover(uri.toString(), Position(0, 20)) // On "ArrayList" in import
+
+        assertNotNull(hover, "Expected hover content for ArrayList import")
+        assertTrue(hover.contents.isRight, "Expected MarkupContent")
+        val content = hover.contents.right
+        logger.info("Class hover content: ${content.value}")
+
+        // Verify that we got the Javadoc from our mock
+        assertTrue(
+            content.value.contains("Resizable-array implementation"),
+            "Expected hover to contain Javadoc from source navigation service. Actual: ${content.value}",
+        )
+    }
 }

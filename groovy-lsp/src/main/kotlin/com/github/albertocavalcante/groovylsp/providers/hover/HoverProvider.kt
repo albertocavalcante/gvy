@@ -10,7 +10,7 @@ import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
-import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
@@ -41,7 +41,7 @@ import java.net.URI
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
-    private val sourceNavigationService: SourceNavigationService? = null,
+    private val sourceNavigator: SourceNavigator? = null,
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
 
@@ -228,6 +228,20 @@ class HoverProvider(
     }
 
     /**
+     * Extract the class name for documentation lookup from various node types.
+     * This enables documentation fetching for both direct ClassNode references
+     * and ImportNode wrappers (when hovering on an import statement).
+     *
+     * @param node The AST node to extract class name from
+     * @return Fully qualified class name, or null if not applicable
+     */
+    private fun extractClassNameForDocumentation(node: ASTNode): String? = when (node) {
+        is ClassNode -> node.name
+        is ImportNode -> node.type?.name ?: node.className
+        else -> null
+    }
+
+    /**
      * Create hover content using the DSL with documentation.
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
@@ -248,17 +262,20 @@ class HoverProvider(
         }
 
         // If standard doc is empty, try source navigation for binary classes
-        if (doc.isEmpty() && node is ClassNode && sourceNavigationService != null) {
-            val className = node.name
-            val classpathUri = compilationService.findClasspathClass(className)
-            if (classpathUri != null) {
-                try {
-                    val result = sourceNavigationService.navigateToSource(classpathUri, className)
-                    if (result is SourceNavigationService.SourceResult.SourceLocation && result.documentation != null) {
-                        doc = result.documentation
+        // This handles both ClassNode and ImportNode (which wraps a class reference)
+        if (doc.isEmpty() && sourceNavigator != null) {
+            val className = extractClassNameForDocumentation(node)
+            if (className != null) {
+                val classpathUri = compilationService.findClasspathClass(className)
+                if (classpathUri != null) {
+                    try {
+                        val result = sourceNavigator.navigateToSource(classpathUri, className)
+                        if (result is SourceNavigator.SourceResult.SourceLocation && result.documentation != null) {
+                            doc = result.documentation
+                        }
+                    } catch (e: Exception) {
+                        logger.debug("Failed to get source documentation for $className", e)
                     }
-                } catch (e: Exception) {
-                    logger.debug("Failed to get source documentation for $className", e)
                 }
             }
         }

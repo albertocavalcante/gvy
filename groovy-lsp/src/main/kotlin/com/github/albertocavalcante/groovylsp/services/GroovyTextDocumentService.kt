@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CoroutineScope
@@ -106,7 +107,8 @@ class GroovyTextDocumentService(
     }
 
     // Source navigation service for go-to-definition on JARs
-    private val sourceNavigationService by lazy {
+    // Typed as SourceNavigator interface for testability
+    private val sourceNavigator: SourceNavigator by lazy {
         SourceNavigationService()
     }
 
@@ -299,7 +301,7 @@ class GroovyTextDocumentService(
         val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(
             compilationService,
             documentProvider,
-            sourceNavigationService,
+            sourceNavigator,
         )
         val hover = hoverProvider.provideHover(params.textDocument.uri, params.position)
 
@@ -339,7 +341,7 @@ class GroovyTextDocumentService(
                 // Create definition provider with source navigation support
                 val definitionProvider = DefinitionProvider(
                     compilationService = compilationService,
-                    sourceNavigationService = sourceNavigationService,
+                    sourceNavigator = sourceNavigator,
                     telemetrySink = telemetrySink,
                 )
 

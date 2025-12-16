@@ -6,7 +6,7 @@ import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.converters.toLspLocationLink
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
-import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +24,7 @@ import java.net.URI
  */
 class DefinitionProvider(
     private val compilationService: GroovyCompilationService,
-    private val sourceNavigationService: SourceNavigationService? = null,
+    private val sourceNavigator: SourceNavigator? = null,
     private val telemetrySink: DefinitionTelemetrySink = DefinitionTelemetrySink.NO_OP,
 ) {
 
@@ -57,7 +57,7 @@ class DefinitionProvider(
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
-        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigationService)
+        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
 
         // Find the origin node at the position
         val originNode = visitor.getNodeAt(documentUri, position.toGroovyPosition())
@@ -128,7 +128,7 @@ class DefinitionProvider(
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
-        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigationService)
+        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
         val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
 
         // Convert each target to Location and emit
@@ -188,7 +188,7 @@ class DefinitionProvider(
         context: DefinitionContext,
     ) {
         val resolver =
-            DefinitionResolver(context.visitor, context.symbolTable, compilationService, sourceNavigationService)
+            DefinitionResolver(context.visitor, context.symbolTable, compilationService, sourceNavigator)
         var definitionFound = false
         try {
             val result = resolver.findDefinitionAt(documentUri, position)

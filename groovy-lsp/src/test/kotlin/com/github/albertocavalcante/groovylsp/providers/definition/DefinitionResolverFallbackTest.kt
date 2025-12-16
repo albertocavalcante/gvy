@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.types.Position
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 
 /**
- * Tests for DefinitionResolver fallback behavior and SourceNavigationService integration.
+ * Tests for DefinitionResolver fallback behavior and SourceNavigator integration.
  *
  * Key behaviors tested:
  * - Source navigation returns extracted .java file URI (success path)
@@ -49,7 +49,7 @@ class DefinitionResolverFallbackTest {
     @Nested
     inner class SourceNavigationSuccessTest {
         /**
-         * When SourceNavigationService successfully extracts source,
+         * When SourceNavigator successfully extracts source,
          * we should return the file: URI to the extracted .java file.
          */
         @Test
@@ -60,7 +60,7 @@ class DefinitionResolverFallbackTest {
             val astVisitor = mockk<GroovyAstModel>()
             val symbolTable = mockk<SymbolTable>()
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigationService>()
+            val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("org.apache.commons.lang3.StringUtils", 6, 25)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
@@ -80,7 +80,7 @@ class DefinitionResolverFallbackTest {
             // Source JAR downloaded and extracted successfully
             coEvery {
                 sourceNavigationService.navigateToSource(jarUri, "org.apache.commons.lang3.StringUtils")
-            } returns SourceNavigationService.SourceResult.SourceLocation(
+            } returns SourceNavigator.SourceResult.SourceLocation(
                 uri = extractedSourceUri,
                 className = "org.apache.commons.lang3.StringUtils",
             )
@@ -95,17 +95,17 @@ class DefinitionResolverFallbackTest {
         }
 
         /**
-         * Verify SourceNavigationService is called with correct parameters
+         * Verify SourceNavigator is called with correct parameters
          */
         @Test
-        fun `SourceNavigationService is invoked with jar URI and class name`() {
+        fun `SourceNavigator is invoked with jar URI and class name`() {
             val documentUri = URI.create("file:///project/src/Main.groovy")
             val position = Position(5, 10)
 
             val astVisitor = mockk<GroovyAstModel>()
             val symbolTable = mockk<SymbolTable>()
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigationService>()
+            val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("org.slf4j.Logger", 5, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
@@ -121,7 +121,7 @@ class DefinitionResolverFallbackTest {
 
             coEvery {
                 sourceNavigationService.navigateToSource(jarUri, "org.slf4j.Logger")
-            } returns SourceNavigationService.SourceResult.SourceLocation(
+            } returns SourceNavigator.SourceResult.SourceLocation(
                 uri = sourceUri,
                 className = "org.slf4j.Logger",
             )
@@ -147,7 +147,7 @@ class DefinitionResolverFallbackTest {
             val astVisitor = mockk<GroovyAstModel>()
             val symbolTable = mockk<SymbolTable>()
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigationService>()
+            val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
@@ -161,7 +161,7 @@ class DefinitionResolverFallbackTest {
             // Service returns BinaryOnly
             coEvery {
                 sourceNavigationService.navigateToSource(jarUri, "com.example.Lib")
-            } returns SourceNavigationService.SourceResult.BinaryOnly(
+            } returns SourceNavigator.SourceResult.BinaryOnly(
                 uri = jarUri,
                 className = "com.example.Lib",
                 reason = "No source found",
@@ -184,7 +184,7 @@ class DefinitionResolverFallbackTest {
             val astVisitor = mockk<GroovyAstModel>()
             val symbolTable = mockk<SymbolTable>()
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigationService>()
+            val sourceNavigationService = mockk<SourceNavigator>()
 
             val targetNode = createPositionedClassNode("com.example.Lib", 10, 10)
             every { astVisitor.getNodeAt(documentUri, position) } returns targetNode
@@ -208,7 +208,7 @@ class DefinitionResolverFallbackTest {
         }
 
         @Test
-        fun `works correctly when SourceNavigationService is null`() {
+        fun `works correctly when SourceNavigator is null`() {
             val documentUri = URI.create("file:///project/src/App.groovy")
             val position = Position(10, 10)
 
@@ -227,7 +227,7 @@ class DefinitionResolverFallbackTest {
 
             // Null service - backward compatibility mode
             val resolver =
-                DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigationService = null)
+                DefinitionResolver(astVisitor, symbolTable, compilationService, sourceNavigator = null)
             val result = runBlocking { resolver.findDefinitionAt(documentUri, position) }
 
             // No source nav attempted, fall through to binary result
@@ -294,7 +294,7 @@ class DefinitionResolverFallbackTest {
             val astVisitor = mockk<GroovyAstModel>()
             val symbolTable = mockk<SymbolTable>()
             val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-            val sourceNavigationService = mockk<SourceNavigationService>()
+            val sourceNavigationService = mockk<SourceNavigator>()
 
             // Create import node: import com.google.gson.Gson
             val importedType = createPositionedClassNode("com.google.gson.Gson", 3, 8)
@@ -319,7 +319,7 @@ class DefinitionResolverFallbackTest {
 
             coEvery {
                 sourceNavigationService.navigateToSource(jarUri, "com.google.gson.Gson")
-            } returns SourceNavigationService.SourceResult.SourceLocation(
+            } returns SourceNavigator.SourceResult.SourceLocation(
                 uri = extractedSourceUri,
                 className = "com.google.gson.Gson",
             )

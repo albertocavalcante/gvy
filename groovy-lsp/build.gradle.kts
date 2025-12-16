@@ -62,6 +62,9 @@ dependencies {
     // Classpath Scanning - For indexing all classes in the project and dependencies
     implementation(libs.classgraph)
 
+    // Java Source Parsing - For extracting Javadoc and line numbers from Java source files
+    implementation(libs.javaparser.core)
+
     // ProGuard analysis-only library jars (not packaged): used to complete class hierarchies for excluded optional deps.
     add("proguardLibrary", libs.openrewrite.jgit)
     add("proguardLibrary", libs.jna)

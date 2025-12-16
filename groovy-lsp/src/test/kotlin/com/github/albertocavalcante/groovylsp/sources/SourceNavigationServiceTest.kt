@@ -58,7 +58,7 @@ class SourceNavigationServiceTest {
         @Test
         fun `SourceResult SourceLocation holds all data`() {
             val uri = URI.create("file:///test/Foo.java")
-            val result = SourceNavigationService.SourceResult.SourceLocation(
+            val result = SourceNavigator.SourceResult.SourceLocation(
                 uri = uri,
                 className = "com.example.Foo",
                 lineNumber = 42,
@@ -72,7 +72,7 @@ class SourceNavigationServiceTest {
         @Test
         fun `SourceResult SourceLocation with default lineNumber`() {
             val uri = URI.create("file:///test/Bar.java")
-            val result = SourceNavigationService.SourceResult.SourceLocation(
+            val result = SourceNavigator.SourceResult.SourceLocation(
                 uri = uri,
                 className = "com.example.Bar",
             )
@@ -83,7 +83,7 @@ class SourceNavigationServiceTest {
         @Test
         fun `SourceResult BinaryOnly includes reason`() {
             val uri = URI.create("jar:file:///test.jar!/Foo.class")
-            val result = SourceNavigationService.SourceResult.BinaryOnly(
+            val result = SourceNavigator.SourceResult.BinaryOnly(
                 uri = uri,
                 className = "com.example.Foo",
                 reason = "No source available",
@@ -105,8 +105,8 @@ class SourceNavigationServiceTest {
             val fileUri = URI.create("file:///some/path/Class.java")
             val result = service.navigateToSource(fileUri, "SomeClass")
 
-            assertTrue(result is SourceNavigationService.SourceResult.BinaryOnly)
-            val binaryResult = result as SourceNavigationService.SourceResult.BinaryOnly
+            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly)
+            val binaryResult = result as SourceNavigator.SourceResult.BinaryOnly
             assertTrue(binaryResult.reason.contains("extract JAR path") || binaryResult.reason.contains("JDK"))
         }
 
@@ -120,8 +120,8 @@ class SourceNavigationServiceTest {
             // Should delegate to JdkSourceResolver - result depends on src.zip availability
             assertNotNull(result)
             assertTrue(
-                result is SourceNavigationService.SourceResult.SourceLocation ||
-                    result is SourceNavigationService.SourceResult.BinaryOnly,
+                result is SourceNavigator.SourceResult.SourceLocation ||
+                    result is SourceNavigator.SourceResult.BinaryOnly,
             )
         }
 
@@ -132,7 +132,7 @@ class SourceNavigationServiceTest {
             val nonExistentJar = URI.create("jar:file:///nonexistent/lib.jar!/com/example/Foo.class")
             val result = service.navigateToSource(nonExistentJar, "com.example.Foo")
 
-            assertTrue(result is SourceNavigationService.SourceResult.BinaryOnly)
+            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly)
         }
 
         @Test
@@ -156,7 +156,7 @@ class SourceNavigationServiceTest {
             val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
             val result = service.navigateToSource(jarUri, "com.example.MyClass")
 
-            assertTrue(result is SourceNavigationService.SourceResult.SourceLocation) {
+            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
                 "Expected SourceLocation but got: $result"
             }
         }
