@@ -2,177 +2,330 @@ package com.github.albertocavalcante.groovyformatter
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Disabled
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 class OpenRewriteFormatterTest {
 
     private val formatter = OpenRewriteFormatter()
 
-    @Test
-    fun `should format simple script with bad indentation`() {
-        val unformatted = """
-            def x = 1
-              def y = 2
-        """.trimIndent()
-        val expected = """
-            def x = 1
-            def y = 2
-        """.trimIndent()
-
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
+    /**
+     * Helper to make test assertions more concise and readable.
+     */
+    private fun assertFormatsTo(input: String, expected: String) {
+        assertThat(formatter.format(input))
+            .withFailMessage { "Formatting did not produce expected output" }
+            .isEqualTo(expected)
     }
 
-    @Test
-    fun `should not change already formatted script`() {
-        val formatted = """
-            def x = 1
-            def y = 2
-        """.trimIndent()
+    @Nested
+    inner class `General formatting` {
 
-        val result = formatter.format(formatted)
+        @Test
+        fun `should format simple script with bad indentation`() {
+            assertFormatsTo(
+                input = """
+                    def x = 1
+                      def y = 2
+                """.trimIndent(),
+                expected = """
+                    def x = 1
+                    def y = 2
+                """.trimIndent(),
+            )
+        }
 
-        assertThat(result).isEqualTo(formatted)
-    }
+        @Test
+        fun `should not change already formatted script`() {
+            val formatted = """
+                def x = 1
+                def y = 2
+            """.trimIndent()
 
-    @Test
-    fun `should handle empty string`() {
-        val result = formatter.format("")
-        assertThat(result).isEmpty()
-    }
+            assertFormatsTo(formatted, formatted)
+        }
 
-    @Test
-    fun `should format script with closures`() {
-        val unformatted = """
-            def list = [1, 2, 3]
-            list.each {  it ->
-              println it
-            }
-        """.trimIndent()
-        val expected = """
-            def list = [1, 2, 3]
-            list.each { it ->
-                println it
-            }
-        """.trimIndent()
+        @Test
+        fun `should handle empty string`() {
+            assertThat(formatter.format("")).isEmpty()
+        }
 
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
-    }
-
-    @Test
-    fun `should not change script with syntax errors`() {
-        val invalidScript = "def x = "
-        val result = formatter.format(invalidScript)
-        assertThat(result).isEqualTo(invalidScript)
-    }
-
-    @Test
-    fun `should collapse redundant inline spaces`() {
-        val unformatted = """
-            def total  =  41
-            println  total
-        """.trimIndent()
-        val expected = """
-            def total = 41
-            println total
-        """.trimIndent()
-
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
-    }
-
-    @Disabled("OpenRewrite formatter does not tighten method invocation spacing yet.")
-    @Test
-    fun `should format method call spacing`() {
-        val unformatted = """
-            println(  "hi" )
-        """.trimIndent()
-        val expected = """
-            println("hi")
-        """.trimIndent()
-
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
-    }
-
-    @Disabled("OpenRewrite formatter keeps operators tight without spaces; needs follow-up recipe.")
-    @Test
-    fun `should format arithmetic expressions`() {
-        val unformatted = """
-            def sum=1+2*3
-        """.trimIndent()
-        val expected = """
-            def sum = 1 + 2 * 3
-        """.trimIndent()
-
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
-    }
-
-    @Disabled("OpenRewrite formatter leaves whitespace around map entries unchanged; document limitation.")
-    @Test
-    fun `should format map literals`() {
-        val unformatted = """
-            def map = [ 'a' :1 ,b:2, c : 3]
-        """.trimIndent()
-        val expected = """
-            def map = ['a': 1, b: 2, c: 3]
-        """.trimIndent()
-
-        val result = formatter.format(unformatted)
-
-        assertThat(result).isEqualTo(expected)
-    }
-
-    @Disabled("OpenRewrite formatter currently omits spacing around parentheses/braces; track for upstream fix.")
-    @Test
-    fun `should format nested control structures`() {
-        val unformatted = """
-            class Greeter {
-            def greet(String name){
-            if(name){
-              println  "Hello ${'$'}name"
-            }
-            }
-            }
-        """.trimIndent()
-        val expected = """
-            class Greeter {
-                def greet(String name) {
-                    if (name) {
-                        println "Hello ${'$'}name"
+        @Test
+        fun `should format script with closures`() {
+            assertFormatsTo(
+                input = """
+                    def list = [1, 2, 3]
+                    list.each {  it ->
+                      println it
                     }
-                }
-            }
-        """.trimIndent()
+                """.trimIndent(),
+                expected = """
+                    def list = [1, 2, 3]
+                    list.each { it ->
+                        println it
+                    }
+                """.trimIndent(),
+            )
+        }
 
-        val result = formatter.format(unformatted)
+        @Test
+        fun `should not change script with syntax errors`() {
+            val invalidScript = "def x = "
+            assertFormatsTo(invalidScript, invalidScript)
+        }
 
-        assertThat(result).isEqualTo(expected)
+        @Test
+        fun `should collapse redundant inline spaces`() {
+            assertFormatsTo(
+                input = """
+                    def total  =  41
+                    println  total
+                """.trimIndent(),
+                expected = """
+                    def total = 41
+                    println total
+                """.trimIndent(),
+            )
+        }
     }
 
-    @Disabled("OpenRewrite formatter omits spaces around for-loop parentheses/braces; upstream fix needed.")
-    @Test
-    fun `should format for loop spacing`() {
-        val unformatted = """
-            for(item in [1,2,3]){
-            println  item
-            }
-        """.trimIndent()
-        val expected = """
-            for (item in [1, 2, 3]) {
-                println item
-            }
-        """.trimIndent()
+    @Nested
+    inner class `Known OpenRewrite limitations` {
 
-        val result = formatter.format(unformatted)
+        @Disabled("OpenRewrite formatter does not tighten method invocation spacing yet.")
+        @Test
+        fun `should format method call spacing`() {
+            assertFormatsTo(
+                input = "println(  \"hi\" )",
+                expected = "println(\"hi\")",
+            )
+        }
 
-        assertThat(result).isEqualTo(expected)
+        @Disabled("OpenRewrite formatter keeps operators tight without spaces; needs follow-up recipe.")
+        @Test
+        fun `should format arithmetic expressions`() {
+            assertFormatsTo(
+                input = "def sum=1+2*3",
+                expected = "def sum = 1 + 2 * 3",
+            )
+        }
+
+        @Disabled("OpenRewrite formatter leaves whitespace around map entries unchanged; document limitation.")
+        @Test
+        fun `should format map literals`() {
+            assertFormatsTo(
+                input = "def map = [ 'a' :1 ,b:2, c : 3]",
+                expected = "def map = ['a': 1, b: 2, c: 3]",
+            )
+        }
+
+        @Disabled("OpenRewrite formatter currently omits spacing around parentheses/braces; track for upstream fix.")
+        @Test
+        fun `should format nested control structures`() {
+            assertFormatsTo(
+                input = """
+                    class Greeter {
+                    def greet(String name){
+                    if(name){
+                      println  "Hello ${'$'}name"
+                    }
+                    }
+                    }
+                """.trimIndent(),
+                expected = """
+                    class Greeter {
+                        def greet(String name) {
+                            if (name) {
+                                println "Hello ${'$'}name"
+                            }
+                        }
+                    }
+                """.trimIndent(),
+            )
+        }
+
+        @Disabled("OpenRewrite formatter omits spaces around for-loop parentheses/braces; upstream fix needed.")
+        @Test
+        fun `should format for loop spacing`() {
+            assertFormatsTo(
+                input = """
+                    for(item in [1,2,3]){
+                    println  item
+                    }
+                """.trimIndent(),
+                expected = """
+                    for (item in [1, 2, 3]) {
+                        println item
+                    }
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Nested
+    inner class `Shebang handling` {
+
+        @Test
+        fun `should preserve standard shebang with imports`() {
+            assertFormatsTo(
+                input = """
+                    #!/usr/bin/env groovy
+
+                    import io.jenkins.infra.InfraConfig
+                    import jenkins.scm.api.SCMSource
+                    import com.cloudbees.groovy.cps.NonCPS
+
+                    // Method kept for backward compatibility
+                    Boolean isRunningOnJenkinsInfra() {
+                      return new InfraConfig(env).isRunningOnJenkinsInfra()
+                    }
+                """.trimIndent(),
+                expected = """
+                    #!/usr/bin/env groovy
+
+                    import io.jenkins.infra.InfraConfig
+                    import jenkins.scm.api.SCMSource
+                    import com.cloudbees.groovy.cps.NonCPS
+
+                    // Method kept for backward compatibility
+                    Boolean isRunningOnJenkinsInfra() {
+                        return new InfraConfig(env).isRunningOnJenkinsInfra()
+                    }
+                """.trimIndent(),
+            )
+        }
+
+        @Test
+        fun `should normalize shebang with no blank line after it`() {
+            assertFormatsTo(
+                input = """
+                    #!/usr/bin/env groovy
+                    import java.util.List
+
+                    def x = 1
+                """.trimIndent(),
+                expected = """
+                    #!/usr/bin/env groovy
+
+                    import java.util.List
+
+                    def x = 1
+                """.trimIndent(),
+            )
+        }
+
+        @Test
+        fun `should preserve shebang with direct path`() {
+            assertFormatsTo(
+                input = """
+                    #!/usr/bin/groovy
+
+                    println "Hello"
+                """.trimIndent(),
+                expected = """
+                    #!/usr/bin/groovy
+
+                    println "Hello"
+                """.trimIndent(),
+            )
+        }
+
+        @Test
+        fun `should preserve shortened shebang format`() {
+            assertFormatsTo(
+                input = """
+                    #!groovy
+
+                    def x = 1
+                """.trimIndent(),
+                expected = """
+                    #!groovy
+
+                    def x = 1
+                """.trimIndent(),
+            )
+        }
+
+        @Test
+        fun `should handle script with only shebang`() {
+            assertFormatsTo(
+                input = "#!/usr/bin/env groovy",
+                expected = "#!/usr/bin/env groovy",
+            )
+        }
+
+        @Test
+        fun `should handle script with shebang and whitespace only`() {
+            assertFormatsTo(
+                input = "#!/usr/bin/env groovy\n\n\n",
+                expected = "#!/usr/bin/env groovy",
+            )
+        }
+
+        @Test
+        fun `should not treat comment as shebang`() {
+            val script = """
+                // This is a comment
+                #!/usr/bin/env groovy
+
+                def x = 1
+            """.trimIndent()
+
+            // Comment before #! means it's not a shebang, so it stays as-is
+            assertFormatsTo(script, script)
+        }
+
+        @Test
+        fun `should handle script without shebang`() {
+            val script = """
+                import java.util.List
+
+                def x = 1
+            """.trimIndent()
+
+            assertFormatsTo(script, script)
+        }
+
+        @Test
+        fun `should normalize Windows CRLF line endings to Unix`() {
+            assertFormatsTo(
+                input = "#!/usr/bin/env groovy\r\n\r\nimport java.util.List\r\n\r\ndef x = 1\r\n",
+                expected = "#!/usr/bin/env groovy\n\nimport java.util.List\n\ndef x = 1\n",
+            )
+        }
+
+        @Test
+        fun `should handle shebang with extra spaces after hash-bang`() {
+            assertFormatsTo(
+                input = """
+                    #!  /usr/bin/env groovy
+
+                    def x = 1
+                """.trimIndent(),
+                expected = """
+                    #!  /usr/bin/env groovy
+
+                    def x = 1
+                """.trimIndent(),
+            )
+        }
+
+        @Test
+        fun `should normalize multiple blank lines after shebang to single blank line`() {
+            assertFormatsTo(
+                input = """
+                    #!/usr/bin/env groovy
+
+
+
+                    import java.util.List
+                """.trimIndent(),
+                expected = """
+                    #!/usr/bin/env groovy
+
+                    import java.util.List
+                """.trimIndent(),
+            )
+        }
     }
 }
