@@ -35,7 +35,7 @@ proguardGradle = "7.8.2"
 jna = "5.18.1"
 openrewriteJgit = "1.3.0"
 mavenEmbedder = "3.9.11"
-mavenResolver = "1.9.22"
+mavenResolver = "1.9.25"
 
 [libraries]
 # Plugins (libraries for plugins block)
