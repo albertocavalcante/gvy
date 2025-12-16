@@ -4,7 +4,7 @@ detekt = "1.23.8"
 spotless = "8.1.0"
 kover = "0.9.4"
 sonarqube = "7.2.1.6560"
-shadow = "9.2.2"
+shadow = "9.3.0"
 gitHooks = "2.1.5"
 jmh = "0.7.3"
 
