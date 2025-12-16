@@ -10,11 +10,16 @@ dependencies {
 
     // Kotlin
     implementation(libs.kotlin.serialization.json)
+    implementation(libs.kotlin.coroutines.core)
 
     // Logging
     implementation(libs.slf4j.api)
 
+    // ClassGraph for scanning plugin JARs
+    implementation(libs.classgraph)
+
     api(project(":groovy-gdsl"))
+    api(project(":groovy-build-tool"))
 
     // Testing
     testImplementation(libs.kotlin.test)
