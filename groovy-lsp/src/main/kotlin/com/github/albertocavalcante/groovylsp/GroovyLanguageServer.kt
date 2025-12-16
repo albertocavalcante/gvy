@@ -135,6 +135,58 @@ class GroovyLanguageServer :
             // Code actions
             codeActionProvider = Either.forLeft(true)
 
+            // Semantic tokens support
+            semanticTokensProvider = org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions().apply {
+                legend = org.eclipse.lsp4j.SemanticTokensLegend().apply {
+                    // Token types - MUST match indices in JenkinsSemanticTokenProvider.TokenTypes
+                    tokenTypes = listOf(
+                        org.eclipse.lsp4j.SemanticTokenTypes.Namespace, // 0
+                        org.eclipse.lsp4j.SemanticTokenTypes.Type, // 1
+                        org.eclipse.lsp4j.SemanticTokenTypes.Class, // 2
+                        org.eclipse.lsp4j.SemanticTokenTypes.Enum, // 3
+                        org.eclipse.lsp4j.SemanticTokenTypes.Interface, // 4
+                        org.eclipse.lsp4j.SemanticTokenTypes.Struct, // 5
+                        org.eclipse.lsp4j.SemanticTokenTypes.TypeParameter, // 6
+                        org.eclipse.lsp4j.SemanticTokenTypes.Parameter, // 7
+                        org.eclipse.lsp4j.SemanticTokenTypes.Variable, // 8
+                        org.eclipse.lsp4j.SemanticTokenTypes.Property, // 9
+                        org.eclipse.lsp4j.SemanticTokenTypes.EnumMember, // 10
+                        org.eclipse.lsp4j.SemanticTokenTypes.Event, // 11
+                        org.eclipse.lsp4j.SemanticTokenTypes.Function, // 12
+                        org.eclipse.lsp4j.SemanticTokenTypes.Method, // 13
+                        org.eclipse.lsp4j.SemanticTokenTypes.Macro, // 14 <- Used for pipeline blocks
+                        org.eclipse.lsp4j.SemanticTokenTypes.Keyword, // 15
+                        org.eclipse.lsp4j.SemanticTokenTypes.Modifier, // 16
+                        org.eclipse.lsp4j.SemanticTokenTypes.Comment, // 17
+                        org.eclipse.lsp4j.SemanticTokenTypes.String, // 18
+                        org.eclipse.lsp4j.SemanticTokenTypes.Number, // 19
+                        org.eclipse.lsp4j.SemanticTokenTypes.Regexp, // 20
+                        org.eclipse.lsp4j.SemanticTokenTypes.Operator, // 21
+                        org.eclipse.lsp4j.SemanticTokenTypes.Decorator, // 22 <- Used for wrapper blocks
+                    )
+
+                    // Token modifiers (bitfield)
+                    tokenModifiers = listOf(
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Declaration,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Definition,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Readonly,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Static,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Deprecated,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Abstract,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Async,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Modification,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.Documentation,
+                        org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary,
+                    )
+                }
+
+                // Support full document semantic tokens (no delta updates yet)
+                full = Either.forLeft(true)
+
+                // TODO: Add range support for better performance with large files
+                // range = Either.forLeft(true)
+            }
+
             // Diagnostics will be pushed
         }
 

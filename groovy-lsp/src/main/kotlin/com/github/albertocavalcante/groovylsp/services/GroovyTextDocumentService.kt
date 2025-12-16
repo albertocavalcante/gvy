@@ -12,6 +12,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
+import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
@@ -480,9 +481,126 @@ class GroovyTextDocumentService(
             actions.map { Either.forRight<Command, CodeAction>(it) }
         }
 
+    override fun semanticTokensFull(
+        params: org.eclipse.lsp4j.SemanticTokensParams,
+    ): CompletableFuture<org.eclipse.lsp4j.SemanticTokens> = coroutineScope.future {
+        logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
+
+        val uri = java.net.URI.create(params.textDocument.uri)
+
+        try {
+            // Ensure document is compiled
+            val compilationResult = compilationService.ensureCompiled(uri)
+            if (compilationResult == null) {
+                logger.warn("Document $uri not compiled, returning empty tokens")
+                return@future org.eclipse.lsp4j.SemanticTokens(emptyList())
+            }
+
+            // Get AST model
+            val astModel = compilationService.getAstModel(uri)
+            if (astModel == null) {
+                logger.warn("No AST model available for $uri, returning empty tokens")
+                return@future org.eclipse.lsp4j.SemanticTokens(emptyList())
+            }
+
+            // Check if this is a Jenkins file
+            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
+
+            // Get Jenkins-specific tokens
+            // Get Jenkins-specific tokens
+            val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(
+                astModel,
+                uri,
+                isJenkinsFile,
+            )
+
+            // TODO: Add general Groovy syntax tokens (keywords, operators, literals)
+            // val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(...)
+
+            // Combine all tokens and encode
+            val allTokens = jenkinsTokens // + groovyTokens
+            val encodedData = encodeSemanticTokens(allTokens)
+
+            logger.debug("Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)")
+            org.eclipse.lsp4j.SemanticTokens(encodedData)
+        } catch (e: Exception) {
+            logger.error("Failed to generate semantic tokens for $uri", e)
+            org.eclipse.lsp4j.SemanticTokens(emptyList())
+        }
+    }
+
+    /**
+     * Encode semantic tokens using LSP relative encoding format.
+     *
+     * LSP semantic tokens are encoded as a flat integer array where each token is
+     * represented by 5 consecutive integers: [deltaLine, deltaStart, length, tokenType, modifiers]
+     *
+     * Encoding rules:
+     * - deltaLine: Line offset from previous token (0 if same line)
+     * - deltaStart: If deltaLine == 0, offset from previous token's start
+     *               If deltaLine > 0, absolute column position (reset)
+     * - length: Token length in characters
+     * - tokenType: Index into SemanticTokensLegend.tokenTypes
+     * - modifiers: Bitfield of indices into SemanticTokensLegend.tokenModifiers
+     *
+     * NOTE: Tokens MUST be sorted by line, then by startChar within each line.
+     *
+     * Example:
+     *   Input:  [Token(line=0, char=0, len=8), Token(line=0, char=10, len=5)]
+     *   Output: [0, 0, 8, type, 0,  0, 10, 5, type, 0]
+     *            ^--token 1-----^   ^--token 2-----^
+     */
+    private fun encodeSemanticTokens(tokens: List<JenkinsSemanticTokenProvider.SemanticToken>): List<Int> {
+        if (tokens.isEmpty()) {
+            return emptyList()
+        }
+
+        val encoded = mutableListOf<Int>()
+        var prevLine = 0
+        var prevChar = 0
+
+        // Sort tokens by line, then by character
+        val sortedTokens = tokens.sortedWith(compareBy({ it.line }, { it.startChar }))
+
+        sortedTokens.forEach { token ->
+            // Calculate delta line
+            val deltaLine = token.line - prevLine
+
+            // Calculate delta char (depends on whether we changed lines)
+            val deltaChar = if (deltaLine == 0) {
+                // Same line: relative to previous token
+                token.startChar - prevChar
+            } else {
+                // New line: absolute position (reset)
+                token.startChar
+            }
+
+            // Add encoded token (5 integers)
+            encoded.add(deltaLine)
+            encoded.add(deltaChar)
+            encoded.add(token.length)
+            encoded.add(token.tokenType)
+            encoded.add(token.tokenModifiers)
+
+            // Update tracking for next token
+            prevLine = token.line
+            prevChar = token.startChar
+        }
+
+        return encoded
+    }
+
     private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
             compilationService.compile(uri, content)
             compilationService.getSymbolStorage(uri)
         }
+
+    /**
+     * Wait for any ongoing diagnostics job for the given URI to complete.
+     * This is useful for testing to ensure compilation is done before making assertions.
+     */
+    suspend fun awaitDiagnostics(uri: java.net.URI) {
+        diagnosticJobs[uri]?.join()
+    }
 }
