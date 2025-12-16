@@ -20,7 +20,7 @@ tasks.withType<org.gradle.api.tasks.compile.GroovyCompile>().configureEach {
 
 group = "com.github.albertocavalcante"
 // x-release-please-start-version
-val baseVersion = "0.3.0"
+val baseVersion = "0.3.1"
 // x-release-please-end
 
 version =

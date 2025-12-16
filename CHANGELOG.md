@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.0...v0.3.1) (2025-12-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.github.javaparser:javaparser-core to v3.27.1 ([#181](https://github.com/albertocavalcante/groovy-lsp/issues/181)) ([79f3515](https://github.com/albertocavalcante/groovy-lsp/commit/79f3515526730959fb19e151cb1c0bd2bcef65ff))
+* **formatter:** preserve shebangs in Groovy scripts ([#183](https://github.com/albertocavalcante/groovy-lsp/issues/183)) ([1d72f2a](https://github.com/albertocavalcante/groovy-lsp/commit/1d72f2af361fd7ba7cf2154761ddacf391b47a26))
+
 ## [0.3.0](https://github.com/albertocavalcante/groovy-lsp/compare/v0.2.0...v0.3.0) (2025-12-16)
 
 
