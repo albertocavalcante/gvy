@@ -133,8 +133,16 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
      * Awaits a notification with detailed diagnostic information.
      * Returns a WaitResult containing the envelope (if found), notifications received during wait,
      * notifications that matched the method but failed the predicate, and elapsed time.
+     *
+     * @param earlySkipPredicate Optional predicate checked periodically. If it returns true,
+     *        the wait is skipped early with a null envelope and skipped=true in result.
      */
-    fun awaitNotificationDetailed(method: String, timeoutMs: Long, predicate: (JsonNode?) -> Boolean): WaitResult {
+    fun awaitNotificationDetailed(
+        method: String,
+        timeoutMs: Long,
+        predicate: (JsonNode?) -> Boolean,
+        earlySkipPredicate: (() -> Boolean)? = null,
+    ): WaitResult {
         val startTime = System.nanoTime()
         val deadline = startTime + timeoutMs * 1_000_000
         val receivedDuringWait = mutableListOf<NotificationSnapshot>()
@@ -188,6 +196,19 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
                             ),
                         )
                     }
+                }
+
+                // Check if we should skip early (e.g., next step's notification arrived)
+                if (earlySkipPredicate?.invoke() == true) {
+                    val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
+                    logger.info("Early skip triggered after {}ms - next notification ready", elapsedMs)
+                    return WaitResult(
+                        envelope = null,
+                        receivedDuringWait = receivedDuringWait,
+                        matchedMethodButFailed = matchedButFailed,
+                        elapsedMs = elapsedMs,
+                        skipped = true,
+                    )
                 }
 
                 // Try to find a matching notification
@@ -251,6 +272,7 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
                         receivedDuringWait = receivedDuringWait,
                         matchedMethodButFailed = matchedButFailed,
                         elapsedMs = elapsedMs,
+                        skipped = false,
                     )
                 }
 
@@ -308,4 +330,5 @@ data class WaitResult(
     val receivedDuringWait: List<NotificationSnapshot>,
     val matchedMethodButFailed: List<PredicateFailure>,
     val elapsedMs: Long,
+    val skipped: Boolean = false,
 )

@@ -5,20 +5,12 @@ import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
-import org.apache.maven.repository.internal.MavenRepositorySystemUtils
-import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.collection.CollectRequest
-import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory
 import org.eclipse.aether.graph.Dependency
-import org.eclipse.aether.impl.DefaultServiceLocator
-import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
-import org.eclipse.aether.spi.connector.RepositoryConnectorFactory
-import org.eclipse.aether.spi.connector.transport.TransporterFactory
-import org.eclipse.aether.transport.http.HttpTransporterFactory
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
@@ -53,8 +45,8 @@ class MavenDependencyResolver : DependencyResolver {
         }
 
         return try {
-            val repositorySystem = newRepositorySystem()
-            val session = newRepositorySystemSession(repositorySystem)
+            val repositorySystem = AetherSessionFactory.repositorySystem
+            val session = newRepositorySystemSession()
 
             // Parse the POM to get dependencies
             val model = parsePom(projectFile)
@@ -99,28 +91,9 @@ class MavenDependencyResolver : DependencyResolver {
         }
     }
 
-    private fun newRepositorySystem(): RepositorySystem {
-        val locator = MavenRepositorySystemUtils.newServiceLocator()
-        locator.addService(RepositoryConnectorFactory::class.java, BasicRepositoryConnectorFactory::class.java)
-        locator.addService(TransporterFactory::class.java, HttpTransporterFactory::class.java)
-
-        locator.setErrorHandler(object : DefaultServiceLocator.ErrorHandler() {
-            override fun serviceCreationFailed(type: Class<*>?, impl: Class<*>?, exception: Throwable?) {
-                logger.error("Service creation failed for $type with impl $impl", exception)
-            }
-        })
-
-        return locator.getService(RepositorySystem::class.java)
-    }
-
-    private fun newRepositorySystemSession(system: RepositorySystem): RepositorySystemSession {
-        val session = MavenRepositorySystemUtils.newSession()
-
-        val localRepoPath = resolveLocalRepository() ?: return session
-        val localRepo = LocalRepository(localRepoPath.toFile())
-        session.localRepositoryManager = system.newLocalRepositoryManager(session, localRepo)
-
-        return session
+    private fun newRepositorySystemSession(): RepositorySystemSession {
+        val localRepoPath = resolveLocalRepository() ?: AetherSessionFactory.resolveLocalRepository()
+        return AetherSessionFactory.createSession(localRepoPath)
     }
 
     override fun resolveLocalRepository(): Path? {

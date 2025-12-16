@@ -276,22 +276,41 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
         val timeout = step.timeoutMs ?: DEFAULT_NOTIFICATION_TIMEOUT_MS
         val checkFailureReasons = mutableListOf<String>() // Capture detailed check failure reasons
 
-        val waitResult = try {
-            context.session.client.awaitNotificationDetailed(step.method, timeout) { payload ->
-                checkFailureReasons.clear() // Clear for each notification evaluation
-                val allChecksPassed = step.checks.all { check ->
-                    val result =
-                        runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
-                    val success = result.getOrDefault(false)
-                    if (!success) {
-                        val failureReason = result.exceptionOrNull()?.message ?: "Check failed"
-                        checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
-                        logger.debug("Notification check failed: {}", failureReason)
-                    }
-                    success
+        // Build early-skip predicate for optional waits if next step is a WaitNotification
+        val earlySkipPredicate: (() -> Boolean)? = if (step.optional && nextStep is ScenarioStep.WaitNotification) {
+            val nextStepPredicate: (JsonNode?) -> Boolean = { payload ->
+                nextStep.checks.all { check ->
+                    runCatching {
+                        context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true)
+                    }.getOrDefault(false)
                 }
-                allChecksPassed
             }
+            { context.session.client.peekNotification(nextStep.method, nextStepPredicate) }
+        } else {
+            null
+        }
+
+        val waitResult = try {
+            context.session.client.awaitNotificationDetailed(
+                step.method,
+                timeout,
+                { payload ->
+                    checkFailureReasons.clear() // Clear for each notification evaluation
+                    val allChecksPassed = step.checks.all { check ->
+                        val result =
+                            runCatching { context.evaluateCheck(payload ?: NullNode.instance, check, quiet = true) }
+                        val success = result.getOrDefault(false)
+                        if (!success) {
+                            val failureReason = result.exceptionOrNull()?.message ?: "Check failed"
+                            checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
+                            logger.debug("Notification check failed: {}", failureReason)
+                        }
+                        success
+                    }
+                    allChecksPassed
+                },
+                earlySkipPredicate,
+            )
         } catch (e: TimeoutException) {
             // If optional, log and return early instead of failing the test
             if (step.optional) {
@@ -299,6 +318,16 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory,
                 return
             }
             throw e
+        }
+
+        // Handle early skip (next notification arrived during wait)
+        if (waitResult.skipped) {
+            logger.info(
+                "Skipping optional step '{}' - next notification arrived after {}ms",
+                step.method,
+                waitResult.elapsedMs,
+            )
+            return
         }
 
         val envelope = waitResult.envelope ?: run {

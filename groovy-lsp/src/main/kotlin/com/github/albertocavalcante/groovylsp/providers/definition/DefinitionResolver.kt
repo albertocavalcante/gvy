@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
@@ -24,6 +25,7 @@ class DefinitionResolver(
     private val astVisitor: GroovyAstModel,
     private val symbolTable: SymbolTable,
     private val compilationService: GroovyCompilationService? = null,
+    private val sourceNavigationService: SourceNavigationService? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
@@ -46,7 +48,7 @@ class DefinitionResolver(
      * Throws specific exceptions for different failure scenarios.
      */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
-    fun findDefinitionAt(
+    suspend fun findDefinitionAt(
         uri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): DefinitionResult? {
@@ -109,7 +111,7 @@ class DefinitionResolver(
     /**
      * Resolve the target node to its definition.
      */
-    private fun resolveDefinition(
+    private suspend fun resolveDefinition(
         targetNode: ASTNode,
         uri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
@@ -153,6 +155,12 @@ class DefinitionResolver(
                 logger.debug("Found classpath definition for ${targetNode.text}: $classpathDef")
                 return classpathDef
             }
+
+            // If we tried global/classpath lookup for an external class reference but found nothing,
+            // return null rather than incorrectly returning the reference as a definition.
+            // This happens when source isn't available for jar:/jrt: classes.
+            logger.debug("External class reference not resolved for ${targetNode.text}")
+            return null
         }
 
         // FIXME: Filter out non-definition nodes that shouldn't be treated as symbols
@@ -228,17 +236,69 @@ class DefinitionResolver(
 
     /**
      * Attempt to find definition on the classpath (JARs).
+     * First tries to navigate to source code if available, otherwise returns binary reference.
+     *
+     * Returns null for URIs that VS Code cannot open (jrt:, jar:) to avoid errors.
      */
-    private fun findClasspathDefinition(targetNode: ASTNode): DefinitionResult.Binary? {
+
+    /**
+     * Attempt to find definition on the classpath (JARs).
+     * First tries to navigate to source code if available, otherwise returns binary reference.
+     *
+     * Returns null for URIs that VS Code cannot open (jrt:, jar:) to avoid errors.
+     */
+    private suspend fun findClasspathDefinition(targetNode: ASTNode): DefinitionResult? {
         if (compilationService == null) return null
 
         val className = getClassName(targetNode) ?: return null
 
-        val uri = compilationService.findClasspathClass(className)
-        return if (uri != null) {
-            DefinitionResult.Binary(uri, className)
-        } else {
-            null
+        val classpathUri = compilationService.findClasspathClass(className) ?: return null
+
+        // Try to navigate to source code if SourceNavigationService is available
+        if (sourceNavigationService != null) {
+            try {
+                val result = sourceNavigationService.navigateToSource(classpathUri, className)
+                when (result) {
+                    is SourceNavigationService.SourceResult.SourceLocation -> {
+                        // Return Binary result pointing to the extracted source file location.
+                        // The client will open this file: URI directly.
+                        logger.debug("Found source for $className at ${result.uri}")
+                        return DefinitionResult.Binary(result.uri, className)
+                    }
+                    is SourceNavigationService.SourceResult.BinaryOnly -> {
+                        logger.debug("No source available for $className: ${result.reason}")
+                        // Fall through to check if URI is resolvable
+                    }
+                }
+            } catch (e: Exception) {
+                // Re-throw CancellationException to preserve coroutine cancellation semantics
+                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                logger.warn("Failed to navigate to source for $className: ${e.message}", e)
+                // Fall through to check if URI is resolvable
+            }
+        }
+
+        // Only return binary result for URIs that VS Code can actually open
+        // jrt: and jar: URIs are handled above by SourceNavigationService
+        // If we reach here, source resolution failed and we cannot open these URIs
+        return when (classpathUri.scheme) {
+            "file" -> DefinitionResult.Binary(classpathUri, className)
+            "jrt" -> {
+                // JDK source resolution was attempted above via JdkSourceResolver
+                // If we reach here, src.zip extraction failed (not found, corrupted, etc.)
+                logger.debug("JDK source not available for $className")
+                null
+            }
+            "jar" -> {
+                // Maven source JAR resolution was attempted above
+                // If we reach here, no source JAR available for this dependency
+                logger.debug("No source available for $className - jar: URI not openable")
+                null
+            }
+            else -> {
+                logger.debug("Skipping class $className with unsupported URI scheme: ${classpathUri.scheme}")
+                null
+            }
         }
     }
 

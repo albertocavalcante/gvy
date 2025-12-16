@@ -15,6 +15,7 @@ import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CoroutineScope
@@ -102,6 +103,11 @@ class GroovyTextDocumentService(
 
     private val codeActionProvider by lazy {
         CodeActionProvider(compilationService, documentProvider, formatter)
+    }
+
+    // Source navigation service for go-to-definition on JARs
+    private val sourceNavigationService by lazy {
+        SourceNavigationService()
     }
 
     override fun signatureHelp(
@@ -329,9 +335,10 @@ class GroovyTextDocumentService(
             }
 
             try {
-                // Create definition provider
+                // Create definition provider with source navigation support
                 val definitionProvider = DefinitionProvider(
                     compilationService = compilationService,
+                    sourceNavigationService = sourceNavigationService,
                     telemetrySink = telemetrySink,
                 )
 

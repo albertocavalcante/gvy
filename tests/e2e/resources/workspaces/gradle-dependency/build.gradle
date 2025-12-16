@@ -9,6 +9,7 @@ repositories {
 }
 
 dependencies {
-    implementation name: 'pipeline-unit-stubs'
+    // Local test library with source JAR for E2E definition testing
+    implementation name: 'testlib'
     implementation localGroovy()
 }

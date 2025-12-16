@@ -4,7 +4,7 @@
 # Allow injecting Gradle arguments (e.g. make build GRADLE_ARGS="--info")
 GRADLE_ARGS ?=
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single
 
 # Default target
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  fix-imports - Auto-fix unused imports and other detekt auto-correctable issues"
 	@echo "  quality    - Run all quality checks including coverage"
 	@echo "  e2e        - Run end-to-end LSP scenarios"
+	@echo "  e2e-single - Run a single E2E scenario (usage: make e2e-single SCENARIO=name)"
 	@echo "  run-stdio  - Run server in stdio mode"
 	@echo "  run-socket - Run server in socket mode (port 8080)"
 	@echo "  version    - Show version information"

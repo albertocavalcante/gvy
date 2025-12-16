@@ -1,5 +1,5 @@
 name: 'definition-jar'
-description: 'Goto definition for class in JAR dependency'
+description: 'Goto definition for class in JAR dependency navigates to extracted source'
 workspace:
   fixture: 'gradle-dependency'
   files:
@@ -7,12 +7,13 @@ workspace:
       content: |
         package com.example
 
-        import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+        import com.example.testlib.Greeter
 
         class DependencyTest {
             def test() {
-                // Should resolve to the JAR class
-                new GenericPipelineDeclaration()
+                // Should resolve to the source JAR class
+                def greeter = new Greeter("World")
+                greeter.greet()
             }
         }
 
@@ -26,12 +27,13 @@ steps:
       text: |
         package com.example
 
-        import com.lesfurets.jenkins.unit.declarative.GenericPipelineDeclaration
+        import com.example.testlib.Greeter
 
         class DependencyTest {
             def test() {
-                // Should resolve to the JAR class
-                new GenericPipelineDeclaration()
+                // Should resolve to the source JAR class
+                def greeter = new Greeter("World")
+                greeter.greet()
             }
         }
 
@@ -67,23 +69,26 @@ steps:
             value: 'Dependencies loaded'
       timeoutMs: 180000
 
+  # Request definition on import at line 3 (Greeter class)
   - request:
       method: 'textDocument/definition'
       params:
         textDocument:
           uri: '{{workspace.uri}}src/main/groovy/DependencyTest.groovy'
         position:
-          line: 7
-          character: 20
+          line: 2
+          character: 30
       saveAs: 'definitionResult'
 
+  # Source JAR is available (testlib-sources.jar) so definition should return
+  # a file: URI to the extracted Greeter.java source
   - assert:
       source: 'definitionResult'
       checks:
         - jsonPath: '$.items[0].uri'
           expect:
             type: 'MATCHES_REGEX'
-            value: 'jar:file:.*pipeline-unit-stubs.jar!/com/lesfurets/jenkins/unit/declarative/GenericPipelineDeclaration.class'
+            value: 'file:.*extracted-sources.*Greeter\.java'
         - jsonPath: '$.items[0].range.start.line'
           expect:
             type: 'EQUALS'

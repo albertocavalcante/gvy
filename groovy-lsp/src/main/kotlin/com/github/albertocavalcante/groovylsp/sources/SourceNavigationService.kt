@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResol
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 class SourceNavigationService(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
     private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
+    private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
 ) {
 
     private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
@@ -44,14 +46,23 @@ class SourceNavigationService(
     }
 
     /**
-     * Navigate to source code for a class found in a JAR.
+     * Navigate to source code for a class found in the classpath.
      *
-     * @param jarUri URI of the binary JAR (e.g., jar:file:///path/to/lib.jar!/com/example/Foo.class)
+     * Handles:
+     * - jrt: URIs (JDK classes) -> extracts from $JAVA_HOME/lib/src.zip
+     * - jar: URIs (Maven dependencies) -> downloads source JAR from Maven
+     *
+     * @param classpathUri URI of the class (jrt: or jar:file:...)
      * @param className Fully qualified class name
      * @return SourceResult indicating where to navigate
      */
-    suspend fun navigateToSource(jarUri: URI, className: String): SourceResult {
-        logger.debug("Navigating to source for: {} from {}", className, jarUri)
+    suspend fun navigateToSource(classpathUri: URI, className: String): SourceResult {
+        logger.debug("Navigating to source for: {} from {}", className, classpathUri)
+
+        // Handle JDK classes (jrt: scheme)
+        if (classpathUri.scheme == "jrt") {
+            return jdkSourceResolver.resolveJdkSource(classpathUri, className)
+        }
 
         // Step 1: Check if we already have extracted sources
         val existingSource = sourceExtractor.findSourceForClass(className)
@@ -64,33 +75,18 @@ class SourceNavigationService(
         }
 
         // Step 2: Derive Maven coordinates from JAR path
-        val jarPath = extractJarPath(jarUri) ?: return SourceResult.BinaryOnly(
-            uri = jarUri,
+        val jarPath = extractJarPath(classpathUri) ?: return SourceResult.BinaryOnly(
+            uri = classpathUri,
             className = className,
             reason = "Could not extract JAR path from URI",
         )
 
-        val coords = deriveCoordinates(jarPath) ?: return SourceResult.BinaryOnly(
-            uri = jarUri,
+        // Step 3: Try to resolve source JAR (Maven or adjacent)
+        val sourceJarPath = resolveSourceJar(jarPath) ?: return SourceResult.BinaryOnly(
+            uri = classpathUri,
             className = className,
-            reason = "Could not determine Maven coordinates for JAR",
+            reason = "Source JAR not available for ${jarPath.fileName}",
         )
-
-        // Step 3: Download source JAR
-        val sourceJarPath = try {
-            sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
-        } catch (e: Exception) {
-            logger.debug("Failed to resolve source JAR: {}", e.message)
-            null
-        }
-
-        if (sourceJarPath == null) {
-            return SourceResult.BinaryOnly(
-                uri = jarUri,
-                className = className,
-                reason = "Source JAR not available for ${coords.groupId}:${coords.artifactId}:${coords.version}",
-            )
-        }
 
         // Step 4: Extract and index the source JAR
         sourceExtractor.extractAndIndex(sourceJarPath)
@@ -104,7 +100,7 @@ class SourceNavigationService(
             )
         } else {
             SourceResult.BinaryOnly(
-                uri = jarUri,
+                uri = classpathUri,
                 className = className,
                 reason = "Class $className not found in extracted sources",
             )
@@ -117,8 +113,8 @@ class SourceNavigationService(
      * Input: jar:file:///path/to/library.jar!/com/example/Foo.class
      * Output: /path/to/library.jar
      */
-    private fun extractJarPath(jarUri: URI): Path? {
-        val uriString = jarUri.toString()
+    private fun extractJarPath(classpathUri: URI): Path? {
+        val uriString = classpathUri.toString()
 
         if (!uriString.startsWith("jar:file:")) {
             return null
@@ -133,6 +129,62 @@ class SourceNavigationService(
             Path.of(jarPath)
         } catch (e: Exception) {
             logger.debug("Failed to parse JAR path: {}", jarPath)
+            null
+        }
+    }
+
+    /**
+     * Resolve source JAR for a binary JAR.
+     *
+     * Resolution order:
+     * 1. Try to derive Maven coordinates and download from Maven Central
+     * 2. Look for adjacent -sources.jar next to the binary JAR (for local JARs)
+     *
+     * @param binaryJarPath Path to the binary JAR file
+     * @return Path to source JAR if found, null otherwise
+     */
+    private suspend fun resolveSourceJar(binaryJarPath: Path): Path? {
+        // Step 1: Try Maven coordinates derivation and download
+        val coords = deriveCoordinates(binaryJarPath)
+        if (coords != null) {
+            try {
+                val sourceJar = sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
+                if (sourceJar != null) {
+                    logger.debug("Resolved source JAR via Maven: {}", sourceJar)
+                    return sourceJar
+                }
+            } catch (e: Exception) {
+                logger.debug("Failed to resolve source JAR from Maven: {}", e.message)
+            }
+        }
+
+        // Step 2: Look for adjacent -sources.jar in the same directory
+        val adjacentSource = findAdjacentSourceJar(binaryJarPath)
+        if (adjacentSource != null) {
+            logger.debug("Found adjacent source JAR: {}", adjacentSource)
+            return adjacentSource
+        }
+
+        logger.debug("No source JAR found for: {}", binaryJarPath)
+        return null
+    }
+
+    /**
+     * Look for a -sources.jar next to a binary JAR file.
+     *
+     * For example: libs/testlib.jar -> libs/testlib-sources.jar
+     */
+    private fun findAdjacentSourceJar(binaryJarPath: Path): Path? {
+        val fileName = binaryJarPath.fileName.toString()
+        if (!fileName.endsWith(".jar")) return null
+
+        val baseName = fileName.removeSuffix(".jar")
+        val sourceJarName = "$baseName-sources.jar"
+        val sourceJarPath = binaryJarPath.parent?.resolve(sourceJarName)
+
+        return if (sourceJarPath != null && Files.exists(sourceJarPath)) {
+            sourceJarPath
+        } else {
             null
         }
     }
