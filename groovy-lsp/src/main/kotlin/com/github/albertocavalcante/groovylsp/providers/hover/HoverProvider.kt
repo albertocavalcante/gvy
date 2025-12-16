@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
@@ -40,6 +41,7 @@ import java.net.URI
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
+    private val sourceNavigationService: SourceNavigationService? = null,
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
 
@@ -228,7 +230,7 @@ class HoverProvider(
     /**
      * Create hover content using the DSL with documentation.
      */
-    private fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
+    private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
         // Check if this is a Jenkins step and we have metadata for it
         val jenkinsHover = tryCreateJenkinsStepHover(node, documentUri)
         if (jenkinsHover != null) {
@@ -238,11 +240,27 @@ class HoverProvider(
         val baseHover = createHoverFor(node).getOrNull() ?: return null
 
         // Try to get documentation for the node
-        val doc = try {
+        var doc = try {
             documentationProvider.getDocumentation(node, documentUri)
         } catch (e: Exception) {
             logger.debug("Failed to get documentation for node", e)
             com.github.albertocavalcante.groovylsp.documentation.Documentation.EMPTY
+        }
+
+        // If standard doc is empty, try source navigation for binary classes
+        if (doc.isEmpty() && node is ClassNode && sourceNavigationService != null) {
+            val className = node.name
+            val classpathUri = compilationService.findClasspathClass(className)
+            if (classpathUri != null) {
+                try {
+                    val result = sourceNavigationService.navigateToSource(classpathUri, className)
+                    if (result is SourceNavigationService.SourceResult.SourceLocation && result.documentation != null) {
+                        doc = result.documentation
+                    }
+                } catch (e: Exception) {
+                    logger.debug("Failed to get source documentation for $className", e)
+                }
+            }
         }
 
         if (doc.isEmpty()) {

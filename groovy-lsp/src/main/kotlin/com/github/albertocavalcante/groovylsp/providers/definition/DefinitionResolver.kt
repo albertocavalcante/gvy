@@ -40,7 +40,8 @@ class DefinitionResolver(
      */
     sealed class DefinitionResult {
         data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
-        data class Binary(val uri: URI, val name: String) : DefinitionResult()
+        data class Binary(val uri: URI, val name: String, val range: org.eclipse.lsp4j.Range? = null) :
+            DefinitionResult()
     }
 
     /**
@@ -263,7 +264,19 @@ class DefinitionResolver(
                         // Return Binary result pointing to the extracted source file location.
                         // The client will open this file: URI directly.
                         logger.debug("Found source for $className at ${result.uri}")
-                        return DefinitionResult.Binary(result.uri, className)
+
+                        // Construct range if line number is available
+                        val range = if (result.lineNumber != null && result.lineNumber > 0) {
+                            val line0 = result.lineNumber - 1
+                            org.eclipse.lsp4j.Range(
+                                org.eclipse.lsp4j.Position(line0, 0),
+                                org.eclipse.lsp4j.Position(line0, 0),
+                            )
+                        } else {
+                            null
+                        }
+
+                        return DefinitionResult.Binary(result.uri, className, range)
                     }
                     is SourceNavigationService.SourceResult.BinaryOnly -> {
                         logger.debug("No source available for $className: ${result.reason}")

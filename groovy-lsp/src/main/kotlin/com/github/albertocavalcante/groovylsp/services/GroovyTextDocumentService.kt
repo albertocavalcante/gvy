@@ -299,6 +299,7 @@ class GroovyTextDocumentService(
         val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(
             compilationService,
             documentProvider,
+            sourceNavigationService,
         )
         val hover = hoverProvider.provideHover(params.textDocument.uri, params.position)
 

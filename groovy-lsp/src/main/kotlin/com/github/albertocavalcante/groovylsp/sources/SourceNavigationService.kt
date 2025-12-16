@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -23,6 +24,7 @@ class SourceNavigationService(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
     private val sourceExtractor: SourceJarExtractor = SourceJarExtractor(),
     private val jdkSourceResolver: JdkSourceResolver = JdkSourceResolver(),
+    private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
 ) {
 
     private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
@@ -37,7 +39,12 @@ class SourceNavigationService(
         /**
          * Source code location found.
          */
-        data class SourceLocation(val uri: URI, val className: String, val lineNumber: Int? = null) : SourceResult()
+        data class SourceLocation(
+            val uri: URI,
+            val className: String,
+            val lineNumber: Int? = null,
+            val documentation: Documentation? = null,
+        ) : SourceResult()
 
         /**
          * No source available - binary reference only.
@@ -68,9 +75,12 @@ class SourceNavigationService(
         val existingSource = sourceExtractor.findSourceForClass(className)
         if (existingSource != null) {
             logger.debug("Found cached source for: {}", className)
+            val inspection = javaSourceInspector.inspectClass(existingSource, className)
             return SourceResult.SourceLocation(
                 uri = existingSource.toUri(),
                 className = className,
+                lineNumber = inspection?.lineNumber,
+                documentation = inspection?.documentation,
             )
         }
 
@@ -94,9 +104,12 @@ class SourceNavigationService(
         // Step 5: Find the specific source file
         val sourcePath = sourceExtractor.findSourceForClass(className)
         return if (sourcePath != null) {
+            val inspection = javaSourceInspector.inspectClass(sourcePath, className)
             SourceResult.SourceLocation(
                 uri = sourcePath.toUri(),
                 className = className,
+                lineNumber = inspection?.lineNumber,
+                documentation = inspection?.documentation,
             )
         } else {
             SourceResult.BinaryOnly(

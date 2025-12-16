@@ -92,7 +92,7 @@ steps:
         - jsonPath: '$.items[0].range.start.line'
           expect:
             type: 'EQUALS'
-            value: 0
+            value: 6
 
   - shutdown: {}
   - exit: {}

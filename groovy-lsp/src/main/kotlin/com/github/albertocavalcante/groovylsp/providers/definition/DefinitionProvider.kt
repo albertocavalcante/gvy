@@ -88,8 +88,9 @@ class DefinitionProvider(
                         // Handle binary definition
                         val locationLink = LocationLink().apply {
                             targetUri = result.uri.toString()
-                            targetRange = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
-                            targetSelectionRange = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+                            val range = result.range ?: org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+                            targetRange = range
+                            targetSelectionRange = range
                             originSelectionRange = originNode.toLspRange()
                         }
                         logger.debug("Found binary definition link to ${locationLink.targetUri}")
@@ -216,7 +217,10 @@ class DefinitionProvider(
 
                     is DefinitionResolver.DefinitionResult.Binary -> {
                         val location =
-                            Location(result.uri.toString(), org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0)))
+                            Location(
+                                result.uri.toString(),
+                                result.range ?: org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0)),
+                            )
                         logger.debug("Found binary definition at ${location.uri}")
                         telemetrySink.report(
                             DefinitionTelemetryEvent(
