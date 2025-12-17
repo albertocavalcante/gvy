@@ -89,9 +89,13 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
         val override = System.getProperty("groovy.lsp.e2e.gradleUserHome")
             ?: System.getenv("GROOVY_LSP_E2E_GRADLE_USER_HOME")
 
+        // Use unique suffix per JVM to support parallel test execution.
+        // Multiple test forks can safely share the parent directory (Gradle handles locking),
+        // but isolating prevents any potential race conditions during heavy parallel load.
+        val uniqueSuffix = ProcessHandle.current().pid()
         val target = when {
             !override.isNullOrBlank() -> Paths.get(override)
-            else -> Paths.get("").toAbsolutePath().resolve("build/e2e-gradle-home")
+            else -> Paths.get("").toAbsolutePath().resolve("build/e2e-gradle-home-$uniqueSuffix")
         }
 
         return runCatching {

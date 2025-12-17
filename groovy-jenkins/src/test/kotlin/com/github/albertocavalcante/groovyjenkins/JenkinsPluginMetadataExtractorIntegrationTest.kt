@@ -91,6 +91,9 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
 
         @JvmStatic fun pipelineUtilityStepsJarExists() = jarExists("pipeline-utility-steps")
 
+        @JvmStatic
+        fun multiplePluginsAvailable(): Boolean = ALL_TEST_PLUGINS.count { jarExists(it) } >= 6
+
         @BeforeAll
         @JvmStatic
         fun printSetupInstructions() {
@@ -257,6 +260,7 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     // ==================== Comprehensive Summary Test ====================
 
     @Test
+    @EnabledIf("multiplePluginsAvailable")
     fun `all plugins - comprehensive extraction summary`() {
         println("\n═══════════════════════════════════════════════════════════════")
         println("         COMPREHENSIVE PLUGIN EXTRACTION SUMMARY")

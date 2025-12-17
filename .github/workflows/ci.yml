@@ -29,14 +29,39 @@ on:
           - 'default'
           - 'info'
           - 'debug'
-        default: 'debug'  # TODO: Revert to 'default' after initial debugging phase
+        default: 'default'
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# ============================================================================
+# RUNNER CONFIGURATION
+# ============================================================================
+# Priority: workflow_dispatch input > CI_RUNNER_LABEL repo variable > self-hosted
+#
+# Default: self-hosted runner (faster, no GitHub Actions minutes cost)
+#
+# To switch to cloud runners permanently:
+#   Settings → Secrets and variables → Actions → Variables → New repository variable
+#   Name: CI_RUNNER_LABEL  Value: cloud
+#
+# To switch to cloud for a single run:
+#   Actions → CI → Run workflow → runner_label: cloud
+#
+# Cloud runner options (when CI_RUNNER_LABEL=cloud):
+#   - PRs: macos-15 (stable Arm64)
+#   - Main: macos-15 + ubuntu-24.04 matrix
+#
+# NOTE: Avoiding ubuntu-latest due to stability issues causing builds to hang.
+# See: https://github.com/actions/runner-images/issues/13182
+#
+# Available runner labels: https://github.com/actions/runner-images#available-images
+# ============================================================================
+
 jobs:
   build:
     name: Build and Test
-    timeout-minutes: 120
+    timeout-minutes: 45
     runs-on: ${{ matrix.os }}
     permissions:
       checks: write
@@ -44,24 +69,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # FIXME: Temporary self-hosted-only matrix for PR/main
-        # Original runner matrix (keep for quick rollback):
-        # os: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '["self-hosted"]' || (github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest"]') ) }}
-        # java: ${{ fromJSON( (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
-        # exclude:
-        #   - os: macos-latest
-        #     java: 21
-        #   - os: self-hosted
-        #     java: 21
-        os:
-          - self-hosted
-        java:
-          - 17
+        # Default: self-hosted (single runner, Java 17 only)
+        # Cloud (opt-in): macos-15 for PRs, multi-platform for main pushes
+        # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
+        # See: https://github.com/actions/runner-images/issues/13182
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["self-hosted"]' ) }}
+        java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
+        exclude:
+          - os: ubuntu-24.04
+            java: 21
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v5
         with:
@@ -72,7 +94,9 @@ jobs:
         with:
           # Allow writing to cache for main OR PRs from the same repository
           # Read-only for forks to prevent cache poisoning
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          # Self-hosted runners may have pre-existing Gradle User Home - allow overwrite
+          cache-overwrite-existing: ${{ matrix.os == 'self-hosted' }}
       - name: Set Gradle flags
         shell: bash
         run: |-
@@ -95,32 +119,41 @@ jobs:
               echo "TEST_LOG_FLAG=" >> $GITHUB_ENV
               ;;
           esac
-      - name: Validate Gradle Wrapper
-        run: ./gradlew --no-daemon --version
       
-      - name: Compile Kotlin
-        run: ./gradlew --no-daemon compileKotlin compileTestKotlin --stacktrace $GRADLE_SCAN_FLAG
-        
-      - name: Run Quality Checks
-        run: ./gradlew --no-daemon lint --stacktrace $GRADLE_SCAN_FLAG
+      # NOTE: --parallel and --build-cache are redundant with gradle.properties settings
+      # (org.gradle.parallel=true, org.gradle.caching=true) but kept explicit for:
+      # 1. Self-documentation - CI intent is clear without checking gradle.properties
+      # 2. Defense in depth - CI works even if gradle.properties changes
+      
+      # Phase 1: Compile + Lint in single invocation with parallel execution
+      - name: Compile and Lint
+        run: ./gradlew classes testClasses lint --parallel --build-cache --stacktrace $GRADLE_SCAN_FLAG
 
+      # Phase 2: Unit Tests (generates coverage data in .ic files)
       - name: Run Unit Tests
         timeout-minutes: 20
-        run: ./gradlew --no-daemon test --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: ./gradlew test --parallel --build-cache --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
 
+      # Phase 3: Coverage Reports (reads .ic files from Phase 2)
+      # NOTE: Split from test task to avoid Kover hang bug when running in same invocation
+      # with --parallel. See: https://github.com/Kotlin/kotlinx-kover/issues/509
+      - name: Generate Coverage Reports
+        run: ./gradlew koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace $GRADLE_SCAN_FLAG
+
+      # Phase 4: E2E Tests (automatically builds shadowJar via task dependency)
+      # Skip on macOS - E2E tests are platform-independent LSP protocol tests
       - name: Run E2E Tests
+        if: matrix.os != 'macos-15'
         timeout-minutes: 30
-        run: ./gradlew --no-daemon :tests:e2eTest --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: ./gradlew :tests:e2eTest --parallel --build-cache --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
 
-      - name: Run Code Coverage
-        run: ./gradlew --no-daemon koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
-      
+      # Phase 5: SonarCloud (needs coverage reports from Phase 3)
       - name: SonarCloud Analysis
-        if: (matrix.os == 'ubuntu-latest' || matrix.os == 'self-hosted') && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
+        if: (matrix.os == 'ubuntu-24.04' || matrix.os == 'self-hosted') && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew --no-daemon sonar --info $GRADLE_SCAN_FLAG
+        run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
         
       - name: Generate Test Report
         uses: dorny/test-reporter@v2
@@ -130,11 +163,7 @@ jobs:
           path: '**/build/test-results/test/*.xml'
           reporter: java-junit
           
-      # Heavy tasks (ShadowJar) run on main OR the specific job that creates the artifact (Ubuntu/Java17)
-      - name: Build Shadow JAR
-        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
-        run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
-        
+      # Verify JAR (already built by e2eTest via shadowJar dependency)
       - name: Verify JAR
         if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: |-
@@ -162,9 +191,7 @@ jobs:
           retention-days: 7
   validate:
     name: Validation Check
-    # FIXME: Temporary; original runs-on preserved below
-    # runs-on: ubuntu-latest
-    runs-on: self-hosted
+    runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
     needs: build
     if: always()
     steps:
@@ -177,9 +204,7 @@ jobs:
           echo "✅ All checks passed!"
   dependency-check:
     name: Check Dependencies
-    # FIXME: Temporary; original runs-on preserved below
-    # runs-on: ubuntu-latest
-    runs-on: self-hosted
+    runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
@@ -192,4 +217,4 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
       - name: Check for dependency updates
-        run: ./gradlew --no-daemon dependencyUpdates --refresh-dependencies || true
+        run: ./gradlew dependencyUpdates --refresh-dependencies || true

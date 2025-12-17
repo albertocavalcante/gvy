@@ -12,6 +12,18 @@ repositories {
 // Ensure groovy-lsp is evaluated so we can access its tasks
 evaluationDependsOn(":groovy-lsp")
 
+// Exclude e2eTest from Kover instrumentation and coverage collection.
+// This prevents root koverHtmlReport/koverXmlReport from triggering e2eTest.
+// E2E tests are slow integration tests that don't contribute to unit test coverage.
+// Reference: https://kotlin.github.io/kotlinx-kover/gradle-plugin/#exclusion-of-test-tasks
+kover {
+    currentProject {
+        instrumentation {
+            disabledForTestTasks.add("e2eTest")
+        }
+    }
+}
+
 dependencies {
     "detektPlugins"(libs.detekt.formatting)
 }
@@ -94,8 +106,12 @@ testing {
                         // E2E tests are heavy, give them more memory
                         maxHeapSize = "2G"
 
-                        // Run sequentially to avoid port conflicts and resource contention
-                        maxParallelForks = 1
+                        // Run sequentially by default to avoid memory exhaustion on CI runners.
+                        // Each test spawns a separate LSP server JVM (~512MB-2GB each).
+                        // Override via: ./gradlew e2eTest -Pe2eParallelForks=4
+                        // NOTE: Uses stdio (not ports), so no port conflicts. Memory is the constraint.
+                        val parallelForks = project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull() ?: 1
+                        maxParallelForks = parallelForks
 
                         // Fail tests that take too long (5 minutes default)
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")

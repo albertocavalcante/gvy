@@ -88,7 +88,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata is case-sensitive`() = runBlocking {
+    fun `resolveStepMetadata is case-sensitive`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val upperCase = manager.resolveStepMetadata("SH")
