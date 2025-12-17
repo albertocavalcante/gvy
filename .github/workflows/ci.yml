@@ -96,31 +96,31 @@ jobs:
               ;;
           esac
       - name: Validate Gradle Wrapper
-        run: ./gradlew --version
+        run: ./gradlew --no-daemon --version
       
       - name: Compile Kotlin
-        run: ./gradlew compileKotlin compileTestKotlin --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon compileKotlin compileTestKotlin --stacktrace $GRADLE_SCAN_FLAG
         
       - name: Run Quality Checks
-        run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon lint --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Run Unit Tests
         timeout-minutes: 20
-        run: ./gradlew test --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon test --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
 
       - name: Run E2E Tests
         timeout-minutes: 30
-        run: ./gradlew :tests:e2eTest --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon :tests:e2eTest --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
 
       - name: Run Code Coverage
-        run: ./gradlew koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon koverHtmlReport koverXmlReport --stacktrace $GRADLE_SCAN_FLAG
       
       - name: SonarCloud Analysis
         if: (matrix.os == 'ubuntu-latest' || matrix.os == 'self-hosted') && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon sonar --info $GRADLE_SCAN_FLAG
         
       - name: Generate Test Report
         uses: dorny/test-reporter@v2
@@ -133,7 +133,7 @@ jobs:
       # Heavy tasks (ShadowJar) run on main OR the specific job that creates the artifact (Ubuntu/Java17)
       - name: Build Shadow JAR
         if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
-        run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
         
       - name: Verify JAR
         if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
@@ -192,4 +192,4 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
       - name: Check for dependency updates
-        run: ./gradlew dependencyUpdates --refresh-dependencies || true
+        run: ./gradlew --no-daemon dependencyUpdates --refresh-dependencies || true

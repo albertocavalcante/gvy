@@ -88,16 +88,16 @@ jobs:
         echo "BUILD_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
         echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
     - name: Validate Gradle Wrapper
-      run: ./gradlew --version
+      run: ./gradlew --no-daemon --version
     - name: Verify version detection
       run: |
         echo "Verifying smart version detection..."
-        ./gradlew printVersion
+        ./gradlew --no-daemon printVersion
         echo "Expected release version (without SNAPSHOT): ${BUILD_VERSION#v}"
     - name: Compile and Test
-      run: ./gradlew compileKotlin compileTestKotlin test --stacktrace $GRADLE_SCAN_FLAG
+      run: ./gradlew --no-daemon compileKotlin compileTestKotlin test --stacktrace $GRADLE_SCAN_FLAG
     - name: Build Shadow JAR
-      run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+      run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
     - name: Test JAR
       shell: bash
       run: |

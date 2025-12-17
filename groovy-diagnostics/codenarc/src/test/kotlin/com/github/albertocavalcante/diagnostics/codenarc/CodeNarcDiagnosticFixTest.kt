@@ -2,7 +2,11 @@ package com.github.albertocavalcante.diagnostics.codenarc
 
 import com.github.albertocavalcante.diagnostics.api.DiagnosticConfiguration
 import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
-import kotlinx.coroutines.test.runTest
+import io.mockk.every
+import io.mockk.mockk
+import org.codenarc.results.Results
+import org.codenarc.rule.Rule
+import org.codenarc.rule.Violation
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -10,38 +14,55 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Integration test to verify the CodeNarc diagnostic triplication fix.
- * This test ensures that CodeNarc violations are only reported once per occurrence.
+ * Tests for CodeNarc diagnostic conversion.
+ *
+ * NOTE: The triplication regression is validated using a stubbed CodeNarc `Results` tree to keep the test
+ * deterministic and independent from CodeNarc runtime performance.
  */
 class CodeNarcDiagnosticFixTest {
 
+    private fun createStubAnalyzer(results: Results): CodeAnalyzer = object : CodeAnalyzer {
+        override fun analyze(
+            sourceCode: String,
+            fileName: String,
+            rulesetContent: String,
+            propertiesFile: String?,
+        ): Results = results
+    }
+
+    private fun createEmptyResults(): Results = mockk<Results>().also { results ->
+        every { results.children } returns mutableListOf()
+        every { results.violations } returns mutableListOf()
+    }
+
     @Test
-    fun `should not triplicate diagnostics when analyzing groovy code with violations`() = runTest {
-        // Given: A sample Groovy code with known violations - use trailing whitespace which definitely exists
+    fun `should not triplicate diagnostics when analyzing groovy code with violations`() {
         val groovyCodeWithViolations = "class TestClass {\n" +
-            "    def method() {   \n" + // Line with trailing whitespace
+            "    def method() {   \n" +
             "        def x = 1\n" +
             "        return x\n" +
             "    }\n" +
             "}"
 
-        // Create a test ruleset that includes TrailingWhitespace rule which definitely exists
-        val testRuleset = """
-            ruleset {
-                description 'Test ruleset for CodeNarc diagnostic fix verification'
+        val trailingWhitespaceRule = mockk<Rule>()
+        every { trailingWhitespaceRule.name } returns "TrailingWhitespace"
+        every { trailingWhitespaceRule.priority } returns 3
 
-                // Include TrailingWhitespace rule which we know exists and will detect our test violations
-                TrailingWhitespace
+        val duplicatedViolation = mockk<Violation>()
+        every { duplicatedViolation.rule } returns trailingWhitespaceRule
+        every { duplicatedViolation.lineNumber } returns 2
+        every { duplicatedViolation.message } returns "Line ends with whitespace characters"
 
-                // Include some basic rules that should definitely exist
-                ruleset('rulesets/basic.xml') {
-                    include 'EmptyClass'
-                    include 'EmptyMethod'
-                }
-            }
-        """.trimIndent()
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(duplicatedViolation)
 
-        // Mock configuration provider that returns our test ruleset
+        val rootResults = mockk<Results>()
+        // Intentionally reuse the same violation on both parent and leaf nodes to simulate the triplication regression.
+        // Before the leaf-only traversal fix, both levels were processed, producing duplicates.
+        every { rootResults.children } returns mutableListOf(leafResults)
+        every { rootResults.violations } returns mutableListOf(duplicatedViolation)
+
         val workspaceContext = object : WorkspaceContext {
             override val root: Path? = Paths.get(".")
             override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
@@ -51,24 +72,23 @@ class CodeNarcDiagnosticFixTest {
             }
         }
 
-        // Use a custom ruleset resolver for testing
         val testRulesetResolver = object : RulesetResolver {
             override fun resolve(context: WorkspaceContext): RulesetConfiguration = RulesetConfiguration(
-                rulesetContent = testRuleset,
+                rulesetContent = "ruleset { TrailingWhitespace }",
                 propertiesFile = null,
                 source = "test-ruleset",
             )
         }
 
-        // When: We analyze the code using our test ruleset
-        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext, testRulesetResolver)
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            rulesetResolver = testRulesetResolver,
+            codeAnalyzer = createStubAnalyzer(rootResults),
+        )
         val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(groovyCodeWithViolations, "TestClass.groovy")
 
-        // Then: Each violation should appear exactly once (no triplication)
-        // We expect some diagnostics but they should be unique
         assertTrue(diagnostics.isNotEmpty(), "Should detect at least one diagnostic")
 
-        // Verify no duplicate diagnostics for the same line/rule
         val violationsByLineAndRule = diagnostics.groupBy { "${it.range.start.line}:${it.code.left}" }
         violationsByLineAndRule.forEach { (lineAndRule, violations) ->
             assertEquals(
@@ -77,16 +97,12 @@ class CodeNarcDiagnosticFixTest {
                 "Violation $lineAndRule should appear exactly once, but found ${violations.size} times",
             )
         }
-
-        println("✅ CodeNarc diagnostic triplication fix verified!")
-        println("   Found ${diagnostics.size} unique diagnostics")
-        diagnostics.forEach { diagnostic ->
-            println("   - Line ${diagnostic.range.start.line + 1}: ${diagnostic.code.left} - ${diagnostic.message}")
-        }
     }
 
     @Test
-    fun `should handle empty source code gracefully`() = runTest {
+    fun `should handle empty source code gracefully`() {
+        val emptyResults = createEmptyResults()
+
         val workspaceContext = object : WorkspaceContext {
             override val root: Path? = Paths.get(".")
             override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
@@ -96,15 +112,17 @@ class CodeNarcDiagnosticFixTest {
             }
         }
 
-        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext)
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(emptyResults),
+        )
         val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics("", "empty.groovy")
 
-        // Should not crash and should return empty diagnostics
         assertTrue(diagnostics.isEmpty(), "Empty source should produce no diagnostics")
     }
 
     @Test
-    fun `should handle basic groovy code without violations`() = runTest {
+    fun `should handle basic groovy code without violations`() {
         val cleanGroovyCode = """
             class CleanClass {
                 def cleanMethod() {
@@ -122,13 +140,14 @@ class CodeNarcDiagnosticFixTest {
             }
         }
 
-        val diagnosticProvider = CodeNarcDiagnosticProvider(workspaceContext)
+        val emptyResults = createEmptyResults()
+
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(emptyResults),
+        )
         val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(cleanGroovyCode, "CleanClass.groovy")
 
-        // Clean code might still have some style violations, but should not crash
-        println("Clean code analysis found ${diagnostics.size} diagnostics")
-        diagnostics.forEach { diagnostic ->
-            println("  - ${diagnostic.code.left}: ${diagnostic.message}")
-        }
+        assertTrue(diagnostics.isEmpty(), "Clean code should produce no diagnostics")
     }
 }

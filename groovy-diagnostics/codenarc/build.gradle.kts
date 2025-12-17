@@ -35,6 +35,13 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty(
+        "junit.jupiter.tempdir.base",
+        layout.buildDirectory
+            .dir("tmp/junit")
+            .get()
+            .asFile,
+    )
     testLogging {
         showStandardStreams = true
         events("passed", "skipped", "failed")

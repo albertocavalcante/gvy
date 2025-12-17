@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Validate Gradle Wrapper
-        run: ./gradlew --version
+        run: ./gradlew --no-daemon --version
 
       - name: Compute nightly version
         id: nightly_version
@@ -100,14 +100,14 @@ jobs:
           echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Run lint checks
-        run: ./gradlew lint --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon lint --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Run tests
         if: env.SKIP_TESTS_INPUT != 'true'
-        run: ./gradlew test :tests:e2eTest --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon test :tests:e2eTest --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Build Shadow JAR
-        run: ./gradlew shadowJar --stacktrace $GRADLE_SCAN_FLAG
+        run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
 
       - name: Verify JAR
         shell: bash
