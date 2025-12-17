@@ -36,13 +36,13 @@ class JenkinsVarsResolutionStrategy(private val compilationService: GroovyCompil
 
         logger.debug("Found Jenkins global variable '{}' at {}", methodName, matchingVar.path)
 
-        // Create a synthetic ClassNode to represent the definition location
-        // NOTE: We only need a non-invalid position so LSP clients can open the target file.
-        // TODO: Parse `vars/*.groovy` and use the real AST range for precise selection/navigation.
+        // Create a synthetic ClassNode to represent the definition location.
+        // Uses the callLineNumber parsed from the vars file to navigate directly to `def call(...)`.
+        val callLine = matchingVar.callLineNumber
         val syntheticNode = ClassNode(matchingVar.name, 0, null).apply {
-            lineNumber = 1
+            lineNumber = callLine
             columnNumber = 1
-            lastLineNumber = 1
+            lastLineNumber = callLine
             lastColumnNumber = 1
         }
 

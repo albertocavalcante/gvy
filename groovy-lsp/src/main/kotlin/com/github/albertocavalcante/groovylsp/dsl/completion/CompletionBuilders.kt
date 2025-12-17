@@ -292,6 +292,21 @@ class PropertyCompletionBuilder {
 }
 
 /**
+ * Builder for function/callable completions (e.g., Jenkins vars).
+ * Inserts the call with parentheses: `name()` with cursor inside.
+ */
+@LspDslMarker
+class FunctionCompletionBuilder {
+    fun build(name: String, returnType: String = "void", doc: String? = null): CompletionItem = completion {
+        label(name)
+        kind(CompletionItemKind.Function)
+        detail("$returnType $name()")
+        snippet("$name($1)")
+        doc?.let { documentation(it) }
+    }
+}
+
+/**
  * Builder for multiple completion items.
  */
 @LspDslMarker
@@ -359,6 +374,14 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
      */
     fun property(name: String, type: String, doc: String? = null) {
         completions.add(PropertyCompletionBuilder().build(name, type, doc))
+    }
+
+    /**
+     * Convenience method for function/callable completions (e.g., Jenkins vars).
+     * Inserts the name with parentheses: `name()`.
+     */
+    fun function(name: String, returnType: String = "void", doc: String? = null) {
+        completions.add(FunctionCompletionBuilder().build(name, returnType, doc))
     }
 
     override fun build(): List<CompletionItem> = completions.toList()

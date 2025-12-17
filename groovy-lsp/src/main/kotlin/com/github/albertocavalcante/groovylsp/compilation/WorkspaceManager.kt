@@ -79,19 +79,30 @@ class WorkspaceManager {
         return depsChanged || sourcesChanged
     }
 
-    private fun refreshSourceRoots(root: Path) {
-        if (sourceRoots.isEmpty()) {
-            val candidates = listOf(
-                root.resolve("src/main/groovy"),
-                root.resolve("src/main/java"),
-                root.resolve("src/main/kotlin"),
-                root.resolve("src/test/groovy"),
-            )
+    private fun refreshSourceRoots(rootPath: Path) {
+        if (sourceRoots.isNotEmpty()) return
 
-            candidates.filter { Files.exists(it) && it.isDirectory() }.forEach(sourceRoots::add)
+        // Standard Maven/Gradle source directories
+        val standardSourceDirs = listOf(
+            rootPath.resolve("src/main/groovy"),
+            rootPath.resolve("src/main/java"),
+            rootPath.resolve("src/main/kotlin"),
+            rootPath.resolve("src/test/groovy"),
+        )
 
-            logger.info("Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}")
+        val existingStandardDirs = standardSourceDirs.filter { Files.exists(it) && Files.isDirectory(it) }
+
+        if (existingStandardDirs.isNotEmpty()) {
+            existingStandardDirs.forEach(sourceRoots::add)
+        } else {
+            // Jenkins Shared Library structure: bare src/ directory
+            val bareSrcDir = rootPath.resolve("src")
+            if (Files.exists(bareSrcDir) && Files.isDirectory(bareSrcDir)) {
+                sourceRoots.add(bareSrcDir)
+            }
         }
+
+        logger.info("Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}")
     }
 
     private fun refreshWorkspaceSources() {
@@ -104,6 +115,7 @@ class WorkspaceManager {
         }
 
         logger.info("Indexed ${workspaceSources.size} Groovy sources from workspace roots")
+        workspaceSources.forEach { logger.info("Indexed source: $it") }
     }
 
     fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()

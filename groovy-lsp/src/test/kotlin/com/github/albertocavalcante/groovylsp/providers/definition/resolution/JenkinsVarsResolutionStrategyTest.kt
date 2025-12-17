@@ -80,4 +80,58 @@ class JenkinsVarsResolutionStrategyTest {
             },
         )
     }
+
+    @Test
+    fun `Jenkins vars strategy resolves to def call line number`() {
+        val varsDir = Files.createTempDirectory("jenkins-vars-line-test")
+        val varsFile = varsDir.resolve("buildPlugin.groovy")
+
+        // Write a vars file with def call on line 5
+        Files.writeString(
+            varsFile,
+            """
+            #!/usr/bin/env groovy
+            /**
+             * Documentation
+             */
+            def call(Map params = [:]) {
+                echo "Building..."
+            }
+            """.trimIndent(),
+        )
+
+        val compilationService = mockk<GroovyCompilationService>()
+        every { compilationService.getJenkinsGlobalVariables() } returns listOf(
+            GlobalVariable(name = "buildPlugin", path = varsFile, documentation = "", callLineNumber = 5),
+        )
+
+        val methodCall = MethodCallExpression(
+            VariableExpression("this"),
+            "buildPlugin",
+            ArgumentListExpression(),
+        )
+
+        val strategy = JenkinsVarsResolutionStrategy(compilationService)
+        val context = ResolutionContext(
+            targetNode = methodCall,
+            documentUri = URI.create("file:///workspace/Jenkinsfile"),
+            position = Position(0, 0),
+        )
+
+        val result = runBlocking { strategy.resolve(context) }
+        result.fold(
+            ifLeft = { error ->
+                throw AssertionError("Expected Right, got Left: ${error.strategy} - ${error.reason}")
+            },
+            ifRight = { definition ->
+                assertTrue(definition is DefinitionResolver.DefinitionResult.Source)
+                val source = definition as DefinitionResolver.DefinitionResult.Source
+                assertEquals(varsFile.toUri(), source.uri)
+                assertTrue(source.node is ClassNode)
+                val node = source.node as ClassNode
+                // Should navigate to line 5 where def call is, not line 1
+                assertEquals(5, node.lineNumber, "Should navigate to def call line, not line 1")
+            },
+        )
+    }
 }

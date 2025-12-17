@@ -6,7 +6,20 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.nameWithoutExtension
 
-data class GlobalVariable(val name: String, val path: Path, val documentation: String = "")
+/**
+ * Represents a global variable from the vars/ directory.
+ *
+ * @param name The variable name (file basename without .groovy)
+ * @param path Path to the .groovy file
+ * @param documentation Documentation from companion .txt file (if any)
+ * @param callLineNumber Line number of `def call(...)` method (1-indexed), or 1 if not found
+ */
+data class GlobalVariable(
+    val name: String,
+    val path: Path,
+    val documentation: String = "",
+    val callLineNumber: Int = 1,
+)
 
 class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
     private val logger = LoggerFactory.getLogger(VarsGlobalVariableProvider::class.java)
@@ -15,6 +28,12 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
     private val htmlToMarkdownConverter: FlexmarkHtmlConverter by lazy {
         FlexmarkHtmlConverter.builder().build()
     }
+
+    // Regex to match "def call" method declaration (with optional modifiers and annotations)
+    private val defCallPattern =
+        Regex(
+            """^\s*(?:@\w+\s+|public\s+|private\s+|protected\s+|static\s+|final\s+|synchronized\s+|abstract\s+)*def\s+call\s*\(""",
+        )
 
     fun getGlobalVariables(): List<GlobalVariable> {
         val varsDir = workspaceRoot.resolve("vars")
@@ -28,7 +47,8 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
                     .map { path ->
                         val name = path.nameWithoutExtension
                         val documentation = readDocumentation(varsDir, name)
-                        GlobalVariable(name, path, documentation)
+                        val callLineNumber = findCallMethodLine(path)
+                        GlobalVariable(name, path, documentation, callLineNumber)
                     }
                     .toList()
             }
@@ -36,6 +56,23 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
             logger.error("Failed to scan vars directory", e)
             emptyList()
         }
+    }
+
+    /**
+     * Find the line number of `def call(...)` in a vars file.
+     * Returns 1 if not found (fallback to first line).
+     */
+    private fun findCallMethodLine(path: Path): Int = try {
+        val lines = Files.readAllLines(path)
+        val index = lines.indexOfFirst { line -> defCallPattern.containsMatchIn(line) }
+        if (index >= 0) {
+            index + 1 // Convert to 1-indexed
+        } else {
+            1 // Default to line 1 if not found
+        }
+    } catch (e: java.io.IOException) {
+        logger.debug("Failed to parse {} for call method: {}", path, e.message)
+        1
     }
 
     /**

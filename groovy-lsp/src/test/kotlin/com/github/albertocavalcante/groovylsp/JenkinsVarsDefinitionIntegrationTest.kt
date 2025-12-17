@@ -115,6 +115,47 @@ class JenkinsVarsDefinitionIntegrationTest {
         )
     }
 
+    /**
+     * FIXME: src/ class resolution is partially implemented - infrastructure is in place (src/ in source roots,
+     * class name matching for simple/fully-qualified names) but the cursor-to-AST-node resolution doesn't find
+     * the ConstructorCallExpression at the expected position. Needs more investigation.
+     */
+    @org.junit.jupiter.api.Disabled("FIXME: src/ class resolution - cursor position/AST node type needs investigation")
+    @Test
+    fun `should navigate to class definition in src directory`(): Unit = runBlocking {
+        // The buildPlugin.groovy fixture already imports org.example.BuildHelper from src/
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        // Import the class and use it
+        val content = """
+            import org.example.BuildHelper
+            
+            node {
+                def helper = new BuildHelper()
+                helper.runBuild()
+            }
+        """.trimIndent()
+
+        openDocument(uri, content)
+        // Open the src file too so it gets compiled
+        val srcUri = workspaceRoot.resolve("src/org/example/BuildHelper.groovy").toUri().toString()
+        openDocument(srcUri, Files.readString(workspaceRoot.resolve("src/org/example/BuildHelper.groovy")))
+
+        // Position at 'BuildHelper' in "new BuildHelper()" on line 3 (0-indexed)
+        // "    def helper = new BuildHelper()"
+        // Position 21 should hit "BuildHelper" after "new "
+        val definitions = requestDefinitionAt(uri, Position(3, 21))
+
+        assertNotNull(definitions, "Should find definitions for BuildHelper")
+        assertTrue(
+            definitions.isNotEmpty(),
+            "Should have at least one definition for BuildHelper (definitions: ${definitions.size})",
+        )
+        assertTrue(
+            definitions.any { it.uri.contains("src/org/example/BuildHelper.groovy") },
+            "Definition should point to src/org/example/BuildHelper.groovy, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
     private suspend fun openDocument(uri: String, content: String) {
         serverHandle!!.server.textDocumentService.didOpen(
             org.eclipse.lsp4j.DidOpenTextDocumentParams().apply {

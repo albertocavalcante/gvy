@@ -199,9 +199,10 @@ object CompletionProvider {
         // TODO: Consider caching these completions if performance becomes an issue
         val varsGlobals = compilationService.workspaceManager.getJenkinsGlobalVariables()
         varsGlobals.forEach { globalVar ->
-            variable(
+            // Use function() to insert as method call with parens: buildPlugin($1)
+            function(
                 name = globalVar.name,
-                type = "Closure",
+                returnType = "Object",
                 doc = globalVar.documentation.ifEmpty {
                     "Shared library global variable from vars/${globalVar.name}.groovy"
                 },

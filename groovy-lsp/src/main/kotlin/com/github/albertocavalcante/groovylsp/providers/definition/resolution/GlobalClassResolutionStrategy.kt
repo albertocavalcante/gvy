@@ -27,13 +27,19 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
 
         logger.debug("Attempting global lookup for class: {}", className)
 
+        // Extract simple name from potentially fully-qualified name for matching
+        val simpleClassName = className.substringAfterLast('.')
+
         // Search all symbol indices across workspace files
         for ((uri, index) in compilationService.getAllSymbolStorages()) {
             val symbols = index.getSymbols(uri).filterIsInstance<Symbol.Class>()
-            if (symbols.none { it.name == className }) continue
+            // Match against both simple name and fully qualified name
+            val matchingSymbol = symbols.find {
+                it.name == simpleClassName || it.fullyQualifiedName == className
+            } ?: continue
 
             // Found it in the index, now load the actual ClassNode from AST
-            val classNode = loadClassNodeFromAst(uri, className)
+            val classNode = loadClassNodeFromAst(uri, matchingSymbol.name)
             if (classNode != null) {
                 logger.debug("Found global class definition for {} at {}", className, uri)
                 return SymbolResolutionStrategy.found(

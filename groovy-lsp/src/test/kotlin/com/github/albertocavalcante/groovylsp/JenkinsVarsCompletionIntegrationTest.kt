@@ -13,7 +13,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Integration tests for Jenkins Shared Library vars/ directory support.
@@ -137,6 +139,28 @@ class JenkinsVarsCompletionIntegrationTest {
 
         val items = requestCompletionsAt(uri, Position(1, 0))
         assertNotNull(items.find { it.label == "sh" }, "Bundled step 'sh' should work with empty vars/")
+    }
+
+    @Test
+    fun `vars completions should insert as method call with parens`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        openDocument(uri, "node {\n\n}")
+
+        val items = requestCompletionsAt(uri, Position(1, 0))
+        val buildPlugin = items.find { it.label == "buildPlugin" }
+
+        assertNotNull(buildPlugin, "Should find buildPlugin completion")
+
+        // Verify it's a snippet that inserts with parentheses
+        assertEquals(
+            org.eclipse.lsp4j.InsertTextFormat.Snippet,
+            buildPlugin.insertTextFormat,
+            "Vars completion should be Snippet format for method call",
+        )
+        assertTrue(
+            buildPlugin.insertText?.contains("(") == true,
+            "Vars completion insertText should contain parentheses",
+        )
     }
 
     private suspend fun openDocument(uri: String, content: String) {
