@@ -14,10 +14,13 @@ import kotlin.io.path.exists
  * on the classpath for compilation. Future phases will add source
  * JAR support and on-demand downloading.
  */
-class GradleBuildTool(private val connectionFactory: GradleConnectionFactory = GradleConnectionPool) : BuildTool {
+class GradleBuildTool(
+    private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
+    retryConfig: GradleDependencyResolver.RetryConfig = GradleDependencyResolver.RetryConfig(),
+) : BuildTool {
 
     private val logger = LoggerFactory.getLogger(GradleBuildTool::class.java)
-    private val dependencyResolver = GradleDependencyResolver(connectionFactory)
+    private val dependencyResolver = GradleDependencyResolver(connectionFactory, retryConfig)
 
     override val name: String = "Gradle"
 

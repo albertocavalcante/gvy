@@ -5,6 +5,8 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
+import org.gradle.tooling.model.DomainObjectSet
+import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -95,5 +97,94 @@ class GradleDependencyResolverRetryTest {
         verify(exactly = 1) { connectionFactory.getConnection(any(), any()) }
         verify { connectionFactory.getConnection(any(), null) }
         verify(exactly = 0) { connectionFactory.getConnection(any(), match { it != null }) }
+    }
+
+    @Test
+    fun `retries on lock timeout exception and succeeds on second attempt`(@TempDir projectDir: Path) {
+        projectDir.resolve("build.gradle").toFile().writeText(
+            """
+            plugins { id 'java' }
+            """.trimIndent(),
+        )
+
+        val connectionFactory = mockk<GradleConnectionFactory>()
+        val connection = mockk<ProjectConnection>()
+        val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+        val ideaProject = mockk<IdeaProject>()
+        val emptyModules = mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
+
+        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
+        every { ideaProject.modules } returns emptyModules
+
+        // First attempt fails with lock timeout, second succeeds
+        val lockTimeoutError = RuntimeException(
+            "Timeout waiting to lock build logic queue. It is currently in use by another process.",
+        )
+        var callCount = 0
+        every { modelBuilder.get() } answers {
+            callCount++
+            if (callCount == 1) {
+                throw lockTimeoutError
+            }
+            ideaProject
+        }
+        every { connection.model(IdeaProject::class.java) } returns modelBuilder
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+
+        // Use zero-delay config for fast test execution
+        val fastRetryConfig = GradleDependencyResolver.RetryConfig(
+            maxAttempts = 4,
+            initialDelayMs = 0L,
+            backoffMultiplier = 1.0,
+        )
+        val resolver = GradleBuildTool(connectionFactory, fastRetryConfig)
+        val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
+
+        // Verify it retried and succeeded
+        assertEquals(0, result.dependencies.size) // Empty project, no deps
+        assertEquals(2, callCount, "Should have retried after lock timeout")
+    }
+
+    @Test
+    fun `gives up after max retry attempts on persistent lock timeout`(@TempDir projectDir: Path) {
+        projectDir.resolve("build.gradle").toFile().writeText(
+            """
+            plugins { id 'java' }
+            """.trimIndent(),
+        )
+
+        val connectionFactory = mockk<GradleConnectionFactory>()
+        val connection = mockk<ProjectConnection>()
+        val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+
+        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
+
+        // Always fail with lock timeout
+        val lockTimeoutError = RuntimeException(
+            "Timeout waiting to lock build logic queue. It is currently in use by another process.",
+        )
+        var attemptCount = 0
+        every { modelBuilder.get() } answers {
+            attemptCount++
+            throw lockTimeoutError
+        }
+        every { connection.model(IdeaProject::class.java) } returns modelBuilder
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+
+        // Use zero-delay config for fast test execution
+        val fastRetryConfig = GradleDependencyResolver.RetryConfig(
+            maxAttempts = 4,
+            initialDelayMs = 0L,
+            backoffMultiplier = 1.0,
+        )
+        val resolver = GradleBuildTool(connectionFactory, fastRetryConfig)
+        val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
+
+        // Should have tried MAX_ATTEMPTS (4) times then given up
+        assertEquals(4, attemptCount, "Should have retried 4 times before giving up")
+        assertEquals(0, result.dependencies.size)
+        assertEquals(0, result.sourceDirectories.size)
     }
 }

@@ -17,6 +17,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.util.concurrent.CancellationException
 
 /**
  * Main provider for go-to-definition functionality.
@@ -118,6 +119,9 @@ class DefinitionProvider(
             logger.warn("Invalid arguments during definition link resolution", e)
         } catch (e: IllegalStateException) {
             logger.warn("Invalid state during definition link resolution", e)
+        } catch (e: CancellationException) {
+            // Client cancelled the request - this is expected, log at debug level
+            logger.debug("Definition link resolution cancelled by client")
         } catch (e: Exception) {
             logger.warn("Unexpected error during definition link resolution", e)
         }
@@ -277,6 +281,16 @@ class DefinitionProvider(
                     reason = e.message,
                 ),
             )
+        } catch (e: CancellationException) {
+            // Client cancelled the request - this is expected behavior, log at debug level
+            logger.debug("Definition resolution cancelled by client for: $uri")
+            telemetrySink.report(
+                DefinitionTelemetryEvent(
+                    uri = uri,
+                    status = DefinitionStatus.CANCELLED,
+                    reason = "Request cancelled by client",
+                ),
+            )
         } catch (e: Exception) {
             logger.warn("Unexpected error during definition resolution", e)
             telemetrySink.report(
@@ -336,6 +350,7 @@ enum class DefinitionStatus {
     VISITOR_MISSING,
     SYMBOL_TABLE_MISSING,
     RESOLUTION_FAILED,
+    CANCELLED,
     ERROR,
 }
 
