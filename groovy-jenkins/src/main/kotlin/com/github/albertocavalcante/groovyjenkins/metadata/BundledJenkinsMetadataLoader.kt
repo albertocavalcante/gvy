@@ -10,8 +10,12 @@ import org.slf4j.LoggerFactory
  * This loader reads the `jenkins-stubs-metadata.json` file bundled with the LSP,
  * providing immediate Jenkins step completions without requiring user configuration.
  *
- * Phase 0: Bundle Jenkins SDK stubs for top 10-20 plugins
- * TODO: Currently only includes minimal stubs (sh step). Needs expansion.
+ * Supports:
+ * - Pipeline steps (sh, echo, git, etc.)
+ * - Global variables (env, params, currentBuild, etc.)
+ * - Post build conditions (always, success, failure, etc.)
+ * - Declarative options (timestamps, disableConcurrentBuilds, etc.)
+ * - Agent types (any, none, label, docker, etc.)
  *
  * @see BundledJenkinsMetadata
  */
@@ -54,6 +58,9 @@ class BundledJenkinsMetadataLoader {
     private data class MetadataJson(
         val steps: Map<String, StepJson>,
         val globalVariables: Map<String, GlobalVariableJson>,
+        val postConditions: Map<String, PostConditionJson> = emptyMap(),
+        val declarativeOptions: Map<String, DeclarativeOptionJson> = emptyMap(),
+        val agentTypes: Map<String, AgentTypeJson> = emptyMap(),
     ) {
         fun toBundledMetadata(): BundledJenkinsMetadata {
             val stepsMap = steps.map { (stepName, step) ->
@@ -81,9 +88,53 @@ class BundledJenkinsMetadataLoader {
                 )
             }.toMap()
 
+            val postConditionsMap = postConditions.map { (condName, cond) ->
+                condName to PostConditionMetadata(
+                    name = condName,
+                    description = cond.description,
+                    executionOrder = cond.executionOrder,
+                )
+            }.toMap()
+
+            val declarativeOptionsMap = declarativeOptions.map { (optName, opt) ->
+                optName to DeclarativeOptionMetadata(
+                    name = optName,
+                    plugin = opt.plugin,
+                    parameters = opt.parameters.map { (paramName, param) ->
+                        paramName to StepParameter(
+                            name = paramName,
+                            type = param.type,
+                            required = param.required,
+                            default = param.default,
+                            documentation = param.documentation,
+                        )
+                    }.toMap(),
+                    documentation = opt.documentation,
+                )
+            }.toMap()
+
+            val agentTypesMap = agentTypes.map { (agentName, agent) ->
+                agentName to AgentTypeMetadata(
+                    name = agentName,
+                    parameters = agent.parameters.map { (paramName, param) ->
+                        paramName to StepParameter(
+                            name = paramName,
+                            type = param.type,
+                            required = param.required,
+                            default = param.default,
+                            documentation = param.documentation,
+                        )
+                    }.toMap(),
+                    documentation = agent.documentation,
+                )
+            }.toMap()
+
             return BundledJenkinsMetadata(
                 steps = stepsMap,
                 globalVariables = globalVarsMap,
+                postConditions = postConditionsMap,
+                declarativeOptions = declarativeOptionsMap,
+                agentTypes = agentTypesMap,
             )
         }
     }
@@ -105,4 +156,20 @@ class BundledJenkinsMetadataLoader {
 
     @Serializable
     private data class GlobalVariableJson(val type: String, val documentation: String? = null)
+
+    @Serializable
+    private data class PostConditionJson(val description: String, val executionOrder: Int = 0)
+
+    @Serializable
+    private data class DeclarativeOptionJson(
+        val plugin: String,
+        val parameters: Map<String, ParameterJson> = emptyMap(),
+        val documentation: String? = null,
+    )
+
+    @Serializable
+    private data class AgentTypeJson(
+        val parameters: Map<String, ParameterJson> = emptyMap(),
+        val documentation: String? = null,
+    )
 }

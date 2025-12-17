@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjenkins
 import com.github.albertocavalcante.groovygdsl.GdslExecutor
 import com.github.albertocavalcante.groovygdsl.GdslLoadResults
 import com.github.albertocavalcante.groovygdsl.GdslLoader
+import com.github.albertocavalcante.groovyjenkins.plugins.PluginDiscoveryService
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,6 +20,7 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
     private val gdslExecutor = GdslExecutor()
     private val fileDetector = JenkinsFileDetector(configuration.filePatterns)
     private val libraryParser = LibraryParser()
+    private val pluginDiscovery = PluginDiscoveryService(workspaceRoot, configuration.pluginConfig)
 
     /**
      * Builds the classpath for Jenkins pipeline files based on library references.
@@ -93,6 +95,9 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
             classpath.add(srcDir)
             logger.debug("Added Jenkins Shared Library 'src' directory to classpath: $srcDir")
         }
+
+        // Scan classpath for dynamic Jenkins definitions
+        scanClasspath(classpath)
 
         return classpath
     }
@@ -253,6 +258,69 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
      * Checks if a URI is a Jenkins pipeline file based on configured patterns.
      */
     fun isJenkinsFile(uri: java.net.URI): Boolean = fileDetector.isJenkinsFile(uri)
+
+    private val scanner = com.github.albertocavalcante.groovyjenkins.scanning.JenkinsClasspathScanner()
+    private val dynamicMetadataCache =
+        mutableMapOf<Int, com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata>()
+    private var currentClasspathHash: Int = 0
+
+    /**
+     * Get combined metadata (bundled + dynamic), optionally filtered by installed plugins.
+     *
+     * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
+     * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
+     */
+    fun getAllMetadata(): com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata {
+        val bundled = com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadataLoader().load()
+        val dynamic = dynamicMetadataCache[currentClasspathHash]
+
+        val merged = if (dynamic != null) {
+            // Merge logic: dynamic overrides bundled for ALL metadata types
+            com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata(
+                steps = bundled.steps + dynamic.steps,
+                globalVariables = bundled.globalVariables + dynamic.globalVariables,
+                postConditions = bundled.postConditions + dynamic.postConditions,
+                declarativeOptions = bundled.declarativeOptions + dynamic.declarativeOptions,
+                agentTypes = bundled.agentTypes + dynamic.agentTypes,
+            )
+        } else {
+            bundled
+        }
+
+        // Apply plugin filtering ONLY if explicit configuration exists (not just defaults)
+        // HEURISTIC: If user hasn't configured plugins.txt or jenkins.plugins, show all bundled
+        if (!pluginDiscovery.hasPluginConfiguration()) {
+            return merged
+        }
+
+        // Filter metadata to only installed plugins (including defaults if enabled)
+        val installedPlugins = pluginDiscovery.getInstalledPluginNames()
+        logger.debug("Filtering metadata to {} installed plugins", installedPlugins.size)
+        return merged.copy(
+            steps = merged.steps.filterValues { it.plugin in installedPlugins },
+            declarativeOptions = merged.declarativeOptions.filterValues { it.plugin in installedPlugins },
+        )
+    }
+
+    /**
+     * Parse and scan classpath for Jenkins metadata.
+     */
+    fun scanClasspath(classpath: List<Path>) {
+        val newHash = classpath.hashCode()
+        if (newHash == currentClasspathHash && dynamicMetadataCache.containsKey(newHash)) {
+            logger.debug("Classpath hash unchanged ($newHash), skipping scan")
+            return
+        }
+
+        try {
+            logger.info("Scanning {} classpath entries for Jenkins metadata (hash: {})", classpath.size, newHash)
+            val metadata = scanner.scan(classpath)
+            dynamicMetadataCache[newHash] = metadata
+            currentClasspathHash = newHash
+        } catch (e: Exception) {
+            logger.error("Failed to scan classpath", e)
+        }
+    }
 
     /**
      * Parses library references from Jenkinsfile source.

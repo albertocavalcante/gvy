@@ -686,5 +686,319 @@
       "type": "org.jenkinsci.plugins.workflow.cps.CpsScript",
       "documentation": "Reference to the pipeline script object. Rarely needed directly."
     }
+  },
+  "postConditions": {
+    "always": {
+      "description": "Run regardless of the completion status of the Pipeline or stage",
+      "executionOrder": 1
+    },
+    "changed": {
+      "description": "Run if the current build result is different from the previous build's result",
+      "executionOrder": 2
+    },
+    "fixed": {
+      "description": "Run if the current build is successful and the previous one was failed or unstable",
+      "executionOrder": 3
+    },
+    "regression": {
+      "description": "Run if the current build is worse than the previous build",
+      "executionOrder": 4
+    },
+    "aborted": {
+      "description": "Run if the current build was aborted (manually or by timeout)",
+      "executionOrder": 5
+    },
+    "failure": {
+      "description": "Run only if the current build has a failure status (typically red in Jenkins)",
+      "executionOrder": 6
+    },
+    "success": {
+      "description": "Run only if the current build has a success status (typically green in Jenkins)",
+      "executionOrder": 7
+    },
+    "unstable": {
+      "description": "Run only if the current build has an unstable status (typically yellow in Jenkins)",
+      "executionOrder": 8
+    },
+    "unsuccessful": {
+      "description": "Run if the build was not successful (failure, unstable, or aborted)",
+      "executionOrder": 9
+    },
+    "cleanup": {
+      "description": "Run after all other post conditions regardless of outcome (like finally block)",
+      "executionOrder": 100
+    }
+  },
+  "declarativeOptions": {
+    "buildDiscarder": {
+      "plugin": "workflow-multibranch",
+      "parameters": {
+        "logRotator": {
+          "type": "BuildDiscarder",
+          "required": true,
+          "documentation": "Strategy for discarding old builds"
+        }
+      },
+      "documentation": "Configure build discard strategy (e.g., keep only last N builds)"
+    },
+    "checkoutToSubdirectory": {
+      "plugin": "workflow-scm-step",
+      "parameters": {
+        "subdirectory": {
+          "type": "String",
+          "required": true,
+          "documentation": "Subdirectory name for SCM checkout"
+        }
+      },
+      "documentation": "Checkout SCM to a subdirectory of the workspace"
+    },
+    "disableConcurrentBuilds": {
+      "plugin": "workflow-job",
+      "parameters": {
+        "abortPrevious": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Abort any currently running builds when a new one starts"
+        }
+      },
+      "documentation": "Disallow concurrent executions of the Pipeline. Can be useful for preventing simultaneous accesses."
+    },
+    "disableResume": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {},
+      "documentation": "Do not allow the pipeline to resume if the controller restarts"
+    },
+    "durabilityHint": {
+      "plugin": "workflow-api",
+      "parameters": {
+        "hint": {
+          "type": "String",
+          "required": true,
+          "documentation": "Durability level: MAX_SURVIVABILITY, SURVIVABLE_NONATOMIC, or PERFORMANCE_OPTIMIZED"
+        }
+      },
+      "documentation": "Override default durability mode for pipeline"
+    },
+    "parallelsAlwaysFailFast": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {},
+      "documentation": "All parallel stages will fail fast if any of them fail"
+    },
+    "preserveStashes": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {
+        "buildCount": {
+          "type": "int",
+          "required": false,
+          "default": "1",
+          "documentation": "Number of recent completed builds to preserve stashes from"
+        }
+      },
+      "documentation": "Preserve stashes from completed builds for use with restarted stages"
+    },
+    "quietPeriod": {
+      "plugin": "workflow-job",
+      "parameters": {
+        "seconds": {
+          "type": "int",
+          "required": true,
+          "documentation": "Quiet period in seconds"
+        }
+      },
+      "documentation": "Set quiet period for the pipeline"
+    },
+    "retry": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {
+        "count": {
+          "type": "int",
+          "required": true,
+          "documentation": "Number of times to retry"
+        }
+      },
+      "documentation": "On failure, retry the entire pipeline the specified number of times"
+    },
+    "skipDefaultCheckout": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {},
+      "documentation": "Skip automatic SCM checkout at start of pipeline, allowing manual checkout control"
+    },
+    "skipStagesAfterUnstable": {
+      "plugin": "pipeline-model-definition",
+      "parameters": {},
+      "documentation": "Skip stages after the build becomes unstable"
+    },
+    "timeout": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "time": {
+          "type": "int",
+          "required": true,
+          "documentation": "Timeout duration"
+        },
+        "unit": {
+          "type": "String",
+          "required": false,
+          "default": "MINUTES",
+          "documentation": "Time unit: NANOSECONDS, MICROSECONDS, MILLISECONDS, SECONDS, MINUTES, HOURS, DAYS"
+        },
+        "activity": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Timeout based on inactivity rather than total time"
+        }
+      },
+      "documentation": "Set timeout for entire pipeline execution"
+    },
+    "timestamps": {
+      "plugin": "timestamper",
+      "parameters": {},
+      "documentation": "Prepend timestamps to console output"
+    }
+  },
+  "agentTypes": {
+    "any": {
+      "parameters": {},
+      "documentation": "Execute the pipeline on any available agent"
+    },
+    "none": {
+      "parameters": {},
+      "documentation": "No global agent; each stage must define its own agent"
+    },
+    "label": {
+      "parameters": {
+        "label": {
+          "type": "String",
+          "required": true,
+          "documentation": "Label expression to select agent"
+        }
+      },
+      "documentation": "Execute on an agent matching the label expression"
+    },
+    "node": {
+      "parameters": {
+        "label": {
+          "type": "String",
+          "required": true,
+          "documentation": "Label expression to select node"
+        }
+      },
+      "documentation": "Execute on a node matching the label expression (same as 'label')"
+    },
+    "docker": {
+      "parameters": {
+        "image": {
+          "type": "String",
+          "required": true,
+          "documentation": "Docker image to use"
+        },
+        "label": {
+          "type": "String",
+          "required": false,
+          "documentation": "Label expression to select Docker host"
+        },
+        "args": {
+          "type": "String",
+          "required": false,
+          "documentation": "Arguments to pass to docker run"
+        },
+        "registryUrl": {
+          "type": "String",
+          "required": false,
+          "documentation": "URL of Docker registry"
+        },
+        "registryCredentialsId": {
+          "type": "String",
+          "required": false,
+          "documentation": "Credentials ID for Docker registry"
+        },
+        "alwaysPull": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Always pull image even if present locally"
+        },
+        "reuseNode": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "Reuse the same node across container restarts"
+        }
+      },
+      "documentation": "Execute inside a Docker container"
+    },
+    "dockerfile": {
+      "parameters": {
+        "filename": {
+          "type": "String",
+          "required": false,
+          "default": "Dockerfile",
+          "documentation": "Path to Dockerfile relative to context"
+        },
+        "dir": {
+          "type": "String",
+          "required": false,
+          "documentation": "Directory containing Dockerfile (default: root of repo)"
+        },
+        "label": {
+          "type": "String",
+          "required": false,
+          "documentation": "Label expression to select build host"
+        },
+        "additionalBuildArgs": {
+          "type": "String",
+          "required": false,
+          "documentation": "Additional arguments to docker build"
+        },
+        "args": {
+          "type": "String",
+          "required": false,
+          "documentation": "Arguments to pass to docker run"
+        },
+        "registryUrl": {
+          "type": "String",
+          "required": false,
+          "documentation": "URL of Docker registry"
+        },
+        "registryCredentialsId": {
+          "type": "String",
+          "required": false,
+          "documentation": "Credentials ID for Docker registry"
+        }
+      },
+      "documentation": "Build and execute inside a Docker image from Dockerfile"
+    },
+    "kubernetes": {
+      "parameters": {
+        "yaml": {
+          "type": "String",
+          "required": false,
+          "documentation": "YAML definition for pod"
+        },
+        "yamlFile": {
+          "type": "String",
+          "required": false,
+          "documentation": "Path to YAML file for pod definition"
+        },
+        "label": {
+          "type": "String",
+          "required": false,
+          "documentation": "Label for the created pod"
+        },
+        "cloud": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of Kubernetes cloud configuration"
+        },
+        "containerTemplate": {
+          "type": "ContainerTemplate",
+          "required": false,
+          "documentation": "Container template definition"
+        }
+      },
+      "documentation": "Execute inside a Kubernetes pod"
+    }
   }
 }

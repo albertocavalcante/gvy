@@ -36,6 +36,38 @@ class JenkinsBlockMetadataTest {
     }
 
     @Test
+    fun `post conditions should be recognized`() {
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("always"))
+        assertEquals(
+            JenkinsBlockMetadata.BlockCategory.POST_CONDITION,
+            JenkinsBlockMetadata.getCategoryFor("always"),
+        )
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("success"))
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("failure"))
+    }
+
+    @Test
+    fun `declarative options should be recognized`() {
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("disableConcurrentBuilds"))
+        assertEquals(
+            JenkinsBlockMetadata.BlockCategory.DECLARATIVE_OPTION,
+            JenkinsBlockMetadata.getCategoryFor("disableConcurrentBuilds"),
+        )
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("skipDefaultCheckout"))
+    }
+
+    @Test
+    fun `agent types should be recognized`() {
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("label"))
+        assertEquals(
+            JenkinsBlockMetadata.BlockCategory.AGENT_TYPE,
+            JenkinsBlockMetadata.getCategoryFor("label"),
+        )
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("docker"))
+        assertTrue(JenkinsBlockMetadata.isJenkinsBlock("any"))
+    }
+
+    @Test
     fun `regular methods should not be recognized`() {
         assertFalse(JenkinsBlockMetadata.isJenkinsBlock("println"))
         assertNull(JenkinsBlockMetadata.getCategoryFor("println"))
@@ -48,11 +80,12 @@ class JenkinsBlockMetadataTest {
         assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.PIPELINE_BLOCKS))
         assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.WRAPPER_BLOCKS))
         assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.CREDENTIAL_BLOCKS))
+        assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.POST_CONDITIONS))
+        assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.DECLARATIVE_OPTIONS))
+        assertTrue(allBlocks.containsAll(JenkinsBlockMetadata.AGENT_TYPES))
 
-        val expectedSize = JenkinsBlockMetadata.PIPELINE_BLOCKS.size +
-            JenkinsBlockMetadata.WRAPPER_BLOCKS.size +
-            JenkinsBlockMetadata.CREDENTIAL_BLOCKS.size
-
-        assertEquals(expectedSize, allBlocks.size, "Should have no duplicates")
+        // Note: There may be duplicates across categories (e.g., 'timestamps' in both
+        // WRAPPER_BLOCKS and DECLARATIVE_OPTIONS), so we can't assert exact size equality.
+        // Instead, verify that each category is fully represented.
     }
 }

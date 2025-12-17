@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins
 
+import com.github.albertocavalcante.groovyjenkins.plugins.PluginConfiguration
 import org.slf4j.LoggerFactory
 
 /**
@@ -9,6 +10,7 @@ data class JenkinsConfiguration(
     val filePatterns: List<String> = listOf("Jenkinsfile", "vars/*.groovy"),
     val sharedLibraries: List<SharedLibrary> = emptyList(),
     val gdslPaths: List<String> = emptyList(),
+    val pluginConfig: PluginConfiguration = PluginConfiguration(),
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(JenkinsConfiguration::class.java)
@@ -22,6 +24,7 @@ data class JenkinsConfiguration(
                 filePatterns = parseFilePatterns(map),
                 sharedLibraries = parseSharedLibraries(map),
                 gdslPaths = parseGdslPaths(map),
+                pluginConfig = PluginConfiguration.fromMap(map),
             )
         } catch (e: Exception) {
             logger.warn("Error parsing Jenkins configuration, using defaults", e)

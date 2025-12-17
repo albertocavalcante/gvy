@@ -16,6 +16,7 @@ object JenkinsBlockMetadata {
         "pipeline", "agent", "stages", "stage", "steps",
         "post", "environment", "options", "parameters",
         "triggers", "tools", "when", "matrix", "axes", "axis",
+        "libraries",
     )
 
     /**
@@ -43,9 +44,52 @@ object JenkinsBlockMetadata {
     )
 
     /**
+     * Post build condition blocks.
+     * Token type: KEYWORD (condition keywords like if/else)
+     *
+     * NOTE: These are DSL keywords that control when enclosed steps execute
+     * based on build result. Not actual steps themselves.
+     */
+    val POST_CONDITIONS = setOf(
+        "always", "success", "failure", "unstable", "aborted",
+        "changed", "fixed", "regression", "unsuccessful", "cleanup",
+    )
+
+    /**
+     * Declarative pipeline options.
+     * Token type: DECORATOR (configuration annotations)
+     *
+     * NOTE: These are JobProperty wrappers, not steps. They configure
+     * the job, not the execution flow.
+     */
+    val DECLARATIVE_OPTIONS = setOf(
+        "timestamps", "disableConcurrentBuilds", "skipDefaultCheckout",
+        "checkoutToSubdirectory", "quietPeriod", "buildDiscarder",
+        "preserveStashes", "parallelsAlwaysFailFast", "disableResume",
+        "durabilityHint", "skipStagesAfterUnstable", "retry", "timeout",
+    )
+
+    /**
+     * Agent specification keywords.
+     * Token type: KEYWORD
+     *
+     * NOTE: Agent blocks can be at pipeline level or stage level.
+     */
+    val AGENT_TYPES = setOf(
+        "any",
+        "none",
+        "label",
+        "docker",
+        "dockerfile",
+        "kubernetes",
+        "node",
+    )
+
+    /**
      * All Jenkins blocks that get special highlighting.
      */
-    val ALL_BLOCKS = PIPELINE_BLOCKS + WRAPPER_BLOCKS + CREDENTIAL_BLOCKS
+    val ALL_BLOCKS = PIPELINE_BLOCKS + WRAPPER_BLOCKS + CREDENTIAL_BLOCKS +
+        POST_CONDITIONS + DECLARATIVE_OPTIONS + AGENT_TYPES
 
     /**
      * Get the category for a Jenkins block.
@@ -54,6 +98,9 @@ object JenkinsBlockMetadata {
         in PIPELINE_BLOCKS -> BlockCategory.PIPELINE_STRUCTURE
         in WRAPPER_BLOCKS -> BlockCategory.WRAPPER
         in CREDENTIAL_BLOCKS -> BlockCategory.CREDENTIAL
+        in POST_CONDITIONS -> BlockCategory.POST_CONDITION
+        in DECLARATIVE_OPTIONS -> BlockCategory.DECLARATIVE_OPTION
+        in AGENT_TYPES -> BlockCategory.AGENT_TYPE
         else -> null
     }
 
@@ -66,5 +113,8 @@ object JenkinsBlockMetadata {
         PIPELINE_STRUCTURE("Pipeline Structure"),
         WRAPPER("Wrapper Block"),
         CREDENTIAL("Credential Binding"),
+        POST_CONDITION("Post Condition"),
+        DECLARATIVE_OPTION("Declarative Option"),
+        AGENT_TYPE("Agent Type"),
     }
 }

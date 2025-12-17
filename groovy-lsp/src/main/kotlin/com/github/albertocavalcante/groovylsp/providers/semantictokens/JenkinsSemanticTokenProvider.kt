@@ -113,6 +113,9 @@ object JenkinsSemanticTokenProvider {
             JenkinsBlockMetadata.BlockCategory.PIPELINE_STRUCTURE -> TokenTypes.MACRO
             JenkinsBlockMetadata.BlockCategory.WRAPPER -> TokenTypes.DECORATOR
             JenkinsBlockMetadata.BlockCategory.CREDENTIAL -> TokenTypes.DECORATOR
+            JenkinsBlockMetadata.BlockCategory.POST_CONDITION -> TokenTypes.MACRO
+            JenkinsBlockMetadata.BlockCategory.DECLARATIVE_OPTION -> TokenTypes.DECORATOR
+            JenkinsBlockMetadata.BlockCategory.AGENT_TYPE -> TokenTypes.MACRO
         }
     }
 }

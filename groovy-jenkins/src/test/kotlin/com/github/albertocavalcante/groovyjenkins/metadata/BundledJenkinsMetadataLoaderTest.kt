@@ -98,4 +98,95 @@ class BundledJenkinsMetadataLoaderTest {
         val missingStep = metadata.getStep("nonExistentStep")
         assertEquals(null, missingStep, "Should return null for missing steps")
     }
+
+    // ========== NEW TESTS FOR EXTENDED METADATA ==========
+
+    @Test
+    fun `should load post condition metadata`() {
+        // TDD: Test for post { always { } } support
+        val loader = BundledJenkinsMetadataLoader()
+        val metadata = loader.load()
+
+        // Verify we have metadata for 'always' post condition
+        val always = metadata.getPostCondition("always")
+        assertNotNull(always, "Should have metadata for 'always' post condition")
+        assertEquals("always", always.name)
+        assertNotNull(always.description)
+    }
+
+    @Test
+    fun `should load all standard post conditions`() {
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val expectedConditions = listOf(
+            "always", "success", "failure", "unstable", "aborted",
+            "changed", "fixed", "regression", "unsuccessful", "cleanup",
+        )
+
+        expectedConditions.forEach { condition ->
+            val meta = metadata.getPostCondition(condition)
+            assertNotNull(meta, "Should have metadata for '$condition' post condition")
+        }
+    }
+
+    @Test
+    fun `should load declarative options metadata`() {
+        // TDD: Test for options { disableConcurrentBuilds() } support
+        val loader = BundledJenkinsMetadataLoader()
+        val metadata = loader.load()
+
+        val disableConcurrent = metadata.getDeclarativeOption("disableConcurrentBuilds")
+        assertNotNull(disableConcurrent, "Should have metadata for 'disableConcurrentBuilds' option")
+        assertEquals("disableConcurrentBuilds", disableConcurrent.name)
+    }
+
+    @Test
+    fun `should load declarative option parameters`() {
+        // TDD: Test for disableConcurrentBuilds(abortPrevious: true)
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val disableConcurrent = metadata.getDeclarativeOption("disableConcurrentBuilds")
+        assertNotNull(disableConcurrent)
+
+        // Should have 'abortPrevious' parameter
+        val abortPreviousParam = disableConcurrent.parameters["abortPrevious"]
+        assertNotNull(abortPreviousParam, "Should have 'abortPrevious' parameter")
+        assertEquals("boolean", abortPreviousParam.type)
+        assertEquals(false, abortPreviousParam.required)
+    }
+
+    @Test
+    fun `should load timestamps option`() {
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val timestamps = metadata.getDeclarativeOption("timestamps")
+        assertNotNull(timestamps, "Should have metadata for 'timestamps' option")
+        assertEquals("timestamper", timestamps.plugin)
+    }
+
+    @Test
+    fun `should load agent type metadata`() {
+        // TDD: Test for agent { label 'maven-21' } support
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val labelAgent = metadata.getAgentType("label")
+        assertNotNull(labelAgent, "Should have metadata for 'label' agent type")
+
+        // 'label' agent should have a 'label' parameter
+        val labelParam = labelAgent.parameters["label"]
+        assertNotNull(labelParam, "Label agent should have 'label' parameter")
+        assertEquals(true, labelParam.required)
+    }
+
+    @Test
+    fun `should load all standard agent types`() {
+        val metadata = BundledJenkinsMetadataLoader().load()
+
+        val expectedAgents = listOf("any", "none", "label", "docker")
+
+        expectedAgents.forEach { agentType ->
+            val meta = metadata.getAgentType(agentType)
+            assertNotNull(meta, "Should have metadata for '$agentType' agent type")
+        }
+    }
 }
