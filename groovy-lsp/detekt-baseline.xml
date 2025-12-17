@@ -1,0 +1,95 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:CompletionProvider.kt$CompletionProvider$private fun detectCompletionContext( nodeAtCursor: org.codehaus.groovy.ast.ASTNode?, astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel, context: SymbolCompletionContext, ): ContextType?</ID>
+    <ID>CyclomaticComplexMethod:DefinitionProvider.kt$DefinitionProvider$@Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback fun provideDefinitionLinks(uri: String, position: Position): Flow&lt;LocationLink></ID>
+    <ID>CyclomaticComplexMethod:DefinitionResolver.kt$DefinitionResolver$private suspend fun findClasspathDefinition(targetNode: ASTNode): DefinitionResult?</ID>
+    <ID>CyclomaticComplexMethod:DocExtractor.kt$DocExtractor$private fun findDocCommentBeforeLine(lines: List&lt;String>, lineIndex: Int): String?</ID>
+    <ID>CyclomaticComplexMethod:HoverProvider.kt$HoverProvider$private fun tryCreateJenkinsStepHover(node: ASTNode, documentUri: URI): Hover?</ID>
+    <ID>CyclomaticComplexMethod:Main.kt$fun runCheck(args: List&lt;String>, out: PrintStream = System.out)</ID>
+    <ID>InstanceOfCheckForException:DefinitionResolver.kt$DefinitionResolver$e is kotlin.coroutines.cancellation.CancellationException</ID>
+    <ID>LargeClass:HoverProviderTest.kt$HoverProviderTest</ID>
+    <ID>LargeClass:WhitespaceFixHandlersTest.kt$WhitespaceFixHandlersTest</ID>
+    <ID>LongMethod:CompletionProvider.kt$CompletionProvider$private fun detectCompletionContext( nodeAtCursor: org.codehaus.groovy.ast.ASTNode?, astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel, context: SymbolCompletionContext, ): ContextType?</ID>
+    <ID>LongMethod:DependencyManager.kt$DependencyManager$@Suppress("TooGenericExceptionCaught") fun startAsyncResolution( workspaceRoot: Path, onProgress: ((Int, String) -> Unit)? = null, onComplete: (WorkspaceResolution) -> Unit, onError: ((Exception) -> Unit)? = null, enableFileWatching: Boolean = true, )</ID>
+    <ID>LongMethod:GroovyLanguageServer.kt$GroovyLanguageServer$override fun initialize(params: InitializeParams): CompletableFuture&lt;InitializeResult></ID>
+    <ID>LongMethod:GroovyLanguageServer.kt$GroovyLanguageServer$private fun startAsyncDependencyResolution()</ID>
+    <ID>LongMethod:JavaSourceInspectorTest.kt$JavaSourceInspectorTest.RealWorldJavaSourceTest$@Test fun `parses realistic JDK Date class with full Javadoc`()</ID>
+    <ID>LongMethod:JavaSourceInspectorTest.kt$JavaSourceInspectorTest.RealWorldJavaSourceTest$@Test fun `parses realistic SimpleDateFormat class with pattern documentation`()</ID>
+    <ID>LongMethod:LintFixAction.kt$LintFixAction$@Suppress("ReturnCount") // Multiple early returns for clarity in validation chain private fun isValidRange(diagnostic: Diagnostic, lines: List&lt;String>, ruleName: String): Boolean</ID>
+    <ID>LongMethod:Main.kt$fun runCheck(args: List&lt;String>, out: PrintStream = System.out)</ID>
+    <ID>LongParameterList:CompletionProvider.kt$CompletionProvider$( ast: org.codehaus.groovy.ast.ASTNode, astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel, line: Int, character: Int, compilationService: GroovyCompilationService, uri: java.net.URI, )</ID>
+    <ID>LongParameterList:TestDiagnosticFactory.kt$TestDiagnosticFactory$( code: String, message: String, line: Int = 0, startChar: Int = 0, endChar: Int = 10, source: String? = "CodeNarc", severity: DiagnosticSeverity = DiagnosticSeverity.Warning, )</ID>
+    <ID>LoopWithTooManyJumpStatements:DocExtractor.kt$DocExtractor$while</ID>
+    <ID>MagicNumber:DiagnosticsService.kt$DiagnosticsService$1_000_000</ID>
+    <ID>MagicNumber:GroovyCompilationService.kt$GroovyCompilationService$50</ID>
+    <ID>MagicNumber:GroovyLanguageServer.kt$GroovyLanguageServer$100</ID>
+    <ID>MagicNumber:GroovyLanguageServer.kt$GroovyLanguageServer$1000</ID>
+    <ID>MagicNumber:JavaSourceInspector.kt$JavaSourceInspector$200</ID>
+    <ID>MagicNumber:JavaSourceInspector.kt$JavaSourceInspector$3</ID>
+    <ID>MagicNumber:JenkinsDocProvider.kt$JenkinsDocProvider$100</ID>
+    <ID>MagicNumber:SourceNavigationService.kt$SourceNavigationService$3</ID>
+    <ID>MaxLineLength:CompletionProvider.kt$CompletionProvider$// This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.</ID>
+    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.ImportNodeResolutionTest$"jar:file:///home/user/.m2/repository/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar!/com/google/gson/Gson.class"</ID>
+    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$"jar:file:///home/user/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar!/org/apache/commons/lang3/StringUtils.class"</ID>
+    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$"jar:file:///home/user/.m2/repository/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar!/org/slf4j/Logger.class"</ID>
+    <ID>MaxLineLength:Main.kt$"${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}"</ID>
+    <ID>MaximumLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.ImportNodeResolutionTest$ </ID>
+    <ID>MaximumLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$ </ID>
+    <ID>MaximumLineLength:Main.kt$ </ID>
+    <ID>NestedBlockDepth:CompletionProvider.kt$CompletionProvider$private fun detectCompletionContext( nodeAtCursor: org.codehaus.groovy.ast.ASTNode?, astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel, context: SymbolCompletionContext, ): ContextType?</ID>
+    <ID>NestedBlockDepth:CompletionProvider.kt$CompletionProvider$suspend fun getContextualCompletions( uri: String, line: Int, character: Int, compilationService: GroovyCompilationService, content: String, ): List&lt;CompletionItem></ID>
+    <ID>NestedBlockDepth:DefinitionProvider.kt$DefinitionProvider$@Suppress("LongMethod", "TooGenericExceptionCaught") private suspend fun FlowCollector&lt;Location>.emitDefinitions( uri: String, documentUri: URI, position: com.github.albertocavalcante.groovyparser.ast.types.Position, context: DefinitionContext, )</ID>
+    <ID>NestedBlockDepth:DefinitionResolver.kt$DefinitionResolver$private fun findGlobalDefinition(targetNode: ASTNode): DefinitionResult.Source?</ID>
+    <ID>NestedBlockDepth:DefinitionResolver.kt$DefinitionResolver$private suspend fun findClasspathDefinition(targetNode: ASTNode): DefinitionResult?</ID>
+    <ID>NestedBlockDepth:HoverProvider.kt$HoverProvider$private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover?</ID>
+    <ID>NestedBlockDepth:JdkSourceResolver.kt$JdkSourceResolver$private fun extractSourceFromZip(srcZip: Path, moduleName: String, classPath: String, className: String): Path?</ID>
+    <ID>NestedBlockDepth:JenkinsSemanticTokenProvider.kt$JenkinsSemanticTokenProvider$fun getSemanticTokens( astModel: GroovyAstModel, uri: URI, isJenkinsFile: Boolean, varsNames: Set&lt;String> = emptySet(), ): List&lt;SemanticToken></ID>
+    <ID>NestedBlockDepth:SourceJarExtractor.kt$SourceJarExtractor$fun extractAndIndex(sourceJarPath: Path): Map&lt;String, Path></ID>
+    <ID>ReturnCount:DefinitionResolver.kt$DefinitionResolver$private suspend fun resolveDefinition( targetNode: ASTNode, uri: URI, position: com.github.albertocavalcante.groovyparser.ast.types.Position, ): DefinitionResult?</ID>
+    <ID>ReturnCount:DocExtractor.kt$DocExtractor$private fun findDocCommentBeforeLine(lines: List&lt;String>, lineIndex: Int): String?</ID>
+    <ID>ReturnCount:DocumentationProvider.kt$DocumentationProvider$fun getDocumentation(node: ASTNode, documentUri: URI): Documentation</ID>
+    <ID>ReturnCount:FixHandlerRegistry.kt$private fun fixBlankLineBeforePackage(context: FixContext): TextEdit?</ID>
+    <ID>ReturnCount:GroovyLanguageServer.kt$GroovyLanguageServer$fun waitForDependencies(timeoutSeconds: Long = 60): Boolean</ID>
+    <ID>ReturnCount:HoverProvider.kt$HoverProvider$private fun tryCreateJenkinsStepHover(node: ASTNode, documentUri: URI): Hover?</ID>
+    <ID>ReturnCount:HoverProvider.kt$HoverProvider$private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover?</ID>
+    <ID>ReturnCount:JavaSourceInspector.kt$JavaSourceInspector$fun inspectClassFromContent( content: String, className: String, sourceName: String = "&lt;unknown>", ): InspectionResult?</ID>
+    <ID>ReturnCount:JdkSourceResolver.kt$JdkSourceResolver$fun findSrcZip(): Path?</ID>
+    <ID>ReturnCount:JdkSourceResolver.kt$JdkSourceResolver$suspend fun resolveJdkSource(jrtUri: URI, className: String): SourceNavigator.SourceResult</ID>
+    <ID>ReturnCount:SourceJarExtractor.kt$SourceJarExtractor$fun extractAndIndex(sourceJarPath: Path): Map&lt;String, Path></ID>
+    <ID>ReturnCount:SourceNavigationService.kt$SourceNavigationService$override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult</ID>
+    <ID>SwallowedException:ClasspathService.kt$ClasspathService$e: ClassNotFoundException</ID>
+    <ID>SwallowedException:ClasspathService.kt$ClasspathService$e: NoClassDefFoundError</ID>
+    <ID>SwallowedException:GroovyCompilationService.kt$GroovyCompilationService$e: CancellationException</ID>
+    <ID>SwallowedException:GroovyLanguageServer.kt$GroovyLanguageServer$e: TimeoutException</ID>
+    <ID>SwallowedException:GroovyTextDocumentService.kt$GroovyTextDocumentService$e: Exception</ID>
+    <ID>SwallowedException:GroovyTextDocumentService.kt$GroovyTextDocumentService$e: IllegalArgumentException</ID>
+    <ID>SwallowedException:GroovyWorkspaceService.kt$GroovyWorkspaceService$e: Exception</ID>
+    <ID>SwallowedException:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ClasspathService.kt$ClasspathService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DefinitionResolver.kt$DefinitionResolver$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DependencyManager.kt$DependencyManager$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DiagnosticsService.kt$DiagnosticsService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentationProvider.kt$DocumentationProvider$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocumentationService.kt$DocumentationService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GroovyCompilationService.kt$GroovyCompilationService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GroovyLanguageServer.kt$GroovyLanguageServer$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GroovyTextDocumentService.kt$GroovyTextDocumentService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GroovyWorkspaceService.kt$GroovyWorkspaceService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:HoverProvider.kt$HoverProvider$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:JavaSourceInspector.kt$JavaSourceInspector$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:JdkSourceResolver.kt$JdkSourceResolver$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:JenkinsSemanticTokenProvider.kt$JenkinsSemanticTokenProvider$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SourceJarExtractor.kt$SourceJarExtractor$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
+    <ID>TooManyFunctions:CompletionProvider.kt$CompletionProvider</ID>
+    <ID>TooManyFunctions:DefinitionResolver.kt$DefinitionResolver</ID>
+    <ID>TooManyFunctions:GroovyCompilationService.kt$GroovyCompilationService</ID>
+    <ID>TooManyFunctions:GroovyTextDocumentService.kt$GroovyTextDocumentService : TextDocumentService</ID>
+    <ID>UnusedParameter:MultipleDiagnosticsPropertyTest.kt$MultipleDiagnosticsPropertyTest$onlyRegistered: Boolean</ID>
+    <ID>UnusedPrivateProperty:JenkinsDocProvider.kt$JenkinsDocProvider$private val logger = LoggerFactory.getLogger(JenkinsDocProvider::class.java)</ID>
+    <ID>UnusedPrivateProperty:JenkinsStepCompletionProvider.kt$JenkinsStepCompletionProvider$private val logger = LoggerFactory.getLogger(JenkinsStepCompletionProvider::class.java)</ID>
+    <ID>UseCheckOrError:CompilationContext.kt$CompilationContext$throw IllegalStateException("Using legacy AstVisitor access with RecursiveAstVisitor")</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -67,7 +67,13 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         val documentUri = URI.create(uri)
         val groovyPosition = position.toGroovyPosition()
 
-        // Get the node at the position
+        // Ensure document is compiled before accessing AST
+        // NOTE: This awaits any active compilation to complete, preventing race conditions
+        // where rename is called before compilation finishes populating the cache
+        compilationService.ensureCompiled(documentUri)
+            ?: throw createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
+
+        // Get the node at the position (now guaranteed to be in cache)
         val visitor = compilationService.getAstModel(documentUri)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No AST visitor available for $uri")
 

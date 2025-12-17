@@ -1,7 +1,10 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.async.future
+import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
@@ -10,6 +13,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
@@ -77,9 +81,41 @@ class GroovyTextDocumentService(
     // Track active diagnostic jobs per URI to cancel stale ones (debouncing/throttling)
     private val diagnosticJobs = ConcurrentHashMap<URI, Job>()
 
-    // Initialize diagnostics service
+    // Initialize diagnostics service with provider-based architecture
     private val diagnosticsService by lazy {
-        DiagnosticsService(compilationService.workspaceManager.getWorkspaceRoot(), serverConfiguration)
+        createDiagnosticsService()
+    }
+
+    /**
+     * Factory method for creating DiagnosticsService with configured providers.
+     *
+     * NOTE: This factory pattern allows for easy testing and future extension.
+     * TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
+     */
+    private fun createDiagnosticsService(): DiagnosticsService {
+        val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
+        val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
+
+        val providers = buildList {
+            // Add CodeNarc if enabled in configuration
+            if (serverConfiguration.codeNarcEnabled) {
+                val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
+                val codeNarcAdapter = DiagnosticProviderAdapter(
+                    delegate = codeNarcProvider,
+                    id = "codenarc",
+                    enabledByDefault = true,
+                )
+                add(codeNarcAdapter)
+            }
+
+            // TODO: Add more providers here as implemented
+            // add(UnusedImportDiagnosticProvider())
+        }
+
+        // TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
+        val config = DiagnosticConfig()
+
+        return DiagnosticsService(providers, config)
     }
 
     // Type definition provider - created lazily

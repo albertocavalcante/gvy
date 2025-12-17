@@ -48,6 +48,11 @@ subprojects {
     detekt {
         config.setFrom(rootProject.files("detekt.yml"))
         buildUponDefaultConfig = true
+        // Use per-module baseline if it exists, otherwise no baseline
+        val moduleBaseline = file("detekt-baseline.xml")
+        if (moduleBaseline.exists()) {
+            baseline = moduleBaseline
+        }
     }
 
     tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
