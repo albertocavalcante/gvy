@@ -65,6 +65,8 @@ class GroovyLanguageServerFeatureMatrixTest {
             server.initialized(InitializedParams())
         }
 
+        client.awaitMessageMatching { it.message.startsWith("Dependencies loaded:") }
+
         val textDocument = TextDocumentItem(documentUri, "groovy", 1, documentContent)
         server.textDocumentService.didOpen(org.eclipse.lsp4j.DidOpenTextDocumentParams(textDocument))
 

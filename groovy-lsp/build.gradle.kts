@@ -55,6 +55,9 @@ dependencies {
     // Kotlin Immutable Collections for functional data structures
     implementation(libs.kotlin.collections.immutable)
 
+    // Functional Programming - Arrow-kt for Either type
+    implementation(libs.arrow.core)
+
     // Logging
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)

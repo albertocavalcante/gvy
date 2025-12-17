@@ -32,9 +32,6 @@ class SymbolNotFoundException(val symbolName: String, val uri: URI, val line: In
 class AmbiguousSymbolException(val symbolName: String, val candidateCount: Int, val uri: URI) :
     SymbolResolutionException("Ambiguous symbol '$symbolName' at $uri ($candidateCount candidates found)")
 
-class CircularReferenceException(val symbolName: String, val path: List<String>) :
-    SymbolResolutionException("Circular reference detected for symbol '$symbolName': ${path.joinToString(" -> ")}")
-
 /**
  * Position and range exceptions
  */

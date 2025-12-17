@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovylsp.providers.definition
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
-import com.github.albertocavalcante.groovylsp.converters.toLspLocationLink
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -15,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -27,6 +27,11 @@ class DefinitionProvider(
     private val sourceNavigator: SourceNavigator? = null,
     private val telemetrySink: DefinitionTelemetrySink = DefinitionTelemetrySink.NO_OP,
 ) {
+
+    companion object {
+        /** Default empty range for synthetic nodes without position info */
+        private val EMPTY_RANGE = Range(Position(0, 0), Position(0, 0))
+    }
 
     private val logger = LoggerFactory.getLogger(DefinitionProvider::class.java)
 
@@ -72,23 +77,31 @@ class DefinitionProvider(
             if (result != null) {
                 when (result) {
                     is DefinitionResolver.DefinitionResult.Source -> {
-                        // Convert to LocationLink and emit
-                        val locationLink = originNode.toLspLocationLink(result.node, visitor)
-                        if (locationLink != null) {
-                            logger.debug(
-                                "Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}",
-                            )
-                            emit(locationLink)
-                        } else {
-                            logger.debug("Could not convert to LocationLink")
-                        }
+                        // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
+                        // (e.g., Jenkins vars) that aren't in the visitor's AST.
+                        val targetUri = result.node.toLspLocation(visitor)?.uri
+                            ?: result.uri.toString()
+                        val targetRange = result.node.toLspRange()
+                            ?: EMPTY_RANGE
+                        val originRange = originNode.toLspRange()
+                            ?: EMPTY_RANGE
+                        val locationLink = LocationLink(
+                            targetUri,
+                            targetRange,
+                            targetRange,
+                            originRange,
+                        )
+                        logger.debug(
+                            "Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}",
+                        )
+                        emit(locationLink)
                     }
 
                     is DefinitionResolver.DefinitionResult.Binary -> {
                         // Handle binary definition
                         val locationLink = LocationLink().apply {
                             targetUri = result.uri.toString()
-                            val range = result.range ?: org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+                            val range = result.range ?: EMPTY_RANGE
                             targetRange = range
                             targetSelectionRange = range
                             originSelectionRange = originNode.toLspRange()
@@ -196,30 +209,32 @@ class DefinitionProvider(
             if (result != null) {
                 when (result) {
                     is DefinitionResolver.DefinitionResult.Source -> {
-                        val location = result.node.toLspLocation(context.visitor)
-                        if (location != null) {
-                            logger.debug(
-                                "Found definition at ${location.uri}:${location.range} " +
-                                    "(node: ${result.node.javaClass.simpleName})",
-                            )
-                            telemetrySink.report(
-                                DefinitionTelemetryEvent(
-                                    uri = uri,
-                                    status = DefinitionStatus.SUCCESS,
-                                ),
-                            )
-                            definitionFound = true
-                            emit(location)
-                        } else {
-                            logger.debug("Could not convert definition node to location")
-                        }
+                        // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
+                        // (e.g., Jenkins vars) that aren't in the visitor's AST.
+                        val targetUri = result.node.toLspLocation(context.visitor)?.uri
+                            ?: result.uri.toString()
+                        val range = result.node.toLspRange()
+                            ?: EMPTY_RANGE
+                        val location = Location(targetUri, range)
+                        logger.debug(
+                            "Found definition at ${location.uri}:${location.range} " +
+                                "(node: ${result.node.javaClass.simpleName})",
+                        )
+                        telemetrySink.report(
+                            DefinitionTelemetryEvent(
+                                uri = uri,
+                                status = DefinitionStatus.SUCCESS,
+                            ),
+                        )
+                        definitionFound = true
+                        emit(location)
                     }
 
                     is DefinitionResolver.DefinitionResult.Binary -> {
                         val location =
                             Location(
                                 result.uri.toString(),
-                                result.range ?: org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0)),
+                                result.range ?: EMPTY_RANGE,
                             )
                         logger.debug("Found binary definition at ${location.uri}")
                         telemetrySink.report(

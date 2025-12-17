@@ -37,6 +37,7 @@ openrewriteJgit = "1.3.0"
 mavenEmbedder = "3.9.12"
 mavenResolver = "1.9.25"
 javaparser = "3.27.1"
+arrow = "2.2.1"
 flexmark = "0.64.8"
 
 [libraries]
@@ -70,6 +71,9 @@ kotlin-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collect
 kotlin-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+
+# Functional Programming
+arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }
 
 # Logging
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }

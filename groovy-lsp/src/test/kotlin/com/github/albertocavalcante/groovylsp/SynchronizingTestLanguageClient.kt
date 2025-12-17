@@ -10,6 +10,7 @@ import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.services.LanguageClient
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
@@ -23,6 +24,8 @@ class SynchronizingTestLanguageClient : LanguageClient {
     // Storage for events
     private val diagnosticsRef = AtomicReference<PublishDiagnosticsParams?>()
     private val messagesRef = AtomicReference<MutableList<MessageParams>>(mutableListOf())
+
+    private val messagesQueue = LinkedBlockingQueue<MessageParams>()
 
     // Synchronization primitives
     private var diagnosticsLatch = CountDownLatch(1)
@@ -54,6 +57,7 @@ class SynchronizingTestLanguageClient : LanguageClient {
 
     override fun showMessage(messageParams: MessageParams) {
         messagesRef.get().add(messageParams)
+        messagesQueue.offer(messageParams)
         messagesLatch.countDown()
     }
 
@@ -99,15 +103,21 @@ class SynchronizingTestLanguageClient : LanguageClient {
      * @return The first message received
      * @throws TimeoutException if no message received within timeout
      */
-    fun awaitMessage(timeoutMs: Long = this.timeoutMs): MessageParams {
-        if (!messagesLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-            throw TimeoutException("No message received within ${timeoutMs}ms")
+    fun awaitMessage(timeoutMs: Long = this.timeoutMs): MessageParams =
+        messagesQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+            ?: throw TimeoutException("No message received within ${timeoutMs}ms")
+
+    fun awaitMessageMatching(timeoutMs: Long = this.timeoutMs, predicate: (MessageParams) -> Boolean): MessageParams {
+        val deadlineNs = System.nanoTime() + timeoutMs * 1_000_000L
+        while (System.nanoTime() < deadlineNs) {
+            val remainingMs = ((deadlineNs - System.nanoTime()) / 1_000_000L).coerceAtLeast(1)
+            val msg = messagesQueue.poll(remainingMs, TimeUnit.MILLISECONDS) ?: continue
+            if (predicate(msg)) return msg
         }
-        val messagesList = messagesRef.get()
-        if (messagesList.isEmpty()) {
-            error("Message latch was released but no messages found")
-        }
-        return messagesList.first()
+
+        throw TimeoutException(
+            "No matching message received within ${timeoutMs}ms. Messages: ${messagesRef.get().map { it.message }}",
+        )
     }
 
     /**
@@ -136,6 +146,7 @@ class SynchronizingTestLanguageClient : LanguageClient {
         messagesRef.set(mutableListOf())
         diagnosticsLatch = CountDownLatch(1)
         messagesLatch = CountDownLatch(1)
+        messagesQueue.clear()
     }
 
     /**

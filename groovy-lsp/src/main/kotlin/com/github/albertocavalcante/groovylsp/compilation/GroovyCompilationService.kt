@@ -227,6 +227,12 @@ class GroovyCompilationService {
 
     fun getCacheStatistics() = cache.getStatistics()
 
+    /**
+     * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
+     * Used by DefinitionResolver to resolve go-to-definition for Jenkins vars calls.
+     */
+    fun getJenkinsGlobalVariables() = workspaceManager.getJenkinsGlobalVariables()
+
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
         if (changed) {
