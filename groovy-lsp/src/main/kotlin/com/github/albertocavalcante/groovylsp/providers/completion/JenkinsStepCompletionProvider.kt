@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadataLoader
+import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import org.eclipse.lsp4j.CompletionItem
@@ -16,45 +16,34 @@ import org.slf4j.LoggerFactory
 object JenkinsStepCompletionProvider {
     private val logger = LoggerFactory.getLogger(JenkinsStepCompletionProvider::class.java)
 
-    private val bundledMetadata by lazy {
-        runCatching { BundledJenkinsMetadataLoader().load() }
-            .onFailure { logger.warn("Failed to load bundled Jenkins metadata", it) }
-            .getOrNull()
-    }
-
     /**
      * Get metadata for a specific Jenkins step by name.
      * Used by hover provider to show step documentation.
      */
-    fun getStepMetadata(stepName: String): JenkinsStepMetadata? = bundledMetadata?.getStep(stepName)
+    fun getStepMetadata(stepName: String, metadata: BundledJenkinsMetadata): JenkinsStepMetadata? =
+        metadata.getStep(stepName)
 
     /**
      * Get metadata for a specific Jenkins global variable by name.
      * Used by hover provider to show global variable documentation.
      */
-    fun getGlobalVariableMetadata(variableName: String): GlobalVariableMetadata? =
-        bundledMetadata?.getGlobalVariable(variableName)
+    fun getGlobalVariableMetadata(variableName: String, metadata: BundledJenkinsMetadata): GlobalVariableMetadata? =
+        metadata.getGlobalVariable(variableName)
 
-    fun getBundledStepCompletions(): List<CompletionItem> {
-        val metadata = bundledMetadata ?: return emptyList()
-
-        return metadata.steps.values.map { step ->
-            val documentationText = step.documentation ?: "Jenkins pipeline step"
-            CompletionItem().apply {
-                label = step.name
-                kind = CompletionItemKind.Function
-                detail = "Jenkins step (${step.plugin})"
-                documentation = Either.forRight(
-                    MarkupContent(MarkupKind.MARKDOWN, documentationText),
-                )
-            }
+    fun getStepCompletions(metadata: BundledJenkinsMetadata): List<CompletionItem> = metadata.steps.values.map { step ->
+        val documentationText = step.documentation ?: "Jenkins pipeline step"
+        CompletionItem().apply {
+            label = step.name
+            kind = CompletionItemKind.Function
+            detail = "Jenkins step (${step.plugin})"
+            documentation = Either.forRight(
+                MarkupContent(MarkupKind.MARKDOWN, documentationText),
+            )
         }
     }
 
-    fun getBundledGlobalVariableCompletions(): List<CompletionItem> {
-        val metadata = bundledMetadata ?: return emptyList()
-
-        return metadata.globalVariables.values.map { globalVar ->
+    fun getGlobalVariableCompletions(metadata: BundledJenkinsMetadata): List<CompletionItem> =
+        metadata.globalVariables.values.map { globalVar ->
             val documentationText = globalVar.documentation ?: "Jenkins global variable"
             CompletionItem().apply {
                 label = globalVar.name
@@ -65,10 +54,12 @@ object JenkinsStepCompletionProvider {
                 )
             }
         }
-    }
 
-    fun getBundledParameterCompletions(stepName: String, existingKeys: Set<String>): List<CompletionItem> {
-        val metadata = bundledMetadata ?: return emptyList()
+    fun getParameterCompletions(
+        stepName: String,
+        existingKeys: Set<String>,
+        metadata: BundledJenkinsMetadata,
+    ): List<CompletionItem> {
         val step = metadata.getStep(stepName) ?: return emptyList()
 
         return step.parameters

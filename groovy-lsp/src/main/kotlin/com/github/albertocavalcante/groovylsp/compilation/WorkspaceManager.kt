@@ -178,4 +178,9 @@ class WorkspaceManager {
      */
     fun getJenkinsGlobalVariables(): List<com.github.albertocavalcante.groovyjenkins.GlobalVariable> =
         jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
+
+    /**
+     * Gets combined Jenkins metadata (steps, globals) including scanned plugins.
+     */
+    fun getAllJenkinsMetadata() = jenkinsWorkspaceManager?.getAllMetadata()
 }

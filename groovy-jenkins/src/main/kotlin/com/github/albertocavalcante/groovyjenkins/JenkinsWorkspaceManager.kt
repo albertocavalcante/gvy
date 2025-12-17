@@ -107,4 +107,9 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
      * Gets global variables defined in the workspace (e.g. vars/ directory).
      */
     fun getGlobalVariables(): List<GlobalVariable> = varsProvider.getGlobalVariables()
+
+    /**
+     * Get combined metadata (bundled + dynamic) from context.
+     */
+    fun getAllMetadata() = jenkinsContext.getAllMetadata()
 }

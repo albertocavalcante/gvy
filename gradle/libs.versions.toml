@@ -37,6 +37,7 @@ openrewriteJgit = "1.3.0"
 mavenEmbedder = "3.9.11"
 mavenResolver = "1.9.25"
 javaparser = "3.27.1"
+flexmark = "0.64.8"
 
 [libraries]
 # Plugins (libraries for plugins block)
@@ -99,6 +100,9 @@ openrewrite-jgit = { module = "org.openrewrite.tools:jgit", version.ref = "openr
 
 # Java Source Parsing
 javaparser-core = { module = "com.github.javaparser:javaparser-core", version.ref = "javaparser" }
+
+# HTML to Markdown
+flexmark-html2md = { module = "com.vladsch.flexmark:flexmark-html2md-converter", version.ref = "flexmark" }
 
 # Maven Embedder (for programmatic dependency resolution)
 maven-embedder = { module = "org.apache.maven:maven-embedder", version.ref = "mavenEmbedder" }

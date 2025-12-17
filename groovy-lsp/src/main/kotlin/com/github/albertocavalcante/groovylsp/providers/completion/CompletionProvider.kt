@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.MarkupContent
 import org.slf4j.LoggerFactory
 
 /**
@@ -160,35 +161,58 @@ object CompletionProvider {
                 null -> {
                     /* No special context */
                     if (isJenkinsFile) {
-                        // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                        addJenkinsMapKeyCompletions(nodeAtCursor, astModel)
+                        val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
+                        if (metadata != null) {
+                            // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
+                            addJenkinsMapKeyCompletions(nodeAtCursor, astModel, metadata)
 
-                        // Suggest global variables from vars/ directory
-                        addJenkinsGlobalVariables(compilationService)
+                            // Suggest global variables from vars/ directory and plugins
+                            addJenkinsGlobalVariables(metadata, compilationService)
+                        }
                     }
                 }
             }
         }
     }
 
-    private fun CompletionsBuilder.addJenkinsGlobalVariables(compilationService: GroovyCompilationService) {
-        val vars = compilationService.workspaceManager.getJenkinsGlobalVariables()
-        vars.forEach { globalVar ->
+    private fun CompletionsBuilder.addJenkinsGlobalVariables(
+        metadata: com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata,
+        compilationService: GroovyCompilationService,
+    ) {
+        // 1. Add global variables from bundled plugin metadata
+        val bundledCompletions = JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
+        bundledCompletions.forEach { item ->
+            val docString = when {
+                item.documentation?.isRight == true -> (item.documentation.right as? MarkupContent)?.value
+                item.documentation?.isLeft == true -> item.documentation.left
+                else -> null
+            } ?: item.detail
+
+            variable(
+                name = item.label,
+                type = item.detail?.substringAfterLast('.') ?: "Object",
+                doc = docString ?: "Jenkins global variable",
+            )
+        }
+
+        // 2. Add global variables from workspace vars/ directory
+        // TODO: Consider caching these completions if performance becomes an issue
+        val varsGlobals = compilationService.workspaceManager.getJenkinsGlobalVariables()
+        varsGlobals.forEach { globalVar ->
             variable(
                 name = globalVar.name,
-                // We don't know the exact type without deeper analysis, usually it's a script/singleton
-                type = "Object",
-                doc = "Jenkins Global Variable: ${globalVar.name}\n${globalVar.documentation}",
+                type = "Closure",
+                doc = globalVar.documentation.ifEmpty {
+                    "Shared library global variable from vars/${globalVar.name}.groovy"
+                },
             )
-
-            // Also suggest 'call' method if present implicitly?
-            // For now, simpler is better. The variable itself is callable.
         }
     }
 
     private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
         nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
         astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        metadata: com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata,
     ) {
         val methodCall = findEnclosingMethodCall(nodeAtCursor, astModel)
         val callName = methodCall?.methodAsString ?: return
@@ -205,11 +229,12 @@ object CompletionProvider {
             }
         }
 
-        val bundledParamCompletions = JenkinsStepCompletionProvider.getBundledParameterCompletions(
+        val bundledParamCompletions = JenkinsStepCompletionProvider.getParameterCompletions(
             callName,
             existingKeys,
+            metadata,
         )
-        bundledParamCompletions.forEach { add(it) }
+        bundledParamCompletions.forEach(::add)
     }
 
     private fun findEnclosingMethodCall(

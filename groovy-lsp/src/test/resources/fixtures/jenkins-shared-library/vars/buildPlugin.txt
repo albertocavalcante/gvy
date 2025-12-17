@@ -1,0 +1,9 @@
+<p>Builds a Jenkins plugin using Maven.</p>
+<p>
+    <b>Parameters:</b>
+    <ul>
+        <li><code>forkCount</code> - Number of parallel forks (default: 2)</li>
+        <li><code>skipTests</code> - Skip test execution (default: false)</li>
+    </ul>
+</p>
+<p>See <a href="https://github.com/jenkinsci/plugin-pom">plugin-pom</a> for details.</p>

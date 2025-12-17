@@ -1,0 +1,16 @@
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                buildPlugin()
+                deployApp(env: 'staging')
+            }
+        }
+        stage('Test') {
+            steps {
+                infra.checkoutSCM()
+            }
+        }
+    }
+}

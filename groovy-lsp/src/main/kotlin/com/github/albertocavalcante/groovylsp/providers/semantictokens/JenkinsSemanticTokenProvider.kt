@@ -63,9 +63,15 @@ object JenkinsSemanticTokenProvider {
      * @param astModel Parsed AST model
      * @param uri Document URI
      * @param isJenkinsFile Whether this is a Jenkins file
+     * @param varsNames Names of global variables from vars/ directory (for highlighting)
      * @return List of semantic tokens for Jenkins blocks
      */
-    fun getSemanticTokens(astModel: GroovyAstModel, uri: URI, isJenkinsFile: Boolean): List<SemanticToken> {
+    fun getSemanticTokens(
+        astModel: GroovyAstModel,
+        uri: URI,
+        isJenkinsFile: Boolean,
+        varsNames: Set<String> = emptySet(),
+    ): List<SemanticToken> {
         if (!isJenkinsFile) {
             return emptyList()
         }
@@ -77,10 +83,10 @@ object JenkinsSemanticTokenProvider {
 
             allNodes.filterIsInstance<MethodCallExpression>().forEach { methodCall ->
                 val methodName = methodCall.methodAsString ?: return@forEach
-                val tokenType = getTokenTypeForMethod(methodName)
 
-                getTokenTypeForMethod(methodName)?.let { tokenType ->
-                    // Get the method name position (not the whole expression)
+                // First check if it's a built-in Jenkins block
+                val builtInTokenType = getTokenTypeForMethod(methodName)
+                if (builtInTokenType != null) {
                     val methodNode = methodCall.method
                     if (methodNode.lineNumber > 0) {
                         tokens.add(
@@ -88,7 +94,23 @@ object JenkinsSemanticTokenProvider {
                                 line = methodNode.lineNumber - 1,
                                 startChar = methodNode.columnNumber - 1,
                                 length = methodName.length,
-                                tokenType = tokenType,
+                                tokenType = builtInTokenType,
+                            ),
+                        )
+                    }
+                    return@forEach
+                }
+
+                // Then check if it's a vars/ global variable call
+                if (methodName in varsNames) {
+                    val methodNode = methodCall.method
+                    if (methodNode.lineNumber > 0) {
+                        tokens.add(
+                            SemanticToken(
+                                line = methodNode.lineNumber - 1,
+                                startChar = methodNode.columnNumber - 1,
+                                length = methodName.length,
+                                tokenType = TokenTypes.FUNCTION,
                             ),
                         )
                     }

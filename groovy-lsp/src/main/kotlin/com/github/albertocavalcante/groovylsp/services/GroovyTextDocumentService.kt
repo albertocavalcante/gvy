@@ -277,8 +277,13 @@ class GroovyTextDocumentService(
 
             val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
             val jenkinsCompletions = if (isJenkinsFile) {
-                JenkinsStepCompletionProvider.getBundledStepCompletions() +
-                    JenkinsStepCompletionProvider.getBundledGlobalVariableCompletions()
+                val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
+                if (metadata != null) {
+                    JenkinsStepCompletionProvider.getStepCompletions(metadata) +
+                        JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
+                } else {
+                    emptyList()
+                }
             } else {
                 emptyList()
             }
@@ -506,12 +511,17 @@ class GroovyTextDocumentService(
             // Check if this is a Jenkins file
             val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
 
-            // Get Jenkins-specific tokens
-            // Get Jenkins-specific tokens
+            // Get vars/ global variable names for semantic highlighting
+            val varsNames = compilationService.workspaceManager.getJenkinsGlobalVariables()
+                .map { it.name }
+                .toSet()
+
+            // Get Jenkins-specific tokens (built-in blocks + vars/ globals)
             val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(
                 astModel,
                 uri,
                 isJenkinsFile,
+                varsNames,
             )
 
             // TODO: Add general Groovy syntax tokens (keywords, operators, literals)

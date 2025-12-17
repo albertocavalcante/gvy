@@ -1,0 +1,3 @@
+<p>Deploys the application to the specified environment.</p>
+<p><b>Required parameter:</b> <code>env</code> - target environment (staging, production)</p>
+<p><b>Optional:</b> <code>dryRun</code> - simulate deployment without executing</p>

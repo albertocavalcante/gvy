@@ -1,7 +1,6 @@
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlin.serialization)
-    groovy
 }
 
 dependencies {
@@ -17,6 +16,9 @@ dependencies {
 
     // ClassGraph for scanning plugin JARs
     implementation(libs.classgraph)
+
+    // HTML to Markdown conversion for vars documentation
+    implementation(libs.flexmark.html2md)
 
     api(project(":groovy-gdsl"))
     api(project(":groovy-build-tool"))
