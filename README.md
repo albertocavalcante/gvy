@@ -40,6 +40,10 @@ We target **LSP Specification 3.17** and use `lsp4j` 0.24.0.
 | `textDocument/foldingRange` | Folding | ⏳ | Planned |
 | `textDocument/implementation` | Implementation | ⏳ | Planned |
 
+## Framework Support
+
+- Spock: `docs/SPOCK_SUPPORT.md` (design + landing plan)
+
 ## Requirements
 
 - Java 17 or higher
