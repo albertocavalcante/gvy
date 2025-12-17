@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.2...v0.3.3) (2025-12-17)
+
+
+### Bug Fixes
+
+* **deps:** update mavenembedder to v3.9.12 ([#189](https://github.com/albertocavalcante/groovy-lsp/issues/189)) ([8182094](https://github.com/albertocavalcante/groovy-lsp/commit/81820946d9ec4173ee014987f365bfb78f2830d1))
+
+
+### Performance Improvements
+
+* **codenarc:** cache ruleset files and speed up tests ([#194](https://github.com/albertocavalcante/groovy-lsp/issues/194)) ([8eb6de9](https://github.com/albertocavalcante/groovy-lsp/commit/8eb6de95c88762f020f5a7d8b7279450a0ef814b))
+
 ## [0.3.2](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.1...v0.3.2) (2025-12-17)
 
 
