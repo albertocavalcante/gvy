@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.2](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.1...v0.3.2) (2025-12-17)
+
+
+### Features
+
+* implement Flow-based diagnostic provider architecture ([#191](https://github.com/albertocavalcante/groovy-lsp/issues/191)) ([0d5ea82](https://github.com/albertocavalcante/groovy-lsp/commit/0d5ea823b9cdae4e5509a73484e846d7002add15))
+* Jenkins semantic tokens for enhanced syntax highlighting ([#184](https://github.com/albertocavalcante/groovy-lsp/issues/184)) ([55a003c](https://github.com/albertocavalcante/groovy-lsp/commit/55a003c45843c384a69433cfaf475a527057761e))
+* **jenkins:** enhanced vars/ support with semantic tokens and hover docs ([#190](https://github.com/albertocavalcante/groovy-lsp/issues/190)) ([f335ab6](https://github.com/albertocavalcante/groovy-lsp/commit/f335ab6a3644862cf8a9faae466bd692309547ee))
+* **jenkins:** implement layered plugin discovery ([#188](https://github.com/albertocavalcante/groovy-lsp/issues/188)) ([bf84cc9](https://github.com/albertocavalcante/groovy-lsp/commit/bf84cc954df06985481434a2733a9e839e79c87d))
+
 ## [0.3.1](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.0...v0.3.1) (2025-12-16)
 
 
