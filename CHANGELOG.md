@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.3...v0.3.4) (2025-12-17)
+
+
+### Features
+
+* add exponential backoff retry for Gradle lock timeout ([#198](https://github.com/albertocavalcante/groovy-lsp/issues/198)) ([876fb3e](https://github.com/albertocavalcante/groovy-lsp/commit/876fb3e8a6bf8a827d4dd219b4073bc7157e3352))
+* **jenkins:** improve vars completion and definition behavior ([#197](https://github.com/albertocavalcante/groovy-lsp/issues/197)) ([37ffa9e](https://github.com/albertocavalcante/groovy-lsp/commit/37ffa9eaa0e109ecbbf520a48602bc104b3c9ec0))
+
 ## [0.3.3](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.2...v0.3.3) (2025-12-17)
 
 
