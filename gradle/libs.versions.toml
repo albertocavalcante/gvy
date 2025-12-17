@@ -5,7 +5,7 @@ spotless = "8.1.0"
 kover = "0.9.4"
 sonarqube = "7.2.1.6560"
 shadow = "9.3.0"
-gitHooks = "2.1.5"
+gitHooks = "2.1.6"
 jmh = "0.7.3"
 
 groovy = "4.0.29"
