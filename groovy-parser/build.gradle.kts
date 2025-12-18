@@ -13,9 +13,11 @@ java {
 }
 
 dependencies {
+    implementation(project(":groovy-common"))
     api(libs.groovy.core)
     implementation(libs.groovy.macro)
 
+    implementation(libs.arrow.core)
     implementation(libs.kotlin.collections.immutable)
     implementation(libs.slf4j.api)
 

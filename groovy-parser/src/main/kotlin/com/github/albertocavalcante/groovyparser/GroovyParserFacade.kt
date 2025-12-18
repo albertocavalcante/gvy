@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -47,6 +48,8 @@ class GroovyParserFacade {
             logger.debug("Compilation failed for ${request.uri}: ${e.message}")
         }
 
+        val tokenIndex = GroovyTokenIndex.build(request.content)
+
         val ast = extractAst(compilationUnit)
         val diagnostics = ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates)
 
@@ -80,6 +83,7 @@ class GroovyParserFacade {
             symbolTable = symbolTable,
             astVisitor = astVisitor,
             recursiveVisitor = recursiveVisitor,
+            tokenIndex = tokenIndex,
         )
     }
 

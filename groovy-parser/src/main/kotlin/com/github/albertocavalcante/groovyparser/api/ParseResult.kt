@@ -16,6 +16,14 @@ data class ParseResult(
     val sourceUnit: SourceUnit,
     val diagnostics: List<ParserDiagnostic>,
     val symbolTable: SymbolTable,
+    /**
+     * Token classification index for determining whether a given offset is within a comment,
+     * string literal, or GString.
+     *
+     * May be `null` for backward compatibility when token classification information
+     * is not available or not required by the caller.
+     */
+    val tokenIndex: com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex? = null,
     @Deprecated("Use `astModel` instead", replaceWith = ReplaceWith("astModel"))
     val astVisitor: com.github.albertocavalcante.groovyparser.ast.AstVisitor,
     val recursiveVisitor: RecursiveAstVisitor? = null,
