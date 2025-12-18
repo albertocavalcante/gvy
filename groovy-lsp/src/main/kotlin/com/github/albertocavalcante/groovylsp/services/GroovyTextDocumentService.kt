@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.services
 import com.github.albertocavalcante.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
+import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -173,6 +174,20 @@ class GroovyTextDocumentService(
     }
 
     private fun List<Diagnostic>.containsErrors(): Boolean = any { it.severity == DiagnosticSeverity.Error }
+
+    private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
+        compilationService.ensureCompiled(uri)?.let { return it }
+
+        // NOTE: Heuristic / tradeoff:
+        // The language client can send definition/references requests immediately after didOpen/didChange.
+        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
+        // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
+        // to make these requests deterministic and avoid flaky e2e behavior.
+        // TODO: Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
+        // for open documents.
+        val content = documentProvider.get(uri) ?: return null
+        return compilationService.compileAsync(coroutineScope, uri, content).await()
+    }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
         logger.info("Document opened: ${params.textDocument.uri}")
@@ -369,7 +384,7 @@ class GroovyTextDocumentService(
             val uri = java.net.URI.create(params.textDocument.uri)
 
             // CRITICAL: Ensure compilation completes before proceeding
-            val compilationResult = compilationService.ensureCompiled(uri)
+            val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide definitions")
                 return@future Either.forLeft(emptyList())
@@ -416,6 +431,13 @@ class GroovyTextDocumentService(
         )
 
         try {
+            val uri = java.net.URI.create(params.textDocument.uri)
+            val compilationResult = ensureCompiledOrCompileNow(uri)
+            if (compilationResult == null) {
+                logger.warn("Document $uri not compiled, cannot provide references")
+                return@future emptyList()
+            }
+
             val referenceProvider = ReferenceProvider(compilationService)
             val locations = referenceProvider.provideReferences(
                 params.textDocument.uri,
