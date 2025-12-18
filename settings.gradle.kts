@@ -60,6 +60,7 @@ rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
 include("groovy-parser")
+include("groovy-common")
 include("groovy-lsp")
 include("tests")
 include("groovy-diagnostics:api")
