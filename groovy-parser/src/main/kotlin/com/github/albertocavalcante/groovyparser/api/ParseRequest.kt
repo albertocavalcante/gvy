@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.api
 
+import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Path
 
@@ -13,6 +14,16 @@ data class ParseRequest(
     val sourceRoots: List<Path> = emptyList(),
     val workspaceSources: List<Path> = emptyList(),
     val locatorCandidates: Set<String> = emptySet(),
+    /**
+     * Groovy compilation phase to compile to.
+     *
+     * Default is [Phases.CANONICALIZATION] to preserve current behavior.
+     *
+     * This can be used to analyze source structure that may be rewritten by later compiler phases or AST transforms.
+     * Example: Spock feature blocks are represented as Groovy statement labels and can be best observed before
+     * `SEMANTIC_ANALYSIS` transforms run.
+     */
+    val compilePhase: Int = Phases.CANONICALIZATION,
     /**
      * Feature flag to enable experimental recursive visitor alongside legacy delegate visitor.
      *

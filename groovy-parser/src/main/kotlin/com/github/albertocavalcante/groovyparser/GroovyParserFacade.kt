@@ -13,7 +13,6 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
@@ -43,7 +42,7 @@ class GroovyParserFacade {
         addWorkspaceSources(compilationUnit, request)
 
         try {
-            compilationUnit.compile(Phases.CANONICALIZATION)
+            compilationUnit.compile(request.compilePhase)
         } catch (e: CompilationFailedException) {
             logger.debug("Compilation failed for ${request.uri}: ${e.message}")
         }
