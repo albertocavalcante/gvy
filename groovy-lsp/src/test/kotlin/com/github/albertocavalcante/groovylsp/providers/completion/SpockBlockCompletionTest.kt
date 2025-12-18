@@ -89,6 +89,71 @@ class SpockBlockCompletionTest {
     }
 
     @Test
+    fun `does not suggest spock block labels when spock import is only in a comment`() = runTest {
+        val compilationService = GroovyCompilationService()
+
+        val (content, line, character) =
+            extractCaret(
+                """
+                /*
+                import spock.lang.Specification
+                */
+                class Foo {
+                    def method() {
+                        /*caret*/
+                    }
+                }
+                """.trimIndent(),
+            )
+
+        val uri = URI.create("file:///src/main/groovy/com/example/Foo.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri.toString(),
+            line,
+            character,
+            compilationService,
+            content,
+        )
+
+        assertFalse(completions.any { it.label == "given:" })
+        assertFalse(completions.any { it.label == "where:" })
+    }
+
+    @Test
+    fun `does not suggest spock block labels when file name ends with Spec groovy but class is not a spec`() = runTest {
+        val compilationService = GroovyCompilationService()
+
+        val (content, line, character) =
+            extractCaret(
+                """
+                class FooSpec {
+                    def feature() {
+                        /*caret*/
+                    }
+                }
+                """.trimIndent(),
+            )
+
+        val uri = URI.create("file:///src/test/groovy/com/example/FooSpec.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri.toString(),
+            line,
+            character,
+            compilationService,
+            content,
+        )
+
+        assertFalse(completions.any { it.label == "given:" })
+        assertFalse(completions.any { it.label == "where:" })
+    }
+
+    @Test
     fun `does not suggest spock block labels when cursor is mid line`() = runTest {
         val compilationService = GroovyCompilationService()
 

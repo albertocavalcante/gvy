@@ -46,7 +46,6 @@ object CompletionProvider {
     ): List<CompletionItem> {
         return try {
             val uriObj = java.net.URI.create(uri)
-            val isSpockSpec = SpockDetector.isLikelySpockSpec(uriObj, content)
 
             // Determine if we are inserting into an existing identifier
             val isClean = isCleanInsertion(content, line, character)
@@ -54,21 +53,24 @@ object CompletionProvider {
             // Strategy 1: Simple insertion (e.g. "myList.BrazilWorldCup2026")
             val content1 = insertDummyIdentifier(content, line, character, withDef = false)
             val result1 = compilationService.compileTransient(uriObj, content1)
+            val ast1 = result1.ast
+            val astModel1 = result1.astModel
 
             // If simple insertion failed and it was a clean insertion, try adding 'def'
             // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.
             if (isClean && !result1.isSuccessful) {
                 val content2 = insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
+                val ast2 = result2.ast
+                val astModel2 = result2.astModel
 
                 // If 'def' strategy produced a better result (successful or fewer errors), use it
                 if (result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size) {
-                    val ast = result2.ast
-                    val astModel = result2.astModel
-                    if (ast != null) {
+                    if (ast2 != null) {
+                        val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result2)
                         return buildCompletionsList(
-                            ast = ast,
-                            astModel = astModel,
+                            ast = ast2,
+                            astModel = astModel2,
                             line = line,
                             character = character,
                             compilationService = compilationService,
@@ -81,15 +83,13 @@ object CompletionProvider {
             }
 
             // Fallback to result1 (simple insertion)
-            val ast = result1.ast
-            val astModel = result1.astModel
-
-            if (ast == null) {
+            if (ast1 == null) {
                 emptyList()
             } else {
+                val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result1)
                 buildCompletionsList(
-                    ast = ast,
-                    astModel = astModel,
+                    ast = ast1,
+                    astModel = astModel1,
                     line = line,
                     character = character,
                     compilationService = compilationService,
