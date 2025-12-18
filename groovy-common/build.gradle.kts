@@ -17,7 +17,6 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlin.coroutines.test)
     testRuntimeOnly(libs.junit.platform.launcher)
-
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)
 }

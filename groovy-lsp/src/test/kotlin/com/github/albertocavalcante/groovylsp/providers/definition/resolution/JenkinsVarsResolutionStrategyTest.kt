@@ -46,7 +46,7 @@ class JenkinsVarsResolutionStrategyTest {
         val result = runBlocking { strategy.resolve(context) }
         result.fold(
             ifLeft = { error ->
-                throw AssertionError("Expected Right, got Left: ${error.strategy} - ${error.reason}")
+                throw AssertionError("Expected Right, got Left: ${error.source} - ${error.reason}")
             },
             ifRight = { definition ->
                 assertTrue(definition is DefinitionResolver.DefinitionResult.Source)
@@ -73,7 +73,7 @@ class JenkinsVarsResolutionStrategyTest {
         val result = runBlocking { strategy.resolve(context) }
         result.fold(
             ifLeft = { error ->
-                assertEquals("JenkinsVars", error.strategy)
+                assertEquals("JenkinsVars", error.source)
             },
             ifRight = { definition ->
                 throw AssertionError("Expected Left, got Right: $definition")
@@ -121,7 +121,7 @@ class JenkinsVarsResolutionStrategyTest {
         val result = runBlocking { strategy.resolve(context) }
         result.fold(
             ifLeft = { error ->
-                throw AssertionError("Expected Right, got Left: ${error.strategy} - ${error.reason}")
+                throw AssertionError("Expected Right, got Left: ${error.source} - ${error.reason}")
             },
             ifRight = { definition ->
                 assertTrue(definition is DefinitionResolver.DefinitionResult.Source)

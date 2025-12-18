@@ -52,19 +52,12 @@ typealias DomainResult<T> = Either<DomainError, T>
 fun <T> T.success(): DomainResult<T> = this.right()
 
 /**
- * Create a failure result from an error message.
+ * Create a failure result from an error message, with an optional cause.
  *
  * ```kotlin
  * val result: DomainResult<Nothing> = "Not found".failure("UserService")
+ * val resultWithCause = "Failed to parse".failure("Parser", exception)
  * ```
  */
-fun String.failure(source: String = "unknown"): DomainResult<Nothing> = DomainError(this, source).left()
-
-/**
- * Create a failure result from an error message with a cause.
- *
- * ```kotlin
- * val result = "Failed to parse".failure("Parser", exception)
- * ```
- */
-fun String.failure(source: String, cause: Throwable): DomainResult<Nothing> = DomainError(this, source, cause).left()
+fun String.failure(source: String = "unknown", cause: Throwable? = null): DomainResult<Nothing> =
+    DomainError(this, source, cause).left()

@@ -89,6 +89,7 @@ dependencies {
     detektPlugins(libs.detekt.formatting)
 
     // Local Modules
+    implementation(project(":groovy-common"))
     implementation(project(":groovy-formatter"))
     implementation(project(":groovy-parser"))
     implementation(project(":groovy-diagnostics:api"))

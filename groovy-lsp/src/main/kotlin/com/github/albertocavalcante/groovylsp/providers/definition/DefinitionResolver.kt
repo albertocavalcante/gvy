@@ -189,7 +189,7 @@ class DefinitionResolver(
         val result = resolutionPipeline.resolve(context)
 
         return result.getOrElse { error ->
-            logger.debug("Resolution failed [{}]: {}", error.strategy, error.reason)
+            logger.debug("Resolution failed [{}]: {}", error.source, error.reason)
             null
         }
     }

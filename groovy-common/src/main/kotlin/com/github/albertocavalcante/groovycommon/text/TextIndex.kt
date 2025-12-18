@@ -17,19 +17,22 @@ object TextIndex {
      * @return Absolute offset into content, clamped to valid range
      */
     fun offsetAt(content: String, line: Int, character: Int): Int {
-        val lines = content.split('\n')
         if (line < 0) return 0
-        if (line >= lines.size) return content.length
 
-        // Sum lengths of all lines before target line (including newlines)
-        var offset = 0
-        for (i in 0 until line) {
-            offset += lines[i].length + 1 // +1 for '\n'
+        // Find start of target line without allocating a list of all lines
+        var lineStartOffset = 0
+        repeat(line) {
+            lineStartOffset = content.indexOf('\n', lineStartOffset) + 1
+            if (lineStartOffset == 0) return content.length // indexOf returned -1, line beyond end
         }
 
-        // Add character offset within target line, clamped to line length
-        val safeChar = character.coerceIn(0, lines[line].length)
-        return (offset + safeChar).coerceIn(0, content.length)
+        if (lineStartOffset > content.length) return content.length
+
+        // Find end of target line to determine line length
+        val lineEndOffset = content.indexOf('\n', lineStartOffset).let { if (it < 0) content.length else it }
+        val lineLength = lineEndOffset - lineStartOffset
+        val safeChar = character.coerceIn(0, lineLength)
+        return (lineStartOffset + safeChar).coerceIn(0, content.length)
     }
 
     /**
@@ -82,8 +85,19 @@ object TextIndex {
      * @return The line text, or empty string if line is out of bounds
      */
     fun lineAt(content: String, line: Int): String {
-        val lines = content.split('\n')
-        return if (line in lines.indices) lines[line] else ""
+        if (line < 0) return ""
+
+        // Find start of target line without allocating a list of all lines
+        var lineStart = 0
+        repeat(line) {
+            lineStart = content.indexOf('\n', lineStart) + 1
+            if (lineStart == 0) return "" // indexOf was -1, line beyond end
+        }
+
+        if (lineStart > content.length) return ""
+
+        val lineEnd = content.indexOf('\n', lineStart)
+        return if (lineEnd < 0) content.substring(lineStart) else content.substring(lineStart, lineEnd)
     }
 
     /**

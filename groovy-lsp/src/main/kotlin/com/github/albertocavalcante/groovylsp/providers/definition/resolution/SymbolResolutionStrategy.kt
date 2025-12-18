@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import com.github.albertocavalcante.groovycommon.functional.DomainError
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import kotlinx.coroutines.CancellationException
@@ -11,7 +12,10 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
- * Error type for symbol resolution failures.
+ * Type alias for resolution-specific errors.
+ *
+ * Uses [DomainError] from groovy-common for consistent error handling across modules.
+ * The `source` field of [DomainError] is used to track which strategy produced the error.
  *
  * Using Arrow's Either<ResolutionError, DefinitionResult> provides:
  * - Industry-standard functional error handling
@@ -20,12 +24,7 @@ import java.net.URI
  *
  * @see SymbolResolutionStrategy for usage in resolution pipelines
  */
-data class ResolutionError(
-    /** Human-readable description of why resolution failed */
-    val reason: String,
-    /** Strategy that produced this error (for debugging) */
-    val strategy: String = "unknown",
-)
+typealias ResolutionError = DomainError
 
 /** Type alias for resolution results using Arrow Either */
 typealias ResolutionResult = Either<ResolutionError, DefinitionResolver.DefinitionResult>
