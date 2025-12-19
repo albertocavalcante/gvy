@@ -16,7 +16,7 @@ on:
           - 'self-hosted'
           - 'magalu'
           - 'cloud'
-        default: 'self-hosted'
+        default: 'magalu'
       disable_scan:
         description: Disable Gradle build scan
         required: false
@@ -40,11 +40,11 @@ concurrency:
 # ============================================================================
 # Priority: workflow_dispatch input > CI_RUNNER_LABEL repo variable > self-hosted
 #
-# Default: self-hosted runner (faster, no GitHub Actions minutes cost)
+# Default: magalu runner (ephemeral, no GitHub Actions minutes cost)
 #
 # Runner options:
-#   - self-hosted: Local runner (default, fastest, no cost)
-#   - magalu: Magalu Cloud ephemeral runner (use runner-provision.yml first!)
+#   - self-hosted: Local runner (fastest, no cost)
+#   - magalu: Magalu Cloud ephemeral runner (default, use runner-provision.yml first!)
 #   - cloud: GitHub-hosted runners (macos-15 for PRs, matrix for main)
 #
 # To switch runners permanently:
@@ -71,6 +71,9 @@ jobs:
     outputs:
       run_main_ci: ${{ steps.filter.outputs.run_main_ci }}
     steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
@@ -106,7 +109,7 @@ jobs:
         #   - cloud: GitHub-hosted (macos-15 for PRs, multi-platform for main)
         # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["self-hosted"]' ) }}
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu' || github.event_name == 'push') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["magalu"]' ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
         exclude:
           - os: ubuntu-24.04
