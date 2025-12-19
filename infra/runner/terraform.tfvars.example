@@ -1,0 +1,7 @@
+# Sensitive Variables (Do not commit actual values)
+github_token = "ghp_YOUR_GITHUB_PAT"
+mgc_api_key  = "YOUR_MAGALU_CLOUD_API_KEY"
+
+# Optional Configuration
+# github_repo_url = "https://github.com/albertocavalcante/groovy-lsp"
+# machine_type    = "BV1-1-40"

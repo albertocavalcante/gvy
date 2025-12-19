@@ -1,0 +1,56 @@
+name: 'Runner Status'
+description: 'Check, wait for, or verify GitHub Actions self-hosted runner status'
+author: 'albertocavalcante'
+
+inputs:
+  mode:
+    description: |
+      Operation mode:
+        - check: Single check, returns has_runners boolean and runner_count
+        - wait-online: Poll until a runner with label is online (fails on timeout)
+        - verify-absent: Check that no runners with label exist (warns but succeeds)
+    required: true
+  label:
+    description: 'Runner label to check/wait for'
+    required: true
+  github-token:
+    description: 'GitHub PAT with repo scope for runner API access'
+    required: true
+  max-wait-minutes:
+    description: 'Maximum time to wait (only for wait-online mode)'
+    required: false
+    default: '10'
+  poll-interval-seconds:
+    description: 'Interval between API calls (only for wait-online mode)'
+    required: false
+    default: '10'
+
+outputs:
+  # Common outputs
+  runner-count:
+    description: 'Number of runners found with the specified label'
+    value: ${{ steps.run.outputs.runner_count }}
+  has-runners:
+    description: 'Whether any runners with the label exist (true/false)'
+    value: ${{ steps.run.outputs.has_runners }}
+  # wait-online specific outputs
+  runner-name:
+    description: 'Name of the runner that came online (wait-online mode)'
+    value: ${{ steps.run.outputs.runner_name }}
+  runner-status:
+    description: 'Status of the runner (wait-online mode)'
+    value: ${{ steps.run.outputs.runner_status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run runner status check
+      id: run
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        MODE: ${{ inputs.mode }}
+        LABEL_NAME: ${{ inputs.label }}
+        MAX_WAIT_MINUTES: ${{ inputs.max-wait-minutes }}
+        POLL_INTERVAL: ${{ inputs.poll-interval-seconds }}
+      run: ${{ github.action_path }}/runner-status.sh
