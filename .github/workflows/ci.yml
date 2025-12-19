@@ -14,6 +14,7 @@ on:
         type: choice
         options:
           - 'self-hosted'
+          - 'magalu'
           - 'cloud'
         default: 'self-hosted'
       disable_scan:
@@ -41,16 +42,22 @@ concurrency:
 #
 # Default: self-hosted runner (faster, no GitHub Actions minutes cost)
 #
-# To switch to cloud runners permanently:
+# Runner options:
+#   - self-hosted: Local runner (default, fastest, no cost)
+#   - magalu: Magalu Cloud ephemeral runner (use runner-provision.yml first!)
+#   - cloud: GitHub-hosted runners (macos-15 for PRs, matrix for main)
+#
+# To switch runners permanently:
 #   Settings → Secrets and variables → Actions → Variables → New repository variable
-#   Name: CI_RUNNER_LABEL  Value: cloud
+#   Name: CI_RUNNER_LABEL  Value: cloud (or magalu)
 #
-# To switch to cloud for a single run:
-#   Actions → CI → Run workflow → runner_label: cloud
+# To switch for a single run:
+#   Actions → CI → Run workflow → runner_label: <choice>
 #
-# Cloud runner options (when CI_RUNNER_LABEL=cloud):
-#   - PRs: macos-15 (stable Arm64)
-#   - Main: macos-15 + ubuntu-24.04 matrix
+# Magalu Cloud runners:
+#   1. Run "Infra: Provision Magalu Runner" workflow first
+#   2. Then run CI with runner_label: magalu
+#   3. Run "Infra: Destroy Magalu Runner" when done (or wait for nightly cleanup)
 #
 # NOTE: Avoiding ubuntu-latest due to stability issues causing builds to hang.
 # See: https://github.com/actions/runner-images/issues/13182
@@ -78,25 +85,32 @@ jobs:
               - '!infra/**'
               - '!*.md'
               - '!docs/**'
-              - '!.github/workflows/runner-infra.yml'
+              - '!.github/workflows/runner-*.yml'
 
   build:
     name: Build and Test
     needs: check-paths
     if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 45
-    runs-on: ${{ matrix.os }}
+    # For Magalu runners, we need all three labels; for others, use the matrix value directly
+    runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os }}
     permissions:
       checks: write
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        # Default: self-hosted (single runner, Java 17 only)
-        # Cloud (opt-in): macos-15 for PRs, multi-platform for main pushes
+        # Runner selection:
+        #   - self-hosted (default): Local runner, Java 17 only
+        #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
+        #   - cloud: GitHub-hosted (macos-15 for PRs, multi-platform for main)
         # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["self-hosted"]' ) }}
+        os: ${{ fromJSON( 
+          (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' ||
+          (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || 
+          '["self-hosted"]' 
+        ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
         exclude:
           - os: ubuntu-24.04

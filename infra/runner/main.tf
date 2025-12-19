@@ -19,7 +19,8 @@ terraform {
 }
 
 provider "mgc" {
-  region = "br-ne1" // NorthEast 1
+  api_key = var.mgc_api_key
+  region  = "br-ne1" // NorthEast 1
 }
 
 module "runner" {
@@ -31,6 +32,7 @@ module "runner" {
   github_personal_access_token = var.github_token
   machine_type                 = var.machine_type
 
-  # Ephemeral labeling
-  runner_labels = ["self-hosted", "magalu", "groovy-lsp"]
+  # Labels for targeting from CI workflows
+  # NOTE: "self-hosted" is auto-added by GitHub and does not need to be specified here.
+  runner_labels = ["magalu", "groovy-lsp"]
 }

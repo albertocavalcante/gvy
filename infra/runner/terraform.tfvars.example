@@ -1,4 +1,6 @@
 # Sensitive Variables (Do not commit actual values)
+# IMPORTANT: When using a real terraform.tfvars file, ensure it is listed in .gitignore
+# (e.g. add 'terraform.tfvars' or '*.tfvars' to prevent accidental credential commits)
 github_token = "ghp_YOUR_GITHUB_PAT"
 mgc_api_key  = "YOUR_MAGALU_CLOUD_API_KEY"
 
