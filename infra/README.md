@@ -56,8 +56,57 @@ To run the Magalu Runner workflows, the following repository secrets must be set
 | Secret | Description |
 | :--- | :--- |
 | `TF_API_TOKEN` | Terraform Cloud User API Token (for state management) |
-| `GH_PAT_RUNNER` | GitHub Personal Access Token for runner registration. **Required scopes:** `repo` (for repo-level runners) or `admin:org` (for org-level runners). See [GitHub docs](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners#authentication-requirements). |
+| `GH_PAT_RUNNER` | GitHub Personal Access Token for runner registration |
 | `MGC_API_KEY` | Magalu Cloud API Key (for provisioning VMs) |
+
+### Creating the GitHub PAT (`GH_PAT_RUNNER`)
+
+GitHub does not support creating PATs via CLI for security reasons. Create one manually:
+
+1. Go to [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
+2. Click **"Generate new token (classic)"**
+3. Set a descriptive name (e.g., `groovy-lsp-runner`)
+4. Select scopes:
+   - `repo` — for repository-level runners
+   - `admin:org` — for organization-level runners (if applicable)
+5. Generate and copy the token
+6. Add to GitHub Secrets:
+   ```bash
+   gh secret set GH_PAT_RUNNER
+   # Paste token when prompted
+   ```
+
+### Creating the Magalu Cloud API Key (`MGC_API_KEY`)
+
+Use the MGC CLI to create an API key:
+
+```bash
+# 1. Login to Magalu Cloud (browser-based OAuth)
+mgc auth login
+
+# 2. Create an API key with required scopes for VM provisioning
+mgc auth api-key create --name="groovy-lsp-runner" \
+  --description="CI runner provisioning" \
+  --scopes='["virtual-machine.read", "virtual-machine.write", "network.read", "network.write"]'
+
+# Output will show: uuid: <ID>
+
+# 3. Get the full API key details using the UUID
+mgc auth api-key get <UUID>
+
+# Output includes:
+#   api_key: <THIS IS THE VALUE FOR MGC_API_KEY>
+#   key_pair_id: (for Object Storage, not needed here)
+#   key_pair_secret: (for Object Storage, not needed here)
+
+# 4. Copy the api_key value and add to GitHub Secrets
+gh secret set MGC_API_KEY
+# Paste the api_key value when prompted
+```
+
+> [!TIP]
+> Manage API keys: `mgc auth api-key list` | `mgc auth api-key revoke --id=<UUID>`
+
 
 ## GitHub Environments
 
