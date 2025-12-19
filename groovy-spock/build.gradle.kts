@@ -3,7 +3,9 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":groovy-common"))
     implementation(project(":groovy-parser"))
+    implementation(libs.slf4j.api)
 
     // Testing
     testImplementation(libs.kotlin.test)
