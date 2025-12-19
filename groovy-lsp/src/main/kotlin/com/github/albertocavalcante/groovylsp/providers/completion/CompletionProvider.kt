@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
 import com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext
 import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
+import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
@@ -77,6 +78,7 @@ object CompletionProvider {
                             uri = uriObj,
                             content = content,
                             isSpockSpec = isSpockSpec,
+                            tokenIndex = result2.tokenIndex,
                         )
                     }
                 }
@@ -96,6 +98,7 @@ object CompletionProvider {
                     uri = uriObj,
                     content = content,
                     isSpockSpec = isSpockSpec,
+                    tokenIndex = result1.tokenIndex,
                 )
             }
         } catch (e: CompilationFailedException) {
@@ -136,6 +139,7 @@ object CompletionProvider {
         return lines.joinToString("\n")
     }
 
+    @Suppress("LongParameterList") // TODO: Refactor to use a CompletionContext data class
     private fun buildCompletionsList(
         ast: org.codehaus.groovy.ast.ASTNode,
         astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
@@ -145,6 +149,7 @@ object CompletionProvider {
         uri: java.net.URI,
         content: String,
         isSpockSpec: Boolean,
+        tokenIndex: GroovyTokenIndex?,
     ): List<CompletionItem> {
         // Extract completion context
         val context = SymbolExtractor.extractCompletionSymbols(ast, line, character)
@@ -161,6 +166,7 @@ object CompletionProvider {
                 character = character,
                 isSpockSpec = isSpockSpec,
                 completionContext = completionContext,
+                tokenIndex = tokenIndex,
             )
 
             // Add local symbol completions
@@ -205,17 +211,22 @@ object CompletionProvider {
         }
     }
 
+    @Suppress("LongParameterList") // TODO: Refactor to use a CompletionContext data class
     private fun CompletionsBuilder.addSpockBlockLabelsIfApplicable(
         content: String,
         line: Int,
         character: Int,
         isSpockSpec: Boolean,
         completionContext: ContextType?,
+        tokenIndex: GroovyTokenIndex?,
     ) {
         if (!isSpockSpec) return
         if (completionContext != null) return
         if (!isLineIndentOnlyBeforeCursor(content, line, character)) return
-        if (isCursorInLikelyCommentOrString(content, line, character)) return
+
+        // Deterministic token-based suppression (replaces heuristic isCursorInLikelyCommentOrString)
+        val offset = offsetAt(content, content.split('\n'), line, character)
+        if (tokenIndex?.isInCommentOrString(offset) == true) return
 
         val labels = listOf(
             "given:" to "Spock setup block",
@@ -241,52 +252,12 @@ object CompletionProvider {
         }
     }
 
-    private fun isCursorInLikelyCommentOrString(content: String, line: Int, character: Int): Boolean {
-        val lines = content.split('\n')
-        if (line !in lines.indices) return false
-
-        val currentLine = lines[line]
-        val safeChar = character.coerceIn(0, currentLine.length)
-        val linePrefix = currentLine.substring(0, safeChar)
-
-        // NOTE: Heuristic / tradeoff:
-        // This is a fast, best-effort suppression to avoid offering block-label completions inside comments/strings.
-        // It is not a full Groovy lexer and may be fooled by comment/string delimiters inside other literals.
-        // TODO: Replace this with AST/token based context classification when we have a proper token stream.
-
-        // 1) Single-line comment.
-        if (linePrefix.contains("//")) return true
-
-        // 2) Block comment: if the last "/*" is after the last "*/" before the cursor, assume we're inside.
-        val offset = offsetAt(content, lines, line, safeChar)
-        val beforeCursor = content.substring(0, offset)
-        if (beforeCursor.lastIndexOf("/*") > beforeCursor.lastIndexOf("*/")) return true
-
-        // 3) Multiline strings: basic triple-quote parity checks.
-        if ((countOccurrences(beforeCursor, "'''") % 2) == 1) return true
-        if ((countOccurrences(beforeCursor, "\"\"\"") % 2) == 1) return true
-
-        return false
-    }
-
     private fun offsetAt(content: String, lines: List<String>, line: Int, character: Int): Int {
         var offset = 0
         for (i in 0 until line) {
             offset += lines[i].length + 1 // + '\n'
         }
         return (offset + character).coerceIn(0, content.length)
-    }
-
-    private fun countOccurrences(haystack: String, needle: String): Int {
-        if (needle.isEmpty() || haystack.length < needle.length) return 0
-        var count = 0
-        var idx = 0
-        while (true) {
-            val found = haystack.indexOf(needle, idx)
-            if (found < 0) return count
-            count++
-            idx = found + needle.length
-        }
     }
 
     private fun isLineIndentOnlyBeforeCursor(content: String, line: Int, character: Int): Boolean {

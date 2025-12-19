@@ -130,6 +130,8 @@ class GroovyCompilationService {
 
     fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
 
+    fun getTokenIndex(uri: URI) = getParseResult(uri)?.tokenIndex
+
     fun getSymbolStorage(uri: URI): SymbolIndex? {
         symbolStorageCache.get(uri)?.let { return it }
         val visitor = getAstModel(uri) ?: return null
