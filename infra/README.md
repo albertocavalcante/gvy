@@ -87,7 +87,7 @@ mgc auth login
 # 2. Create an API key with required scopes for VM provisioning
 mgc auth api-key create --name="groovy-lsp-runner" \
   --description="CI runner provisioning" \
-  --scopes='["virtual-machine.read", "virtual-machine.write", "network.read", "network.write"]'
+  --scopes='["virtual-machine.read", "virtual-machine.write", "network.read", "network.write", "gdb:ssh-pkey-r", "gdb:ssh-pkey-w"]'
 
 # Output will show: uuid: <ID>
 

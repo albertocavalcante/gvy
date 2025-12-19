@@ -1,6 +1,3 @@
-# Output Values
-# Useful information about the provisioned runner infrastructure
-
 output "runner_config" {
   description = "Runner configuration summary"
   value = {
@@ -11,4 +8,14 @@ output "runner_config" {
     region       = var.mgc_region
     repo_url     = var.github_repo_url
   }
+}
+
+output "generated_ssh_private_key" {
+  value     = module.runner.generated_ssh_private_key
+  sensitive = true
+}
+
+output "runner_ipv4s" {
+  description = "Public IP addresses of the runners"
+  value       = module.runner.runner_public_ips
 }
