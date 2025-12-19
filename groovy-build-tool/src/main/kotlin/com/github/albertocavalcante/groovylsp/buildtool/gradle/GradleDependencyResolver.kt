@@ -76,6 +76,11 @@ class GradleDependencyResolver(
 
         val lastException = transientRetryResult.exceptionOrNull()
 
+        // Log the original failure before attempting fallback
+        if (lastException != null) {
+            logger.error("Initial Gradle resolution failed: ${lastException.message}", lastException)
+        }
+
         // Fall back to isolated Gradle user home for init script errors
         if (lastException != null && shouldRetryWithIsolatedGradleUserHome(lastException)) {
             val isolatedResult = tryWithIsolatedUserHome(projectDir)
@@ -138,6 +143,8 @@ class GradleDependencyResolver(
         val isolatedUserHome = isolatedGradleUserHomeDir()
         return runCatching {
             resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile())
+        }.onFailure { e ->
+            logger.error("Isolated Gradle user home retry also failed: ${e.message}", e)
         }.getOrNull()
     }
 
