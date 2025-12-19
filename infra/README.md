@@ -184,3 +184,129 @@ State is managed remotely via Terraform Cloud:
 - Organization: `alberto`
 - Workspace: `groovy-lsp-runner`
 
+## Local Development
+
+### Prerequisites
+
+1. **Export Terraform Cloud credentials** (for state access):
+   ```bash
+   export TF_CLOUD_ORGANIZATION="alberto"
+   export TF_WORKSPACE="groovy-lsp-runner"
+   export TF_TOKEN_app_terraform_io="<your-terraform-cloud-token>"
+   ```
+
+2. **Export cloud provider credentials**:
+   ```bash
+   export TF_VAR_mgc_api_key="<your-magalu-api-key>"
+   export TF_VAR_github_token="<your-github-pat>"
+   ```
+
+### Terraform Output Commands
+
+After running `terraform apply`, retrieve sensitive outputs:
+
+#### Get SSH Private Key
+```bash
+# Export SSH key to file (for connecting to runner)
+terraform output -raw generated_ssh_private_key > runner-key.pem
+
+# Set correct permissions
+chmod 600 runner-key.pem
+```
+
+#### Get Runner IP Addresses
+```bash
+# JSON format (required for list/tuple outputs)
+terraform output -json runner_ipv4s
+
+# Example output: ["201.23.15.34"]
+
+# Extract single IP for scripting
+terraform output -json runner_ipv4s | jq -r '.[0]'
+```
+
+#### Get Runner Configuration Summary
+```bash
+# View all runner configuration
+terraform output runner_config
+
+# Example output:
+# {
+#   count        = 1
+#   labels       = ["self-hosted", "magalu", "groovy-lsp"]
+#   machine_type = "BV1-1-40"
+#   name_prefix  = "groovy-lsp-ci"
+#   region       = "br-ne1"
+#   repo_url     = "https://github.com/albertocavalcante/groovy-lsp"
+# }
+```
+
+### Connect to Runner via SSH
+```bash
+# 1. Export SSH key (if not already done)
+terraform output -raw generated_ssh_private_key > runner-key.pem
+chmod 600 runner-key.pem
+
+# 2. Get runner IP
+RUNNER_IP=$(terraform output -json runner_ipv4s | jq -r '.[0]')
+
+# 3. Connect
+ssh -i runner-key.pem ubuntu@$RUNNER_IP
+```
+
+### Common Errors
+
+#### ❌ `Error: Output "runner_ipv4" not found`
+**Cause**: Output name mismatch. The correct output is `runner_ipv4s` (plural).
+```bash
+# Wrong
+terraform output -raw runner_ipv4
+
+# Correct
+terraform output -json runner_ipv4s
+```
+
+#### ❌ `Error: Unsupported value for raw output`
+**Cause**: The `-raw` flag only works for strings, not lists/tuples.
+```bash
+# Wrong (runner_ipv4s is a list)
+terraform output -raw runner_ipv4s
+
+# Correct
+terraform output -json runner_ipv4s
+```
+
+### Complete Local Workflow Example
+
+```bash
+# 1. Navigate to runner directory
+cd infra/runner
+
+# 2. Export credentials
+export TF_CLOUD_ORGANIZATION="alberto"
+export TF_WORKSPACE="groovy-lsp-runner"
+export TF_TOKEN_app_terraform_io="<your-tf-cloud-token>"
+export TF_VAR_mgc_api_key="<your-magalu-api-key>"
+export TF_VAR_github_token="<your-github-pat>"
+
+# 3. Initialize Terraform
+terraform init
+
+# 4. Plan infrastructure changes
+terraform plan
+
+# 5. Apply changes
+terraform apply
+
+# 6. Get runner IP and SSH key
+terraform output -json runner_ipv4s | jq -r '.[0]'
+terraform output -raw generated_ssh_private_key > runner-key.pem
+chmod 600 runner-key.pem
+
+# 7. Connect to runner
+ssh -i runner-key.pem ubuntu@$(terraform output -json runner_ipv4s | jq -r '.[0]')
+
+# 8. Cleanup when done
+terraform destroy
+```
+
