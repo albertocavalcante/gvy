@@ -18,4 +18,5 @@ output "generated_ssh_private_key" {
 output "runner_ipv4s" {
   description = "Public IP addresses of the runners"
   value       = module.runner.runner_public_ips
+  sensitive   = true
 }
