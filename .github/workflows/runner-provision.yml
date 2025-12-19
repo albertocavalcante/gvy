@@ -41,6 +41,37 @@ jobs:
           terraform_version: 1.5.7
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
+      # TODO: Consider migrating to dflook/terraform-github-actions for better TFC integration
+      # Reference: https://github.com/albertocavalcante/hackathons/blob/main/.github/workflows/terraform-plan.yml
+      - name: Create TFC Workspace if not exists
+        env:
+          TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TF_API_TOKEN" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$TF_WORKSPACE")
+          
+          if [ "$STATUS" = "404" ]; then
+            echo "Creating workspace $TF_WORKSPACE..."
+            curl -s -X POST \
+              -H "Authorization: Bearer $TF_API_TOKEN" \
+              -H "Content-Type: application/vnd.api+json" \
+              "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces" \
+              -d '{
+                "data": {
+                  "type": "workspaces",
+                  "attributes": {
+                    "name": "'"$TF_WORKSPACE"'",
+                    "execution-mode": "local",
+                    "auto-apply": false
+                  }
+                }
+              }'
+            echo "✅ Workspace created"
+          else
+            echo "✅ Workspace $TF_WORKSPACE already exists"
+          fi
+
       - name: Terraform Init
         working-directory: infra/runner
         run: terraform init
