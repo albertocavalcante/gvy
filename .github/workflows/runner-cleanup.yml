@@ -1,0 +1,172 @@
+name: 'Infra: Auto-Cleanup Magalu Runner'
+
+# This workflow automatically cleans up Magalu Cloud runners when idle.
+# Runs every 2 hours and checks for recent PR activity before destroying.
+#
+# Logic:
+#   1. Check if any magalu runners exist
+#   2. Check if there's been PR activity in the last 2 hours
+#   3. If runners exist AND no recent activity → destroy
+#   4. Skip if no runners or if there's recent activity
+
+on:
+  schedule:
+    # Run every 2 hours
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_cleanup:
+        description: 'Force cleanup regardless of activity'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  TF_CLOUD_ORGANIZATION: 'alberto'
+  TF_WORKSPACE: 'groovy-lsp-runner'
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
+  TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
+
+jobs:
+  check-activity:
+    name: Check Runner and Activity Status
+    runs-on: ubuntu-latest
+    outputs:
+      has_runners: ${{ steps.check-runners.outputs.has-runners }}
+      has_recent_activity: ${{ steps.check-activity.outputs.has_activity }}
+      should_cleanup: ${{ steps.decide.outputs.should_cleanup }}
+    steps:
+      - name: Checkout (for local action)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Check for Magalu runners
+        id: check-runners
+        uses: ./.github/actions/runner-status
+        with:
+          mode: check
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
+      - name: Check for recent PR activity
+        id: check-activity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check for PR activity in the last 2 hours
+          TWO_HOURS_AGO=$(date -u -d '2 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-2H +%Y-%m-%dT%H:%M:%SZ)
+          
+          echo "Checking for PR activity since $TWO_HOURS_AGO..."
+          
+          # Check for recently updated PRs
+          RECENT_PRS=$(gh api "repos/${{ github.repository }}/pulls?state=open&sort=updated&direction=desc&per_page=10" \
+            --jq "[.[] | select(.updated_at > \"$TWO_HOURS_AGO\")] | length")
+          
+          # Check for running workflows (excluding this one)
+          RUNNING_WORKFLOWS=$(gh api "repos/${{ github.repository }}/actions/runs?status=in_progress" \
+            --jq "[.workflow_runs[] | select(.name != \"Infra: Auto-Cleanup Magalu Runner\")] | length")
+          
+          echo "Recent PRs: $RECENT_PRS"
+          echo "Running workflows: $RUNNING_WORKFLOWS"
+          
+          if [ "$RECENT_PRS" -gt 0 ] || [ "$RUNNING_WORKFLOWS" -gt 0 ]; then
+            echo "has_activity=true" >> $GITHUB_OUTPUT
+            echo "✅ Recent activity detected - skipping cleanup"
+          else
+            echo "has_activity=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No recent activity detected"
+          fi
+
+      - name: Decide on cleanup
+        id: decide
+        run: |
+          HAS_RUNNERS="${{ steps.check-runners.outputs.has-runners }}"
+          HAS_ACTIVITY="${{ steps.check-activity.outputs.has_activity }}"
+          FORCE="${{ github.event.inputs.force_cleanup }}"
+          
+          echo "Has runners: $HAS_RUNNERS"
+          echo "Has activity: $HAS_ACTIVITY"
+          echo "Force cleanup: $FORCE"
+          
+          if [ "$HAS_RUNNERS" != "true" ]; then
+            echo "should_cleanup=false" >> $GITHUB_OUTPUT
+            echo "📦 No runners to clean up"
+          elif [ "$FORCE" == "true" ]; then
+            echo "should_cleanup=true" >> $GITHUB_OUTPUT
+            echo "🔨 Force cleanup requested"
+          elif [ "$HAS_ACTIVITY" == "true" ]; then
+            echo "should_cleanup=false" >> $GITHUB_OUTPUT
+            echo "⏳ Skipping cleanup due to recent activity"
+          else
+            echo "should_cleanup=true" >> $GITHUB_OUTPUT
+            echo "🧹 Proceeding with cleanup"
+          fi
+
+  plan-destroy:
+    name: Terraform Plan Destroy
+    needs: check-activity
+    if: needs.check-activity.outputs.should_cleanup == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@a1502cd9e758c50496cc9ac5308c4843bcd56d36 # v3.0.0
+        with:
+          terraform_version: 1.11.4
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        working-directory: infra/runner
+        run: terraform init
+
+      - name: Terraform Plan Destroy
+        working-directory: infra/runner
+        run: terraform plan -destroy -out=destroy.tfplan
+
+      - name: Upload Destroy Plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cleanup-destroy-tfplan
+          path: infra/runner/destroy.tfplan
+          retention-days: 1
+
+  apply-destroy:
+    name: Terraform Destroy
+    needs: plan-destroy
+    runs-on: ubuntu-latest
+    # Auto-approve for scheduled runs (cleanup environment has no protection rules)
+    environment: cleanup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@a1502cd9e758c50496cc9ac5308c4843bcd56d36 # v3.0.0
+        with:
+          terraform_version: 1.11.4
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Download Destroy Plan
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: cleanup-destroy-tfplan
+          path: infra/runner
+
+      - name: Terraform Init
+        working-directory: infra/runner
+        run: terraform init
+
+      - name: Terraform Destroy
+        working-directory: infra/runner
+        run: terraform apply -input=false destroy.tfplan
+
+      - name: Verify Runners Removed
+        uses: ./.github/actions/runner-status
+        with:
+          mode: verify-absent
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}

@@ -178,6 +178,33 @@ environment: ${{ github.event_name == 'schedule' && 'cleanup' || 'production' }}
 3. Create `cleanup`:
    - No protection rules needed (allows auto-approval)
 
+## Magalu Cloud Pricing
+
+Reference pricing for **Balanced Value (High Memory)** VMs with **10GB disk**:
+
+| Type | vCPU | RAM | R$/hour | R$/month | Notes |
+| :--- | :---: | :---: | ---: | ---: | :--- |
+| `BV1-4-10` | 1 | 4GB | 0.1000 | 72.99 | Minimum viable |
+| `BV2-8-10` | 2 | 8GB | 0.1644 | 119.99 | Light workloads |
+| **`BV4-16-10`** | 4 | 16GB | 0.3151 | 229.99 | **Default** (recommended for Gradle) |
+| `BV8-32-10` | 8 | 32GB | 0.6575 | 479.99 | Heavy parallel builds |
+
+> [!NOTE]
+> All Balanced Value VMs have **10GB disk** regardless of tier. This is sufficient for ephemeral CI runners since Gradle cache is externalized.
+
+### Cost Estimation
+
+| Usage Pattern | Hours/Month | Estimated Cost |
+| :--- | :---: | ---: |
+| On-demand (8h/day, weekdays) | ~176h | ~R$55 |
+| Always-on (development) | ~720h | ~R$227 |
+| Burst (CI-triggered) | ~40h | ~R$13 |
+
+To change machine type, use the `machine_type` input when provisioning:
+```bash
+gh workflow run runner-provision.yml -f machine_type=BV8-32-10
+```
+
 ## Terraform State
 
 State is managed remotely via Terraform Cloud:
@@ -234,7 +261,7 @@ terraform output runner_config
 # {
 #   count        = 1
 #   labels       = ["self-hosted", "magalu", "groovy-lsp"]
-#   machine_type = "BV1-1-40"
+#   machine_type = "BV4-16-10"
 #   name_prefix  = "groovy-lsp-ci"
 #   region       = "br-ne1"
 #   repo_url     = "https://github.com/albertocavalcante/groovy-lsp"

@@ -13,17 +13,29 @@ on:
   workflow_dispatch:
     inputs:
       runner_count:
-        description: "Number of runners to provision"
+        description: 'Number of runners to provision'
         required: false
-        default: "1"
+        default: '1'
         type: string
+      machine_type:
+        description: 'Magalu Cloud VM type (BV1-4-10, BV2-8-10, BV4-16-10, BV8-32-10)'
+        required: false
+        default: 'BV4-16-10'
+        type: choice
+        options:
+          - 'BV1-4-10'
+          - 'BV2-8-10'
+          - 'BV4-16-10'
+          - 'BV8-32-10'
 
 env:
-  TF_CLOUD_ORGANIZATION: "alberto"
-  TF_WORKSPACE: "groovy-lsp-runner"
+  TF_CLOUD_ORGANIZATION: 'alberto'
+  TF_WORKSPACE: 'groovy-lsp-runner'
   TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
   TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
   TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
+  TF_VAR_runner_count: ${{ github.event.inputs.runner_count || '1' }}
+  TF_VAR_machine_type: ${{ github.event.inputs.machine_type || 'BV4-16-10' }}
 
 jobs:
   plan:

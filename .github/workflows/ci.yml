@@ -90,9 +90,72 @@ jobs:
               - '!docs/**'
               - '!.github/workflows/runner-*.yml'
 
+  check-runner:
+    name: Check Runner Availability
+    runs-on: ubuntu-latest
+    needs: check-paths
+    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
+    outputs:
+      runner_available: ${{ steps.check.outputs.has-runners }}
+      needs_provision: ${{ steps.decide.outputs.needs_provision }}
+    steps:
+      - name: Checkout (for local action)
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Check for Magalu runners
+        id: check
+        uses: ./.github/actions/runner-status
+        with:
+          mode: check
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
+      - name: Decide on provisioning
+        id: decide
+        run: |
+          RUNNER_LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'magalu' }}"
+          HAS_RUNNERS="${{ steps.check.outputs.has-runners }}"
+          
+          echo "Runner label: $RUNNER_LABEL"
+          echo "Has runners: $HAS_RUNNERS"
+          
+          # Only need to provision if targeting magalu and no runners available
+          if [[ "$RUNNER_LABEL" == "magalu" && "$HAS_RUNNERS" != "true" ]]; then
+            echo "needs_provision=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Magalu runner not available - provisioning required"
+          else
+            echo "needs_provision=false" >> $GITHUB_OUTPUT
+            echo "✅ Runner available or not using magalu"
+          fi
+
+      - name: Trigger provisioning workflow
+        if: steps.decide.outputs.needs_provision == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
+        run: |
+          echo "Triggering runner-provision.yml..."
+          gh workflow run runner-provision.yml --repo ${{ github.repository }}
+          echo "⏳ Provisioning triggered. Manual approval may be required."
+          echo ""
+          echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
+          echo ""
+          echo "This CI run will wait for the runner to become available."
+
+      - name: Wait for runner to become available
+        if: steps.decide.outputs.needs_provision == 'true'
+        uses: ./.github/actions/runner-status
+        with:
+          mode: wait-online
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+          max-wait-minutes: '15'
+          poll-interval-seconds: '30'
+
   build:
     name: Build and Test
-    needs: check-paths
+    needs: [check-paths, check-runner]
     if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 45
     # For Magalu runners, we need all three labels; for others, use the matrix value directly

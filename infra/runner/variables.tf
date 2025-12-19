@@ -36,9 +36,9 @@ variable "github_repo_url" {
 }
 
 variable "machine_type" {
-  description = "Magalu Cloud VM machine type (e.g., BV1-1-40 = 1vCPU, 4GB RAM)"
+  description = "Magalu Cloud VM machine type (e.g., BV4-16-10 = 4vCPU, 16GB RAM)"
   type        = string
-  default     = "BV1-1-40"
+  default     = "BV4-16-10"
 }
 
 variable "runner_count" {
