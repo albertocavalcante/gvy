@@ -106,11 +106,7 @@ jobs:
         #   - cloud: GitHub-hosted (macos-15 for PRs, multi-platform for main)
         # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( 
-          (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' ||
-          (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || 
-          '["self-hosted"]' 
-        ) }}
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["self-hosted"]' ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
         exclude:
           - os: ubuntu-24.04
