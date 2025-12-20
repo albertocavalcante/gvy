@@ -9,6 +9,7 @@ inputs:
         - check: Single check, returns has_runners boolean and runner_count
         - wait-online: Poll until a runner with label is online (fails on timeout)
         - verify-absent: Check that no runners with label exist (warns but succeeds)
+        - prune-offline: Delete offline runners with the specified label
     required: true
   label:
     description: 'Runner label to check/wait for'

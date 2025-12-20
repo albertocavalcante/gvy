@@ -40,6 +40,13 @@ jobs:
           label: magalu
           github-token: ${{ secrets.GH_PAT_RUNNER }}
 
+      - name: Prune Offline Runners
+        uses: ./.github/actions/runner-status
+        with:
+          mode: prune-offline
+          label: magalu
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
   plan-destroy:
     name: Terraform Plan Destroy
     needs: check-runners
