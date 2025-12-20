@@ -1,12 +1,15 @@
 # Main Infrastructure Configuration
 # Magalu Cloud Self-Hosted GitHub Actions Runner
 
+# TODO: Pin to a fixed commit hash once the magalu-github-runner module stabilizes.
+# Currently tracking the main branch for active development.
+#
 # To update the module ref to the latest commit from main:
 # NEW_REF=$(gh api /repos/albertocavalcante/magalu-github-runner/commits/main --jq .sha) && \
-# sed -i '' "s/ref=3b96e3efe3e1334924425b17d8cdf79a8edb7aed[a-f0-9]*/ref=${NEW_REF}/" infra/runner/main.tf
+# sed -i '' "s/ref=[a-f0-9]*/ref=${NEW_REF}/" infra/runner/main.tf
 
 module "runner" {
-  source = "github.com/albertocavalcante/magalu-github-runner?ref=3b96e3efe3e1334924425b17d8cdf79a8edb7aed"
+  source = "github.com/albertocavalcante/magalu-github-runner?ref=main"
 
   runner_count                 = var.runner_count
   runner_name_prefix           = var.runner_name_prefix
@@ -27,4 +30,3 @@ check "runner_image_valid" {
     error_message = "Invalid runner_image \"${var.runner_image}\". Must be one of: ${join(", ", keys(local.image_map))}."
   }
 }
-
