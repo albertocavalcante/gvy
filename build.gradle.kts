@@ -90,20 +90,27 @@ subprojects {
             target("*.gradle.kts")
             ktlint(ktlintVersion)
         }
-        format("markdown") {
-            target("**/*.md")
-            targetExclude("**/build/**/*.md", "**/target/**/*.md")
-            prettier()
-                .config(
-                    mapOf(
-                        "parser" to "markdown",
-                        "printWidth" to 120,
-                        "tabWidth" to 2,
-                        "useTabs" to false,
-                        "proseWrap" to "always",
-                    ),
-                )
-        }
+        // NOTE: Markdown formatting disabled - requires npm which is not available on self-hosted runner
+        // To re-enable, install npm on the runner and uncomment this block
+        // format("markdown") {
+        //     target("**/*.md")
+        //     targetExclude(
+        //         "**/build/**/*.md",
+        //         "**/target/**/*.md",
+        //         "**/src/test/resources/**/*.md",
+        //         "**/BUNDLED_STUBS_TODO.md",
+        //     )
+        //     prettier()
+        //         .config(
+        //             mapOf(
+        //                 "parser" to "markdown",
+        //                 "printWidth" to 120,
+        //                 "tabWidth" to 2,
+        //                 "useTabs" to false,
+        //                 "proseWrap" to "always",
+        //             ),
+        //         )
+        // }
 
         groovy {
             target("src/**/*.groovy")

@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught") // File I/O uses catch-all for resilience
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.vladsch.flexmark.html2md.converter.FlexmarkHtmlConverter
@@ -30,10 +32,10 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
     }
 
     // Regex to match "def call" method declaration (with optional modifiers and annotations)
-    private val defCallPattern =
-        Regex(
-            """^\s*(?:@\w+\s+|public\s+|private\s+|protected\s+|static\s+|final\s+|synchronized\s+|abstract\s+)*def\s+call\s*\(""",
-        )
+    private val defCallPattern = Regex(
+        """^\s*(?:@\w+\s+|public\s+|private\s+|protected\s+|static\s+""" +
+            """|final\s+|synchronized\s+|abstract\s+)*def\s+call\s*\(""",
+    )
 
     fun getGlobalVariables(): List<GlobalVariable> {
         val varsDir = workspaceRoot.resolve("vars")

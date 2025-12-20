@@ -63,9 +63,9 @@ class GradleBuildTool(
         // from the IdeaProject model (supports custom source directory layouts)
         val resolution = dependencyResolver.resolveWithSourceDirectories(workspaceRoot)
 
-        logger.info(
-            "Resolved ${resolution.dependencies.size} dependencies and ${resolution.sourceDirectories.size} source directories",
-        )
+        val depCount = resolution.dependencies.size
+        val srcCount = resolution.sourceDirectories.size
+        logger.info("Resolved $depCount dependencies and $srcCount source directories")
         return resolution
     }
 

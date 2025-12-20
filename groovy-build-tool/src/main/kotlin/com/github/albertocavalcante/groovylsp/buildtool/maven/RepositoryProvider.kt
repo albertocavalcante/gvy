@@ -91,6 +91,7 @@ class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
         return repos
     }
 
+    @Suppress("TooGenericExceptionCaught") // Catch-all for POM parsing errors
     private fun parsePom(path: Path): Model? = try {
         val factory = DefaultModelBuilderFactory()
         val builder = factory.newInstance()

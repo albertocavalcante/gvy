@@ -1,3 +1,5 @@
+@file:Suppress("ReturnCount") // Early returns are clearer for multi-stage resolution logic
+
 package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver

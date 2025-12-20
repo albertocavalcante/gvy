@@ -52,6 +52,7 @@ class MavenSourceArtifactResolver(
             return@withContext cachedPath
         }
 
+        @Suppress("TooGenericExceptionCaught") // Catch-all for artifact resolution errors
         try {
             val session = AetherSessionFactory.createSession(cacheDir)
             val artifact = DefaultArtifact(groupId, artifactId, "sources", "jar", version)

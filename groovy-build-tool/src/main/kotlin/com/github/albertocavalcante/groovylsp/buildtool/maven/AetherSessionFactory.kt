@@ -57,42 +57,53 @@ object AetherSessionFactory {
      */
     fun resolveLocalRepository(): Path {
         // 1. Check M2_REPO environment variable
-        System.getenv("M2_REPO")?.let { envRepo ->
-            val path = File(envRepo)
-            if (path.exists()) {
-                logger.debug("Using M2_REPO environment variable: $envRepo")
-                return path.toPath()
-            }
-        }
+        getPathFromEnv("M2_REPO")?.let { return it }
 
         // 2. Check settings.xml for custom local repository
         val userHome = System.getProperty("user.home")
         val m2Dir = File(userHome, ".m2")
         val settingsFile = File(m2Dir, "settings.xml")
 
-        if (settingsFile.exists()) {
-            try {
-                val dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance()
-                dbf.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
-                val db = dbf.newDocumentBuilder()
-                val nodeList = db.parse(settingsFile).getElementsByTagName("localRepository")
-                if (nodeList.length > 0) {
-                    val repoPath = nodeList.item(0).textContent.trim()
-                    val customPath = File(repoPath)
-                    if (customPath.exists()) {
-                        logger.debug("Using localRepository from settings.xml: ${customPath.absolutePath}")
-                        return customPath.toPath()
-                    }
-                }
-            } catch (e: Exception) {
-                logger.warn("Could not parse settings.xml: ${e.message}")
-            }
-        }
+        parseLocalRepositoryFromSettings(settingsFile)?.let { return it }
 
         // 3. Default location
         val defaultRepo = File(m2Dir, "repository")
         logger.debug("Using default Maven repository: ${defaultRepo.absolutePath}")
         return defaultRepo.toPath()
+    }
+
+    private fun getPathFromEnv(envVar: String): Path? {
+        val envValue = System.getenv(envVar) ?: return null
+        val path = File(envValue)
+        if (path.exists()) {
+            logger.debug("Using $envVar environment variable: $envValue")
+            return path.toPath()
+        }
+        return null
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Catch-all for XML parsing errors
+    private fun parseLocalRepositoryFromSettings(settingsFile: File): Path? {
+        if (!settingsFile.exists()) return null
+
+        return try {
+            val dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            dbf.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
+            val db = dbf.newDocumentBuilder()
+            val nodeList = db.parse(settingsFile).getElementsByTagName("localRepository")
+            if (nodeList.length > 0) {
+                val repoPath = nodeList.item(0).textContent.trim()
+                val customPath = File(repoPath)
+                if (customPath.exists()) {
+                    logger.debug("Using localRepository from settings.xml: ${customPath.absolutePath}")
+                    return customPath.toPath()
+                }
+            }
+            null
+        } catch (e: Exception) {
+            logger.warn("Could not parse settings.xml: ${e.message}")
+            null
+        }
     }
 
     /**

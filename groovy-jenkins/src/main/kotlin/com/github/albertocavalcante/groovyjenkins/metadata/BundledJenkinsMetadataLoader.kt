@@ -1,3 +1,9 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // JSON parsing uses catch-all for resilience
+    "LongMethod", // toBundledMetadata transforms all metadata types
+    "UseCheckOrError", // Explicit IllegalStateException provides clearer error messages
+)
+
 package com.github.albertocavalcante.groovyjenkins.metadata
 
 import kotlinx.serialization.Serializable

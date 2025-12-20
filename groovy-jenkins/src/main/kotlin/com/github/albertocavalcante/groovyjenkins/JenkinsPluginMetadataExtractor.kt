@@ -1,3 +1,11 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // JAR/ClassGraph scanning uses catch-all for resilience
+    "NestedBlockDepth", // JAR extraction has inherent nesting
+    "LongMethod", // extractGlobalVariables needs comprehensive scanning logic
+    "CyclomaticComplexMethod", // extractGlobalVariables handles multiple extraction paths
+    "UnusedParameter", // sourcesJarPath reserved for future Javadoc extraction
+)
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata

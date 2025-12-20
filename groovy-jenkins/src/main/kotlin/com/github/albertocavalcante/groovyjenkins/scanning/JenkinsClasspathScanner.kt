@@ -1,3 +1,9 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // Classpath scanning requires catch-all for resilience
+    "ReturnCount", // Step name resolution has multiple early returns
+    "MagicNumber", // Array index 3 is self-documenting in annotation context
+)
+
 package com.github.albertocavalcante.groovyjenkins.scanning
 
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
@@ -23,11 +29,9 @@ class JenkinsClasspathScanner {
         // Core Jenkins types to look for
         private const val STEP_DESCRIPTOR_CLASS = "org.jenkinsci.plugins.workflow.steps.StepDescriptor"
         private const val GLOBAL_VARIABLE_CLASS = "org.jenkinsci.plugins.workflow.cps.GlobalVariable"
-        private const val FUNCTION_NAME_ANNOTATION = "org.jenkinsci.plugins.workflow.steps.StepDescriptor.FunctionName"
         private const val SYMBOL_ANNOTATION = "org.jenkinsci.Symbol"
         private const val DATA_BOUND_CONSTRUCTOR = "org.kohsuke.stapler.DataBoundConstructor"
         private const val DATA_BOUND_SETTER = "org.kohsuke.stapler.DataBoundSetter"
-        private const val DESCRIPTOR_CLASS = "hudson.model.Descriptor"
     }
 
     /**

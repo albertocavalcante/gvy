@@ -1,3 +1,8 @@
+@file:Suppress(
+    "LongMethod", // Integration tests benefit from comprehensive in-line assertions
+    "ImplicitDefaultLocale", // Test output formatting doesn't need locale awareness
+)
+
 package com.github.albertocavalcante.groovyjenkins
 
 import org.junit.jupiter.api.BeforeAll
@@ -71,25 +76,35 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         private fun jarExists(name: String): Boolean = Files.exists(TEST_PLUGINS_DIR.resolve("$name.jar"))
 
         // Condition methods for @EnabledIf
-        @JvmStatic fun kubernetesJarExists() = jarExists("kubernetes")
+        @JvmStatic
+        fun kubernetesJarExists() = jarExists("kubernetes")
 
-        @JvmStatic fun credentialsBindingJarExists() = jarExists("credentials-binding")
+        @JvmStatic
+        fun credentialsBindingJarExists() = jarExists("credentials-binding")
 
-        @JvmStatic fun dockerWorkflowJarExists() = jarExists("docker-workflow")
+        @JvmStatic
+        fun dockerWorkflowJarExists() = jarExists("docker-workflow")
 
-        @JvmStatic fun gitJarExists() = jarExists("git")
+        @JvmStatic
+        fun gitJarExists() = jarExists("git")
 
-        @JvmStatic fun slackJarExists() = jarExists("slack")
+        @JvmStatic
+        fun slackJarExists() = jarExists("slack")
 
-        @JvmStatic fun badgeJarExists() = jarExists("badge")
+        @JvmStatic
+        fun badgeJarExists() = jarExists("badge")
 
-        @JvmStatic fun httpRequestJarExists() = jarExists("http-request")
+        @JvmStatic
+        fun httpRequestJarExists() = jarExists("http-request")
 
-        @JvmStatic fun lockableResourcesJarExists() = jarExists("lockable-resources")
+        @JvmStatic
+        fun lockableResourcesJarExists() = jarExists("lockable-resources")
 
-        @JvmStatic fun junitJarExists() = jarExists("junit")
+        @JvmStatic
+        fun junitJarExists() = jarExists("junit")
 
-        @JvmStatic fun pipelineUtilityStepsJarExists() = jarExists("pipeline-utility-steps")
+        @JvmStatic
+        fun pipelineUtilityStepsJarExists() = jarExists("pipeline-utility-steps")
 
         @JvmStatic
         fun multiplePluginsAvailable(): Boolean = ALL_TEST_PLUGINS.count { jarExists(it) } >= 6

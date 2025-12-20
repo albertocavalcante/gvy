@@ -12,7 +12,6 @@ import org.eclipse.aether.graph.Dependency
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -44,6 +43,7 @@ class MavenDependencyResolver : DependencyResolver {
             return emptyList()
         }
 
+        @Suppress("TooGenericExceptionCaught") // Catch-all for resolution errors
         return try {
             val repositorySystem = AetherSessionFactory.repositorySystem
             val session = newRepositorySystemSession()
@@ -96,46 +96,9 @@ class MavenDependencyResolver : DependencyResolver {
         return AetherSessionFactory.createSession(localRepoPath)
     }
 
-    override fun resolveLocalRepository(): Path? {
-        // 1. Check M2_REPO environment variable
-        System.getenv("M2_REPO")?.let { envRepo ->
-            val path = File(envRepo)
-            if (path.exists()) {
-                logger.debug("Using M2_REPO environment variable: $envRepo")
-                return path.toPath()
-            }
-        }
+    override fun resolveLocalRepository(): Path? = AetherSessionFactory.resolveLocalRepository()
 
-        // 2. Check settings.xml for custom local repository
-        val userHome = System.getProperty("user.home")
-        val m2Dir = File(userHome, ".m2")
-        val settingsFile = File(m2Dir, "settings.xml")
-
-        if (settingsFile.exists()) {
-            try {
-                val dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance()
-                dbf.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true)
-                val db = dbf.newDocumentBuilder()
-                val nodeList = db.parse(settingsFile).getElementsByTagName("localRepository")
-                if (nodeList.length > 0) {
-                    val repoPath = nodeList.item(0).textContent.trim()
-                    val customPath = File(repoPath)
-                    if (customPath.exists()) {
-                        logger.debug("Using localRepository from settings.xml: ${customPath.absolutePath}")
-                        return customPath.toPath()
-                    }
-                }
-            } catch (e: Exception) {
-                logger.warn("Could not parse settings.xml: ${e.message}")
-            }
-        }
-
-        // 3. Default location
-        val defaultRepo = File(m2Dir, "repository")
-        logger.debug("Using default Maven repository: ${defaultRepo.absolutePath}")
-        return defaultRepo.toPath()
-    }
-
+    @Suppress("TooGenericExceptionCaught") // Catch-all for POM parsing errors
     private fun parsePom(pomPath: Path): Model? = try {
         val factory = DefaultModelBuilderFactory()
         val builder = factory.newInstance()

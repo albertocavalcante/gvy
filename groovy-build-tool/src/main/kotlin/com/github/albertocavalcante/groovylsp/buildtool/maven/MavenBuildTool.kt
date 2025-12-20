@@ -58,6 +58,7 @@ class MavenBuildTool : BuildTool {
         return WorkspaceResolution(dependencies, sourceDirs)
     }
 
+    @Suppress("TooGenericExceptionCaught") // Catch-all for embedded resolution fallback
     private fun tryEmbeddedResolution(pomPath: Path): List<Path> = try {
         dependencyResolver.resolveDependencies(pomPath)
     } catch (e: Exception) {
@@ -65,6 +66,7 @@ class MavenBuildTool : BuildTool {
         emptyList()
     }
 
+    @Suppress("TooGenericExceptionCaught") // Catch-all for CLI process errors
     private fun resolveViaCli(workspaceRoot: Path): List<Path> {
         val cpFile = Files.createTempFile("mvn-classpath", ".txt")
         try {

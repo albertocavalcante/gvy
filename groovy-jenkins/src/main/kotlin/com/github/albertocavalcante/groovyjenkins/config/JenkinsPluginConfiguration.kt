@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught") // File I/O uses catch-all for resilience
+
 package com.github.albertocavalcante.groovyjenkins.config
 
 import org.slf4j.LoggerFactory

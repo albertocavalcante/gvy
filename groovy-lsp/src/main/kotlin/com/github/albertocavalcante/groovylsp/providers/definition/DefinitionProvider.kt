@@ -1,3 +1,5 @@
+@file:Suppress("SwallowedException") // CancellationException is expected client behavior, logged at debug level
+
 package com.github.albertocavalcante.groovylsp.providers.definition
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService

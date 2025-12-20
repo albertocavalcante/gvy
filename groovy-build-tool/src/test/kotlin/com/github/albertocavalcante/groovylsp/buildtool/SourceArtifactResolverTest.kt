@@ -86,10 +86,7 @@ class SourceArtifactResolverTest {
 
     @Test
     fun `should build correct cache path structure`() {
-        // Verify the expected Maven-style path structure
-        val expectedPath = tempDir.resolve("org/jenkins-ci/plugins/workflow/workflow-step-api/2.24")
-
-        // The resolver should use this structure for caching
+        // The resolver should use Maven-style structure for caching
         // This is a structural test - doesn't require network access
         val groupId = "org.jenkins-ci.plugins.workflow"
         val artifactId = "workflow-step-api"

@@ -97,6 +97,7 @@ class GradleDependencyResolver(
      * Attempts resolution with exponential backoff for transient failures.
      * Returns the result of the last attempt (success or failure).
      */
+    @Suppress("LoopWithTooManyJumpStatements") // Retry loop with early exit is clearer than alternatives
     private fun runWithTransientRetry(projectDir: Path): Result<WorkspaceResolution> {
         var lastResult: Result<WorkspaceResolution> = Result.failure(IllegalStateException("No attempts made"))
         var currentDelay = retryConfig.initialDelayMs
@@ -185,9 +186,9 @@ class GradleDependencyResolver(
             processModule(module, dependencies, sourceDirectories)
         }
 
-        logger.info(
-            "Resolved ${dependencies.size} dependencies and ${sourceDirectories.size} source directories via Gradle Tooling API",
-        )
+        val depCount = dependencies.size
+        val srcCount = sourceDirectories.size
+        logger.info("Resolved $depCount dependencies and $srcCount source directories via Gradle Tooling API")
         return WorkspaceResolution(dependencies.toList(), sourceDirectories.toList())
     }
 

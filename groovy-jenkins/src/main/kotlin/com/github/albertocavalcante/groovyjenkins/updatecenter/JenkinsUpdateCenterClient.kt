@@ -1,3 +1,8 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // HTTP/network errors use catch-all for resilience
+    "MagicNumber", // HTTP status codes and timeouts are self-documenting
+)
+
 package com.github.albertocavalcante.groovyjenkins.updatecenter
 
 import kotlinx.coroutines.Dispatchers

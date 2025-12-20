@@ -102,47 +102,75 @@ class DefinitionResolver(
 
     /**
      * Validate position and find the target node.
+     * Orchestrates validation, node selection, and effective target resolution.
      */
     private fun validateAndFindNode(
         uri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): ASTNode {
-        // Validate position
+        validatePosition(position, uri)
+        val trackedNode = astVisitor.getNodeAt(uri, position)
+        val targetNode = selectBestNode(uri, position, trackedNode)
+        return resolveEffectiveTarget(targetNode, trackedNode)
+    }
+
+    /**
+     * Validate that position coordinates are non-negative.
+     */
+    private fun validatePosition(position: com.github.albertocavalcante.groovyparser.ast.types.Position, uri: URI) {
         if (position.line < 0 || position.character < 0) {
             handleValidationError("invalidPosition", uri, ValidationContext.PositionContext(position))
         }
+    }
 
-        val trackedNode = astVisitor.getNodeAt(uri, position)
-
-        // Fallback: the visitor-based tracker only records nodes with valid start coordinates and may return
-        // broad container nodes for positions inside untracked expressions. Use a direct AST walk as a backup.
+    /**
+     * Select the best node for the given position, using fallback if necessary.
+     * Prefers more specific nodes over broad containers (ClassNode, BlockStatement, etc.)
+     */
+    private fun selectBestNode(
+        uri: URI,
+        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        trackedNode: ASTNode?,
+    ): ASTNode {
         val fallbackNode = (compilationService?.getAst(uri) as? ModuleNode)
             ?.findNodeAt(position.line, position.character)
 
-        val targetNode =
-            when {
-                trackedNode == null && fallbackNode != null -> fallbackNode
-                trackedNode != null && fallbackNode != null && isBroadContainer(trackedNode) &&
-                    !isBroadContainer(fallbackNode) -> fallbackNode
+        return when {
+            trackedNode == null && fallbackNode != null -> fallbackNode
+            shouldPreferFallback(trackedNode, fallbackNode) -> fallbackNode!!
+            else -> trackedNode
+        } ?: handleValidationError("nodeNotFound", uri, ValidationContext.PositionContext(position))
+    }
 
-                else -> trackedNode
-            } ?: handleValidationError("nodeNotFound", uri, ValidationContext.PositionContext(position))
+    /**
+     * Determine if the fallback node should be preferred over the tracked node.
+     */
+    private fun shouldPreferFallback(trackedNode: ASTNode?, fallbackNode: ASTNode?): Boolean =
+        trackedNode != null && fallbackNode != null &&
+            isBroadContainer(trackedNode) && !isBroadContainer(fallbackNode)
 
-        val methodCall = when {
+    /**
+     * Resolve the effective target, preferring MethodCallExpression when applicable.
+     * NOTE: Clicking on a method call can resolve to its ConstantExpression "method" node.
+     * Prefer the enclosing MethodCallExpression to avoid false positives.
+     */
+    private fun resolveEffectiveTarget(targetNode: ASTNode, trackedNode: ASTNode?): ASTNode {
+        val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
+        val effectiveTarget = methodCall ?: targetNode
+        logger.debug("Found target node: ${effectiveTarget.javaClass.simpleName}")
+        return effectiveTarget
+    }
+
+    /**
+     * Extract MethodCallExpression if the target is a method name constant.
+     */
+    private fun extractMethodCallIfApplicable(targetNode: ASTNode, trackedNode: ASTNode?): MethodCallExpression? =
+        when {
             targetNode is MethodCallExpression -> targetNode
             trackedNode is ConstantExpression -> findMethodCallWhereNodeIsMethodExpression(trackedNode)
             targetNode is ConstantExpression -> findMethodCallWhereNodeIsMethodExpression(targetNode)
             else -> null
         }
-
-        // NOTE: Clicking on a method call can resolve to its ConstantExpression "method" node.
-        // Prefer the enclosing MethodCallExpression in that specific case to avoid false positives when
-        // the ConstantExpression is a string literal argument.
-        val effectiveTarget = methodCall ?: targetNode
-
-        logger.debug("Found target node: ${effectiveTarget.javaClass.simpleName}")
-        return effectiveTarget
-    }
 
     private fun isBroadContainer(node: ASTNode): Boolean = node is org.codehaus.groovy.ast.ClassNode ||
         node is org.codehaus.groovy.ast.MethodNode ||

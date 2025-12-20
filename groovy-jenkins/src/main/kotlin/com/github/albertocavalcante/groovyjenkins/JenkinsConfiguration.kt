@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught") // Configuration parsing uses catch-all for resilience
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovyjenkins.plugins.PluginConfiguration

@@ -1,3 +1,9 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // XML parsing and classpath scanning use catch-all for resilience
+    "ReturnCount", // Multiple early returns are clearer in search/resolution methods
+    "NestedBlockDepth", // Maven repository resolution has inherent complexity
+)
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovygdsl.GdslExecutor

@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught") // Path/URI parsing uses catch-all for resilience
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovygdsl.GdslLoadResults
@@ -32,6 +34,7 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
         val path = try {
             java.nio.file.Paths.get(uri)
         } catch (e: Exception) {
+            logger.debug("Could not convert URI to path: $uri", e)
             return false
         }
 
@@ -46,6 +49,7 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
                 val matcher = java.nio.file.FileSystems.getDefault().getPathMatcher("glob:$pattern")
                 matcher.matches(path) || matcher.matches(path.fileName)
             } catch (e: Exception) {
+                logger.debug("Invalid glob pattern: $pattern", e)
                 false
             }
         }

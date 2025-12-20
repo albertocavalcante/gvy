@@ -1,3 +1,9 @@
+@file:Suppress(
+    "TooGenericExceptionCaught", // Plugin resolution uses catch-all for resilience
+    "ReturnCount", // Multiple early returns are clearer in search methods
+    "NestedBlockDepth", // Plugin resolution has inherent nesting
+)
+
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovyjenkins.config.JenkinsPluginConfiguration
@@ -25,6 +31,7 @@ import java.nio.file.Path
  * This ensures the user always gets some level of support while enabling
  * rich, version-accurate metadata when dependencies are available.
  */
+@Suppress("UnusedPrivateProperty") // TODO: updateCenterClient and cacheDir reserved for future use
 class JenkinsPluginManager(
     private val sourceResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
     private val metadataExtractor: JenkinsPluginMetadataExtractor = JenkinsPluginMetadataExtractor(),

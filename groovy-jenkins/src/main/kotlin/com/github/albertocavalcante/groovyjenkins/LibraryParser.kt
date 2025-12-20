@@ -1,3 +1,5 @@
+@file:Suppress("NestedBlockDepth") // AST traversal has inherent nesting
+
 package com.github.albertocavalcante.groovyjenkins
 
 import org.codehaus.groovy.ast.AnnotationNode
@@ -170,6 +172,7 @@ class LibraryParser {
             is ConstantExpression -> {
                 parseLibraryString(valueMember.text)?.let { libraries.add(it) }
             }
+
             is ListExpression -> {
                 valueMember.expressions.forEach { expr ->
                     if (expr is ConstantExpression) {
