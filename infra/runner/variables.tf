@@ -19,13 +19,13 @@ variable "mgc_api_key" {
 # =============================================================================
 
 variable "mgc_region" {
-  description = "Magalu Cloud region (br-ne1, br-se1, br-mgl1, br-mc1)"
+  description = "Magalu Cloud region (br-ne1 = Northeast, br-se1 = Southeast)"
   type        = string
   default     = "br-ne1"
 
   validation {
-    condition     = contains(["br-ne1", "br-se1", "br-mgl1", "br-mc1"], var.mgc_region)
-    error_message = "Region must be one of: br-ne1, br-se1, br-mgl1, br-mc1"
+    condition     = contains(["br-ne1", "br-se1"], var.mgc_region)
+    error_message = "Region must be: br-ne1 (Northeast) or br-se1 (Southeast). Note: br-mgl1 is deprecated."
   }
 }
 
@@ -64,3 +64,8 @@ variable "runner_labels" {
   default     = ["magalu", "groovy-lsp"]
 }
 
+variable "runner_image" {
+  description = "Runner OS image (friendly name). See locals.tf for valid options."
+  type        = string
+  default     = "ubuntu-22"
+}

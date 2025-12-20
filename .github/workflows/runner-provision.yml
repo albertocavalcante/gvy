@@ -27,6 +27,19 @@ on:
           - 'BV2-8-10'
           - 'BV4-16-10'
           - 'BV8-32-10'
+      runner_image:
+        description: 'Runner OS image'
+        required: false
+        default: 'ubuntu-22'
+        type: choice
+        options:
+          - 'ubuntu-22'
+          - 'ubuntu-24'
+          - 'debian-12'
+          - 'debian-13'
+          - 'rocky-9'
+          - 'oracle-8'
+          - 'oracle-9'
 
 env:
   TF_CLOUD_ORGANIZATION: 'alberto'
@@ -36,6 +49,7 @@ env:
   TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
   TF_VAR_runner_count: ${{ github.event.inputs.runner_count || '1' }}
   TF_VAR_machine_type: ${{ github.event.inputs.machine_type || 'BV4-16-10' }}
+  TF_VAR_runner_image: ${{ github.event.inputs.runner_image || 'ubuntu-22' }}
 
 jobs:
   plan:
