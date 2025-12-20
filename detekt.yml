@@ -204,7 +204,6 @@ style:
     active: true
   UseRequireNotNull:
     active: true
+  # Enforce no star imports everywhere, including tests
   WildcardImport:
     active: true
-    excludes:
-    - '**/test/**'

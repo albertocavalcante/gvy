@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.groovylsp.testing.client
 
-import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.node.NullNode
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
 import org.eclipse.lsp4j.ConfigurationParams
@@ -24,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
+class HarnessLanguageClient : LanguageClient {
     private val logger = LoggerFactory.getLogger(HarnessLanguageClient::class.java)
 
     private val notifications = mutableListOf<NotificationEnvelope>()
@@ -102,7 +99,7 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
         return CompletableFuture.completedFuture(null)
     }
 
-    fun awaitNotification(method: String, timeoutMs: Long, predicate: (JsonNode?) -> Boolean): NotificationEnvelope? {
+    fun awaitNotification(method: String, timeoutMs: Long, predicate: (Any?) -> Boolean): NotificationEnvelope? {
         val result = awaitNotificationDetailed(method, timeoutMs, predicate)
         return result.envelope
     }
@@ -115,7 +112,7 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
      * @param predicate The predicate to match the notification payload
      * @return true if a matching notification exists in the queue, false otherwise
      */
-    fun peekNotification(method: String, predicate: (JsonNode?) -> Boolean): Boolean {
+    fun peekNotification(method: String, predicate: (Any?) -> Boolean): Boolean {
         lock.withLock {
             return notifications.any { envelope ->
                 envelope.id !in consumedNotificationIds &&
@@ -140,7 +137,7 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
     fun awaitNotificationDetailed(
         method: String,
         timeoutMs: Long,
-        predicate: (JsonNode?) -> Boolean,
+        predicate: (Any?) -> Boolean,
         earlySkipPredicate: (() -> Boolean)? = null,
     ): WaitResult {
         val startTime = System.nanoTime()
@@ -288,16 +285,10 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
     }
 
     private fun recordNotification(method: String, payload: Any?) {
-        val payloadNode = when (payload) {
-            null -> NullNode.instance
-            is JsonNode -> payload
-            else -> mapper.valueToTree(payload) ?: NullNode.instance
-        }
-
         val envelope = NotificationEnvelope(
             id = notificationSequence.incrementAndGet(),
             method = method,
-            payload = payloadNode,
+            payload = payload,
             timestamp = Instant.now(),
         )
 
@@ -306,16 +297,16 @@ class HarnessLanguageClient(private val mapper: ObjectMapper) : LanguageClient {
             condition.signalAll()
         }
 
-        logger.debug("Recorded notification {} {}", method, payloadNode)
+        logger.debug("Recorded notification {} {}", method, payload)
     }
 }
 
-data class NotificationEnvelope(val id: Long, val method: String, val payload: JsonNode?, val timestamp: Instant)
+data class NotificationEnvelope(val id: Long, val method: String, val payload: Any?, val timestamp: Instant)
 
 /**
  * Snapshot of a notification for lightweight tracking during wait operations.
  */
-data class NotificationSnapshot(val method: String, val timestamp: Instant, val payload: JsonNode?)
+data class NotificationSnapshot(val method: String, val timestamp: Instant, val payload: Any?)
 
 /**
  * Information about a notification that matched the method but failed predicate checks.

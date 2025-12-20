@@ -32,10 +32,11 @@ steps:
           expect:
             type: CONTAINS
             value: "Unexpected input"
+        # LSP4J Gson serializes DiagnosticSeverity as string: "Error", "Warning", "Information", "Hint"
         - jsonPath: $.diagnostics[0].severity
           expect:
             type: EQUALS
-            value: "Error"
+            value: 'Error'
         - jsonPath: $.diagnostics[0].range.start.line
           expect:
             type: EQUALS

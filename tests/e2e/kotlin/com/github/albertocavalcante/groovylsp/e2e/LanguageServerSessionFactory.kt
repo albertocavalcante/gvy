@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.testing.client.HarnessLanguageClient
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
 import org.eclipse.lsp4j.launch.LSPLauncher
@@ -8,15 +8,23 @@ import org.eclipse.lsp4j.services.LanguageServer
 import org.slf4j.LoggerFactory
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Duration
+import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
-class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
+class LanguageServerSessionFactory {
     private val logger = LoggerFactory.getLogger(LanguageServerSessionFactory::class.java)
+
+    // Cached server executor for in-process mode to allow cleanly shutting down the thread
+    private val inProcessExecutor = Executors.newCachedThreadPool { r ->
+        Thread(r, "groovy-lsp-in-process-server").apply { isDaemon = true }
+    }
 
     private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
         ?.let { Path.of(it) }
@@ -28,6 +36,19 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
 
     fun start(serverConfig: ServerConfig, scenarioName: String): LanguageServerSession {
         val launchMode = serverConfig.mode
+
+        return if (launchMode == ServerLaunchMode.InProcess) {
+            createInProcessSession(scenarioName)
+        } else {
+            createProcessSession(serverConfig, scenarioName, launchMode)
+        }
+    }
+
+    private fun createProcessSession(
+        serverConfig: ServerConfig,
+        scenarioName: String,
+        launchMode: ServerLaunchMode,
+    ): LanguageServerSession {
         require(launchMode == ServerLaunchMode.Stdio) {
             "Only stdio launch mode is currently supported (requested: $launchMode) for scenario '$scenarioName'"
         }
@@ -49,7 +70,7 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
 
         val process = processBuilder.start()
 
-        val client = HarnessLanguageClient(mapper)
+        val client = HarnessLanguageClient()
         val launcher = LSPLauncher.createClientLauncher(
             client,
             process.inputStream,
@@ -82,6 +103,7 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
         return launchArgs + when (mode) {
             ServerLaunchMode.Stdio -> listOf("stdio")
             ServerLaunchMode.Socket -> error("Socket mode is not yet implemented in the e2e harness")
+            ServerLaunchMode.InProcess -> error("In-process mode should not invoke buildCommand")
         }
     }
 
@@ -106,6 +128,55 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
         }.getOrNull()
     }
 
+    private fun createInProcessSession(scenarioName: String): LanguageServerSession {
+        val (clientIn, serverOut) = createPipePair()
+        val (serverIn, clientOut) = createPipePair()
+
+        val server = GroovyLanguageServer()
+        val serverExecutor = inProcessExecutor
+
+        // Launch server listener in a separate thread
+        val listening = serverExecutor.submit {
+            try {
+                val launcher = LSPLauncher.createServerLauncher(
+                    server,
+                    serverIn,
+                    serverOut,
+                )
+                // Use the launcher's executor service to run the loop
+                launcher.startListening().get()
+            } catch (e: Exception) {
+                logger.error("In-process server error for scenario '{}'", scenarioName, e)
+            }
+        }
+
+        val client = HarnessLanguageClient()
+        val clientLauncher = LSPLauncher.createClientLauncher(
+            client,
+            clientIn,
+            clientOut,
+        )
+        val clientListening = clientLauncher.startListening()
+
+        logger.info("Started in-process language server for scenario '{}'", scenarioName)
+
+        return LanguageServerSession(
+            process = null,
+            server = clientLauncher.remoteProxy,
+            endpoint = clientLauncher.remoteEndpoint,
+            client = client,
+            listening = clientListening, // We track client's listener; server's is managed by executor
+            stderrPump = null,
+        )
+    }
+
+    private fun createPipePair(): Pair<PipedInputStream, PipedOutputStream> {
+        val output = PipedOutputStream()
+        val input = PipedInputStream()
+        input.connect(output)
+        return input to output
+    }
+
     private fun startErrorPump(process: Process, scenarioName: String): Thread {
         val thread = Thread(
             {
@@ -126,18 +197,18 @@ class LanguageServerSessionFactory(private val mapper: ObjectMapper) {
 }
 
 class LanguageServerSession(
-    private val process: Process,
+    private val process: Process?,
     val server: LanguageServer,
     val endpoint: RemoteEndpoint,
     val client: HarnessLanguageClient,
     private val listening: Future<Void>,
-    private val stderrPump: Thread,
+    private val stderrPump: Thread?,
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(LanguageServerSession::class.java)
 
     override fun close() {
         try {
-            if (process.isAlive) {
+            if (process != null && process.isAlive) {
                 logger.debug("Waiting for language server process to finish")
                 process.waitFor(SHUTDOWN_TIMEOUT.seconds, TimeUnit.SECONDS)
             }
@@ -145,7 +216,7 @@ class LanguageServerSession(
             Thread.currentThread().interrupt()
             logger.warn("Interrupted while waiting for language server process shutdown", ex)
         } finally {
-            if (process.isAlive) {
+            if (process != null && process.isAlive) {
                 logger.warn("Language server process still alive after timeout; terminating forcibly")
                 process.destroyForcibly()
             }
@@ -153,7 +224,7 @@ class LanguageServerSession(
 
         listening.cancel(true)
 
-        if (stderrPump.isAlive) {
+        if (stderrPump != null && stderrPump.isAlive) {
             try {
                 stderrPump.join(STDERR_PUMP_JOIN_TIMEOUT.toMillis())
             } catch (ex: InterruptedException) {

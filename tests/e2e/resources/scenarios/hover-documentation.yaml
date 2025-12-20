@@ -20,7 +20,7 @@ steps:
             int add(int a, int b) {
                 return a + b
             }
-            
+
             /**
              * Multiplies two numbers.
              * @param x first operand
@@ -44,26 +44,26 @@ steps:
       source: addHoverResult
       checks:
         # Validate method signature shows
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "add("
         # Validate doc summary shows
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "Adds two numbers together"
         # Validate @param documentation
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "first number"
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "second number"
         # Validate @return documentation
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "sum of a and b"
@@ -80,17 +80,17 @@ steps:
       source: multiplyHoverResult
       checks:
         # Validate doc summary shows
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "Multiplies two numbers"
         # Validate @param documentation
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "first operand"
         # Validate @return documentation
-        - jsonPath: $.contents.right.value
+        - jsonPath: $.contents.value
           expect:
             type: CONTAINS
             value: "product of x and y"

@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.fail
@@ -10,10 +7,9 @@ import java.nio.file.Path
 import kotlin.io.path.exists
 
 class ScenarioRunnerTest {
-    private val mapper: ObjectMapper = ObjectMapper(YAMLFactory()).registerKotlinModule()
-    private val loader = ScenarioLoader(mapper)
-    private val sessionFactory = LanguageServerSessionFactory(mapper)
-    private val executor = ScenarioExecutor(sessionFactory, mapper)
+    private val loader = ScenarioLoader()
+    private val sessionFactory = LanguageServerSessionFactory()
+    private val executor = ScenarioExecutor(sessionFactory)
 
     @TestFactory
     fun endToEndScenarios(): List<DynamicTest> {

@@ -2,6 +2,7 @@ import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     kotlin("jvm")
+    alias(libs.plugins.kotlin.serialization)
     groovy
 }
 
@@ -62,6 +63,14 @@ testing {
                 implementation(libs.kotlin.coroutines.test)
                 implementation(libs.mockk)
                 implementation(libs.spock.core)
+
+                // Jackson for YAML parsing (via ScenarioParser abstraction)
+                // TODO: Replace Jackson with kotlinx.serialization when official YAML support is added
+                // Track: https://github.com/Kotlin/kotlinx.serialization/issues/1836
+
+                // kotlinx.serialization-json for runtime JSON operations (multiplatform, stable)
+                // This is kept separate from YAML parsing and can remain even after YAML migration
+                implementation(libs.kotlin.serialization.json)
             }
 
             targets {
