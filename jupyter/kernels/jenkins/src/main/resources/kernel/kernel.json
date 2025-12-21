@@ -1,0 +1,14 @@
+{
+    "argv": [
+        "java",
+        "-jar",
+        "{resource_dir}/jenkins-kernel-all.jar",
+        "{connection_file}"
+    ],
+    "display_name": "Jenkins Pipeline (Groovy 2.4)",
+    "language": "jenkins-pipeline",
+    "interrupt_mode": "message",
+    "metadata": {
+        "debugger": false
+    }
+}
