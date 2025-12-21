@@ -75,13 +75,33 @@ class ConcurrencyStressTest {
             val duration = 5000L
             val startTime = System.currentTimeMillis()
 
+            // NOTE: Use Dispatchers.IO (not Dispatchers.Default) for these concurrent jobs
+            // because they make blocking .get() calls on CompletableFutures (line 133).
+            //
+            // WHY THIS MATTERS:
+            // - Dispatchers.Default has limited threads (~max(2, nCPU))
+            // - On 1-core machines (e.g., Magalu BV1-1-40): only ~2 threads available
+            // - This test spawns 6 coroutines (1 writer + 5 readers)
+            // - All 6 call .get() which blocks threads waiting for LSP server responses
+            // - If all Default threads are blocked, LSP server can't process requests
+            // - Result: Thread starvation deadlock → test hangs until JUnit timeout (20m)
+            //
+            // SOLUTION:
+            // - Dispatchers.IO is designed for blocking operations
+            // - IO pool scales dynamically (64+ threads) to handle blocking calls
+            // - Test works reliably on any machine size (1-core to 8-core)
+            //
+            // ALTERNATIVES CONSIDERED:
+            // 1. Replace .get() with .await() - More elegant but riskier refactor
+            // 2. Reduce concurrency (5→2 readers) - Weakens test coverage
+            // 3. Upgrade runner infrastructure - Masks architectural issue
             coroutineScope {
-                val writer = async(Dispatchers.Default) {
+                val writer = async(Dispatchers.IO) {
                     runWriter(server, uri, startTime, duration)
                 }
 
                 val readers = (1..5).map { id ->
-                    async(Dispatchers.Default) {
+                    async(Dispatchers.IO) {
                         runReader(server, uri, startTime, duration, id)
                     }
                 }
