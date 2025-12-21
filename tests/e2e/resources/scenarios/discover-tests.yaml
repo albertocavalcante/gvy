@@ -1,0 +1,56 @@
+name: discover-tests
+description: Verify groovy/discoverTests custom request discovers Spock specifications
+
+server:
+  mode: inProcess
+
+workspace:
+  fixture: spock-tests
+
+steps:
+  - initialize: {}
+  - initialized: {}
+
+  # Open the Spock spec file to trigger compilation
+  - openDocument:
+      path: src/test/groovy/com/example/CalculatorSpec.groovy
+      languageId: groovy
+
+  # Wait for compilation to settle
+  - wait:
+      duration: 1000
+
+  # Send custom groovy/discoverTests request
+  - request:
+      method: groovy/discoverTests
+      params:
+        workspaceUri: '{{workspace.uri}}'
+      saveAs: result
+
+  # Verify the response structure
+  - assert:
+      source: result
+      checks:
+        # Check that we got at least one test suite
+        - jsonPath: $.length()
+          expect:
+            gte: 1
+        # Check the first suite has the expected class name
+        - jsonPath: $[0].suite
+          expect:
+            contains: 'CalculatorSpec'
+        # Check the suite has tests
+        - jsonPath: $[0].tests.length()
+          expect:
+            gte: 1
+        # Check the first test has a name
+        - jsonPath: $[0].tests[0].test
+          expect:
+            not_empty: true
+        # Check line numbers are present and valid
+        - jsonPath: $[0].tests[0].line
+          expect:
+            gte: 1
+
+  - shutdown: {}
+  - exit: {}

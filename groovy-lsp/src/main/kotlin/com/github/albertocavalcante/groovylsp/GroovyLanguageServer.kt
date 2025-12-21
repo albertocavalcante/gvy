@@ -565,4 +565,27 @@ class GroovyLanguageServer :
         }
         return false
     }
+
+    // ============================================================================
+    // CUSTOM LSP METHODS
+    // ============================================================================
+
+    /**
+     * Discover all Spock test classes and feature methods in the workspace.
+     *
+     * Custom LSP request: `groovy/discoverTests`
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("groovy/discoverTests")
+    fun discoverTests(
+        params: com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams,
+    ): CompletableFuture<List<com.github.albertocavalcante.groovylsp.providers.testing.TestSuite>> {
+        logger.info("Received groovy/discoverTests request for: ${params.workspaceUri}")
+
+        return CompletableFuture.supplyAsync {
+            val provider = com.github.albertocavalcante.groovylsp.providers.testing.TestDiscoveryProvider(
+                compilationService,
+            )
+            provider.discoverTests(params.workspaceUri)
+        }
+    }
 }
