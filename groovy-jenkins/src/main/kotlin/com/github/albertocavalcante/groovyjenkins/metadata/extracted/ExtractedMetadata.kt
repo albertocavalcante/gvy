@@ -50,7 +50,7 @@ data class ExtractionInfo(
 data class ExtractedStep(
     val scope: StepScope,
     val positionalParams: List<String> = emptyList(),
-    val namedParams: Map<String, ExtractedParameter>,
+    val namedParams: Map<String, ExtractedParameter> = emptyMap(),
     val documentation: String? = null,
     val returnType: String? = null,
 )

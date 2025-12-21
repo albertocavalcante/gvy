@@ -79,7 +79,7 @@ data class MergedParameter(
 
     // From enrichment
     val description: String?,
-    val required: Boolean?,
+    val required: Boolean = false, // Default to false if enrichment doesn't specify
     val validValues: List<String>?,
     val examples: List<String>,
 )
