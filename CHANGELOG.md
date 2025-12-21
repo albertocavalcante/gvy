@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.1](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.0...v0.4.1) (2025-12-21)
+
+
+### Features
+
+* add Jenkins enrichment metadata ([#266](https://github.com/albertocavalcante/groovy-lsp/issues/266)) ([0ee5206](https://github.com/albertocavalcante/groovy-lsp/commit/0ee5206d59edab2c91c9785e7b7313da9ab8628e))
+* add Jenkins GDSL extractor tooling ([#265](https://github.com/albertocavalcante/groovy-lsp/issues/265)) ([9a69ef1](https://github.com/albertocavalcante/groovy-lsp/commit/9a69ef106a11a67fbb2e5ae8b98ddc5eb21280cb))
+* add Jenkins IntelliSense architecture and TDD foundation ([#257](https://github.com/albertocavalcante/groovy-lsp/issues/257)) ([f09a68a](https://github.com/albertocavalcante/groovy-lsp/commit/f09a68abf8f71eaace4954aaf2e23948d2fcae72))
+* add Jenkins metadata foundation data structures (PR [#1](https://github.com/albertocavalcante/groovy-lsp/issues/1)) ([#263](https://github.com/albertocavalcante/groovy-lsp/issues/263)) ([109bcf2](https://github.com/albertocavalcante/groovy-lsp/commit/109bcf23bffc45a15762ada029649e854d103b99))
+* improve Jenkins GDSL extraction and add E2E tests ([#261](https://github.com/albertocavalcante/groovy-lsp/issues/261)) ([88101ea](https://github.com/albertocavalcante/groovy-lsp/commit/88101eabad661c764ad0ad5a838671294826eece))
+* **jupyter:** add groovy-jupyter kernel module (Phase 1A) ([#262](https://github.com/albertocavalcante/groovy-lsp/issues/262)) ([9498405](https://github.com/albertocavalcante/groovy-lsp/commit/949840560abbc992fe532ddeac36e4122dee6748))
+* **jupyter:** add kernel packaging and installation script ([#274](https://github.com/albertocavalcante/groovy-lsp/issues/274)) ([541af98](https://github.com/albertocavalcante/groovy-lsp/commit/541af983f52fbbb622a25765f39773f759fca9e3))
+* **jupyter:** implement Connection and Heartbeat handlers (Phase 1B.2) ([#268](https://github.com/albertocavalcante/groovy-lsp/issues/268)) ([3a6d7b7](https://github.com/albertocavalcante/groovy-lsp/commit/3a6d7b7bf6eae582ab8993791ba72b6b0f5f0a65))
+* **jupyter:** implement ExecuteHandler and StreamPublisher (Phase 1B.4) ([#270](https://github.com/albertocavalcante/groovy-lsp/issues/270)) ([882ee07](https://github.com/albertocavalcante/groovy-lsp/commit/882ee074c14eb1d419490bf81aff53bdc1faf17f))
+* **jupyter:** implement KernelInfoHandler and StatusPublisher (Phase 1B.3) ([#269](https://github.com/albertocavalcante/groovy-lsp/issues/269)) ([9d76e07](https://github.com/albertocavalcante/groovy-lsp/commit/9d76e07ba6002c506846d62388cfd217cf850180))
+* **jupyter:** implement KernelServer and ShutdownHandler ([#271](https://github.com/albertocavalcante/groovy-lsp/issues/271)) ([04acd6c](https://github.com/albertocavalcante/groovy-lsp/commit/04acd6c1168db52682cd69eeae06bcb414703c75))
+* **jupyter:** implement message dispatch in KernelServer ([#273](https://github.com/albertocavalcante/groovy-lsp/issues/273)) ([ae03ce4](https://github.com/albertocavalcante/groovy-lsp/commit/ae03ce43fd59349c4944feda524e4a49e8dbc5ba))
+* **jupyter:** implement Wire Protocol for ZMQ messages (Phase 1B.1) ([#267](https://github.com/albertocavalcante/groovy-lsp/issues/267)) ([9c6fb72](https://github.com/albertocavalcante/groovy-lsp/commit/9c6fb729609da7b17a0b99b2a0259d0e5109822b))
+* **lsp:** add groovy/discoverTests custom method for Spock test discovery ([#277](https://github.com/albertocavalcante/groovy-lsp/issues/277)) ([5ffa1e5](https://github.com/albertocavalcante/groovy-lsp/commit/5ffa1e5e33989467bde98bf7af1e0caef7a5fe80))
+
+
+### Bug Fixes
+
+* add Apache Ivy dependency for Grape/Grab support in Jupyter kernel ([#276](https://github.com/albertocavalcante/groovy-lsp/issues/276)) ([14c6d8e](https://github.com/albertocavalcante/groovy-lsp/commit/14c6d8e58b01b4a19faaebb7aa9c22d1e235cf79))
+* **deps:** update dependency ch.qos.logback:logback-classic to v1.5.23 ([#278](https://github.com/albertocavalcante/groovy-lsp/issues/278)) ([a49cf92](https://github.com/albertocavalcante/groovy-lsp/commit/a49cf9280f5ce07b4f167cee4fe093a4dc80e0a0))
+
 ## [0.4.0](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.4...v0.4.0) (2025-12-21)
 
 
