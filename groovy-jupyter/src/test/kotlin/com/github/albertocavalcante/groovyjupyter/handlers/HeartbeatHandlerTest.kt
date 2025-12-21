@@ -81,21 +81,13 @@ class HeartbeatHandlerTest {
     @Test
     fun `should return false when no message available`() {
         // Given: A handler with no pending messages
-        // Use a separate socket that has no messages pending
-        val emptyContext = ZContext()
-        val emptyServer = emptyContext.createSocket(ZMQ.REP)
-        emptyServer.bind("inproc://empty-test")
-
-        val handler = HeartbeatHandler(emptyServer)
+        val handler = HeartbeatHandler(serverSocket)
 
         // When: Trying to handle with no messages (non-blocking)
         val handled = handler.handleOnce()
 
         // Then: Should return false
         assertThat(handled).isFalse()
-
-        emptyServer.close()
-        emptyContext.close()
     }
 
     @Test

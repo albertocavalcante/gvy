@@ -22,6 +22,7 @@ import java.io.Closeable
 class JupyterConnection(private val config: ConnectionFile, val signer: HmacSigner) : Closeable {
     private val logger = LoggerFactory.getLogger(JupyterConnection::class.java)
     private val context = ZContext()
+    private val createdSockets = mutableListOf<ZMQ.Socket>()
 
     // Socket instances (created lazily on first access)
     val shellSocket: ZMQ.Socket by lazy { createSocket(ZMQ.ROUTER, "shell") }
@@ -61,11 +62,8 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
         logger.info("Closing sockets...")
 
         // Close sockets in reverse order of creation
-        runCatching { heartbeatSocket.close() }
-        runCatching { stdinSocket.close() }
-        runCatching { controlSocket.close() }
-        runCatching { iopubSocket.close() }
-        runCatching { shellSocket.close() }
+        createdSockets.asReversed().forEach { runCatching { it.close() } }
+        createdSockets.clear()
 
         context.close()
         isClosed = true
@@ -74,7 +72,7 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
 
     private fun createSocket(type: Int, name: String): ZMQ.Socket {
         logger.debug("Creating {} socket", name)
-        return context.createSocket(type)
+        return context.createSocket(type).also { createdSockets.add(it) }
     }
 
     private fun bindSocket(socket: ZMQ.Socket, address: String, name: String) {
