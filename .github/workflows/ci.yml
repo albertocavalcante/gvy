@@ -15,6 +15,7 @@ on:
         options:
           - 'self-hosted'
           - 'magalu'
+          - 'local-macos'
           - 'cloud'
         default: 'magalu'
       disable_scan:
@@ -91,6 +92,9 @@ jobs:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
+          # For workflow_run events, use the triggering workflow's head commit as base
+          # This fixes the 'before field is missing' warning
+          base: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
           filters: |
             run_main_ci:
               - 'src/**'
@@ -113,8 +117,6 @@ jobs:
       github.event_name != 'workflow_run' &&
       (needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch')
     outputs:
-      runner_available: ${{ steps.check.outputs.has-runners }}
-      needs_provision: ${{ steps.decide.outputs.needs_provision }}
       provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
       - name: Checkout (for local action)
@@ -122,34 +124,27 @@ jobs:
         with:
           sparse-checkout: .github/actions
 
-      - name: Check for Magalu runners
-        id: check
+      - name: Determine Runner Label
+        id: mode
+        run: |
+          # Priority: Input > Variable > Default(magalu)
+          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'magalu' }}"
+          echo "label=$LABEL" >> $GITHUB_OUTPUT
+          echo "Checking availability for: $LABEL"
+
+      # --- Magalu Check ---
+      - name: Check Magalu runner
+        if: steps.mode.outputs.label == 'magalu'
+        id: check-magalu
         uses: ./.github/actions/runner-status
         with:
           mode: check
           label: magalu
           github-token: ${{ secrets.GH_PAT_RUNNER }}
 
-      - name: Decide on provisioning
-        id: decide
-        run: |
-          RUNNER_LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'magalu' }}"
-          HAS_RUNNERS="${{ steps.check.outputs.has-runners }}"
-
-          echo "Runner label: $RUNNER_LABEL"
-          echo "Has runners: $HAS_RUNNERS"
-
-          # Only need to provision if targeting magalu and no runners available
-          if [[ "$RUNNER_LABEL" == "magalu" && "$HAS_RUNNERS" != "true" ]]; then
-            echo "needs_provision=true" >> $GITHUB_OUTPUT
-            echo "⚠️ Magalu runner not available - provisioning required"
-          else
-            echo "needs_provision=false" >> $GITHUB_OUTPUT
-            echo "✅ Runner available or not using magalu"
-          fi
-
-      - name: Trigger provisioning workflow
-        if: steps.decide.outputs.needs_provision == 'true'
+      - name: Trigger provisioning (Magalu)
+        if: steps.mode.outputs.label == 'magalu' && steps.check-magalu.outputs.has-runners != 'true'
+        id: exit-early
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
         run: |
@@ -160,17 +155,63 @@ jobs:
           echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
           echo ""
           echo "ℹ️ This CI run will exit now to avoid wasting compute cycles."
-          echo "   CI will automatically resume after provisioning completes via workflow_run event."
-
-      # Exit early to avoid wasting compute cycles while waiting for approval
-      # The workflow_run event will trigger a new CI run once provisioning completes
-      - name: Exit early (CI will auto-resume after provisioning)
-        id: exit-early
-        if: steps.decide.outputs.needs_provision == 'true'
-        run: |
           echo "::notice::CI exiting early. Will auto-resume via workflow_run after runner-provision.yml completes."
           # Set output to signal downstream jobs to skip
           echo "provisioning_triggered=true" >> $GITHUB_OUTPUT
+
+      # --- Local macOS Check ---
+      - name: Check Local macOS runner
+        if: steps.mode.outputs.label == 'local-macos'
+        id: check-local
+        uses: ./.github/actions/runner-status
+        with:
+          mode: check
+          label: local-macos
+          github-token: ${{ secrets.GH_PAT_RUNNER }}
+
+      - name: Verify Local macOS Availability
+        if: steps.mode.outputs.label == 'local-macos' && steps.check-local.outputs.has-runners != 'true'
+        run: |
+          echo "❌ No local macOS runner found online with label 'local-macos'."
+          echo ""
+          echo "To set up a runner on your Mac:"
+          echo "  ./tools/github/actions/setup-macos-runner.sh"
+          echo ""
+          echo "Ensure the runner service is active:"
+          echo "  cd ~/.gha-runners/groovy-lsp-*"
+          echo "  ./svc.sh status"
+          echo ""
+          exit 1
+
+      # --- Summary ---
+      - name: Runner Check Summary
+        if: always()
+        run: |
+          LABEL="${{ steps.mode.outputs.label }}"
+          echo "Runner label: $LABEL"
+
+          case "$LABEL" in
+            "magalu")
+              if [[ "${{ steps.check-magalu.outputs.has-runners }}" == "true" ]]; then
+                echo "✅ Magalu runner available"
+              else
+                echo "⏳ Magalu runner provisioning triggered"
+              fi
+              ;;
+            "local-macos")
+              if [[ "${{ steps.check-local.outputs.has-runners }}" == "true" ]]; then
+                echo "✅ Local macOS runner available"
+              else
+                echo "❌ Local macOS runner check failed (see above)"
+              fi
+              ;;
+            "cloud")
+              echo "✅ Using GitHub-hosted cloud runners (no check needed)"
+              ;;
+            *)
+              echo "✅ Runner check complete for: $LABEL"
+              ;;
+          esac
 
   build:
     name: Build and Test
@@ -184,8 +225,8 @@ jobs:
         (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
       )
     timeout-minutes: 45
-    # For Magalu runners, we need all three labels; for others, use the matrix value directly
-    runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os }}
+    # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
+    runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os == 'local-macos' && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || matrix.os }}
     permissions:
       checks: write
       contents: read
@@ -193,12 +234,12 @@ jobs:
       fail-fast: false
       matrix:
         # Runner selection:
-        #   - self-hosted (default): Local runner, Java 17 only
         #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
+        #   - local-macos: Local macOS runner (setup with tools/github/actions/setup-macos-runner.sh)
         #   - cloud: GitHub-hosted (macos-15 for PRs, multi-platform for main)
         # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu' || github.event_name == 'push') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["magalu"]' ) }}
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu' || github.event_name == 'push') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["magalu"]' ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
         exclude:
           - os: ubuntu-24.04

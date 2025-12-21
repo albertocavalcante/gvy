@@ -1,0 +1,8 @@
+# ShellCheck configuration
+# https://github.com/koalaman/shellcheck
+
+# Disable specific checks if needed
+# disable=SC1234
+
+# Enable all optional checks
+enable=all
