@@ -16,8 +16,8 @@ on:
           - 'self-hosted'
           - 'magalu'
           - 'local-macos'
-          - 'cloud'
-        default: 'magalu'
+          - 'github-hosted'
+        default: 'github-hosted'
       disable_scan:
         description: Disable Gradle build scan
         required: false
@@ -57,16 +57,16 @@ concurrency:
 # ============================================================================
 # Priority: workflow_dispatch input > CI_RUNNER_LABEL repo variable > self-hosted
 #
-# Default: magalu runner (ephemeral, no GitHub Actions minutes cost)
+# Default: github-hosted runner (standard GitHub Actions runners)
 #
 # Runner options:
 #   - self-hosted: Local runner (fastest, no cost)
-#   - magalu: Magalu Cloud ephemeral runner (default, use runner-provision.yml first!)
-#   - cloud: GitHub-hosted runners (macos-15 for PRs, matrix for main)
+#   - magalu: Magalu Cloud ephemeral runner (use runner-provision.yml first!)
+#   - github-hosted: GitHub-hosted runners (default, macos-15 for PRs, matrix for main)
 #
 # To switch runners permanently:
 #   Settings → Secrets and variables → Actions → Variables → New repository variable
-#   Name: CI_RUNNER_LABEL  Value: cloud (or magalu)
+#   Name: CI_RUNNER_LABEL  Value: github-hosted (or magalu)
 #
 # To switch for a single run:
 #   Actions → CI → Run workflow → runner_label: <choice>
@@ -129,8 +129,8 @@ jobs:
       - name: Determine Runner Label
         id: mode
         run: |
-          # Priority: Input > Variable > Default(magalu)
-          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'magalu' }}"
+          # Priority: Input > Variable > Default(github-hosted)
+          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}"
           echo "label=$LABEL" >> $GITHUB_OUTPUT
           echo "Checking availability for: $LABEL"
 
@@ -207,7 +207,7 @@ jobs:
                 echo "❌ Local macOS runner check failed (see above)"
               fi
               ;;
-            "cloud")
+            "github-hosted")
               echo "✅ Using GitHub-hosted cloud runners (no check needed)"
               ;;
             *)
@@ -238,11 +238,11 @@ jobs:
         # Runner selection:
         #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
         #   - local-macos: Local macOS runner (setup with tools/github/actions/setup-macos-runner.sh)
-        #   - cloud: GitHub-hosted (macos-15 for PRs, multi-platform for main)
+        #   - github-hosted: GitHub-hosted (macos-15 for PRs, multi-platform for main)
         # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu' || github.event_name == 'push') && '["magalu"]' || (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') || '["magalu"]' ) }}
-        java: ${{ fromJSON( (github.event.inputs.runner_label == 'cloud' || vars.CI_RUNNER_LABEL == 'cloud') && (github.event_name == 'pull_request' && '[17]' || '[17, 21]') || '[17]' ) }}
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "ubuntu-24.04"]') ) }}
+        java: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos' || github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
         exclude:
           - os: ubuntu-24.04
             java: 21
