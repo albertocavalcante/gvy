@@ -42,10 +42,12 @@ concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
   # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
   # workflow_run: group by triggering run ID (allows resume after provisioning)
+  # workflow_dispatch: group by run ID (never wait for other CI runs)
   group: >-
     ${{ github.workflow }}-${{
       github.event_name == 'pull_request' && github.head_ref ||
       github.event_name == 'workflow_run' && github.event.workflow_run.id ||
+      github.event_name == 'workflow_dispatch' && github.run_id ||
       github.sha
     }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
