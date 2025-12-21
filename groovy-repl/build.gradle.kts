@@ -6,6 +6,10 @@ dependencies {
     // Groovy runtime for execution
     implementation(libs.groovy.core)
 
+    // Apache Ivy - required for Groovy's @Grab annotation (Grape dependency management)
+    // Without this, code using @Grab will fail with NoClassDefFoundError: org/apache/ivy/util/MessageLogger
+    runtimeOnly(libs.ivy)
+
     // Logging
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)
