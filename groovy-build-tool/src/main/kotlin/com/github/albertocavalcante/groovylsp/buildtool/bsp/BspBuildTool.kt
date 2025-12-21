@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.buildtool.bsp
 
 import ch.epfl.scala.bsp4j.DependencyModulesResult
 import ch.epfl.scala.bsp4j.SourcesResult
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.BspCompatibleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -16,7 +16,7 @@ import kotlin.io.path.exists
  * Connects to BSP servers that advertise themselves via .bsp directory JSON files.
  * This enables support for build tools without direct API implementations.
  */
-class BspBuildTool : BuildTool {
+class BspBuildTool : BspCompatibleBuildTool {
 
     private val logger = LoggerFactory.getLogger(BspBuildTool::class.java)
 

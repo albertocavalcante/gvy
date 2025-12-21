@@ -34,3 +34,15 @@ interface BuildTool {
         onChange: (Path) -> Unit,
     ): BuildToolFileWatcher? = null
 }
+
+/**
+ * Marker interface for native Gradle Tooling API implementations.
+ * Used for type-safe filtering in BuildToolManager without coupling to concrete classes.
+ */
+interface NativeGradleBuildTool : BuildTool
+
+/**
+ * Marker interface for BSP (Build Server Protocol) implementations.
+ * Used for type-safe filtering in BuildToolManager without coupling to concrete classes.
+ */
+interface BspCompatibleBuildTool : BuildTool

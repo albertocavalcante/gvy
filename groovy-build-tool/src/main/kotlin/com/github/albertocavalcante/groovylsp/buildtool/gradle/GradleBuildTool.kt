@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.NativeGradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
@@ -17,7 +17,7 @@ import kotlin.io.path.exists
 class GradleBuildTool(
     private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
     retryConfig: GradleDependencyResolver.RetryConfig = GradleDependencyResolver.RetryConfig(),
-) : BuildTool {
+) : NativeGradleBuildTool {
 
     private val logger = LoggerFactory.getLogger(GradleBuildTool::class.java)
     private val dependencyResolver = GradleDependencyResolver(connectionFactory, retryConfig)

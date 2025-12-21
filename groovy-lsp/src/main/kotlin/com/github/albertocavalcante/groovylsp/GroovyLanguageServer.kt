@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
@@ -51,17 +52,18 @@ class GroovyLanguageServer :
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val compilationService = GroovyCompilationService()
 
-    // Async dependency management
+    // Available build tools in detection priority order
     // BSP comes first - it's opt-in (only used if .bsp/ directory exists)
     // This enables support for Bazel, sbt, Mill without direct implementations
-    private val buildToolManager = BuildToolManager(
-        listOf(
-            BspBuildTool(),
-            GradleBuildTool(),
-            MavenBuildTool(),
-        ),
+    private val availableBuildTools: List<BuildTool> = listOf(
+        BspBuildTool(),
+        GradleBuildTool(),
+        MavenBuildTool(),
     )
-    private val dependencyManager = DependencyManager(buildToolManager, coroutineScope)
+
+    // Async dependency management - lazily initialized after config parsing
+    private var buildToolManager: BuildToolManager? = null
+    private var dependencyManager: DependencyManager? = null
     private var savedInitParams: InitializeParams? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
 
@@ -251,7 +253,18 @@ class GroovyLanguageServer :
         val config = ServerConfiguration.fromMap(savedInitOptionsMap)
         compilationService.workspaceManager.initializeJenkinsWorkspace(config)
 
-        dependencyManager.startAsyncResolution(
+        // Initialize build tool manager with configured strategy
+        // This allows users to control BSP vs native Gradle resolution
+        logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
+        val newBuildToolManager = BuildToolManager(
+            buildTools = availableBuildTools,
+            gradleBuildStrategy = config.gradleBuildStrategy,
+        )
+        buildToolManager = newBuildToolManager
+        val newDependencyManager = DependencyManager(newBuildToolManager, coroutineScope)
+        dependencyManager = newDependencyManager
+
+        newDependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
             onProgress = { percentage, message ->
                 progressReporter.updateProgress(message, percentage)
@@ -287,7 +300,7 @@ class GroovyLanguageServer :
                 )
 
                 // Get tool name for friendly message
-                val toolName = dependencyManager.getCurrentBuildToolName() ?: "Build Tool"
+                val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
 
                 // Notify client of successful resolution
                 client?.showMessage(
@@ -319,7 +332,7 @@ class GroovyLanguageServer :
         logger.info("Shutting down Groovy Language Server...")
         try {
             // Cancel dependency resolution if in progress
-            dependencyManager.cancel()
+            dependencyManager?.cancel()
 
             // Shutdown Gradle connection pool
             val poolShutdown = CompletableFuture.runAsync { GradleConnectionPool.shutdown() }
@@ -405,10 +418,11 @@ class GroovyLanguageServer :
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean {
         val start = System.currentTimeMillis()
         while (System.currentTimeMillis() - start < timeoutSeconds * 1000) {
-            if (dependencyManager.isDependenciesReady()) {
+            val manager = dependencyManager ?: return false
+            if (manager.isDependenciesReady()) {
                 return true
             }
-            if (dependencyManager.getState() ==
+            if (manager.getState() ==
                 com.github.albertocavalcante.groovylsp.gradle.DependencyManager.State.FAILED
             ) {
                 return false

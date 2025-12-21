@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.config
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
+import com.github.albertocavalcante.groovylsp.buildtool.GradleBuildStrategy
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.slf4j.LoggerFactory
 
@@ -38,6 +39,10 @@ data class ServerConfiguration(
 
     // Jenkins configuration
     val jenkinsConfig: JenkinsConfiguration = JenkinsConfiguration(),
+
+    // Gradle Build Strategy - controls how Gradle projects resolve dependencies
+    // See: https://devblogs.microsoft.com/java/new-build-server-for-gradle/
+    val gradleBuildStrategy: GradleBuildStrategy = GradleBuildStrategy.AUTO,
 ) {
 
     enum class CompilationMode {
@@ -92,6 +97,11 @@ data class ServerConfiguration(
 
                     // Jenkins configuration
                     jenkinsConfig = JenkinsConfiguration.fromMap(map),
+
+                    // Gradle build strategy
+                    gradleBuildStrategy = GradleBuildStrategy.fromString(
+                        map["groovy.gradle.buildStrategy"] as? String,
+                    ),
                 )
             } catch (e: Exception) {
                 logger.warn("Error parsing configuration, using defaults", e)
