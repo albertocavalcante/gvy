@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 dependencies {
@@ -15,6 +16,12 @@ dependencies {
 
     // Gradle Tooling API
     implementation(libs.gradle.tooling.api)
+
+    // Build Server Protocol (for Bazel, sbt, Mill support)
+    implementation(libs.bsp4j)
+
+    // JSON parsing for BSP connection files
+    implementation(libs.kotlin.serialization.json)
 
     // Maven Embedder (for programmatic dependency resolution)
     implementation(libs.maven.embedder)
@@ -34,6 +41,19 @@ dependencies {
 
 kotlin {
     jvmToolchain(17)
+}
+
+// Exclude BSP client from coverage - requires real BSP server (integration test)
+// NOTE: BspConnectionDetails and BspBuildTool are tested via unit tests.
+// BspClient requires a running BSP server process to test properly.
+kover {
+    reports {
+        filters {
+            excludes {
+                classes("*BspClient*")
+            }
+        }
+    }
 }
 
 tasks.test {

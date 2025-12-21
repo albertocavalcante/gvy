@@ -39,6 +39,7 @@ mavenResolver = "1.9.25"
 javaparser = "3.27.1"
 arrow = "2.2.1"
 flexmark = "0.64.8"
+bsp4j = "2.1.1"
 
 [libraries]
 # Plugins (libraries for plugins block)
@@ -63,6 +64,9 @@ rewrite-groovy = { module = "org.openrewrite:rewrite-groovy", version.ref = "rew
 
 # Gradle Tooling
 gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "gradleTooling" }
+
+# Build Server Protocol
+bsp4j = { module = "ch.epfl.scala:bsp4j", version.ref = "bsp4j" }
 
 # Kotlin
 kotlin-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

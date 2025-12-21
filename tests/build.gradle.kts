@@ -25,6 +25,11 @@ kover {
     }
 }
 
+// Disable koverVerify for this module - it only contains e2e test code, no production code to cover
+tasks.matching { it.name == "koverVerify" }.configureEach {
+    enabled = false
+}
+
 dependencies {
     "detektPlugins"(libs.detekt.formatting)
 }

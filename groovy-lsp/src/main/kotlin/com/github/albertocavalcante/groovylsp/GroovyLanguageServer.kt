@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionPool
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
@@ -51,8 +52,11 @@ class GroovyLanguageServer :
     private val compilationService = GroovyCompilationService()
 
     // Async dependency management
+    // BSP comes first - it's opt-in (only used if .bsp/ directory exists)
+    // This enables support for Bazel, sbt, Mill without direct implementations
     private val buildToolManager = BuildToolManager(
         listOf(
+            BspBuildTool(),
             GradleBuildTool(),
             MavenBuildTool(),
         ),
