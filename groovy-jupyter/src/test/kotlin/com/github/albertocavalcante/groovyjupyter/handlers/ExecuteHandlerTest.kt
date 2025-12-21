@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyjupyter.handlers
 
-import com.github.albertocavalcante.groovyjupyter.execution.GroovyExecutor
 import com.github.albertocavalcante.groovyjupyter.protocol.Header
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
+import com.github.albertocavalcante.groovyrepl.GroovyExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

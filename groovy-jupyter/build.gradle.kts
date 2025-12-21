@@ -15,9 +15,7 @@ dependencies {
     // Reused modules
     implementation(project(":groovy-parser"))
     implementation(project(":groovy-common"))
-
-    // Groovy runtime for execution
-    implementation(libs.groovy.core)
+    implementation(project(":groovy-repl")) // Groovy execution engine
 
     // Logging
     implementation(libs.slf4j.api)

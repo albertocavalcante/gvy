@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyjupyter
 
-import com.github.albertocavalcante.groovyjupyter.execution.GroovyExecutor
 import com.github.albertocavalcante.groovyjupyter.kernel.KernelServer
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
+import com.github.albertocavalcante.groovyrepl.GroovyExecutor
 import org.slf4j.LoggerFactory
 import kotlin.system.exitProcess
 

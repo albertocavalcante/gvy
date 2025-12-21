@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyjupyter.execution
+package com.github.albertocavalcante.groovyrepl
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -30,11 +30,11 @@ class GroovyExecutorTest {
         val executor = GroovyExecutor()
 
         // When: Executing println
-        val result = executor.execute("println 'Hello, Jupyter!'")
+        val result = executor.execute("println 'Hello, REPL!'")
 
         // Then: Should capture output
         assertThat(result.isSuccess).isTrue()
-        assertThat(result.stdout).contains("Hello, Jupyter!")
+        assertThat(result.stdout).contains("Hello, REPL!")
     }
 
     @Test
@@ -174,5 +174,20 @@ class GroovyExecutorTest {
         assertThat(result.isSuccess).isTrue()
         // Groovy division returns BigDecimal, so we compare numerically
         assertThat((result.value as Number).toInt()).isEqualTo(3)
+    }
+
+    @Test
+    fun `should expose current bindings`() {
+        // Given: An executor with variables
+        val executor = GroovyExecutor()
+        executor.execute("name = 'Groovy'")
+        executor.execute("version = 4")
+
+        // When: Getting bindings
+        val bindings = executor.getBindings()
+
+        // Then: Should contain the variables
+        assertThat(bindings).containsEntry("name", "Groovy")
+        assertThat(bindings).containsEntry("version", 4)
     }
 }

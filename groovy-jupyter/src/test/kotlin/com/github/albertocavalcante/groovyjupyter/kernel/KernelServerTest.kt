@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyjupyter.kernel
 
-import com.github.albertocavalcante.groovyjupyter.execution.GroovyExecutor
 import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteHandler
 import com.github.albertocavalcante.groovyjupyter.handlers.HeartbeatHandler
 import com.github.albertocavalcante.groovyjupyter.handlers.KernelInfoHandler
@@ -12,6 +11,7 @@ import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
 import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
+import com.github.albertocavalcante.groovyrepl.GroovyExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
