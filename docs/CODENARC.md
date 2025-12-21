@@ -145,7 +145,7 @@ ruleset('rulesets/groovyism.xml') {
 
 ### Standard CodeNarc Rulesets
 
-CodeNarc provides these built-in rulesets:
+CodeNarc provides these built-in rulesets (bundled in CodeNarc JAR):
 
 - `rulesets/basic.xml` - Fundamental code quality rules
 - `rulesets/imports.xml` - Import organization rules
@@ -156,6 +156,35 @@ CodeNarc provides these built-in rulesets:
 - `rulesets/groovyism.xml` - Groovy-specific best practices
 - `rulesets/naming.xml` - Naming convention rules
 - `rulesets/size.xml` - Code size and complexity rules
+- `rulesets/jenkins.xml` - Jenkins CPS safety rules (7 rules)
+
+### Ruleset Resolution and Fallback
+
+The LSP uses a hierarchical ruleset resolution strategy:
+
+1. **Workspace Configuration Files** (highest priority)
+   - `.codenarc` in workspace root
+   - `config/codenarc/rules.groovy`
+   - `codenarc.groovy`
+
+2. **Custom DSL Rulesets** (project-type specific)
+   - `codenarc/rulesets/frameworks/jenkins.groovy` for Jenkins projects
+   - `codenarc/rulesets/base/default.groovy` for plain Groovy projects
+
+3. **Bundled CodeNarc Rulesets** (fallback)
+   - `rulesets/jenkins.xml` for Jenkins projects
+   - `rulesets/basic.xml` for other projects
+
+**Fallback Behavior**: If custom DSL rulesets are missing from the classpath (e.g., when running as fat JAR without resources), the LSP automatically generates a minimal DSL wrapper that references CodeNarc's bundled XML rulesets. This prevents `IllegalStateException` crashes and ensures diagnostics continue to work.
+
+**Example Fallback**:
+```groovy
+// Generated when custom ruleset missing
+ruleset {
+    description 'Fallback to CodeNarc bundled ruleset'
+    ruleset('rulesets/jenkins.xml')  // For Jenkins projects
+}
+```
 
 ### Ruleset Hierarchy
 
@@ -187,9 +216,55 @@ ruleset('rulesets/basic.xml') {
 }
 ```
 
+## Configuration
+
+### Disabling CodeNarc
+
+CodeNarc diagnostics can be disabled via LSP configuration:
+
+```json
+{
+  "groovy.codenarc.enabled": false
+}
+```
+
+When disabled, CodeNarc analysis is skipped entirely (no ruleset loading, no diagnostics).
+
+### Configuration Options
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `groovy.codenarc.enabled` | boolean | `true` | Enable/disable CodeNarc diagnostics |
+| `groovy.codenarc.propertiesFile` | string | `null` | Explicit path to CodeNarc properties file |
+| `groovy.codenarc.autoDetect` | boolean | `true` | Auto-detect CodeNarc config files in workspace |
+
 ## Project-Specific Configurations
 
 ### Jenkins Projects
+
+**Automatic Detection**: Jenkins projects are automatically detected by the presence of:
+- `Jenkinsfile` in the workspace root
+- `vars/` directory (Jenkins shared library)
+- `resources/` directory (Jenkins shared library resources)
+
+**Bundled Jenkins Rules**: The LSP includes CodeNarc's bundled `rulesets/jenkins.xml` which provides 7 Jenkins-specific CPS (Continuation Passing Style) rules:
+
+1. **ClassNotSerializable** - Classes should implement Serializable for CPS transformation
+2. **ClosureInGString** - Closures in GStrings cause CPS runtime errors
+3. **CpsCallFromNonCpsMethod** - CPS methods cannot be called from non-CPS methods
+4. **ExpressionInCpsMethodNotSerializable** - Expressions in CPS methods must be Serializable
+5. **ForbiddenCallInCpsMethod** - Non-CPS methods cannot be called with CPS closures
+6. **ObjectOverrideOnlyNonCpsMethods** - Overridden Object methods must be @NonCPS
+7. **ParameterOrReturnTypeNotSerializable** - Parameters and return types must be Serializable
+
+**Custom Jenkins Ruleset**: The LSP provides a custom Jenkins ruleset at `codenarc/rulesets/frameworks/jenkins.groovy` that:
+- Includes all bundled Jenkins CPS rules
+- Adds basic code quality rules (excluding patterns common in Jenkinsfiles)
+- Configures `CpsCallFromNonCpsMethodRule` for common Jenkins patterns
+
+**Fallback Mechanism**: If custom rulesets are missing from the classpath, the LSP automatically falls back to CodeNarc's bundled XML rulesets, preventing crashes.
+
+**Customizing Jenkins Rules** (for custom rulesets):
 
 Jenkins projects require special handling due to DSL patterns and implicit variables:
 

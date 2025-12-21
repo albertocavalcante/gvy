@@ -31,6 +31,29 @@ interface RulesetResolver {
 }
 
 /**
+ * Loads resources from a given path.
+ * Extracted for testability - allows mocking resource loading in tests.
+ */
+fun interface ResourceLoader {
+    /**
+     * Loads content from the specified resource path.
+     * @param resourcePath The path to the resource
+     * @return The content as a string, or null if not found
+     */
+    fun load(resourcePath: String): String?
+}
+
+/**
+ * Default implementation that loads resources from the classpath.
+ */
+class ClasspathResourceLoader : ResourceLoader {
+    override fun load(resourcePath: String): String? =
+        this::class.java.classLoader.getResourceAsStream(resourcePath)?.use { stream ->
+            stream.reader().readText()
+        }
+}
+
+/**
  * Default implementation that resolves rulesets hierarchically:
  * 1. Explicit workspace config file
  * 2. Server configuration override
@@ -40,6 +63,7 @@ interface RulesetResolver {
 @Suppress("TooGenericExceptionCaught") // Ruleset resolution needs robust error handling
 class HierarchicalRulesetResolver(
     private val projectTypeDetector: ProjectTypeDetector = DefaultProjectTypeDetector(),
+    private val resourceLoader: ResourceLoader = ClasspathResourceLoader(),
 ) : RulesetResolver {
 
     companion object {
@@ -200,6 +224,11 @@ class HierarchicalRulesetResolver(
 
     /**
      * Loads the appropriate default ruleset based on project type.
+     *
+     * Fallback chain:
+     * 1. Try custom DSL ruleset for project type
+     * 2. Try default DSL ruleset
+     * 3. Fall back to CodeNarc's bundled XML rulesets (wrapped in minimal DSL)
      */
     private fun loadProjectTypeDefault(context: WorkspaceContext): ResolvedRuleset {
         val projectType = if (context.root != null) {
@@ -208,7 +237,8 @@ class HierarchicalRulesetResolver(
             ProjectType.PlainGroovy
         }
 
-        val resourcePath = when (projectType) {
+        // Try custom DSL rulesets first
+        val customResourcePath = when (projectType) {
             is ProjectType.JenkinsLibrary -> "codenarc/rulesets/frameworks/jenkins.groovy"
             is ProjectType.GrailsApplication -> "codenarc/rulesets/frameworks/grails.groovy" // Future
             is ProjectType.SpringBootProject -> "codenarc/rulesets/frameworks/spring-boot.groovy" // Future
@@ -222,30 +252,51 @@ class HierarchicalRulesetResolver(
             else -> "codenarc/rulesets/base/default.groovy"
         }
 
-        val content = loadRulesetFromResource(resourcePath)
-            ?: loadRulesetFromResource("codenarc/rulesets/base/default.groovy")
-            ?: error("Failed to load any ruleset from resources - check that ruleset files exist in classpath")
+        // Try custom ruleset
+        loadRulesetFromResource(customResourcePath)?.let {
+            return ResolvedRuleset(it, "resource:$customResourcePath")
+        }
 
-        return ResolvedRuleset(content, "resource:$resourcePath")
+        // Try default ruleset as fallback
+        val defaultResourcePath = "codenarc/rulesets/base/default.groovy"
+        loadRulesetFromResource(defaultResourcePath)?.let {
+            logger.info("Falling back to default ruleset: {}", defaultResourcePath)
+            return ResolvedRuleset(it, "resource:$defaultResourcePath")
+        }
+
+        // Final fallback: Use CodeNarc's bundled XML rulesets
+        // Generate minimal DSL wrapper that references bundled rulesets
+        val bundledRulesetPath = when (projectType) {
+            is ProjectType.JenkinsLibrary -> "rulesets/jenkins.xml"
+            else -> "rulesets/basic.xml"
+        }
+
+        logger.warn(
+            "Custom rulesets not found in classpath. Falling back to CodeNarc bundled ruleset: {}",
+            bundledRulesetPath,
+        )
+
+        // Generate minimal DSL wrapper for bundled XML ruleset
+        val bundledWrapper = """
+            ruleset {
+                description 'Fallback to CodeNarc bundled ruleset'
+                ruleset('$bundledRulesetPath')
+            }
+        """.trimIndent()
+
+        return ResolvedRuleset(bundledWrapper, "bundled:$bundledRulesetPath")
     }
 
     /**
-     * Loads ruleset content from a classpath resource.
+     * Loads ruleset content from a classpath resource using the injected ResourceLoader.
      */
-    private fun loadRulesetFromResource(resourcePath: String): String? {
-        return try {
-            val inputStream = this::class.java.classLoader.getResourceAsStream(resourcePath)
-                ?: return null
-
-            inputStream.use { stream ->
-                stream.reader().readText()
-            }.also {
-                logger.debug("Successfully loaded ruleset from $resourcePath (${it.length} characters)")
-            }
-        } catch (e: Exception) {
-            logger.debug("Failed to load ruleset from resource: $resourcePath", e)
-            null
+    private fun loadRulesetFromResource(resourcePath: String): String? = try {
+        resourceLoader.load(resourcePath)?.also {
+            logger.debug("Successfully loaded ruleset from {} ({} characters)", resourcePath, it.length)
         }
+    } catch (e: Exception) {
+        logger.debug("Failed to load ruleset from resource: {}", resourcePath, e)
+        null
     }
 
     /**
