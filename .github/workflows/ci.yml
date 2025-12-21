@@ -209,6 +209,35 @@ jobs:
         with:
           # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+
+      - name: 🖥️ Runner Specs
+        shell: bash
+        run: |
+          echo "## 🖥️ Runner: ${{ runner.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Spec | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **OS** | ${{ runner.os }} / ${{ runner.arch }} |" >> $GITHUB_STEP_SUMMARY
+
+          # Cross-platform CPU/RAM detection
+          # TODO: Add Windows support using: wmic cpu get NumberOfCores, systeminfo for RAM
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            CORES=$(sysctl -n hw.ncpu)
+            RAM=$(echo "scale=1; $(sysctl -n hw.memsize) / 1024 / 1024 / 1024" | bc)
+            RAM="${RAM} GB"
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            CORES="N/A (Windows not yet supported)"
+            RAM="N/A"
+          else
+            CORES=$(nproc)
+            RAM=$(free -h | awk '/Mem:/ {print $2}')
+          fi
+          DISK=$(df -h / | awk 'NR==2 {print $4 " free"}' 2>/dev/null || echo "N/A")
+
+          echo "| **CPU Cores** | $CORES |" >> $GITHUB_STEP_SUMMARY
+          echo "| **RAM** | $RAM |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Disk** | $DISK |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Hostname** | $(hostname) |" >> $GITHUB_STEP_SUMMARY
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
