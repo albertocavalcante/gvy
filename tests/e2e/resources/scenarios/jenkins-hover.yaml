@@ -1,0 +1,89 @@
+# NOTE: Jenkins step hover is WIP. This test documents current behavior
+# and will be updated as hover support improves.
+# TODO: Implement proper Jenkins step hover documentation
+name: jenkins-hover
+description: >
+  Tests hover documentation for Jenkins pipeline steps.
+  Currently tests completion since hover for bare step names is not yet implemented.
+steps:
+  - initialize:
+      initializationOptions:
+        jenkins:
+          filePatterns: ["Jenkinsfile"]
+  - initialized: {}
+
+  # =====================================================
+  # Test: Verify Jenkins completion works (hover WIP)
+  # =====================================================
+  - openDocument:
+      path: "Jenkinsfile"
+      languageId: "groovy"
+      version: 1
+      text: |
+        node {
+            s
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 1
+          character: 5
+      saveAs: shCompletion
+  - assert:
+      source: shCompletion
+      checks:
+        # sh step should be in completions
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        # stage should also be available
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: stage
+
+  # =====================================================
+  # Test: echo step completion with documentation
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 2
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        ech
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 15
+      saveAs: echoCompletion
+  - assert:
+      source: echoCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: echo
+        # Verify echo step has correct plugin detail (exact match)
+        - jsonPath: $.items[*].detail
+          expect:
+            type: CONTAINS
+            value: "Jenkins step (workflow-basic-steps)"
+
+  - shutdown: {}
+  - exit: {}

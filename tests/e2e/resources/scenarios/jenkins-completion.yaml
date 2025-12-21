@@ -1,0 +1,239 @@
+name: jenkins-completion
+description: >
+  Comprehensive Jenkins pipeline completion tests.
+  Tests that step completions, global variables, and documentation appear correctly in Jenkinsfiles.
+steps:
+  - initialize:
+      initializationOptions:
+        jenkins:
+          filePatterns: ["Jenkinsfile", "*.jenkinsfile"]
+  - initialized: {}
+
+  # =====================================================
+  # Test 1: Basic step completion inside a pipeline
+  # =====================================================
+  - openDocument:
+      path: "Jenkinsfile"
+      languageId: "groovy"
+      version: 1
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        ech
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 15
+      saveAs: echoCompletion
+      extract:
+        - variable: echoCompletion.items
+          jsonPath: $.items
+  - assert:
+      source: echoCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: echo
+        # Verify echo step has correct plugin detail
+        - jsonPath: $.items[*].detail
+          expect:
+            type: CONTAINS
+            value: "Jenkins step (workflow-basic-steps)"
+
+  # =====================================================
+  # Test 2: sh step completion
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 2
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        s
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 13
+      saveAs: shCompletion
+  - assert:
+      source: shCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: stage
+
+  # =====================================================
+  # Test 3: Global variable completion (env)
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 3
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        echo "Building: ${env
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 40
+      saveAs: envCompletion
+  - assert:
+      source: envCompletion
+      checks:
+        # env should appear in completions
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: env
+
+  # =====================================================
+  # Test 4: currentBuild global variable
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 4
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        echo "Build #${currentBui
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 44
+      saveAs: currentBuildCompletion
+  - assert:
+      source: currentBuildCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: currentBuild
+
+  # =====================================================
+  # Test 5: params global variable
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 5
+      text: |
+        pipeline {
+            agent any
+            parameters {
+                string(name: 'VERSION', defaultValue: '1.0')
+            }
+            stages {
+                stage('Build') {
+                    steps {
+                        echo "Version: ${para
+                    }
+                }
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 8
+          character: 40
+      saveAs: paramsCompletion
+  - assert:
+      source: paramsCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: params
+
+  # =====================================================
+  # Test 6: Multiple steps completion
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 6
+      text: |
+        node {
+            stage('Test') {
+
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 2
+          character: 8
+      saveAs: nodeStepsCompletion
+  - assert:
+      source: nodeStepsCompletion
+      checks:
+        # Should have multiple Jenkins steps available
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: echo
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: checkout
+
+  - shutdown: {}
+  - exit: {}
+

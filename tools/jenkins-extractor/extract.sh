@@ -20,6 +20,8 @@ OUTPUT_DIR="${1:-$SCRIPT_DIR/output}"
 CONTAINER_NAME="jenkins-gdsl-extractor"
 JENKINS_PORT=8888
 MAX_WAIT_SECONDS=300
+# Additional wait time for Pipeline Syntax plugin after Jenkins core is ready
+MAX_PLUGIN_WAIT_SECONDS=180
 
 # Colors for output
 RED='\033[0;31m'
@@ -37,6 +39,44 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if content is valid GDSL (starts with // comment, not HTML)
+is_valid_gdsl() {
+    local content="$1"
+    # Trim leading whitespace (GDSL may start with newlines)
+    content="${content#"${content%%[![:space:]]*}"}"
+    # Valid GDSL starts with "//" (Groovy comment) not "<" (HTML)
+    if [[ "$content" == //* ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Wait for the GDSL endpoint to return actual GDSL content
+wait_for_gdsl_endpoint() {
+    local max_seconds=$1
+    local seconds_waited=0
+
+    log_info "Waiting for Pipeline Syntax plugin to initialize (max ${max_seconds}s)..."
+
+    while [ $seconds_waited -lt $max_seconds ]; do
+        # Fetch the GDSL endpoint
+        local response
+        response=$(curl -s "http://localhost:$JENKINS_PORT/pipeline-syntax/gdsl" 2>/dev/null || echo "")
+
+        # Check if we got valid GDSL content
+        if is_valid_gdsl "$response"; then
+            log_info "Pipeline Syntax plugin ready after ${seconds_waited}s"
+            return 0
+        fi
+
+        sleep 5
+        seconds_waited=$((seconds_waited + 5))
+        echo -n "."
+    done
+    echo ""
+    return 1
 }
 
 cleanup() {
@@ -65,12 +105,12 @@ docker run -d \
     -p "$JENKINS_PORT:8080" \
     jenkins-extractor
 
-# Wait for Jenkins to be ready
-log_info "Waiting for Jenkins to start (max ${MAX_WAIT_SECONDS}s)..."
+# Phase 1: Wait for Jenkins core to be ready
+log_info "Waiting for Jenkins core to start (max ${MAX_WAIT_SECONDS}s)..."
 SECONDS_WAITED=0
 while [ $SECONDS_WAITED -lt $MAX_WAIT_SECONDS ]; do
     if curl -s "http://localhost:$JENKINS_PORT/api/json" > /dev/null 2>&1; then
-        log_info "Jenkins is ready after ${SECONDS_WAITED}s"
+        log_info "Jenkins core ready after ${SECONDS_WAITED}s"
         break
     fi
     sleep 5
@@ -85,33 +125,73 @@ if [ $SECONDS_WAITED -ge $MAX_WAIT_SECONDS ]; then
     exit 1
 fi
 
-# Extract GDSL
-log_info "Extracting GDSL..."
-if curl -s "http://localhost:$JENKINS_PORT/pipeline-syntax/gdsl" > "$OUTPUT_DIR/gdsl-output.groovy"; then
-    log_info "GDSL saved to $OUTPUT_DIR/gdsl-output.groovy"
-else
-    log_error "Failed to extract GDSL"
+# Phase 2: Wait for Pipeline Syntax plugin to be ready
+# The /pipeline-syntax/gdsl endpoint is provided by the workflow-cps plugin
+# and may take additional time to initialize after Jenkins core is ready
+if ! wait_for_gdsl_endpoint $MAX_PLUGIN_WAIT_SECONDS; then
+    log_error "Pipeline Syntax plugin failed to initialize within ${MAX_PLUGIN_WAIT_SECONDS}s"
+    log_error "This may indicate the workflow-cps plugin is not installed or failed to load"
+    docker logs "$CONTAINER_NAME" | tail -100
     exit 1
 fi
 
-# Extract globals reference
+# Extract GDSL with validation
+log_info "Extracting GDSL..."
+GDSL_CONTENT=$(curl -s "http://localhost:$JENKINS_PORT/pipeline-syntax/gdsl")
+
+# Validate the content is actual GDSL, not HTML error page
+if ! is_valid_gdsl "$GDSL_CONTENT"; then
+    log_error "Extracted content is not valid GDSL (possibly HTML error page)"
+    log_error "First 200 characters: ${GDSL_CONTENT:0:200}"
+    exit 1
+fi
+
+# Save the validated GDSL
+echo "$GDSL_CONTENT" > "$OUTPUT_DIR/gdsl-output.groovy"
+log_info "GDSL saved to $OUTPUT_DIR/gdsl-output.groovy"
+
+# Count extracted methods for validation
+METHOD_COUNT=$(grep -c "method(name:" "$OUTPUT_DIR/gdsl-output.groovy" || echo "0")
+log_info "Extracted $METHOD_COUNT method definitions"
+
+if [ "$METHOD_COUNT" -lt 5 ]; then
+    log_warn "Unusually low method count ($METHOD_COUNT). GDSL may be incomplete."
+fi
+
+# Extract globals reference with validation
 log_info "Extracting globals reference..."
-if curl -s "http://localhost:$JENKINS_PORT/pipeline-syntax/globals" > "$OUTPUT_DIR/globals-output.html"; then
-    log_info "Globals saved to $OUTPUT_DIR/globals-output.html"
+GLOBALS_CONTENT=$(curl -s "http://localhost:$JENKINS_PORT/pipeline-syntax/globals")
+
+# Check if globals is actual HTML content (should contain <html or <!DOCTYPE)
+if [[ "$GLOBALS_CONTENT" == *"<html"* ]] || [[ "$GLOBALS_CONTENT" == *"<!DOCTYPE"* ]]; then
+    # Check it's not the "Jenkins is starting" page
+    if [[ "$GLOBALS_CONTENT" == *"Jenkins is getting ready"* ]]; then
+        log_warn "Globals endpoint returned startup page, skipping"
+    else
+        echo "$GLOBALS_CONTENT" > "$OUTPUT_DIR/globals-output.html"
+        log_info "Globals saved to $OUTPUT_DIR/globals-output.html"
+    fi
 else
-    log_warn "Failed to extract globals (non-critical)"
+    log_warn "Globals endpoint did not return HTML content, skipping"
 fi
 
 # Get Jenkins version
 JENKINS_VERSION=$(curl -s -I "http://localhost:$JENKINS_PORT/" | grep -i "X-Jenkins:" | awk '{print $2}' | tr -d '\r')
 log_info "Jenkins version: $JENKINS_VERSION"
 
-# Create metadata header
+# Count properties for metadata
+PROPERTY_COUNT=$(grep -c "property(name:" "$OUTPUT_DIR/gdsl-output.groovy" || echo "0")
+
+# Create metadata header with extraction statistics
 cat > "$OUTPUT_DIR/extraction-info.json" << EOF
 {
     "jenkinsVersion": "$JENKINS_VERSION",
     "extractedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-    "source": "docker-extraction"
+    "source": "docker-extraction",
+    "statistics": {
+        "methodCount": $METHOD_COUNT,
+        "propertyCount": $PROPERTY_COUNT
+    }
 }
 EOF
 
@@ -119,9 +199,16 @@ log_info "Extraction complete!"
 log_info "Output files:"
 ls -la "$OUTPUT_DIR"
 
-# Note: The GDSL to JSON conversion should be done by a separate Kotlin tool
-# that uses the GdslParser class we implemented.
+# Validate extraction was successful
+if [ "$METHOD_COUNT" -gt 0 ]; then
+    log_info "SUCCESS: Extracted $METHOD_COUNT methods and $PROPERTY_COUNT properties"
+else
+    log_error "FAILURE: No methods extracted. Check Jenkins logs for errors."
+    docker logs "$CONTAINER_NAME" | tail -50
+    exit 1
+fi
+
 log_info ""
-log_info "To convert GDSL to JSON, run:"
-log_info "  ./gradlew :tools:jenkins-extractor:run --args=\"$OUTPUT_DIR/gdsl-output.groovy\""
+log_info "To convert GDSL to JSON, use the GdslExecutor:"
+log_info "  ./gradlew :groovy-gdsl:test"
 

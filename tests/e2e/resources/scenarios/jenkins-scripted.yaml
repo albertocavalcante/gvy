@@ -1,0 +1,188 @@
+name: jenkins-scripted
+description: >
+  Tests LSP support for scripted (non-declarative) Jenkins pipelines.
+  Covers completion for node blocks, stage blocks, and common scripted pipeline patterns.
+steps:
+  - initialize:
+      initializationOptions:
+        jenkins:
+          filePatterns: ["Jenkinsfile"]
+  - initialized: {}
+
+  # =====================================================
+  # Test 1: Scripted pipeline with node block - completion
+  # =====================================================
+  - openDocument:
+      path: "Jenkinsfile"
+      languageId: "groovy"
+      version: 1
+      text: |
+        node('linux') {
+            stage('Checkout') {
+                checkout scm
+            }
+            stage('Build') {
+
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 5
+          character: 8
+      saveAs: nodeCompletion
+  - assert:
+      source: nodeCompletion
+      checks:
+        # Core steps should be available
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: echo
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: checkout
+
+  # =====================================================
+  # Test 2: Parallel execution in scripted pipeline
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 2
+      text: |
+        node {
+            stage('Parallel Tests') {
+                parallel(
+                    'Unit': {
+
+                    },
+                    'Integration': {
+                        sh 'make integration-test'
+                    }
+                )
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 4
+          character: 12
+      saveAs: parallelCompletion
+  - assert:
+      source: parallelCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: echo
+
+  # =====================================================
+  # Test 3: withCredentials step in completions
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 3
+      text: |
+        node {
+            with
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 1
+          character: 8
+      saveAs: withCompletion
+  - assert:
+      source: withCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: withCredentials
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: withEnv
+
+  # =====================================================
+  # Test 4: Try-catch pattern - completion inside try
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 4
+      text: |
+        node {
+            try {
+
+            } catch (Exception e) {
+                echo "Build failed"
+            }
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 2
+          character: 8
+      saveAs: tryBlockCompletion
+  - assert:
+      source: tryBlockCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: sh
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: bat
+
+  # =====================================================
+  # Test 5: Global variables in completions
+  # =====================================================
+  - changeDocument:
+      path: "Jenkinsfile"
+      version: 5
+      text: |
+        node {
+            echo "Build #${current
+        }
+  - request:
+      method: "textDocument/completion"
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}/Jenkinsfile"
+        position:
+          line: 1
+          character: 27
+      saveAs: globalVarCompletion
+  - assert:
+      source: globalVarCompletion
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: currentBuild
+
+  - shutdown: {}
+  - exit: {}
