@@ -34,20 +34,22 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Determine installation mode
-if [[ $EUID -eq 0 ]]; then
-    # Running as root - system install
-    USER_INSTALL=""
-    log_info "Running as root. Performing system-wide installation."
-elif [[ "${1:-}" == "--user" ]]; then
-    # Explicit user install
-    USER_INSTALL="--user"
-    log_info "User flag detected. Performing user installation."
-else
-    # Default to user install for non-root users
-    USER_INSTALL="--user"
-    log_info "Not running as root. Defaulting to user installation."
-fi
+# Determine installation mode and parse arguments
+parse_args() {
+    INSTALL_OPTS=()
+    if [[ $EUID -eq 0 ]]; then
+        # Running as root - system install
+        log_info "Running as root. Performing system-wide installation."
+    elif [[ "${1:-}" == "--user" ]]; then
+        # Explicit user install
+        INSTALL_OPTS+=("--user")
+        log_info "User flag detected. Performing user installation."
+    else
+        # Default to user install for non-root users
+        INSTALL_OPTS+=("--user")
+        log_info "Not running as root. Defaulting to user installation."
+    fi
+}
 
 # Verify dependencies
 check_dependencies() {
@@ -138,12 +140,11 @@ install_kernel() {
        log_warn "Could not detect Groovy version. Using default display name."
     fi
 
-    # Install using jupyter kernelspec JAR
+    # Copy the JAR
     cp "$PROJECT_ROOT/groovy-jupyter/build/libs/$JAR_NAME" "$TEMP_KERNEL_DIR/"
 
     # Install using jupyter kernelspec
-    # shellcheck disable=SC2086
-    jupyter kernelspec install "$TEMP_KERNEL_DIR" --name="$KERNEL_NAME" $USER_INSTALL --replace
+    jupyter kernelspec install "$TEMP_KERNEL_DIR" --name="$KERNEL_NAME" "${INSTALL_OPTS[@]}" --replace
 
     log_info "Kernel installed successfully!"
 }
@@ -152,9 +153,9 @@ install_kernel() {
 verify_installation() {
     log_info "Verifying installation..."
 
-    if jupyter kernelspec list | grep -q "$KERNEL_NAME"; then
+    if output=$(jupyter kernelspec list | grep "$KERNEL_NAME"); then
         log_info "✓ Groovy kernel is available"
-        jupyter kernelspec list | grep "$KERNEL_NAME"
+        echo "$output"
     else
         log_error "Kernel installation verification failed"
         exit 1
@@ -166,6 +167,7 @@ main() {
     log_info "Installing Groovy Jupyter Kernel"
     log_info "================================="
 
+    parse_args "$@"
     check_dependencies
     build_jar
     install_kernel
