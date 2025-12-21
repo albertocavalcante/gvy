@@ -1,6 +1,9 @@
 package com.github.albertocavalcante.groovyjupyter
 
+import com.github.albertocavalcante.groovyjupyter.execution.GroovyExecutor
+import com.github.albertocavalcante.groovyjupyter.kernel.KernelServer
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
+import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import org.slf4j.LoggerFactory
 import kotlin.system.exitProcess
 
@@ -37,10 +40,22 @@ fun main(args: Array<String>) {
     logger.info("  Stdin:     ${config.stdinPort}")
     logger.info("  Heartbeat: ${config.heartbeatPort}")
 
-    // TODO: Phase 1B - Implement GroovyKernel with ZMQ socket handling
-    // val kernel = GroovyKernel(config)
-    // kernel.start()
+    // Create kernel components
+    val signer = HmacSigner(config.key)
+    val executor = GroovyExecutor()
+    val server = KernelServer.create(config, signer, executor)
 
-    logger.info("Groovy Jupyter Kernel initialized (ZMQ handlers not yet implemented)")
-    logger.info("Run the test suite to verify core components: ./gradlew :groovy-jupyter:test")
+    // Register shutdown hook for graceful cleanup
+    Runtime.getRuntime().addShutdownHook(
+        Thread {
+            logger.info("Shutdown hook triggered")
+            server.close()
+        },
+    )
+
+    // Start the kernel server (blocks until shutdown)
+    logger.info("Groovy Jupyter Kernel starting...")
+    server.run()
+
+    logger.info("Groovy Jupyter Kernel stopped")
 }

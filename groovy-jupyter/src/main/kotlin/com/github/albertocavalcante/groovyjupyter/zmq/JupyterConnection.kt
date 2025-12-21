@@ -75,6 +75,11 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
         return context.createSocket(type).also { createdSockets.add(it) }
     }
 
+    /**
+     * Create a ZMQ poller for monitoring sockets.
+     */
+    fun createPoller(size: Int): ZMQ.Poller = context.createPoller(size)
+
     private fun bindSocket(socket: ZMQ.Socket, address: String, name: String) {
         // Port 0 means use ephemeral port - replace with wildcard for ZMQ
         val bindAddress = if (address.endsWith(":0")) {

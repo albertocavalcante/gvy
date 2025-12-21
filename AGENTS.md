@@ -109,6 +109,24 @@
   ./gradlew lint - Check for issues (no changes)
   ./gradlew lintFix - Auto-fix all correctable lint and formatting issues
   Order: Spotless formatting first, then Detekt auto-correct
+
+  <lint-handling>
+    ALWAYS address lint/detekt issues introduced by your changes. Never ignore them.
+    
+    For each lint issue, do ONE of:
+    1. FIX it properly (e.g., extract magic numbers to constants, add null checks)
+    2. SUPPRESS with annotation + justification comment when legitimate (e.g., @Suppress("LoopWithTooManyJumpStatements"))
+    3. ASK user if unsure about the right approach
+    
+    It's acceptable to fix lint issues at the end of a change, but they MUST be addressed
+    before committing. The goal is zero new lint issues per PR.
+    
+    Common fixes:
+    - MagicNumber → extract to companion object constant
+    - UseOrEmpty → replace `?: ""` with `.orEmpty()`
+    - UnusedImports → remove unused imports
+    - LoopWithTooManyJumpStatements → @Suppress if logic is clear
+  </lint-handling>
 </code-quality>
 
 <pr-review-commands>
