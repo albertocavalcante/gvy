@@ -1,7 +1,7 @@
 name: initialize-basic
-description: Basic lifecycle handshake that exercises initialize/shutdown over stdio.
+description: Basic lifecycle handshake that exercises initialize/shutdown in-process.
 server:
-  mode: stdio
+  mode: inProcess
 workspace:
   fixture: empty-workspace
 steps:

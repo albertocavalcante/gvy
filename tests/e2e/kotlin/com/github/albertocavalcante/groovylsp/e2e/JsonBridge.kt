@@ -85,4 +85,13 @@ object JsonBridge {
      * Particularly useful for LSP4J response objects.
      */
     fun Gson.toJsonElement(obj: Any?): JsonElement = toJsonTree(obj).toKotlinxJsonElement()
+
+    /**
+     * Converts any object to kotlinx JsonElement using the internal Gson instance.
+     * This is the preferred method for converting LSP4J objects to JsonElement.
+     */
+    fun toJsonElement(obj: Any?): JsonElement {
+        if (obj == null) return JsonNull
+        return gson.toJsonTree(obj).toKotlinxJsonElement()
+    }
 }

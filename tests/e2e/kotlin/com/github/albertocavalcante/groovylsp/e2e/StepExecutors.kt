@@ -1,10 +1,7 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.toJavaObject
-import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.toJsonElement
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.wrapJavaObject
-import com.google.gson.Gson
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
@@ -29,9 +26,6 @@ import java.util.concurrent.TimeoutException
 import kotlin.io.path.name
 
 private val logger = LoggerFactory.getLogger("StepExecutors")
-
-// Shared Gson instance for LSP4J interop
-private val gson = Gson()
 
 interface StepExecutor<T : ScenarioStep> {
     fun execute(step: T, context: ScenarioContext, nextStep: ScenarioStep? = null)
@@ -61,7 +55,7 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
 
         context.state.initializedResult = result
         // Serialize LSP4J result back to JsonElement using Gson bridge
-        context.lastResult = gson.toJsonElement(result)
+        context.lastResult = JsonBridge.toJsonElement(result)
 
         interpolatedOptions?.let {
             context.variables["client.initializationOptions"] = it
@@ -147,7 +141,7 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
         context.lastResult = buildJsonObject {
             put("uri", uri)
             put("version", step.version)
-            put("changes", gson.toJsonElement(changes))
+            put("changes", JsonBridge.toJsonElement(changes))
         }
     }
 }
@@ -160,7 +154,7 @@ class SaveDocumentStepExecutor : StepExecutor<ScenarioStep.SaveDocument> {
             text = step.text?.let { context.interpolateString(it) }
         }
         context.session.server.textDocumentService.didSave(params)
-        context.lastResult = gson.toJsonElement(params)
+        context.lastResult = JsonBridge.toJsonElement(params)
     }
 }
 
@@ -169,7 +163,7 @@ class CloseDocumentStepExecutor : StepExecutor<ScenarioStep.CloseDocument> {
         val uri = context.resolveUri(step.uri, step.path)
         val params = DidCloseTextDocumentParams(TextDocumentIdentifier(uri))
         context.session.server.textDocumentService.didClose(params)
-        context.lastResult = gson.toJsonElement(params)
+        context.lastResult = JsonBridge.toJsonElement(params)
     }
 }
 
@@ -339,11 +333,4 @@ class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
             }
         }
     }
-}
-
-// Helpers duplicated/localized to avoid visibility issues during refactor
-private fun Gson.toJsonElement(obj: Any?): JsonElement {
-    if (obj == null) return JsonNull
-    val jsonString = this.toJson(obj)
-    return Json.parseToJsonElement(jsonString)
 }

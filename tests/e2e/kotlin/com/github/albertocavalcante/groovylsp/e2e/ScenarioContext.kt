@@ -138,8 +138,7 @@ data class ScenarioContext(
         }
 
         val actualNode = wrapJavaObject(readValue)
-        val comparator = JsonExpectationEvaluator()
-        val success = comparator.matches(
+        val success = JsonExpectationEvaluator.matches(
             expectation = expectation,
             pathExists = pathExists,
             actualNode = actualNode,
@@ -221,7 +220,10 @@ class ScenarioWorkspace(val rootDir: java.nio.file.Path) {
     }
 }
 
-class JsonExpectationEvaluator {
+object JsonExpectationEvaluator {
+    // Cache compiled regex patterns for performance
+    private val regexCache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
     fun matches(expectation: JsonExpectation, pathExists: Boolean, actualNode: JsonElement?): Boolean =
         when (expectation.type) {
             ExpectationType.EXISTS -> pathExists
@@ -258,7 +260,8 @@ class JsonExpectationEvaluator {
         if (actual == null || expected == null) return false
         val pattern = expected.jsonPrimitive.content
         return try {
-            Regex(pattern).containsMatchIn(actual.jsonPrimitive.content)
+            val regex = regexCache.getOrPut(pattern) { Regex(pattern) }
+            regex.containsMatchIn(actual.jsonPrimitive.content)
         } catch (ex: Exception) {
             false
         }
