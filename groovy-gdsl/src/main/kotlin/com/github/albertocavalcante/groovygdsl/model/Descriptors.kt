@@ -48,6 +48,19 @@ data class MethodDescriptor(
     val namedParameters: List<NamedParameterDescriptor> = emptyList(),
     /** Documentation string from `doc: '...'` */
     val documentation: String? = null,
+    /**
+     * Raw `context(...)` definition map from the owning contributor.
+     *
+     * This is captured verbatim to enable downstream tooling (e.g. Jenkins metadata extraction)
+     * to make deterministic decisions based on scope/type without re-parsing the original GDSL text.
+     */
+    val context: Map<String, Any> = emptyMap(),
+    /**
+     * Optional enclosing call hint captured from `enclosingCall('...')` usage.
+     *
+     * This is used by some GDSL scripts (e.g. Jenkins) to scope contributions to blocks like `node { ... }`.
+     */
+    val enclosingCall: String? = null,
 )
 
 /**
@@ -62,6 +75,10 @@ data class PropertyDescriptor(
     val type: String,
     /** Optional documentation */
     val documentation: String? = null,
+    /** Raw `context(...)` definition map from the owning contributor. */
+    val context: Map<String, Any> = emptyMap(),
+    /** Optional enclosing call hint captured from `enclosingCall('...')` usage. */
+    val enclosingCall: String? = null,
 )
 
 /**

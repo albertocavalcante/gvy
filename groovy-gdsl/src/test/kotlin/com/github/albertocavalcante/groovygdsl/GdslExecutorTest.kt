@@ -29,7 +29,7 @@ class GdslExecutorTest {
         @Test
         fun `should execute Spock GDSL sample`() {
             val script = this::class.java.getResource("/bundled-gdsls/spock.gdsl")?.readText()
-                ?: throw IllegalStateException("Spock GDSL sample not found")
+                ?: error("Spock GDSL sample not found")
 
             assertDoesNotThrow {
                 executor.execute(script, "spock.gdsl")
@@ -39,7 +39,7 @@ class GdslExecutorTest {
         @Test
         fun `should execute Grails GDSL sample`() {
             val script = this::class.java.getResource("/bundled-gdsls/grails.gdsl")?.readText()
-                ?: throw IllegalStateException("Grails GDSL sample not found")
+                ?: error("Grails GDSL sample not found")
 
             assertDoesNotThrow {
                 executor.execute(script, "grails.gdsl")

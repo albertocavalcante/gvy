@@ -9,7 +9,8 @@
 #   # Wait for startup, then:
 #   curl http://localhost:8080/pipeline-syntax/gdsl > output.gdsl
 
-FROM jenkins/jenkins:lts-jdk21
+ARG JENKINS_TAG=lts-jdk21
+FROM jenkins/jenkins:${JENKINS_TAG}
 
 # Skip setup wizard
 ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
@@ -30,4 +31,3 @@ EXPOSE 8080 50000
 # Health check
 HEALTHCHECK --interval=10s --timeout=5s --retries=30 \
     CMD curl -f http://localhost:8080/api/json || exit 1
-

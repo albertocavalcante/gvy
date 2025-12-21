@@ -1,5 +1,8 @@
 # Jenkins Pipeline Core Plugins for GDSL Extraction
 # This file lists plugins to install in the extraction Jenkins instance
+#
+# NOTE: Versions are currently set to `:latest` for convenience.
+# TODO: Pin plugin versions (or use a lockfile) so rebuilding the Docker image is fully reproducible.
 
 # Core Pipeline Plugins
 workflow-aggregator:latest
@@ -33,4 +36,3 @@ docker-commons:latest
 pipeline-utility-steps:latest
 timestamper:latest
 ws-cleanup:latest
-

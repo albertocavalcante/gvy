@@ -23,6 +23,7 @@ class GdslContributor(val context: GdslContext) {
 
     private val _methods = mutableListOf<MethodDescriptor>()
     private val _properties = mutableListOf<PropertyDescriptor>()
+    private var lastEnclosingCall: String? = null
 
     /** All captured method definitions (immutable snapshot) */
     val methods: List<MethodDescriptor> get() = _methods.toList()
@@ -50,6 +51,8 @@ class GdslContributor(val context: GdslContext) {
                 parameters = parameters,
                 namedParameters = namedParameters,
                 documentation = documentation,
+                context = context.definition,
+                enclosingCall = lastEnclosingCall,
             ),
         )
     }
@@ -69,6 +72,8 @@ class GdslContributor(val context: GdslContext) {
                 name = name,
                 type = type,
                 documentation = documentation,
+                context = context.definition,
+                enclosingCall = lastEnclosingCall,
             ),
         )
     }
@@ -90,7 +95,7 @@ class GdslContributor(val context: GdslContext) {
      *
      * @param type The type to delegate to
      */
-    fun delegatesTo(type: Any) {
+    fun delegatesTo(@Suppress("UNUSED_PARAMETER") type: Any) {
         // TODO: Capture delegation for closure inference
     }
 
@@ -108,10 +113,11 @@ class GdslContributor(val context: GdslContext) {
      * @return Always true during GDSL parsing (contributions are always captured)
      */
     fun enclosingCall(methodName: String): Boolean {
-        // NOTE: During GDSL parsing, we capture all contributions regardless
-        // of context. The enclosingCall condition is evaluated at completion
-        // time to filter which contributions apply.
-        // TODO: Implement proper context tracking for completion filtering
+        // NOTE: During GDSL parsing, we capture all contributions regardless of runtime context,
+        // but we still record the requested call name so downstream tooling can make deterministic
+        // decisions (e.g. treating Jenkins `closureScope` + `enclosingCall('node')` as node-only).
+        // TODO: Track nested enclosing call stacks rather than a single last-seen value.
+        lastEnclosingCall = methodName
         return true
     }
 

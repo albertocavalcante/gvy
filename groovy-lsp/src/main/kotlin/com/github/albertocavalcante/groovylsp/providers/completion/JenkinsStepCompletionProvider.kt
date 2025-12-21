@@ -8,14 +8,11 @@ import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 
 /**
  * Provides Jenkins step completions backed by bundled metadata.
  */
 object JenkinsStepCompletionProvider {
-    private val logger = LoggerFactory.getLogger(JenkinsStepCompletionProvider::class.java)
-
     /**
      * Get metadata for a specific Jenkins step by name.
      * Used by hover provider to show step documentation.

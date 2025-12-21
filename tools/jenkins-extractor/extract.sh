@@ -13,7 +13,7 @@
 #   output_dir/globals-output.html - Global variables reference
 #   output_dir/metadata.json       - Parsed JSON metadata
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${1:-$SCRIPT_DIR/output}"
@@ -39,6 +39,20 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+sha256_file() {
+    local file="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{print $1}'
+        return 0
+    fi
+    log_error "No SHA-256 tool found (need sha256sum or shasum)"
+    return 1
 }
 
 # Check if content is valid GDSL (starts with // comment, not HTML)
@@ -93,7 +107,10 @@ mkdir -p "$OUTPUT_DIR"
 
 # Build the image if needed
 log_info "Building Jenkins extractor image..."
-docker build -t jenkins-extractor "$SCRIPT_DIR"
+docker build \
+    --build-arg "JENKINS_TAG=${JENKINS_TAG:-lts-jdk21}" \
+    -t jenkins-extractor \
+    "$SCRIPT_DIR"
 
 # Remove any existing container
 docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
@@ -182,12 +199,22 @@ log_info "Jenkins version: $JENKINS_VERSION"
 # Count properties for metadata
 PROPERTY_COUNT=$(grep -c "property(name:" "$OUTPUT_DIR/gdsl-output.groovy" || echo "0")
 
-# Create metadata header with extraction statistics
+# Create deterministic extraction metadata (used by the converter + audit trail)
+PLUGINS_MANIFEST_SHA256=$(sha256_file "$SCRIPT_DIR/plugins.txt")
+GDSL_SHA256=$(sha256_file "$OUTPUT_DIR/gdsl-output.groovy")
+EXTRACTED_AT="${EXTRACTED_AT:-1970-01-01T00:00:00Z}"
+
+export PLUGINS_MANIFEST_SHA256
+export GDSL_SHA256
+export EXTRACTED_AT
+
 cat > "$OUTPUT_DIR/extraction-info.json" << EOF
 {
     "jenkinsVersion": "$JENKINS_VERSION",
-    "extractedAt": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-    "source": "docker-extraction",
+    "extractedAt": "$EXTRACTED_AT",
+    "pluginsManifestSha256": "$PLUGINS_MANIFEST_SHA256",
+    "gdslSha256": "$GDSL_SHA256",
+    "extractorVersion": "1.0.0",
     "statistics": {
         "methodCount": $METHOD_COUNT,
         "propertyCount": $PROPERTY_COUNT
@@ -209,6 +236,19 @@ else
 fi
 
 log_info ""
-log_info "To convert GDSL to JSON, use the GdslExecutor:"
-log_info "  ./gradlew :groovy-gdsl:test"
+log_info "Converting GDSL to JSON..."
 
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+JSON_OUTPUT_DIR="$OUTPUT_DIR/json"
+mkdir -p "$JSON_OUTPUT_DIR"
+
+"$REPO_ROOT/gradlew" :tools:jenkins-extractor:convertGdsl \
+    -PgdslFile="$OUTPUT_DIR/gdsl-output.groovy" \
+    -PoutputDir="$JSON_OUTPUT_DIR" \
+    -PjenkinsVersion="$JENKINS_VERSION" \
+    -PpluginId="jenkins" \
+    -PpluginVersion="$JENKINS_VERSION" \
+    -PpluginDisplayName="Jenkins (combined)" \
+    --console=plain
+
+log_info "JSON written to $JSON_OUTPUT_DIR/jenkins.json"
