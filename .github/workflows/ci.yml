@@ -31,9 +31,23 @@ on:
           - 'info'
           - 'debug'
         default: 'default'
+  # Event-driven trigger: when runner-provision.yml completes, this workflow
+  # auto-resumes without wasting compute cycles on polling during approval wait
+  workflow_run:
+    workflows: ['Infra: Provision Magalu Runner']
+    types: [completed]
+    branches: [main]
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # PRs: group by head_ref (cancel outdated runs for same branch)
+  # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
+  # workflow_run: group by triggering run ID (allows resume after provisioning)
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event_name == 'pull_request' && github.head_ref ||
+      github.event_name == 'workflow_run' && github.event.workflow_run.id ||
+      github.sha
+    }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # ============================================================================
 # RUNNER CONFIGURATION
@@ -94,10 +108,14 @@ jobs:
     name: Check Runner Availability
     runs-on: ubuntu-latest
     needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
+    # Skip for workflow_run - runner is already available from completed provisioning
+    if: |
+      github.event_name != 'workflow_run' &&
+      (needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch')
     outputs:
       runner_available: ${{ steps.check.outputs.has-runners }}
       needs_provision: ${{ steps.decide.outputs.needs_provision }}
+      provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
       - name: Checkout (for local action)
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
@@ -117,10 +135,10 @@ jobs:
         run: |
           RUNNER_LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'magalu' }}"
           HAS_RUNNERS="${{ steps.check.outputs.has-runners }}"
-          
+
           echo "Runner label: $RUNNER_LABEL"
           echo "Has runners: $HAS_RUNNERS"
-          
+
           # Only need to provision if targeting magalu and no runners available
           if [[ "$RUNNER_LABEL" == "magalu" && "$HAS_RUNNERS" != "true" ]]; then
             echo "needs_provision=true" >> $GITHUB_OUTPUT
@@ -137,26 +155,34 @@ jobs:
         run: |
           echo "Triggering runner-provision.yml..."
           gh workflow run runner-provision.yml --repo ${{ github.repository }}
-          echo "⏳ Provisioning triggered. Manual approval may be required."
           echo ""
+          echo "⏳ Provisioning triggered. Manual approval may be required."
           echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
           echo ""
-          echo "This CI run will wait for the runner to become available."
+          echo "ℹ️ This CI run will exit now to avoid wasting compute cycles."
+          echo "   CI will automatically resume after provisioning completes via workflow_run event."
 
-      - name: Wait for runner to become available
+      # Exit early to avoid wasting compute cycles while waiting for approval
+      # The workflow_run event will trigger a new CI run once provisioning completes
+      - name: Exit early (CI will auto-resume after provisioning)
+        id: exit-early
         if: steps.decide.outputs.needs_provision == 'true'
-        uses: ./.github/actions/runner-status
-        with:
-          mode: wait-online
-          label: magalu
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-          max-wait-minutes: '15'
-          poll-interval-seconds: '30'
+        run: |
+          echo "::notice::CI exiting early. Will auto-resume via workflow_run after runner-provision.yml completes."
+          # Set output to signal downstream jobs to skip
+          echo "provisioning_triggered=true" >> $GITHUB_OUTPUT
 
   build:
     name: Build and Test
     needs: [check-paths, check-runner]
-    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
+    # Run if:
+    # 1. workflow_run from successful provisioning (check-runner was skipped), OR
+    # 2. Normal trigger (push/PR/dispatch) with relevant paths AND no provisioning triggered
+    if: |
+      always() && (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
+      )
     timeout-minutes: 45
     # For Magalu runners, we need all three labels; for others, use the matrix value directly
     runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os }}
@@ -205,7 +231,7 @@ jobs:
           else
             echo "GRADLE_SCAN_FLAG=" >> $GITHUB_ENV
           fi
-          
+
           # Set test log level flag
           case "${{ github.event.inputs.test_log_level }}" in
             "info")
@@ -218,12 +244,12 @@ jobs:
               echo "TEST_LOG_FLAG=" >> $GITHUB_ENV
               ;;
           esac
-      
+
       # NOTE: --parallel and --build-cache are redundant with gradle.properties settings
       # (org.gradle.parallel=true, org.gradle.caching=true) but kept explicit for:
       # 1. Self-documentation - CI intent is clear without checking gradle.properties
       # 2. Defense in depth - CI works even if gradle.properties changes
-      
+
       # Phase 1: Compile + Lint in single invocation with parallel execution
       - name: Compile and Lint
         run: ./gradlew classes testClasses lint --parallel --build-cache --stacktrace $GRADLE_SCAN_FLAG
@@ -253,7 +279,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
-        
+
       - name: Generate Test Report
         uses: dorny/test-reporter@fe45e9537387dac839af0d33ba56eed8e24189e8 # v2.3.0
         if: success() || failure()
@@ -261,14 +287,14 @@ jobs:
           name: Test Results (${{ matrix.os }} - Java ${{ matrix.java }})
           path: '**/build/test-results/test/*.xml'
           reporter: java-junit
-          
+
       # Verify JAR (already built by e2eTest via shadowJar dependency)
       - name: Verify JAR
         if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: |-
           echo "Testing JAR with --help flag..."
           java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
-          
+
       - name: Upload JAR artifact
         if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -276,7 +302,7 @@ jobs:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
           path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
           retention-days: 7
-          
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -291,13 +317,37 @@ jobs:
   validate:
     name: Validation Check
     runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
-    needs: build
+    needs: [build, check-runner]
     if: always()
     steps:
       - name: Check build status
-        run: |-
-          if [[ "${{ needs.build.result }}" != "success" ]]; then
-            echo "Build failed or was cancelled"
+        run: |
+          BUILD_RESULT="${{ needs.build.result }}"
+          PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
+
+          echo "Build result: $BUILD_RESULT"
+          echo "Provisioning triggered: $PROVISIONING"
+
+          # If provisioning was triggered, build is expected to be skipped
+          if [[ "$PROVISIONING" == "true" && "$BUILD_RESULT" == "skipped" ]]; then
+            echo "ℹ️ Build skipped - runner provisioning in progress"
+            echo "   CI will resume automatically after provisioning completes"
+            exit 0
+          fi
+
+          # For workflow_run events, check-runner is skipped so we can't check provisioning_triggered
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            if [[ "$BUILD_RESULT" != "success" ]]; then
+              echo "❌ Build failed after provisioning"
+              exit 1
+            fi
+            echo "✅ All checks passed!"
+            exit 0
+          fi
+
+          # Normal case: build must succeed
+          if [[ "$BUILD_RESULT" != "success" ]]; then
+            echo "❌ Build failed or was cancelled"
             exit 1
           fi
           echo "✅ All checks passed!"
