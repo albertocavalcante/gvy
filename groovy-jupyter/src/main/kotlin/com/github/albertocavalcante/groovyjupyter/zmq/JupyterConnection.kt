@@ -92,4 +92,29 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
         socket.bind(bindAddress)
         logger.info("Bound {} socket to {}", name, socket.lastEndpoint)
     }
+
+    /**
+     * Send a message on the specified socket.
+     */
+    fun sendMessage(socket: ZMQ.Socket, message: com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage) {
+        val headerJson = message.header.toJson()
+        val parentHeaderJson = message.parentHeader?.toJson() ?: "{}"
+        val metadataJson = message.metadataToJson()
+        val contentJson = message.contentToJson()
+
+        val wireMessage = com.github.albertocavalcante.groovyjupyter.zmq.WireMessage(
+            identities = message.identities,
+            signature = "", // will be computed by toSignedFrames
+            header = headerJson,
+            parentHeader = parentHeaderJson,
+            metadata = metadataJson,
+            content = contentJson,
+        )
+
+        val frames = wireMessage.toSignedFrames(signer)
+        frames.forEachIndexed { index, frame ->
+            val flags = if (index < frames.lastIndex) ZMQ.SNDMORE else 0
+            socket.send(frame, flags)
+        }
+    }
 }

@@ -21,7 +21,7 @@ class KernelInfoHandler(
 
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.KERNEL_INFO_REQUEST
 
-    override fun handle(request: JupyterMessage, connection: JupyterConnection) {
+    override fun handle(request: JupyterMessage, connection: JupyterConnection, socket: org.zeromq.ZMQ.Socket) {
         logger.info("Handling kernel_info_request")
 
         val statusPublisher = statusPublisherFactory(connection)
@@ -31,7 +31,7 @@ class KernelInfoHandler(
 
         // 2. Create and send kernel_info_reply
         val reply = createReply(request)
-        // TODO: Send reply on shell socket (will be implemented with message sending)
+        connection.sendMessage(socket, reply)
 
         // 3. Publish idle status
         statusPublisher.publishIdle(request)

@@ -21,6 +21,9 @@ class ExecuteHandler(
     private val statusPublisherFactory: (JupyterConnection) -> StatusPublisher = { conn ->
         StatusPublisher(conn.iopubSocket, conn.signer)
     },
+    private val streamPublisherFactory: (JupyterConnection) -> StreamPublisher = { conn ->
+        StreamPublisher(conn.iopubSocket, conn.signer)
+    },
 ) : MessageHandler {
     private val logger = LoggerFactory.getLogger(ExecuteHandler::class.java)
 
@@ -29,10 +32,11 @@ class ExecuteHandler(
 
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.EXECUTE_REQUEST
 
-    override fun handle(request: JupyterMessage, connection: JupyterConnection) {
+    override fun handle(request: JupyterMessage, connection: JupyterConnection, socket: org.zeromq.ZMQ.Socket) {
         logger.info("Handling execute_request")
 
         val statusPublisher = statusPublisherFactory(connection)
+        val streamPublisher = streamPublisherFactory(connection)
 
         // 1. Publish busy status
         statusPublisher.publishBusy(request)
@@ -41,10 +45,68 @@ class ExecuteHandler(
             // 2. Execute the code
             val result = execute(request)
 
-            // TODO: Publish execute_input, stream, execute_result/error
-            // TODO: Send execute_reply on shell socket
+            val code = (request.content["code"] as? String).orEmpty()
+            val silent = request.content["silent"] as? Boolean ?: false
+
+            // 3. Publish execute_input (IOPub)
+            if (!silent && code.isNotBlank()) {
+                val inputMsg = request.createReply(MessageType.EXECUTE_INPUT)
+                inputMsg.content = mapOf(
+                    "code" to code,
+                    "execution_count" to executionCount,
+                )
+                connection.sendMessage(connection.iopubSocket, inputMsg)
+            }
+
+            // 4. Publish streams
+            if (result.stdout.isNotEmpty()) {
+                streamPublisher.publishStdout(result.stdout, request)
+            }
+            if (result.stderr.isNotEmpty()) {
+                streamPublisher.publishStderr(result.stderr, request)
+            }
+
+            // 5. Publish execute_result (IOPub)
+            if (!silent && result.status == ExecuteStatus.OK && result.result != null) {
+                val resultMsg = request.createReply(MessageType.EXECUTE_RESULT)
+                resultMsg.content = mapOf(
+                    "data" to mapOf("text/plain" to result.result.toString()),
+                    "metadata" to emptyMap<String, Any>(),
+                    "execution_count" to executionCount,
+                )
+                connection.sendMessage(connection.iopubSocket, resultMsg)
+            }
+
+            // 6. Publish error (IOPub)
+            if (result.status == ExecuteStatus.ERROR) {
+                val errorMsg = request.createReply(MessageType.ERROR)
+                errorMsg.content = mapOf(
+                    "ename" to (result.errorName ?: "Error"),
+                    "evalue" to result.errorValue.orEmpty(),
+                    "traceback" to result.traceback,
+                )
+                connection.sendMessage(connection.iopubSocket, errorMsg)
+            }
+
+            // 7. Send execute_reply on shell socket
+            val reply = request.createReply(MessageType.EXECUTE_REPLY)
+            val content = mutableMapOf<String, Any>(
+                "status" to result.status.name.lowercase(), // "ok" or "error"
+                "execution_count" to executionCount,
+            )
+
+            if (result.status == ExecuteStatus.ERROR) {
+                content["ename"] = result.errorName ?: "Error"
+                content["evalue"] = result.errorValue.orEmpty()
+                content["traceback"] = result.traceback
+            } else {
+                content["user_expressions"] = emptyMap<String, Any>()
+            }
+
+            reply.content = content
+            connection.sendMessage(socket, reply)
         } finally {
-            // 3. Publish idle status (always, even on exceptions)
+            // 5. Publish idle status (always, even on exceptions)
             statusPublisher.publishIdle(request)
         }
 

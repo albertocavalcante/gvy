@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.handlers
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
+import org.zeromq.ZMQ
 
 /**
  * Interface for message handlers in the Jupyter kernel.
@@ -22,6 +23,7 @@ interface MessageHandler {
      *
      * @param request The incoming Jupyter message
      * @param connection The connection to use for sending responses
+     * @param socket The ZMQ socket where the request was received (for replying)
      */
-    fun handle(request: JupyterMessage, connection: JupyterConnection)
+    fun handle(request: JupyterMessage, connection: JupyterConnection, socket: ZMQ.Socket)
 }

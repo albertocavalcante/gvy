@@ -1,26 +1,13 @@
 package com.github.albertocavalcante.groovyjupyter.kernel
 
 import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteHandler
-import com.github.albertocavalcante.groovyjupyter.handlers.HeartbeatHandler
 import com.github.albertocavalcante.groovyjupyter.handlers.KernelInfoHandler
-import com.github.albertocavalcante.groovyjupyter.handlers.MessageHandler
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
-import com.github.albertocavalcante.groovyjupyter.protocol.Header
-import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
-import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
-import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
 import com.github.albertocavalcante.groovyrepl.GroovyExecutor
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.zeromq.ZContext
-import org.zeromq.ZMQ
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 
 /**
  * TDD tests for KernelServer - the main loop that dispatches messages.

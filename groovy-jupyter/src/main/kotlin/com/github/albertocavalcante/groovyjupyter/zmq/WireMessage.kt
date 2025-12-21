@@ -87,13 +87,17 @@ data class WireMessage(
         )
     }
 
+    private val jsonParser = Json { ignoreUnknownKeys = true }
+
     private fun parseHeader(json: String): Header {
         if (json.isBlank() || json == "{}") {
             return Header()
         }
         return try {
-            Json.decodeFromString<Header>(json)
+            jsonParser.decodeFromString<Header>(json)
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            System.err.println("Failed to parse header: $json")
+            e.printStackTrace()
             Header()
         }
     }
