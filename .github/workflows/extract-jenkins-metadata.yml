@@ -1,0 +1,128 @@
+# Jenkins Metadata Extraction Workflow
+#
+# Extracts GDSL metadata from a running Jenkins instance with all pipeline plugins.
+# Runs quarterly (aligned with Jenkins LTS releases) and on manual trigger.
+#
+# The extracted metadata is committed to the repository for bundled IntelliSense support.
+
+name: Extract Jenkins Metadata
+
+on:
+  # Quarterly schedule - runs on the 1st of Jan, Apr, Jul, Oct
+  schedule:
+    - cron: '0 0 1 1,4,7,10 *'
+
+  # Manual trigger with version input
+  workflow_dispatch:
+    inputs:
+      jenkins_version:
+        description: 'Jenkins LTS version (e.g., 2.479.3)'
+        required: false
+        default: 'latest'
+      commit_changes:
+        description: 'Commit changes to repository'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: jenkins-gdsl-extractor
+
+jobs:
+  extract:
+    name: Extract GDSL Metadata
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@f236b35da9d031e13b1005234ebe4392ed54c580 # v5.0.0
+
+      - name: Build Jenkins extractor image
+        run: |
+          docker build -t jenkins-extractor tools/jenkins-extractor
+
+      - name: Start Jenkins and extract GDSL
+        run: |
+          # Run extraction script
+          ./tools/jenkins-extractor/extract.sh tools/jenkins-extractor/output
+
+      - name: Show extracted content
+        run: |
+          echo "=== GDSL Output (first 100 lines) ==="
+          head -100 tools/jenkins-extractor/output/gdsl-output.groovy || true
+          echo ""
+          echo "=== Extraction Info ==="
+          cat tools/jenkins-extractor/output/extraction-info.json || true
+
+      # TODO: Uncomment when we have the Kotlin GDSL-to-JSON converter
+      # - name: Convert GDSL to JSON
+      #   run: |
+      #     ./gradlew :tools:jenkins-extractor:run \
+      #       --args="tools/jenkins-extractor/output/gdsl-output.groovy tools/jenkins-extractor/output/metadata.json"
+
+      - name: Upload extraction artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: jenkins-metadata
+          path: tools/jenkins-extractor/output/
+          retention-days: 30
+
+      # TODO: Uncomment when we want to auto-commit metadata updates
+      # - name: Commit metadata changes
+      #   if: ${{ github.event.inputs.commit_changes == 'true' || github.event_name == 'schedule' }}
+      #   run: |
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "github-actions[bot]@users.noreply.github.com"
+      #
+      #     # Determine version directory
+      #     JENKINS_VERSION=$(jq -r '.jenkinsVersion' tools/jenkins-extractor/output/extraction-info.json)
+      #     LTS_VERSION=$(echo "$JENKINS_VERSION" | cut -d. -f1,2)
+      #
+      #     # Copy to versioned directory
+      #     mkdir -p "groovy-jenkins/src/main/resources/metadata/lts-$LTS_VERSION"
+      #     cp tools/jenkins-extractor/output/metadata.json \
+      #        "groovy-jenkins/src/main/resources/metadata/lts-$LTS_VERSION/"
+      #
+      #     git add groovy-jenkins/src/main/resources/metadata/
+      #     git diff --staged --quiet || git commit -m "chore: update Jenkins metadata for LTS $LTS_VERSION"
+      #     git push
+
+  notify:
+    name: Notify on Failure
+    needs: extract
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Create issue on failure
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const title = `Jenkins Metadata Extraction Failed - ${new Date().toISOString().split('T')[0]}`;
+            const body = `The scheduled Jenkins metadata extraction workflow failed.
+
+            **Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+
+            Please investigate and fix the issue. The extraction is important for keeping IntelliSense metadata up-to-date.
+            `;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'ci']
+            });
+

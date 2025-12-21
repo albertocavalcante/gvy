@@ -1,26 +1,31 @@
 # AGENTS.md
 
+<project-context>
+  This is a Kotlin/JVM project: Groovy Language Server (LSP).
+  Primary language: Kotlin
+  Build tool: Gradle (Kotlin DSL)
+  Test framework: JUnit 5 with Kotlin
+</project-context>
+
 <github-cli-ironclad>
   MUST use GitHub CLI exclusively for reading GitHub content. NEVER use WebFetch for GitHub.
 
-# Repository metadata
+  # Repository metadata
+  gh api repos/owner/repo --jq '.description, .topics, .homepage'
+  gh api repos/owner/repo/releases/latest --jq '.tag_name, .published_at'
 
-gh api repos/owner/repo --jq '.description, .topics, .homepage' gh api repos/owner/repo/releases/latest --jq '.tag_name,
-.published_at'
+  # File content (base64 decode)
+  gh api repos/owner/repo/contents/path/to/file.md --jq '.content' | base64 -d
+  gh api repos/owner/repo/contents/README.md --jq '.content' | base64 -d
 
-# File content (base64 decode)
+  # Search and exploration
+  gh api repos/owner/repo/contents/path --jq '.[] | select(.type=="file") | .name'
+  gh search repos "gradle hooks language:kotlin" --limit 5
+  gh search repos --language=kotlin --topic=gradle --limit 5
 
-gh api repos/owner/repo/contents/path/to/file.md --jq '.content' | base64 -d gh api repos/owner/repo/contents/README.md
---jq '.content' | base64 -d
-
-# Search and exploration
-
-gh api repos/owner/repo/contents/path --jq '.[] | select(.type=="file") | .name' gh search repos "gradle hooks
-language:kotlin" --limit 5 gh search repos --language=kotlin --topic=gradle --limit 5
-
-# Raw content with --jq for processing
-
-gh api repos/owner/repo/contents/build.gradle.kts --jq '.download_url' | xargs curl -s </github-cli-ironclad>
+  # Raw content with --jq for processing
+  gh api repos/owner/repo/contents/build.gradle.kts --jq '.download_url' | xargs curl -s
+</github-cli-ironclad>
 
 <git-workflow-rules>
   <forbidden>
@@ -61,14 +66,15 @@ gh api repos/owner/repo/contents/build.gradle.kts --jq '.download_url' | xargs c
   </ship-it-definition>
 </git-workflow-rules>
 
-  <local-git-ignore>
+<local-git-ignore>
   File: .git/info/exclude (local ignore, not shared with others)
 
-Add files/folders that should be ignored only on your machine: echo "filename.ext" >> .git/info/exclude echo
-"folder-name/" >> .git/info/exclude
+  Add files/folders that should be ignored only on your machine:
+    echo "filename.ext" >> .git/info/exclude
+    echo "folder-name/" >> .git/info/exclude
 
-Use for: local dev files, personal notes, temp directories NOT for: files all developers should ignore (use .gitignore
-instead)
+  Use for: local dev files, personal notes, temp directories
+  NOT for: files all developers should ignore (use .gitignore instead)
 
   <default-behavior>
     When asked to "ignore a file" or "add to ignore": ALWAYS use .git/info/exclude
@@ -109,13 +115,12 @@ instead)
   SonarCloud API - Get code quality issues for PR analysis:
   curl "https://sonarcloud.io/api/issues/search?componentKeys=albertocavalcante_groovy-lsp&pullRequest=PR_NUMBER&types=BUG,CODE_SMELL,VULNERABILITY&statuses=OPEN,CONFIRMED"
 
-GitHub CLI - PR review insights: gh pr view PR_NUMBER --comments # View PR with all comments gh api
-repos/owner/repo/pulls/PR_NUMBER/reviews | jq -r '.[] | "Author: \(.user.login)\nState: \(.state)\n\(.body)"' gh api
-repos/owner/repo/pulls/PR_NUMBER/comments | jq -r '.[] | "File: \(.path)\nLine: \(.line)\nAuthor:
-\(.user.login)\nComment:\n\(.body)"' gh pr checks PR_NUMBER # Check CI/CD status
-
-Claude WebFetch - For automated analysis: WebFetch url="https://sonarcloud.io/api/issues/search?..." prompt="List the
-issues with severity and file locations" </pr-review-commands>
+  GitHub CLI - PR review insights:
+  gh pr view PR_NUMBER --comments
+  gh api repos/owner/repo/pulls/PR_NUMBER/reviews | jq -r '.[] | "Author: \(.user.login)\nState: \(.state)\n\(.body)"'
+  gh api repos/owner/repo/pulls/PR_NUMBER/comments | jq -r '.[] | "File: \(.path)\nLine: \(.line)\nAuthor: \(.user.login)\nComment:\n\(.body)"'
+  gh pr checks PR_NUMBER
+</pr-review-commands>
 
 <pr-feedback-workflow>
   When addressing review feedback, retrieve all sources before coding (run from repo root):
@@ -132,14 +137,15 @@ issues with severity and file locations" </pr-review-commands>
     --body-file github-issues/issue.md \
     --label "enhancement" --label "lsp/completion" --label "P1-must" --label "size/M"
 
-# Label Formula: Type + Area + Priority + Size
+  # Label Formula: Type + Area + Priority + Size
+  Type: bug, enhancement, documentation, architecture, tech-debt
+  Area: lsp/completion, lsp/navigation, lsp/diagnostics, lsp/hover, lsp/symbols
+  Priority: P0-critical, P1-must, P2-should, P3-nice
+  Size: size/XS, size/S, size/M, size/L, size/XL
 
-Type: bug, enhancement, documentation, architecture, tech-debt Area: lsp/completion, lsp/navigation, lsp/diagnostics,
-lsp/hover, lsp/symbols Priority: P0-critical, P1-must, P2-should, P3-nice Size: size/XS, size/S, size/M, size/L, size/XL
-
-# Common Commands
-
-gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-issues>
+  # Common Commands
+  gh label create "lsp/completion" -c "c2e0c6" -d "Completion features"
+</github-issues>
 
 <flaky-tests>
   When a test fails due to a timeout or non-deterministic behavior, add a FIXME comment to the test file indicating it is flaky.
@@ -159,3 +165,57 @@ gh label create "lsp/completion" -c "c2e0c6" -d "Completion features" </github-i
   Rationale: Backtick style with spaces is more readable, self-documenting, and follows BDD principles.
   Applies to ALL test types: unit tests, integration tests, and property-based tests.
 </test-naming>
+
+<test-driven-development>
+  Follow TDD (Test-Driven Development) for new features. Recommended 99.999% of the time.
+  
+  <tdd-cycle>
+    1. **Red**: Write a failing test first that defines expected behavior
+    2. **Green**: Write minimum code to make the test pass
+    3. **Refactor**: Clean up while keeping tests green
+  </tdd-cycle>
+
+  <order-of-operations>
+    1. Create test file with test cases (they may fail to compile initially)
+    2. Create minimal interface/class to make tests compile
+    3. Run tests - verify they fail for the right reason
+    4. Implement until tests pass
+    5. Refactor if needed
+  </order-of-operations>
+
+  <when-to-skip>
+    TDD can be skipped when overhead is excessive (rare cases):
+    - Pure infrastructure/wiring code with no logic
+    - Exploratory spikes that will be rewritten
+    - Trivial one-liner changes
+    
+    When skipping, write tests immediately after implementation.
+  </when-to-skip>
+
+  <rationale>
+    TDD ensures testable design, living documentation, and confidence in refactoring.
+    Tests written after implementation often miss edge cases and test implementation details.
+  </rationale>
+</test-driven-development>
+
+<github-actions>
+  <action-pinning>
+    ALWAYS pin GitHub Actions to full SHA commit hash, NOT version tags.
+    Add an inline comment with the full semver version for readability.
+
+    ✅ Good:
+    uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+    uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+
+    ❌ Bad:
+    uses: actions/checkout@v4
+    uses: actions/setup-java@v4
+
+    Rationale: SHA pinning prevents supply chain attacks where a tag could be moved
+    to point to malicious code. The inline version comment maintains readability.
+
+    To find SHA for a version:
+    gh api repos/OWNER/REPO/git/refs/tags/VERSION --jq '.object.sha'
+    Example: gh api repos/actions/checkout/git/refs/tags/v6.0.1 --jq '.object.sha'
+  </action-pinning>
+</github-actions>

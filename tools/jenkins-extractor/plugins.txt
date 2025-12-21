@@ -1,0 +1,36 @@
+# Jenkins Pipeline Core Plugins for GDSL Extraction
+# This file lists plugins to install in the extraction Jenkins instance
+
+# Core Pipeline Plugins
+workflow-aggregator:latest
+workflow-basic-steps:latest
+workflow-cps:latest
+workflow-durable-task-step:latest
+workflow-job:latest
+workflow-multibranch:latest
+workflow-scm-step:latest
+workflow-step-api:latest
+workflow-support:latest
+
+# Pipeline Stage Plugins
+pipeline-stage-step:latest
+pipeline-stage-view:latest
+pipeline-build-step:latest
+pipeline-input-step:latest
+pipeline-model-definition:latest
+pipeline-model-api:latest
+
+# Common Steps
+junit:latest
+credentials:latest
+credentials-binding:latest
+git:latest
+github:latest
+docker-workflow:latest
+docker-commons:latest
+
+# Utility Plugins
+pipeline-utility-steps:latest
+timestamper:latest
+ws-cleanup:latest
+
