@@ -40,6 +40,7 @@ javaparser = "3.27.1"
 arrow = "2.2.1"
 flexmark = "0.64.8"
 bsp4j = "2.1.1"
+jeromq = "0.6.0"
 
 [libraries]
 # Plugins (libraries for plugins block)
@@ -117,6 +118,9 @@ maven-embedder = { module = "org.apache.maven:maven-embedder", version.ref = "ma
 maven-compat = { module = "org.apache.maven:maven-compat", version.ref = "mavenEmbedder" }
 maven-resolver-connector-basic = { module = "org.apache.maven.resolver:maven-resolver-connector-basic", version.ref = "mavenResolver" }
 maven-resolver-transport-http = { module = "org.apache.maven.resolver:maven-resolver-transport-http", version.ref = "mavenResolver" }
+
+# Jupyter Kernel Protocol
+jeromq = { module = "org.zeromq:jeromq", version.ref = "jeromq" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

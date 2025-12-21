@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "java",
+    "-jar",
+    "{resource_dir}/groovy-jupyter-all.jar",
+    "{connection_file}"
+  ],
+  "display_name": "Groovy",
+  "language": "groovy",
+  "interrupt_mode": "message",
+  "metadata": {
+    "debugger": false
+  }
+}
