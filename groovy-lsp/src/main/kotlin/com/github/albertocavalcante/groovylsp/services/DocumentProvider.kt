@@ -17,4 +17,6 @@ class DocumentProvider {
     }
 
     fun snapshot(): Map<URI, String> = documents.toMap()
+
+    fun getAllUris(): Set<URI> = documents.keys.toSet()
 }

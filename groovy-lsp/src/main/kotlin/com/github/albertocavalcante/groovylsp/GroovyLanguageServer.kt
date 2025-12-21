@@ -17,16 +17,23 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.CompletionOptions
+import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
+import org.eclipse.lsp4j.FileSystemWatcher
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
+import org.eclipse.lsp4j.Registration
+import org.eclipse.lsp4j.RegistrationParams
 import org.eclipse.lsp4j.ServerCapabilities
 import org.eclipse.lsp4j.ServerInfo
 import org.eclipse.lsp4j.SignatureHelpOptions
 import org.eclipse.lsp4j.TextDocumentSyncKind
+import org.eclipse.lsp4j.WatchKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
@@ -66,6 +73,7 @@ class GroovyLanguageServer :
     private var dependencyManager: DependencyManager? = null
     private var savedInitParams: InitializeParams? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
+    private var clientCapabilities: ClientCapabilities? = null
 
     // Service instances - initialized immediately to prevent UninitializedPropertyAccessException in tests
     private val textDocumentService = GroovyTextDocumentService(
@@ -74,7 +82,7 @@ class GroovyLanguageServer :
         client = { client },
     )
 
-    private val workspaceService = GroovyWorkspaceService(compilationService)
+    private val workspaceService = GroovyWorkspaceService(compilationService, coroutineScope, textDocumentService)
 
     override fun connect(client: LanguageClient) {
         logger.info("Connected to language client")
@@ -90,6 +98,7 @@ class GroovyLanguageServer :
 
         // Save params for later use in initialized()
         savedInitParams = params
+        clientCapabilities = params.capabilities
 
         // Parse initialization options for Jenkins configuration
         val initOptions = params.initializationOptions
@@ -194,6 +203,10 @@ class GroovyLanguageServer :
             }
 
             // Diagnostics will be pushed
+
+            // NOTE: File watching requires dynamic registration in initialized() because
+            // the server needs to tell the client exactly which files to watch.
+            // See registerFileWatchers() for the actual registration.
         }
 
         val serverInfo = ServerInfo().apply {
@@ -209,6 +222,9 @@ class GroovyLanguageServer :
     override fun initialized(params: InitializedParams) {
         logger.info("Server initialized - starting async dependency resolution")
 
+        // Register file watchers for config files (if client supports dynamic registration)
+        registerFileWatchers()
+
         // Send ready message to client
         client?.showMessage(
             MessageParams().apply {
@@ -219,6 +235,77 @@ class GroovyLanguageServer :
 
         // Start async dependency resolution in background
         startAsyncDependencyResolution()
+    }
+
+    /**
+     * Registers file system watchers for configuration files.
+     * Uses LSP dynamic registration to tell the client exactly which files to watch.
+     *
+     * Watched files:
+     * - .codenarc, codenarc.xml, codenarc.groovy - CodeNarc rule configuration
+     * - *.gdsl - Groovy DSL descriptors (especially for Jenkins)
+     * - build.gradle, build.gradle.kts, pom.xml - Build files for dependency changes
+     */
+    private fun registerFileWatchers() {
+        val supportsDynamicRegistration = clientCapabilities
+            ?.workspace
+            ?.didChangeWatchedFiles
+            ?.dynamicRegistration == true
+
+        if (!supportsDynamicRegistration) {
+            logger.info("Client does not support dynamic file watcher registration - relying on client defaults")
+            return
+        }
+
+        val currentClient = client
+        if (currentClient == null) {
+            logger.warn("No client connected - cannot register file watchers")
+            return
+        }
+
+        // Define file watchers with specific patterns and watch kinds
+        // WatchKind flags: Create = 1, Change = 2, Delete = 4 (can be combined)
+        val allWatchKinds = WatchKind.Create + WatchKind.Change + WatchKind.Delete
+
+        val watchers = listOf(
+            // CodeNarc configuration files
+            FileSystemWatcher(Either.forLeft("**/.codenarc"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/codenarc.xml"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/codenarc.groovy"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/codenarc.properties"), allWatchKinds),
+
+            // GDSL files for DSL support (Jenkins, Gradle, etc.)
+            FileSystemWatcher(Either.forLeft("**/*.gdsl"), allWatchKinds),
+
+            // Build files for dependency resolution
+            FileSystemWatcher(Either.forLeft("**/build.gradle"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/build.gradle.kts"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/settings.gradle"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/settings.gradle.kts"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/pom.xml"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/gradle.properties"), allWatchKinds),
+
+            // Groovy source files for incremental indexing
+            FileSystemWatcher(Either.forLeft("**/*.groovy"), allWatchKinds),
+            FileSystemWatcher(Either.forLeft("**/*.java"), allWatchKinds),
+        )
+
+        val registrationOptions = DidChangeWatchedFilesRegistrationOptions(watchers)
+
+        val registration = Registration(
+            "groovy-lsp-file-watchers",
+            "workspace/didChangeWatchedFiles",
+            registrationOptions,
+        )
+
+        currentClient.registerCapability(RegistrationParams(listOf(registration)))
+            .thenAccept {
+                logger.info("Successfully registered ${watchers.size} file watchers")
+            }
+            .exceptionally { error ->
+                logger.warn("Failed to register file watchers: ${error.message}")
+                null
+            }
     }
 
     /**
@@ -309,6 +396,9 @@ class GroovyLanguageServer :
                         message = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
                     },
                 )
+
+                // Start workspace indexing after dependencies are resolved
+                startWorkspaceIndexing(workspaceRoot, progressReporter)
             },
             onError = { error ->
                 logger.error("Failed to resolve dependencies", error)
@@ -411,6 +501,45 @@ class GroovyLanguageServer :
     override fun getTextDocumentService(): TextDocumentService = textDocumentService
 
     override fun getWorkspaceService(): WorkspaceService = workspaceService
+
+    /**
+     * Starts workspace indexing in the background after dependencies are resolved.
+     */
+    @Suppress("UNUSED_PARAMETER") // Parameters kept for future use (e.g., per-workspace progress)
+    private fun startWorkspaceIndexing(workspaceRoot: Path, progressReporter: ProgressReporter) {
+        val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
+        if (sourceUris.isEmpty()) {
+            logger.debug("No workspace sources to index")
+            return
+        }
+
+        logger.info("Starting workspace indexing: ${sourceUris.size} files")
+
+        // Create a new progress reporter for indexing
+        val indexingProgressReporter = ProgressReporter(client)
+        indexingProgressReporter.startDependencyResolution(
+            title = "Indexing workspace",
+            initialMessage = "Indexing ${sourceUris.size} Groovy files...",
+        )
+
+        coroutineScope.launch(Dispatchers.Default) {
+            try {
+                compilationService.indexAllWorkspaceSources(sourceUris) { indexed, total ->
+                    val percentage = if (total > 0) (indexed * 100 / total) else 0
+                    indexingProgressReporter.updateProgress(
+                        "Indexed $indexed/$total files",
+                        percentage,
+                    )
+                }
+
+                indexingProgressReporter.complete("✅ Indexed ${sourceUris.size} files")
+                logger.info("Workspace indexing complete: ${sourceUris.size} files")
+            } catch (e: Exception) {
+                logger.error("Workspace indexing failed", e)
+                indexingProgressReporter.completeWithError("Failed to index workspace: ${e.message}")
+            }
+        }
+    }
 
     /**
      * Waits for dependency resolution to complete, useful for CLI/testing.

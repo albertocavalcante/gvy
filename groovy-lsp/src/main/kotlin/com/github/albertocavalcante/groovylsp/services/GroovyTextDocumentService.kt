@@ -671,4 +671,29 @@ class GroovyTextDocumentService(
     suspend fun awaitDiagnostics(uri: java.net.URI) {
         diagnosticJobs[uri]?.join()
     }
+
+    /**
+     * Notifies that CodeNarc rulesets should be reloaded.
+     * Currently a placeholder - actual reload happens when diagnostics are re-run.
+     * Called when .codenarc files change; should be followed by rerunDiagnosticsOnOpenFiles().
+     */
+    fun reloadCodeNarcRulesets() {
+        logger.info("CodeNarc ruleset reload requested")
+        // NOTE: Currently no caching to invalidate. Rulesets are resolved fresh on each analysis.
+        // This method exists as a hook for future cache invalidation logic.
+    }
+
+    /**
+     * Re-runs diagnostics on all currently open files.
+     * Called after configuration changes that affect diagnostics.
+     */
+    fun rerunDiagnosticsOnOpenFiles() {
+        logger.info("Re-running diagnostics on open files")
+        documentProvider.getAllUris().forEach { uri ->
+            val content = documentProvider.get(uri)
+            if (content != null) {
+                triggerDiagnostics(uri, content)
+            }
+        }
+    }
 }

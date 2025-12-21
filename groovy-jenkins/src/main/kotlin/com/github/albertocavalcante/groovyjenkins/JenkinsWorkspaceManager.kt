@@ -16,6 +16,7 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
     private val logger = LoggerFactory.getLogger(JenkinsWorkspaceManager::class.java)
     private val jenkinsContext = JenkinsContext(configuration, workspaceRoot)
     private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
+    private val librarySourceLoader = LibrarySourceLoader()
 
     // Cache for parsed library references to avoid redundant AST parsing
     private data class CacheEntry(val contentHash: Int, val libraries: List<LibraryReference>)
@@ -81,8 +82,35 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
         // Build classpath from references AND project dependencies
         val classpath = jenkinsContext.buildClasspath(libraries, projectDependencies)
 
+        // Extract library sources for navigation
+        extractLibrarySources(libraries)
+
         logger.debug("Built Jenkins classpath for $uri: ${classpath.size} entries")
         return classpath
+    }
+
+    /**
+     * Extracts source files from configured shared libraries.
+     */
+    private fun extractLibrarySources(libraryReferences: List<LibraryReference>) {
+        val resolver = SharedLibraryResolver(configuration)
+        val resolvedLibraries = resolver.resolveAll(libraryReferences)
+
+        resolvedLibraries.forEach { library ->
+            librarySourceLoader.extractSources(library)
+        }
+    }
+
+    /**
+     * Gets source root directories for extracted library sources.
+     * These can be added to compilation source roots for navigation.
+     */
+    fun getLibrarySourceRoots(): List<Path> {
+        // Extract sources for all configured libraries if not already extracted
+        configuration.sharedLibraries.forEach { library ->
+            librarySourceLoader.extractSources(library)
+        }
+        return librarySourceLoader.getExtractedSourceRoots()
     }
 
     /**

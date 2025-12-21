@@ -192,6 +192,8 @@ object CompletionProvider {
                 is ContextType.TypeParameter -> {
                     logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
                     addTypeParameterClasses(completionContext.prefix, compilationService)
+                    // Also add auto-import completions for unimported types
+                    addAutoImportCompletions(completionContext.prefix, uri, content, compilationService)
                 }
 
                 null -> {
@@ -609,5 +611,27 @@ object CompletionProvider {
                 doc = "Class: ${classInfo.fullName}",
             )
         }
+    }
+
+    /**
+     * Add auto-import completions for types not yet imported.
+     * Searches both workspace and classpath for matching types.
+     */
+    private fun CompletionsBuilder.addAutoImportCompletions(
+        prefix: String,
+        uri: java.net.URI,
+        content: String,
+        compilationService: GroovyCompilationService,
+    ) {
+        val completions = AutoImportCompletionProvider.getTypeCompletions(
+            prefix = prefix,
+            uri = uri,
+            content = content,
+            compilationService = compilationService,
+            classpathService = compilationService.classpathService,
+        )
+
+        // Add pre-built completion items directly (they already have additionalTextEdits)
+        addAll(completions)
     }
 }

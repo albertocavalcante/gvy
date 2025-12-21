@@ -14,14 +14,25 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 class GroovyCompilationService {
+    companion object {
+        /**
+         * Batch size for parallel workspace indexing.
+         * Balances parallelism with resource usage.
+         */
+        private const val INDEXING_BATCH_SIZE = 10
+    }
 
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
     private val cache = CompilationCache()
@@ -149,6 +160,127 @@ class GroovyCompilationService {
     }
 
     /**
+     * Indexes a single workspace file for symbol resolution.
+     * Lightweight operation that parses and builds SymbolIndex without full compilation.
+     *
+     * @param uri The URI of the file to index
+     * @return SymbolIndex if indexing succeeded, null otherwise
+     */
+    suspend fun indexWorkspaceFile(uri: URI): SymbolIndex? {
+        // Check if already indexed first
+        symbolStorageCache.get(uri)?.let {
+            logger.debug("File already indexed: $uri")
+            return it
+        }
+
+        val path = parseUriToPath(uri) ?: return null
+
+        return when {
+            !Files.exists(path) || !Files.isRegularFile(path) -> {
+                logger.debug("File does not exist or is not a regular file: $uri")
+                null
+            }
+            else -> performIndexing(uri, path)
+        }
+    }
+
+    private fun parseUriToPath(uri: URI): Path? = try {
+        Path.of(uri)
+    } catch (e: java.nio.file.InvalidPathException) {
+        logger.debug("Failed to convert URI to path: $uri", e)
+        null
+    }
+
+    // NOTE: Various exceptions possible (IOException, ParseException, etc.)
+    // Catch all to prevent indexing failure from stopping workspace indexing
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun performIndexing(uri: URI, path: Path): SymbolIndex? = try {
+        val content = Files.readString(path)
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+
+        val parseResult = parser.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = workspaceManager.getDependencyClasspath(),
+                sourceRoots = workspaceManager.getSourceRoots(),
+                workspaceSources = emptyList(), // Don't recurse during indexing
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                useRecursiveVisitor = false, // Faster for indexing - don't need full AST traversal
+            ),
+        )
+
+        val astModel = parseResult.astModel
+        if (astModel != null) {
+            val index = SymbolIndex().buildFromVisitor(astModel)
+            symbolStorageCache.put(uri, index)
+            logger.debug("Indexed workspace file: $uri")
+            index
+        } else {
+            logger.debug("Failed to build AST model for indexing: $uri")
+            null
+        }
+    } catch (e: Exception) {
+        logger.warn("Failed to index workspace file: $uri", e)
+        null
+    }
+
+    /**
+     * Indexes all workspace source files in the background.
+     * Reports progress via callback function.
+     *
+     * @param uris List of URIs to index
+     * @param onProgress Callback invoked with (indexed, total) progress
+     */
+    suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) {
+        if (uris.isEmpty()) {
+            logger.debug("No workspace sources to index")
+            return
+        }
+
+        logger.info("Starting workspace indexing: ${uris.size} files")
+        val total = uris.size
+        val indexed = AtomicInteger(0)
+
+        // Index files in truly parallel batches using launch
+        // NOTE: Batch size balances parallelism with resource usage
+        uris.chunked(INDEXING_BATCH_SIZE).forEach { batch ->
+            coroutineScope {
+                batch.forEach { uri ->
+                    launch(Dispatchers.IO) {
+                        indexFileWithProgress(uri, indexed, total, onProgress)
+                    }
+                }
+            }
+        }
+
+        logger.info("Workspace indexing complete: ${indexed.get()}/$total files indexed")
+    }
+
+    /**
+     * Indexes a single file and reports progress atomically.
+     */
+    @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
+    private suspend fun indexFileWithProgress(
+        uri: URI,
+        indexed: AtomicInteger,
+        total: Int,
+        onProgress: (Int, Int) -> Unit,
+    ) {
+        try {
+            indexWorkspaceFile(uri)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e // Re-throw cancellation
+        } catch (e: Exception) {
+            // Catch all to prevent batch failure from stopping entire indexing
+            logger.warn("Failed to index file: $uri", e)
+        } finally {
+            val currentCount = indexed.incrementAndGet()
+            onProgress(currentCount, total)
+        }
+    }
+
+    /**
      * Start async compilation and return Deferred for coordination.
      * Reuses existing compilation if already in progress for the same URI.
      */
@@ -225,6 +357,17 @@ class GroovyCompilationService {
         symbolStorageCache.clear()
         compilationJobs.clear()
         invalidateClassLoader()
+    }
+
+    /**
+     * Invalidates all cached data for a specific URI.
+     * Used when a file is deleted or needs to be fully re-indexed.
+     */
+    fun invalidateCache(uri: URI) {
+        cache.invalidate(uri)
+        symbolStorageCache.remove(uri)
+        compilationJobs.remove(uri)
+        logger.debug("Invalidated cache for: $uri")
     }
 
     fun getCacheStatistics() = cache.getStatistics()

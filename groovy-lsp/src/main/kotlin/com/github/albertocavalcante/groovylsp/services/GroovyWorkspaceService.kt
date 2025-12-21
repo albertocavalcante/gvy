@@ -5,6 +5,8 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.ExecuteCommandParams
@@ -19,7 +21,11 @@ import java.util.concurrent.CompletableFuture
 /**
  * Handles all workspace related LSP operations.
  */
-class GroovyWorkspaceService(private val compilationService: GroovyCompilationService) : WorkspaceService {
+class GroovyWorkspaceService(
+    private val compilationService: GroovyCompilationService,
+    private val coroutineScope: CoroutineScope,
+    private val textDocumentService: GroovyTextDocumentService? = null,
+) : WorkspaceService {
 
     private val logger = LoggerFactory.getLogger(GroovyWorkspaceService::class.java)
 
@@ -58,6 +64,19 @@ class GroovyWorkspaceService(private val compilationService: GroovyCompilationSe
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
         logger.debug("Watched files changed: ${params.changes?.size ?: 0} changes")
 
+        if (params.changes.isNullOrEmpty()) return
+
+        val changes = params.changes.groupBy { classifyFileChange(it.uri) }
+
+        // Handle CodeNarc config changes
+        changes[FileType.CODENARC]?.let { codenarcChanges ->
+            logger.info("CodeNarc config changed, reloading rulesets")
+            textDocumentService?.reloadCodeNarcRulesets()
+            // Re-run diagnostics on open files
+            textDocumentService?.rerunDiagnosticsOnOpenFiles()
+        }
+
+        // Handle GDSL file changes
         val shouldReloadGdsl = params.changes.any { change ->
             try {
                 val uri = java.net.URI.create(change.uri)
@@ -72,7 +91,79 @@ class GroovyWorkspaceService(private val compilationService: GroovyCompilationSe
             compilationService.workspaceManager.reloadJenkinsGdsl()
         }
 
-        // Could trigger re-compilation of affected files
+        // Handle source file changes for incremental indexing
+        changes[FileType.SOURCE]?.let { sourceChanges ->
+            handleSourceFileChanges(sourceChanges)
+        }
+
+        // Build file changes are handled by BuildToolFileWatcher in DependencyManager
+    }
+
+    /**
+     * Handles source file changes for incremental workspace indexing.
+     * - Created files: Index the new file
+     * - Changed files: Re-index to update symbols
+     * - Deleted files: Remove from symbol index
+     */
+    private fun handleSourceFileChanges(changes: List<org.eclipse.lsp4j.FileEvent>) {
+        val created = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Created }
+        val changed = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Changed }
+        val deleted = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Deleted }
+
+        // Handle deleted files - remove from cache
+        deleted.forEach { event ->
+            try {
+                val uri = java.net.URI.create(event.uri)
+                compilationService.invalidateCache(uri)
+                logger.debug("Removed deleted file from index: ${event.uri}")
+            } catch (e: Exception) {
+                logger.debug("Failed to process deleted file: ${event.uri}", e)
+            }
+        }
+
+        // Index new and changed files in background
+        val toIndex = (created + changed).mapNotNull { event ->
+            try {
+                java.net.URI.create(event.uri)
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        if (toIndex.isNotEmpty()) {
+            logger.info("Indexing ${toIndex.size} changed source files")
+            coroutineScope.launch {
+                compilationService.indexAllWorkspaceSources(toIndex)
+            }
+        }
+    }
+
+    private enum class FileType(val suffixes: List<String>) {
+        CODENARC(listOf(".codenarc", "codenarc.xml", "codenarc.groovy", "codenarc.properties")),
+        GDSL(listOf(".gdsl")),
+        BUILD(
+            listOf(
+                "build.gradle",
+                "build.gradle.kts",
+                "settings.gradle",
+                "settings.gradle.kts",
+                "pom.xml",
+                "gradle.properties",
+            ),
+        ),
+        SOURCE(listOf(".groovy", ".java")),
+        OTHER(emptyList()),
+        ;
+
+        companion object {
+            fun fromPath(path: String): FileType =
+                entries.firstOrNull { type -> type.suffixes.any { path.endsWith(it) } } ?: OTHER
+        }
+    }
+
+    private fun classifyFileChange(uriString: String): FileType {
+        val path = runCatching { java.net.URI.create(uriString).path }.getOrNull() ?: return FileType.OTHER
+        return FileType.fromPath(path)
     }
 
     override fun symbol(

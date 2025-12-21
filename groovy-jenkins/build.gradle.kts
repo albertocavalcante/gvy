@@ -11,6 +11,9 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
     implementation(libs.kotlin.coroutines.core)
 
+    // Arrow for functional programming
+    implementation(libs.arrow.core)
+
     // Logging
     implementation(libs.slf4j.api)
 

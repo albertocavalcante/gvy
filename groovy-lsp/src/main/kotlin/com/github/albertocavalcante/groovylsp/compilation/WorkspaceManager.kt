@@ -102,6 +102,14 @@ class WorkspaceManager {
             }
         }
 
+        // Add Jenkins library source roots if available
+        jenkinsWorkspaceManager?.getLibrarySourceRoots()?.forEach { librarySourceRoot ->
+            if (Files.exists(librarySourceRoot) && Files.isDirectory(librarySourceRoot)) {
+                sourceRoots.add(librarySourceRoot)
+                logger.debug("Added Jenkins library source root: $librarySourceRoot")
+            }
+        }
+
         logger.info("Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}")
     }
 
@@ -122,6 +130,19 @@ class WorkspaceManager {
     fun getWorkspaceRoot(): Path? = workspaceRoot
     fun getSourceRoots(): List<Path> = sourceRoots.toList()
     fun getWorkspaceSources(): List<Path> = workspaceSources
+
+    /**
+     * Gets workspace source URIs for indexing.
+     * Converts Path objects to URI objects for use in compilation service.
+     */
+    fun getWorkspaceSourceUris(): List<URI> = workspaceSources.mapNotNull { path ->
+        try {
+            path.toUri()
+        } catch (e: Exception) {
+            logger.warn("Failed to convert path to URI: $path", e)
+            null
+        }
+    }
 
     /**
      * Initializes Jenkins workspace manager with configuration.
