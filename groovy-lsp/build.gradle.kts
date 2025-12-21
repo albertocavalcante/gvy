@@ -1,5 +1,9 @@
+import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestResult
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
+import java.time.Duration
 import java.util.zip.ZipFile
 import javax.inject.Inject
 
@@ -115,19 +119,107 @@ tasks.test {
     maxHeapSize = "1G"
 
     // Fail tests that take too long (5 minutes default)
-    systemProperty("junit.jupiter.execution.timeout.default", "300s")
+    val junitTimeoutProperty = "junit.jupiter.execution.timeout.default"
+    systemProperty(junitTimeoutProperty, "300s")
+
+    // ============================================================================
+    // TEST MONITORING & DEADLOCK DETECTION
+    // ============================================================================
+    // Hard timeout for entire test task (20 minutes) - safety net for hangs
+    // Individual tests should timeout first at 5m via JUnit timeout above
+    // If this fires, it means we have a serious deadlock or infinite loop
+    timeout.set(Duration.ofMinutes(20))
+
+    // JVM arguments for enhanced diagnostics and thread dump generation
+    jvmArgs(
+        "-XX:+PrintConcurrentLocks", // Show lock info in thread dumps
+        "-XX:+UnlockDiagnosticVMOptions", // Enable diagnostic options
+        "-XX:+LogVMOutput", // Enable JVM logging
+        "-XX:LogFile=build/test-jvm.log", // Log JVM events to file for post-mortem analysis
+    )
+
+    // TODO: Tier 2 - Enable JVM Flight Recorder for continuous profiling
+    // Uncomment to capture detailed performance data (CPU, memory, locks, I/O)
+    // jvmArgs(
+    //     "-XX:StartFlightRecording=duration=20m,filename=build/test-recording.jfr",
+    //     "-XX:FlightRecorderOptions=stackdepth=128"
+    // )
+    // Analysis: Use JDK Mission Control or upload to fastThread.io
 
     testLogging {
         showStandardStreams = true
-        events("passed", "skipped", "failed")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        events("passed", "skipped", "failed", "standardOut", "standardError")
+        exceptionFormat = TestExceptionFormat.FULL
         showStackTraces = true
+        showExceptions = true
+        showCauses = true
+        displayGranularity = 2 // Show individual test methods for hang identification
     }
+
+    // Detect and warn about slow tests (potential deadlock indicators)
+    val slowTestThresholdMs = 60_000L
+    val verySlowTestThresholdMs = 180_000L
+
+    afterTest(
+        KotlinClosure2<TestDescriptor, TestResult, Unit>({
+            descriptor,
+            result,
+            ->
+            val duration = result.endTime - result.startTime
+            if (duration > verySlowTestThresholdMs) { // Error if test took >3 minutes
+                logger.error(
+                    "❌ VERY SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms - possible deadlock?",
+                )
+            } else if (duration > slowTestThresholdMs) { // Warn if test took >1 minute
+                logger.warn("⚠️  SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms")
+            }
+        }),
+    )
+
+    // Log test environment on start - helps diagnose Runner-specific issues
+    doFirst {
+        logger.lifecycle("╔════════════════════════════════════════╗")
+        logger.lifecycle("║      Test Monitoring Active            ║")
+        logger.lifecycle("╠════════════════════════════════════════╣")
+        logger.lifecycle("║ Task timeout:        ${timeout.get().toMinutes()} minutes")
+        logger.lifecycle("║ JUnit timeout:       ${systemProperties[junitTimeoutProperty]}")
+        logger.lifecycle("║ Max parallel forks:  $maxParallelForks")
+        logger.lifecycle("║ CPU cores:           ${Runtime.getRuntime().availableProcessors()}")
+        logger.lifecycle("║ Max heap:            $maxHeapSize")
+        logger.lifecycle("║ JVM log:             build/test-jvm.log")
+        logger.lifecycle("╚════════════════════════════════════════╝")
+    }
+
     reports {
         junitXml.required.set(true)
         html.required.set(true)
     }
 }
+
+// TODO: Tier 3 - Create custom Gradle task to analyze JVM logs for deadlocks
+// This would parse build/test-jvm.log and detect patterns like:
+// - "deadlock" keyword
+// - High number of BLOCKED threads
+// - Circular lock dependencies
+// Example:
+// tasks.register("analyzeTestHangs") {
+//     group = "verification"
+//     description = "Analyze JVM logs and test reports for hangs/deadlocks"
+//     doLast {
+//         val jvmLog = file("build/test-jvm.log")
+//         if (jvmLog.exists()) {
+//             val content = jvmLog.readText()
+//             if (content.contains("deadlock") || content.contains("BLOCKED")) {
+//                 logger.error("⚠️ POTENTIAL DEADLOCK - Check build/test-jvm.log")
+//             }
+//         }
+//     }
+// }
+
+// TODO: Tier 3 - Add custom Detekt rule to catch unsafe blocking patterns
+// This would detect code like: async(Dispatchers.Default) { future.get() }
+// and suggest using Dispatchers.IO or .await() instead
+// See: buildSrc/src/main/kotlin/detekt/UnsafeBlockingInCoroutineRule.kt
 
 val mainSourceSet = sourceSets.named("main")
 
@@ -463,9 +555,9 @@ abstract class SmokeShadowJarTask
                 """
                 // Minimal Groovy file used for jar smoke checks
                 // Intentionally includes trailing whitespace so `check` reliably emits at least one diagnostic.
-                class Smoke {  
+                class Smoke {  \u0020
                   static void main(String[] args) {
-                    println "ok"  
+                    println "ok"  \u0020
                   }
                 }
                 """.trimIndent(),
