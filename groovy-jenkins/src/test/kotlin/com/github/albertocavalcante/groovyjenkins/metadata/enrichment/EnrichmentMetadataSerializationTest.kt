@@ -79,7 +79,7 @@ class EnrichmentMetadataSerializationTest {
     fun `deserializes JenkinsEnrichment from JSON`() {
         val jsonString = """
             {
-              "${'$'}schema": "https://groovy-lsp.dev/schemas/jenkins-enrichment-v1.json",
+              "${'$'}schema": "https://groovy-lsp.dev/schemas/jenkins-enrichment-2025-12-21.json",
               "version": "1.0.0",
               "steps": {
                 "echo": {

@@ -9,11 +9,13 @@ import kotlinx.serialization.Serializable
  * This file is version-controlled and maintained by humans to provide
  * better documentation, examples, and categorization beyond what can be
  * automatically extracted from Jenkins.
+ *
+ * TODO: Align all Jenkins metadata schemas to date-based versioning (YYYY-MM-DD) for easier evolution.
  */
 @Serializable
 data class JenkinsEnrichment(
     @SerialName("\$schema")
-    val schema: String = "https://groovy-lsp.dev/schemas/jenkins-enrichment-v1.json",
+    val schema: String = "https://groovy-lsp.dev/schemas/jenkins-enrichment-2025-12-21.json",
     val version: String = "1.0.0",
     val steps: Map<String, StepEnrichment> = emptyMap(),
     val globalVariables: Map<String, GlobalVariableEnrichment> = emptyMap(),

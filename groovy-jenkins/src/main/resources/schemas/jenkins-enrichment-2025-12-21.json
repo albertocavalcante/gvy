@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://groovy-lsp.dev/schemas/jenkins-enrichment-2025-12-21.json",
+  "title": "Groovy LSP Jenkins Enrichment (Tier 2) v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "version", "steps", "globalVariables", "sections", "directives"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "https://groovy-lsp.dev/schemas/jenkins-enrichment-2025-12-21.json"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/stepEnrichment" }
+    },
+    "globalVariables": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/globalVariableEnrichment" }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/sectionEnrichment" }
+    },
+    "directives": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/directiveEnrichment" }
+    }
+  },
+  "$defs": {
+    "stepEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugin", "description"],
+      "properties": {
+        "plugin": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "documentationUrl": { "type": "string", "format": "uri" },
+        "category": { "$ref": "#/$defs/stepCategory" },
+        "examples": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "parameterEnrichment": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/parameterEnrichment" }
+        },
+        "deprecation": { "$ref": "#/$defs/deprecationInfo" }
+      }
+    },
+    "stepCategory": {
+      "type": "string",
+      "enum": ["scm", "build", "test", "deploy", "notification", "utility"]
+    },
+    "parameterEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "validValues": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "examples": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "deprecationInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "message"],
+      "properties": {
+        "since": { "type": "string", "minLength": 1 },
+        "replacement": { "type": "string" },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "globalVariableEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "documentationUrl": { "type": "string", "format": "uri" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/propertyEnrichment" }
+        }
+      }
+    },
+    "propertyEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "description"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "readOnly": { "type": "boolean" }
+      }
+    },
+    "sectionEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "allowedIn"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "allowedIn": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "innerInstructions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "documentationUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "directiveEnrichment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "allowedIn"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "allowedIn": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "documentationUrl": { "type": "string", "format": "uri" }
+      }
+    }
+  }
+}
