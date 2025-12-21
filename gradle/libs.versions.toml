@@ -18,7 +18,7 @@ coroutines = "1.10.2"
 collectionsImmutable = "0.4.0"
 serialization = "1.9.0"
 slf4j = "2.0.17"
-logback = "1.5.22"
+logback = "1.5.23"
 rewriteGroovy = "8.67.0"
 
 junit = "6.0.1"
