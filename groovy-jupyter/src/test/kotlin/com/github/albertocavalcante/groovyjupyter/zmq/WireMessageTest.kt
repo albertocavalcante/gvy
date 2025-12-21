@@ -292,4 +292,87 @@ class WireMessageTest {
             assertThat(rtFrame).isEqualTo(origFrame)
         }
     }
+
+    @Test
+    fun `should convert to JupyterMessage with parsed header and content`() {
+        // Given: Wire message with properly formatted JSON
+        val header =
+            """{"msg_id":"abc123","session":"sess1","username":"user","date":"2024-01-01T00:00:00.000Z","msg_type":"execute_request","version":"5.3"}"""
+        val parentHeader = """{}"""
+        val metadata = """{"key":"value"}"""
+        val content = """{"code":"print('hello')","silent":false}"""
+
+        val frames = listOf(
+            "identity1".toByteArray(Charsets.UTF_8),
+            WireMessage.DELIMITER.toByteArray(Charsets.UTF_8),
+            "signature".toByteArray(Charsets.UTF_8),
+            header.toByteArray(Charsets.UTF_8),
+            parentHeader.toByteArray(Charsets.UTF_8),
+            metadata.toByteArray(Charsets.UTF_8),
+            content.toByteArray(Charsets.UTF_8),
+        )
+
+        // When: Parse and convert to JupyterMessage
+        val wireMsg = WireMessage.fromFrames(frames)
+        val jupyterMsg = wireMsg.toJupyterMessage()
+
+        // Then: Should correctly parse fields
+        assertThat(jupyterMsg.header.msgId).isEqualTo("abc123")
+        assertThat(jupyterMsg.header.session).isEqualTo("sess1")
+        assertThat(jupyterMsg.header.msgType).isEqualTo("execute_request")
+        assertThat(jupyterMsg.parentHeader).isNull()
+        assertThat(jupyterMsg.metadata).containsEntry("key", "value")
+        assertThat(jupyterMsg.content).containsEntry("code", "print('hello')")
+        assertThat(jupyterMsg.content).containsEntry("silent", false)
+        assertThat(jupyterMsg.identities).hasSize(1)
+    }
+
+    @Test
+    fun `should filter null values from content when parsing JSON`() {
+        // Given: Content with null value
+        val header = """{"msg_id":"test","session":"sess1","msg_type":"test","version":"5.3"}"""
+        val content = """{"name":"Alice","nickname":null,"age":30}"""
+
+        val frames = listOf(
+            WireMessage.DELIMITER.toByteArray(Charsets.UTF_8),
+            "sig".toByteArray(Charsets.UTF_8),
+            header.toByteArray(Charsets.UTF_8),
+            "{}".toByteArray(Charsets.UTF_8),
+            "{}".toByteArray(Charsets.UTF_8),
+            content.toByteArray(Charsets.UTF_8),
+        )
+
+        // When
+        val jupyterMsg = WireMessage.fromFrames(frames).toJupyterMessage()
+
+        // Then: Null values should be filtered out
+        assertThat(jupyterMsg.content).containsEntry("name", "Alice")
+        assertThat(jupyterMsg.content).containsEntry("age", 30L)
+        assertThat(jupyterMsg.content).doesNotContainKey("nickname")
+    }
+
+    @Test
+    fun `should preserve string type for string literals that look like booleans or numbers`() {
+        // Given: Content with string "true" and string "123"
+        val header = """{"msg_id":"test","session":"sess1","msg_type":"test","version":"5.3"}"""
+        val content = """{"boolString":"true","numString":"123","realBool":true,"realNum":123}"""
+
+        val frames = listOf(
+            WireMessage.DELIMITER.toByteArray(Charsets.UTF_8),
+            "sig".toByteArray(Charsets.UTF_8),
+            header.toByteArray(Charsets.UTF_8),
+            "{}".toByteArray(Charsets.UTF_8),
+            "{}".toByteArray(Charsets.UTF_8),
+            content.toByteArray(Charsets.UTF_8),
+        )
+
+        // When
+        val jupyterMsg = WireMessage.fromFrames(frames).toJupyterMessage()
+
+        // Then: String literals should remain strings, not be converted
+        assertThat(jupyterMsg.content["boolString"]).isEqualTo("true")
+        assertThat(jupyterMsg.content["numString"]).isEqualTo("123")
+        assertThat(jupyterMsg.content["realBool"]).isEqualTo(true)
+        assertThat(jupyterMsg.content["realNum"]).isEqualTo(123L)
+    }
 }

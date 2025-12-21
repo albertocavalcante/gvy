@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
+import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
 import com.github.albertocavalcante.groovyrepl.GroovyExecutor
 import org.slf4j.LoggerFactory
 import org.zeromq.ZMQ
@@ -96,8 +97,7 @@ class KernelServer(
     private fun handleSocketMessage(socket: ZMQ.Socket, socketName: String) {
         logger.debug("Received message on {} socket", socketName)
 
-        // TODO: Parse WireMessage, find handler, dispatch
-        // For now, just receive and discard
+        // Receive all frames
         val frames = mutableListOf<ByteArray>()
         var more = true
         while (more) {
@@ -106,8 +106,42 @@ class KernelServer(
             more = socket.hasReceiveMore()
         }
 
-        if (frames.isNotEmpty()) {
-            logger.debug("Received {} frames on {}", frames.size, socketName)
+        if (frames.isEmpty()) {
+            logger.debug("No frames received on {}", socketName)
+            return
+        }
+
+        logger.debug("Received {} frames on {}", frames.size, socketName)
+
+        try {
+            // Parse wire message
+            val wireMessage = WireMessage.fromFrames(frames)
+
+            // Convert to JupyterMessage
+            val jupyterMessage = wireMessage.toJupyterMessage()
+
+            val msgType = jupyterMessage.header.msgType
+            logger.info("Received message type: {} on {}", msgType, socketName)
+
+            // Find handler
+            val messageType = MessageType.fromValue(msgType)
+            if (messageType == null) {
+                logger.warn("Unknown message type: {}", msgType)
+                return
+            }
+
+            val handler = findHandler(messageType)
+            if (handler == null) {
+                logger.warn("No handler for message type: {}", messageType)
+                return
+            }
+
+            // Dispatch to handler
+            logger.debug("Dispatching {} to {}", messageType, handler::class.simpleName)
+            handler.handle(jupyterMessage, connection)
+            logger.debug("Handler completed for {}", messageType)
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            logger.error("Error processing message on {}: {}", socketName, e.message, e)
         }
     }
 
