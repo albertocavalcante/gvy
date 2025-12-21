@@ -11,45 +11,55 @@ import org.slf4j.LoggerFactory
 import org.zeromq.ZMQ
 
 /**
- * Publishes kernel execution status on the IOPub socket.
- *
- * The kernel must publish busy/idle status to inform frontends
- * about its execution state. This helps UI show activity indicators.
+ * Represents stream output types.
  */
-class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: HmacSigner) {
-    private val logger = LoggerFactory.getLogger(StatusPublisher::class.java)
+enum class StreamName(val value: String) {
+    STDOUT("stdout"),
+    STDERR("stderr"),
+}
+
+/**
+ * Publishes stream output (stdout/stderr) on the IOPub socket.
+ *
+ * The kernel publishes stream messages during code execution so
+ * frontends can display output in real-time.
+ */
+class StreamPublisher(private val iopubSocket: ZMQ.Socket, private val signer: HmacSigner) {
+    private val logger = LoggerFactory.getLogger(StreamPublisher::class.java)
 
     /**
-     * Publish that the kernel is busy processing a request.
+     * Publish stdout output.
      */
-    fun publishBusy(parent: JupyterMessage) {
-        publishStatus(KernelStatus.BUSY, parent)
+    fun publishStdout(text: String, parent: JupyterMessage) {
+        publishStream(StreamName.STDOUT, text, parent)
     }
 
     /**
-     * Publish that the kernel is idle and ready for new requests.
+     * Publish stderr output.
      */
-    fun publishIdle(parent: JupyterMessage) {
-        publishStatus(KernelStatus.IDLE, parent)
+    fun publishStderr(text: String, parent: JupyterMessage) {
+        publishStream(StreamName.STDERR, text, parent)
     }
 
-    private fun publishStatus(status: KernelStatus, parent: JupyterMessage) {
-        logger.debug("Publishing status: {}", status.value)
+    private fun publishStream(name: StreamName, text: String, parent: JupyterMessage) {
+        if (text.isEmpty()) return
+
+        logger.debug("Publishing stream {}: {} chars", name.value, text.length)
 
         val header = Header(
             session = parent.header.session,
             username = parent.header.username,
-            msgType = MessageType.STATUS.value,
+            msgType = MessageType.STREAM.value,
         )
 
-        // Use proper JSON serialization instead of manual string construction
         val content = buildJsonObject {
-            put("execution_state", status.value)
+            put("name", name.value)
+            put("text", text)
         }.toString()
 
         val wireMessage = WireMessage(
             identities = emptyList(),
-            signature = "", // Will be computed
+            signature = "",
             header = header.toJson(),
             parentHeader = parent.header.toJson(),
             metadata = "{}",
@@ -59,7 +69,7 @@ class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: H
         val frames = wireMessage.toSignedFrames(signer)
         sendMultipart(frames)
 
-        logger.trace("Status {} published", status.value)
+        logger.trace("Stream {} published", name.value)
     }
 
     private fun sendMultipart(frames: List<ByteArray>) {
