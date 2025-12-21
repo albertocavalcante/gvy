@@ -16,11 +16,14 @@ class ShutdownHandler(private val onShutdown: () -> Unit = {}) : MessageHandler 
 
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.SHUTDOWN_REQUEST
 
-    override fun handle(request: JupyterMessage, connection: JupyterConnection) {
+    override fun handle(request: JupyterMessage, connection: JupyterConnection, socket: org.zeromq.ZMQ.Socket) {
         val restart = shouldRestart(request)
         logger.info("Handling shutdown_request (restart={})", restart)
 
-        // TODO: Send shutdown_reply on control socket
+        // Send shutdown_reply on control socket
+        val reply = request.createReply(MessageType.SHUTDOWN_REPLY)
+        reply.content = mapOf("restart" to restart)
+        connection.sendMessage(socket, reply)
 
         // Trigger shutdown callback
         onShutdown()

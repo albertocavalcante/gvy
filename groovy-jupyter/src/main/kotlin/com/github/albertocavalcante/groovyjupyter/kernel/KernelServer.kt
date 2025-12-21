@@ -138,7 +138,12 @@ class KernelServer(
 
             // Dispatch to handler
             logger.debug("Dispatching {} to {}", messageType, handler::class.simpleName)
-            handler.handle(jupyterMessage, connection)
+            try {
+                handler.handle(jupyterMessage, connection, socket)
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                logger.error("Error handling message ${jupyterMessage.header.msgType}", e)
+                // TODO: Send error status/reply?
+            }
             logger.debug("Handler completed for {}", messageType)
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             logger.error("Error processing message on {}: {}", socketName, e.message, e)

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
-import kotlin.text.Charsets
 
 /**
  * TDD tests for StatusPublisher - publishes kernel status on IOPub.

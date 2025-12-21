@@ -115,7 +115,30 @@ install_kernel() {
     # Copy kernel.json
     cp "$PROJECT_ROOT/groovy-jupyter/src/main/resources/kernel/kernel.json" "$TEMP_KERNEL_DIR/"
 
-    # Copy the JAR
+    # Generate logos from assets (requires ImageMagick 'convert')
+    if command -v convert &> /dev/null; then
+        log_info "Generating kernel logos from SVG..."
+        convert -background none -resize 64x64 "$PROJECT_ROOT/assets/groovy-logo.svg" "$TEMP_KERNEL_DIR/logo-64x64.png"
+        convert -background none -resize 32x32 "$PROJECT_ROOT/assets/groovy-logo.svg" "$TEMP_KERNEL_DIR/logo-32x32.png"
+    else
+        log_warn "ImageMagick 'convert' not found. Skipping PNG logo generation."
+    fi
+
+    # Copy SVG logo for supported UIs (e.g. JupyterLab)
+    cp "$PROJECT_ROOT/assets/groovy-logo.svg" "$TEMP_KERNEL_DIR/logo-svg.svg"
+
+    # Extract Groovy version from libs.versions.toml and update kernel.json
+    GROOVY_VERSION=$(grep 'groovy = "' "$PROJECT_ROOT/gradle/libs.versions.toml" | head -n 1 | sed -E 's/.*groovy = "(.*)"/\1/')
+    if [[ -n "$GROOVY_VERSION" ]]; then
+       log_info "Detected Groovy version: $GROOVY_VERSION"
+       # Update display_name using temp file for portability (sed -i differs on Mac/Linux)
+       sed "s/\"display_name\": \"Groovy\"/\"display_name\": \"Groovy ${GROOVY_VERSION}\"/" "$TEMP_KERNEL_DIR/kernel.json" > "$TEMP_KERNEL_DIR/kernel.json.tmp"
+       mv "$TEMP_KERNEL_DIR/kernel.json.tmp" "$TEMP_KERNEL_DIR/kernel.json"
+    else
+       log_warn "Could not detect Groovy version. Using default display name."
+    fi
+
+    # Install using jupyter kernelspec JAR
     cp "$PROJECT_ROOT/groovy-jupyter/build/libs/$JAR_NAME" "$TEMP_KERNEL_DIR/"
 
     # Install using jupyter kernelspec

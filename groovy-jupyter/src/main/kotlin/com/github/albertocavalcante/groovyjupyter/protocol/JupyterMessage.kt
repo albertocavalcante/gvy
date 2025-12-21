@@ -86,7 +86,9 @@ data class JupyterMessage(
     var content: Map<String, Any> = emptyMap(),
     val identities: MutableList<ByteArray> = mutableListOf(),
 ) {
-    fun contentToJson(): String = json.encodeToString(serializableContent())
+    fun contentToJson(): String = json.encodeToString(serializableMap(content))
+
+    fun metadataToJson(): String = json.encodeToString(serializableMap(metadata))
 
     /**
      * Create a reply message to this request.
@@ -99,6 +101,9 @@ data class JupyterMessage(
         parentHeader = header,
         identities = identities,
     )
+
+    private fun serializableMap(map: Map<String, Any>): Map<String, kotlinx.serialization.json.JsonElement> =
+        map.mapValues { (_, v) -> v.toJsonElement() }
 
     /**
      * Recursively convert any value to a JsonElement.
@@ -116,9 +121,6 @@ data class JupyterMessage(
         is Iterable<*> -> kotlinx.serialization.json.JsonArray(this.map { it.toJsonElement() })
         else -> kotlinx.serialization.json.JsonPrimitive(this.toString())
     }
-
-    private fun serializableContent(): Map<String, kotlinx.serialization.json.JsonElement> =
-        content.mapValues { (_, v) -> v.toJsonElement() }
 
     companion object {
         private val json = Json { encodeDefaults = true }
