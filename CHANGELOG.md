@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.4.0](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.4...v0.4.0) (2025-12-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* implement v0.4.0 P1 features - workspace indexing, library sources, auto-import, and config watching ([#256](https://github.com/albertocavalcante/groovy-lsp/issues/256))
+
+### Features
+
+* add BSP client support for Bazel, sbt, and Mill ([#253](https://github.com/albertocavalcante/groovy-lsp/issues/253)) ([b584cad](https://github.com/albertocavalcante/groovy-lsp/commit/b584cad231f7bd28850e89dcbfbe945fda21b441))
+* add comprehensive test monitoring infrastructure ([#251](https://github.com/albertocavalcante/groovy-lsp/issues/251)) ([13bf442](https://github.com/albertocavalcante/groovy-lsp/commit/13bf4424d46498bffda6825dd22a86fbdb2aa12a))
+* add Gradle build strategy configuration and BSP integration docs ([#254](https://github.com/albertocavalcante/groovy-lsp/issues/254)) ([74e8733](https://github.com/albertocavalcante/groovy-lsp/commit/74e8733cd5fa0b0c40ef0240533d42a449ae5fce))
+* **ci:** add local-macos runner support and auto-setup script ([#247](https://github.com/albertocavalcante/groovy-lsp/issues/247)) ([ce34339](https://github.com/albertocavalcante/groovy-lsp/commit/ce343390d7ad88100612bb77647968c9ac00b73e))
+* **ci:** add runner specs display in job summary ([#246](https://github.com/albertocavalcante/groovy-lsp/issues/246)) ([7c34415](https://github.com/albertocavalcante/groovy-lsp/commit/7c34415c910b25308b408ce052761e7494d2d7d5))
+* **common:** add groovy-common module with shared functional utilities ([#207](https://github.com/albertocavalcante/groovy-lsp/issues/207)) ([8a5e14e](https://github.com/albertocavalcante/groovy-lsp/commit/8a5e14e00e82892af758b7ea006310b9001a7725))
+* implement v0.4.0 P1 features - workspace indexing, library sources, auto-import, and config watching ([#256](https://github.com/albertocavalcante/groovy-lsp/issues/256)) ([4ae7ad0](https://github.com/albertocavalcante/groovy-lsp/commit/4ae7ad040379ab9eafa550fa85f6dd4c1e3c960d))
+* **infra:** add runner image selection and fix region validation ([#240](https://github.com/albertocavalcante/groovy-lsp/issues/240)) ([dffaeb5](https://github.com/albertocavalcante/groovy-lsp/commit/dffaeb58c8c7d649013be920965ccad667deb9c3))
+* **infra:** Enhance runner infrastructure with auto-cleanup and better specs ([#237](https://github.com/albertocavalcante/groovy-lsp/issues/237)) ([892aacb](https://github.com/albertocavalcante/groovy-lsp/commit/892aacb0b1e693d513bd5be776773126add9ac15))
+* **infra:** expose runner ip and update scopes ([#226](https://github.com/albertocavalcante/groovy-lsp/issues/226)) ([c5ac42e](https://github.com/albertocavalcante/groovy-lsp/commit/c5ac42e70f1c25e0aefe967f4547849fdb39b788))
+* **infra:** mark runner ips as sensitive output ([#228](https://github.com/albertocavalcante/groovy-lsp/issues/228)) ([3865697](https://github.com/albertocavalcante/groovy-lsp/commit/3865697152703c4fc63c5bee9331bfd72aa80fe4))
+* **infra:** prune offline runners before destroying ([#242](https://github.com/albertocavalcante/groovy-lsp/issues/242)) ([8d93bd5](https://github.com/albertocavalcante/groovy-lsp/commit/8d93bd508c2bbc03f4a7b0cbd1a75b9f9d190349))
+* Integrates Magalu Cloud Self-Hosted Runner ([#214](https://github.com/albertocavalcante/groovy-lsp/issues/214)) ([a60951e](https://github.com/albertocavalcante/groovy-lsp/commit/a60951ef3219c1f5d0625c498eba49a1db00c294))
+* **lsp:** wire GroovyTokenIndex into Spock completion gating ([#211](https://github.com/albertocavalcante/groovy-lsp/issues/211)) ([f110795](https://github.com/albertocavalcante/groovy-lsp/commit/f1107951a80d1ae96cf1394895f7220c28c418da))
+* **parser:** add compilePhase option ([#202](https://github.com/albertocavalcante/groovy-lsp/issues/202)) ([04e4161](https://github.com/albertocavalcante/groovy-lsp/commit/04e4161c11bc24425fd480dbf63f54a88369c13f))
+* **parser:** implement deterministic GroovyTokenIndex using lexer classification ([#210](https://github.com/albertocavalcante/groovy-lsp/issues/210)) ([10e2a43](https://github.com/albertocavalcante/groovy-lsp/commit/10e2a438cb1732fe76ef6f6d1e6aab70670a5f38))
+* scaffold spock support ([#200](https://github.com/albertocavalcante/groovy-lsp/issues/200)) ([122967e](https://github.com/albertocavalcante/groovy-lsp/commit/122967e02e34349cf3a7f0f413a5ae1fee48f5dd))
+* **spock:** add AST-based spec detection ([#203](https://github.com/albertocavalcante/groovy-lsp/issues/203)) ([228fa39](https://github.com/albertocavalcante/groovy-lsp/commit/228fa394a1fc46e0e96d95f6a4bc5c9906e290b1))
+* **spock:** add SpockBlockIndex for AST-based block detection ([#212](https://github.com/albertocavalcante/groovy-lsp/issues/212)) ([c3c5856](https://github.com/albertocavalcante/groovy-lsp/commit/c3c5856f3b5dfd3126f5db0c93e9b7d31418ba57))
+
+
+### Bug Fixes
+
+* add CodeNarc Jenkins diagnostics support and fix ruleset resolution ([#255](https://github.com/albertocavalcante/groovy-lsp/issues/255)) ([6b5e488](https://github.com/albertocavalcante/groovy-lsp/commit/6b5e48898546832743baa5ca561d80687e639cfd))
+* **build-tool:** resolve detekt issues ([#239](https://github.com/albertocavalcante/groovy-lsp/issues/239)) ([ed21f9c](https://github.com/albertocavalcante/groovy-lsp/commit/ed21f9ca1a71d112f52dbb6934990df6d309e839))
+* **ci:** add checkout step and set magalu as default runner ([#235](https://github.com/albertocavalcante/groovy-lsp/issues/235)) ([6f43f8d](https://github.com/albertocavalcante/groovy-lsp/commit/6f43f8d2c26cadca11bfe4d04bd1caab105ddc17))
+* **ci:** add workflow_dispatch to concurrency group ([#248](https://github.com/albertocavalcante/groovy-lsp/issues/248)) ([94aa77b](https://github.com/albertocavalcante/groovy-lsp/commit/94aa77bf4d138388396b1129a10accdc89d90c06))
+* **ci:** auto-create TFC workspace on first provision ([#222](https://github.com/albertocavalcante/groovy-lsp/issues/222)) ([b4edf00](https://github.com/albertocavalcante/groovy-lsp/commit/b4edf00dd130ea7f013fb54a1f18bf2d590c2395))
+* **e2e:** fix failing tests and remove star imports ([#243](https://github.com/albertocavalcante/groovy-lsp/issues/243)) ([b18cc7f](https://github.com/albertocavalcante/groovy-lsp/commit/b18cc7fff2733ceec2b6363a0cef248b6ac4c411))
+* flatten os matrix strategy in ci.yml to fix yaml syntax ([#231](https://github.com/albertocavalcante/groovy-lsp/issues/231)) ([72fe831](https://github.com/albertocavalcante/groovy-lsp/commit/72fe831be67f862de7b0cb4210a23ba1ce5db019))
+* **gradle:** improve error logging when dependency resolution fails ([#213](https://github.com/albertocavalcante/groovy-lsp/issues/213)) ([b30e0d5](https://github.com/albertocavalcante/groovy-lsp/commit/b30e0d5d70d90c75eb7b1ed1b5448d5046575f5b))
+* **infra:** add missing changes from PR [#214](https://github.com/albertocavalcante/groovy-lsp/issues/214) ([#217](https://github.com/albertocavalcante/groovy-lsp/issues/217)) ([a9220e7](https://github.com/albertocavalcante/groovy-lsp/commit/a9220e74dbb1f3c5de52c345dc61a509da96b5d4))
+* **infra:** update module ref to latest commit (76b92b2) ([#224](https://github.com/albertocavalcante/groovy-lsp/issues/224)) ([85640ec](https://github.com/albertocavalcante/groovy-lsp/commit/85640eca58a040a01f5c8c0c38e98b16bc9e6d2e))
+* **infra:** upgrade Terraform to 1.11.4 for WriteOnly attribute support ([#223](https://github.com/albertocavalcante/groovy-lsp/issues/223)) ([ba71b1e](https://github.com/albertocavalcante/groovy-lsp/commit/ba71b1ed21f647377a8122f7ef56ea19ffc035fb))
+* **infra:** use cloud block instead of remote backend ([#220](https://github.com/albertocavalcante/groovy-lsp/issues/220)) ([c0ad2e0](https://github.com/albertocavalcante/groovy-lsp/commit/c0ad2e02a6ee99f2b167e4bd8089febc2aaa237b))
+* **lsp:** compile on-demand for definition ([#204](https://github.com/albertocavalcante/groovy-lsp/issues/204)) ([c6e3faf](https://github.com/albertocavalcante/groovy-lsp/commit/c6e3faf1d6fdb3bb8f9cdde82739390794bbbd9a))
+* resolve thread starvation deadlock in ConcurrencyStressTest ([#250](https://github.com/albertocavalcante/groovy-lsp/issues/250)) ([6bea244](https://github.com/albertocavalcante/groovy-lsp/commit/6bea2443b8d23c4060e9aa9bff0bc653c686cc2c))
+
+
+### Performance Improvements
+
+* **ci:** eliminate polling waste with event-driven runner provisioning ([#245](https://github.com/albertocavalcante/groovy-lsp/issues/245)) ([18ccf89](https://github.com/albertocavalcante/groovy-lsp/commit/18ccf89fa89a6a1b7a3ed57b2d5824dd83b4079c))
+* **gradle:** optimize JVM args for 16GB runner ([#238](https://github.com/albertocavalcante/groovy-lsp/issues/238)) ([500fe14](https://github.com/albertocavalcante/groovy-lsp/commit/500fe14d32b80890060c8489da72f8eb38220893))
+
 ## [0.3.4](https://github.com/albertocavalcante/groovy-lsp/compare/v0.3.3...v0.3.4) (2025-12-17)
 
 
