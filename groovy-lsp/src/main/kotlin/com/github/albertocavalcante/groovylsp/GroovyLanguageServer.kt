@@ -379,7 +379,7 @@ class GroovyLanguageServer :
             onComplete = { resolution ->
                 logger.info(
                     "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                        "${resolution.sourceDirectories.size} source directories",
+                            "${resolution.sourceDirectories.size} source directories",
                 )
 
                 // Update compilation service with resolved dependencies
@@ -632,6 +632,12 @@ class GroovyLanguageServer :
                     suite = params.suite,
                     test = params.test,
                     debug = params.debug,
+                ) ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                        "Build tool '${buildTool.name}' does not support test execution.",
+                        null,
+                    ),
                 )
             } catch (e: Exception) {
                 logger.error("Error generating test command", e)

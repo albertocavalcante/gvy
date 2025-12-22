@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
@@ -143,7 +144,7 @@ class MavenBuildTool : BuildTool {
         }
 
         return TestCommand(
-            executable = getMvnCommand(workspaceRoot),
+            executable = BuildExecutableResolver.resolveMaven(workspaceRoot),
             args = args,
             cwd = workspaceRoot.toString(),
         )

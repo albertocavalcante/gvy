@@ -21,16 +21,14 @@ object BuildExecutableResolver {
      * 1. Wrapper in workspace (gradlew or gradlew.bat)
      * 2. System gradle command
      */
-    fun resolveGradle(workspaceRoot: Path): String {
-        val wrapper = if (isWindows) "gradlew.bat" else "gradlew"
-        val wrapperPath = workspaceRoot.resolve(wrapper)
-
-        return if (wrapperPath.exists()) {
-            if (isWindows) wrapper else "./$wrapper"
-        } else {
-            "gradle"
-        }
-    }
+    fun resolveGradle(workspaceRoot: Path): String =
+        resolveExecutable(
+            workspaceRoot = workspaceRoot,
+            wrapperName = "gradlew",
+            windowsWrapperName = "gradlew.bat",
+            systemCommand = "gradle",
+            useWindows = isWindows,
+        )
 
     /**
      * Resolves the Maven executable for a workspace.
@@ -39,42 +37,56 @@ object BuildExecutableResolver {
      * 1. Wrapper in workspace (mvnw or mvnw.cmd)
      * 2. System mvn command
      */
-    fun resolveMaven(workspaceRoot: Path): String {
-        val wrapper = if (isWindows) "mvnw.cmd" else "mvnw"
-        val wrapperPath = workspaceRoot.resolve(wrapper)
-
-        return if (wrapperPath.exists()) {
-            if (isWindows) wrapper else "./$wrapper"
-        } else {
-            "mvn"
-        }
-    }
+    fun resolveMaven(workspaceRoot: Path): String =
+        resolveExecutable(
+            workspaceRoot = workspaceRoot,
+            wrapperName = "mvnw",
+            windowsWrapperName = "mvnw.cmd",
+            systemCommand = "mvn",
+            useWindows = isWindows,
+        )
 
     /**
-     * For testing: allows overriding the Windows detection.
+     * For testing: allows overriding the Windows detection for Gradle.
      */
-    internal fun resolveGradle(workspaceRoot: Path, forceWindows: Boolean): String {
-        val wrapper = if (forceWindows) "gradlew.bat" else "gradlew"
-        val wrapperPath = workspaceRoot.resolve(wrapper)
-
-        return if (wrapperPath.exists()) {
-            if (forceWindows) wrapper else "./$wrapper"
-        } else {
-            "gradle"
-        }
-    }
+    internal fun resolveGradle(workspaceRoot: Path, forceWindows: Boolean): String =
+        resolveExecutable(
+            workspaceRoot = workspaceRoot,
+            wrapperName = "gradlew",
+            windowsWrapperName = "gradlew.bat",
+            systemCommand = "gradle",
+            useWindows = forceWindows,
+        )
 
     /**
-     * For testing: allows overriding the Windows detection.
+     * For testing: allows overriding the Windows detection for Maven.
      */
-    internal fun resolveMaven(workspaceRoot: Path, forceWindows: Boolean): String {
-        val wrapper = if (forceWindows) "mvnw.cmd" else "mvnw"
+    internal fun resolveMaven(workspaceRoot: Path, forceWindows: Boolean): String =
+        resolveExecutable(
+            workspaceRoot = workspaceRoot,
+            wrapperName = "mvnw",
+            windowsWrapperName = "mvnw.cmd",
+            systemCommand = "mvn",
+            useWindows = forceWindows,
+        )
+
+    /**
+     * Generic helper to resolve a build executable.
+     */
+    private fun resolveExecutable(
+        workspaceRoot: Path,
+        wrapperName: String,
+        windowsWrapperName: String,
+        systemCommand: String,
+        useWindows: Boolean,
+    ): String {
+        val wrapper = if (useWindows) windowsWrapperName else wrapperName
         val wrapperPath = workspaceRoot.resolve(wrapper)
 
         return if (wrapperPath.exists()) {
-            if (forceWindows) wrapper else "./$wrapper"
+            if (useWindows) wrapper else "./$wrapper"
         } else {
-            "mvn"
+            systemCommand
         }
     }
 }
