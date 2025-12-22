@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.2...v0.4.3) (2025-12-22)
+
+
+### Features
+
+* **jenkins:** integrate enrichment metadata into LSP providers ([#284](https://github.com/albertocavalcante/groovy-lsp/issues/284)) ([3a70470](https://github.com/albertocavalcante/groovy-lsp/commit/3a70470126b00752ef9211859190dc95d89e2115))
+* **lsp:** smart parameter snippets with type-aware templates ([#286](https://github.com/albertocavalcante/groovy-lsp/issues/286)) ([72e8c1b](https://github.com/albertocavalcante/groovy-lsp/commit/72e8c1bfe7f3743b58e0117cb7bde2b3eff69c40))
+
 ## [0.4.2](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.1...v0.4.2) (2025-12-22)
 
 
