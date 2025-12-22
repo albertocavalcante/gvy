@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -51,10 +52,21 @@ class GroovyCompilationService {
 
     /**
      * Compiles Groovy source code and returns the result.
+     *
+     * NOTE: The cache lookup uses (uri, content) as the key and does NOT consider
+     * the [compilePhase] parameter. If a file was previously compiled to a later
+     * phase, subsequent requests for earlier phases may return the cached result
+     * from the later phase. This is a known limitation for Spock feature extraction,
+     * which requires early-phase AST (before Spock's transformations).
+     * TODO: Consider including compilePhase in the cache key for phase-sensitive use cases.
      */
     @Suppress("TooGenericExceptionCaught") // Final fallback
-    suspend fun compile(uri: URI, content: String): CompilationResult {
-        logger.debug("Compiling: $uri")
+    suspend fun compile(
+        uri: URI,
+        content: String,
+        compilePhase: Int = Phases.CANONICALIZATION,
+    ): CompilationResult {
+        logger.debug("Compiling: $uri (phase=$compilePhase)")
 
         return try {
             // Check cache first
@@ -66,14 +78,18 @@ class GroovyCompilationService {
                 val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
                 return CompilationResult.success(ast, diagnostics, content)
             } else {
-                performCompilation(uri, content)
+                performCompilation(uri, content, compilePhase)
             }
         } catch (e: Exception) {
             errorHandler.handleException(e, uri)
         }
     }
 
-    private suspend fun performCompilation(uri: URI, content: String): CompilationResult {
+    private suspend fun performCompilation(
+        uri: URI,
+        content: String,
+        compilePhase: Int = Phases.CANONICALIZATION,
+    ): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath (may be Jenkins-specific or standard)
@@ -88,6 +104,7 @@ class GroovyCompilationService {
                 workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 useRecursiveVisitor = true,
+                compilePhase = compilePhase,
             ),
         )
 
@@ -112,8 +129,12 @@ class GroovyCompilationService {
      * Compiles code without updating the cache.
      * Useful for completion where we insert a dummy identifier.
      */
-    suspend fun compileTransient(uri: URI, content: String): com.github.albertocavalcante.groovyparser.api.ParseResult {
-        logger.debug("Transient compilation for: $uri")
+    suspend fun compileTransient(
+        uri: URI,
+        content: String,
+        compilePhase: Int = Phases.CANONICALIZATION,
+    ): com.github.albertocavalcante.groovyparser.api.ParseResult {
+        logger.debug("Transient compilation for: $uri (phase=$compilePhase)")
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
 
@@ -126,6 +147,7 @@ class GroovyCompilationService {
                 workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 useRecursiveVisitor = true,
+                compilePhase = compilePhase,
             ),
         )
     }
@@ -180,6 +202,7 @@ class GroovyCompilationService {
                 logger.debug("File does not exist or is not a regular file: $uri")
                 null
             }
+
             else -> performIndexing(uri, path)
         }
     }

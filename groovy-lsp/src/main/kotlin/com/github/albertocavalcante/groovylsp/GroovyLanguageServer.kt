@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionPool
@@ -10,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
+import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import kotlinx.coroutines.CancellationException
@@ -19,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.CodeLensOptions
 import org.eclipse.lsp4j.CompletionOptions
 import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
 import org.eclipse.lsp4j.FileSystemWatcher
@@ -200,6 +203,11 @@ class GroovyLanguageServer :
 
                 // TODO: Add range support for better performance with large files
                 // range = Either.forLeft(true)
+            }
+
+            // CodeLens support for test run/debug buttons
+            codeLensProvider = CodeLensOptions().apply {
+                resolveProvider = false
             }
 
             // Diagnostics will be pushed
@@ -586,6 +594,67 @@ class GroovyLanguageServer :
                 compilationService,
             )
             provider.discoverTests(params.workspaceUri)
+        }
+    }
+
+    /**
+     * Generate a test execution command for the given test suite/method.
+     *
+     * Custom LSP request: `groovy/runTest`
+     */
+    @Suppress("TooGenericExceptionCaught")
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("groovy/runTest")
+    fun runTest(params: RunTestParams): CompletableFuture<TestCommand> {
+        logger.info("Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}")
+
+        return CompletableFuture.supplyAsync {
+            try {
+                // TODO: For multi-project workspace support, derive workspace root from params.uri
+                // Currently single-workspace, so we use the global workspace root
+                val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
+                    ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
+                            "No workspace root found for: ${params.uri}",
+                            null,
+                        ),
+                    )
+
+                val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
+                    ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                            "No build tool detected for workspace: $workspaceRoot",
+                            null,
+                        ),
+                    )
+
+                buildTool.getTestCommand(
+                    workspaceRoot = workspaceRoot,
+                    suite = params.suite,
+                    test = params.test,
+                    debug = params.debug,
+                ) ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                        "Build tool '${buildTool.name}' does not support test execution.",
+                        null,
+                    ),
+                )
+            } catch (e: Exception) {
+                logger.error("Error generating test command", e)
+                throw if (e is org.eclipse.lsp4j.jsonrpc.ResponseErrorException) {
+                    e
+                } else {
+                    org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                            e.message ?: "Internal error generating test command",
+                            null,
+                        ),
+                    )
+                }
+            }
         }
     }
 }

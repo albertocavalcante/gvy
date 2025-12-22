@@ -1,3 +1,7 @@
+// TODO: Consider migrating from gradle-pre-commit-git-hooks to lefthook for:
+// - Faster hook execution (no Gradle daemon startup)
+// - Better cross-platform support
+// - Unified config with lefthook.yml (currently has separate YAML/Python hooks)
 plugins {
     id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.5"
 }
@@ -28,18 +32,21 @@ gitHooks {
 
             echo "Running auto-formatting and code quality fixes..."
 
-            # Store list of staged files
-            staged_files=${'$'}(git diff --cached --name-only --diff-filter=d)
+            # Store list of staged files (only .kt files for Kotlin formatting)
+            staged_kt_files=${'$'}(git diff --cached --name-only --diff-filter=d | grep -E '\.kt${'$'}' || true)
 
             # Run auto-fixers (spotlessApply + detektAutoCorrect)
             ./gradlew lintFix --quiet || exit 1
 
-            # Re-stage modified files
-            for file in ${'$'}staged_files; do
-                if [ -f "${'$'}file" ]; then
-                    git add "${'$'}file"
-                fi
-            done
+            # Re-stage any modified files that were originally staged
+            # This handles files that were formatted by spotlessApply
+            if [ -n "${'$'}staged_kt_files" ]; then
+                for file in ${'$'}staged_kt_files; do
+                    if [ -f "${'$'}file" ]; then
+                        git add "${'$'}file"
+                    fi
+                done
+            fi
 
             echo "✓ Code formatting applied and files re-staged"
             """

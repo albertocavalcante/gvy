@@ -28,7 +28,6 @@ object SpockFeatureExtractor {
                 val line = method.lineNumber.takeIf { it > 0 } ?: 1
 
                 features.add(SpockFeatureMethod(name = featureName, line = line))
-                logger.debug("Found feature method: {} at line {}", featureName, line)
             }
         }
 
