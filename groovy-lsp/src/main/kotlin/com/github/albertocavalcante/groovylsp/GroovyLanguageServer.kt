@@ -379,7 +379,7 @@ class GroovyLanguageServer :
             onComplete = { resolution ->
                 logger.info(
                     "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                            "${resolution.sourceDirectories.size} source directories",
+                        "${resolution.sourceDirectories.size} source directories",
                 )
 
                 // Update compilation service with resolved dependencies

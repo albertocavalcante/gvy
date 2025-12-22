@@ -115,6 +115,6 @@ object SpockDetector {
         // rather than deeper semantic checks. This keeps detection cheap and dependency-free, but can miss unusual code
         // layouts (e.g., split class declarations) or produce false negatives.
         return spockImportRegex.containsMatchIn(normalized) ||
-                spockExtendsRegex.containsMatchIn(normalized)
+            spockExtendsRegex.containsMatchIn(normalized)
     }
 }
