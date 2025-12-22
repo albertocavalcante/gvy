@@ -45,7 +45,7 @@ data class CompilationContext(
     @Deprecated("Use astModel instead")
     val astVisitor: AstVisitor
         get() = astModel as? AstVisitor
-            ?: throw IllegalStateException("Using legacy AstVisitor access with RecursiveAstVisitor")
+            ?: error("Using legacy AstVisitor access with RecursiveAstVisitor")
 
     companion object {
         /**

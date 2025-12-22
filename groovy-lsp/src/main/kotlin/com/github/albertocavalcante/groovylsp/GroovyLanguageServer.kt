@@ -11,9 +11,14 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
+import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
+import com.github.albertocavalcante.groovylsp.providers.testing.TestDiscoveryProvider
+import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
+import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +42,11 @@ import org.eclipse.lsp4j.ServerInfo
 import org.eclipse.lsp4j.SignatureHelpOptions
 import org.eclipse.lsp4j.TextDocumentSyncKind
 import org.eclipse.lsp4j.WatchKind
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
@@ -52,6 +61,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
+private const val MILLIS_PER_SECOND = 1000L
+private const val POLLING_INTERVAL_MS = 100L
+private const val PERCENTAGE_MULTIPLIER = 100
 
 class GroovyLanguageServer :
     LanguageServer,
@@ -62,9 +74,16 @@ class GroovyLanguageServer :
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val compilationService = GroovyCompilationService()
 
+    init {
+        // Register test framework detectors (idempotent - safe to call multiple times)
+        // TODO: Add JUnit5, JUnit4, TestNG detectors when implemented
+        TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
+    }
+
     // Available build tools in detection priority order
     // BSP comes first - it's opt-in (only used if .bsp/ directory exists)
     // This enables support for Bazel, sbt, Mill without direct implementations
+
     private val availableBuildTools: List<BuildTool> = listOf(
         BspBuildTool(),
         GradleBuildTool(),
@@ -533,7 +552,7 @@ class GroovyLanguageServer :
         coroutineScope.launch(Dispatchers.Default) {
             try {
                 compilationService.indexAllWorkspaceSources(sourceUris) { indexed, total ->
-                    val percentage = if (total > 0) (indexed * 100 / total) else 0
+                    val percentage = if (total > 0) (indexed * PERCENTAGE_MULTIPLIER / total) else 0
                     indexingProgressReporter.updateProgress(
                         "Indexed $indexed/$total files",
                         percentage,
@@ -552,9 +571,10 @@ class GroovyLanguageServer :
     /**
      * Waits for dependency resolution to complete, useful for CLI/testing.
      */
+    @Suppress("ReturnCount")
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean {
         val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < timeoutSeconds * 1000) {
+        while (System.currentTimeMillis() - start < timeoutSeconds * MILLIS_PER_SECOND) {
             val manager = dependencyManager ?: return false
             if (manager.isDependenciesReady()) {
                 return true
@@ -565,7 +585,7 @@ class GroovyLanguageServer :
                 return false
             }
             try {
-                Thread.sleep(100)
+                Thread.sleep(POLLING_INTERVAL_MS)
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
                 return false
@@ -583,14 +603,12 @@ class GroovyLanguageServer :
      *
      * Custom LSP request: `groovy/discoverTests`
      */
-    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("groovy/discoverTests")
-    fun discoverTests(
-        params: com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams,
-    ): CompletableFuture<List<com.github.albertocavalcante.groovylsp.providers.testing.TestSuite>> {
+    @JsonRequest("groovy/discoverTests")
+    fun discoverTests(params: DiscoverTestsParams): CompletableFuture<List<TestSuite>> {
         logger.info("Received groovy/discoverTests request for: ${params.workspaceUri}")
 
         return CompletableFuture.supplyAsync {
-            val provider = com.github.albertocavalcante.groovylsp.providers.testing.TestDiscoveryProvider(
+            val provider = TestDiscoveryProvider(
                 compilationService,
             )
             provider.discoverTests(params.workspaceUri)
@@ -602,8 +620,8 @@ class GroovyLanguageServer :
      *
      * Custom LSP request: `groovy/runTest`
      */
-    @Suppress("TooGenericExceptionCaught")
-    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("groovy/runTest")
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> {
         logger.info("Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}")
 
@@ -612,18 +630,18 @@ class GroovyLanguageServer :
                 // TODO: For multi-project workspace support, derive workspace root from params.uri
                 // Currently single-workspace, so we use the global workspace root
                 val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
-                    ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
+                    ?: throw ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InvalidParams,
                             "No workspace root found for: ${params.uri}",
                             null,
                         ),
                     )
 
                 val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
-                    ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                    ?: throw ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InternalError,
                             "No build tool detected for workspace: $workspaceRoot",
                             null,
                         ),
@@ -634,26 +652,25 @@ class GroovyLanguageServer :
                     suite = params.suite,
                     test = params.test,
                     debug = params.debug,
-                ) ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                    org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                        org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+                ) ?: throw ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.InternalError,
                         "Build tool '${buildTool.name}' does not support test execution.",
                         null,
                     ),
                 )
+            } catch (e: ResponseErrorException) {
+                logger.error("Error generating test command", e)
+                throw e
             } catch (e: Exception) {
                 logger.error("Error generating test command", e)
-                throw if (e is org.eclipse.lsp4j.jsonrpc.ResponseErrorException) {
-                    e
-                } else {
-                    org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                        org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
-                            e.message ?: "Internal error generating test command",
-                            null,
-                        ),
-                    )
-                }
+                throw ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.InternalError,
+                        "Failed to generate test command: ${e.message}",
+                        null,
+                    ),
+                )
             }
         }
     }

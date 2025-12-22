@@ -29,6 +29,7 @@ class DiagnosticsService(
 ) {
 
     companion object {
+        private const val NANOS_TO_MILLIS = 1_000_000L
         private val logger = LoggerFactory.getLogger(DiagnosticsService::class.java)
     }
 
@@ -71,7 +72,7 @@ class DiagnosticsService(
 
                             emitAll(provider.provideDiagnostics(uri, content))
 
-                            val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
+                            val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
                             logger.debug("Provider {} completed in {}ms", provider.id, elapsedMs)
                         } catch (e: Exception) {
                             // NOTE: Error isolation - one provider failure doesn't stop others

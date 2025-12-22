@@ -26,6 +26,8 @@ import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+private const val RETRY_DELAY_MS = 50L
+
 class GroovyCompilationService {
     companion object {
         /**
@@ -351,7 +353,7 @@ class GroovyCompilationService {
                 } catch (e: CancellationException) {
                     logger.debug("Compilation cancelled for $uri while awaiting - retrying ensureCompiled")
                     // Give a small grace period for the new compilation to start if this was a restart
-                    kotlinx.coroutines.delay(50)
+                    kotlinx.coroutines.delay(RETRY_DELAY_MS)
                     continue
                 }
             }
