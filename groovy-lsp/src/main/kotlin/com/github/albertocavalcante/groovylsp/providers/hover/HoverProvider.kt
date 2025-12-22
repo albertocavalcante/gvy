@@ -323,7 +323,9 @@ class HoverProvider(
                 append(doc)
                 append("\n\n")
             }
-            append("**Plugin:** ${stepMetadata.plugin}\n\n")
+            stepMetadata.plugin?.let { plugin ->
+                append("**Plugin:** $plugin\n\n")
+            }
 
             // Use namedParams instead of parameters for MergedStepMetadata
             if (stepMetadata.namedParams.isNotEmpty()) {

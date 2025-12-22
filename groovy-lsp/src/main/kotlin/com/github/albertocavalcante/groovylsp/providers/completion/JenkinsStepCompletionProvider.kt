@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
@@ -69,6 +70,9 @@ object JenkinsStepCompletionProvider {
                     label = "$key:"
                     kind = CompletionItemKind.Property
                     detail = param.type
+                    // Use SnippetBuilder for type-aware insertion
+                    insertText = SnippetBuilder.buildParameterSnippet(key, param)
+                    insertTextFormat = InsertTextFormat.Snippet
                     // Use enriched description if available
                     documentation = param.description?.let {
                         Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))
