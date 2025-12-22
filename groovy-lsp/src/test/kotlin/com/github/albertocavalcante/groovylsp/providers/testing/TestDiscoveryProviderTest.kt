@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -24,8 +25,9 @@ class TestDiscoveryProviderTest {
             }
         """.trimIndent()
 
+        // Use CONVERSION phase to preserve statement labels and avoid Spock class resolution issues
         val realService = GroovyCompilationService()
-        realService.compile(uri, content)
+        realService.compile(uri, content, compilePhase = Phases.CONVERSION)
         val parseResult = realService.getParseResult(uri)!!
 
         val mockService = mockk<GroovyCompilationService>()

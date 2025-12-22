@@ -23,9 +23,10 @@ class TestCodeLensProviderTest {
             }
         """.trimIndent()
 
-        // Use SEMANTIC_ANALYSIS to avoid Spock's renaming/label-stripping transformations
+        // Use CONVERSION phase to preserve statement labels (required for Spock block detection)
+        // and avoid Spock class resolution issues (Spock not on test classpath)
         val realService = GroovyCompilationService()
-        realService.compile(uri, content, compilePhase = Phases.SEMANTIC_ANALYSIS)
+        realService.compile(uri, content, compilePhase = Phases.CONVERSION)
         val parseResult = realService.getParseResult(uri)!!
 
         val mockService = mockk<GroovyCompilationService>()
