@@ -73,6 +73,8 @@ object JenkinsStepCompletionProvider {
                     // Use SnippetBuilder for type-aware insertion
                     insertText = SnippetBuilder.buildParameterSnippet(key, param)
                     insertTextFormat = InsertTextFormat.Snippet
+                    // Sort required parameters first: "0_key" vs "1_key"
+                    sortText = if (param.required) "0_$key" else "1_$key"
                     // Use enriched description if available
                     documentation = param.description?.let {
                         Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))

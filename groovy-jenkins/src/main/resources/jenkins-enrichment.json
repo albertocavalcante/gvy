@@ -7,22 +7,30 @@
       "description": "Execute a shell script on a node.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/#sh-shell-script",
       "category": "utility",
-      "examples": ["sh 'echo Hello'"],
+      "examples": [
+        "sh 'echo Hello'"
+      ],
       "parameterEnrichment": {
         "script": {
           "description": "The shell script to execute.",
           "required": true,
-          "examples": ["echo 'test'"]
+          "examples": [
+            "echo 'test'"
+          ]
         },
         "returnStdout": {
           "description": "If true, return stdout from the script instead of printing it.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         },
         "returnStatus": {
           "description": "If true, return the exit status instead of failing the build.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         }
       }
     },
@@ -31,12 +39,16 @@
       "description": "Execute a Windows batch script on a node.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/#bat-windows-batch-script",
       "category": "utility",
-      "examples": ["bat 'echo Hello'"],
+      "examples": [
+        "bat 'echo Hello'"
+      ],
       "parameterEnrichment": {
         "script": {
           "description": "The batch script to execute.",
           "required": true,
-          "examples": ["echo test"]
+          "examples": [
+            "echo test"
+          ]
         }
       }
     },
@@ -45,12 +57,16 @@
       "description": "Print a message to the build log.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#echo-print-message",
       "category": "utility",
-      "examples": ["echo 'Hello World'"],
+      "examples": [
+        "echo 'Hello World'"
+      ],
       "parameterEnrichment": {
         "message": {
           "description": "Text to print.",
           "required": true,
-          "examples": ["Build started"]
+          "examples": [
+            "Build started"
+          ]
         }
       }
     },
@@ -59,12 +75,16 @@
       "description": "Fail the build with an error message.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#error-error-signal",
       "category": "utility",
-      "examples": ["error('Something went wrong')"],
+      "examples": [
+        "error('Something went wrong')"
+      ],
       "parameterEnrichment": {
         "message": {
           "description": "Error message to display.",
           "required": true,
-          "examples": ["Invalid configuration"]
+          "examples": [
+            "Invalid configuration"
+          ]
         }
       }
     },
@@ -73,24 +93,32 @@
       "description": "Check out from a version control system using an SCM definition.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-scm-step/#checkout-general-scm",
       "category": "scm",
-      "examples": ["checkout scm"]
+      "examples": [
+        "checkout scm"
+      ]
     },
     "git": {
       "plugin": "git",
       "description": "Check out from a Git repository.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/git/#git-git",
       "category": "scm",
-      "examples": ["git 'https://github.com/OWNER/REPO.git'"],
+      "examples": [
+        "git 'https://github.com/OWNER/REPO.git'"
+      ],
       "parameterEnrichment": {
         "url": {
           "description": "Repository URL.",
           "required": true,
-          "examples": ["https://github.com/OWNER/REPO.git"]
+          "examples": [
+            "https://github.com/OWNER/REPO.git"
+          ]
         },
         "branch": {
           "description": "Branch name to check out.",
           "required": false,
-          "examples": ["main"]
+          "examples": [
+            "main"
+          ]
         }
       }
     },
@@ -99,25 +127,41 @@
       "description": "Define a stage in the pipeline for visualization and scoping.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/pipeline-stage-step/#stage-stage",
       "category": "utility",
-      "examples": ["stage('Build') { echo 'Building' }"]
+      "examples": [
+        "stage('Build') { echo 'Building' }"
+      ]
     },
     "timeout": {
       "plugin": "workflow-basic-steps",
       "description": "Enforce a time limit on the body of the step.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#timeout-enforce-time-limit",
       "category": "utility",
-      "examples": ["timeout(time: 5, unit: 'MINUTES') { sh 'make test' }"],
+      "examples": [
+        "timeout(time: 5, unit: 'MINUTES') { sh 'make test' }"
+      ],
       "parameterEnrichment": {
         "time": {
           "description": "Timeout duration.",
           "required": true,
-          "examples": ["5"]
+          "examples": [
+            "5"
+          ]
         },
         "unit": {
           "description": "Time unit.",
           "required": false,
-          "validValues": ["NANOSECONDS", "MICROSECONDS", "MILLISECONDS", "SECONDS", "MINUTES", "HOURS", "DAYS"],
-          "examples": ["MINUTES"]
+          "validValues": [
+            "NANOSECONDS",
+            "MICROSECONDS",
+            "MILLISECONDS",
+            "SECONDS",
+            "MINUTES",
+            "HOURS",
+            "DAYS"
+          ],
+          "examples": [
+            "MINUTES"
+          ]
         }
       }
     },
@@ -126,12 +170,16 @@
       "description": "Retry the body up to N times.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#retry-retry-the-body-up-to-n-times",
       "category": "utility",
-      "examples": ["retry(3) { sh 'flaky-command' }"],
+      "examples": [
+        "retry(3) { sh 'flaky-command' }"
+      ],
       "parameterEnrichment": {
         "count": {
           "description": "Number of retries.",
           "required": true,
-          "examples": ["3"]
+          "examples": [
+            "3"
+          ]
         }
       }
     },
@@ -140,12 +188,16 @@
       "description": "Run multiple branches of steps in parallel.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-cps/#parallel-execute-in-parallel",
       "category": "utility",
-      "examples": ["parallel a: { sh 'make test' }, b: { sh 'make lint' }"],
+      "examples": [
+        "parallel a: { sh 'make test' }, b: { sh 'make lint' }"
+      ],
       "parameterEnrichment": {
         "failFast": {
           "description": "If true, abort other branches when one fails.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         }
       }
     },
@@ -154,22 +206,30 @@
       "description": "Stash files for later use in the build.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#stash-stash-some-files-to-be-used-later-in-the-build",
       "category": "utility",
-      "examples": ["stash name: 'dist', includes: 'build/**'"],
+      "examples": [
+        "stash name: 'dist', includes: 'build/**'"
+      ],
       "parameterEnrichment": {
         "name": {
           "description": "Stash name.",
           "required": true,
-          "examples": ["dist"]
+          "examples": [
+            "dist"
+          ]
         },
         "includes": {
           "description": "Ant-style include pattern.",
           "required": false,
-          "examples": ["build/**"]
+          "examples": [
+            "build/**"
+          ]
         },
         "excludes": {
           "description": "Ant-style exclude pattern.",
           "required": false,
-          "examples": ["**/*.tmp"]
+          "examples": [
+            "**/*.tmp"
+          ]
         }
       }
     },
@@ -178,12 +238,16 @@
       "description": "Restore files previously stashed.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#unstash-restore-files-previously-stashed",
       "category": "utility",
-      "examples": ["unstash 'dist'"],
+      "examples": [
+        "unstash 'dist'"
+      ],
       "parameterEnrichment": {
         "name": {
           "description": "Stash name.",
           "required": true,
-          "examples": ["dist"]
+          "examples": [
+            "dist"
+          ]
         }
       }
     },
@@ -192,17 +256,23 @@
       "description": "Archive the artifacts from the build.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/workflow-basic-steps/#archiveartifacts-archive-the-artifacts",
       "category": "build",
-      "examples": ["archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true"],
+      "examples": [
+        "archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true"
+      ],
       "parameterEnrichment": {
         "artifacts": {
           "description": "Ant-style include pattern for artifacts.",
           "required": true,
-          "examples": ["build/libs/*.jar"]
+          "examples": [
+            "build/libs/*.jar"
+          ]
         },
         "fingerprint": {
           "description": "If true, fingerprint the archived artifacts.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         }
       }
     },
@@ -211,12 +281,16 @@
       "description": "Archive JUnit-formatted test results.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/junit/#junit-archive-junit-formatted-test-results",
       "category": "test",
-      "examples": ["junit 'build/test-results/test/*.xml'"],
+      "examples": [
+        "junit 'build/test-results/test/*.xml'"
+      ],
       "parameterEnrichment": {
         "testResults": {
           "description": "Ant-style pattern for test report XML files.",
           "required": true,
-          "examples": ["build/test-results/test/*.xml"]
+          "examples": [
+            "build/test-results/test/*.xml"
+          ]
         }
       }
     },
@@ -225,17 +299,23 @@
       "description": "Pause the pipeline and wait for human input.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/pipeline-input-step/#input-wait-for-interactive-input",
       "category": "utility",
-      "examples": ["input message: 'Deploy to production?', ok: 'Deploy'"],
+      "examples": [
+        "input message: 'Deploy to production?', ok: 'Deploy'"
+      ],
       "parameterEnrichment": {
         "message": {
           "description": "Message to show in the input prompt.",
           "required": true,
-          "examples": ["Deploy to production?"]
+          "examples": [
+            "Deploy to production?"
+          ]
         },
         "ok": {
           "description": "Label for the proceed button.",
           "required": false,
-          "examples": ["Deploy"]
+          "examples": [
+            "Deploy"
+          ]
         }
       }
     },
@@ -244,22 +324,30 @@
       "description": "Trigger another job.",
       "documentationUrl": "https://www.jenkins.io/doc/pipeline/steps/pipeline-build-step/#build-build-a-job",
       "category": "build",
-      "examples": ["build job: 'my-job', wait: true"],
+      "examples": [
+        "build job: 'my-job', wait: true"
+      ],
       "parameterEnrichment": {
         "job": {
           "description": "Job name to trigger.",
           "required": true,
-          "examples": ["my-job"]
+          "examples": [
+            "my-job"
+          ]
         },
         "wait": {
           "description": "If true, wait for the triggered job to complete.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         },
         "propagate": {
           "description": "If true, propagate failures from the triggered job.",
           "required": false,
-          "examples": ["true"]
+          "examples": [
+            "true"
+          ]
         }
       }
     }
@@ -267,7 +355,59 @@
   "globalVariables": {
     "env": {
       "description": "Environment variables available to the pipeline.",
-      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables"
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables",
+      "properties": {
+        "BUILD_ID": {
+          "type": "String",
+          "description": "The current build ID, identical to BUILD_NUMBER for builds created in Jenkins 1.597+.",
+          "readOnly": true
+        },
+        "BUILD_NUMBER": {
+          "type": "String",
+          "description": "The current build number.",
+          "readOnly": true
+        },
+        "BUILD_URL": {
+          "type": "String",
+          "description": "The URL to the current build.",
+          "readOnly": true
+        },
+        "JOB_NAME": {
+          "type": "String",
+          "description": "Name of the job.",
+          "readOnly": true
+        },
+        "JOB_BASE_NAME": {
+          "type": "String",
+          "description": "Short name of the job without folder path.",
+          "readOnly": true
+        },
+        "BRANCH_NAME": {
+          "type": "String",
+          "description": "Branch name for multibranch pipelines.",
+          "readOnly": true
+        },
+        "CHANGE_ID": {
+          "type": "String",
+          "description": "Pull request number for multibranch pipelines.",
+          "readOnly": true
+        },
+        "WORKSPACE": {
+          "type": "String",
+          "description": "The absolute path of the workspace.",
+          "readOnly": true
+        },
+        "NODE_NAME": {
+          "type": "String",
+          "description": "Name of the agent running the build.",
+          "readOnly": true
+        },
+        "JENKINS_URL": {
+          "type": "String",
+          "description": "Full URL of Jenkins.",
+          "readOnly": true
+        }
+      }
     },
     "params": {
       "description": "Map of build parameters provided to the job.",
@@ -279,11 +419,54 @@
       "properties": {
         "result": {
           "type": "String",
-          "description": "Build result."
+          "description": "Build result: SUCCESS, UNSTABLE, FAILURE, ABORTED, or null if running."
+        },
+        "currentResult": {
+          "type": "String",
+          "description": "Current build result, never null. Starts as SUCCESS.",
+          "readOnly": true
         },
         "number": {
           "type": "int",
           "description": "Build number.",
+          "readOnly": true
+        },
+        "displayName": {
+          "type": "String",
+          "description": "Display name of the build (e.g., '#42')."
+        },
+        "description": {
+          "type": "String",
+          "description": "Description of the build, shown in the UI."
+        },
+        "duration": {
+          "type": "long",
+          "description": "Build duration in milliseconds.",
+          "readOnly": true
+        },
+        "durationString": {
+          "type": "String",
+          "description": "Human-readable build duration.",
+          "readOnly": true
+        },
+        "startTimeInMillis": {
+          "type": "long",
+          "description": "Build start time in milliseconds since epoch.",
+          "readOnly": true
+        },
+        "absoluteUrl": {
+          "type": "String",
+          "description": "Absolute URL of the build.",
+          "readOnly": true
+        },
+        "previousBuild": {
+          "type": "RunWrapper",
+          "description": "Reference to the previous build, or null.",
+          "readOnly": true
+        },
+        "nextBuild": {
+          "type": "RunWrapper",
+          "description": "Reference to the next build, or null.",
           "readOnly": true
         }
       }
@@ -295,63 +478,113 @@
   "sections": {
     "pipeline": {
       "description": "Top-level Declarative Pipeline block.",
-      "allowedIn": ["root"],
+      "allowedIn": [
+        "root"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#declarative-pipeline"
     },
     "agent": {
       "description": "Specifies where the entire pipeline or a stage runs.",
-      "allowedIn": ["pipeline", "stage"],
-      "innerInstructions": ["any", "none", "label", "docker", "dockerfile"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
+      "innerInstructions": [
+        "any",
+        "none",
+        "label",
+        "docker",
+        "dockerfile"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#agent"
     },
     "stages": {
       "description": "Group of one or more stages.",
-      "allowedIn": ["pipeline"],
-      "innerInstructions": ["stage"],
+      "allowedIn": [
+        "pipeline"
+      ],
+      "innerInstructions": [
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#stages"
     },
     "stage": {
       "description": "A stage block within Declarative Pipeline.",
-      "allowedIn": ["stages"],
-      "innerInstructions": ["steps", "post", "when", "environment", "options", "agent", "tools"],
+      "allowedIn": [
+        "stages"
+      ],
+      "innerInstructions": [
+        "steps",
+        "post",
+        "when",
+        "environment",
+        "options",
+        "agent",
+        "tools"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#stage"
     },
     "steps": {
       "description": "Defines the steps to run in a stage.",
-      "allowedIn": ["stage"],
+      "allowedIn": [
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#steps"
     },
     "post": {
       "description": "Post-build actions, run in a specific order based on conditions.",
-      "allowedIn": ["pipeline", "stage"],
-      "innerInstructions": ["always", "success", "failure", "unstable", "changed", "aborted"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
+      "innerInstructions": [
+        "always",
+        "success",
+        "failure",
+        "unstable",
+        "changed",
+        "aborted"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#post"
     }
   },
   "directives": {
     "environment": {
       "description": "Define environment variables for the pipeline or a stage.",
-      "allowedIn": ["pipeline", "stage"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#environment"
     },
     "options": {
       "description": "Configure pipeline or stage options.",
-      "allowedIn": ["pipeline", "stage"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#options"
     },
     "parameters": {
       "description": "Define parameters for the pipeline.",
-      "allowedIn": ["pipeline"],
+      "allowedIn": [
+        "pipeline"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#parameters"
     },
     "when": {
       "description": "Conditional execution of a stage.",
-      "allowedIn": ["stage"],
+      "allowedIn": [
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#when"
     },
     "tools": {
       "description": "Configure tools (e.g. JDK, Maven) for the pipeline or a stage.",
-      "allowedIn": ["pipeline", "stage"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#tools"
     }
   }

@@ -144,18 +144,19 @@ class EnrichmentMetadataLoaderTest {
         val currentBuildEnrichment = enrichment.globalVariables["currentBuild"]
         assertNotNull(currentBuildEnrichment)
 
-        assertEquals(2, currentBuildEnrichment.properties.size)
+        // currentBuild now has many properties (result, currentResult, number, displayName, etc.)
+        assertTrue(currentBuildEnrichment.properties.size >= 10, "Should have at least 10 properties")
 
         val resultProperty = currentBuildEnrichment.properties["result"]
         assertNotNull(resultProperty)
         assertEquals("String", resultProperty.type)
-        assertEquals("Build result.", resultProperty.description)
+        assertTrue(resultProperty.description?.contains("SUCCESS") == true, "Should mention SUCCESS")
         assertEquals(false, resultProperty.readOnly)
 
         val numberProperty = currentBuildEnrichment.properties["number"]
         assertNotNull(numberProperty)
         assertEquals("int", numberProperty.type)
-        assertEquals("Build number.", numberProperty.description)
+        assertTrue(numberProperty.description?.contains("Build number") == true)
         assertEquals(true, numberProperty.readOnly)
     }
 
