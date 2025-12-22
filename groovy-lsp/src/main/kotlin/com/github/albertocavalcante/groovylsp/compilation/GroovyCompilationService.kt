@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -56,7 +57,7 @@ class GroovyCompilationService {
     suspend fun compile(
         uri: URI,
         content: String,
-        compilePhase: Int = org.codehaus.groovy.control.Phases.CANONICALIZATION,
+        compilePhase: Int = Phases.CANONICALIZATION,
     ): CompilationResult {
         logger.debug("Compiling: $uri (phase=$compilePhase)")
 
@@ -80,7 +81,7 @@ class GroovyCompilationService {
     private suspend fun performCompilation(
         uri: URI,
         content: String,
-        compilePhase: Int = org.codehaus.groovy.control.Phases.CANONICALIZATION,
+        compilePhase: Int = Phases.CANONICALIZATION,
     ): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
@@ -124,7 +125,7 @@ class GroovyCompilationService {
     suspend fun compileTransient(
         uri: URI,
         content: String,
-        compilePhase: Int = org.codehaus.groovy.control.Phases.CANONICALIZATION,
+        compilePhase: Int = Phases.CANONICALIZATION,
     ): com.github.albertocavalcante.groovyparser.api.ParseResult {
         logger.debug("Transient compilation for: $uri (phase=$compilePhase)")
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
