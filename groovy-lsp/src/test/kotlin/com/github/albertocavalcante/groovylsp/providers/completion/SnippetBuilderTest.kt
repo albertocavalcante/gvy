@@ -199,4 +199,58 @@ class SnippetBuilderTest {
         // Special chars in validValues should be escaped
         assertEquals("pattern: '\${1|a\\|b,c\\,d|}'", snippet)
     }
+
+    @Test
+    fun `should not quote int validValues`() {
+        val param = MergedParameter(
+            name = "exitCode",
+            type = "int",
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = listOf("0", "1", "2"),
+            examples = emptyList(),
+        )
+
+        val snippet = SnippetBuilder.buildParameterSnippet("exitCode", param)
+
+        // Int validValues should not be quoted
+        assertEquals("exitCode: \${1|0,1,2|}", snippet)
+    }
+
+    @Test
+    fun `should handle array types as list`() {
+        val param = MergedParameter(
+            name = "args",
+            type = "String[]",
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = null,
+            examples = emptyList(),
+        )
+
+        val snippet = SnippetBuilder.buildParameterSnippet("args", param)
+
+        // Array types should be treated as list
+        assertEquals("args: [\$1]", snippet)
+    }
+
+    @Test
+    fun `should escape dollar sign in validValues`() {
+        val param = MergedParameter(
+            name = "variable",
+            type = "String",
+            defaultValue = null,
+            description = null,
+            required = false,
+            validValues = listOf("\$HOME", "\$PATH"),
+            examples = emptyList(),
+        )
+
+        val snippet = SnippetBuilder.buildParameterSnippet("variable", param)
+
+        // Dollar signs should be escaped
+        assertEquals("variable: '\${1|\\\$HOME,\\\$PATH|}'", snippet)
+    }
 }

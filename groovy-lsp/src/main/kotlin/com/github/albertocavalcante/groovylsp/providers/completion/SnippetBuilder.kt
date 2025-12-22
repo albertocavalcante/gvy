@@ -40,7 +40,12 @@ object SnippetBuilder {
         val validValues = param.validValues
         if (!validValues.isNullOrEmpty()) {
             val escapedValues = validValues.map { escapeSnippetChars(it) }
-            return "'\${1|${escapedValues.joinToString(",")}|}'"
+            val choice = "\${1|${escapedValues.joinToString(",")}|}"
+            // Conditionally quote based on type - numeric/boolean don't need quotes
+            return when (normalizeType(param.type)) {
+                "int", "long", "short", "byte", "float", "double", "boolean" -> choice
+                else -> "'$choice'"
+            }
         }
 
         // Otherwise, determine by type
@@ -63,9 +68,14 @@ object SnippetBuilder {
             .substringAfterLast(".") // Remove package prefix
             .lowercase()
 
+        // Handle array types as list
+        if (simplified.endsWith("[]")) {
+            return "list"
+        }
+
         return when (simplified) {
             "boolean" -> "boolean"
-            "integer", "int" -> "int"
+            "integer", "int", "numeric" -> "int"
             "long" -> "long"
             "short" -> "short"
             "byte" -> "byte"
@@ -80,6 +90,7 @@ object SnippetBuilder {
 
     /**
      * Escape special characters that have meaning in LSP snippet syntax.
+     * - `$` is the tabstop/variable prefix
      * - `|` is the choice delimiter
      * - `,` separates choices
      * - `}` ends a placeholder
@@ -87,6 +98,7 @@ object SnippetBuilder {
      */
     private fun escapeSnippetChars(value: String): String = value
         .replace("\\", "\\\\") // Escape backslash first
+        .replace("\$", "\\\$")
         .replace("|", "\\|")
         .replace(",", "\\,")
         .replace("}", "\\}")
