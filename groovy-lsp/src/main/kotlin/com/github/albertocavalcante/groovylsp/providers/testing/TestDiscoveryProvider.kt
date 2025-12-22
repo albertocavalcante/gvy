@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.groovyspock.SpockFeatureExtractor
-import org.codehaus.groovy.ast.ClassNode
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -45,13 +45,15 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
             val ast = parseResult.ast ?: continue
 
+            val specClassNode = SpockDetector.getSpecificationClassNode(parseResult)
+
             // Check each class individually to handle mixed files correctly
             for (classNode in ast.classes) {
                 // Skip non-Spock classes (check class hierarchy, not just file)
-                if (!isSpockSpecClass(classNode)) continue
+                if (!SpockDetector.isSpockSpec(classNode, ast, specClassNode)) continue
 
                 val features = SpockFeatureExtractor.extractFeatures(classNode)
-
+                // ... (rest of the logic remains same)
                 if (features.isNotEmpty()) {
                     val tests = features.map { feature ->
                         Test(test = feature.name, line = feature.line)
@@ -76,25 +78,6 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
         logger.info("Discovered {} test suites", testSuites.size)
         return testSuites
-    }
-
-    /**
-     * Check if a class extends spock.lang.Specification (directly or indirectly).
-     */
-    private fun isSpockSpecClass(classNode: ClassNode): Boolean {
-        // Check super class chain for Specification
-        var superClass = classNode.superClass
-        while (superClass != null) {
-            if (superClass.name == "spock.lang.Specification") {
-                return true
-            }
-            // Also check simple name for cases where import resolves it
-            if (superClass.nameWithoutPackage == "Specification") {
-                return true
-            }
-            superClass = superClass.superClass
-        }
-        return false
     }
 
     companion object {
