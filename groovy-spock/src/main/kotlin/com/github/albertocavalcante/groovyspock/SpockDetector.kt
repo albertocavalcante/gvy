@@ -46,15 +46,19 @@ object SpockDetector {
             return true
         }
 
-        // Tier 2: Import-aware AST check (no class loading required).
-        val superClass = classNode.superClass ?: return false
-
-        if (superClass.name == "spock.lang.Specification") {
-            return true
-        }
-
-        if (superClass.nameWithoutPackage == "Specification" && module != null) {
-            return isSpockSpecImported(module)
+        // Tier 2: Import-aware AST check with superclass chain traversal (no class loading required).
+        var currentClass: ClassNode? = classNode.superClass
+        while (currentClass != null) {
+            if (currentClass.name == "spock.lang.Specification") {
+                return true
+            }
+            if (currentClass.nameWithoutPackage == "Specification" && module != null) {
+                if (isSpockSpecImported(module)) {
+                    return true
+                }
+            }
+            // Move up the hierarchy (may be null if superclass wasn't resolved)
+            currentClass = currentClass.superClass
         }
 
         return false
@@ -111,6 +115,6 @@ object SpockDetector {
         // rather than deeper semantic checks. This keeps detection cheap and dependency-free, but can miss unusual code
         // layouts (e.g., split class declarations) or produce false negatives.
         return spockImportRegex.containsMatchIn(normalized) ||
-            spockExtendsRegex.containsMatchIn(normalized)
+                spockExtendsRegex.containsMatchIn(normalized)
     }
 }
