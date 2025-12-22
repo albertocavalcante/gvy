@@ -12,6 +12,7 @@ dependencies {
     // JUnit 5 API (compileOnly, as we only need it for constants/identifiers)
     // We don't want to force JUnit 5 on the runtime classpath of the user's project
     compileOnly(libs.junit.jupiter.api)
+    compileOnly(libs.junit4)
 
     // Logging
     implementation(libs.slf4j.api)
