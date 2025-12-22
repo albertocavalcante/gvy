@@ -325,13 +325,14 @@ class HoverProvider(
             }
             append("**Plugin:** ${stepMetadata.plugin}\n\n")
 
-            if (stepMetadata.parameters.isNotEmpty()) {
+            // Use namedParams instead of parameters for MergedStepMetadata
+            if (stepMetadata.namedParams.isNotEmpty()) {
                 append("### Parameters\n\n")
-                stepMetadata.parameters.forEach { (name, param) ->
+                stepMetadata.namedParams.forEach { (name, param) ->
                     val required = if (param.required) " *(required)*" else ""
-                    val defaultVal = param.default?.let { " (default: `$it`)" } ?: ""
+                    val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
                     append("- **`$name`**: `${param.type}`$required$defaultVal\n")
-                    param.documentation?.let { doc ->
+                    param.description?.let { doc ->
                         append("  - $doc\n")
                     }
                 }

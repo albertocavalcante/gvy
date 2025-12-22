@@ -276,22 +276,14 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
-    fun getAllMetadata(): com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata {
-        val bundled = com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadataLoader().load()
-        val dynamic = dynamicMetadataCache[currentClasspathHash]
+    fun getAllMetadata(): com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata {
+        // Use VersionedMetadataLoader to get merged metadata (bundled + enrichment)
+        val loader = com.github.albertocavalcante.groovyjenkins.metadata.VersionedMetadataLoader()
+        val merged = loader.loadMerged()
 
-        val merged = if (dynamic != null) {
-            // Merge logic: dynamic overrides bundled for ALL metadata types
-            com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata(
-                steps = bundled.steps + dynamic.steps,
-                globalVariables = bundled.globalVariables + dynamic.globalVariables,
-                postConditions = bundled.postConditions + dynamic.postConditions,
-                declarativeOptions = bundled.declarativeOptions + dynamic.declarativeOptions,
-                agentTypes = bundled.agentTypes + dynamic.agentTypes,
-            )
-        } else {
-            bundled
-        }
+        // TODO: Integrate dynamic metadata from classpath scanning
+        // For now, we return the merged metadata as-is
+        // Dynamic metadata integration will be added in a future PR
 
         // Apply plugin filtering ONLY if explicit configuration exists (not just defaults)
         // HEURISTIC: If user hasn't configured plugins.txt or jenkins.plugins, show all bundled
@@ -303,8 +295,9 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
         val installedPlugins = pluginDiscovery.getInstalledPluginNames()
         logger.debug("Filtering metadata to {} installed plugins", installedPlugins.size)
         return merged.copy(
-            steps = merged.steps.filterValues { it.plugin in installedPlugins },
-            declarativeOptions = merged.declarativeOptions.filterValues { it.plugin in installedPlugins },
+            steps = merged.steps.filterValues { step ->
+                step.plugin?.let { it in installedPlugins } ?: false
+            },
         )
     }
 

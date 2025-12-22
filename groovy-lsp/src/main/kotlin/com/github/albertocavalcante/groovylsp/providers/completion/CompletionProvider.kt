@@ -278,7 +278,7 @@ object CompletionProvider {
     }
 
     private fun CompletionsBuilder.addJenkinsGlobalVariables(
-        metadata: com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata,
+        metadata: com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata,
         compilationService: GroovyCompilationService,
     ) {
         // 1. Add global variables from bundled plugin metadata
@@ -315,7 +315,7 @@ object CompletionProvider {
     private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
         nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
         astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-        metadata: com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata,
+        metadata: com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata,
     ) {
         val methodCall = findEnclosingMethodCall(nodeAtCursor, astModel)
         val callName = methodCall?.methodAsString ?: return

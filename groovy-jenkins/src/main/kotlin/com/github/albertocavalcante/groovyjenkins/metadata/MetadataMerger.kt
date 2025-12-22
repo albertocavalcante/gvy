@@ -144,4 +144,80 @@ object MetadataMerger {
             documentation = overlay.documentation ?: base.documentation,
         )
     }
+
+    /**
+     * Merge bundled metadata with enrichment metadata to create MergedJenkinsMetadata.
+     *
+     * This combines machine-extracted metadata (bundled) with human-curated enrichment
+     * to provide the best available information for LSP features.
+     *
+     * Priority:
+     * - Extracted data (types, parameters, scopes) from bundled
+     * - Enrichment overlay (descriptions, examples, valid values, categories)
+     *
+     * @param bundled The base bundled metadata (extracted, deterministic)
+     * @param enrichment The enrichment metadata (curated, high-quality)
+     * @return Merged metadata ready for use by LSP features
+     */
+    fun mergeWithEnrichment(
+        bundled: BundledJenkinsMetadata,
+        enrichment: com.github.albertocavalcante.groovyjenkins.metadata.enrichment.JenkinsEnrichment,
+    ): MergedJenkinsMetadata {
+        // Merge steps
+        val mergedSteps = bundled.steps.mapValues { (stepName, bundledStep) ->
+            val stepEnrichment = enrichment.steps[stepName]
+
+            // Merge parameters
+            val mergedParams = bundledStep.parameters.mapValues { (paramName, bundledParam) ->
+                val paramEnrichment = stepEnrichment?.parameterEnrichment?.get(paramName)
+
+                MergedParameter(
+                    name = paramName,
+                    type = bundledParam.type,
+                    defaultValue = bundledParam.default,
+                    description = paramEnrichment?.description ?: bundledParam.documentation,
+                    required = paramEnrichment?.required ?: bundledParam.required,
+                    validValues = paramEnrichment?.validValues,
+                    examples = paramEnrichment?.examples ?: emptyList(),
+                )
+            }
+
+            MergedStepMetadata(
+                name = stepName,
+                scope = com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope.GLOBAL,
+                positionalParams = emptyList(),
+                namedParams = mergedParams,
+                extractedDocumentation = bundledStep.documentation,
+                returnType = null,
+                plugin = stepEnrichment?.plugin ?: bundledStep.plugin,
+                enrichedDescription = stepEnrichment?.description,
+                documentationUrl = stepEnrichment?.documentationUrl,
+                category = stepEnrichment?.category,
+                examples = stepEnrichment?.examples ?: emptyList(),
+                deprecation = stepEnrichment?.deprecation,
+            )
+        }
+
+        // Merge global variables
+        val mergedGlobalVars = bundled.globalVariables.mapValues { (varName, bundledVar) ->
+            val varEnrichment = enrichment.globalVariables[varName]
+
+            MergedGlobalVariable(
+                name = varName,
+                type = bundledVar.type,
+                extractedDocumentation = bundledVar.documentation,
+                enrichedDescription = varEnrichment?.description,
+                documentationUrl = varEnrichment?.documentationUrl,
+                properties = varEnrichment?.properties ?: emptyMap(),
+            )
+        }
+
+        return MergedJenkinsMetadata(
+            jenkinsVersion = "2.426.3", // TODO: Get from bundled metadata
+            steps = mergedSteps,
+            globalVariables = mergedGlobalVars,
+            sections = enrichment.sections,
+            directives = enrichment.directives,
+        )
+    }
 }

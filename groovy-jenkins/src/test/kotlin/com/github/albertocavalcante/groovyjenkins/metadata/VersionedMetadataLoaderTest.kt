@@ -46,9 +46,10 @@ class VersionedMetadataLoaderTest {
 
         // Stable should have more complete definitions
         val sh = metadata.steps["sh"]!!
-        assertTrue(sh.parameters.size >= 5, "Stable sh should have 5+ parameters")
-        assertTrue(sh.parameters.containsKey("returnStdout"))
-        assertTrue(sh.parameters.containsKey("returnStatus"))
+        // MergedStepMetadata uses namedParams instead of parameters
+        assertTrue(sh.namedParams.size >= 5, "Stable sh should have 5+ parameters")
+        assertTrue(sh.namedParams.containsKey("returnStdout"))
+        assertTrue(sh.namedParams.containsKey("returnStatus"))
         assertEquals("workflow-durable-task-step", sh.plugin)
     }
 
@@ -105,21 +106,21 @@ class VersionedMetadataLoaderTest {
     }
 
     @Test
-    fun `preserves post conditions from bundled`() {
+    fun `includes sections from enrichment`() {
         val loader = VersionedMetadataLoader()
         val metadata = loader.loadMerged(jenkinsVersion = "2.479.3")
 
-        // Should have post conditions from bundled
-        assertTrue(metadata.postConditions.isNotEmpty())
+        // MergedJenkinsMetadata has sections from enrichment instead of postConditions
+        assertTrue(metadata.sections.isNotEmpty())
     }
 
     @Test
-    fun `preserves declarative options from bundled`() {
+    fun `includes directives from enrichment`() {
         val loader = VersionedMetadataLoader()
         val metadata = loader.loadMerged(jenkinsVersion = "2.479.3")
 
-        // Should have declarative options from bundled
-        assertTrue(metadata.declarativeOptions.isNotEmpty())
+        // MergedJenkinsMetadata has directives from enrichment instead of declarativeOptions
+        assertTrue(metadata.directives.isNotEmpty())
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins.metadata
 
+import com.github.albertocavalcante.groovyjenkins.metadata.enrichment.EnrichmentMetadataLoader
 import org.slf4j.LoggerFactory
 
 /**
@@ -10,13 +11,14 @@ import org.slf4j.LoggerFactory
  * 2. Default metadata
  * 3. Bundled metadata (always available)
  *
- * When loading merged metadata, stable step definitions take priority
- * over bundled to provide more accurate/complete parameter information.
+ * When loading merged metadata, enrichment and stable step definitions
+ * take priority over bundled to provide more accurate/complete parameter information.
  */
 class VersionedMetadataLoader {
     private val logger = LoggerFactory.getLogger(VersionedMetadataLoader::class.java)
 
     private val bundledLoader = BundledJenkinsMetadataLoader()
+    private val enrichmentLoader = EnrichmentMetadataLoader()
 
     companion object {
         private const val METADATA_BASE_PATH = "/metadata"
@@ -53,19 +55,22 @@ class VersionedMetadataLoader {
     }
 
     /**
-     * Load metadata merged with stable step definitions.
+     * Load metadata merged with enrichment and stable step definitions.
      *
      * Priority order (highest to lowest):
-     * 1. Stable step definitions (hardcoded, most accurate)
-     * 2. Version-specific metadata (when available)
-     * 3. Bundled metadata (fallback)
+     * 1. Enrichment metadata (curated descriptions, examples, valid values)
+     * 2. Stable step definitions (hardcoded, most accurate)
+     * 3. Version-specific metadata (when available)
+     * 4. Bundled metadata (fallback)
      *
      * @param jenkinsVersion The Jenkins version (optional)
-     * @return Merged metadata with stable steps taking priority
+     * @return Merged metadata ready for use by LSP features
      */
-    fun loadMerged(jenkinsVersion: String? = null): BundledJenkinsMetadata {
+    fun loadMerged(jenkinsVersion: String? = null): MergedJenkinsMetadata {
         val bundled = load(jenkinsVersion)
-        return MetadataMerger.merge(bundled, StableStepDefinitions.all())
+        val bundledWithStable = MetadataMerger.merge(bundled, StableStepDefinitions.all())
+        val enrichment = enrichmentLoader.load()
+        return MetadataMerger.mergeWithEnrichment(bundledWithStable, enrichment)
     }
 
     /**
@@ -74,14 +79,18 @@ class VersionedMetadataLoader {
      * Priority order (highest to lowest):
      * 1. User overrides
      * 2. Dynamic classpath scan results
-     * 3. Stable step definitions
-     * 4. Version-specific metadata
-     * 5. Bundled metadata
+     * 3. Enrichment metadata
+     * 4. Stable step definitions
+     * 5. Version-specific metadata
+     * 6. Bundled metadata
      *
      * @param jenkinsVersion The Jenkins version (optional)
      * @param dynamicSteps Steps from classpath scanning (optional)
      * @param userOverrides User-provided overrides (optional)
      * @return Fully merged metadata
+     *
+     * NOTE: This still returns BundledJenkinsMetadata for now to maintain compatibility.
+     * Future versions may return MergedJenkinsMetadata once all consumers are updated.
      */
     fun loadMergedAll(
         jenkinsVersion: String? = null,

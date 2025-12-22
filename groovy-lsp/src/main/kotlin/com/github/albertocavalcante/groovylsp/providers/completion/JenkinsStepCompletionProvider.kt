@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.MarkupContent
@@ -10,37 +10,39 @@ import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 /**
- * Provides Jenkins step completions backed by bundled metadata.
+ * Provides Jenkins step completions backed by merged metadata (bundled + enrichment).
  */
 object JenkinsStepCompletionProvider {
     /**
      * Get metadata for a specific Jenkins step by name.
      * Used by hover provider to show step documentation.
      */
-    fun getStepMetadata(stepName: String, metadata: BundledJenkinsMetadata): JenkinsStepMetadata? =
+    fun getStepMetadata(stepName: String, metadata: MergedJenkinsMetadata): MergedStepMetadata? =
         metadata.getStep(stepName)
 
     /**
      * Get metadata for a specific Jenkins global variable by name.
      * Used by hover provider to show global variable documentation.
      */
-    fun getGlobalVariableMetadata(variableName: String, metadata: BundledJenkinsMetadata): GlobalVariableMetadata? =
+    fun getGlobalVariableMetadata(variableName: String, metadata: MergedJenkinsMetadata): MergedGlobalVariable? =
         metadata.getGlobalVariable(variableName)
 
-    fun getStepCompletions(metadata: BundledJenkinsMetadata): List<CompletionItem> = metadata.steps.values.map { step ->
+    fun getStepCompletions(metadata: MergedJenkinsMetadata): List<CompletionItem> = metadata.steps.values.map { step ->
+        // Prefer enriched description, fall back to extracted documentation
         val documentationText = step.documentation ?: "Jenkins pipeline step"
         CompletionItem().apply {
             label = step.name
             kind = CompletionItemKind.Function
-            detail = "Jenkins step (${step.plugin})"
+            detail = step.plugin?.let { "Jenkins step ($it)" } ?: "Jenkins step"
             documentation = Either.forRight(
                 MarkupContent(MarkupKind.MARKDOWN, documentationText),
             )
         }
     }
 
-    fun getGlobalVariableCompletions(metadata: BundledJenkinsMetadata): List<CompletionItem> =
+    fun getGlobalVariableCompletions(metadata: MergedJenkinsMetadata): List<CompletionItem> =
         metadata.globalVariables.values.map { globalVar ->
+            // Prefer enriched description, fall back to extracted documentation
             val documentationText = globalVar.documentation ?: "Jenkins global variable"
             CompletionItem().apply {
                 label = globalVar.name
@@ -55,18 +57,20 @@ object JenkinsStepCompletionProvider {
     fun getParameterCompletions(
         stepName: String,
         existingKeys: Set<String>,
-        metadata: BundledJenkinsMetadata,
+        metadata: MergedJenkinsMetadata,
     ): List<CompletionItem> {
         val step = metadata.getStep(stepName) ?: return emptyList()
 
-        return step.parameters
+        // Use namedParams instead of parameters
+        return step.namedParams
             .filterKeys { key -> key !in existingKeys }
             .map { (key, param) ->
                 CompletionItem().apply {
                     label = "$key:"
                     kind = CompletionItemKind.Property
                     detail = param.type
-                    documentation = param.documentation?.let {
+                    // Use enriched description if available
+                    documentation = param.description?.let {
                         Either.forRight(MarkupContent(MarkupKind.MARKDOWN, it))
                     }
                 }
