@@ -21,14 +21,13 @@ object BuildExecutableResolver {
      * 1. Wrapper in workspace (gradlew or gradlew.bat)
      * 2. System gradle command
      */
-    fun resolveGradle(workspaceRoot: Path): String =
-        resolveExecutable(
-            workspaceRoot = workspaceRoot,
-            wrapperName = "gradlew",
-            windowsWrapperName = "gradlew.bat",
-            systemCommand = "gradle",
-            useWindows = isWindows,
-        )
+    fun resolveGradle(workspaceRoot: Path): String = resolveExecutable(
+        workspaceRoot = workspaceRoot,
+        wrapperName = "gradlew",
+        windowsWrapperName = "gradlew.bat",
+        systemCommand = "gradle",
+        useWindows = isWindows,
+    )
 
     /**
      * Resolves the Maven executable for a workspace.
@@ -37,38 +36,35 @@ object BuildExecutableResolver {
      * 1. Wrapper in workspace (mvnw or mvnw.cmd)
      * 2. System mvn command
      */
-    fun resolveMaven(workspaceRoot: Path): String =
-        resolveExecutable(
-            workspaceRoot = workspaceRoot,
-            wrapperName = "mvnw",
-            windowsWrapperName = "mvnw.cmd",
-            systemCommand = "mvn",
-            useWindows = isWindows,
-        )
+    fun resolveMaven(workspaceRoot: Path): String = resolveExecutable(
+        workspaceRoot = workspaceRoot,
+        wrapperName = "mvnw",
+        windowsWrapperName = "mvnw.cmd",
+        systemCommand = "mvn",
+        useWindows = isWindows,
+    )
 
     /**
      * For testing: allows overriding the Windows detection for Gradle.
      */
-    internal fun resolveGradle(workspaceRoot: Path, forceWindows: Boolean): String =
-        resolveExecutable(
-            workspaceRoot = workspaceRoot,
-            wrapperName = "gradlew",
-            windowsWrapperName = "gradlew.bat",
-            systemCommand = "gradle",
-            useWindows = forceWindows,
-        )
+    internal fun resolveGradle(workspaceRoot: Path, forceWindows: Boolean): String = resolveExecutable(
+        workspaceRoot = workspaceRoot,
+        wrapperName = "gradlew",
+        windowsWrapperName = "gradlew.bat",
+        systemCommand = "gradle",
+        useWindows = forceWindows,
+    )
 
     /**
      * For testing: allows overriding the Windows detection for Maven.
      */
-    internal fun resolveMaven(workspaceRoot: Path, forceWindows: Boolean): String =
-        resolveExecutable(
-            workspaceRoot = workspaceRoot,
-            wrapperName = "mvnw",
-            windowsWrapperName = "mvnw.cmd",
-            systemCommand = "mvn",
-            useWindows = forceWindows,
-        )
+    internal fun resolveMaven(workspaceRoot: Path, forceWindows: Boolean): String = resolveExecutable(
+        workspaceRoot = workspaceRoot,
+        wrapperName = "mvnw",
+        windowsWrapperName = "mvnw.cmd",
+        systemCommand = "mvn",
+        useWindows = forceWindows,
+    )
 
     /**
      * Generic helper to resolve a build executable.

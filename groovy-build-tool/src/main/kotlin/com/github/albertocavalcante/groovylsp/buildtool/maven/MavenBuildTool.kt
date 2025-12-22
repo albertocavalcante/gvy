@@ -130,12 +130,7 @@ class MavenBuildTool : BuildTool {
         return "mvn"
     }
 
-    override fun getTestCommand(
-        workspaceRoot: Path,
-        suite: String,
-        test: String?,
-        debug: Boolean,
-    ): TestCommand {
+    override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {
         val testArg = if (test != null) "$suite#$test" else suite
         val args = mutableListOf("test", "-Dtest=$testArg")
 
@@ -150,4 +145,3 @@ class MavenBuildTool : BuildTool {
         )
     }
 }
-

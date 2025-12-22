@@ -1,9 +1,12 @@
 pre-commit:
   commands:
+    kotlin-format-check:
+      glob: '*.kt'
+      run: ./gradlew spotlessCheck
     yaml-format:
-      glob: "*.{yml,yaml}"
+      glob: '*.{yml,yaml}'
       run: yq -i -P '.' {staged_files}
     python-format:
-      glob: "*.py"
+      glob: '*.py'
       run: ruff format {staged_files} && ruff check --fix {staged_files}
       # TODO: Add explicit dependency check for ruff in the future

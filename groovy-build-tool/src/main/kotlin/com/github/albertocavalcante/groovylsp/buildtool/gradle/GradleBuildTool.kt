@@ -77,12 +77,7 @@ class GradleBuildTool(
     ): com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher =
         GradleBuildFileWatcher(coroutineScope, onChange)
 
-    override fun getTestCommand(
-        workspaceRoot: Path,
-        suite: String,
-        test: String?,
-        debug: Boolean,
-    ): TestCommand {
+    override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {
         val testFilter = if (test != null) "$suite.$test" else suite
         val args = mutableListOf("test", "--tests", testFilter)
 
