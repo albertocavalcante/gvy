@@ -14,6 +14,14 @@ import java.net.URI
  * Provides CodeLens for Spock test methods.
  *
  * Shows "▶ Run Test" and "🐛 Debug Test" buttons above each feature method.
+ *
+ * NOTE: This provider relies on the cached AST which may have been compiled to
+ * CANONICALIZATION phase. Spock's AST transformations at this phase may have
+ * renamed methods and stripped block labels. The [SpockFeatureExtractor] is
+ * designed to work with early-phase AST (CONVERSION or SEMANTIC_ANALYSIS).
+ * For best results, ensure files are compiled with an early phase before
+ * requesting CodeLenses via [GroovyTextDocumentService.codeLens], which calls
+ * [GroovyCompilationService.ensureCompiled].
  */
 class TestCodeLensProvider(private val compilationService: GroovyCompilationService) {
     private val logger = LoggerFactory.getLogger(TestCodeLensProvider::class.java)

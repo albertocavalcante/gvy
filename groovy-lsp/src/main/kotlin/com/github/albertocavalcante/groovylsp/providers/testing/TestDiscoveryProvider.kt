@@ -10,6 +10,12 @@ import java.net.URI
  * Discovers Spock test classes and feature methods in a workspace.
  *
  * Used by the `groovy/discoverTests` LSP request to populate VS Code Test Explorer.
+ *
+ * NOTE: This provider relies on [GroovyCompilationService.getParseResult] which
+ * retrieves results from the [CompilationCache]. Files must be compiled (e.g., via
+ * didOpen or workspace indexing) before they appear in discovery results.
+ * Consider calling [GroovyCompilationService.indexWorkspace] for full coverage
+ * or triggering compilation for individual files before discovery.
  */
 class TestDiscoveryProvider(private val compilationService: GroovyCompilationService) {
     private val logger = LoggerFactory.getLogger(TestDiscoveryProvider::class.java)

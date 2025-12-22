@@ -609,11 +609,13 @@ class GroovyLanguageServer :
 
         return CompletableFuture.supplyAsync {
             try {
+                // TODO: For multi-project workspace support, derive workspace root from params.uri
+                // Currently single-workspace, so we use the global workspace root
                 val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
                     ?: throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
                         org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
                             org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
-                            "No workspace root found",
+                            "No workspace root found for: ${params.uri}",
                             null,
                         ),
                     )

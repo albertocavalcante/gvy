@@ -52,6 +52,13 @@ class GroovyCompilationService {
 
     /**
      * Compiles Groovy source code and returns the result.
+     *
+     * NOTE: The cache lookup uses (uri, content) as the key and does NOT consider
+     * the [compilePhase] parameter. If a file was previously compiled to a later
+     * phase, subsequent requests for earlier phases may return the cached result
+     * from the later phase. This is a known limitation for Spock feature extraction,
+     * which requires early-phase AST (before Spock's transformations).
+     * TODO: Consider including compilePhase in the cache key for phase-sensitive use cases.
      */
     @Suppress("TooGenericExceptionCaught") // Final fallback
     suspend fun compile(
