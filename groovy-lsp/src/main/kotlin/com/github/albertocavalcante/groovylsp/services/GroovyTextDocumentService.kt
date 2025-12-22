@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
+import com.github.albertocavalcante.groovylsp.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
@@ -32,6 +33,8 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
+import org.eclipse.lsp4j.CodeLens
+import org.eclipse.lsp4j.CodeLensParams
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
@@ -148,6 +151,10 @@ class GroovyTextDocumentService(
     // Typed as SourceNavigator interface for testability
     private val sourceNavigator: SourceNavigator by lazy {
         SourceNavigationService()
+    }
+
+    private val testCodeLensProvider by lazy {
+        TestCodeLensProvider(compilationService)
     }
 
     override fun signatureHelp(
@@ -543,6 +550,12 @@ class GroovyTextDocumentService(
 
             actions.map { Either.forRight<Command, CodeAction>(it) }
         }
+
+    override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> = coroutineScope.future {
+        logger.debug("CodeLens requested for ${params.textDocument.uri}")
+        val uri = java.net.URI.create(params.textDocument.uri)
+        testCodeLensProvider.provideCodeLenses(uri)
+    }
 
     override fun semanticTokensFull(
         params: org.eclipse.lsp4j.SemanticTokensParams,
