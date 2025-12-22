@@ -3,7 +3,7 @@
 // - Better cross-platform support
 // - Unified config with lefthook.yml (currently has separate YAML/Python hooks)
 plugins {
-    id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.5"
+    id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.6"
 }
 
 dependencyResolutionManagement {
@@ -77,6 +77,7 @@ include("groovy-gdsl")
 include("groovy-build-tool")
 include("groovy-spock")
 include("groovy-testing")
+include("groovy-junit")
 include("jupyter:kernel-core")
 include("jupyter:kernels:groovy")
 include("jupyter:kernels:jenkins")

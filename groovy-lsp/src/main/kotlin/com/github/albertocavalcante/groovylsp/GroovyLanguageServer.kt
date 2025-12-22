@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovyjunit.junit.JUnit5TestDetector
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
@@ -76,8 +77,9 @@ class GroovyLanguageServer :
 
     init {
         // Register test framework detectors (idempotent - safe to call multiple times)
-        // TODO: Add JUnit5, JUnit4, TestNG detectors when implemented
+        // NOTE: Order matters for "appliesTo" checks if frameworks overlap, but explicit checks usually avoid this.
         TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
+        TestFrameworkRegistry.registerIfAbsent(JUnit5TestDetector())
     }
 
     // Available build tools in detection priority order
