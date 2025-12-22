@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.2](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.1...v0.4.2) (2025-12-22)
+
+
+### Features
+
+* add groovy-testing module and refactor test runner architecture ([#281](https://github.com/albertocavalcante/groovy-lsp/issues/281)) ([de38199](https://github.com/albertocavalcante/groovy-lsp/commit/de38199cdd956b2a7049971304b7c7450c0075aa))
+* Add JUnit 5 Support ([#282](https://github.com/albertocavalcante/groovy-lsp/issues/282)) ([ac4ebd1](https://github.com/albertocavalcante/groovy-lsp/commit/ac4ebd1bc3c9723af1ab1d812d46829d20c5b635))
+* add Test Runner LSP support for Spock specifications ([#279](https://github.com/albertocavalcante/groovy-lsp/issues/279)) ([a091015](https://github.com/albertocavalcante/groovy-lsp/commit/a091015532944c4bb60ed6ab45d6617d02d5d680))
+* **junit4:** implement JUnit 4 support ([#283](https://github.com/albertocavalcante/groovy-lsp/issues/283)) ([3280397](https://github.com/albertocavalcante/groovy-lsp/commit/32803976fddc827f0a240a56bb813c41a3589151))
+
 ## [0.4.1](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.0...v0.4.1) (2025-12-21)
 
 
