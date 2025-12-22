@@ -33,6 +33,22 @@ interface BuildTool {
         coroutineScope: kotlinx.coroutines.CoroutineScope,
         onChange: (Path) -> Unit,
     ): BuildToolFileWatcher? = null
+
+    /**
+     * Returns a command to execute tests for this build tool.
+     *
+     * @param workspaceRoot The root directory of the workspace.
+     * @param suite Fully qualified name of the test class.
+     * @param test Optional specific test method name (null = run all tests in suite).
+     * @param debug Whether to run in debug mode.
+     * @return A [TestCommand] that the client can execute, or null if not supported.
+     */
+    fun getTestCommand(
+        workspaceRoot: Path,
+        suite: String,
+        test: String? = null,
+        debug: Boolean = false,
+    ): TestCommand? = null
 }
 
 /**

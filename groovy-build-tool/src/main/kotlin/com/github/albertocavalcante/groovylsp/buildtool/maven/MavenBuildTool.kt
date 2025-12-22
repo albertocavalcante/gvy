@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import org.slf4j.LoggerFactory
 import java.io.BufferedReader
@@ -127,4 +128,25 @@ class MavenBuildTool : BuildTool {
 
         return "mvn"
     }
+
+    override fun getTestCommand(
+        workspaceRoot: Path,
+        suite: String,
+        test: String?,
+        debug: Boolean,
+    ): TestCommand {
+        val testArg = if (test != null) "$suite#$test" else suite
+        val args = mutableListOf("test", "-Dtest=$testArg")
+
+        if (debug) {
+            args.add("-Dmaven.surefire.debug")
+        }
+
+        return TestCommand(
+            executable = getMvnCommand(workspaceRoot),
+            args = args,
+            cwd = workspaceRoot.toString(),
+        )
+    }
 }
+
