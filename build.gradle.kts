@@ -44,6 +44,16 @@ subprojects {
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
     }
 
+    // Configure Java Toolchain for all subprojects to ensure hermetic builds
+    // Only apply to projects that have the 'java' plugin (or derived plugins like 'groovy', 'kotlin-jvm')
+    pluginManager.withPlugin("java") {
+        configure<JavaPluginExtension> {
+            toolchain {
+                languageVersion.set(JavaLanguageVersion.of(17))
+            }
+        }
+    }
+
     // Code Quality Configuration
     detekt {
         config.setFrom(rootProject.files("detekt.yml"))

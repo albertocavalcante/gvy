@@ -506,12 +506,6 @@ tasks.register("printVersion") {
     }
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
 val shadowJarTask = tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar")
 
 tasks.register<ReportJarCompositionTask>("reportShadowJarComposition") {

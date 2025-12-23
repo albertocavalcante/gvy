@@ -23,6 +23,7 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
      * @param workspaceUri The workspace root URI (used to identify the target workspace)
      * @return List of [TestSuite] containing discovered tests
      */
+    @Suppress("LoopWithTooManyJumpStatements")
     fun discoverTests(workspaceUri: String): List<TestSuite> {
         logger.info("Discovering tests in workspace: $workspaceUri")
 
@@ -89,6 +90,7 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
          * Parse a workspace URI string to a URI object.
          * Handles both file:// URIs and plain paths.
          */
+        @Suppress("SwallowedException")
         fun parseWorkspaceUri(workspaceUri: String): URI? = try {
             if (workspaceUri.startsWith("file://")) {
                 URI.create(workspaceUri)

@@ -21,6 +21,7 @@ import kotlin.io.path.isDirectory
  * This class serves as a central point for workspace state, allowing other components
  * of the compilation service to query and update workspace-related information.
  */
+@Suppress("TooManyFunctions")
 class WorkspaceManager {
     private val logger = LoggerFactory.getLogger(WorkspaceManager::class.java)
 

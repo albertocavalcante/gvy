@@ -57,7 +57,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
         private val logger = org.slf4j.LoggerFactory.getLogger(GroovyTokenIndex::class.java)
 
         /** Build index from source using Groovy lexer. */
-        @Suppress("TooGenericExceptionCaught")
+        @Suppress("TooGenericExceptionCaught", "LongMethod", "CyclomaticComplexMethod", "NestedBlockDepth")
         fun build(source: String): GroovyTokenIndex {
             val spans = mutableListOf<TokenSpan>()
 

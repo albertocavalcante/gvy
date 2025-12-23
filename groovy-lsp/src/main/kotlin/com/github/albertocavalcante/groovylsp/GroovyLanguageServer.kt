@@ -624,7 +624,7 @@ class GroovyLanguageServer :
      *
      * Custom LSP request: `groovy/runTest`
      */
-    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount", "SwallowedException")
     @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> {
         logger.info("Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}")
