@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.kover)
     alias(libs.plugins.sonarqube)
+    alias(libs.plugins.gradle.versions)
     application
 }
 

@@ -20,6 +20,7 @@ import com.github.albertocavalcante.groovylsp.services.ProjectStartupManager
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,13 +44,13 @@ import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 
-class GroovyLanguageServer :
+class GroovyLanguageServer(private val dispatcher: CoroutineDispatcher = Dispatchers.Default) :
     LanguageServer,
     LanguageClientAware {
 
     private val logger = LoggerFactory.getLogger(GroovyLanguageServer::class.java)
     private var client: LanguageClient? = null
-    private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
     private val compilationService = GroovyCompilationService()
 
     // Services

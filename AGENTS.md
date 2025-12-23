@@ -22,16 +22,26 @@ To revert: `git show main~1:AGENTS.md > AGENTS.md` and remove .agent/ .gemini/ d
 
 ## Commands
 
-```bash
-# Build & Test
-./gradlew build                                    # Full build
-./gradlew test                                     # All tests
-./gradlew test --tests "*ClassName*" --info        # Single test with output
-./gradlew lintFix                                  # Auto-fix lint issues
+> [!TIP]
+> **Use the Makefile!**  
+> This project includes a comprehensive `Makefile` to simplify common tasks.  
+> Run `make help` to see all available commands.
 
-# Environment (macOS with Homebrew - adjust for your OS/JDK setup)
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+```bash
+# Common Tasks
+make build          # Full build with tests
+make test           # Run all tests
+make lint           # Check code quality
+make format         # Fix linting issues
+make jar            # Fast build (skips tests)
+
+# Advanced
+make e2e            # Run end-to-end tests
+make run-stdio      # Run LSP in stdio mode
 ```
+
+> If you need to use Gradle directly (e.g., for specific task arguments), try to use the `make` wrappers first, or fall back to `./gradlew` only when necessary.
+
 
 ## Critical Rules
 

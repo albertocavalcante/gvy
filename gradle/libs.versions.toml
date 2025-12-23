@@ -7,6 +7,7 @@ sonarqube = "7.2.1.6560"
 shadow = "9.3.0"
 gitHooks = "2.1.6"
 jmh = "0.7.3"
+gradleVersions = "0.51.0"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
@@ -140,3 +141,4 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref = "gitHooks" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
+gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradleVersions" }
