@@ -97,17 +97,27 @@ jobs:
           # For workflow_run events, use the triggering workflow's head commit as base
           # This fixes the 'before field is missing' warning
           base: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+          # Use 'every' predicate to properly handle exclusion patterns
+          # With 'some' (default), a file matches if it matches ANY pattern, breaking negations
+          predicate-quantifier: 'every'
           filters: |
             run_main_ci:
+              # Positive patterns: paths that require CI
               - 'src/**'
               - 'gradle/**'
+              - 'groovy-*/**'
+              - 'tests/**'
               - '*.gradle'
               - '*.gradle.kts'
               - 'gradle.properties'
+              - 'settings.gradle.kts'
               - '.github/workflows/ci.yml'
-              - '!infra/**'
-              - '!*.md'
+              # Negative patterns: paths that should NOT trigger CI
+              - '!**/*.md'
+              - '!.agent/**'
+              - '!.gemini/**'
               - '!docs/**'
+              - '!infra/**'
               - '!.github/workflows/runner-*.yml'
 
   check-runner:
@@ -420,16 +430,25 @@ jobs:
   validate:
     name: Validation Check
     runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
-    needs: [build, check-runner]
+    needs: [build, check-runner, check-paths]
     if: always()
     steps:
       - name: Check build status
         run: |
           BUILD_RESULT="${{ needs.build.result }}"
           PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
+          RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
 
           echo "Build result: $BUILD_RESULT"
           echo "Provisioning triggered: $PROVISIONING"
+          echo "Run main CI: $RUN_MAIN_CI"
+
+          # If paths filter determined no CI needed, skipped build is OK
+          if [[ "$RUN_MAIN_CI" != "true" && "$BUILD_RESULT" == "skipped" ]]; then
+            echo "ℹ️ Build skipped - no relevant code changes detected"
+            echo "   Only documentation or config files were modified"
+            exit 0
+          fi
 
           # If provisioning was triggered, build is expected to be skipped
           if [[ "$PROVISIONING" == "true" && "$BUILD_RESULT" == "skipped" ]]; then
@@ -448,9 +467,17 @@ jobs:
             exit 0
           fi
 
+          # Handle cancelled builds (user action or concurrency cancellation)
+          if [[ "$BUILD_RESULT" == "cancelled" ]]; then
+            echo "⚠️ Build was cancelled"
+            echo "   This is expected when a newer commit is pushed to the same PR"
+            # Exit 0 for cancelled - it's not a failure, just superseded
+            exit 0
+          fi
+
           # Normal case: build must succeed
           if [[ "$BUILD_RESULT" != "success" ]]; then
-            echo "❌ Build failed or was cancelled"
+            echo "❌ Build failed"
             exit 1
           fi
           echo "✅ All checks passed!"
