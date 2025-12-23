@@ -69,6 +69,8 @@ For detailed procedures, see:
 | `.agent/workflows/github-actions.md` | SHA pinning, workflow debugging |
 | `.agent/workflows/github-issues.md` | Issue creation and label conventions |
 | `.agent/workflows/conflict-resolution.md` | Rebase/merge conflict step-by-step |
+| `.agent/workflows/next.md` | Codebase review and next improvements planning |
+| `.agent/workflows/review.md` | PR review, address feedback, verify CI |
 
 ## Tool Reliability
 
