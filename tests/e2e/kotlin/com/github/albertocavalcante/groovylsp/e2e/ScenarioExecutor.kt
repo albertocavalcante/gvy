@@ -33,6 +33,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         ScenarioStep.SendNotification::class to SendNotificationStepExecutor(),
         ScenarioStep.WaitNotification::class to WaitNotificationStepExecutor(),
         ScenarioStep.Assert::class to AssertStepExecutor(),
+        ScenarioStep.Wait::class to WaitStepExecutor(),
     )
 
     fun execute(definition: ScenarioDefinition) {

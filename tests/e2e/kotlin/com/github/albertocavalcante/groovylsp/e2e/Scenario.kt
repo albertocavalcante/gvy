@@ -153,6 +153,7 @@ data class WorkspaceConfig(val fixture: String? = null)
     Type(value = ScenarioStep.CodeAction::class, name = "codeAction"),
     Type(value = ScenarioStep.Formatting::class, name = "formatting"),
     Type(value = ScenarioStep.Rename::class, name = "rename"),
+    Type(value = ScenarioStep.Wait::class, name = "wait"),
 )
 sealed interface ScenarioStep {
     data class Initialize(val rootUri: String? = null, val initializationOptions: JsonElement? = null) : ScenarioStep
@@ -162,6 +163,8 @@ sealed interface ScenarioStep {
     data object Shutdown : ScenarioStep
 
     data object Exit : ScenarioStep
+
+    data class Wait(val duration: Long) : ScenarioStep
 
     data class OpenDocument(
         val uri: String? = null,

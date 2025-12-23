@@ -334,3 +334,10 @@ class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
         }
     }
 }
+
+class WaitStepExecutor : StepExecutor<ScenarioStep.Wait> {
+    override fun execute(step: ScenarioStep.Wait, context: ScenarioContext, nextStep: ScenarioStep?) {
+        Thread.sleep(step.duration)
+        logger.info("Waited for {} ms", step.duration)
+    }
+}
