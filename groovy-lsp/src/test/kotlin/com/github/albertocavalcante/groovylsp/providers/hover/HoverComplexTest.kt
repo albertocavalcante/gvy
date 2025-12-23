@@ -48,8 +48,8 @@ class HoverComplexTest {
         // fixture.assertHoverContains(5, 24, "String name")
 
         // 5. Hover Variable Definition (Line 9, 'p')
-        // TODO: Fix type inference for def variables (currently returns Object p)
-        // fixture.assertHoverContains(9, 5, "Person p")
+        // Now enabled after type inference improvements!
+        fixture.assertHoverContains(9, 5, "Person")
 
         // 6. Hover Property Access (Line 10, 'name')
         // TODO: Fix hover for property access (currently returns String literal "name")

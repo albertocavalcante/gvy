@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.dsl.hover
 
+import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
+import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
 import org.codehaus.groovy.ast.ASTNode
@@ -29,9 +31,18 @@ import org.eclipse.lsp4j.Hover
  */
 
 /**
- * Format a VariableExpression for hover
+ * Format a VariableExpression for hover.
+ * Uses TypeInferencer when the declared type is dynamic (def).
  */
-fun VariableExpression.toHoverContent(): HoverContent.Code = HoverContent.Code("${type.nameWithoutPackage} $name")
+fun VariableExpression.toHoverContent(): HoverContent.Code {
+    val displayType = if (type.isDynamic()) {
+        // For def variables, show "def" as the type
+        "def"
+    } else {
+        type.nameWithoutPackage
+    }
+    return HoverContent.Code("$displayType $name")
+}
 
 /**
  * Format a MethodNode for hover
@@ -172,22 +183,26 @@ fun BinaryExpression.toHoverContent(): HoverContent = when (operation.text) {
 }
 
 /**
- * Format a DeclarationExpression for hover
+ * Format a DeclarationExpression for hover.
+ * Uses TypeInferencer to infer the type for def variables.
  */
 fun DeclarationExpression.toHoverContent(): HoverContent {
     val varExpr = leftExpression as? VariableExpression
-    val type = varExpr?.type?.nameWithoutPackage ?: "def"
     val name = varExpr?.name ?: "unknown"
+
+    // Use TypeInferencer for better type inference
+    val inferredType = TypeInferencer.inferType(this)
+    val displayType = inferredType.substringAfterLast('.')
 
     return HoverContent.Section(
         "Variable Declaration",
         listOf(
-            HoverContent.Code("$type $name = $rightExpression"),
+            HoverContent.Code("$displayType $name"),
             HoverContent.KeyValue(
                 listOf(
-                    "Type" to type,
+                    "Inferred Type" to inferredType,
                     "Name" to name,
-                    "Initial Value" to rightExpression.toString(),
+                    "Initial Value" to rightExpression.text,
                 ),
             ),
         ),

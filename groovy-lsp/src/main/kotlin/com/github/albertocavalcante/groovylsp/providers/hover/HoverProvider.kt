@@ -200,10 +200,10 @@ class HoverProvider(
         visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
     ): ASTNode {
-        // If it's a declaration, show the node itself
+        // If it's a declaration, return the DeclarationExpression for richer hover info
         val parent = visitor.getParent(node)
         if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
-            return node
+            return parent // Return parent so TypeInferencer can infer the type
         }
 
         // Otherwise resolve to definition

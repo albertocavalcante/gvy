@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.types
 
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
+import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -117,21 +118,25 @@ class GroovyTypeResolver(
         return resolvedType
     }
 
-    private suspend fun findVariableInitializerType(variableName: String, context: CompilationContext): ClassNode? {
-        // Search through all nodes in the module to find declaration with initializer
-        val allNodes = context.astModel.getAllNodes()
-        for (node in allNodes) {
-            if (node is DeclarationExpression) {
-                val leftExpression = node.leftExpression
-                if (leftExpression is VariableExpression && leftExpression.name == variableName) {
-                    // Found the declaration, now resolve the right side type
-                    val rightExpression = node.rightExpression
-                    return resolveType(rightExpression, context)
-                }
+    /**
+     * Find the type of a variable's initializer expression.
+     * Uses TypeInferencer for expression type inference with functional approach.
+     */
+    private fun findVariableInitializerType(variableName: String, context: CompilationContext): ClassNode? =
+        context.astModel.getAllNodes()
+            .asSequence()
+            .filterIsInstance<DeclarationExpression>()
+            .firstOrNull { decl ->
+                (decl.leftExpression as? VariableExpression)?.name == variableName
             }
-        }
-        return null
-    }
+            ?.let { decl ->
+                // Use TypeInferencer for better type inference
+                val inferredTypeName = TypeInferencer.inferExpressionType(decl.rightExpression)
+                // Extract raw type before angle brackets for generic types
+                // e.g., "java.util.ArrayList<java.lang.Integer>" -> "java.util.ArrayList"
+                val rawTypeName = inferredTypeName.substringBefore('<')
+                ClassHelper.make(rawTypeName)
+            }
 
     private suspend fun resolveMethodReturnType(
         methodCall: MethodCallExpression,
