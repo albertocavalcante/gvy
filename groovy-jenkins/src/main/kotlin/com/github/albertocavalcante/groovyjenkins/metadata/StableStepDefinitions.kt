@@ -18,13 +18,38 @@ package com.github.albertocavalcante.groovyjenkins.metadata
  */
 object StableStepDefinitions {
 
+    // Plugin name constants
+    private object Plugins {
+        const val DURABLE_TASK = "workflow-durable-task-step"
+        const val BASIC_STEPS = "workflow-basic-steps"
+        const val UTILITY_STEPS = "pipeline-utility-steps"
+        const val CPS = "workflow-cps"
+        const val SCM_STEP = "workflow-scm-step"
+        const val STAGE_STEP = "pipeline-stage-step"
+        const val SUPPORT = "workflow-support"
+        const val INPUT_STEP = "pipeline-input-step"
+        const val BUILD_STEP = "pipeline-build-step"
+        const val JUNIT = "junit"
+        const val MULTIBRANCH = "workflow-multibranch"
+        const val CORE = "core"
+    }
+
+    // Common parameter descriptions
+    private object Descriptions {
+        const val RETURN_STDOUT = "If true, return the stdout as the step value."
+        const val RETURN_STATUS = "If true, return the exit code as the step value."
+        const val ENCODING = "The encoding for the output (e.g., 'UTF-8')."
+        const val LABEL = "Label for the step in Blue Ocean and Pipeline Stage View."
+        const val FILE_PATH = "The file path relative to workspace."
+    }
+
     private val STEPS: Map<String, JenkinsStepMetadata> = buildMap {
         // ========== workflow-durable-task-step plugin ==========
         put(
             "sh",
             JenkinsStepMetadata(
                 name = "sh",
-                plugin = "workflow-durable-task-step",
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Execute a shell script on Unix-like systems.",
                 parameters = mapOf(
                     "script" to StepParameter(
@@ -38,26 +63,26 @@ object StableStepDefinitions {
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the stdout as the step value.",
+                        documentation = Descriptions.RETURN_STDOUT,
                     ),
                     "returnStatus" to StepParameter(
                         name = "returnStatus",
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the exit code as the step value.",
+                        documentation = Descriptions.RETURN_STATUS,
                     ),
                     "encoding" to StepParameter(
                         name = "encoding",
                         type = "String",
                         required = false,
-                        documentation = "The encoding for the output (e.g., 'UTF-8').",
+                        documentation = Descriptions.ENCODING,
                     ),
                     "label" to StepParameter(
                         name = "label",
                         type = "String",
                         required = false,
-                        documentation = "Label for the step in Blue Ocean and Pipeline Stage View.",
+                        documentation = Descriptions.LABEL,
                     ),
                 ),
             ),
@@ -67,7 +92,7 @@ object StableStepDefinitions {
             "bat",
             JenkinsStepMetadata(
                 name = "bat",
-                plugin = "workflow-durable-task-step",
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Execute a Windows batch script.",
                 parameters = mapOf(
                     "script" to StepParameter(
@@ -81,26 +106,26 @@ object StableStepDefinitions {
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the stdout as the step value.",
+                        documentation = Descriptions.RETURN_STDOUT,
                     ),
                     "returnStatus" to StepParameter(
                         name = "returnStatus",
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the exit code as the step value.",
+                        documentation = Descriptions.RETURN_STATUS,
                     ),
                     "encoding" to StepParameter(
                         name = "encoding",
                         type = "String",
                         required = false,
-                        documentation = "The encoding for the output (e.g., 'UTF-8').",
+                        documentation = Descriptions.ENCODING,
                     ),
                     "label" to StepParameter(
                         name = "label",
                         type = "String",
                         required = false,
-                        documentation = "Label for the step in Blue Ocean and Pipeline Stage View.",
+                        documentation = Descriptions.LABEL,
                     ),
                 ),
             ),
@@ -110,7 +135,7 @@ object StableStepDefinitions {
             "powershell",
             JenkinsStepMetadata(
                 name = "powershell",
-                plugin = "workflow-durable-task-step",
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Execute a PowerShell script.",
                 parameters = mapOf(
                     "script" to StepParameter(
@@ -124,26 +149,26 @@ object StableStepDefinitions {
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the stdout as the step value.",
+                        documentation = Descriptions.RETURN_STDOUT,
                     ),
                     "returnStatus" to StepParameter(
                         name = "returnStatus",
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the exit code as the step value.",
+                        documentation = Descriptions.RETURN_STATUS,
                     ),
                     "encoding" to StepParameter(
                         name = "encoding",
                         type = "String",
                         required = false,
-                        documentation = "The encoding for the output (e.g., 'UTF-8').",
+                        documentation = Descriptions.ENCODING,
                     ),
                     "label" to StepParameter(
                         name = "label",
                         type = "String",
                         required = false,
-                        documentation = "Label for the step in Blue Ocean and Pipeline Stage View.",
+                        documentation = Descriptions.LABEL,
                     ),
                 ),
             ),
@@ -153,7 +178,7 @@ object StableStepDefinitions {
             "pwsh",
             JenkinsStepMetadata(
                 name = "pwsh",
-                plugin = "workflow-durable-task-step",
+                plugin = Plugins.DURABLE_TASK,
                 documentation = "Execute a PowerShell Core script (cross-platform).",
                 parameters = mapOf(
                     "script" to StepParameter(
@@ -167,26 +192,26 @@ object StableStepDefinitions {
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the stdout as the step value.",
+                        documentation = Descriptions.RETURN_STDOUT,
                     ),
                     "returnStatus" to StepParameter(
                         name = "returnStatus",
                         type = "boolean",
                         required = false,
                         default = "false",
-                        documentation = "If true, return the exit code as the step value.",
+                        documentation = Descriptions.RETURN_STATUS,
                     ),
                     "encoding" to StepParameter(
                         name = "encoding",
                         type = "String",
                         required = false,
-                        documentation = "The encoding for the output (e.g., 'UTF-8').",
+                        documentation = Descriptions.ENCODING,
                     ),
                     "label" to StepParameter(
                         name = "label",
                         type = "String",
                         required = false,
-                        documentation = "Label for the step in Blue Ocean and Pipeline Stage View.",
+                        documentation = Descriptions.LABEL,
                     ),
                 ),
             ),
@@ -197,7 +222,7 @@ object StableStepDefinitions {
             "echo",
             JenkinsStepMetadata(
                 name = "echo",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Print a message to the console log.",
                 parameters = mapOf(
                     "message" to StepParameter(
@@ -214,7 +239,7 @@ object StableStepDefinitions {
             "error",
             JenkinsStepMetadata(
                 name = "error",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Signal an error and fail the build.",
                 parameters = mapOf(
                     "message" to StepParameter(
@@ -231,7 +256,7 @@ object StableStepDefinitions {
             "timeout",
             JenkinsStepMetadata(
                 name = "timeout",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Enforce a time limit on a block of code.",
                 parameters = mapOf(
                     "time" to StepParameter(
@@ -262,7 +287,7 @@ object StableStepDefinitions {
             "retry",
             JenkinsStepMetadata(
                 name = "retry",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Retry a block of code a specified number of times.",
                 parameters = mapOf(
                     "count" to StepParameter(
@@ -285,7 +310,7 @@ object StableStepDefinitions {
             "sleep",
             JenkinsStepMetadata(
                 name = "sleep",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Pause execution for a specified time.",
                 parameters = mapOf(
                     "time" to StepParameter(
@@ -309,7 +334,7 @@ object StableStepDefinitions {
             "dir",
             JenkinsStepMetadata(
                 name = "dir",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Change current directory for a block.",
                 parameters = mapOf(
                     "path" to StepParameter(
@@ -326,7 +351,7 @@ object StableStepDefinitions {
             "deleteDir",
             JenkinsStepMetadata(
                 name = "deleteDir",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Delete the current directory and its contents.",
                 parameters = emptyMap(),
             ),
@@ -336,7 +361,7 @@ object StableStepDefinitions {
             "pwd",
             JenkinsStepMetadata(
                 name = "pwd",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Get the current working directory.",
                 parameters = mapOf(
                     "tmp" to StepParameter(
@@ -354,14 +379,14 @@ object StableStepDefinitions {
             "writeFile",
             JenkinsStepMetadata(
                 name = "writeFile",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Write content to a file in the workspace.",
                 parameters = mapOf(
                     "file" to StepParameter(
                         name = "file",
                         type = "String",
                         required = true,
-                        documentation = "The file path relative to workspace.",
+                        documentation = Descriptions.FILE_PATH,
                     ),
                     "text" to StepParameter(
                         name = "text",
@@ -383,14 +408,14 @@ object StableStepDefinitions {
             "readFile",
             JenkinsStepMetadata(
                 name = "readFile",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Read content from a file in the workspace.",
                 parameters = mapOf(
                     "file" to StepParameter(
                         name = "file",
                         type = "String",
                         required = true,
-                        documentation = "The file path relative to workspace.",
+                        documentation = Descriptions.FILE_PATH,
                     ),
                     "encoding" to StepParameter(
                         name = "encoding",
@@ -406,14 +431,14 @@ object StableStepDefinitions {
             "fileExists",
             JenkinsStepMetadata(
                 name = "fileExists",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Check if a file exists in the workspace.",
                 parameters = mapOf(
                     "file" to StepParameter(
                         name = "file",
                         type = "String",
                         required = true,
-                        documentation = "The file path relative to workspace.",
+                        documentation = Descriptions.FILE_PATH,
                     ),
                 ),
             ),
@@ -423,7 +448,7 @@ object StableStepDefinitions {
             "isUnix",
             JenkinsStepMetadata(
                 name = "isUnix",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Check if running on a Unix-like system.",
                 parameters = emptyMap(),
             ),
@@ -433,7 +458,7 @@ object StableStepDefinitions {
             "stash",
             JenkinsStepMetadata(
                 name = "stash",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Stash files for later use in the build.",
                 parameters = mapOf(
                     "name" to StepParameter(
@@ -476,7 +501,7 @@ object StableStepDefinitions {
             "unstash",
             JenkinsStepMetadata(
                 name = "unstash",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Restore stashed files into the workspace.",
                 parameters = mapOf(
                     "name" to StepParameter(
@@ -493,7 +518,7 @@ object StableStepDefinitions {
             "catchError",
             JenkinsStepMetadata(
                 name = "catchError",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Catch an error and set build/stage result instead of failing.",
                 parameters = mapOf(
                     "buildResult" to StepParameter(
@@ -531,7 +556,7 @@ object StableStepDefinitions {
             "warnError",
             JenkinsStepMetadata(
                 name = "warnError",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Catch an error and set build result to UNSTABLE.",
                 parameters = mapOf(
                     "message" to StepParameter(
@@ -555,7 +580,7 @@ object StableStepDefinitions {
             "withEnv",
             JenkinsStepMetadata(
                 name = "withEnv",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Set environment variables for a block.",
                 parameters = mapOf(
                     "overrides" to StepParameter(
@@ -572,7 +597,7 @@ object StableStepDefinitions {
             "wrap",
             JenkinsStepMetadata(
                 name = "wrap",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Invoke a legacy build wrapper.",
                 parameters = mapOf(
                     "delegate" to StepParameter(
@@ -589,7 +614,7 @@ object StableStepDefinitions {
             "unstable",
             JenkinsStepMetadata(
                 name = "unstable",
-                plugin = "workflow-basic-steps",
+                plugin = Plugins.BASIC_STEPS,
                 documentation = "Set the build result to UNSTABLE.",
                 parameters = mapOf(
                     "message" to StepParameter(
@@ -607,7 +632,7 @@ object StableStepDefinitions {
             "parallel",
             JenkinsStepMetadata(
                 name = "parallel",
-                plugin = "workflow-cps",
+                plugin = Plugins.CPS,
                 documentation = "Execute branches in parallel.",
                 parameters = mapOf(
                     "branches" to StepParameter(
@@ -632,7 +657,7 @@ object StableStepDefinitions {
             "checkout",
             JenkinsStepMetadata(
                 name = "checkout",
-                plugin = "workflow-scm-step",
+                plugin = Plugins.SCM_STEP,
                 documentation = "Check out source code from SCM.",
                 parameters = mapOf(
                     "scm" to StepParameter(
@@ -664,7 +689,7 @@ object StableStepDefinitions {
             "stage",
             JenkinsStepMetadata(
                 name = "stage",
-                plugin = "pipeline-stage-step",
+                plugin = Plugins.STAGE_STEP,
                 documentation = "Define a stage of the pipeline.",
                 parameters = mapOf(
                     "name" to StepParameter(
@@ -688,7 +713,7 @@ object StableStepDefinitions {
             "node",
             JenkinsStepMetadata(
                 name = "node",
-                plugin = "workflow-support",
+                plugin = Plugins.SUPPORT,
                 documentation = "Allocate a node (executor) for a block.",
                 parameters = mapOf(
                     "label" to StepParameter(
@@ -705,7 +730,7 @@ object StableStepDefinitions {
             "ws",
             JenkinsStepMetadata(
                 name = "ws",
-                plugin = "workflow-support",
+                plugin = Plugins.SUPPORT,
                 documentation = "Use a custom workspace directory.",
                 parameters = mapOf(
                     "dir" to StepParameter(
@@ -723,7 +748,7 @@ object StableStepDefinitions {
             "input",
             JenkinsStepMetadata(
                 name = "input",
-                plugin = "pipeline-input-step",
+                plugin = Plugins.INPUT_STEP,
                 documentation = "Wait for manual input before proceeding.",
                 parameters = mapOf(
                     "message" to StepParameter(
@@ -771,7 +796,7 @@ object StableStepDefinitions {
             "build",
             JenkinsStepMetadata(
                 name = "build",
-                plugin = "pipeline-build-step",
+                plugin = Plugins.BUILD_STEP,
                 documentation = "Trigger another job/pipeline.",
                 parameters = mapOf(
                     "job" to StepParameter(
@@ -815,7 +840,7 @@ object StableStepDefinitions {
             "readJSON",
             JenkinsStepMetadata(
                 name = "readJSON",
-                plugin = "pipeline-utility-steps",
+                plugin = Plugins.UTILITY_STEPS,
                 documentation = "Read JSON from file or text.",
                 parameters = mapOf(
                     "file" to StepParameter(
@@ -845,7 +870,7 @@ object StableStepDefinitions {
             "writeJSON",
             JenkinsStepMetadata(
                 name = "writeJSON",
-                plugin = "pipeline-utility-steps",
+                plugin = Plugins.UTILITY_STEPS,
                 documentation = "Write data to JSON file.",
                 parameters = mapOf(
                     "file" to StepParameter(
@@ -875,7 +900,7 @@ object StableStepDefinitions {
             "readYaml",
             JenkinsStepMetadata(
                 name = "readYaml",
-                plugin = "pipeline-utility-steps",
+                plugin = Plugins.UTILITY_STEPS,
                 documentation = "Read YAML from file or text.",
                 parameters = mapOf(
                     "file" to StepParameter(
@@ -898,7 +923,7 @@ object StableStepDefinitions {
             "writeYaml",
             JenkinsStepMetadata(
                 name = "writeYaml",
-                plugin = "pipeline-utility-steps",
+                plugin = Plugins.UTILITY_STEPS,
                 documentation = "Write data to YAML file.",
                 parameters = mapOf(
                     "file" to StepParameter(
@@ -929,7 +954,7 @@ object StableStepDefinitions {
             "junit",
             JenkinsStepMetadata(
                 name = "junit",
-                plugin = "junit",
+                plugin = Plugins.JUNIT,
                 documentation = "Archive JUnit-format test results.",
                 parameters = mapOf(
                     "testResults" to StepParameter(
@@ -967,7 +992,7 @@ object StableStepDefinitions {
             "properties",
             JenkinsStepMetadata(
                 name = "properties",
-                plugin = "workflow-multibranch",
+                plugin = Plugins.MULTIBRANCH,
                 documentation = "Set job properties from within the pipeline.",
                 parameters = mapOf(
                     "properties" to StepParameter(
@@ -985,7 +1010,7 @@ object StableStepDefinitions {
             "archiveArtifacts",
             JenkinsStepMetadata(
                 name = "archiveArtifacts",
-                plugin = "core",
+                plugin = Plugins.CORE,
                 documentation = "Archive build artifacts.",
                 parameters = mapOf(
                     "artifacts" to StepParameter(
