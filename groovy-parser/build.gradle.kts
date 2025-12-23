@@ -6,12 +6,6 @@ plugins {
 group = "com.github.albertocavalcante"
 version = rootProject.version
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
 dependencies {
     implementation(project(":groovy-common"))
     api(libs.groovy.core)

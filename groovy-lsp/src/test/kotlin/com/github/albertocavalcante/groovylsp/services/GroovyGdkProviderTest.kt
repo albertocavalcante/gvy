@@ -103,10 +103,12 @@ class GroovyGdkProviderTest {
     }
 
     @Test
-    fun `should return empty list for unknown type`() {
+    fun `should return object methods for unknown type`() {
         val methods = gdkProvider.getMethodsForType("com.example.UnknownType")
 
-        assertThat(methods).isEmpty()
+        // Since everything is an Object in Groovy, we should at least get Object methods
+        assertThat(methods).isNotEmpty
+        assertThat(methods.map { it.name }).contains("dump", "inspect")
     }
 
     @Test

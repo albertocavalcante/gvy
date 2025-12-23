@@ -27,12 +27,6 @@ tasks.test {
     useJUnitPlatform()
 }
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
 /**
  * Converts extracted GDSL to JSON format.
  *

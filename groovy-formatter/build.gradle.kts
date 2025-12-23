@@ -5,12 +5,6 @@ plugins {
 group = "com.github.albertocavalcante"
 version = rootProject.version
 
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
-}
-
 dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.rewrite.groovy) {

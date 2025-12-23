@@ -1,3 +1,8 @@
 tools/ export-ignore
+.agent/ export-ignore
+.devcontainer/ export-ignore
+.gemini/ export-ignore
+.kiro/ export-ignore
+.spec/ export-ignore
 
 

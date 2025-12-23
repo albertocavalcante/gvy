@@ -49,8 +49,23 @@ subprojects {
     pluginManager.withPlugin("java") {
         configure<JavaPluginExtension> {
             toolchain {
-                languageVersion.set(JavaLanguageVersion.of(17))
+                languageVersion.set(JavaLanguageVersion.of(21))
             }
+        }
+    }
+
+    // Ensure bytecode compatibility is limited to Java 17 despite using JDK 21 toolchain
+    tasks.withType<JavaCompile>().configureEach {
+        options.release.set(17)
+    }
+
+    tasks.withType<GroovyCompile>().configureEach {
+        options.release.set(17)
+    }
+
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
 

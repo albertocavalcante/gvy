@@ -4,6 +4,15 @@
 # Allow injecting Gradle arguments (e.g. make build GRADLE_ARGS="--info")
 GRADLE_ARGS ?=
 
+# macOS: Check for JAVA_HOME, trust environment (direnv/sdkman)
+ifeq ($(shell uname),Darwin)
+    ifndef JAVA_HOME
+        $(warning JAVA_HOME is not set!)
+        $(warning Run 'sdk env' or 'direnv allow' to activate the environment.)
+        $(warning If you haven't set up the tools yet, run: ./tools/macos/setup.sh)
+    endif
+endif
+
 .PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single
 
 # Default target

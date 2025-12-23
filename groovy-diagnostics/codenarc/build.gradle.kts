@@ -3,12 +3,6 @@ plugins {
     groovy
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
-    }
-}
-
 dependencies {
     implementation(project(":groovy-diagnostics:api"))
     implementation(project(":groovy-parser"))

@@ -39,10 +39,6 @@ dependencies {
     detektPlugins(libs.detekt.formatting)
 }
 
-kotlin {
-    jvmToolchain(17)
-}
-
 // Exclude BSP client from coverage - requires real BSP server (integration test)
 // NOTE: BspConnectionDetails and BspBuildTool are tested via unit tests.
 // BspClient requires a running BSP server process to test properly.
