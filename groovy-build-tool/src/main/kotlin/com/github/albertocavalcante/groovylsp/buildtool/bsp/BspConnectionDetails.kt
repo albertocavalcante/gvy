@@ -11,7 +11,6 @@ import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.readText
-import kotlin.streams.toList
 
 /**
  * BSP connection details parsed from .bsp directory JSON files.

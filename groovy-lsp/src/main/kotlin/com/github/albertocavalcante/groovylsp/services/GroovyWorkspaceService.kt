@@ -69,7 +69,7 @@ class GroovyWorkspaceService(
         val changes = params.changes.groupBy { classifyFileChange(it.uri) }
 
         // Handle CodeNarc config changes
-        changes[FileType.CODENARC]?.let { codenarcChanges ->
+        changes[FileType.CODENARC]?.let { _ ->
             logger.info("CodeNarc config changed, reloading rulesets")
             textDocumentService?.reloadCodeNarcRulesets()
             // Re-run diagnostics on open files
