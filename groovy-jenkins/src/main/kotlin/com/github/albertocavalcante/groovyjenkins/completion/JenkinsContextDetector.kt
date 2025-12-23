@@ -40,6 +40,9 @@ object JenkinsContextDetector {
         "changed", "fixed", "regression", "aborted", "cleanup",
     )
 
+    // Pre-compiled pattern for post conditions (avoids per-iteration regex compilation)
+    private val POST_CONDITION_PATTERN = Regex("""^(${POST_CONDITIONS.joinToString("|")})\s*\{.*""")
+
     // Step name pattern - matches step name followed by space or end of string
     private val STEP_PATTERN = Regex("""^\s*(\w+)(?:\s|$)""")
 
@@ -108,49 +111,80 @@ object JenkinsContextDetector {
             return JenkinsCompletionContext(isTopLevel = true)
         }
 
-        // Track open blocks
+        val blockStack = analyzeBlockStructure(lines, lineNumber)
+        val lineContext = detectCurrentLineContext(lines, lineNumber, column)
+
+        return buildContext(blockStack, lineContext)
+    }
+
+    /**
+     * Analyze block structure up to the given line.
+     */
+    private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int): List<String> {
         val blockStack = mutableListOf<String>()
         var braceDepth = 0
 
-        // Analyze lines up to cursor
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = lines[i]
 
-            // Check for block openings
-            for ((blockName, pattern) in BLOCK_PATTERNS) {
-                if (pattern.containsMatchIn(line)) {
-                    blockStack.add(blockName)
-                }
-            }
+            addBlockOpenings(line, blockStack)
+            addPostConditionBlocks(line, blockStack)
 
-            // Check for post condition blocks
-            for (condition in POST_CONDITIONS) {
-                if (line.trim().matches(Regex("""$condition\s*\{.*"""))) {
-                    blockStack.add(condition)
-                }
-            }
-
-            // Track brace depth for simple heuristic
-            braceDepth += line.count { it == '{' }
-            braceDepth -= line.count { it == '}' }
-
-            // Remove blocks when we close them
-            while (braceDepth < blockStack.size && blockStack.isNotEmpty()) {
-                blockStack.removeAt(blockStack.size - 1)
-            }
+            braceDepth += line.count { it == '{' } - line.count { it == '}' }
+            trimBlockStackToDepth(blockStack, braceDepth)
         }
 
-        // Also check current line for inline context
-        val currentLine = if (lineNumber < lines.size) lines[lineNumber] else ""
-        val lineContext = detectFromLine(currentLine, column)
+        return blockStack.toList()
+    }
 
-        // Determine context from block stack
-        val isDeclarative = blockStack.contains("pipeline")
-        val isScripted = !isDeclarative && blockStack.contains("node")
-        val isInNode = blockStack.contains("node")
+    /**
+     * Add any block openings found in the line to the stack.
+     */
+    private fun addBlockOpenings(line: String, blockStack: MutableList<String>) {
+        for ((blockName, pattern) in BLOCK_PATTERNS) {
+            if (pattern.containsMatchIn(line)) {
+                blockStack.add(blockName)
+            }
+        }
+    }
 
-        // Check for post condition
-        val postCondition = blockStack.lastOrNull { POST_CONDITIONS.contains(it) }
+    /**
+     * Add any post condition blocks found in the line to the stack.
+     */
+    private fun addPostConditionBlocks(line: String, blockStack: MutableList<String>) {
+        val trimmedLine = line.trim()
+        POST_CONDITION_PATTERN.find(trimmedLine)?.groups?.get(1)?.value?.let { condition ->
+            blockStack.add(condition)
+        }
+    }
+
+    /**
+     * Trim block stack when braces close.
+     */
+    private fun trimBlockStackToDepth(blockStack: MutableList<String>, braceDepth: Int) {
+        while (braceDepth < blockStack.size && blockStack.isNotEmpty()) {
+            blockStack.removeAt(blockStack.size - 1)
+        }
+    }
+
+    /**
+     * Detect context from the current line at cursor position.
+     */
+    private fun detectCurrentLineContext(lines: List<String>, lineNumber: Int, column: Int): JenkinsCompletionContext {
+        val currentLine = lines.getOrElse(lineNumber) { "" }
+        return detectFromLine(currentLine, column)
+    }
+
+    /**
+     * Build final context from block stack and line context.
+     */
+    private fun buildContext(
+        blockStack: List<String>,
+        lineContext: JenkinsCompletionContext,
+    ): JenkinsCompletionContext {
+        val isDeclarative = "pipeline" in blockStack
+        val isScripted = !isDeclarative && "node" in blockStack
+        val postCondition = blockStack.lastOrNull { it in POST_CONDITIONS }
 
         return JenkinsCompletionContext(
             // From line context
@@ -160,29 +194,29 @@ object JenkinsContextDetector {
             partialText = lineContext.partialText,
 
             // From block analysis
-            isPostContext = blockStack.contains("post") || postCondition != null,
-            isOptionsContext = blockStack.contains("options"),
-            isAgentContext = blockStack.contains("agent"),
-            isStageContext = blockStack.contains("stage"),
-            isStepsContext = blockStack.contains("steps"),
-            isWhenContext = blockStack.contains("when"),
-            isEnvironmentContext = blockStack.contains("environment"),
-            isParametersContext = blockStack.contains("parameters"),
-            isTriggersContext = blockStack.contains("triggers"),
-            isToolsContext = blockStack.contains("tools"),
-            isScriptContext = blockStack.contains("script"),
+            isPostContext = "post" in blockStack || postCondition != null,
+            isOptionsContext = "options" in blockStack,
+            isAgentContext = "agent" in blockStack,
+            isStageContext = "stage" in blockStack,
+            isStepsContext = "steps" in blockStack,
+            isWhenContext = "when" in blockStack,
+            isEnvironmentContext = "environment" in blockStack,
+            isParametersContext = "parameters" in blockStack,
+            isTriggersContext = "triggers" in blockStack,
+            isToolsContext = "tools" in blockStack,
+            isScriptContext = "script" in blockStack,
 
             // Pipeline type
             isDeclarativePipeline = isDeclarative,
             isScriptedPipeline = isScripted,
-            isInNode = isInNode,
+            isInNode = "node" in blockStack,
             isTopLevel = blockStack.isEmpty(),
 
             // Additional info
             postCondition = postCondition,
-            enclosingBlocks = blockStack.toList(),
+            enclosingBlocks = blockStack,
 
-            // Step context (may be set from line or block)
+            // Step context
             isStepParameterContext = lineContext.isStepParameterContext,
             currentStepName = lineContext.currentStepName,
         )
