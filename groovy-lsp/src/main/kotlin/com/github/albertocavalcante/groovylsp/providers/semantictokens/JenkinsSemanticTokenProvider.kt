@@ -3,6 +3,8 @@ package com.github.albertocavalcante.groovylsp.providers.semantictokens
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.eclipse.lsp4j.SemanticTokenModifiers
+import org.eclipse.lsp4j.SemanticTokenTypes
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -25,6 +27,52 @@ import java.net.URI
 object JenkinsSemanticTokenProvider {
 
     private val logger = LoggerFactory.getLogger(JenkinsSemanticTokenProvider::class.java)
+
+    /**
+     * Complete list of Semantic Token Types supported by this server.
+     * This serves as the single source of truth for the LSP legend.
+     */
+    val LEGEND_TOKEN_TYPES = listOf(
+        SemanticTokenTypes.Namespace, // 0
+        SemanticTokenTypes.Type, // 1
+        SemanticTokenTypes.Class, // 2
+        SemanticTokenTypes.Enum, // 3
+        SemanticTokenTypes.Interface, // 4
+        SemanticTokenTypes.Struct, // 5
+        SemanticTokenTypes.TypeParameter, // 6
+        SemanticTokenTypes.Parameter, // 7
+        SemanticTokenTypes.Variable, // 8
+        SemanticTokenTypes.Property, // 9
+        SemanticTokenTypes.EnumMember, // 10
+        SemanticTokenTypes.Event, // 11
+        SemanticTokenTypes.Function, // 12
+        SemanticTokenTypes.Method, // 13
+        SemanticTokenTypes.Macro, // 14 <- Used for pipeline blocks
+        SemanticTokenTypes.Keyword, // 15
+        SemanticTokenTypes.Modifier, // 16
+        SemanticTokenTypes.Comment, // 17
+        SemanticTokenTypes.String, // 18
+        SemanticTokenTypes.Number, // 19
+        SemanticTokenTypes.Regexp, // 20
+        SemanticTokenTypes.Operator, // 21
+        SemanticTokenTypes.Decorator, // 22 <- Used for wrapper blocks
+    )
+
+    /**
+     * Complete list of Semantic Token Modifiers supported by this server.
+     */
+    val LEGEND_TOKEN_MODIFIERS = listOf(
+        SemanticTokenModifiers.Declaration,
+        SemanticTokenModifiers.Definition,
+        SemanticTokenModifiers.Readonly,
+        SemanticTokenModifiers.Static,
+        SemanticTokenModifiers.Deprecated,
+        SemanticTokenModifiers.Abstract,
+        SemanticTokenModifiers.Async,
+        SemanticTokenModifiers.Modification,
+        SemanticTokenModifiers.Documentation,
+        SemanticTokenModifiers.DefaultLibrary,
+    )
 
     /**
      * Semantic token representation for Jenkins blocks.
