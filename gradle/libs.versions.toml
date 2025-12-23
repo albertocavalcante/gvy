@@ -7,7 +7,7 @@ sonarqube = "7.2.1.6560"
 shadow = "9.3.0"
 gitHooks = "2.1.6"
 jmh = "0.7.3"
-gradleVersions = "0.51.0"
+gradleVersions = "0.53.0"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
