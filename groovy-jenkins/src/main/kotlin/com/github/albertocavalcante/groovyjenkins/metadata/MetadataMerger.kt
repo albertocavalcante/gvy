@@ -1,80 +1,105 @@
 package com.github.albertocavalcante.groovyjenkins.metadata
 
+import com.github.albertocavalcante.groovyjenkins.metadata.enrichment.JenkinsEnrichment
+import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
+
 /**
- * Merges multiple metadata sources with priority ordering.
+ * Merges multiple metadata sources with priority ordering using functional patterns.
  *
- * Priority order (highest to lowest):
- * 1. User overrides - custom metadata for internal plugins
- * 2. Dynamic classpath scan - user's actual plugin JARs
- * 3. Stable step definitions - hardcoded core steps
- * 4. Versioned metadata - per-LTS-version metadata
- * 5. Bundled metadata - fallback default metadata
- *
- * This allows accurate IntelliSense by preferring the most specific/accurate
- * source of metadata available.
+ * Implements Semigroup behavior where the "Right" side generally overrides the "Left" side,
+ * preventing imperative mutation and ensuring referential transparency.
  */
 object MetadataMerger {
 
-    /**
-     * Merge bundled metadata with stable step definitions.
-     *
-     * Stable steps take priority over bundled steps (more accurate/complete).
-     * Other metadata types (globalVariables, postConditions, etc.) are preserved from bundled.
-     *
-     * @param bundled The base bundled metadata
-     * @param stable Map of stable step definitions (typically from StableStepDefinitions.all())
-     * @return Merged metadata with stable steps overriding bundled
-     */
-    fun merge(bundled: BundledJenkinsMetadata, stable: Map<String, JenkinsStepMetadata>): BundledJenkinsMetadata {
-        // Start with bundled steps, then overlay stable steps
-        val mergedSteps = bundled.steps.toMutableMap()
-        mergedSteps.putAll(stable)
+    // Functional interface for Semigroup pattern (Arrow 2.x removed strict Semigroup interface)
+    fun interface Semigroup<A> {
+        fun combine(a: A, b: A): A
 
-        return bundled.copy(steps = mergedSteps)
+        // Helper to allow scoping like: semigroup.run { a.combine(b) }
+        fun <R> run(block: Semigroup<A>.() -> R): R = block()
+    }
+
+    // Define Semigroups for our types
+    private val stepMetadataSemigroup: Semigroup<JenkinsStepMetadata> = Semigroup { a, b ->
+        // b overrides a, but we merge parameters
+        a.copy(
+            plugin = b.plugin ?: a.plugin,
+            documentation = b.documentation ?: a.documentation,
+            parameters = a.parameters + b.parameters, // Right overrides Left keys
+        )
+    }
+
+    private val bundledMetadataSemigroup: Semigroup<BundledJenkinsMetadata> = Semigroup { a, b ->
+        // Deep merge steps:
+        // 1. Keys in both: combine values
+        // 2. Keys only in a: keep a
+        // 3. Keys only in b: keep b
+        val combinedSteps = (a.steps.keys + b.steps.keys).associateWith { key ->
+            val stepA = a.steps[key]
+            val stepB = b.steps[key]
+            if (stepA != null && stepB != null) {
+                stepMetadataSemigroup.run { combine(stepA, stepB) }
+            } else {
+                stepB ?: stepA!!
+            }
+        }
+
+        BundledJenkinsMetadata(
+            steps = combinedSteps,
+            globalVariables = a.globalVariables + b.globalVariables,
+            postConditions = a.postConditions + b.postConditions,
+            declarativeOptions = a.declarativeOptions + b.declarativeOptions,
+            agentTypes = a.agentTypes + b.agentTypes,
+        )
     }
 
     /**
-     * Merge with full priority ordering including user overrides.
-     *
-     * Priority (highest first):
-     * 1. User overrides
-     * 2. Stable definitions
-     * 3. Bundled metadata
-     *
-     * @param bundled The base bundled metadata
-     * @param stable Map of stable step definitions
-     * @param userOverrides User-provided step overrides (highest priority)
-     * @return Merged metadata with proper priority
+     * Merge stable steps into bundled metadata.
+     */
+    fun merge(bundled: BundledJenkinsMetadata, stable: Map<String, JenkinsStepMetadata>): BundledJenkinsMetadata {
+        val stableMetadata =
+            BundledJenkinsMetadata(
+                steps = stable,
+                globalVariables = emptyMap(),
+                postConditions = emptyMap(),
+                declarativeOptions = emptyMap(),
+                agentTypes = emptyMap(),
+            )
+        return bundledMetadataSemigroup.run { combine(bundled, stableMetadata) }
+    }
+
+    /**
+     * Merge with full priority ordering.
      */
     fun mergeWithPriority(
         bundled: BundledJenkinsMetadata,
         stable: Map<String, JenkinsStepMetadata>,
         userOverrides: Map<String, JenkinsStepMetadata> = emptyMap(),
     ): BundledJenkinsMetadata {
-        // Start with bundled, overlay stable, then user overrides
-        val mergedSteps = bundled.steps.toMutableMap()
-        mergedSteps.putAll(stable)
-        mergedSteps.putAll(userOverrides)
+        val stableMetadata =
+            BundledJenkinsMetadata(
+                steps = stable,
+                globalVariables = emptyMap(),
+                postConditions = emptyMap(),
+                declarativeOptions = emptyMap(),
+                agentTypes = emptyMap(),
+            )
+        val userMetadata =
+            BundledJenkinsMetadata(
+                steps = userOverrides,
+                globalVariables = emptyMap(),
+                postConditions = emptyMap(),
+                declarativeOptions = emptyMap(),
+                agentTypes = emptyMap(),
+            )
 
-        return bundled.copy(steps = mergedSteps)
+        return bundledMetadataSemigroup.run {
+            combine(combine(bundled, stableMetadata), userMetadata)
+        }
     }
 
     /**
-     * Merge multiple metadata sources with full priority chain.
-     *
-     * Priority (highest first):
-     * 1. User overrides
-     * 2. Dynamic classpath scan
-     * 3. Stable definitions
-     * 4. Versioned metadata
-     * 5. Bundled metadata
-     *
-     * @param bundled The base bundled metadata
-     * @param versioned Version-specific metadata (optional)
-     * @param stable Map of stable step definitions
-     * @param dynamic Dynamically scanned metadata from classpath (optional)
-     * @param userOverrides User-provided step overrides (optional)
-     * @return Fully merged metadata
+     * Merge all sources.
      */
     fun mergeAll(
         bundled: BundledJenkinsMetadata,
@@ -83,91 +108,54 @@ object MetadataMerger {
         dynamic: Map<String, JenkinsStepMetadata>? = null,
         userOverrides: Map<String, JenkinsStepMetadata> = emptyMap(),
     ): BundledJenkinsMetadata {
-        // Build up from lowest to highest priority
-        val mergedSteps = bundled.steps.toMutableMap()
-
-        // Add versioned metadata
-        if (versioned != null) {
-            mergedSteps.putAll(versioned.steps)
-        }
-
-        // Add stable definitions
-        mergedSteps.putAll(stable)
-
-        // Add dynamic classpath scan results
-        if (dynamic != null) {
-            mergedSteps.putAll(dynamic)
-        }
-
-        // Add user overrides (highest priority)
-        mergedSteps.putAll(userOverrides)
-
-        // Merge other metadata types from versioned if available
-        val mergedGlobalVars = bundled.globalVariables.toMutableMap()
-        val mergedPostConditions = bundled.postConditions.toMutableMap()
-        val mergedDeclarativeOptions = bundled.declarativeOptions.toMutableMap()
-        val mergedAgentTypes = bundled.agentTypes.toMutableMap()
-
-        if (versioned != null) {
-            mergedGlobalVars.putAll(versioned.globalVariables)
-            mergedPostConditions.putAll(versioned.postConditions)
-            mergedDeclarativeOptions.putAll(versioned.declarativeOptions)
-            mergedAgentTypes.putAll(versioned.agentTypes)
-        }
-
-        return BundledJenkinsMetadata(
-            steps = mergedSteps,
-            globalVariables = mergedGlobalVars,
-            postConditions = mergedPostConditions,
-            declarativeOptions = mergedDeclarativeOptions,
-            agentTypes = mergedAgentTypes,
+        val sources = listOfNotNull(
+            bundled,
+            versioned,
+            BundledJenkinsMetadata(
+                steps = stable,
+                globalVariables = emptyMap(),
+                postConditions = emptyMap(),
+                declarativeOptions = emptyMap(),
+                agentTypes = emptyMap(),
+            ),
+            dynamic?.let {
+                BundledJenkinsMetadata(
+                    steps = it,
+                    globalVariables = emptyMap(),
+                    postConditions = emptyMap(),
+                    declarativeOptions = emptyMap(),
+                    agentTypes = emptyMap(),
+                )
+            },
+            BundledJenkinsMetadata(
+                steps = userOverrides,
+                globalVariables = emptyMap(),
+                postConditions = emptyMap(),
+                declarativeOptions = emptyMap(),
+                agentTypes = emptyMap(),
+            ),
         )
+
+        return sources.reduce { acc, next -> bundledMetadataSemigroup.run { combine(acc, next) } }
     }
 
     /**
-     * Merge step parameters from multiple sources.
-     *
-     * Used when you want to combine parameters from different definitions
-     * rather than replacing entirely.
-     *
-     * @param base The base step metadata
-     * @param overlay The overlay step metadata (parameters added/overwritten)
-     * @return Step metadata with merged parameters
+     * Merge step parameters.
      */
-    fun mergeStepParameters(base: JenkinsStepMetadata, overlay: JenkinsStepMetadata): JenkinsStepMetadata {
-        val mergedParams = base.parameters.toMutableMap()
-        mergedParams.putAll(overlay.parameters)
-
-        return base.copy(
-            parameters = mergedParams,
-            // Prefer overlay's documentation if available
-            documentation = overlay.documentation ?: base.documentation,
-        )
-    }
+    fun mergeStepParameters(base: JenkinsStepMetadata, overlay: JenkinsStepMetadata): JenkinsStepMetadata =
+        stepMetadataSemigroup.run { combine(base, overlay) }
 
     /**
-     * Merge bundled metadata with enrichment metadata to create MergedJenkinsMetadata.
+     * Merge with enrichment metadata.
      *
-     * This combines machine-extracted metadata (bundled) with human-curated enrichment
-     * to provide the best available information for LSP features.
-     *
-     * Priority:
-     * - Extracted data (types, parameters, scopes) from bundled
-     * - Enrichment overlay (descriptions, examples, valid values, categories)
-     *
-     * @param bundled The base bundled metadata (extracted, deterministic)
-     * @param enrichment The enrichment metadata (curated, high-quality)
-     * @return Merged metadata ready for use by LSP features
+     * Note: This is a complex transformation, not a simple semigroup merge,
+     * so we keep it as a specialized function but use immutable operations.
      */
-    fun mergeWithEnrichment(
-        bundled: BundledJenkinsMetadata,
-        enrichment: com.github.albertocavalcante.groovyjenkins.metadata.enrichment.JenkinsEnrichment,
-    ): MergedJenkinsMetadata {
-        // Merge steps
+    fun mergeWithEnrichment(bundled: BundledJenkinsMetadata, enrichment: JenkinsEnrichment): MergedJenkinsMetadata {
         val mergedSteps = bundled.steps.mapValues { (stepName, bundledStep) ->
             val stepEnrichment = enrichment.steps[stepName]
 
-            // Merge parameters
+            // Merge parameters strictly
             val mergedParams = bundledStep.parameters.mapValues { (paramName, bundledParam) ->
                 val paramEnrichment = stepEnrichment?.parameterEnrichment?.get(paramName)
 
@@ -184,7 +172,7 @@ object MetadataMerger {
 
             MergedStepMetadata(
                 name = stepName,
-                scope = com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope.GLOBAL,
+                scope = StepScope.GLOBAL,
                 positionalParams = emptyList(),
                 namedParams = mergedParams,
                 extractedDocumentation = bundledStep.documentation,
@@ -198,7 +186,6 @@ object MetadataMerger {
             )
         }
 
-        // Merge global variables
         val mergedGlobalVars = bundled.globalVariables.mapValues { (varName, bundledVar) ->
             val varEnrichment = enrichment.globalVariables[varName]
 

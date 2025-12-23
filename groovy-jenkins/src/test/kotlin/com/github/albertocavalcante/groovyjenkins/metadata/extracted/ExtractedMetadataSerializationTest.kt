@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
  * Test serialization and deserialization of extracted Jenkins metadata.
  * Following TDD: tests written first to define the API contract.
  */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 class ExtractedMetadataSerializationTest {
 
     private val json = Json {

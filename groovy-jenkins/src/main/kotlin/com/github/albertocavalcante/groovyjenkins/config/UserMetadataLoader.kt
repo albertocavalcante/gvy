@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught")
+
 package com.github.albertocavalcante.groovyjenkins.config
 
 import com.github.albertocavalcante.groovyjenkins.gdsl.GdslParser

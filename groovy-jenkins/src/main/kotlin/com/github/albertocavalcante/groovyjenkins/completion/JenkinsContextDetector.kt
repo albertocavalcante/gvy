@@ -62,29 +62,9 @@ object JenkinsContextDetector {
             line
         }
 
-        // Check for env. context
-        ENV_DOT_PATTERN.find(textBeforeCursor)?.let { match ->
-            return JenkinsCompletionContext(
-                isEnvContext = true,
-                partialText = match.groupValues[1],
-            )
-        }
-
-        // Check for params. context
-        PARAMS_DOT_PATTERN.find(textBeforeCursor)?.let { match ->
-            return JenkinsCompletionContext(
-                isParamsContext = true,
-                partialText = match.groupValues[1],
-            )
-        }
-
-        // Check for currentBuild. context
-        CURRENT_BUILD_DOT_PATTERN.find(textBeforeCursor)?.let { match ->
-            return JenkinsCompletionContext(
-                isCurrentBuildContext = true,
-                partialText = match.groupValues[1],
-            )
-        }
+        // Try to match property access contexts first
+        val propertyContext = matchPropertyContext(textBeforeCursor)
+        if (propertyContext != null) return propertyContext
 
         // Check for step parameter context
         val stepMatch = STEP_PATTERN.find(textBeforeCursor.trim())
@@ -96,6 +76,33 @@ object JenkinsContextDetector {
         }
 
         return JenkinsCompletionContext()
+    }
+
+    private fun matchPropertyContext(text: String): JenkinsCompletionContext? {
+        val envMatch = ENV_DOT_PATTERN.find(text)
+        if (envMatch != null) {
+            return JenkinsCompletionContext(
+                isEnvContext = true,
+                partialText = envMatch.groupValues[1],
+            )
+        }
+
+        val paramsMatch = PARAMS_DOT_PATTERN.find(text)
+        if (paramsMatch != null) {
+            return JenkinsCompletionContext(
+                isParamsContext = true,
+                partialText = paramsMatch.groupValues[1],
+            )
+        }
+
+        val buildMatch = CURRENT_BUILD_DOT_PATTERN.find(text)
+        if (buildMatch != null) {
+            return JenkinsCompletionContext(
+                isCurrentBuildContext = true,
+                partialText = buildMatch.groupValues[1],
+            )
+        }
+        return null
     }
 
     /**

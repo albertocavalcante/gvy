@@ -2,6 +2,7 @@
     "TooGenericExceptionCaught", // Plugin resolution uses catch-all for resilience
     "ReturnCount", // Multiple early returns are clearer in search methods
     "NestedBlockDepth", // Plugin resolution has inherent nesting
+    "LoopWithTooManyJumpStatements", // Iterating plugins with multiple guard clauses (continue)
 )
 
 package com.github.albertocavalcante.groovyjenkins
@@ -10,6 +11,8 @@ import com.github.albertocavalcante.groovyjenkins.config.JenkinsPluginConfigurat
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadataLoader
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MetadataMerger
+import com.github.albertocavalcante.groovyjenkins.metadata.StableStepDefinitions
 import com.github.albertocavalcante.groovyjenkins.updatecenter.JenkinsUpdateCenterClient
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
@@ -22,14 +25,12 @@ import java.nio.file.Path
 /**
  * Central orchestrator for Jenkins plugin metadata resolution.
  *
- * Implements a multi-tier fallback strategy:
- * 1. **Classpath**: Extract metadata from project dependencies (highest priority)
- * 2. **User Config**: Plugins specified in plugins.txt, resolved via Update Center
- * 3. **Downloaded**: Download and extract from Maven Central/Jenkins repo
- * 4. **Bundled**: Fall back to static bundled stubs (always available)
- *
- * This ensures the user always gets some level of support while enabling
- * rich, version-accurate metadata when dependencies are available.
+ * Implements a functional pipeline strategy where sources are folded:
+ * 1. **Bundled**: Base fallback (static stubs)
+ * 2. **Stable**: Hardcoded core definitions
+ * 3. **User Config**: Plugins specified in plugins.txt
+ * 4. **Downloaded**: Downloaded JARs
+ * 5. **Classpath**: Project dependencies (Highest priority)
  */
 @Suppress("UnusedPrivateProperty") // TODO: updateCenterClient and cacheDir reserved for future use
 class JenkinsPluginManager(
@@ -44,11 +45,11 @@ class JenkinsPluginManager(
 
     // Thread-safe lazy loading
     private val bundledMetadataLoader = BundledJenkinsMetadataLoader()
-    private var bundledMetadata: BundledJenkinsMetadata? = null
     private val bundledMetadataMutex = Mutex()
+    private var bundledMetadataCache: BundledJenkinsMetadata? = null
 
-    // Cache for extracted metadata from JARs
-    private val extractedMetadataCache = mutableMapOf<String, List<JenkinsStepMetadata>>()
+    // Cache for extracted metadata from JARs (Jar Path -> Map<StepName, Step>)
+    private val extractedMetadataCache = mutableMapOf<String, Map<String, JenkinsStepMetadata>>()
     private val cacheMutex = Mutex()
 
     // Cache for user-configured plugins (by workspace)
@@ -60,73 +61,70 @@ class JenkinsPluginManager(
     private val downloadedPluginMutex = Mutex()
 
     /**
-     * Resolve metadata for a Jenkins step using multi-tier fallback.
-     *
-     * @param stepName Name of the Jenkins step (e.g., "sh", "withCredentials")
-     * @param classpathJars JARs from the project's resolved classpath
-     * @param workspaceRoot Optional workspace root for loading user config
-     * @return Step metadata or null if not found at any tier
+     * Resolve metadata for a Jenkins step using functional pipeline.
      */
     suspend fun resolveStepMetadata(
         stepName: String,
         classpathJars: List<Path> = emptyList(),
         workspaceRoot: Path? = null,
     ): JenkinsStepMetadata? {
-        logger.debug("Resolving step metadata for: {}", stepName)
+        // Define sources from lowest to highest priority
+        // Collect candidate steps from each tier (ordered by priority: Lowest -> Highest)
+        val candidates = mutableListOf<JenkinsStepMetadata>()
 
-        // Tier 1: Check classpath JARs
-        val classpathMetadata = findInClasspath(stepName, classpathJars)
-        if (classpathMetadata != null) {
-            logger.debug("Found {} in classpath", stepName)
-            return classpathMetadata
-        }
+        // 1. Bundled (Lowest)
+        getBundledMetadata().getStep(stepName)?.let { candidates.add(it) }
 
-        // Tier 2: Check user-configured plugins
+        // 2. Stable Definitions
+        StableStepDefinitions.all()[stepName]?.let { candidates.add(it) }
+
+        // 3. User Config & Downloaded (Medium)
+        // Check user config first
         if (workspaceRoot != null) {
-            val userConfigMetadata = findInUserConfig(stepName, workspaceRoot)
-            if (userConfigMetadata != null) {
-                logger.debug("Found {} in user-configured plugins", stepName)
-                return userConfigMetadata
-            }
+            findStepInUserConfig(stepName, workspaceRoot)?.let { candidates.add(it) }
         }
+        // Then downloaded plugins (fallback heuristic)
+        findStepInDownloadedPlugins(stepName)?.let { candidates.add(it) }
 
-        // Tier 3: Check downloaded plugins (from previous resolutions)
-        val downloadedMetadata = findInDownloadedPlugins(stepName)
-        if (downloadedMetadata != null) {
-            logger.debug("Found {} in downloaded plugins", stepName)
-            return downloadedMetadata
+        // 4. Classpath (Highest)
+        findStepInClasspath(stepName, classpathJars)?.let { candidates.add(it) }
+
+        if (candidates.isEmpty()) return null
+
+        // Reduce using the Semigroup to merge parameters deeply
+        // acc = lower priority, next = higher priority. 'combine' ensures next overrides acc where appropriate.
+        return candidates.reduce { acc, next ->
+            MetadataMerger.mergeStepParameters(acc, next)
         }
-
-        // Tier 4: Fall back to bundled stubs
-        val bundled = getBundledMetadata()
-        val bundledStep = bundled.getStep(stepName)
-        if (bundledStep != null) {
-            logger.debug("Found {} in bundled stubs", stepName)
-            return bundledStep
-        }
-
-        logger.debug("Step {} not found in any tier", stepName)
-        return null
     }
 
-    /**
-     * Search for step metadata in user-configured plugins.
-     */
-    private suspend fun findInUserConfig(stepName: String, workspaceRoot: Path): JenkinsStepMetadata? {
-        val plugins = loadUserPlugins(workspaceRoot)
+    // --- Helper lookup methods (Lazy / Specific) ---
 
-        for (plugin in plugins) {
-            val coords = plugin.toMavenCoordinates()
-            if (coords != null) {
-                val jarPath = resolvePluginJar(coords)
-                if (jarPath != null) {
-                    val extracted = extractMetadataFromJar(jarPath)
-                    val step = extracted.find { it.name == stepName }
-                    if (step != null) return step
+    private suspend fun findStepInClasspath(stepName: String, classpathJars: List<Path>): JenkinsStepMetadata? =
+        classpathJars.firstNotNullOfOrNull { jar ->
+            getMetadataFromJar(jar)[stepName]
+        }
+
+    private suspend fun findStepInUserConfig(stepName: String, workspaceRoot: Path): JenkinsStepMetadata? =
+        loadUserPlugins(workspaceRoot).firstNotNullOfOrNull { plugin ->
+            plugin.toMavenCoordinates()?.let { coords ->
+                resolvePluginJar(coords)?.let { jarPath ->
+                    getMetadataFromJar(jarPath)[stepName]
                 }
             }
         }
-        return null
+
+    private suspend fun findStepInDownloadedPlugins(stepName: String): JenkinsStepMetadata? {
+        val downloadedJars = downloadedPluginMutex.withLock {
+            downloadedPluginCache.values.toList()
+        }
+        return downloadedJars.firstNotNullOfOrNull { jarPath ->
+            if (Files.exists(jarPath)) {
+                getMetadataFromJar(jarPath)[stepName]
+            } else {
+                null
+            }
+        }
     }
 
     /**
@@ -167,58 +165,28 @@ class JenkinsPluginManager(
     }
 
     /**
-     * Search for step metadata in downloaded plugins.
-     */
-    private suspend fun findInDownloadedPlugins(stepName: String): JenkinsStepMetadata? {
-        val downloadedJars = downloadedPluginMutex.withLock {
-            downloadedPluginCache.values.toList()
-        }
-
-        for (jarPath in downloadedJars) {
-            if (Files.exists(jarPath)) {
-                val extracted = extractMetadataFromJar(jarPath)
-                val step = extracted.find { it.name == stepName }
-                if (step != null) return step
-            }
-        }
-        return null
-    }
-
-    /**
      * Get all available step names from all tiers.
      */
     suspend fun getAllKnownSteps(classpathJars: List<Path> = emptyList()): Set<String> {
-        val steps = mutableSetOf<String>()
+        val names = mutableSetOf<String>()
+        names.addAll(getBundledMetadata().steps.keys)
+        names.addAll(StableStepDefinitions.all().keys)
 
-        // Add bundled steps
-        val bundled = getBundledMetadata()
-        steps.addAll(bundled.steps.keys)
-
-        // Add classpath steps
         classpathJars.forEach { jar ->
-            val extracted = extractMetadataFromJar(jar)
-            steps.addAll(extracted.map { it.name })
+            names.addAll(getMetadataFromJar(jar).keys)
         }
-
-        return steps
-    }
-
-    /**
-     * Search for step metadata in classpath JARs.
-     */
-    private suspend fun findInClasspath(stepName: String, classpathJars: List<Path>): JenkinsStepMetadata? {
-        for (jar in classpathJars) {
-            val extracted = extractMetadataFromJar(jar)
-            val step = extracted.find { it.name == stepName }
-            if (step != null) return step
-        }
-        return null
+        return names
     }
 
     /**
      * Extract metadata from a JAR, with caching.
      */
-    private suspend fun extractMetadataFromJar(jarPath: Path): List<JenkinsStepMetadata> {
+
+    /**
+     * EXTRACT metadata from a JAR (or retrieve from cache), returning a Name->Step Map.
+     * Renamed to getMetadataFromJar to reflect retrieval + caching.
+     */
+    private suspend fun getMetadataFromJar(jarPath: Path): Map<String, JenkinsStepMetadata> {
         val key = jarPath.toString()
 
         val cached = cacheMutex.withLock {
@@ -229,16 +197,17 @@ class JenkinsPluginManager(
         // Check if this looks like a Jenkins plugin
         val fileName = jarPath.fileName.toString()
         if (!isLikelyJenkinsPlugin(fileName)) {
-            return emptyList()
+            return emptyMap()
         }
 
-        val extracted = metadataExtractor.extractFromJar(jarPath, fileName.removeSuffix(".jar"))
+        val extractedList = metadataExtractor.extractFromJar(jarPath, fileName.removeSuffix(".jar"))
+        val extractedMap = extractedList.associateBy { it.name }
 
         cacheMutex.withLock {
-            extractedMetadataCache[key] = extracted
+            extractedMetadataCache[key] = extractedMap
         }
 
-        return extracted
+        return extractedMap
     }
 
     /**
@@ -258,8 +227,8 @@ class JenkinsPluginManager(
      * Get bundled metadata, loading lazily if needed.
      */
     private suspend fun getBundledMetadata(): BundledJenkinsMetadata = bundledMetadataMutex.withLock {
-        if (bundledMetadata == null) {
-            bundledMetadata = try {
+        if (bundledMetadataCache == null) {
+            bundledMetadataCache = try {
                 bundledMetadataLoader.load()
             } catch (e: Exception) {
                 logger.error("Failed to load bundled Jenkins metadata", e)
@@ -267,7 +236,7 @@ class JenkinsPluginManager(
                 BundledJenkinsMetadata(emptyMap(), emptyMap())
             }
         }
-        bundledMetadata!!
+        bundledMetadataCache!!
     }
 
     /**
@@ -278,7 +247,7 @@ class JenkinsPluginManager(
             extractedMetadataCache.clear()
         }
         bundledMetadataMutex.withLock {
-            bundledMetadata = null
+            bundledMetadataCache = null
         }
         logger.info("Invalidated Jenkins plugin manager cache")
     }

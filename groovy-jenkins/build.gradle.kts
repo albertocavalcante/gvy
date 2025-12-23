@@ -33,6 +33,8 @@ dependencies {
     testImplementation(libs.mockk)
     testRuntimeOnly(libs.junit.platform.launcher)
 
+    testImplementation(libs.kotlin.coroutines.test)
+
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)
 }

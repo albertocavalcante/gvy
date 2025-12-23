@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
  * Test serialization and deserialization of enrichment metadata.
  * Tier 2 metadata is hand-curated and version-controlled.
  */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 class EnrichmentMetadataSerializationTest {
 
     private val json = Json {

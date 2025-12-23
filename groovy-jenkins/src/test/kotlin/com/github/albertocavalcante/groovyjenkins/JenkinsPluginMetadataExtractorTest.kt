@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyjenkins
 
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -19,12 +18,7 @@ class JenkinsPluginMetadataExtractorTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private lateinit var extractor: JenkinsPluginMetadataExtractor
-
-    @BeforeEach
-    fun setup() {
-        extractor = JenkinsPluginMetadataExtractor()
-    }
+    private val extractor = JenkinsPluginMetadataExtractor()
 
     @Test
     fun `should return empty list for non-existent JAR`() {

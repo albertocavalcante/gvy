@@ -16,6 +16,7 @@ package com.github.albertocavalcante.groovyjenkins.metadata
  *
  * @see JenkinsStepMetadata
  */
+@Suppress("LargeClass")
 object StableStepDefinitions {
 
     // Plugin name constants

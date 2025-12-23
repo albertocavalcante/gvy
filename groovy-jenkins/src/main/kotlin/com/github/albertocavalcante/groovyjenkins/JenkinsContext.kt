@@ -9,7 +9,15 @@ package com.github.albertocavalcante.groovyjenkins
 import com.github.albertocavalcante.groovygdsl.GdslExecutor
 import com.github.albertocavalcante.groovygdsl.GdslLoadResults
 import com.github.albertocavalcante.groovygdsl.GdslLoader
+import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedParameter
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.VersionedMetadataLoader
+import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.groovyjenkins.plugins.PluginDiscoveryService
+import com.github.albertocavalcante.groovyjenkins.scanning.JenkinsClasspathScanner
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -265,9 +273,9 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
      */
     fun isJenkinsFile(uri: java.net.URI): Boolean = fileDetector.isJenkinsFile(uri)
 
-    private val scanner = com.github.albertocavalcante.groovyjenkins.scanning.JenkinsClasspathScanner()
+    private val scanner = JenkinsClasspathScanner()
     private val dynamicMetadataCache =
-        mutableMapOf<Int, com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata>()
+        mutableMapOf<Int, BundledJenkinsMetadata>()
     private var currentClasspathHash: Int = 0
 
     /**
@@ -276,30 +284,76 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
-    fun getAllMetadata(): com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata {
-        // Use VersionedMetadataLoader to get merged metadata (bundled + enrichment)
-        val loader = com.github.albertocavalcante.groovyjenkins.metadata.VersionedMetadataLoader()
-        val merged = loader.loadMerged()
+    fun getAllMetadata(): MergedJenkinsMetadata {
+        // 1. Load base bundled/versioned metadata
+        val loader = VersionedMetadataLoader()
+        val versionedMerged = loader.loadMerged() // This is MergedJenkinsMetadata (Context-rich)
+        // We need Bundled for merging... VersionedMetadataLoader.loadMerged() returns MergedJenkinsMetadata.
+        // We might need to step back and use MetadataMerger capabilities directly.
 
-        // TODO: Integrate dynamic metadata from classpath scanning
-        // For now, we return the merged metadata as-is
-        // Dynamic metadata integration will be added in a future PR
+        // Let's get the raw bundled/versioned first if possible or just use the merged and overlay dynamic.
+        // Since MergedJenkinsMetadata is the target, we can overlay dynamic steps onto it.
+
+        val dynamicMetadata = dynamicMetadataCache[currentClasspathHash]
+
+        val finalMetadata = if (dynamicMetadata != null) {
+            val combinedSteps = versionedMerged.steps + dynamicMetadata.steps.mapValues { (name, step) ->
+                step.toMerged(backup = versionedMerged.steps[name])
+            }
+            versionedMerged.copy(steps = combinedSteps)
+        } else {
+            versionedMerged
+        }
 
         // Apply plugin filtering ONLY if explicit configuration exists (not just defaults)
         // HEURISTIC: If user hasn't configured plugins.txt or jenkins.plugins, show all bundled
         if (!pluginDiscovery.hasPluginConfiguration()) {
-            return merged
+            return finalMetadata
         }
 
         // Filter metadata to only installed plugins (including defaults if enabled)
         val installedPlugins = pluginDiscovery.getInstalledPluginNames()
         logger.debug("Filtering metadata to {} installed plugins", installedPlugins.size)
-        return merged.copy(
-            steps = merged.steps.filterValues { step ->
+        return finalMetadata.copy(
+            steps = finalMetadata.steps.filterValues { step ->
                 step.plugin?.let { it in installedPlugins } ?: false
             },
         )
     }
+
+    private fun JenkinsStepMetadata.toMerged(backup: MergedStepMetadata? = null): MergedStepMetadata =
+        MergedStepMetadata(
+            name = this.name,
+            scope = StepScope.GLOBAL,
+            positionalParams = emptyList(),
+            namedParams = run {
+                val dynamicParams = this.parameters.mapValues { (pName, param) ->
+                    MergedParameter(
+                        name = pName,
+                        type = param.type,
+                        defaultValue = param.default,
+                        description = param.documentation,
+                        required = param.required,
+                        validValues = null,
+                        examples = emptyList(),
+                    )
+                }
+                if (backup != null) {
+                    backup.namedParams + dynamicParams
+                } else {
+                    dynamicParams
+                }
+            },
+            extractedDocumentation = this.documentation,
+            returnType = null,
+            plugin = this.plugin,
+            // Preserve enrichment from backup if available
+            enrichedDescription = backup?.enrichedDescription,
+            documentationUrl = backup?.documentationUrl,
+            category = backup?.category,
+            examples = backup?.examples ?: emptyList(),
+            deprecation = backup?.deprecation,
+        )
 
     /**
      * Parse and scan classpath for Jenkins metadata.

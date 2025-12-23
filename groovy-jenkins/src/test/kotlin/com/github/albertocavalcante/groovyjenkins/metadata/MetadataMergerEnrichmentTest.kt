@@ -366,6 +366,7 @@ class MetadataMergerEnrichmentTest {
         agentTypes = emptyMap(),
     )
 
+    @Suppress("LongMethod")
     private fun createEnrichment(): JenkinsEnrichment = JenkinsEnrichment(
         steps = mapOf(
             "sh" to StepEnrichment(

@@ -41,7 +41,7 @@ class EnrichmentMetadataLoader {
         logger.debug("Loading enrichment metadata from {}", ENRICHMENT_RESOURCE)
 
         val resourceStream = javaClass.getResourceAsStream(ENRICHMENT_RESOURCE)
-            ?: throw IllegalStateException("Enrichment metadata not found: $ENRICHMENT_RESOURCE")
+            ?: error("Enrichment metadata not found: $ENRICHMENT_RESOURCE")
 
         return try {
             val jsonString = resourceStream.bufferedReader().use { it.readText() }
