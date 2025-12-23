@@ -1,0 +1,6 @@
+description = "Comprehensive codebase review and planning for next improvements"
+prompt = """
+Execute the following workflow to review the codebase and plan next steps:
+
+!{cat .agent/workflows/next.md}
+"""
