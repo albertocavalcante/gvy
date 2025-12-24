@@ -186,13 +186,11 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         val response = context.session.endpoint.request(step.method, paramsObject)
             .get(timeout, TimeUnit.MILLISECONDS)
 
-
         logger.info("Raw response for {}: {} (type={})", step.method, response, response?.javaClass?.simpleName)
         val responseNode = wrapJavaObject(response) // Convert whatever Gson returned to JsonElement
         val normalized = context.normalizeResponse(step.method, responseNode)
         context.lastResult = normalized
         logger.info("Response for {}: {}", step.method, normalized)
-
 
         step.saveAs?.let { name ->
             context.saveResult(name, normalized)
