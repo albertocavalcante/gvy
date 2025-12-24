@@ -1,8 +1,10 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
+import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.CoroutineScope
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -13,6 +15,7 @@ import java.util.concurrent.CompletableFuture
  * Handles test-related custom LSP requests.
  */
 class TestRequestDelegate(
+    private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
     private val buildToolManagerProvider: () -> BuildToolManager?,
 ) {
@@ -21,9 +24,11 @@ class TestRequestDelegate(
     fun discoverTests(params: DiscoverTestsParams): CompletableFuture<List<TestSuite>> {
         logger.info("Received groovy/discoverTests request for: ${params.workspaceUri}")
 
-        return CompletableFuture.supplyAsync {
+        return coroutineScope.future {
             val provider = TestDiscoveryProvider(compilationService)
-            provider.discoverTests(params.workspaceUri)
+            val result = provider.discoverTests(params.workspaceUri)
+            logger.info("discoverTests returning ${result.size} test suites: ${result.map { it.suite }}")
+            result
         }
     }
 

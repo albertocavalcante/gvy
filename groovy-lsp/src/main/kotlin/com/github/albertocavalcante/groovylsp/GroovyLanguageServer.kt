@@ -68,7 +68,8 @@ class GroovyLanguageServer(private val dispatcher: CoroutineDispatcher = Dispatc
         MavenBuildTool(),
     )
     private val startupManager = ProjectStartupManager(compilationService, availableBuildTools, coroutineScope)
-    private val testRequestDelegate = TestRequestDelegate(compilationService) { startupManager.buildToolManager }
+    private val testRequestDelegate =
+        TestRequestDelegate(coroutineScope, compilationService) { startupManager.buildToolManager }
 
     // State
     private var savedInitParams: InitializeParams? = null

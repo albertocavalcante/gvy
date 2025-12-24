@@ -74,11 +74,20 @@ class GroovyCompilationService {
             // Check cache first
             val cachedResult = cache.get(uri, content)
             if (cachedResult != null) {
-                logger.debug("Using cached parse result for: $uri")
-                val ast = cachedResult.ast!!
-                // Convert compilation diagnostics (errors)
-                val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
-                return CompilationResult.success(ast, diagnostics, content)
+                // Check for suspicious Script node - this happens when file was compiled
+                // before sourceRoots was populated (e.g., during didOpen before workspace init)
+                val isSuspiciousScriptNode = isSuspiciousScript(uri, cachedResult)
+
+                if (isSuspiciousScriptNode) {
+                    // Cache has a Script node that might be stale - re-compile with current sourceRoots
+                    logger.info("Cached result has suspicious Script node for $uri, re-compiling")
+                    performCompilation(uri, content, compilePhase)
+                } else {
+                    logger.debug("Using cached parse result for: $uri")
+                    val ast = cachedResult.ast!!
+                    val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
+                    CompilationResult.success(ast, diagnostics, content)
+                }
             } else {
                 performCompilation(uri, content, compilePhase)
             }
@@ -97,6 +106,9 @@ class GroovyCompilationService {
         // Get file-specific classpath (may be Jenkins-specific or standard)
         val classpath = workspaceManager.getClasspathForFile(uri, content)
 
+        // Parse the source code
+        // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
+        // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
         val parseResult = parser.parse(
             ParseRequest(
                 uri = uri,
@@ -155,6 +167,87 @@ class GroovyCompilationService {
     }
 
     fun getParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? = cache.get(uri)
+
+    /**
+     * Checks if a parse result contains a suspicious Script node.
+     *
+     * A "suspicious" Script node is one where:
+     * - There's exactly one class in the AST
+     * - The class extends groovy.lang.Script
+     * - The class name matches the filename
+     *
+     * This typically happens when a file is compiled before sourceRoots were populated,
+     * causing the Groovy compiler to fall back to treating it as a Script.
+     */
+    private fun isSuspiciousScript(
+        uri: URI,
+        parseResult: com.github.albertocavalcante.groovyparser.api.ParseResult,
+    ): Boolean {
+        val filename = runCatching { Path.of(uri).fileName.toString().substringBeforeLast(".") }.getOrNull()
+        return filename != null && parseResult.ast?.classes?.let { classes ->
+            classes.size == 1 &&
+                classes[0].superClass.name == "groovy.lang.Script" &&
+                classes[0].name == filename
+        } == true
+    }
+
+    /**
+     * Gets a valid parse result for the URI, ensuring stale Script nodes are recompiled.
+     *
+     * Unlike [getParseResult], this method checks if the cached result contains a suspicious
+     * Script node (which can happen when file was compiled before sourceRoots was populated).
+     * If detected, it parses directly at CONVERSION phase WITHOUT workspaceSources to avoid
+     * name collisions that cause Script fallback.
+     *
+     * Use this method when you need to ensure the AST accurately represents the source code
+     * structure (e.g., test discovery, Spock detection).
+     */
+    suspend fun getValidParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? {
+        val cachedResult = cache.get(uri) ?: return null
+
+        // Use helper function to check for suspicious Script node
+        if (isSuspiciousScript(uri, cachedResult)) {
+            logger.info("Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase")
+            // Read content directly from file instead of cache to verify content is correct
+            val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+            val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
+                Files.readString(sourcePath)
+            } else {
+                cache.getWithContent(uri)?.first
+            }
+            val content = fileContent ?: return null
+            logger.info("Content starts with: '${content.take(50).replace("\n", "\\n")}'")
+            val parseResult = parser.parse(
+                ParseRequest(
+                    uri = uri,
+                    content = content,
+                    classpath = workspaceManager.getClasspathForFile(uri, content),
+                    // Don't add source roots - prevents classloader from finding .groovy file
+                    sourceRoots = emptyList(),
+                    // Don't add other sources - causes Script fallback
+                    workspaceSources = emptyList(),
+                    locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                    // Faster - don't need full traversal
+                    useRecursiveVisitor = false,
+                    compilePhase = Phases.CONVERSION,
+                ),
+            )
+
+            // Update cache with correct result
+            cache.put(uri, content, parseResult)
+            logger.info(
+                "Re-parsed $uri at CONVERSION: classes=${
+                    parseResult.ast?.classes?.map {
+                        "${it.name} (super=${it.superClass.name})"
+                    }
+                }",
+            )
+            logger.debug("Content preview: ${content.take(100).replace("\n", "\\n")}")
+            return parseResult
+        }
+
+        return cachedResult
+    }
 
     fun getAst(uri: URI): ASTNode? = getParseResult(uri)?.ast
 
@@ -223,6 +316,9 @@ class GroovyCompilationService {
         val content = Files.readString(path)
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
+        // Parse the source code for indexing
+        // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
+        // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
         val parseResult = parser.parse(
             ParseRequest(
                 uri = uri,

@@ -182,13 +182,17 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         val paramsObject = paramsNode?.toJavaObject()
         val timeout = step.timeoutMs ?: 30_000L
 
+        // LSP4J limitation: endpoint.request() may return null for custom @JsonRequest methods
         val response = context.session.endpoint.request(step.method, paramsObject)
             .get(timeout, TimeUnit.MILLISECONDS)
 
+
+        logger.info("Raw response for {}: {} (type={})", step.method, response, response?.javaClass?.simpleName)
         val responseNode = wrapJavaObject(response) // Convert whatever Gson returned to JsonElement
         val normalized = context.normalizeResponse(step.method, responseNode)
         context.lastResult = normalized
         logger.info("Response for {}: {}", step.method, normalized)
+
 
         step.saveAs?.let { name ->
             context.saveResult(name, normalized)

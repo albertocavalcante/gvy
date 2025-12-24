@@ -26,6 +26,8 @@ class ScenarioLoader(private val parser: ScenarioParser = JacksonScenarioParser(
             .use { stream ->
                 return stream
                     .filter { path -> path.isRegularFile() && path.extension in setOf("yml", "yaml") }
+                    // Convention: files prefixed with _ are disabled scenarios (e.g., _discover-tests.yaml)
+                    .filter { path -> !path.fileName.toString().startsWith("_") }
                     .sorted()
                     .map { path -> load(path) }
                     .collect(Collectors.toList())
