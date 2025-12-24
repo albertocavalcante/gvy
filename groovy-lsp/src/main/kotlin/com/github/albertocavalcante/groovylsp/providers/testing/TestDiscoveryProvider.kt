@@ -38,15 +38,35 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
         // Get all workspace source URIs
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
+        val groovyFiles = sourceUris.filter { it.path.endsWith(".groovy", ignoreCase = true) }
+        logger.info("Found {} source URIs, {} are Groovy files", sourceUris.size, groovyFiles.size)
 
-        for (uri in sourceUris) {
-            // Skip non-Groovy files
-            if (!uri.path.endsWith(".groovy", ignoreCase = true)) continue
-
+        for (uri in groovyFiles) {
             // Get parsed result for this file - use getValidParseResult to handle stale Script nodes
-            val parseResult = compilationService.getValidParseResult(uri) ?: continue
-            val ast = parseResult.ast ?: continue
+            val parseResult: com.github.albertocavalcante.groovyparser.api.ParseResult =
+                compilationService.getValidParseResult(uri) ?: run {
+                    // File not in cache - compile it on demand
+                    // This can happen when workspace is indexed but files aren't opened in editor yet
+                    logger.info("File not cached, compiling on demand: {}", uri)
+                    val content = try {
+                        java.nio.file.Files.readString(java.nio.file.Path.of(uri))
+                    } catch (e: Exception) {
+                        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+                        return@run null
+                    }
+                    // Compile the file - this populates the cache
+                    compilationService.compile(uri, content)
+                    // Now fetch the ParseResult from cache
+                    compilationService.getValidParseResult(uri)
+                } ?: continue // Skip if still null after compilation
+
+            val ast = parseResult.ast
+            if (ast == null) {
+                logger.info("No AST for: {} - compilation may have failed", uri)
+                continue
+            }
             val classLoader = parseResult.compilationUnit.classLoader
+            logger.info("Processing {} - found {} classes in AST", uri.path.substringAfterLast('/'), ast.classes.size)
 
             // Check each class individually to handle mixed files correctly
             logger.debug(
@@ -87,7 +107,11 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
                 }
             }
         }
-
+        logger.info(
+            "Test discovery complete: found {} test suites with {} total tests",
+            testSuites.size,
+            testSuites.sumOf { it.tests.size },
+        )
         return testSuites
     }
 

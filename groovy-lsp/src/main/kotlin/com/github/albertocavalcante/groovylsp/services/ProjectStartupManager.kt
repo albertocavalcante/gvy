@@ -120,12 +120,20 @@ class ProjectStartupManager(
         }
 
         logger.info("Starting background dependency resolution for: $workspaceRoot")
-        client?.showMessage(
-            MessageParams().apply {
-                type = MessageType.Info
-                message = "Resolving build dependencies..."
-            },
+        logger.info(
+            "Client connection status: ${if (client != null) "connected" else "NULL - notifications will not be sent"}",
         )
+        if (client != null) {
+            logger.info("Sending 'Resolving build dependencies' notification to client")
+            client.showMessage(
+                MessageParams().apply {
+                    type = MessageType.Info
+                    message = "Resolving build dependencies..."
+                },
+            )
+        } else {
+            logger.warn("Cannot send showMessage - client is null")
+        }
 
         val progressReporter = ProgressReporter(client)
         initializeWorkspaces(workspaceRoot, initOptionsMap)
@@ -203,12 +211,18 @@ class ProjectStartupManager(
         progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
 
         val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
-        client?.showMessage(
-            MessageParams().apply {
-                type = MessageType.Info
-                message = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-            },
-        )
+        if (client != null) {
+            val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
+            logger.info("Sending completion notification to client: $msg")
+            client.showMessage(
+                MessageParams().apply {
+                    type = MessageType.Info
+                    message = msg
+                },
+            )
+        } else {
+            logger.warn("Cannot send completion showMessage - client is null")
+        }
 
         startWorkspaceIndexing(client)
     }

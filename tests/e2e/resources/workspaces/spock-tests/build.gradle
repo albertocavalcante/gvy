@@ -1,0 +1,13 @@
+plugins {
+    id 'groovy'
+}
+
+repositories {
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    // Minimal Spock stub for E2E test discovery testing
+    testImplementation name: 'spock-stub'
+    testImplementation localGroovy()
+}

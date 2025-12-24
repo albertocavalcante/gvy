@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
+import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.groovylsp.testing.client.HarnessLanguageClient
+import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
 import org.eclipse.lsp4j.launch.LSPLauncher
 import org.eclipse.lsp4j.services.LanguageServer
@@ -71,11 +73,19 @@ class LanguageServerSessionFactory {
         val process = processBuilder.start()
 
         val client = HarnessLanguageClient()
-        val launcher = LSPLauncher.createClientLauncher(
-            client,
-            process.inputStream,
-            process.outputStream,
-        )
+
+        // Use Launcher.Builder with GroovyLanguageServerProtocol to properly deserialize
+        // custom @JsonRequest method responses. LSPLauncher.createClientLauncher only
+        // creates a proxy for the standard LanguageServer interface, causing
+        // endpoint.request() to return null for custom methods like groovy/discoverTests.
+        //
+        // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
+        val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
+            .setLocalService(client)
+            .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
+            .setInput(process.inputStream)
+            .setOutput(process.outputStream)
+            .create()
         val listening = launcher.startListening()
 
         val stderrPump = startErrorPump(process, scenarioName)
@@ -87,6 +97,8 @@ class LanguageServerSessionFactory {
             client = client,
             listening = listening,
             stderrPump = stderrPump,
+            serverFuture = null,
+            typedServerProxy = launcher.remoteProxy,
         )
     }
 
@@ -133,30 +145,52 @@ class LanguageServerSessionFactory {
         val (serverIn, clientOut) = createPipePair()
 
         val server = GroovyLanguageServer()
-        val serverExecutor = inProcessExecutor
 
-        // Launch server listener in a separate thread
-        val listening = serverExecutor.submit {
+        // Create the server-side launcher (this will handle server.connect() internally)
+        val serverLauncher = LSPLauncher.createServerLauncher(
+            server,
+            serverIn,
+            serverOut,
+        )
+
+        // Start the server's JSON-RPC listener in a background thread
+        val serverListening = inProcessExecutor.submit {
             try {
-                val launcher = LSPLauncher.createServerLauncher(
-                    server,
-                    serverIn,
-                    serverOut,
-                )
-                // Use the launcher's executor service to run the loop
-                launcher.startListening().get()
+                serverLauncher.startListening().get()
             } catch (e: Exception) {
                 logger.error("In-process server error for scenario '{}'", scenarioName, e)
             }
         }
 
+        // Create the client-side launcher with typed GroovyLanguageServerProtocol interface.
+        // This enables proper deserialization of custom @JsonRequest method responses.
+        // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
         val client = HarnessLanguageClient()
-        val clientLauncher = LSPLauncher.createClientLauncher(
-            client,
-            clientIn,
-            clientOut,
-        )
+        val clientLauncher = Launcher.Builder<GroovyLanguageServerProtocol>()
+            .setLocalService(client)
+            .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
+            .setInput(clientIn)
+            .setOutput(clientOut)
+            .create()
         val clientListening = clientLauncher.startListening()
+
+        // CRITICAL: The server launcher creates a RemoteProxy for the client.
+        // We need to connect that proxy to the server so it can send notifications.
+        // This happens automatically when startListening() receives the first message,
+        // but we need it connected BEFORE that. So we wait a bit for the launchers to stabilize.
+        //
+        // TODO(#314): Replace Thread.sleep with proper synchronization mechanism.
+        //   Options: LSP4J handshake pattern, custom groovy/ready notification, or polling.
+        //   See: https://github.com/albertocavalcante/groovy-lsp/issues/314
+        Thread.sleep(100)
+
+        // If still not connected, try to trigger it by accessing the remote proxy
+        // (This forces the launcher to create and connect the proxy)
+        try {
+            serverLauncher.remoteProxy // Force proxy creation
+        } catch (e: Exception) {
+            logger.warn("Could not access server's remote proxy: {}", e.message)
+        }
 
         logger.info("Started in-process language server for scenario '{}'", scenarioName)
 
@@ -167,6 +201,8 @@ class LanguageServerSessionFactory {
             client = client,
             listening = clientListening, // We track client's listener; server's is managed by executor
             stderrPump = null,
+            serverFuture = serverListening,
+            typedServerProxy = clientLauncher.remoteProxy,
         )
     }
 
@@ -196,6 +232,21 @@ class LanguageServerSessionFactory {
     }
 }
 
+/**
+ * Represents an active LSP session with the language server.
+ *
+ * Provides access to both the standard [LanguageServer] interface and the
+ * typed [GroovyLanguageServerProtocol] for custom method invocation.
+ *
+ * ## Why both server types?
+ *
+ * [server] is the standard LSP interface for core protocol methods.
+ * [groovyServer] provides typed access to custom @JsonRequest methods like
+ * `groovy/discoverTests` and `groovy/runTest`. Without this typed interface,
+ * LSP4J's [RemoteEndpoint.request] returns null for custom methods.
+ *
+ * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
+ */
 class LanguageServerSession(
     private val process: Process?,
     val server: LanguageServer,
@@ -203,8 +254,25 @@ class LanguageServerSession(
     val client: HarnessLanguageClient,
     private val listening: Future<Void>,
     private val stderrPump: Thread?,
+    private val serverFuture: Future<*>? = null,
+    private val typedServerProxy: GroovyLanguageServerProtocol? = null,
 ) : AutoCloseable {
     private val logger = LoggerFactory.getLogger(LanguageServerSession::class.java)
+
+    /**
+     * Typed server proxy for invoking custom @JsonRequest methods.
+     *
+     * Returns the [GroovyLanguageServerProtocol] proxy which provides compile-time
+     * type safety for custom LSP methods. Throws if typed server is not available
+     * (e.g., if session was created with legacy launcher).
+     *
+     * @throws IllegalStateException if typed server proxy is not available
+     */
+    val groovyServer: GroovyLanguageServerProtocol
+        get() = typedServerProxy ?: error(
+            "Typed server proxy not available. " +
+                "Ensure session was created with Launcher.Builder using GroovyLanguageServerProtocol.",
+        )
 
     override fun close() {
         try {
@@ -223,6 +291,7 @@ class LanguageServerSession(
         }
 
         listening.cancel(true)
+        serverFuture?.cancel(true)
 
         if (stderrPump != null && stderrPump.isAlive) {
             try {

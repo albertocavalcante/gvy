@@ -81,6 +81,22 @@ For detailed procedures, see:
 | `.agent/workflows/conflict-resolution.md` | Rebase/merge conflict step-by-step |
 | `.agent/workflows/next.md` | Codebase review and next improvements planning |
 | `.agent/workflows/review.md` | PR review, address feedback, verify CI |
+| `.agent/workflows/defer.md` | Defer work to GitHub issue with TODO tracking |
+
+## Deferred Work
+
+When improvements are **beyond current scope** or you want to track TODOs:
+
+1. **Create GitHub issue** — `gh issue create ...` with labels
+2. **Add TODO(#N)** — Reference issue in code comment
+3. **Reply to reviewer** — Link to issue if PR feedback
+
+```kotlin
+// TODO(#123): Brief description.
+//   See: https://github.com/albertocavalcante/groovy-lsp/issues/123
+```
+
+See `/defer` workflow for full pattern.
 
 ## Tool Reliability
 

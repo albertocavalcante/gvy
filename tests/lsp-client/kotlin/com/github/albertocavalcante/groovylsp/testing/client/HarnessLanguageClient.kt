@@ -49,6 +49,7 @@ class HarnessLanguageClient : LanguageClient {
     }
 
     override fun showMessage(messageParams: MessageParams) {
+        logger.info("Received showMessage: type={}, message='{}'", messageParams.type, messageParams.message)
         messagesStorage += messageParams
         recordNotification("window/showMessage", messageParams)
     }

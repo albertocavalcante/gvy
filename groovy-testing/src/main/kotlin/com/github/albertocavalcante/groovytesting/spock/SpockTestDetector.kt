@@ -10,6 +10,7 @@ import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.slf4j.LoggerFactory
 
 /**
  * Spock test framework detector.
@@ -19,6 +20,8 @@ import org.codehaus.groovy.ast.ModuleNode
  * groovy-spock module with the new groovy-testing API.
  */
 class SpockTestDetector : TestFrameworkDetector {
+
+    private val logger = LoggerFactory.getLogger(SpockTestDetector::class.java)
 
     override val framework: TestFramework = TestFramework.SPOCK
 
@@ -30,7 +33,14 @@ class SpockTestDetector : TestFrameworkDetector {
         } else {
             null
         }
-        return SpockDetector.isSpockSpec(classNode, module, specClassNode)
+        val result = SpockDetector.isSpockSpec(classNode, module, specClassNode)
+        logger.info(
+            "SpockTestDetector.appliesTo({}) = {} (specClassNode={})",
+            classNode.name,
+            result,
+            if (specClassNode != null) "loaded" else "null",
+        )
+        return result
     }
 
     override fun extractTests(classNode: ClassNode): List<TestItem> {

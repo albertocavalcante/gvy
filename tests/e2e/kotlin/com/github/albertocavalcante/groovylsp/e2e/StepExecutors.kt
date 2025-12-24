@@ -2,6 +2,9 @@ package com.github.albertocavalcante.groovylsp.e2e
 
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.toJavaObject
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.wrapJavaObject
+import com.github.albertocavalcante.groovylsp.testing.api.DiscoverTestsParams
+import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
+import com.github.albertocavalcante.groovylsp.testing.api.RunTestParams
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
@@ -21,11 +24,109 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.slf4j.LoggerFactory
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.io.path.name
 
 private val logger = LoggerFactory.getLogger("StepExecutors")
+
+// ============================================================================
+// Custom Request Routing
+// ============================================================================
+
+/**
+ * Sealed class for type-safe routing of custom @JsonRequest methods.
+ *
+ * LSP4J's generic [RemoteEndpoint.request] returns null for custom methods because
+ * the client launcher doesn't know the expected response type. This sealed class
+ * provides compile-time type safety when invoking custom methods through the
+ * [GroovyLanguageServerProtocol] typed proxy.
+ *
+ * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
+ */
+sealed class CustomRequest<T> {
+    abstract val method: String
+
+    /**
+     * Invoke this custom request on the typed server proxy.
+     *
+     * @param server The typed language server proxy
+     * @param params Raw parameters from the scenario (will be converted to proper type)
+     * @return CompletableFuture with the typed response
+     */
+    abstract fun invoke(server: GroovyLanguageServerProtocol, params: Any?): CompletableFuture<T>
+
+    /**
+     * Custom request: groovy/discoverTests
+     */
+    data object DiscoverTests : CustomRequest<List<com.github.albertocavalcante.groovylsp.testing.api.TestSuite>>() {
+        override val method = "groovy/discoverTests"
+
+        @Suppress("UNCHECKED_CAST")
+        override fun invoke(
+            server: GroovyLanguageServerProtocol,
+            params: Any?,
+        ): CompletableFuture<List<com.github.albertocavalcante.groovylsp.testing.api.TestSuite>> {
+            val typedParams = params.toDiscoverTestsParams()
+            return server.discoverTests(typedParams)
+        }
+    }
+
+    /**
+     * Custom request: groovy/runTest
+     */
+    data object RunTest : CustomRequest<com.github.albertocavalcante.groovylsp.testing.api.TestCommand>() {
+        override val method = "groovy/runTest"
+
+        @Suppress("UNCHECKED_CAST")
+        override fun invoke(
+            server: GroovyLanguageServerProtocol,
+            params: Any?,
+        ): CompletableFuture<com.github.albertocavalcante.groovylsp.testing.api.TestCommand> {
+            val typedParams = params.toRunTestParams()
+            return server.runTest(typedParams)
+        }
+    }
+
+    companion object {
+        /**
+         * Look up a CustomRequest by method name.
+         *
+         * @return The CustomRequest if this is a known custom method, null otherwise
+         */
+        fun fromMethod(method: String): CustomRequest<*>? = when (method) {
+            DiscoverTests.method -> DiscoverTests
+            RunTest.method -> RunTest
+            else -> null
+        }
+    }
+}
+
+/**
+ * Convert raw params Map to [DiscoverTestsParams].
+ */
+@Suppress("UNCHECKED_CAST")
+private fun Any?.toDiscoverTestsParams(): DiscoverTestsParams {
+    val map = this as? Map<String, Any?> ?: error("Expected Map for DiscoverTestsParams, got: $this")
+    return DiscoverTestsParams(
+        workspaceUri = map["workspaceUri"] as? String ?: error("Missing workspaceUri in DiscoverTestsParams"),
+    )
+}
+
+/**
+ * Convert raw params Map to [RunTestParams].
+ */
+@Suppress("UNCHECKED_CAST")
+private fun Any?.toRunTestParams(): RunTestParams {
+    val map = this as? Map<String, Any?> ?: error("Expected Map for RunTestParams, got: $this")
+    return RunTestParams(
+        uri = map["uri"] as? String ?: error("Missing uri in RunTestParams"),
+        suite = map["suite"] as? String ?: error("Missing suite in RunTestParams"),
+        test = map["test"] as? String,
+        debug = map["debug"] as? Boolean ?: false,
+    )
+}
 
 interface StepExecutor<T : ScenarioStep> {
     fun execute(step: T, context: ScenarioContext, nextStep: ScenarioStep? = null)
@@ -182,9 +283,38 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         val paramsObject = paramsNode?.toJavaObject()
         val timeout = step.timeoutMs ?: 30_000L
 
-        // LSP4J limitation: endpoint.request() may return null for custom @JsonRequest methods
-        val response = context.session.endpoint.request(step.method, paramsObject)
-            .get(timeout, TimeUnit.MILLISECONDS)
+        logger.info("Sending request '{}' with params: {}", step.method, paramsObject)
+
+        // Route custom @JsonRequest methods through typed proxy for proper response deserialization.
+        // Standard LSP methods use the generic endpoint.request() fallback.
+        //
+        // LSP4J's generic endpoint.request() returns null for custom methods because the
+        // client launcher doesn't know the expected response type. The typed server proxy
+        // (GroovyLanguageServerProtocol) solves this by providing compile-time type information.
+        //
+        // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
+        val customRequest = CustomRequest.fromMethod(step.method)
+
+        val response = try {
+            if (customRequest != null) {
+                logger.info("Using typed proxy for custom method '{}'", step.method)
+                val future = customRequest.invoke(context.session.groovyServer, paramsObject)
+                logger.info("Custom request future created for '{}', waiting for response...", step.method)
+                val result = future.get(timeout, TimeUnit.MILLISECONDS)
+                logger.info("Custom request '{}' completed successfully", step.method)
+                result
+            } else {
+                // Standard LSP method - use generic endpoint
+                val future = context.session.endpoint.request(step.method, paramsObject)
+                logger.info("Request future created for '{}', waiting for response...", step.method)
+                val result = future.get(timeout, TimeUnit.MILLISECONDS)
+                logger.info("Request '{}' completed successfully", step.method)
+                result
+            }
+        } catch (e: Exception) {
+            logger.error("Request '{}' failed with exception: {} - {}", step.method, e::class.simpleName, e.message)
+            throw e
+        }
 
         logger.info("Raw response for {}: {} (type={})", step.method, response, response?.javaClass?.simpleName)
         val responseNode = wrapJavaObject(response) // Convert whatever Gson returned to JsonElement
@@ -193,6 +323,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         logger.info("Response for {}: {}", step.method, normalized)
 
         step.saveAs?.let { name ->
+            logger.info("Saving result as '{}': {}", name, normalized)
             context.saveResult(name, normalized)
         }
 
