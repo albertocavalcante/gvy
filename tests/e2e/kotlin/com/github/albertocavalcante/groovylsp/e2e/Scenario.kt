@@ -40,9 +40,11 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
         is ObjectNode -> JsonObject(
             node.fields().asSequence().associate { (k, v) -> k to treeNodeToJsonElement(v) },
         )
+
         is ArrayNode -> JsonArray(
             node.elements().asSequence().map { treeNodeToJsonElement(it) }.toList(),
         )
+
         is ValueNode -> when {
             node.isNull -> JsonNull
             node.isTextual -> JsonPrimitive(node.asText())
@@ -51,6 +53,7 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
             node.isFloat || node.isDouble || node.isNumber -> JsonPrimitive(node.asDouble())
             else -> JsonPrimitive(node.asText())
         }
+
         else -> JsonNull
     }
 }
@@ -278,4 +281,6 @@ enum class ExpectationType {
     SIZE,
     EMPTY,
     NOT_EMPTY,
+    GTE, // Greater than or equal
+    LTE, // Less than or equal
 }

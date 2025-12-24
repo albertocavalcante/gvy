@@ -14,7 +14,7 @@ class GradleDependencyIntegrationTest {
     @Test
     fun `should initialize workspace and resolve dependencies for compilation`() =
         runTest(timeout = kotlin.time.Duration.parse("3m")) {
-            val compilationService = GroovyCompilationService()
+            val compilationService = GroovyCompilationService(GradleDependencyIntegrationTest::class.java.classLoader)
             val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
             // Initialize the workspace and trigger dependency resolution for the test
@@ -49,7 +49,7 @@ class GradleDependencyIntegrationTest {
     @Test
     fun `should compile groovy code with external dependencies`() =
         runTest(timeout = kotlin.time.Duration.parse("3m")) {
-            val compilationService = GroovyCompilationService()
+            val compilationService = GroovyCompilationService(GradleDependencyIntegrationTest::class.java.classLoader)
             val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
             // Initialize workspace with dependencies using test project

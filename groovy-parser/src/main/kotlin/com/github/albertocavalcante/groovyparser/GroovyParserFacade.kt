@@ -23,13 +23,82 @@ import kotlin.io.path.isRegularFile
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
  */
-class GroovyParserFacade {
+class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
 
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
 
+    /**
+     * Parse a Groovy source file.
+     *
+     * If compilation fails at a phase later than CONVERSION and produces a "Script fallback"
+     * (where the class extends groovy.lang.Script due to unresolved superclass), this method
+     * automatically retries at CONVERSION phase to preserve the original class structure.
+     */
     fun parse(request: ParseRequest): ParseResult {
+        val result = parseInternal(request)
+
+        // Check if we should retry at an earlier phase
+        if (shouldRetryAtConversion(request, result)) {
+            logger.info("Detected Script fallback for ${request.uri}, retrying at CONVERSION phase")
+            return parseInternal(request.copy(compilePhase = org.codehaus.groovy.control.Phases.CONVERSION))
+        }
+
+        return result
+    }
+
+    /**
+     * Determines if we should retry parsing at CONVERSION phase.
+     *
+     * This handles the case where Groovy's compiler converts a class to a Script when
+     * it cannot resolve the superclass (e.g., `extends spock.lang.Specification` when
+     * Spock is not on the classpath).
+     */
+    private fun shouldRetryAtConversion(request: ParseRequest, result: ParseResult): Boolean {
+        // Only retry if we compiled past CONVERSION phase
+        if (request.compilePhase <= org.codehaus.groovy.control.Phases.CONVERSION) {
+            logger.debug(
+                "shouldRetryAtConversion: false - already at CONVERSION or earlier (phase=${request.compilePhase})",
+            )
+            return false
+        }
+
+        // NOTE: We do NOT check result.isSuccessful here.
+        // Groovy often successfully compiles a broken class as a Script, so we must check the AST structure
+        // regardless of compilation status.
+
+        // Check for Script fallback pattern: single class extending groovy.lang.Script
+        val ast = result.ast
+        if (ast == null) {
+            logger.debug("shouldRetryAtConversion: false - AST is null")
+            return false
+        }
+
+        val classes = ast.classes
+        if (classes.isEmpty()) {
+            logger.debug("shouldRetryAtConversion: false - no classes in AST")
+            return false
+        }
+
+        // Log class details for debugging - use safe call for superClass (null for interfaces)
+        val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
+        logger.info("shouldRetryAtConversion: checking classes: $classInfo")
+
+        if (classes.size != 1) {
+            logger.debug("shouldRetryAtConversion: false - ${classes.size} classes (expected 1)")
+            return false
+        }
+
+        val cls = classes[0]
+        // Use safe call for superClass - it's null for interfaces
+        val isScript = cls.superClass?.name == "groovy.lang.Script"
+        logger.info("shouldRetryAtConversion: isScript=$isScript for ${cls.name}")
+        return isScript
+    }
+
+    private fun parseInternal(request: ParseRequest): ParseResult {
         val config = createCompilerConfiguration()
-        val classLoader = GroovyClassLoader()
+        // Use configured parent classloader (default is platform/bootstrap to avoid pollution)
+        val classLoader = GroovyClassLoader(parentClassLoader)
 
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
@@ -42,16 +111,31 @@ class GroovyParserFacade {
 
         addWorkspaceSources(compilationUnit, request)
 
+        var compilationFailed = false
         try {
             compilationUnit.compile(request.compilePhase)
         } catch (e: CompilationFailedException) {
+            compilationFailed = true
             logger.debug("Compilation failed for ${request.uri}: ${e.message}")
         }
 
         val tokenIndex = GroovyTokenIndex.build(request.content)
 
         val ast = extractAst(compilationUnit)
-        val diagnostics = ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates)
+        val diagnostics =
+            ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates).toMutableList()
+
+        if (compilationFailed && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
+            val errorMessage = compilationUnit.errorCollector.lastError?.toString() ?: "Unknown error"
+            diagnostics.add(
+                com.github.albertocavalcante.groovyparser.api.ParserDiagnostic(
+                    range = com.github.albertocavalcante.groovyparser.api.ParserRange.point(0, 0),
+                    severity = ParserSeverity.ERROR,
+                    message = "Compilation failed: $errorMessage",
+                    source = "GroovyParser",
+                ),
+            )
+        }
 
         val recursiveVisitor = if (request.useRecursiveVisitor && ast != null) {
             val tracker = NodeRelationshipTracker()
@@ -105,6 +189,7 @@ class GroovyParserFacade {
             }
             .forEach { path ->
                 runCatching {
+                    logger.info("Adding workspace source: $path")
                     compilationUnit.addSource(path.toFile())
                 }.onFailure { throwable ->
                     logger.debug("Failed adding workspace source {}: {}", path, throwable.message)

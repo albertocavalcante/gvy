@@ -24,7 +24,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `suggests spock block labels at line start inside spec`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -59,7 +59,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels in non spock file`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -90,7 +90,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels when spock import is only in a comment`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -124,7 +124,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels when file name ends with Spec groovy but class is not a spec`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -155,7 +155,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels when cursor is mid line`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -188,7 +188,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels inside multiline comment`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(
@@ -223,7 +223,7 @@ class SpockBlockCompletionTest {
 
     @Test
     fun `does not suggest spock block labels inside multiline string`() = runTest {
-        val compilationService = GroovyCompilationService()
+        val compilationService = GroovyCompilationService(SpockBlockCompletionTest::class.java.classLoader)
 
         val (content, line, character) =
             extractCaret(

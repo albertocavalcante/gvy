@@ -50,10 +50,28 @@ object TypeInferencer {
     fun inferExpressionType(expression: Expression): String = when (expression) {
         is ListExpression -> inferListType(expression)
         is MapExpression -> "java.util.LinkedHashMap"
-        is ConstructorCallExpression -> expression.type.name
+        is ConstructorCallExpression -> inferConstructorType(expression)
         is MethodCallExpression -> inferMethodCallType(expression)
         is BinaryExpression -> inferBinaryExpressionType(expression)
         else -> expression.type.name
+    }
+
+    private fun inferConstructorType(expression: ConstructorCallExpression): String {
+        val typeName = expression.type.name
+        return when (typeName) {
+            "ArrayList" -> "java.util.ArrayList"
+            "LinkedList" -> "java.util.LinkedList"
+            "HashMap" -> "java.util.HashMap"
+            "LinkedHashMap" -> "java.util.LinkedHashMap"
+            "HashSet" -> "java.util.HashSet"
+            "TreeMap" -> "java.util.TreeMap"
+            "StringBuilder" -> "java.lang.StringBuilder"
+            else -> if (expression.type.redirect() != expression.type) {
+                expression.type.redirect().name
+            } else {
+                typeName
+            }
+        }
     }
 
     // ==========================================================================

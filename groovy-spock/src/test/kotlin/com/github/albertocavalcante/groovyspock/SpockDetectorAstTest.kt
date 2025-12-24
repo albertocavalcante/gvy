@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 
 class SpockDetectorAstTest {
 
-    private val parser = GroovyParserFacade()
+    private val parser = GroovyParserFacade(SpockDetectorAstTest::class.java.classLoader)
 
     @Test
     fun `detects spock spec when class extends fully qualified specification`() {

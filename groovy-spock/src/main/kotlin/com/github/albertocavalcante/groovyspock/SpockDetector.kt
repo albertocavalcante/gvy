@@ -40,27 +40,55 @@ object SpockDetector {
      * @param module Optional ModuleNode for import-aware checks.
      * @param specClassNode Optional ClassNode for spock.lang.Specification from classpath.
      */
+    private val logger = org.slf4j.LoggerFactory.getLogger(SpockDetector::class.java)
+
     fun isSpockSpec(classNode: ClassNode, module: ModuleNode? = null, specClassNode: ClassNode? = null): Boolean {
-        // Tier 1: Semantic check if we have the Specification class from classpath (most correct).
+        // Semantic check if we have the Specification class from classpath
         if (specClassNode != null && classNode.isDerivedFrom(specClassNode)) {
+            logger.debug("Detected Spock spec via derivedFrom: ${classNode.name}")
             return true
         }
 
-        // Tier 2: Import-aware AST check with superclass chain traversal (no class loading required).
-        var currentClass: ClassNode? = classNode.superClass
-        while (currentClass != null) {
-            if (currentClass.name == "spock.lang.Specification") {
+        // Robust AST-based check using sequence traversal
+        val hierarchy = classNode.hierarchy().toList()
+
+        // Fallback: If parsing resulted in a Script node (typically due to missing classpath),
+        // check if the module imports Spock. This allows detection even when 'extends Specification'
+        // resolution failed and the parser fell back to Script.
+        if (module != null && classNode.superClass?.name == "groovy.lang.Script") {
+            if (isSpockSpecImported(module)) {
                 return true
             }
-            if (currentClass.nameWithoutPackage == "Specification" && module != null) {
-                if (isSpockSpecImported(module)) {
-                    return true
-                }
-            }
-            // Move up the hierarchy (may be null if superclass wasn't resolved)
-            currentClass = currentClass.superClass
         }
 
+        return hierarchy.any {
+            it.isSpecification(module)
+        }
+    }
+
+    private fun ClassNode.hierarchy(): Sequence<ClassNode> = sequence {
+        var current: ClassNode? = this@hierarchy
+        while (current != null) {
+            yield(current)
+
+            // IF resolution failed (superClass is Object), check unresolvedSuperClass
+            if (current.superClass == ClassHelper.OBJECT_TYPE) {
+                val unresolved = current.unresolvedSuperClass
+                if (unresolved != null && unresolved != ClassHelper.OBJECT_TYPE) {
+                    yield(unresolved)
+                }
+            }
+
+            current = current.superClass
+        }
+    }
+
+    private fun ClassNode.isSpecification(module: ModuleNode?): Boolean {
+        if (name == "spock.lang.Specification") return true
+
+        if (nameWithoutPackage == "Specification" && module != null) {
+            return isSpockSpecImported(module)
+        }
         return false
     }
 

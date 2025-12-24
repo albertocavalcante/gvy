@@ -24,7 +24,7 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
      * @return List of [TestSuite] containing discovered tests
      */
     @Suppress("LoopWithTooManyJumpStatements")
-    fun discoverTests(workspaceUri: String): List<TestSuite> {
+    suspend fun discoverTests(workspaceUri: String): List<TestSuite> {
         logger.info("Discovering tests in workspace: $workspaceUri")
 
         val testSuites = mutableListOf<TestSuite>()
@@ -43,12 +43,19 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
             // Skip non-Groovy files
             if (!uri.path.endsWith(".groovy", ignoreCase = true)) continue
 
-            // Get parsed result for this file
-            val parseResult = compilationService.getParseResult(uri) ?: continue
+            // Get parsed result for this file - use getValidParseResult to handle stale Script nodes
+            val parseResult = compilationService.getValidParseResult(uri) ?: continue
             val ast = parseResult.ast ?: continue
             val classLoader = parseResult.compilationUnit.classLoader
 
             // Check each class individually to handle mixed files correctly
+            logger.debug(
+                "Classes in AST for $uri: ${
+                    ast.classes.map {
+                        "${it.name} (super=${it.superClass.name}) methods=[${it.methods.joinToString { m -> m.name }}]"
+                    }
+                }",
+            )
             for (classNode in ast.classes) {
                 // Use registry to detect and extract tests
                 val testItems = TestFrameworkRegistry.extractTests(classNode, ast, classLoader)
@@ -81,7 +88,6 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
             }
         }
 
-        logger.info("Discovered {} test suites", testSuites.size)
         return testSuites
     }
 

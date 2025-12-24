@@ -32,7 +32,6 @@ data class CompletionContext(
     val character: Int,
     val ast: ASTNode,
     val astModel: GroovyAstModel,
-    val isSpockSpec: Boolean,
     val tokenIndex: GroovyTokenIndex?,
     val compilationService: GroovyCompilationService,
     val content: String,
@@ -96,11 +95,11 @@ object CompletionProvider {
                                 character = character,
                                 ast = ast2,
                                 astModel = astModel2,
-                                isSpockSpec = isSpockSpec,
                                 tokenIndex = result2.tokenIndex,
                                 compilationService = compilationService,
                                 content = content,
                             ),
+                            isSpockSpec = isSpockSpec,
                         )
                     }
                 }
@@ -118,11 +117,11 @@ object CompletionProvider {
                         character = character,
                         ast = ast1,
                         astModel = astModel1,
-                        isSpockSpec = isSpockSpec,
                         tokenIndex = result1.tokenIndex,
                         compilationService = compilationService,
                         content = content,
                     ),
+                    isSpockSpec = isSpockSpec,
                 )
             }
         } catch (e: CompilationFailedException) {
@@ -130,6 +129,25 @@ object CompletionProvider {
             logger.debug("AST analysis failed for completion at {}:{}: {}", line, character, e.message)
             emptyList()
         }
+    }
+
+    private fun resolveDataTypes(className: String, service: GroovyCompilationService): List<String> {
+        // Try exact name first
+        if (service.classpathService.loadClass(className) != null) return listOf(className)
+
+        // If simple name, try default imports
+        if (!className.contains('.')) {
+            val candidates = listOf(
+                "java.lang.$className",
+                "java.util.$className",
+                "java.io.$className",
+                "java.net.$className",
+                "groovy.lang.$className",
+                "groovy.util.$className",
+            )
+            return candidates.filter { service.classpathService.loadClass(it) != null }
+        }
+        return emptyList()
     }
 
     private fun isCleanInsertion(content: String, line: Int, character: Int): Boolean {
@@ -151,6 +169,14 @@ object CompletionProvider {
         val lines = content.lines().toMutableList()
         if (line < 0 || line >= lines.size) return content
 
+        // Fix hanging assignments on previous line to ensure parser continues to current line
+        if (line > 0) {
+            val prevLineIdx = line - 1
+            if (lines[prevLineIdx].trim().endsWith("=")) {
+                lines[prevLineIdx] = lines[prevLineIdx] + " null;"
+            }
+        }
+
         val targetLine = lines[line]
         // Ensure character is within bounds
         val safeChar = character.coerceIn(0, targetLine.length)
@@ -163,7 +189,7 @@ object CompletionProvider {
         return lines.joinToString("\n")
     }
 
-    private fun buildCompletionsList(ctx: CompletionContext): List<CompletionItem> {
+    private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
         // Extract completion context
         val context = SymbolExtractor.extractCompletionSymbols(ctx.ast, ctx.line, ctx.character)
         val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
@@ -173,7 +199,7 @@ object CompletionProvider {
         val completionContext = detectCompletionContext(nodeAtCursor, ctx.astModel, context)
 
         return completions {
-            addSpockBlockLabelsIfApplicable(ctx, completionContext)
+            addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
 
             // Add local symbol completions
             addClasses(context.classes)
@@ -264,8 +290,9 @@ object CompletionProvider {
     private fun CompletionsBuilder.addSpockBlockLabelsIfApplicable(
         ctx: CompletionContext,
         completionContext: ContextType?,
+        isSpockSpec: Boolean,
     ) {
-        if (!ctx.isSpockSpec) return
+        if (!isSpockSpec) return
         if (completionContext != null) return
         if (!isLineIndentOnlyBeforeCursor(ctx.content, ctx.line, ctx.character)) return
 
@@ -623,11 +650,27 @@ object CompletionProvider {
      * Add GDK (GroovyDevelopment Kit) method completions for a given type.
      */
     private fun CompletionsBuilder.addGdkMethods(className: String, compilationService: GroovyCompilationService) {
+        val resolvedTypes = resolveDataTypes(className, compilationService)
+        if (resolvedTypes.isEmpty()) {
+            // Try original name as fallback
+            addGdkMethodsForSingleType(className, compilationService, this)
+        } else {
+            resolvedTypes.forEach { type ->
+                addGdkMethodsForSingleType(type, compilationService, this)
+            }
+        }
+    }
+
+    private fun addGdkMethodsForSingleType(
+        className: String,
+        compilationService: GroovyCompilationService,
+        builder: CompletionsBuilder,
+    ) {
         val gdkMethods = compilationService.gdkProvider.getMethodsForType(className)
-        logger.debug("Found {} GDK methods for type {}", gdkMethods.size, className)
+        // logger.debug("Found {} GDK methods for type {}", gdkMethods.size, className)
 
         gdkMethods.forEach { gdkMethod ->
-            method(
+            builder.method(
                 name = gdkMethod.name,
                 returnType = gdkMethod.returnType,
                 parameters = gdkMethod.parameters,
@@ -643,13 +686,28 @@ object CompletionProvider {
         className: String,
         compilationService: GroovyCompilationService,
     ) {
+        val resolvedTypes = resolveDataTypes(className, compilationService)
+        if (resolvedTypes.isEmpty()) {
+            addClasspathMethodsForSingleType(className, compilationService, this)
+        } else {
+            resolvedTypes.forEach { type ->
+                addClasspathMethodsForSingleType(type, compilationService, this)
+            }
+        }
+    }
+
+    private fun addClasspathMethodsForSingleType(
+        className: String,
+        compilationService: GroovyCompilationService,
+        builder: CompletionsBuilder,
+    ) {
         val classpathMethods = compilationService.classpathService.getMethods(className)
-        logger.debug("Found {} classpath methods for type {}", classpathMethods.size, className)
+        // logger.debug("Found {} classpath methods for type {}", classpathMethods.size, className)
 
         classpathMethods.forEach { method ->
             // Only add public instance methods
             if (method.isPublic && !method.isStatic) {
-                method(
+                builder.method(
                     name = method.name,
                     returnType = method.returnType,
                     parameters = method.parameters,

@@ -66,7 +66,7 @@ class TestLanguageServerRunner {
      */
     fun startInMemoryServer(): TestLanguageServerHandle {
         val testClient = SynchronizingTestLanguageClient()
-        val server = GroovyLanguageServer()
+        val server = GroovyLanguageServer(parentClassLoader = GroovyLanguageServer::class.java.classLoader)
 
         // Create in-memory pipes for communication
         val clientToServer = PipedOutputStream()

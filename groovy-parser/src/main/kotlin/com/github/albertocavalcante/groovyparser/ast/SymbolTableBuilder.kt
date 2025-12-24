@@ -48,15 +48,22 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
                         registry.addFieldDeclaration(node, property.name, property)
                     }
                 }
+
                 is FieldNode -> {
                     // Field is handled by its enclosing class
                 }
+
                 is PropertyNode -> {
                     // Property is handled by its enclosing class
                 }
+
                 is ImportNode -> registry.addImportDeclaration(uri, node)
                 is org.codehaus.groovy.ast.expr.DeclarationExpression -> {
                     processDeclarationExpression(node, uri)
+                }
+
+                is org.codehaus.groovy.ast.Parameter -> {
+                    registry.addVariableDeclaration(uri, node)
                 }
             }
         }

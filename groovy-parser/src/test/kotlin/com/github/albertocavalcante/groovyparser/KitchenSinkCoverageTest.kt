@@ -15,7 +15,8 @@ import kotlin.test.assertTrue
 
 class KitchenSinkCoverageTest {
 
-    private val parser = GroovyParserFacade()
+    // Use the test's classloader to ensure Groovy classes (like @CompileStatic) are available
+    private val parser = GroovyParserFacade(GroovyParserFacade::class.java.classLoader)
     private val visitor = AstVisitor()
 
     @Test

@@ -142,6 +142,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
                     definition
                 }
             }
+
             else -> definition
         }
 
@@ -200,7 +201,14 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         // all references naturally resolve to the same definition, making comparison simple
 
         val isMatchingDefinition = when {
-            nodeDefinition != null -> nodeDefinition.equals(params.definition)
+            nodeDefinition == null -> false
+            nodeDefinition == params.definition -> true
+            // Robust fallback for Parameters
+            nodeDefinition is org.codehaus.groovy.ast.Parameter &&
+                params.definition is org.codehaus.groovy.ast.Parameter -> {
+                areParametersEqual(nodeDefinition, params.definition)
+            }
+
             else -> false
         }
 
@@ -242,6 +250,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
             }
             isDecl
         }
+
         else -> false
     }
 
@@ -290,5 +299,28 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         if (seen.add(key)) {
             send(location)
         }
+    }
+
+    /**
+     * Compare two Parameters for equality.
+     * Needed because Groovy AST nodes don't implement value equality for Parameter.
+     */
+    private fun areParametersEqual(
+        p1: org.codehaus.groovy.ast.Parameter,
+        p2: org.codehaus.groovy.ast.Parameter,
+    ): Boolean {
+        // Simple but effective: name and type name must match
+        // We could also check location if available, but generated parameters might not have it
+        if (p1.name != p2.name) return false
+
+        val t1 = p1.type?.name
+        val t2 = p2.type?.name
+
+        if (t1 == t2) return true
+
+        // Handle fully qualified vs simple name mismatch (e.g. String vs java.lang.String)
+        val s1 = t1?.substringAfterLast('.')
+        val s2 = t2?.substringAfterLast('.')
+        return s1 == s2
     }
 }

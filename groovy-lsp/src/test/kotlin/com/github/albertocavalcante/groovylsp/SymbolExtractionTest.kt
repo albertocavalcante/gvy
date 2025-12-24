@@ -24,7 +24,7 @@ class SymbolExtractionTest {
 
     @BeforeEach
     fun setup() {
-        compilationService = GroovyCompilationService()
+        compilationService = GroovyCompilationService(SymbolExtractionTest::class.java.classLoader)
     }
 
     @Test
