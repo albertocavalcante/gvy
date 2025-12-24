@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovylsp.testing.client
 
+import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
+import com.github.albertocavalcante.groovylsp.services.ServerStatus
+import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
 import org.eclipse.lsp4j.ConfigurationParams
@@ -12,7 +15,6 @@ import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.UnregistrationParams
 import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkspaceFolder
-import org.eclipse.lsp4j.services.LanguageClient
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
@@ -21,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-class HarnessLanguageClient : LanguageClient {
+class HarnessLanguageClient : GroovyLanguageClient {
     private val logger = LoggerFactory.getLogger(HarnessLanguageClient::class.java)
 
     private val notifications = mutableListOf<NotificationEnvelope>()
@@ -32,6 +34,16 @@ class HarnessLanguageClient : LanguageClient {
 
     private val diagnosticsStorage = LinkedBlockingDeque<PublishDiagnosticsParams>()
     private val messagesStorage = LinkedBlockingDeque<MessageParams>()
+
+    /**
+     * CompletableFuture that completes when the server sends `groovy/status` with status="Ready".
+     *
+     * E2E tests can await this future to synchronize with server initialization instead of
+     * using brittle Thread.sleep() calls.
+     *
+     * @see <a href="https://github.com/albertocavalcante/groovy-lsp/issues/314">Issue #314</a>
+     */
+    val readyFuture: CompletableFuture<Void> = CompletableFuture()
 
     val diagnostics: List<PublishDiagnosticsParams>
         get() = diagnosticsStorage.toList()
@@ -98,6 +110,43 @@ class HarnessLanguageClient : LanguageClient {
     override fun unregisterCapability(params: UnregistrationParams): CompletableFuture<Void> {
         recordNotification("client/unregisterCapability", params)
         return CompletableFuture.completedFuture(null)
+    }
+
+    // ============================================================================
+    // GROOVY-SPECIFIC NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * Handles the `groovy/status` notification from the server.
+     *
+     * When the server signals "Ready" status, this completes the [readyFuture]
+     * allowing E2E tests to proceed with their assertions. If the server signals
+     * "Error" status, the future is completed exceptionally so tests fail fast.
+     */
+    override fun groovyStatus(status: StatusNotification) {
+        logger.info("Received groovy/status: {} - {}", status.status, status.message)
+        recordNotification("groovy/status", status)
+
+        when (status.status) {
+            ServerStatus.Ready -> {
+                readyFuture.complete(null)
+                logger.info("Server ready - E2E tests can proceed")
+            }
+
+            ServerStatus.Error -> {
+                val errorMessage = status.message ?: "Server initialization failed"
+                readyFuture.completeExceptionally(RuntimeException(errorMessage))
+                logger.error("Server error - E2E tests will fail: {}", errorMessage)
+            }
+
+            ServerStatus.Starting -> {
+                logger.info("Server starting - waiting for Ready status")
+            }
+
+            ServerStatus.Indexing -> {
+                logger.info("Server indexing - waiting for Ready status")
+            }
+        }
     }
 
     fun awaitNotification(method: String, timeoutMs: Long, predicate: (Any?) -> Boolean): NotificationEnvelope? {

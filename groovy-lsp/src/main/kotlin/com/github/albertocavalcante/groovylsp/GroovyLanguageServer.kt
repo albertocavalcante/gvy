@@ -14,9 +14,12 @@ import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsPar
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
+import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import com.github.albertocavalcante.groovylsp.services.ProjectStartupManager
+import com.github.albertocavalcante.groovylsp.services.ServerStatus
+import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import kotlinx.coroutines.CancellationException
@@ -51,7 +54,14 @@ class GroovyLanguageServer(
     LanguageClientAware {
 
     private val logger = LoggerFactory.getLogger(GroovyLanguageServer::class.java)
-    private var client: LanguageClient? = null
+
+    // Base client for standard LSP notifications (showMessage, publishDiagnostics, etc.)
+    private var baseClient: LanguageClient? = null
+
+    // Extended client for Groovy-specific notifications (groovy/status). May be null if
+    // the client doesn't support the GroovyLanguageClient interface.
+    private var groovyClient: GroovyLanguageClient? = null
+
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
     private val compilationService = GroovyCompilationService(parentClassLoader)
 
@@ -59,7 +69,7 @@ class GroovyLanguageServer(
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
-        client = { client },
+        client = { baseClient },
     )
     private val workspaceService = GroovyWorkspaceService(compilationService, coroutineScope, textDocumentService)
 
@@ -87,7 +97,30 @@ class GroovyLanguageServer(
 
     override fun connect(client: LanguageClient) {
         logger.info("Connected to language client")
-        this.client = client
+        // Always store base client for standard LSP operations
+        this.baseClient = client
+
+        // Try to cast to GroovyLanguageClient for extended notifications.
+        // LSP4J creates a proxy that implements all interfaces registered on the Launcher.
+        this.groovyClient = client as? GroovyLanguageClient
+        if (this.groovyClient == null) {
+            logger.info("Client does not support GroovyLanguageClient interface - status notifications disabled")
+        }
+    }
+
+    /**
+     * Sends a status notification to the client.
+     *
+     * Provides explicit server status updates for clients to track initialization progress.
+     */
+    internal fun sendStatus(status: ServerStatus, message: String? = null) {
+        val notification = StatusNotification(status, message)
+        try {
+            groovyClient?.groovyStatus(notification)
+            logger.debug("Sent status notification: {} - {}", status, message)
+        } catch (e: Exception) {
+            logger.debug("Could not send status notification: {}", e.message)
+        }
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
@@ -109,9 +142,12 @@ class GroovyLanguageServer(
     override fun initialized(params: InitializedParams) {
         logger.info("Server initialized - starting async dependency resolution")
 
-        startupManager.registerFileWatchers(client, clientCapabilities)
+        // Send starting status before async work begins
+        sendStatus(ServerStatus.Starting, "Initializing workspace...")
 
-        client?.showMessage(
+        startupManager.registerFileWatchers(baseClient, clientCapabilities)
+
+        baseClient?.showMessage(
             MessageParams().apply {
                 type = MessageType.Info
                 message = "Groovy Language Server is ready!"
@@ -119,10 +155,12 @@ class GroovyLanguageServer(
         )
 
         startupManager.startAsyncDependencyResolution(
-            client = client,
+            client = baseClient,
             initParams = savedInitParams,
             initOptionsMap = savedInitOptionsMap,
             textDocumentServiceRefresh = { textDocumentService.refreshOpenDocuments() },
+            onReady = { sendStatus(ServerStatus.Ready) },
+            onError = { error -> sendStatus(ServerStatus.Error, error.message) },
         )
     }
 

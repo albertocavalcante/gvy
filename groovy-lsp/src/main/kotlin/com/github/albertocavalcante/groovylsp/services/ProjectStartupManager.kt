@@ -108,14 +108,18 @@ class ProjectStartupManager(
         initParams: InitializeParams?,
         initOptionsMap: Map<String, Any>?,
         textDocumentServiceRefresh: () -> Unit,
+        onReady: () -> Unit = {},
+        onError: (Exception) -> Unit = {},
     ) {
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
+            onReady() // Still signal Ready to prevent clients from hanging
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info("No workspace root found - running in light mode without dependencies")
+            onReady() // Still signal Ready in light mode
             return
         }
 
@@ -148,8 +152,9 @@ class ProjectStartupManager(
                 textDocumentServiceRefresh,
                 progressReporter,
                 client,
+                onReady,
             ),
-            onError = createErrorCallback(progressReporter, client),
+            onError = createErrorCallback(progressReporter, client, onError),
         )
 
         progressReporter.startDependencyResolution()
@@ -195,6 +200,7 @@ class ProjectStartupManager(
         textDocumentServiceRefresh: () -> Unit,
         progressReporter: ProgressReporter,
         client: LanguageClient?,
+        onReady: () -> Unit,
     ): (WorkspaceResolution) -> Unit = { resolution ->
         logger.info(
             "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
@@ -225,19 +231,26 @@ class ProjectStartupManager(
         }
 
         startWorkspaceIndexing(client)
+
+        // Signal that server is ready after dependency resolution and indexing starts
+        onReady()
     }
 
-    private fun createErrorCallback(progressReporter: ProgressReporter, client: LanguageClient?): (Exception) -> Unit =
-        { error ->
-            logger.error("Failed to resolve dependencies", error)
-            progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
-            client?.showMessage(
-                MessageParams().apply {
-                    type = MessageType.Warning
-                    message = "Could not load build dependencies - LSP will work with project files only"
-                },
-            )
-        }
+    private fun createErrorCallback(
+        progressReporter: ProgressReporter,
+        client: LanguageClient?,
+        onError: (Exception) -> Unit,
+    ): (Exception) -> Unit = { error ->
+        logger.error("Failed to resolve dependencies", error)
+        progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
+        client?.showMessage(
+            MessageParams().apply {
+                type = MessageType.Warning
+                message = "Could not load build dependencies - LSP will work with project files only"
+            },
+        )
+        onError(error)
+    }
 
     private fun startWorkspaceIndexing(client: LanguageClient?) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
