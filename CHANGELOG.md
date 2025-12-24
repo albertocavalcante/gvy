@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.4](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.3...v0.4.4) (2025-12-24)
+
+
+### Features
+
+* add /review workflow for PR review and feedback ([#297](https://github.com/albertocavalcante/groovy-lsp/issues/297)) ([5a6ba37](https://github.com/albertocavalcante/groovy-lsp/commit/5a6ba372a15e9c0f594391034c55c8bcc600b311))
+* Codebase Health Improvements (Batch 1) ([#308](https://github.com/albertocavalcante/groovy-lsp/issues/308)) ([2b8ad1c](https://github.com/albertocavalcante/groovy-lsp/commit/2b8ad1c3c71af9642d5b4d6133f7e87d42c9ef54))
+* Improve Kotlin LSP Installation Script ([#309](https://github.com/albertocavalcante/groovy-lsp/issues/309)) ([2f3d01b](https://github.com/albertocavalcante/groovy-lsp/commit/2f3d01b2fe6b4e0f5aa5f0703040eff8b3a6832f))
+* **lsp:** AST-based property completions for Jenkins globals ([#289](https://github.com/albertocavalcante/groovy-lsp/issues/289)) ([bec8ad7](https://github.com/albertocavalcante/groovy-lsp/commit/bec8ad7e88ec211d7c46c1de5101a38fa3c86af9))
+* **lsp:** intelligent parameter sorting and enrichment expansion ([#287](https://github.com/albertocavalcante/groovy-lsp/issues/287)) ([8dea56d](https://github.com/albertocavalcante/groovy-lsp/commit/8dea56d21e407f3af377416c849eba51d32d481c))
+* setup cross-platform /next slash command ([#302](https://github.com/albertocavalcante/groovy-lsp/issues/302)) ([b561030](https://github.com/albertocavalcante/groovy-lsp/commit/b561030ea538c96c417c6ec01192a8c132ec5b7c))
+* Type Inference Improvements ([#307](https://github.com/albertocavalcante/groovy-lsp/issues/307)) ([74f1cd2](https://github.com/albertocavalcante/groovy-lsp/commit/74f1cd2c203f3cce5aaf6e36be9f5650d91ca928))
+
+
+### Bug Fixes
+
+* **ci:** enable e2e tests on PRs ([#299](https://github.com/albertocavalcante/groovy-lsp/issues/299)) ([2495ab8](https://github.com/albertocavalcante/groovy-lsp/commit/2495ab831d4d94e325a9413daef16b44a08379a4))
+* **ci:** remove invalid predicate-quantifier from paths-filter ([#298](https://github.com/albertocavalcante/groovy-lsp/issues/298)) ([81f259e](https://github.com/albertocavalcante/groovy-lsp/commit/81f259e74d2ed2751b479ee3a578f584c94f8558))
+* **e2e:** handle null objects in ScenarioContext assertions ([#300](https://github.com/albertocavalcante/groovy-lsp/issues/300)) ([2914af8](https://github.com/albertocavalcante/groovy-lsp/commit/2914af8c19863dbcc127443cfae09c3ce1e25bb4))
+* explicit gradle toolchain configuration and build health improvements ([#301](https://github.com/albertocavalcante/groovy-lsp/issues/301)) ([60c78c1](https://github.com/albertocavalcante/groovy-lsp/commit/60c78c19a17c130356e1a3a19167029f4f047621))
+* **groovy-jenkins:** Deep Merging, Lazy Resolution & Cleanup ([#306](https://github.com/albertocavalcante/groovy-lsp/issues/306)) ([fa21fff](https://github.com/albertocavalcante/groovy-lsp/commit/fa21fffb985af710c2ac45e48465b33f851ab984))
+* remove unused variables and imports ([#296](https://github.com/albertocavalcante/groovy-lsp/issues/296)) ([46ffb39](https://github.com/albertocavalcante/groovy-lsp/commit/46ffb398354953155f802dd75fe9cefd22622e71))
+
 ## [0.4.3](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.2...v0.4.3) (2025-12-22)
 
 
