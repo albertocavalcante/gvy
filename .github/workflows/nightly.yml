@@ -49,11 +49,24 @@ jobs:
       DISABLE_SCAN_INPUT: ${{ github.event.inputs.disable_scan || 'false' }}
 
     steps:
+      - name: Validate ref input
+        shell: bash
+        env:
+          REF_INPUT: ${{ github.event.inputs.ref || 'main' }}
+        run: |
+          # Validate ref matches allowed patterns: branch names, tags, or SHAs
+          if [[ ! "$REF_INPUT" =~ ^[a-zA-Z0-9._/-]+$ ]] || [[ "$REF_INPUT" =~ \.\. ]]; then
+            echo "::error::Invalid ref format: $REF_INPUT"
+            exit 1
+          fi
+          echo "Validated ref: $REF_INPUT"
+          echo "VALIDATED_REF=$REF_INPUT" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.ref || 'main' }}
+          ref: ${{ env.VALIDATED_REF || github.event.inputs.ref || 'main' }}
 
       - name: Setup Java
         uses: actions/setup-java@v5
