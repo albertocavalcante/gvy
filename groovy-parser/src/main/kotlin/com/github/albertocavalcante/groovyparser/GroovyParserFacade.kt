@@ -81,8 +81,8 @@ class GroovyParserFacade {
             return false
         }
 
-        // Log class details for debugging
-        val classInfo = classes.map { "${it.name} (super=${it.superClass.name})" }
+        // Log class details for debugging - use safe call for superClass (null for interfaces)
+        val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
         logger.info("shouldRetryAtConversion: checking classes: $classInfo")
 
         if (classes.size != 1) {
@@ -91,7 +91,8 @@ class GroovyParserFacade {
         }
 
         val cls = classes[0]
-        val isScript = cls.superClass.name == "groovy.lang.Script"
+        // Use safe call for superClass - it's null for interfaces
+        val isScript = cls.superClass?.name == "groovy.lang.Script"
         logger.info("shouldRetryAtConversion: isScript=$isScript for ${cls.name}")
         return isScript
     }

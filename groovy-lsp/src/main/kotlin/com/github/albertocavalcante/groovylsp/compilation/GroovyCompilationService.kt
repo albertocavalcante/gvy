@@ -184,11 +184,15 @@ class GroovyCompilationService {
         parseResult: com.github.albertocavalcante.groovyparser.api.ParseResult,
     ): Boolean {
         val filename = runCatching { Path.of(uri).fileName.toString().substringBeforeLast(".") }.getOrNull()
-        return filename != null && parseResult.ast?.classes?.let { classes ->
-            classes.size == 1 &&
-                classes[0].superClass.name == "groovy.lang.Script" &&
-                classes[0].name == filename
-        } == true
+            ?: return false
+        val classes = parseResult.ast?.classes ?: return false
+
+        if (classes.size != 1) {
+            return false
+        }
+        val singleClass = classes.single()
+        // Use safe call for superClass - it's null for interfaces
+        return singleClass.superClass?.name == "groovy.lang.Script" && singleClass.name == filename
     }
 
     /**
@@ -238,7 +242,7 @@ class GroovyCompilationService {
             logger.info(
                 "Re-parsed $uri at CONVERSION: classes=${
                     parseResult.ast?.classes?.map {
-                        "${it.name} (super=${it.superClass.name})"
+                        "${it.name} (super=${it.superClass?.name ?: "null"})"
                     }
                 }",
             )
