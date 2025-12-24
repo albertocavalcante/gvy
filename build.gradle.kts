@@ -206,11 +206,29 @@ subprojects {
     }
 
     // Force sequential test execution on GitHub Actions to avoid resource contention/flakiness
+    // Otherwise, use parallel execution and generous memory locally
     afterEvaluate {
-        if (System.getenv("GITHUB_ACTIONS") == "true") {
-            tasks.withType<Test>().configureEach {
+        tasks.withType<Test>().configureEach {
+            if (System.getenv("GITHUB_ACTIONS") == "true") {
                 maxParallelForks = 1
+                minHeapSize = "256m"
+                maxHeapSize = "1g"
+            } else {
+                // Local development optimization
+                maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+                minHeapSize = "512m"
+                maxHeapSize = "4g"
+                
+                // Improve console output
+                testLogging {
+                    events("passed", "skipped", "failed")
+                    showStandardStreams = false // Reduce noise, only show failures usually
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                }
             }
+            
+            // Shared JVM args for better test performance
+            jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
         }
     }
 }

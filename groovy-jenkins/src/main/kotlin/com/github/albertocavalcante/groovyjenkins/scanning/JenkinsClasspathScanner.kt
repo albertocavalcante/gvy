@@ -6,6 +6,10 @@
 
 package com.github.albertocavalcante.groovyjenkins.scanning
 
+import com.github.albertocavalcante.groovycommon.text.extractSymbolName
+import com.github.albertocavalcante.groovycommon.text.toLowerCamelCase
+import com.github.albertocavalcante.groovycommon.text.toPropertyName
+import com.github.albertocavalcante.groovycommon.text.toStepName
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
@@ -42,7 +46,7 @@ class JenkinsClasspathScanner {
 
         // If classpath is empty, return empty metadata
         if (classpath.isEmpty()) {
-            return BundledJenkinsMetadata(emptyMap(), emptyMap())
+            return BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
         }
 
         val stepMetadata = mutableMapOf<String, JenkinsStepMetadata>()
@@ -67,7 +71,10 @@ class JenkinsClasspathScanner {
         }
 
         logger.info("Scanned ${stepMetadata.size} steps and ${globalVariableMetadata.size} global variables")
-        return BundledJenkinsMetadata(stepMetadata, globalVariableMetadata)
+        return BundledJenkinsMetadata(
+            steps = stepMetadata,
+            globalVariables = globalVariableMetadata,
+        )
     }
 
     private fun scanSteps(scanResult: ScanResult, steps: MutableMap<String, JenkinsStepMetadata>) {
@@ -118,11 +125,14 @@ class JenkinsClasspathScanner {
         globalVars.forEach { globalInfo ->
             try {
                 // Name usually from @Symbol or class name convention
-                var name = getSymbol(globalInfo)
+                // Name usually from @Symbol or class name convention
+                // PR #3: Use shared extraction logic
+                val symbol = extractSymbol(globalInfo)
+                var name = symbol
 
                 if (name == null) {
                     // Fallback: use class name, decapitalized
-                    name = globalInfo.simpleName.replaceFirstChar { it.lowercase() }
+                    name = globalInfo.simpleName.toLowerCamelCase()
                         .removeSuffix("GlobalVariable")
                         .removeSuffix("Impl")
                 }
@@ -165,7 +175,7 @@ class JenkinsClasspathScanner {
         // 2a. Methods
         stepClass.methodInfo.forEach { method ->
             if (method.hasAnnotation(DATA_BOUND_SETTER) && method.name.startsWith("set")) {
-                val propName = method.name.substring(3).replaceFirstChar { it.lowercase() }
+                val propName = method.name.toPropertyName()
 
                 if (method.parameterInfo.isNotEmpty()) {
                     val param = method.parameterInfo[0]
@@ -194,11 +204,11 @@ class JenkinsClasspathScanner {
 
     private fun getStepName(descriptorInfo: ClassInfo, stepClassInfo: ClassInfo?): String? {
         // 1. Check for @Symbol on Descriptor
-        getSymbol(descriptorInfo)?.let { return it }
+        extractSymbol(descriptorInfo)?.let { return it }
 
         // 2. Check for @Symbol on the Step class (if known)
         if (stepClassInfo != null) {
-            getSymbol(stepClassInfo)?.let { return it }
+            extractSymbol(stepClassInfo)?.let { return it }
         }
 
         // 3. Fallback? If implicit, Jenkins typically requires explicit @Symbol or getFunctionNameOverride
@@ -207,28 +217,21 @@ class JenkinsClasspathScanner {
         if (stepClassInfo != null) {
             val simpleName = stepClassInfo.simpleName
             if (simpleName.endsWith("Step")) {
-                return simpleName.removeSuffix("Step").replaceFirstChar { it.lowercase() }
+                return simpleName.toStepName()
             }
         }
 
         return null
     }
 
-    private fun getSymbol(classInfo: ClassInfo): String? {
-        // Check @Symbol annotation on the class
-        val symbol = classInfo.getAnnotationInfo(SYMBOL_ANNOTATION)
-        if (symbol != null) {
-            val valid = symbol.parameterValues.getValue("value")
-
-            // Handle array values (ClassGraph returns Object[] for arrays)
-            if (valid is Array<*>) {
-                return valid.firstOrNull()?.toString()
-            }
-            if (valid is String) {
-                return valid
-            }
-        }
-        return null
+    /**
+     * Helper to extract @Symbol value from ClassInfo using shared logic.
+     */
+    private fun extractSymbol(classInfo: ClassInfo): String? {
+        val symbolValue = classInfo.getAnnotationInfo(SYMBOL_ANNOTATION)
+            ?.parameterValues
+            ?.getValue("value")
+        return extractSymbolName(symbolValue)
     }
 
     private fun getPluginName(classInfo: ClassInfo): String {

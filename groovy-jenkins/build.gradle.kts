@@ -23,6 +23,7 @@ dependencies {
     // HTML to Markdown conversion for vars documentation
     implementation(libs.flexmark.html2md)
 
+    api(project(":groovy-common"))
     api(project(":groovy-gdsl"))
     api(project(":groovy-build-tool"))
 

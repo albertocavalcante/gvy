@@ -62,6 +62,7 @@ class BundledJenkinsMetadataLoader {
      */
     @Serializable
     private data class MetadataJson(
+        val jenkinsVersion: String? = null,
         val steps: Map<String, StepJson>,
         val globalVariables: Map<String, GlobalVariableJson>,
         val postConditions: Map<String, PostConditionJson> = emptyMap(),
@@ -141,6 +142,7 @@ class BundledJenkinsMetadataLoader {
                 postConditions = postConditionsMap,
                 declarativeOptions = declarativeOptionsMap,
                 agentTypes = agentTypesMap,
+                jenkinsVersion = jenkinsVersion,
             )
         }
     }

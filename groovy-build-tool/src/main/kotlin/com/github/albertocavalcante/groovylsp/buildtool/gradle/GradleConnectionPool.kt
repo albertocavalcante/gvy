@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import org.gradle.tooling.GradleConnectionException
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
 import org.slf4j.LoggerFactory
@@ -47,8 +48,7 @@ object GradleConnectionPool : GradleConnectionFactory {
      *
      * @param projectDir The project directory whose connection to close
      */
-    // FIXME: Replace with specific exception types (IOException, GradleConnectionException)
-    @Suppress("TooGenericExceptionCaught")
+    // Generic exception handling removed
     fun closeConnection(projectDir: Path) {
         val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
         val keys = connections.keys.filter { it.projectDir == normalizedProjectDir }
@@ -62,8 +62,10 @@ object GradleConnectionPool : GradleConnectionFactory {
             try {
                 connection.close()
                 logger.debug("Closed Gradle connection for: ${key.projectDir}")
-            } catch (e: Exception) {
-                logger.warn("Error closing Gradle connection for ${key.projectDir}", e)
+            } catch (e: GradleConnectionException) {
+                logger.warn("Gradle connection error while closing for ${key.projectDir}: ${e.message}")
+            } catch (e: IllegalStateException) {
+                logger.warn("Illegal state while closing connection for ${key.projectDir}: ${e.message}")
             }
         }
     }

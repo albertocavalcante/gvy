@@ -5,6 +5,7 @@ import org.eclipse.lsp4j.WorkDoneProgressBegin
 import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkDoneProgressEnd
 import org.eclipse.lsp4j.WorkDoneProgressReport
+import org.eclipse.lsp4j.jsonrpc.JsonRpcException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.slf4j.LoggerFactory
@@ -25,8 +26,7 @@ class ProgressReporter(private val client: LanguageClient?) {
      * @param title The title to display in the progress UI
      * @param initialMessage Optional initial progress message
      */
-    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
-    @Suppress("TooGenericExceptionCaught")
+    // Generic exception handling removed
     fun startDependencyResolution(
         title: String = "Resolving Gradle dependencies",
         initialMessage: String = "Initializing...",
@@ -61,8 +61,10 @@ class ProgressReporter(private val client: LanguageClient?) {
 
             isActive = true
             logger.debug("Started progress reporting: $title")
-        } catch (e: Exception) {
-            logger.warn("Failed to start progress reporting", e)
+        } catch (e: JsonRpcException) {
+            logger.warn("JSON-RPC error starting progress reporting: {}", e.message)
+        } catch (e: IllegalStateException) {
+            logger.warn("Illegal state while starting progress reporting: {}", e.message)
         }
     }
 
@@ -72,8 +74,7 @@ class ProgressReporter(private val client: LanguageClient?) {
      * @param message The progress message to display
      * @param percentage Optional completion percentage (0-100)
      */
-    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
-    @Suppress("TooGenericExceptionCaught")
+    // Generic exception handling removed
     fun updateProgress(message: String, percentage: Int? = null) {
         if (client == null || !isActive) {
             logger.debug("Progress update skipped - client unavailable or not active: $message")
@@ -94,8 +95,10 @@ class ProgressReporter(private val client: LanguageClient?) {
             )
 
             logger.debug("Updated progress: $message ${percentage?.let { "($it%)" } ?: ""}")
-        } catch (e: Exception) {
-            logger.warn("Failed to update progress", e)
+        } catch (e: JsonRpcException) {
+            logger.warn("JSON-RPC error updating progress: {}", e.message)
+        } catch (e: IllegalStateException) {
+            logger.warn("Illegal state while updating progress: {}", e.message)
         }
     }
 
@@ -104,8 +107,7 @@ class ProgressReporter(private val client: LanguageClient?) {
      *
      * @param message The completion message to display
      */
-    // FIXME: Replace with specific exception types (JsonRpcException, IllegalStateException)
-    @Suppress("TooGenericExceptionCaught")
+    // Generic exception handling removed
     fun complete(message: String) {
         if (client == null || !isActive) {
             logger.debug("Progress completion skipped - client unavailable or not active: $message")
@@ -126,8 +128,10 @@ class ProgressReporter(private val client: LanguageClient?) {
 
             isActive = false
             logger.debug("Completed progress: $message")
-        } catch (e: Exception) {
-            logger.warn("Failed to complete progress", e)
+        } catch (e: JsonRpcException) {
+            logger.warn("JSON-RPC error completing progress: {}", e.message)
+        } catch (e: IllegalStateException) {
+            logger.warn("Illegal state while completing progress: {}", e.message)
         }
     }
 

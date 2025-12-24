@@ -45,6 +45,8 @@ object MetadataMerger {
         }
 
         BundledJenkinsMetadata(
+            // Prefer version from b (right side) if available, else keep a's version
+            jenkinsVersion = b.jenkinsVersion ?: a.jenkinsVersion,
             steps = combinedSteps,
             globalVariables = a.globalVariables + b.globalVariables,
             postConditions = a.postConditions + b.postConditions,
@@ -200,7 +202,7 @@ object MetadataMerger {
         }
 
         return MergedJenkinsMetadata(
-            jenkinsVersion = "2.426.3", // TODO: Get from bundled metadata
+            jenkinsVersion = bundled.jenkinsVersion ?: "unknown",
             steps = mergedSteps,
             globalVariables = mergedGlobalVars,
             sections = enrichment.sections,

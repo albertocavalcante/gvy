@@ -105,6 +105,7 @@ class MetadataMergerEnrichmentTest {
     fun `should handle missing enrichment gracefully`() {
         // RED: Testing that steps without enrichment still work
         val bundled = BundledJenkinsMetadata(
+            jenkinsVersion = "2.426.3",
             steps = mapOf(
                 "customStep" to JenkinsStepMetadata(
                     name = "customStep",
@@ -319,6 +320,7 @@ class MetadataMergerEnrichmentTest {
     // === Helper functions to create test data ===
 
     private fun createBundledMetadata(): BundledJenkinsMetadata = BundledJenkinsMetadata(
+        jenkinsVersion = "2.426.3",
         steps = mapOf(
             "sh" to JenkinsStepMetadata(
                 name = "sh",

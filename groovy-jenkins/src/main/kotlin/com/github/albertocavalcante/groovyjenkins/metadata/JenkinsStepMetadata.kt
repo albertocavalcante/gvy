@@ -169,6 +169,12 @@ data class AgentTypeMetadata(
  */
 data class BundledJenkinsMetadata(
     /**
+     * Jenkins version this metadata was extracted from (e.g., "2.426.3").
+     * May be null for dynamically scanned metadata or legacy sources.
+     */
+    val jenkinsVersion: String? = null,
+
+    /**
      * All known steps indexed by name
      */
     val steps: Map<String, JenkinsStepMetadata>,

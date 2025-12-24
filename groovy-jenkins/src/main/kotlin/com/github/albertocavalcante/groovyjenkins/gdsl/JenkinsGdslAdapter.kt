@@ -49,7 +49,7 @@ class JenkinsGdslAdapter {
      */
     fun convert(result: GdslParseResult, pluginSource: String = DEFAULT_PLUGIN): BundledJenkinsMetadata {
         if (!result.success) {
-            return BundledJenkinsMetadata(emptyMap(), emptyMap())
+            return BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
         }
 
         val steps = result.methods
@@ -60,7 +60,10 @@ class JenkinsGdslAdapter {
             .map { convertProperty(it) }
             .associateBy { it.name }
 
-        return BundledJenkinsMetadata(steps, globalVariables)
+        return BundledJenkinsMetadata(
+            steps = steps,
+            globalVariables = globalVariables,
+        )
     }
 
     /**

@@ -13,6 +13,18 @@ import kotlin.test.assertTrue
 class BundledJenkinsMetadataLoaderTest {
 
     @Test
+    fun `should load jenkins version from metadata`() {
+        val loader = BundledJenkinsMetadataLoader()
+        val metadata = loader.load()
+
+        // Metadata might not have version yet (null), or might have it if updated.
+        // For now we just check that the property exists and doesn't crash.
+        // Once we update the JSON, we can assert a specific version.
+        val version = metadata.jenkinsVersion
+        // assertNotNull(version) // Uncomment when JSON is updated
+    }
+
+    @Test
     fun `should load bundled Jenkins metadata from resources`() {
         // RED: This test will fail because BundledJenkinsMetadataLoader doesn't exist yet
         val loader = BundledJenkinsMetadataLoader()

@@ -8,6 +8,10 @@
 
 package com.github.albertocavalcante.groovyjenkins
 
+import com.github.albertocavalcante.groovycommon.text.extractSymbolName
+import com.github.albertocavalcante.groovycommon.text.simpleClassName
+import com.github.albertocavalcante.groovycommon.text.toPropertyName
+import com.github.albertocavalcante.groovycommon.text.toStepName
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
@@ -99,7 +103,7 @@ class JenkinsPluginMetadataExtractor {
         // FIXME: Some plugins put @Symbol on DescriptorImpl but the value is still
         // "descriptorImpl" because ClassGraph returns the simple class name as fallback.
         // This happens when the annotation value is not a literal string but a reference.
-        if (stepName == "descriptorImpl" || stepName == "DescriptorImpl") {
+        if (shouldSkipSymbol(stepName)) {
             // Try to derive step name from enclosing class name
             stepName = deriveStepNameFromDescriptor(classInfo)
             if (stepName == null) {
@@ -108,37 +112,27 @@ class JenkinsPluginMetadataExtractor {
             }
         }
 
-        // Skip common non-step symbols
-        if (stepName.isNullOrBlank() || stepName in SKIP_SYMBOLS) {
+        // Skip common non-step symbols (case-insensitive check)
+        if (shouldSkipSymbol(stepName)) {
             return null
         }
 
-        logger.debug("Found @Symbol step: {} in class {}", stepName, classInfo.name)
+        // At this point stepName is guaranteed non-null by shouldSkipSymbol check
+        val validStepName = stepName ?: return null
+
+        logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
 
         val parameters = extractParameters(classInfo)
 
         return JenkinsStepMetadata(
-            name = stepName,
+            name = validStepName,
             plugin = pluginId,
             parameters = parameters,
             documentation = extractDocumentation(classInfo),
         )
     }
 
-    /**
-     * Extract symbol name from annotation value.
-     * Handles String, String[], and various ClassGraph wrapper types.
-     */
-    private fun extractSymbolName(symbolValues: Any?): String? = when (symbolValues) {
-        is String -> symbolValues.takeIf { it.isNotBlank() }
-        is Array<*> -> symbolValues.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }
-        is List<*> -> symbolValues.firstOrNull()?.toString()?.takeIf { it.isNotBlank() }
-        else -> {
-            // ClassGraph may return AnnotationEnumValue or other types
-            val str = symbolValues?.toString()
-            str?.takeIf { it.isNotBlank() && !it.contains("@") }
-        }
-    }
+    // Symbol name extraction is now handled by com.github.albertocavalcante.groovycommon.text.extractSymbolName
 
     /**
      * Derive step name from a DescriptorImpl class by looking at its enclosing class.
@@ -159,17 +153,14 @@ class JenkinsPluginMetadataExtractor {
             return null
         }
 
-        // Extract the parent class name
+        // Extract the parent class name and convert to step name
         val parentClassName = className
             .substringBefore("\$DescriptorImpl")
             .substringBefore("\$Descriptor")
-            .substringAfterLast(".")
+            .simpleClassName()
 
-        // Convert to lowerCamelCase step name
-        val stepName = parentClassName
-            .removeSuffix("Step")
-            .removeSuffix("Builder")
-            .replaceFirstChar { it.lowercase() }
+        // Convert to lowerCamelCase step name using shared utility
+        val stepName = parentClassName.toStepName()
 
         // Validate it's a reasonable step name
         return if (stepName.isNotBlank() && stepName.length > 1) {
@@ -188,13 +179,14 @@ class JenkinsPluginMetadataExtractor {
         const val GLOBAL_VARIABLE = "org.jenkinsci.plugins.workflow.cps.GlobalVariable"
         const val GLOBAL_VARIABLE_SERVICE = "META-INF/services/org.jenkinsci.plugins.workflow.cps.GlobalVariable"
 
-        // Symbols to skip (not actual pipeline steps)
+        // Symbols to skip (not actual pipeline steps) - lowercase for case-insensitive matching
         private val SKIP_SYMBOLS = setOf(
-            "descriptorImpl",
-            "DescriptorImpl",
-            "stepDescriptorImpl",
-            "StepDescriptorImpl",
+            "descriptorimpl",
+            "stepdescriptorimpl",
         )
+
+        /** Check if a symbol name should be skipped (case-insensitive) */
+        private fun shouldSkipSymbol(name: String?): Boolean = name.isNullOrBlank() || name.lowercase() in SKIP_SYMBOLS
     }
 
     /**
@@ -206,8 +198,7 @@ class JenkinsPluginMetadataExtractor {
         val className = classInfo.simpleName
         val stepName = className
             .removeSuffix("Descriptor")
-            .removeSuffix("Step")
-            .replaceFirstChar { it.lowercase() }
+            .toStepName()
 
         if (stepName.isBlank()) return null
 
@@ -235,7 +226,7 @@ class JenkinsPluginMetadataExtractor {
                     val paramName = param.name ?: "arg${parameters.size}"
                     parameters[paramName] = StepParameter(
                         name = paramName,
-                        type = param.typeSignatureOrTypeDescriptor.toString().substringAfterLast('.'),
+                        type = param.typeSignatureOrTypeDescriptor.toString().simpleClassName(),
                         required = true,
                         documentation = null,
                     )
@@ -247,11 +238,11 @@ class JenkinsPluginMetadataExtractor {
         val methods = classInfo.declaredMethodInfo
         methods.forEach { method ->
             if (method.hasAnnotation(DATA_BOUND_SETTER) && method.name.startsWith("set")) {
-                val paramName = method.name.removePrefix("set").replaceFirstChar { it.lowercase() }
+                val paramName = method.name.toPropertyName()
                 val paramType = method.parameterInfo.firstOrNull()
                     ?.typeSignatureOrTypeDescriptor
                     ?.toString()
-                    ?.substringAfterLast('.')
+                    ?.simpleClassName()
                     ?: "Object"
 
                 parameters[paramName] = StepParameter(
@@ -322,10 +313,10 @@ class JenkinsPluginMetadataExtractor {
                             .forEach { className ->
                                 logger.debug("Found GlobalVariable in services: {}", className)
                                 // Variable name is typically the simple class name in lowerCamelCase
-                                val varName = className.substringAfterLast('.')
+                                val varName = className.simpleClassName()
                                     .removeSuffix("Global")
                                     .removeSuffix("Variable")
-                                    .replaceFirstChar { it.lowercase() }
+                                    .toStepName()
 
                                 variables.add(
                                     GlobalVariableMetadata(
@@ -354,11 +345,7 @@ class JenkinsPluginMetadataExtractor {
                                 .find { it.name == "value" }
                                 ?.value
 
-                            val varName = when (symbolValue) {
-                                is Array<*> -> symbolValue.firstOrNull()?.toString()
-                                is String -> symbolValue
-                                else -> null
-                            }
+                            val varName = extractSymbolName(symbolValue)
 
                             if (varName != null && variables.none { it.name == varName }) {
                                 logger.debug("Found @Symbol GlobalVariable: {} -> {}", varName, classInfo.name)

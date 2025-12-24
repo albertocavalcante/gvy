@@ -233,7 +233,7 @@ class JenkinsPluginManager(
             } catch (e: Exception) {
                 logger.error("Failed to load bundled Jenkins metadata", e)
                 // Return empty metadata on failure
-                BundledJenkinsMetadata(emptyMap(), emptyMap())
+                BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
             }
         }
         bundledMetadataCache!!

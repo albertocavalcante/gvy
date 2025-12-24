@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -8,6 +9,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import java.io.IOException
+import java.nio.file.ClosedWatchServiceException
 import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
@@ -77,8 +80,10 @@ class GradleBuildFileWatcher(
             watchJob = coroutineScope.launch(Dispatchers.IO) {
                 watchLoop()
             }
-        } catch (e: Exception) {
-            logger.error("Failed to start build file watcher", e)
+        } catch (e: IOException) {
+            logger.error("IO error starting build file watcher", e)
+        } catch (e: UnsupportedOperationException) {
+            logger.error("File watching not supported on this platform", e)
         }
     }
 
@@ -101,8 +106,10 @@ class GradleBuildFileWatcher(
             watchService = null
 
             logger.info("Stopped build file watcher")
-        } catch (e: Exception) {
-            logger.warn("Error stopping build file watcher", e)
+        } catch (e: IOException) {
+            logger.warn("IO error stopping build file watcher", e)
+        } catch (e: ClosedWatchServiceException) {
+            // Already closed, ignore
         }
     }
 
@@ -129,9 +136,10 @@ class GradleBuildFileWatcher(
             }
             logger.debug("Watch service closed, terminating watch loop.")
             return
-        } catch (e: Exception) {
-            logger.error("Error in build file watch loop", e)
-            throw e
+        } catch (e: IOException) {
+            logger.error("IO error in build file watch loop", e)
+        } catch (e: InterruptedException) {
+            logger.debug("Watch loop interrupted")
         }
     }
 
@@ -222,8 +230,10 @@ class GradleBuildFileWatcher(
                     // Trigger dependency re-resolution
                     try {
                         onBuildFileChanged(projectDir)
-                    } catch (e: Exception) {
-                        logger.error("Error handling build file change for $filenameStr", e)
+                    } catch (e: IOException) {
+                        logger.error("IO error handling build file change for $filenameStr", e)
+                    } catch (e: CancellationException) {
+                        logger.debug("Build file change handling cancelled for $filenameStr")
                     }
                 }
             }
