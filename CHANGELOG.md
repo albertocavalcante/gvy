@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.5](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.4...v0.4.5) (2025-12-24)
+
+
+### Features
+
+* **e2e:** add typed support for custom @JsonRequest methods ([#313](https://github.com/albertocavalcante/groovy-lsp/issues/313)) ([0ab8129](https://github.com/albertocavalcante/groovy-lsp/commit/0ab8129c473a772a43f29b46e37aafcc31101a43))
+
+
+### Bug Fixes
+
+* robust classloader isolation and test discovery fixes ([#311](https://github.com/albertocavalcante/groovy-lsp/issues/311)) ([f5d442b](https://github.com/albertocavalcante/groovy-lsp/commit/f5d442b69eebf5dd954984e4a013f9da80c97864))
+
 ## [0.4.4](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.3...v0.4.4) (2025-12-24)
 
 
