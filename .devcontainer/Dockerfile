@@ -29,17 +29,73 @@ RUN microdnf update -y \
 # -----------------------------------------------------------------------------
 # See: https://github.com/Kotlin/kotlin-lsp/releases
 ARG KOTLIN_LSP_VERSION=0.253.10629
-ARG KOTLIN_LSP_SHA256=638ec1552fde7e5158f8c7df06443cfb97c5c09957273790586cbd59115bf11c
+ARG KOTLIN_LSP_SHA256_X64=638ec1552fde7e5158f8c7df06443cfb97c5c09957273790586cbd59115bf11c
+ARG KOTLIN_LSP_SHA256_ARM64=638ec1552fde7e5158f8c7df06443cfb97c5c09957273790586cbd59115bf11c
 
 # Copy local cache if available (from .devcontainer/cache/)
 COPY cache/. /tmp/cache/
 
-RUN if [ -f "/tmp/cache/kotlin-${KOTLIN_LSP_VERSION}.vsix" ]; then \
+RUN ARCH=$(uname -m) \
+    && case $ARCH in \
+        x86_64) \
+            KOTLIN_LSP_PLATFORM="linux-x64"; \
+            KOTLIN_LSP_SHA256=$KOTLIN_LSP_SHA256_X64; \
+            ;; \
+        aarch64) \
+            KOTLIN_LSP_PLATFORM="linux-aarch64"; \
+            KOTLIN_LSP_SHA256=$KOTLIN_LSP_SHA256_ARM64; \
+            ;; \
+        *) echo "Unsupported arch: $ARCH"; exit 1; ;; \
+    esac \
+    # Filename format: kotlin-lsp-{version}-{platform}.vsix (for newer versions)
+    # Or fallback to old format if needed? Assuming we are moving forward with v261+ support mostly.
+    # The user wanted mechanism to get latest version which is v261+.
+    # Let's try to support the new naming convention primarily.
+    # New: kotlin-lsp-0.261.0-linux-x64.vsix (example verify exact name from release)
+    # Checking release info from earlier step:
+    # "kotlin-lsp-261.13587.0-linux-x64.vsix"
+    # Wait, the version is "261.13587.0".
+    #
+    # Construct filename
+    && FILENAME="kotlin-lsp-${KOTLIN_LSP_VERSION}-${KOTLIN_LSP_PLATFORM}.vsix" \
+    && URL="https://download-cdn.jetbrains.com/kotlin-lsp/${KOTLIN_LSP_VERSION}/${FILENAME}" \
+    # Check local cache
+    && if [ -f "/tmp/cache/${FILENAME}" ]; then \
         echo "Using local cache for Kotlin LSP VSIX..."; \
-        cp "/tmp/cache/kotlin-${KOTLIN_LSP_VERSION}.vsix" /tmp/kotlin.vsix; \
+        cp "/tmp/cache/${FILENAME}" /tmp/kotlin.vsix; \
     else \
-        echo "Downloading Kotlin LSP VSIX..."; \
-        curl -fSL -o /tmp/kotlin.vsix https://download-cdn.jetbrains.com/kotlin-lsp/${KOTLIN_LSP_VERSION}/kotlin-${KOTLIN_LSP_VERSION}.vsix; \
+        # Fallback to old format check if new format fails?
+        # Actually, let's keep it simple. If we upgrade version, we expect new format.
+        # If user stays on old version (0.253...), this code will break because of filename mismatch.
+        # BUT 0.253 didn't have platform specific suffixes.
+        #
+        # Better approach:
+        # If KOTLIN_LSP_VERSION starts with "0.253", use old logic?
+        # Or just handle the file existence?
+        # A simpler way might be to try strict filename for new versions.
+        # Given the task is to upgrade to "latest" which uses new format, I will code for new format.
+        # Compatibility with 0.253 might be lost unless I add a check.
+        #
+        # Let's add a robust check:
+        # If specific old version, use old URL.
+        #
+        if [[ "${KOTLIN_LSP_VERSION}" == 0.253* ]]; then \
+           OLD_FILENAME="kotlin-${KOTLIN_LSP_VERSION}.vsix"; \
+           URL="https://download-cdn.jetbrains.com/kotlin-lsp/${KOTLIN_LSP_VERSION}/${OLD_FILENAME}"; \
+           if [ -f "/tmp/cache/${OLD_FILENAME}" ]; then \
+                cp "/tmp/cache/${OLD_FILENAME}" /tmp/kotlin.vsix; \
+           else \
+                echo "Downloading Kotlin LSP VSIX (Legacy)..."; \
+                curl -fSL -o /tmp/kotlin.vsix "$URL"; \
+           fi \
+        else \
+           echo "Downloading Kotlin LSP VSIX (${FILENAME})..."; \
+           if [ -f "/tmp/cache/${FILENAME}" ]; then \
+                cp "/tmp/cache/${FILENAME}" /tmp/kotlin.vsix; \
+           else \
+                curl -fSL -o /tmp/kotlin.vsix "$URL"; \
+           fi \
+        fi \
     fi \
     # Verify checksum
     && echo "${KOTLIN_LSP_SHA256}  /tmp/kotlin.vsix" | sha256sum -c - \

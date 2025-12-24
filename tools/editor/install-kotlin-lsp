@@ -2,16 +2,11 @@
 set -e
 
 # -----------------------------------------------------------------------------
-# tools/editor/install-kotlin-lsp - Install Kotlin LSP extension for VS Code compatible editors
-# -----------------------------------------------------------------------------
-# This script installs the Kotlin LSP VSIX extension for any VS Code compatible
-# editor (code, cursor, agy, etc.). It caches the VSIX file to avoid repeated
-# downloads.
+# tools/editor/install-kotlin-lsp
 #
-# Usage:
-#   tools/editor/install-kotlin-lsp              # Uses 'code' by default
-#   tools/editor/install-kotlin-lsp cursor       # Uses 'cursor' instead
-#   tools/editor/install-kotlin-lsp agy          # Uses 'agy' instead
+# Installs the Kotlin LSP extension for VS Code compatible editors.
+# Supports automatic version fetching, platform-specific builds, and devcontainer updates.
+# Refactored for robustness: Uses jq for JSON, traps for cleanup.
 # -----------------------------------------------------------------------------
 
 # Resolve paths
@@ -21,111 +16,316 @@ DEVCONTAINER_DIR="$ROOT_DIR/.devcontainer"
 CACHE_DIR="$DEVCONTAINER_DIR/cache"
 JSON_FILE="$DEVCONTAINER_DIR/devcontainer.json"
 
-# Determine editor command (default: code)
-EDITOR_CMD="${1:-code}"
+# Default behaviors
+UPDATE_CONFIG=true
+TARGET_VERSION="latest"
+EDITOR_CMD=""
 
-# Check if editor is available
-if ! command -v "$EDITOR_CMD" &> /dev/null; then
-    echo "❌ Error: '$EDITOR_CMD' command not found."
-    echo "   Please install $EDITOR_CMD or specify a different editor."
-    exit 1
-fi
-
-# Check dependencies
-if ! command -v jq &> /dev/null; then
-    echo "❌ Error: 'jq' is not installed. Please install it to run this script."
-    exit 1
-fi
-
-# Read configuration from devcontainer.json
-# Strip comments before parsing JSON
-VERSION=$(grep -v '^[[:space:]]*//' "$JSON_FILE" | jq -r '.build.args.KOTLIN_LSP_VERSION')
-CHECKSUM=$(grep -v '^[[:space:]]*//' "$JSON_FILE" | jq -r '.build.args.KOTLIN_LSP_SHA256')
-
-if [ "$VERSION" == "null" ] || [ "$CHECKSUM" == "null" ]; then
-    echo "❌ Error: Could not extract KOTLIN_LSP_VERSION or KOTLIN_LSP_SHA256 from $JSON_FILE"
-    exit 1
-fi
-
-FILENAME="kotlin-${VERSION}.vsix"
-FILE_PATH="$CACHE_DIR/$FILENAME"
-URL="https://download-cdn.jetbrains.com/kotlin-lsp/${VERSION}/${FILENAME}"
-
-echo "🔍 Kotlin LSP Version: $VERSION"
-echo "🎯 Editor: $EDITOR_CMD"
-echo "📦 Cache Location: $FILE_PATH"
+# Constants
+BASE_URL="https://download-cdn.jetbrains.com/kotlin-lsp"
+GITHUB_API="https://api.github.com/repos/Kotlin/kotlin-lsp/releases/latest"
 
 # -----------------------------------------------------------------------------
-# Step 1: Ensure VSIX is cached
+# Styling & Helpers
 # -----------------------------------------------------------------------------
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-if [ -f "$FILE_PATH" ]; then
-    echo "✅ Found cached VSIX file."
-    echo "   Verifying checksum..."
-    CURRENT_SUM=$(sha256sum "$FILE_PATH" | awk '{print $1}')
-    if [ "$CURRENT_SUM" == "$CHECKSUM" ]; then
-        echo "✅ Cache is valid."
+TMP_FILES=()
+
+cleanup() {
+    for tmp in "${TMP_FILES[@]}"; do
+        [ -f "$tmp" ] && rm -f "$tmp"
+    done
+}
+trap cleanup EXIT
+
+log_info() { echo -e "${BLUE}🔹 $1${NC}"; }
+log_success() { echo -e "${GREEN}✅ $1${NC}"; }
+log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
+log_error() { echo -e "${RED}❌ $1${NC}"; }
+log_section() { echo -e "\n${BOLD}$1${NC}"; }
+fail() { log_error "$1"; exit 1; }
+
+# Wrapper for sed -i that works on both macOS (BSD) and Linux (GNU)
+sed_i() {
+    if [[ "$OS" == "Darwin" ]]; then
+        sed -i '' "$@"
     else
-        echo "⚠️  Checksum mismatch! Cached file is invalid."
-        echo "   Expected: $CHECKSUM"
-        echo "   Found:    $CURRENT_SUM"
-        echo "   Re-downloading..."
-        rm -f "$FILE_PATH"
-        FILE_PATH=""
+        sed -i "$@"
     fi
+}
+
+check_cmd() {
+    if ! command -v "$1" &> /dev/null; then
+        fail "'$1' is required but not installed."
+    fi
+}
+
+# Wrapper for curl with robust flags
+# Usage: fetch_url <url> [output_file]
+fetch_url() {
+    local url="$1"
+    local output="$2"
+    
+    local curl_opts=(
+        -fSL
+        -4
+        --retry 3
+        --retry-delay 5
+        --connect-timeout 30
+    )
+
+    if [ -n "$output" ]; then
+        curl "${curl_opts[@]}" -o "$output" "$url"
+    else
+        curl "${curl_opts[@]}" -s "$url"
+    fi
+}
+
+usage() {
+    echo -e "${BOLD}Usage:${NC} $0 [options] [editor]"
+    echo ""
+    echo -e "${BOLD}Arguments:${NC}"
+    echo "  [editor]          Optional. Editor command (code, cursor, agy). Auto-detected if omitted."
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo "  --latest          Install the latest version from GitHub (Default)"
+    echo "  --version <ver>   Install a specific version"
+    echo "  --update-config   Update devcontainer.json with installed version/checksums (Default)"
+    echo "  --no-update-config Do NOT update devcontainer.json"
+    echo "  --help            Show this help message"
+    echo ""
+    exit 0
+}
+
+# -----------------------------------------------------------------------------
+# 1. Argument Parsing
+# -----------------------------------------------------------------------------
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --latest)
+            TARGET_VERSION="latest"
+            shift
+            ;;
+        --version)
+            TARGET_VERSION="$2"
+            shift 2
+            ;;
+        --update-config)
+            UPDATE_CONFIG=true
+            shift
+            ;;
+        --no-update-config)
+            UPDATE_CONFIG=false
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ ${#POSITIONAL_ARGS[@]} -gt 0 ]; then
+    EDITOR_CMD="${POSITIONAL_ARGS[0]}"
 fi
 
-if [ ! -f "$FILE_PATH" ]; then
-    echo "⬇️  Downloading from $URL..."
-    mkdir -p "$CACHE_DIR"
-    
-    # Capture curl exit code to warn about disk space
-    set +e
-    curl -fSL -o "$FILE_PATH" "$URL"
-    CURL_EXIT=$?
-    set -e
-    
-    if [ $CURL_EXIT -ne 0 ]; then
-        echo "❌ Download failed with exit code $CURL_EXIT."
-        if [ $CURL_EXIT -eq 56 ] || [ $CURL_EXIT -eq 23 ]; then
-            echo "⚠️  Possible Cause: Disk Full (ENOSPC)."
-            echo "   - Please check your available disk space."
-            echo "   - Try running: docker system prune -a"
+# -----------------------------------------------------------------------------
+# 2. Prerequisites & Environment
+# -----------------------------------------------------------------------------
+log_section "Checking Prerequisites..."
+check_cmd jq
+check_cmd curl
+
+# Auto-detect editor
+if [ -z "$EDITOR_CMD" ]; then
+    for cmd in code cursor agy codium; do
+        if command -v "$cmd" &> /dev/null; then
+            EDITOR_CMD="$cmd"
+            break
         fi
-        rm -f "$FILE_PATH"
-        exit $CURL_EXIT
+    done
+    if [ -z "$EDITOR_CMD" ]; then
+        fail "No compatible editor found (checked: code, cursor, agy, codium). Please specify one."
     fi
-    
-    # Verify checksum
-    echo "🔐 Verifying checksum..."
-    CURRENT_SUM=$(sha256sum "$FILE_PATH" | awk '{print $1}')
-    if [ "$CURRENT_SUM" == "$CHECKSUM" ]; then
-        echo "✅ Download successful and verified."
-    else
-        echo "❌ Download corrupted."
-        echo "   Expected: $CHECKSUM"
-        echo "   Found:    $CURRENT_SUM"
-        rm -f "$FILE_PATH"
-        exit 1
+    log_info "Auto-detected editor: ${BOLD}$EDITOR_CMD${NC}"
+else
+    if ! command -v "$EDITOR_CMD" &> /dev/null; then
+        fail "Editor '$EDITOR_CMD' not found."
     fi
 fi
 
+# Detect Platform
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "$OS" in
+    Darwin) PLATFORM_OS="mac" ;;
+    Linux)  PLATFORM_OS="linux" ;;
+    *)      fail "Unsupported OS: $OS" ;;
+esac
+
+case "$ARCH" in
+    x86_64) PLATFORM_ARCH="x64" ;;
+    arm64|aarch64) PLATFORM_ARCH="aarch64" ;;
+    *)      fail "Unsupported Architecture: $ARCH" ;;
+esac
+
+PLATFORM_SUFFIX="${PLATFORM_OS}-${PLATFORM_ARCH}"
+log_info "Detected Platform: ${BOLD}$PLATFORM_SUFFIX${NC}"
+
 # -----------------------------------------------------------------------------
-# Step 2: Install extension using the specified editor
+# 3. Resolve Version
 # -----------------------------------------------------------------------------
+log_section "Resolving Version..."
+if [ "$TARGET_VERSION" == "latest" ]; then
+    log_info "Fetching latest version info from GitHub..."
+    
+    LATEST_JSON=$(fetch_url "$GITHUB_API")
+    LATEST_TAG=$(echo "$LATEST_JSON" | jq -r '.tag_name')
+    
+    if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" == "null" ]; then
+        fail "Failed to fetch latest version from GitHub."
+    fi
+    
+    # Robust extraction
+    VERSION=$(echo "$LATEST_TAG" | sed -E 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+    
+    log_info "Latest version is: ${BOLD}$VERSION${NC}"
+else
+    VERSION="$TARGET_VERSION"
+    log_info "Using specified version: ${BOLD}$VERSION${NC}"
+fi
+
+# -----------------------------------------------------------------------------
+# 4. Construct URL & Filename
+# -----------------------------------------------------------------------------
+IS_LEGACY=false
+if [[ "$VERSION" == 0.253* ]]; then
+    IS_LEGACY=true
+    FILENAME="kotlin-${VERSION}.vsix"
+else
+    FILENAME="kotlin-lsp-${VERSION}-${PLATFORM_SUFFIX}.vsix"
+fi
+
+DOWNLOAD_URL="${BASE_URL}/${VERSION}/${FILENAME}"
+FILE_PATH="$CACHE_DIR/$FILENAME"
+
+# -----------------------------------------------------------------------------
+# 5. Download & Verify (with Auto-Retry)
+# -----------------------------------------------------------------------------
+log_section "Downloading Artifacts..."
+mkdir -p "$CACHE_DIR"
+
+MAX_RETRIES=1
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -le $MAX_RETRIES ]; do
+    if [ -f "$FILE_PATH" ]; then
+        log_info "Found cached file: $FILE_PATH"
+    else
+        log_info "Downloading ${BOLD}$FILENAME${NC}..."
+        fetch_url "$DOWNLOAD_URL" "$FILE_PATH" || {
+            rm -f "$FILE_PATH"
+            fail "Failed to download $DOWNLOAD_URL"
+        }
+    fi
+
+    # Verify Checksum
+    if [ "$IS_LEGACY" == "true" ]; then
+        log_warn "Skipping checksum verification for legacy version."
+        break # No verification means success for legacy
+    else
+        CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+        log_info "Fetching checksum..."
+        
+        EXPECTED_SUM=$(fetch_url "$CHECKSUM_URL" | awk '{print $1}')
+        
+        if [ -z "$EXPECTED_SUM" ]; then
+            fail "Could not fetch checksum from $CHECKSUM_URL"
+        fi
+        
+        CURRENT_SUM=$(sha256sum "$FILE_PATH" | awk '{print $1}')
+        
+        if [ "$EXPECTED_SUM" == "$CURRENT_SUM" ]; then
+            log_success "Checksum verified."
+            break # Success, exit loop
+        else
+            log_error "Checksum mismatch!"
+            echo "Expected: $EXPECTED_SUM"
+            echo "Found:    $CURRENT_SUM"
+            log_warn "Deleting corrupted file..."
+            rm -f "$FILE_PATH"
+            
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                log_info "Retrying download (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+                RETRY_COUNT=$((RETRY_COUNT+1))
+            else
+                fail "Checksum verification failed after retries."
+            fi
+        fi
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 6. Install Extension
+# -----------------------------------------------------------------------------
+log_section "Installing Extension..."
+log_info "Installing to ${BOLD}$EDITOR_CMD${NC}..."
+"$EDITOR_CMD" --install-extension "$FILE_PATH" --force 2>/dev/null || fail "Failed to install extension."
+log_success "Extension installed successfully!"
+
+# -----------------------------------------------------------------------------
+# 7. Update devcontainer.json (using jq)
+# -----------------------------------------------------------------------------
+if [ "$UPDATE_CONFIG" == "true" ] && [ -f "$JSON_FILE" ]; then
+    log_section "Updating Configuration..."
+    log_info "Target: $JSON_FILE"
+    
+    if [ "$IS_LEGACY" == "true" ]; then
+        log_warn "Cannot update config for legacy version automatically."
+    else
+        # Construct URLs for both architectures
+        # Use simple variable substitution to avoid repetition
+        URL_X64="${BASE_URL}/${VERSION}/kotlin-lsp-${VERSION}-linux-x64.vsix.sha256"
+        URL_ARM64="${BASE_URL}/${VERSION}/kotlin-lsp-${VERSION}-linux-aarch64.vsix.sha256"
+        
+        log_info "Fetching Linux checksums..."
+        SUM_X64=$(fetch_url "$URL_X64" | awk '{print $1}')
+        SUM_ARM64=$(fetch_url "$URL_ARM64" | awk '{print $1}')
+        
+        if [ -n "$SUM_X64" ] && [ -n "$SUM_ARM64" ]; then
+            log_info "Updating fields in ${BOLD}$JSON_FILE${NC}..."
+            
+            # Use sed to update, protecting against JSONC comments which jq would strip.
+            # We match key, quote, colon, space, quote, value, end quote.
+            
+            # Update Version
+            sed_i -E "s/(\"KOTLIN_LSP_VERSION\": \")[^\"]*(\")/\1$VERSION\2/" "$JSON_FILE"
+            
+            # Update X64 Checksum
+            sed_i -E "s/(\"KOTLIN_LSP_SHA256_X64\": \")[^\"]*(\")/\1$SUM_X64\2/" "$JSON_FILE"
+            
+            # Update ARM64 Checksum
+            sed_i -E "s/(\"KOTLIN_LSP_SHA256_ARM64\": \")[^\"]*(\")/\1$SUM_ARM64\2/" "$JSON_FILE"
+            
+            log_success "devcontainer.json updated."
+        else
+            log_error "Failed to fetch Linux checksums. Skipping config update."
+        fi
+    fi
+fi
 
 echo ""
-echo "📥 Installing Kotlin LSP extension to $EDITOR_CMD..."
-
-# The --install-extension flag is standard across all VS Code compatible editors
-# (code, cursor, agy, codium, etc.)
-"$EDITOR_CMD" --install-extension "$FILE_PATH"
-
-if [ $? -eq 0 ]; then
-    echo "✅ Successfully installed Kotlin LSP extension!"
-    echo ""
-    echo "🎉 You can now use Kotlin LSP with $EDITOR_CMD"
-else
-    echo "❌ Failed to install extension."
-    exit 1
-fi
+log_success "${BOLD}All operations completed successfully!${NC}"
+echo ""

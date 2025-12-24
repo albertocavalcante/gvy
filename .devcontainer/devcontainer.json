@@ -5,8 +5,9 @@
 		"args": {
 			// Check for latest versions at: https://github.com/Kotlin/kotlin-lsp/releases
 			// Verify checksums from the release page (click "SHA-256 Checksum" for the VSIX)
-			"KOTLIN_LSP_VERSION": "0.253.10629",
-			"KOTLIN_LSP_SHA256": "638ec1552fde7e5158f8c7df06443cfb97c5c09957273790586cbd59115bf11c",
+			"KOTLIN_LSP_VERSION": "261.13587.0",
+			"KOTLIN_LSP_SHA256_X64": "6b042c82ad678d5bdd685e115f8b4431af8b5e2e0c45ddcc5a5738db878f5fbc",
+			"KOTLIN_LSP_SHA256_ARM64": "ddbd5ec021f7ac29001f686a24ac1c52027754f433a1504d2a5f41afa3e20a10",
 			// Tool versions
 			"JQ_VERSION": "1.8.1",
 			"RG_VERSION": "15.1.0",
