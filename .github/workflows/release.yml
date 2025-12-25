@@ -3,6 +3,7 @@ name: Release
   push:
     tags:
     - v*
+    - vscode-groovy-*
   workflow_dispatch:
     inputs:
       runner_label:
@@ -283,3 +284,55 @@ jobs:
             echo "  - $file ($size)"
           fi
         done
+
+  # VS Code Extension publish (triggers on vscode-groovy-* tags)
+  publish-extension:
+    name: Publish VS Code Extension
+    if: startsWith(github.ref, 'refs/tags/vscode-groovy-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: editors/code
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/code/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build extension
+        run: |
+          npm run compile
+          npm run package
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
+
+      # Uncomment when ready to publish to Open VSX
+      # - name: Publish to Open VSX Registry
+      #   run: npx ovsx publish -p ${{ secrets.OVSX_TOKEN }}
+
+      - name: Upload VSIX to release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
+        with:
+          files: '*.vsix'
+          tag_name: ${{ github.ref_name }}
