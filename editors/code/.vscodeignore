@@ -12,6 +12,7 @@
 
 !language-configuration.json
 !syntaxes/**
+!resources/**
 
 !client/out/extension.js
 
