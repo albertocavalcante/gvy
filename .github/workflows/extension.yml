@@ -75,7 +75,6 @@ jobs:
 
   test-matrix:
     name: Test (${{ matrix.os }})
-    if: github.event_name == 'push'
     needs: validate
     strategy:
       matrix:
@@ -117,7 +116,6 @@ jobs:
 
   package:
     name: Package VSIX
-    if: github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
 

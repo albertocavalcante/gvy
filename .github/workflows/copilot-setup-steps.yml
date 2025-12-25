@@ -9,9 +9,6 @@ on:
   push:
     paths:
       - .github/workflows/copilot-setup-steps.yml
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
 
 jobs:
   # The job MUST be named `copilot-setup-steps` for the coding agent to pick it up.
