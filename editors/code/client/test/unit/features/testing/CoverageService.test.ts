@@ -1,7 +1,7 @@
 
 import * as assert from 'assert';
 import * as sinon from 'sinon';
-import * as proxyquire from 'proxyquire';
+import proxyquire from 'proxyquire';
 
 describe('CoverageService', () => {
     let CoverageService: any;
