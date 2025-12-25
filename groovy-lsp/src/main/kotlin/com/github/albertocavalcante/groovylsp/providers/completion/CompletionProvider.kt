@@ -83,25 +83,24 @@ object CompletionProvider {
                 val result2 = compilationService.compileTransient(uriObj, content2)
                 val ast2 = result2.ast
                 val astModel2 = result2.astModel
+                val defStrategyBetter = result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size
 
-                // If 'def' strategy produced a better result (successful or fewer errors), use it
-                if (result2.isSuccessful || result2.diagnostics.size < result1.diagnostics.size) {
-                    if (ast2 != null) {
-                        val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result2)
-                        return buildCompletionsList(
-                            CompletionContext(
-                                uri = uriObj,
-                                line = line,
-                                character = character,
-                                ast = ast2,
-                                astModel = astModel2,
-                                tokenIndex = result2.tokenIndex,
-                                compilationService = compilationService,
-                                content = content,
-                            ),
-                            isSpockSpec = isSpockSpec,
-                        )
-                    }
+                // Use 'def' strategy if it produced a better result and has a valid AST
+                if (defStrategyBetter && ast2 != null) {
+                    val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result2)
+                    return buildCompletionsList(
+                        CompletionContext(
+                            uri = uriObj,
+                            line = line,
+                            character = character,
+                            ast = ast2,
+                            astModel = astModel2,
+                            tokenIndex = result2.tokenIndex,
+                            compilationService = compilationService,
+                            content = content,
+                        ),
+                        isSpockSpec = isSpockSpec,
+                    )
                 }
             }
 
