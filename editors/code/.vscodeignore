@@ -1,0 +1,20 @@
+# Package as an allowlist (deny-all by default).
+# This makes VSIX contents predictable and avoids accidental leakage of dev/CI files.
+
+# Deny everything...
+**
+
+# ...then explicitly allow only what's needed at runtime/Marketplace.
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+
+!language-configuration.json
+!syntaxes/**
+!resources/**
+
+!client/out/extension.js
+
+!server/groovy-lsp.jar
+!server/.groovy-lsp-version

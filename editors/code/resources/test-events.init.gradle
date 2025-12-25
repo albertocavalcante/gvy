@@ -1,0 +1,69 @@
+// Gradle Init Script: test-events.init.gradle
+// Emits JSON events for test lifecycle to be consumed by the VS Code extension.
+// Usage: ./gradlew --init-script test-events.init.gradle test
+
+import groovy.json.JsonOutput
+
+allprojects {
+    tasks.matching { it instanceof Test }.configureEach { testTask ->
+        // Force tests to run (bypass up-to-date checks)
+        testTask.outputs.upToDateWhen { false }
+
+        testTask.addTestListener(new TestListener() {
+            @Override
+            void beforeSuite(TestDescriptor suite) {
+                if (suite.className) {
+                    println JsonOutput.toJson([
+                        event: 'suiteStarted',
+                        id: suite.className,
+                        name: suite.displayName
+                    ])
+                }
+            }
+
+            @Override
+            void afterSuite(TestDescriptor suite, TestResult result) {
+                if (suite.className) {
+                    println JsonOutput.toJson([
+                        event: 'suiteFinished',
+                        id: suite.className,
+                        result: result.resultType.toString(),
+                        testCount: result.testCount,
+                        successfulCount: result.successfulTestCount,
+                        failedCount: result.failedTestCount,
+                        skippedCount: result.skippedTestCount,
+                        duration: result.endTime - result.startTime
+                    ])
+                }
+            }
+
+            @Override
+            void beforeTest(TestDescriptor test) {
+                println JsonOutput.toJson([
+                    event: 'testStarted',
+                    id: "${test.className}.${test.name}",
+                    name: test.displayName,
+                    parent: test.className
+                ])
+            }
+
+            @Override
+            void afterTest(TestDescriptor test, TestResult result) {
+                def event = [
+                    event: 'testFinished',
+                    id: "${test.className}.${test.name}",
+                    name: test.displayName,
+                    result: result.resultType.toString(),
+                    duration: result.endTime - result.startTime
+                ]
+
+                if (result.resultType == TestResult.ResultType.FAILURE && result.exception) {
+                    event.message = result.exception.message ?: 'Test failed'
+                    event.stackTrace = result.exception.stackTrace*.toString().join('\n')
+                }
+
+                println JsonOutput.toJson(event)
+            }
+        })
+    }
+}

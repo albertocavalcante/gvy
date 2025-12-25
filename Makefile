@@ -13,7 +13,7 @@ ifeq ($(shell uname),Darwin)
     endif
 endif
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single ext-install ext-build ext-test ext-package
 
 # Default target
 help:
@@ -33,6 +33,13 @@ help:
 	@echo "  run-stdio  - Run server in stdio mode"
 	@echo "  run-socket - Run server in socket mode (port 8080)"
 	@echo "  version    - Show version information"
+	@echo ""
+	@echo "VS Code Extension (editors/code/):"
+	@echo "  ext-install - Install extension dependencies"
+	@echo "  ext-build   - Build the extension"
+	@echo "  ext-test    - Run extension tests"
+	@echo "  ext-package - Package the extension (.vsix)"
+
 
 # Quick JAR build without tests (most common during development)
 jar:
@@ -88,3 +95,24 @@ run-socket: jar
 # Version information
 version:
 	./gradlew printVersion $(GRADLE_ARGS)
+
+# VS Code Extension (editors/code/)
+EXT_DIR := editors/code
+
+# Smart install: Only runs npm install if package.json/lock has changed or node_modules is missing
+$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/package-lock.json
+	cd $(EXT_DIR) && npm install
+	@touch $@
+
+# Explicit clean install
+ext-install:
+	cd $(EXT_DIR) && npm ci
+
+ext-build: $(EXT_DIR)/node_modules
+	cd $(EXT_DIR) && npm run compile
+
+ext-test: $(EXT_DIR)/node_modules
+	cd $(EXT_DIR) && npm test
+
+ext-package: $(EXT_DIR)/node_modules
+	cd $(EXT_DIR) && npm run package

@@ -1,0 +1,68 @@
+# Copybara configuration for syncing editors/code/ to vscode-groovy mirror
+#
+# This workflow syncs changes from the groovy-lsp monorepo to the standalone
+# vscode-groovy repository. The mirror is read-only; all development happens
+# in the monorepo.
+#
+# Usage: copybara copy.bara.sky push-to-vscode-groovy
+
+core.workflow(
+    name = "push-to-vscode-groovy",
+    
+    origin = git.origin(
+        url = "https://github.com/albertocavalcante/groovy-lsp.git",
+        ref = "main",
+    ),
+    
+    destination = git.github_destination(
+        url = "https://github.com/albertocavalcante/vscode-groovy.git",
+        push = "main",
+    ),
+    
+    # Only sync files from editors/code/
+    origin_files = glob(
+        include = ["editors/code/**"],
+        exclude = [
+            # Exclude monorepo-specific tooling
+            "editors/code/.gemini/**",
+            "editors/code/.aider*",
+        ]
+    ),
+    
+    transformations = [
+        # Move files from editors/code/ to root
+        core.move("editors/code", ""),
+        
+        # Revert monorepo-specific package.json changes
+        core.replace(
+            before = '"directory": "editors/code"',
+            after = "",
+            paths = glob(["package.json"]),
+        ),
+        core.replace(
+            before = "https://github.com/albertocavalcante/groovy-lsp.git",
+            after = "https://github.com/albertocavalcante/vscode-groovy.git",
+            paths = glob(["package.json"]),
+        ),
+        core.replace(
+            before = "https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code",
+            after = "https://github.com/albertocavalcante/vscode-groovy",
+            paths = glob(["package.json", "README.md"]),
+        ),
+        core.replace(
+            before = "https://github.com/albertocavalcante/groovy-lsp/issues",
+            after = "https://github.com/albertocavalcante/vscode-groovy/issues",
+            paths = glob(["package.json"]),
+        ),
+        
+        # Add sync metadata to commit message
+        metadata.add_header(
+            "This commit was automatically synced from groovy-lsp monorepo.\n" +
+            "Source: https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code\n" +
+            "Do not edit this repository directly - changes will be overwritten.\n\n"
+        ),
+    ],
+    
+    # All commits appear as from gls-bot (consistent with jenkins-extractor)
+    authoring = authoring.overwrite("gls-bot <gls-bot@cavalcante.uk>"),
+)

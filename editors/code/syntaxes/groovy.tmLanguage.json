@@ -1,0 +1,234 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Groovy",
+  "scopeName": "source.groovy",
+  "fileTypes": [
+    "groovy",
+    "gvy",
+    "gy",
+    "gsh",
+    "gradle",
+    "Jenkinsfile"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#annotations"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.groovy",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": {
+            "0": {
+              "name": "punctuation.definition.comment.groovy"
+            }
+          }
+        },
+        {
+          "name": "comment.line.double-slash.groovy",
+          "begin": "//",
+          "end": "$",
+          "captures": {
+            "0": {
+              "name": "punctuation.definition.comment.groovy"
+            }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.groovy",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.groovy",
+              "match": "\\\\."
+            },
+            {
+              "include": "#string-interpolation"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.triple.groovy",
+          "begin": "'''",
+          "end": "'''",
+          "patterns": [
+            {
+              "name": "constant.character.escape.groovy",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.groovy",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.groovy",
+              "match": "\\\\."
+            },
+            {
+              "include": "#string-interpolation"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.groovy",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.groovy",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "string-interpolation": {
+      "patterns": [
+        {
+          "name": "meta.embedded.line.groovy",
+          "contentName": "source.groovy.embedded",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        },
+        {
+          "name": "variable.other.groovy",
+          "match": "\\$[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.groovy",
+          "match": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?[fFdDlLgG]?\\b"
+        },
+        {
+          "name": "constant.numeric.hex.groovy",
+          "match": "\\b0[xX][0-9a-fA-F]+[lL]?\\b"
+        },
+        {
+          "name": "constant.numeric.octal.groovy",
+          "match": "\\b0[0-7]+[lL]?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.groovy",
+          "match": "\\b0[bB][01]+[lL]?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.groovy",
+          "match": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|try|catch|finally|throw|synchronized)\\b"
+        },
+        {
+          "name": "keyword.other.groovy",
+          "match": "\\b(def|class|interface|enum|trait|extends|implements|import|package|as|in|instanceof)\\b"
+        },
+        {
+          "name": "storage.modifier.groovy",
+          "match": "\\b(public|private|protected|static|final|abstract|native|synchronized|transient|volatile|strictfp)\\b"
+        },
+        {
+          "name": "storage.type.groovy",
+          "match": "\\b(void|boolean|byte|char|short|int|long|float|double|String|Object|List|Map|Set|Collection)\\b"
+        },
+        {
+          "name": "constant.language.groovy",
+          "match": "\\b(true|false|null|this|super)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.groovy",
+          "match": "(==|!=|<=|>=|<=>|=~|==~|\\?:|\\?\\.|\\*\\.|\\.\\.\\.|\\.\\.)"
+        },
+        {
+          "name": "keyword.operator.assignment.groovy",
+          "match": "(=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=|>>>=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.groovy",
+          "match": "(\\+\\+|--|\\+|-|\\*|/|%|\\*\\*)"
+        },
+        {
+          "name": "keyword.operator.logical.groovy",
+          "match": "(&&|\\|\\||!|\\?|:)"
+        },
+        {
+          "name": "keyword.operator.bitwise.groovy",
+          "match": "(&|\\||\\^|~|<<|>>|>>>)"
+        },
+        {
+          "name": "keyword.operator.comparison.groovy",
+          "match": "(<|>|<=|>=)"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.groovy",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.groovy",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "annotations": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.groovy",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    }
+  }
+}
