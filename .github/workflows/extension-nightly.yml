@@ -1,0 +1,131 @@
+name: Extension Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Ref to build from"
+        required: false
+        default: "main"
+      use_latest_lsp:
+        description: "Use the latest Groovy LSP (instead of pinned)"
+        required: false
+        type: boolean
+        default: false
+      skip_tests:
+        description: "Skip test suite"
+        required: false
+        type: boolean
+        default: false
+      publish_prerelease:
+        description: "Publish a GitHub prerelease with the nightly VSIX attached"
+        required: false
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    working-directory: editors/code
+
+jobs:
+  nightly:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      REQUIRE_SERVER_BUNDLE: true
+      USE_LATEST_LSP_INPUT: ${{ github.event.inputs.use_latest_lsp || 'false' }}
+      SKIP_TESTS_INPUT: ${{ github.event.inputs.skip_tests || 'false' }}
+      PUBLISH_PRERELEASE_INPUT: ${{ github.event.inputs.publish_prerelease || 'false' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'main' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/code/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Compute Groovy LSP cache key
+        id: groovy_lsp_cache
+        if: env.USE_LATEST_LSP_INPUT != 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node tools/compute-groovy-cache-key.js >> "$GITHUB_OUTPUT"
+
+      - name: Cache Groovy LSP
+        if: env.USE_LATEST_LSP_INPUT != 'true'
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: |
+            editors/code/server/groovy-lsp.jar
+            editors/code/server/.groovy-lsp-version
+          key: groovy-lsp-${{ runner.os }}-${{ steps.groovy_lsp_cache.outputs.tag }}-${{ steps.groovy_lsp_cache.outputs.hash }}
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SKIP_PREPARE_SERVER: false
+          USE_LATEST_GROOVY_LSP: ${{ env.USE_LATEST_LSP_INPUT }}
+
+      - name: Compute nightly version
+        id: nightly_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
+          NIGHTLY_VERSION="${BASE_VERSION}-nightly.$(date -u +%Y%m%d%H%M)"
+          npm version "$NIGHTLY_VERSION" --no-git-tag-version
+          echo "nightly_version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Build extension
+        run: npm run compile
+
+      - name: Run tests
+        if: env.SKIP_TESTS_INPUT != 'true'
+        run: |
+          /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+          export DISPLAY=:99
+          npm test
+
+      - name: Package VSIX
+        run: npm run package
+        env:
+          SKIP_PREPARE_SERVER: true
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vsix-nightly-${{ steps.nightly_version.outputs.nightly_version }}
+          path: editors/code/*.vsix
+          retention-days: 7
+
+      - name: Publish prerelease (GitHub only)
+        if: env.PUBLISH_PRERELEASE_INPUT == 'true'
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
+        with:
+          tag_name: ${{ steps.nightly_version.outputs.nightly_tag }}
+          name: Extension Nightly ${{ steps.nightly_version.outputs.nightly_version }}
+          prerelease: true
+          generate_release_notes: false
+          files: editors/code/*.vsix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
