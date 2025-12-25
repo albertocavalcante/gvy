@@ -1,0 +1,62 @@
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be named `copilot-setup-steps` for the coding agent to pick it up.
+  copilot-setup-steps:
+    environment: copilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read # used by checkout and prepare-server download auth
+    env:
+      GH_HOST: github.com
+      GH_TOKEN: ${{ secrets.COPILOT_GH_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Groovy Language Server
+        run: npm run prepare-server:download
+
+      - name: Ensure GitHub CLI is available
+        run: |
+          if ! command -v gh >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y gh
+          fi
+          gh --version
+
+      - name: Authenticate GitHub CLI
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "GH_TOKEN is not set; provide a fine-grained PAT in the copilot environment." >&2
+            exit 1
+          fi
+          gh auth setup-git
+          gh auth status

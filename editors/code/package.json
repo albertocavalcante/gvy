@@ -1,0 +1,529 @@
+{
+  "name": "vscode-groovy",
+  "displayName": "Groovy Language Support",
+  "description": "Language support for Apache Groovy, Gradle, and Jenkins Pipeline",
+  "version": "0.1.0-alpha.0",
+  "publisher": "albertocavalcante",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "groovy",
+    "gradle",
+    "jenkinsfile",
+    "jenkins",
+    "pipeline"
+  ],
+  "activationEvents": [
+    "onLanguage:groovy",
+    "onLanguage:jenkinsfile",
+    "workspaceContains:**/Jenkinsfile",
+    "workspaceContains:**/Jenkinsfile.*",
+    "workspaceContains:**/*.groovy",
+    "workspaceContains:**/*.gradle",
+    "workspaceContains:**/*.gradle.kts"
+  ],
+  "main": "./client/out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "groovy.restartServer",
+        "title": "Groovy: Restart Language Server"
+      },
+      {
+        "command": "groovy.showVersion",
+        "title": "Groovy: Show Language Server Version"
+      },
+      {
+        "command": "groovy.checkForUpdates",
+        "title": "Groovy: Check for Language Server Updates"
+      },
+      {
+        "command": "groovy.gradle.build",
+        "title": "Gradle: Build"
+      },
+      {
+        "command": "groovy.gradle.test",
+        "title": "Gradle: Test"
+      },
+      {
+        "command": "groovy.gradle.clean",
+        "title": "Gradle: Clean"
+      },
+      {
+        "command": "groovy.gradle.selectTask",
+        "title": "Gradle: Select and Run Task"
+      },
+      {
+        "command": "groovy.gradle.dependencies",
+        "title": "Gradle: Show Dependencies"
+      },
+      {
+        "command": "groovy.gradle.refresh",
+        "title": "Gradle: Refresh Project"
+      },
+      {
+        "command": "groovy.gradle.projectInfo",
+        "title": "Gradle: Show Project Info"
+      },
+      {
+        "command": "groovy.test.runAll",
+        "title": "Groovy: Run All Tests",
+        "icon": "$(testing-run-all-icon)"
+      },
+      {
+        "command": "groovy.test.runCurrentFile",
+        "title": "Groovy: Run Tests in Current File",
+        "icon": "$(testing-run-icon)"
+      },
+      {
+        "command": "groovy.repl.sendFile",
+        "title": "Groovy: Send File to REPL"
+      },
+      {
+        "command": "groovy.repl.restart",
+        "title": "Groovy: Restart REPL",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "groovy.repl.stop",
+        "title": "Groovy: Stop REPL",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "groovy.repl.clear",
+        "title": "Groovy: Clear REPL",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "groovy.test.generate",
+        "title": "Groovy: Generate Spock Specification",
+        "category": "Test"
+      },
+      {
+        "command": "groovy.repl.show",
+        "title": "Groovy: Show REPL",
+        "icon": "$(terminal)"
+      }
+    ],
+    "languages": [
+      {
+        "id": "groovy",
+        "aliases": [
+          "Groovy",
+          "groovy"
+        ],
+        "extensions": [
+          ".groovy",
+          ".gvy",
+          ".gy",
+          ".gsh",
+          ".gradle"
+        ],
+        "firstLine": "^#!.*\\b(groovy|gradle)\\b",
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "jenkinsfile",
+        "aliases": [
+          "Jenkinsfile",
+          "Jenkins Pipeline"
+        ],
+        "filenames": [
+          "Jenkinsfile"
+        ],
+        "filenamePatterns": [
+          "Jenkinsfile*",
+          "*.jenkinsfile",
+          "*.Jenkinsfile"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "groovy",
+        "scopeName": "source.groovy",
+        "path": "./syntaxes/groovy.tmLanguage.json"
+      },
+      {
+        "language": "jenkinsfile",
+        "scopeName": "source.groovy",
+        "path": "./syntaxes/groovy.tmLanguage.json"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "jenkinsfile",
+        "scopes": {
+          "macro": [
+            "entity.name.tag.pipeline.jenkins"
+          ],
+          "decorator": [
+            "entity.name.function.decorator.jenkins"
+          ]
+        }
+      },
+      {
+        "language": "groovy",
+        "scopes": {
+          "macro": [
+            "entity.name.tag.pipeline.jenkins"
+          ],
+          "decorator": [
+            "entity.name.function.decorator.jenkins"
+          ]
+        }
+      }
+    ],
+    "configurationDefaults": {
+      "[jenkinsfile]": {
+        "editor.semanticHighlighting.enabled": true
+      },
+      "[groovy]": {
+        "editor.semanticHighlighting.enabled": true
+      }
+    },
+    "configuration": {
+      "title": "Groovy Language Server",
+      "properties": {
+        "groovy.java.home": {
+          "type": "string",
+          "description": "Path to Java home (requires Java 17+)"
+        },
+        "groovy.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace communication with Groovy Language Server"
+        },
+        "groovy.server.maxNumberOfProblems": {
+          "scope": "resource",
+          "type": "number",
+          "default": 100,
+          "description": "Controls the maximum number of problems produced by the server."
+        },
+        "groovy.server.path": {
+          "scope": "machine",
+          "type": "string",
+          "description": "Absolute path to a custom Groovy Language Server JAR. If not set, the embedded server is used."
+        },
+        "groovy.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable code formatting for Groovy files"
+        },
+        "groovy.compilation.mode": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "single-file"
+          ],
+          "default": "workspace",
+          "enumDescriptions": [
+            "Compile all files together for full project context (slower, more accurate)",
+            "Compile each file independently for faster feedback (may miss cross-file errors)"
+          ],
+          "description": "Compilation mode for Groovy files"
+        },
+        "groovy.compilation.incrementalThreshold": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "description": "Number of files changed to trigger full workspace recompilation"
+        },
+        "groovy.compilation.maxWorkspaceFiles": {
+          "type": "number",
+          "default": 500,
+          "minimum": 1,
+          "description": "Maximum number of files to compile in workspace mode. Larger projects automatically use single-file mode."
+        },
+        "groovy.repl.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable the Groovy REPL integration"
+        },
+        "groovy.repl.maxSessions": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Maximum number of concurrent REPL sessions"
+        },
+        "groovy.repl.sessionTimeoutMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 1,
+          "description": "Idle timeout for REPL sessions (minutes)"
+        },
+        "groovy.codenarc.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable CodeNarc static analysis for Groovy files"
+        },
+        "groovy.codenarc.propertiesFile": {
+          "type": "string",
+          "description": "Path to custom CodeNarc configuration file (.properties or .groovy). If not set, auto-detection is used."
+        },
+        "groovy.codenarc.autoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect project type (Jenkins, Gradle, Spock) and apply appropriate CodeNarc ruleset"
+        },
+        "groovy.jenkins.filePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Jenkinsfile",
+            "vars/*.groovy"
+          ],
+          "description": "File patterns to recognize as Jenkins Pipeline files"
+        },
+        "groovy.jenkins.sharedLibraries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Library name (e.g., 'my-pipeline-lib')"
+              },
+              "jar": {
+                "type": "string",
+                "description": "Absolute path to library JAR file"
+              },
+              "sourcesJar": {
+                "type": "string",
+                "description": "Absolute path to library sources JAR (optional, for navigation)"
+              }
+            },
+            "required": [
+              "name",
+              "jar"
+            ]
+          },
+          "default": [],
+          "markdownDescription": "Jenkins shared libraries configuration. Each library provides custom pipeline steps and DSL extensions.\n\nExample:\n```json\n[\n  {\n    \"name\": \"my-pipeline-lib\",\n    \"jar\": \"/path/to/my-pipeline-lib.jar\",\n    \"sourcesJar\": \"/path/to/my-pipeline-lib-sources.jar\"\n  }\n]\n```"
+        },
+        "groovy.jenkins.gdslPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
+        },
+        "groovy.jenkins.pluginsTxtPath": {
+          "type": "string",
+          "description": "Explicit path to Jenkins plugins.txt (overrides auto-discovery)"
+        },
+        "groovy.jenkins.plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional Jenkins plugins to include (plugin IDs, e.g. 'workflow-basic-steps')"
+        },
+        "groovy.jenkins.includeDefaultPlugins": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include Groovy LSP built-in default Jenkins plugins (recommended)"
+        },
+        "groovy.update.checkOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check for Language Server updates when the extension is activated"
+        },
+        "groovy.update.checkIntervalHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "description": "Hours between automatic update checks (minimum: 1)"
+        },
+        "groovy.update.notifications": {
+          "type": "string",
+          "enum": [
+            "off",
+            "onlyWhenOutdated",
+            "always"
+          ],
+          "default": "onlyWhenOutdated",
+          "enumDescriptions": [
+            "Disable update notifications",
+            "Show notification only when a new version is available",
+            "Always show notification after checking for updates"
+          ],
+          "description": "When to show update notifications"
+        },
+        "groovy.ai.tools.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Master switch to enable AI tools (e.g., symbol search, definition lookup) for LLMs."
+        },
+        "groovy.ai.tools.allowed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "all"
+          ],
+          "description": "List of allowed tools. Use ['all'] to enable all tools, or specify individual tool names (e.g., ['groovy_find_symbol'])."
+        }
+      }
+    },
+    "languageModelTools": [
+      {
+        "name": "groovy_find_symbol",
+        "tags": [
+          "workspace",
+          "groovy"
+        ],
+        "toolReferenceName": "groovy_find_symbol",
+        "displayName": "Groovy: Find Symbol",
+        "modelDescription": "Locate classes, methods, or fields in the Groovy workspace by name.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The name of the symbol to search for (e.g., 'OrderService')"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      },
+      {
+        "name": "groovy_get_references",
+        "tags": [
+          "references",
+          "groovy"
+        ],
+        "toolReferenceName": "groovy_get_references",
+        "displayName": "Groovy: Find References",
+        "modelDescription": "Find all usages of a specific symbol at a given location.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "The file URI of the symbol"
+            },
+            "line": {
+              "type": "number",
+              "description": "The line number (0-indexed)"
+            },
+            "character": {
+              "type": "number",
+              "description": "The character position (0-indexed)"
+            }
+          },
+          "required": [
+            "uri",
+            "line",
+            "character"
+          ]
+        }
+      },
+      {
+        "name": "groovy_get_definition",
+        "tags": [
+          "definition",
+          "groovy"
+        ],
+        "toolReferenceName": "groovy_get_definition",
+        "displayName": "Groovy: Get Definition",
+        "modelDescription": "Resolve a symbol at a location to its definition.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "uri": {
+              "type": "string",
+              "description": "The file URI of the usage"
+            },
+            "line": {
+              "type": "number",
+              "description": "The line number (0-indexed)"
+            },
+            "character": {
+              "type": "number",
+              "description": "The character position (0-indexed)"
+            }
+          },
+          "required": [
+            "uri",
+            "line",
+            "character"
+          ]
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run prepare-server && node tools/validate-server.js && npm run package-build",
+    "prepare-server": "node tools/prepare-server.js",
+    "prepare-server:local": "PREFER_LOCAL=true node tools/prepare-server.js",
+    "prepare-server:download": "FORCE_DOWNLOAD=true node tools/prepare-server.js",
+    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "package-build": "npm run check-types && npm run lint && node esbuild.js --production",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
+    "check-types": "tsc --noEmit --project client/tsconfig.json",
+    "lint": "eslint client/src/**/*.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "package": "vsce package",
+    "install-extension": "node tools/install-extension.js",
+    "clean": "rm -rf client/out/ server/*.jar server/.groovy-lsp-version",
+    "postinstall": "cd client && npm install && cd .. && npm run prepare-server",
+    "test": "mocha",
+    "test:watch": "mocha --watch",
+    "compile:tests": "tsc -b client/tsconfig.json",
+    "test:integration": "npm run compile:tests && vscode-test",
+    "test:all": "npm run test && npm run test:integration"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22",
+    "@types/proxyquire": "^1.3.31",
+    "@types/sinon": "^21.0.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.0.0",
+    "chai": "^6.2.1",
+    "esbuild": "^0.27.0",
+    "eslint": "^9.13.0",
+    "fast-check": "^4.4.0",
+    "mocha": "^11.7.5",
+    "npm-run-all2": "^8.0.0",
+    "prettier": "^3.7.3",
+    "proxyquire": "^2.1.3",
+    "sinon": "^21.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/albertocavalcante/vscode-groovy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/albertocavalcante/vscode-groovy/issues"
+  },
+  "homepage": "https://github.com/albertocavalcante/vscode-groovy#readme"
+}

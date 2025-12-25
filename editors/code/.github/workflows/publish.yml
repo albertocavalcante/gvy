@@ -1,0 +1,48 @@
+name: Publish Extension
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      REQUIRE_SERVER_BUNDLE: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: |
+          npm run compile
+          npm run package
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
+
+      # Uncomment when ready to publish to Open VSX
+      # - name: Publish to Open VSX Registry
+      #   run: npx ovsx publish -p ${{ secrets.OVSX_TOKEN }}
+
+      - name: Upload VSIX to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.vsix'
+          tag_name: ${{ github.event.release.tag_name }}
