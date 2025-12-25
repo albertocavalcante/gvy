@@ -97,15 +97,16 @@ version:
 	./gradlew printVersion $(GRADLE_ARGS)
 
 # VS Code Extension (editors/code/)
+EXT_DIR := editors/code
 
 ext-install:
-	cd editors/code && npm ci
+	cd $(EXT_DIR) && npm ci
 
 ext-build:
-	cd editors/code && npm run compile
+	cd $(EXT_DIR) && npm run compile
 
 ext-test:
-	cd editors/code && npm test
+	cd $(EXT_DIR) && npm test
 
 ext-package:
-	cd editors/code && npm run package
+	cd $(EXT_DIR) && npm run package
