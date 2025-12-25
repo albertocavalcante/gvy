@@ -20,6 +20,10 @@ export class LSPToolService implements ILSPToolService {
             query
         );
 
+        if (!symbols) {
+            return [];
+        }
+
         return symbols.map((s: vscodeType.SymbolInformation) => this.toAISymbolInfo(s));
     }
 
@@ -35,6 +39,10 @@ export class LSPToolService implements ILSPToolService {
             uri,
             position
         );
+
+        if (!locations) {
+            return [];
+        }
 
         return locations.map((l: vscodeType.Location) => this.toAILocation(l));
     }
