@@ -128,4 +128,42 @@ describe('CoverageService', () => {
         const line = coverage.details[0];
         assert.strictEqual(line.branches, undefined, 'Branches should be undefined for lines without branches');
     });
+
+    it('should handle multiple packages correctly (regex lastIndex reset)', async () => {
+        const workspacePath = '/workspace';
+
+        fsMock.existsSync.returns(true);
+
+        // Two packages: first one matches, second one processes correctly
+        const xmlContent = `
+            <report>
+                <package name="com/example/pkg1">
+                    <sourcefile name="Class1.groovy">
+                        <line nr="1" mi="0" ci="1" mb="0" cb="0"/>
+                    </sourcefile>
+                </package>
+                <package name="com/example/pkg2">
+                    <sourcefile name="Class2.groovy">
+                        <line nr="5" mi="0" ci="1" mb="0" cb="0"/>
+                    </sourcefile>
+                </package>
+            </report>
+        `;
+        fsMock.promises.readFile.resolves(xmlContent);
+
+        const testRunMock = {
+            addCoverage: sinon.spy()
+        };
+
+        await coverageService.addCoverageToRun(testRunMock, workspacePath);
+
+        // Should produce 2 file coverage entries
+        assert.equal(testRunMock.addCoverage.callCount, 2, 'Should process both files');
+
+        const firstCall = testRunMock.addCoverage.getCall(0).args[0];
+        assert.ok(firstCall.uri.fsPath.includes('Class1.groovy'));
+
+        const secondCall = testRunMock.addCoverage.getCall(1).args[0];
+        assert.ok(secondCall.uri.fsPath.includes('Class2.groovy'));
+    });
 });

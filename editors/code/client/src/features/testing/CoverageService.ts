@@ -109,6 +109,7 @@ export class CoverageService {
             const packageName = packageMatch[1].replace(/\//g, path.sep);
             const packageContent = packageMatch[2];
 
+            sourcefileRegex.lastIndex = 0;
             let sourceMatch;
             while ((sourceMatch = sourcefileRegex.exec(packageContent)) !== null) {
                 const filename = sourceMatch[1];
@@ -134,6 +135,7 @@ export class CoverageService {
                 }
 
                 const lines: JacocoLine[] = [];
+                lineRegex.lastIndex = 0;
                 let lineMatch;
                 while ((lineMatch = lineRegex.exec(sourceContent)) !== null) {
                     lines.push({
