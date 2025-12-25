@@ -1,5 +1,6 @@
 {
     "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+    "separate-pull-requests": true,
     "packages": {
         ".": {
             "release-type": "simple",
@@ -7,11 +8,22 @@
             "bump-patch-for-minor-pre-major": true,
             "versioning": "default",
             "include-v-in-tag": true,
+            "include-component-in-tag": false,
             "initial-version": "0.1.0",
             "prerelease": false,
             "extra-files": [
                 "build.gradle.kts"
             ]
+        },
+        "editors/code": {
+            "release-type": "node",
+            "component": "vscode-groovy",
+            "include-component-in-tag": true,
+            "changelog-path": "CHANGELOG.md",
+            "bump-minor-pre-major": true,
+            "bump-patch-for-minor-pre-major": true,
+            "prerelease": true,
+            "prerelease-type": "alpha"
         }
     }
 }
