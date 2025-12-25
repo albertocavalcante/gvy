@@ -1,0 +1,27 @@
+# ghalint configuration - GitHub Actions security linter
+# Docs: https://github.com/suzuki-shunsuke/ghalint
+# Run: brew install suzuki-shunsuke/tap/ghalint && ghalint run
+#
+# TODO(#320): Add CI workflow to run ghalint on PR changes.
+#   See: https://github.com/albertocavalcante/groovy-lsp/issues/320
+
+excludes:
+  # Lightweight jobs inherit workflow-level permissions
+  - policy_name: job_permissions
+    job_name: check-paths
+  - policy_name: job_permissions
+    job_name: check-runner
+  - policy_name: job_permissions
+    job_name: plan
+  - policy_name: job_permissions
+    job_name: apply
+  - policy_name: job_permissions
+    job_name: wait-for-runner
+
+  # Short jobs don't need explicit timeout
+  - policy_name: job_timeout_minutes_is_required
+    job_name: check-paths
+  - policy_name: job_timeout_minutes_is_required
+    job_name: check-runner
+  - policy_name: job_timeout_minutes_is_required
+    job_name: validate

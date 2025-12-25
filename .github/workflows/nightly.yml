@@ -14,9 +14,11 @@ on:
         required: false
         type: choice
         options:
+          - "github-hosted"
           - "self-hosted"
-          - "ubuntu-latest"
-        default: "self-hosted"
+          - "local-macos"
+          - "magalu"
+        default: "github-hosted"
       skip_tests:
         description: "Skip test suite"
         required: false
@@ -42,7 +44,7 @@ jobs:
     name: Nightly
     permissions:
       contents: write
-    runs-on: ${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'self-hosted' }}
+    runs-on: ${{ (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && 'self-hosted' || (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || 'macos-15' }}
     env:
       SKIP_TESTS_INPUT: ${{ github.event.inputs.skip_tests || 'false' }}
       PUBLISH_PRERELEASE_INPUT: ${{ github.event.inputs.publish_prerelease || 'false' }}
