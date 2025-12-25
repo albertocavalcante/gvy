@@ -17,6 +17,7 @@ import { LSPToolService } from "./features/ai/LSPToolService";
 import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
 import { CommandProvider } from "./features/ai/CommandProvider";
+import { TestFeature } from "./features/testing/TestFeature";
 
 /**
  * Activates the extension
@@ -66,7 +67,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Register Spock Test Scaffolding
         // TODO: Move this into registerTestingFeatures once refined
-        const { TestFeature } = require('./features/testing/TestFeature');
         context.subscriptions.push(new TestFeature());
 
         // Initialize update service for LSP version checking
