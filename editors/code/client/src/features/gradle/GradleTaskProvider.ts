@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { GradleService } from './GradleService';
 
 export class GradleTaskProvider implements vscode.TaskProvider {
-    constructor(private readonly gradleService: GradleService) {}
+    constructor(private readonly gradleService: GradleService) { }
 
     async provideTasks(_token: vscode.CancellationToken): Promise<vscode.Task[]> {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -63,7 +63,7 @@ export class GradleTaskProvider implements vscode.TaskProvider {
         if (task.definition.type === 'gradle' && task.definition.task) {
             return new vscode.Task(
                 task.definition,
-                task.scope || vscode.workspace.workspaceFolders![0],
+                task.scope || (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0 ? vscode.workspace.workspaceFolders[0] : vscode.TaskScope.Global),
                 task.definition.task,
                 'gradle',
                 new vscode.ShellExecution(`gradle ${task.definition.task}`)

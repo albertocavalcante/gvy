@@ -28,9 +28,9 @@ export class SpockGenerator {
     }`;
         }).join('\n\n');
 
-        return `package ${packageName}
+        const packageDecl = packageName ? `package ${packageName}\n\n` : '';
 
-import spock.lang.Specification
+        return `${packageDecl}import spock.lang.Specification
 
 class ${specName} extends Specification {
 
