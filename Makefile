@@ -97,7 +97,6 @@ version:
 	./gradlew printVersion $(GRADLE_ARGS)
 
 # VS Code Extension (editors/code/)
-.PHONY: ext-install ext-build ext-test ext-package
 
 ext-install:
 	cd editors/code && npm ci
