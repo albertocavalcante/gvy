@@ -47,7 +47,7 @@ describe('CoverageService', () => {
         // Load CoverageService with mocks
         // Load CoverageService with mocks
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const module = (proxyquire as any)('../../../../src/features/testing/CoverageService', {
+        const module = (proxyquire as any).noCallThru()('../../../../src/features/testing/CoverageService', {
             'vscode': vscodeMock,
             'fs': fsMock
         });
