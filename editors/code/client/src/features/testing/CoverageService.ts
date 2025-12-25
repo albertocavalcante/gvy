@@ -166,9 +166,14 @@ export class CoverageService {
                 // Create branch coverage if branches exist
                 const branches: vscode.BranchCoverage[] = [];
                 if (line.mb > 0 || line.cb > 0) {
-                    branches.push(
-                        new vscode.BranchCoverage(line.cb > 0, position, 'branch'),
-                    );
+                    // Add covered branches (`cb` count)
+                    for (let i = 0; i < line.cb; i++) {
+                        branches.push(new vscode.BranchCoverage(1, position));
+                    }
+                    // Add missed branches (`mb` count)
+                    for (let i = 0; i < line.mb; i++) {
+                        branches.push(new vscode.BranchCoverage(0, position));
+                    }
                 }
 
                 return new vscode.StatementCoverage(
