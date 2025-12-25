@@ -334,5 +334,5 @@ jobs:
       - name: Upload VSIX to release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2
         with:
-          files: '*.vsix'
+          files: editors/code/*.vsix
           tag_name: ${{ github.ref_name }}
