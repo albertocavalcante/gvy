@@ -97,13 +97,24 @@ Requirements: `gh` (authenticated for the repo), `codex` CLI, and `jq` for parsi
 
 ### Project Structure
 
-```
-src/
-├── main/kotlin/         # LSP server implementation
-├── test/kotlin/         # Unit tests
-.spec/                   # Technical specifications
-.github/workflows/       # CI/CD configuration
-```
+This is a monorepo containing:
+
+| Path | Description |
+|------|-------------|
+| `groovy-lsp/` | Core Language Server (Kotlin) |
+| `groovy-parser/` | Groovy parser module |
+| `groovy-jenkins/` | Jenkins Pipeline support |
+| `groovy-spock/` | Spock test framework support |
+| `editors/code/` | VS Code/Cursor/VSCodium extension |
+| `jupyter/` | Jupyter Kernel integration |
+| `tests/` | End-to-end LSP scenarios |
+
+### VS Code Extension
+
+The VS Code extension is located in `editors/code/`. 
+See [editors/code/README.md](editors/code/README.md) for extension-specific documentation.
+
+A standalone mirror is maintained at [vscode-groovy](https://github.com/albertocavalcante/vscode-groovy) (synced via Copybara).
 
 ## Contributing
 

@@ -520,10 +520,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/albertocavalcante/vscode-groovy.git"
+    "url": "https://github.com/albertocavalcante/groovy-lsp.git",
+    "directory": "editors/code"
   },
   "bugs": {
-    "url": "https://github.com/albertocavalcante/vscode-groovy/issues"
+    "url": "https://github.com/albertocavalcante/groovy-lsp/issues"
   },
-  "homepage": "https://github.com/albertocavalcante/vscode-groovy#readme"
+  "homepage": "https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code#readme"
 }

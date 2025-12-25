@@ -13,7 +13,7 @@ ifeq ($(shell uname),Darwin)
     endif
 endif
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single ext-install ext-build ext-test ext-package
 
 # Default target
 help:
@@ -33,6 +33,13 @@ help:
 	@echo "  run-stdio  - Run server in stdio mode"
 	@echo "  run-socket - Run server in socket mode (port 8080)"
 	@echo "  version    - Show version information"
+	@echo ""
+	@echo "VS Code Extension (editors/code/):"
+	@echo "  ext-install - Install extension dependencies"
+	@echo "  ext-build   - Build the extension"
+	@echo "  ext-test    - Run extension tests"
+	@echo "  ext-package - Package the extension (.vsix)"
+
 
 # Quick JAR build without tests (most common during development)
 jar:
@@ -88,3 +95,18 @@ run-socket: jar
 # Version information
 version:
 	./gradlew printVersion $(GRADLE_ARGS)
+
+# VS Code Extension (editors/code/)
+.PHONY: ext-install ext-build ext-test ext-package
+
+ext-install:
+	cd editors/code && npm ci
+
+ext-build:
+	cd editors/code && npm run compile
+
+ext-test:
+	cd editors/code && npm test
+
+ext-package:
+	cd editors/code && npm run package
