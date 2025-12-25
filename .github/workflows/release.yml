@@ -114,18 +114,22 @@ jobs:
       run: |
         mkdir -p dist
         # Copy JAR with version in filename
+        # Use pattern matching to handle versioned runner labels (e.g., ubuntu-24.04, macos-14)
         if [ "${{ matrix.os }}" = "self-hosted" ]; then
            # On self-hosted, we assume the JAR is portable and generate all platform variants
            echo "Generating all platform artifacts from single build..."
            cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
            cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
            cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
-        elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+        elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
-        elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+        elif [[ "${{ matrix.os }}" == macos* ]] || [[ "${{ matrix.os }}" == *macos* ]]; then
           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
-        elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+        elif [[ "${{ matrix.os }}" == windows* ]]; then
           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+        else
+          echo "Unknown OS: ${{ matrix.os }}, creating generic artifact"
+          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-generic.jar
         fi
     - name: Upload release artifacts
       uses: actions/upload-artifact@v6
