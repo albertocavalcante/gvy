@@ -1,6 +1,5 @@
 
 import * as vscode from 'vscode';
-import { ILSPToolService, AISymbolInfo, AILocation } from './types';
 
 /**
  * Manages the registration and availability of AI tools based on configuration.

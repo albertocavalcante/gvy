@@ -2,7 +2,7 @@
  * Type definitions for AI Tool Services
  */
 
-import * as vscode from 'vscode';
+
 
 /**
  * Represents a simplified symbol information for LLM consumption
@@ -57,6 +57,7 @@ export interface ILSPToolService {
 export interface ToolDefinition {
     name: string;
     command: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (service: ILSPToolService, params: any) => Promise<any>;
 }
 

@@ -19,6 +19,7 @@ export class CommandProvider implements vscode.Disposable {
     private registerCommands() {
         TOOL_DEFINITIONS.forEach(tool => {
             if (this.registry.isToolEnabled(tool.name)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 this.disposables.push(vscode.commands.registerCommand(tool.command, async (args: any) => {
                     return await tool.handler(this.lspService, args);
                 }));

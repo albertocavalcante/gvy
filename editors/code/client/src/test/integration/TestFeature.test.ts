@@ -1,7 +1,6 @@
 
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import * as path from 'path';
 
 suite('Spock Test Scaffolding Integration', () => {
 
