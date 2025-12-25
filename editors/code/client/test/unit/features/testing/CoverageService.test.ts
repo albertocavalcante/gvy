@@ -59,10 +59,10 @@ describe('CoverageService', () => {
         const workspacePath = '/workspace';
         const reportPath = '/workspace/build/reports/jacoco/test/jacocoTestReport.xml';
 
-        // Mock finding report
-        fsMock.existsSync.withArgs(reportPath).returns(true);
+        // Mock finding report - use substring match to be OS-agnostic
+        fsMock.existsSync.withArgs(sinon.match('jacocoTestReport.xml')).returns(true);
         // Mock finding source file
-        fsMock.existsSync.withArgs('/workspace/src/main/groovy/com/example/MyClass.groovy').returns(true);
+        fsMock.existsSync.withArgs(sinon.match('MyClass.groovy')).returns(true);
 
         const xmlContent = `
             <report>
@@ -106,8 +106,8 @@ describe('CoverageService', () => {
         const workspacePath = '/workspace';
         const reportPath = '/workspace/build/reports/jacoco/test/jacocoTestReport.xml';
 
-        fsMock.existsSync.withArgs(reportPath).returns(true);
-        fsMock.existsSync.withArgs('/workspace/src/main/groovy/com/example/MyClass.groovy').returns(true);
+        fsMock.existsSync.withArgs(sinon.match('jacocoTestReport.xml')).returns(true);
+        fsMock.existsSync.withArgs(sinon.match('MyClass.groovy')).returns(true);
 
         const xmlContent = `
             <report>
@@ -118,7 +118,7 @@ describe('CoverageService', () => {
                 </package>
             </report>
         `;
-        fsMock.promises.readFile.withArgs(reportPath, 'utf-8').resolves(xmlContent);
+        fsMock.promises.readFile.withArgs(sinon.match('jacocoTestReport.xml'), 'utf-8').resolves(xmlContent);
 
         const testRunMock = {
             addCoverage: sinon.spy()
