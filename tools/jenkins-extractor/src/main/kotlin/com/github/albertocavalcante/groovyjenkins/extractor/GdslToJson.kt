@@ -34,6 +34,8 @@ private const val ARG_INDEX_JENKINS_VERSION = 2
 private const val ARG_INDEX_PLUGIN_ID = 3
 private const val ARG_INDEX_PLUGIN_VERSION = 4
 private const val ARG_INDEX_PLUGIN_DISPLAY_NAME = 5
+private const val OBJECT_TYPE = "java.lang.Object"
+private const val SIMPLE_OBJECT_TYPE = "Object"
 
 data class ExtractionInputs(
     val jenkinsVersion: String,
@@ -378,7 +380,7 @@ private fun buildNamedParams(
         merged.putIfAbsent(
             positionalName,
             ExtractedParameter(
-                type = "java.lang.Object",
+                type = OBJECT_TYPE,
                 defaultValue = null,
             ),
         )
@@ -391,8 +393,8 @@ private fun mergeExtractedParameter(existing: ExtractedParameter?, candidate: Ex
     if (existing == null) return candidate
 
     val mergedType = when {
-        existing.type == "java.lang.Object" && candidate.type != "java.lang.Object" -> candidate.type
-        existing.type == "Object" && candidate.type != "Object" -> candidate.type
+        existing.type == OBJECT_TYPE && candidate.type != OBJECT_TYPE -> candidate.type
+        existing.type == SIMPLE_OBJECT_TYPE && candidate.type != SIMPLE_OBJECT_TYPE -> candidate.type
         else -> existing.type
     }
 
@@ -424,6 +426,7 @@ private fun determineClosureScope(enclosingCall: String?): StepScope = when (enc
         // `@RequiresContext` annotations to make this deterministic.
         StepScope.NODE
     }
+
     else -> {
         // NOTE: Heuristic - unknown enclosing call, defaulting to NODE as it's more common.
         // TODO: Capture more context from the GDSL runtime so this mapping is deterministic.

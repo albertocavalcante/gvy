@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
+import org.slf4j.LoggerFactory
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -10,7 +12,10 @@ import kotlin.io.path.exists
  */
 object BuildExecutableResolver {
 
-    private val isWindows: Boolean by lazy {
+    private val logger = LoggerFactory.getLogger(BuildExecutableResolver::class.java)
+
+    /** True if running on Windows, false otherwise. */
+    val isWindows: Boolean by lazy {
         System.getProperty("os.name", "").lowercase().contains("windows")
     }
 
@@ -68,6 +73,7 @@ object BuildExecutableResolver {
 
     /**
      * Generic helper to resolve a build executable.
+     * On Unix, checks executable permission and falls back to system command if not executable.
      */
     private fun resolveExecutable(
         workspaceRoot: Path,
@@ -79,10 +85,22 @@ object BuildExecutableResolver {
         val wrapper = if (useWindows) windowsWrapperName else wrapperName
         val wrapperPath = workspaceRoot.resolve(wrapper)
 
-        return if (wrapperPath.exists()) {
-            if (useWindows) wrapper else "./$wrapper"
-        } else {
-            systemCommand
+        if (!wrapperPath.exists()) return systemCommand
+
+        // On Unix, verify executable permission
+        if (!useWindows && !Files.isExecutable(wrapperPath)) {
+            logger.warn(
+                "Build wrapper exists but is not executable: {}. " +
+                    "Fix with 'chmod +x {}' or 'git update-index --chmod=+x {}'. " +
+                    "Falling back to system {}.",
+                wrapperPath,
+                wrapperName,
+                wrapperName,
+                systemCommand,
+            )
+            return systemCommand
         }
+
+        return wrapperPath.toAbsolutePath().toString()
     }
 }

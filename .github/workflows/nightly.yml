@@ -66,7 +66,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ env.VALIDATED_REF || github.event.inputs.ref || 'main' }}
+          ref: ${{ env.VALIDATED_REF || 'main' }}
 
       - name: Setup Java
         uses: actions/setup-java@v5

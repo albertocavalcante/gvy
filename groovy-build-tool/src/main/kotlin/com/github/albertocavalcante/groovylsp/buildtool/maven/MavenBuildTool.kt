@@ -72,7 +72,7 @@ class MavenBuildTool : BuildTool {
     private fun resolveViaCli(workspaceRoot: Path): List<Path> {
         val cpFile = Files.createTempFile("mvn-classpath", ".txt")
         try {
-            val mvnCommand = getMvnCommand(workspaceRoot)
+            val mvnCommand = BuildExecutableResolver.resolveMaven(workspaceRoot)
             val command = listOf(
                 mvnCommand,
                 "dependency:build-classpath",
@@ -109,25 +109,6 @@ class MavenBuildTool : BuildTool {
         } finally {
             Files.deleteIfExists(cpFile)
         }
-    }
-
-    private fun getMvnCommand(workspaceRoot: Path): String {
-        val mvnw = workspaceRoot.resolve("mvnw")
-        if (mvnw.exists()) {
-            // Ensure it's executable
-            if (!Files.isExecutable(mvnw)) {
-                mvnw.toFile().setExecutable(true)
-            }
-            return mvnw.toAbsolutePath().toString()
-        }
-
-        // Windows check
-        val mvnwCmd = workspaceRoot.resolve("mvnw.cmd")
-        if (mvnwCmd.exists()) {
-            return mvnwCmd.toAbsolutePath().toString()
-        }
-
-        return "mvn"
     }
 
     override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {

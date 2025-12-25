@@ -13,6 +13,9 @@ import org.eclipse.lsp4j.Position
  */
 object ImportUtils {
 
+    private const val IMPORT_PREFIX = "import "
+    private const val IMPORT_STATIC_PREFIX = "import static "
+
     /**
      * Extracts import information from AST (deterministic) or content (heuristic fallback).
      *
@@ -68,10 +71,10 @@ object ImportUtils {
         for (line in content.lineSequence()) {
             val trimmed = line.trim()
             when {
-                trimmed.startsWith("import ") && !trimmed.startsWith("import static ") -> {
+                trimmed.startsWith(IMPORT_PREFIX) && !trimmed.startsWith(IMPORT_STATIC_PREFIX) -> {
                     // Extract FQN: "import foo.Bar;" -> "foo.Bar"
                     val fqn = trimmed
-                        .removePrefix("import ")
+                        .removePrefix(IMPORT_PREFIX)
                         .removeSuffix(";")
                         .trim()
                     // Skip star imports
@@ -106,7 +109,7 @@ object ImportUtils {
             val trimmed = lines[i].trim()
             when {
                 trimmed.startsWith("package ") -> packageLine = i
-                trimmed.startsWith("import ") -> lastImportLine = i
+                trimmed.startsWith(IMPORT_PREFIX) -> lastImportLine = i
                 isCodeDeclaration(trimmed) -> break
             }
         }
