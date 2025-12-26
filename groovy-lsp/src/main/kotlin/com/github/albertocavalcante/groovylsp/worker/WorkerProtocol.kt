@@ -9,6 +9,7 @@ object WorkerProtocol {
 
 enum class WorkerFeature {
     AST,
+    SYMBOLS,
 }
 
 data class WorkerCapabilities(val features: Set<WorkerFeature> = emptySet())
