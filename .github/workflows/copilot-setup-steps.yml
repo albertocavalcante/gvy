@@ -1,15 +1,12 @@
-name: "Copilot Setup Steps"
-
+name: Copilot Setup Steps
 # This workflow defines the environment setup for GitHub Copilot Coding Agent.
 # When @github-copilot is mentioned in issues/PRs to auto-fix or implement features,
 # this workflow configures how the agent sets up the extension development environment.
-
 on:
   workflow_dispatch:
   push:
     paths:
       - .github/workflows/copilot-setup-steps.yml
-
 jobs:
   # The job MUST be named `copilot-setup-steps` for the coding agent to pick it up.
   copilot-setup-steps:
@@ -20,37 +17,30 @@ jobs:
       contents: read
     env:
       GH_HOST: github.com
-      GH_TOKEN: ${{ secrets.COPILOT_GH_TOKEN }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
-
       - name: Set up Node.js
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: editors/code/package-lock.json
-
       - name: Install Java 17
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Install extension dependencies
         run: npm ci
         working-directory: editors/code
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Prepare Groovy Language Server
         run: npm run prepare-server:download
         working-directory: editors/code
-
       - name: Ensure GitHub CLI is available
         run: |
           if ! command -v gh >/dev/null 2>&1; then
@@ -58,8 +48,9 @@ jobs:
             sudo apt-get install -y gh
           fi
           gh --version
-
       - name: Authenticate GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_GH_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "GH_TOKEN is not set; provide a fine-grained PAT in the copilot environment." >&2

@@ -16,14 +16,14 @@ on:
 env:
   TF_CLOUD_ORGANIZATION: "alberto"
   TF_WORKSPACE: "groovy-lsp-runner"
-  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-  TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
-  TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
 
 jobs:
   check-runners:
     name: Check Existing Runners
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     outputs:
       has_runners: ${{ steps.check.outputs.has-runners }}
     steps:
@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           sparse-checkout: .github/actions
+          persist-credentials: false
 
       - name: Check for Magalu runners
         id: check
@@ -52,9 +53,14 @@ jobs:
     needs: check-runners
     if: needs.check-runners.outputs.has_runners == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -64,10 +70,16 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         run: terraform init
 
       - name: Terraform Plan Destroy
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
+          TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
         run: terraform plan -destroy -out=destroy.tfplan
 
       - name: Upload Destroy Plan
@@ -81,11 +93,16 @@ jobs:
     name: Terraform Destroy
     needs: plan-destroy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     # For scheduled runs, auto-approve; for manual, require approval
     environment: ${{ github.event_name == 'schedule' && 'cleanup' || 'production' }}
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -101,10 +118,16 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         run: terraform init
 
       - name: Terraform Destroy
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
+          TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
         run: terraform apply -input=false destroy.tfplan
 
       - name: Verify Runners Removed

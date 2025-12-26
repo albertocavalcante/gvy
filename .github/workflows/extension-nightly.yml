@@ -31,6 +31,7 @@ defaults:
 
 jobs:
   nightly:
+    timeout-minutes: 30
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -45,6 +46,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           ref: ${{ github.event.inputs.ref || 'main' }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6

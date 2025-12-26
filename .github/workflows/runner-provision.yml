@@ -44,9 +44,6 @@ on:
 env:
   TF_CLOUD_ORGANIZATION: 'alberto'
   TF_WORKSPACE: 'groovy-lsp-runner'
-  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-  TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
-  TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
   TF_VAR_runner_count: ${{ github.event.inputs.runner_count || '1' }}
   TF_VAR_machine_type: ${{ github.event.inputs.machine_type || 'BV4-16-10' }}
   TF_VAR_runner_image: ${{ github.event.inputs.runner_image || 'ubuntu-22' }}
@@ -55,11 +52,16 @@ jobs:
   plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     outputs:
       plan_exists: ${{ steps.plan.outcome == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -100,11 +102,17 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         run: terraform init
 
       - name: Terraform Plan
         id: plan
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
+          TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
         run: terraform plan -out=tfplan
 
       - name: Upload Plan Artifact
@@ -118,10 +126,15 @@ jobs:
     name: Terraform Apply
     needs: plan
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
     environment: production # Requires manual approval
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -137,16 +150,25 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
         run: terraform init
 
       - name: Terraform Apply
         working-directory: infra/runner
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_VAR_github_token: ${{ secrets.GH_PAT_RUNNER }}
+          TF_VAR_mgc_api_key: ${{ secrets.MGC_API_KEY }}
         run: terraform apply -input=false tfplan
 
   wait-for-runner:
     name: Wait for Runner Registration
     needs: apply
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     outputs:
       runner-name: ${{ steps.wait.outputs.runner-name }}
     steps:
@@ -154,6 +176,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           sparse-checkout: .github/actions
+          persist-credentials: false
 
       - name: Wait for Magalu runner to be online
         id: wait

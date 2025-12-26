@@ -64,6 +64,7 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ github.event.inputs.tag || github.ref }}
+        persist-credentials: false
     - name: "Set up JDK ${{ matrix.java }}"
       uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
       with:
@@ -132,6 +133,7 @@ jobs:
     permissions:
       contents: write
     needs: build-release
+    timeout-minutes: 15
     outputs:
       tag_name: ${{ steps.release_info.outputs.version }}
       version_no_v: ${{ steps.release_info.outputs.version_no_v }}
@@ -157,6 +159,7 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ github.event.inputs.tag || github.ref }}
+        persist-credentials: false
     - name: Download all artifacts
       uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
@@ -295,6 +298,9 @@ jobs:
   publish-homebrew:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     if: ${{ !inputs.dry_run }}
     steps:
       - name: Update Homebrew Formula
@@ -313,6 +319,7 @@ jobs:
     needs: create-release
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
 
@@ -325,6 +332,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ needs.create-release.outputs.tag_name }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
