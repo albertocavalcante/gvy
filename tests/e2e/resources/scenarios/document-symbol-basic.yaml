@@ -47,7 +47,7 @@ steps:
         - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Class')]"
           expect:
             type: NOT_EMPTY
-        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Method')]"
+        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Constructor')]"
           expect:
             type: NOT_EMPTY
         - jsonPath: "$.[?(@.right.name == 'compute' && @.right.kind == 'Method')]"

@@ -51,7 +51,7 @@ private fun Symbol.displayName(): String = when (this) {
 
 private fun Symbol.toSymbolKind(): SymbolKind = when (this) {
     is Symbol.Class -> SymbolKind.Class
-    is Symbol.Method -> SymbolKind.Method
+    is Symbol.Method -> if (node.isConstructor) SymbolKind.Constructor else SymbolKind.Method
     is Symbol.Field -> SymbolKind.Field
     is Symbol.Property -> SymbolKind.Property
     is Symbol.Variable -> SymbolKind.Variable

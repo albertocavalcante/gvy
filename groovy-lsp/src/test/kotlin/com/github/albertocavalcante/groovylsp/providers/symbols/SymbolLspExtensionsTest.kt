@@ -100,5 +100,6 @@ class SymbolLspExtensionsTest {
         assertNotNull(documentSymbol)
         require(documentSymbol != null)
         assertEquals("constructor", documentSymbol.name)
+        assertEquals(SymbolKind.Constructor, documentSymbol.kind)
     }
 }
