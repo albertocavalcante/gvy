@@ -67,11 +67,23 @@ sealed class Symbol {
 
         val signature: String
             get() = buildString {
+                val isConstructor = node.isConstructor
+                val constructorName = if (isConstructor) {
+                    owner?.nameWithoutPackage
+                        ?: owner?.name
+                        ?: node.declaringClass?.nameWithoutPackage
+                        ?: node.declaringClass?.name
+                        ?: "constructor"
+                } else {
+                    name
+                }
                 if (isStatic) append("static ")
                 if (isAbstract) append("abstract ")
                 append(visibility.keyword).append(" ")
-                append(returnType?.nameWithoutPackage ?: "def").append(" ")
-                append(name).append("(")
+                if (!isConstructor) {
+                    append(returnType?.nameWithoutPackage ?: "def").append(" ")
+                }
+                append(constructorName).append("(")
                 append(parameters.joinToString(", ") { "${it.type.nameWithoutPackage} ${it.name}" })
                 append(")")
             }

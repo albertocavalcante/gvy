@@ -101,5 +101,35 @@ class SymbolLspExtensionsTest {
         require(documentSymbol != null)
         assertEquals("constructor", documentSymbol.name)
         assertEquals(SymbolKind.Constructor, documentSymbol.kind)
+        assertEquals("public constructor(String name)", documentSymbol.detail)
+        assertEquals("public constructor(String name)", constructorSymbol.signature)
+    }
+
+    @Test
+    fun `constructor symbol uses class name in signature`() {
+        val classNode = ClassNode("Widget", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        val constructorNode = ConstructorNode(
+            Modifier.PUBLIC,
+            arrayOf(Parameter(ClassHelper.STRING_TYPE, "name")),
+            ClassNode.EMPTY_ARRAY,
+            BlockStatement(),
+        ).apply {
+            declaringClass = classNode
+            setLineNumber(1)
+            setColumnNumber(1)
+            setLastLineNumber(1)
+            setLastColumnNumber(10)
+        }
+        val uri = URI.create("file:///test.groovy")
+
+        val constructorSymbol = Symbol.Method.from(constructorNode, uri)
+
+        val documentSymbol = constructorSymbol.toDocumentSymbol()
+        assertNotNull(documentSymbol)
+        require(documentSymbol != null)
+        assertEquals("Widget", documentSymbol.name)
+        assertEquals(SymbolKind.Constructor, documentSymbol.kind)
+        assertEquals("public Widget(String name)", documentSymbol.detail)
+        assertEquals("public Widget(String name)", constructorSymbol.signature)
     }
 }
