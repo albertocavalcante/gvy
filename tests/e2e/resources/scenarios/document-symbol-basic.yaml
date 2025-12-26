@@ -1,0 +1,55 @@
+name: document-symbol-basic
+description: Document symbols should include class and method entries.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 180000
+  - openDocument:
+      path: src/Symbols.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        class Widget {
+            String name
+
+            Widget(String name) {
+                this.name = name
+            }
+
+            int compute(int value) {
+                return value + name.length()
+            }
+        }
+  - request:
+      method: textDocument/documentSymbol
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/Symbols.groovy"
+      saveAs: documentSymbols
+  - assert:
+      source: documentSymbols
+      checks:
+        - jsonPath: $
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $[*].right.name
+          expect:
+            type: CONTAINS
+            value: Widget
+        - jsonPath: $[*].right.name
+          expect:
+            type: CONTAINS
+            value: compute
+  - shutdown: {}
+  - exit: {}
