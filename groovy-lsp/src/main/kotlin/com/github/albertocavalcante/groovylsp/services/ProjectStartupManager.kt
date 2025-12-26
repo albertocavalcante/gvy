@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
+import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,6 +41,7 @@ class ProjectStartupManager(
     private val coroutineScope: CoroutineScope,
 ) {
     private val logger = LoggerFactory.getLogger(ProjectStartupManager::class.java)
+    private val groovyVersionResolver = GroovyVersionResolver()
 
     var buildToolManager: BuildToolManager? = null
         private set
@@ -111,14 +113,17 @@ class ProjectStartupManager(
         onReady: () -> Unit = {},
         onError: (Exception) -> Unit = {},
     ) {
+        val config = ServerConfiguration.fromMap(initOptionsMap)
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
+            updateGroovyVersion(config, emptyList())
             onReady() // Still signal Ready to prevent clients from hanging
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info("No workspace root found - running in light mode without dependencies")
+            updateGroovyVersion(config, emptyList())
             onReady() // Still signal Ready in light mode
             return
         }
@@ -140,34 +145,33 @@ class ProjectStartupManager(
         }
 
         val progressReporter = ProgressReporter(client)
-        initializeWorkspaces(workspaceRoot, initOptionsMap)
+        initializeWorkspaces(workspaceRoot, config)
 
-        val dependencyManager = setupDependencyManager(initOptionsMap)
+        val dependencyManager = setupDependencyManager(config)
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
             onProgress = createProgressCallback(progressReporter, client),
             onComplete = createCompletionCallback(
                 workspaceRoot,
+                config,
                 textDocumentServiceRefresh,
                 progressReporter,
                 client,
                 onReady,
             ),
-            onError = createErrorCallback(progressReporter, client, onError),
+            onError = createErrorCallback(progressReporter, client, config, onError),
         )
 
         progressReporter.startDependencyResolution()
     }
 
-    private fun initializeWorkspaces(workspaceRoot: Path, initOptionsMap: Map<String, Any>?) {
+    private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
-        val config = ServerConfiguration.fromMap(initOptionsMap)
         compilationService.workspaceManager.initializeJenkinsWorkspace(config)
     }
 
-    private fun setupDependencyManager(initOptionsMap: Map<String, Any>?): DependencyManager {
-        val config = ServerConfiguration.fromMap(initOptionsMap)
+    private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
         logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
 
         val newBuildToolManager = BuildToolManager(
@@ -197,6 +201,7 @@ class ProjectStartupManager(
 
     private fun createCompletionCallback(
         workspaceRoot: Path,
+        config: ServerConfiguration,
         textDocumentServiceRefresh: () -> Unit,
         progressReporter: ProgressReporter,
         client: LanguageClient?,
@@ -206,6 +211,8 @@ class ProjectStartupManager(
             "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
                 "${resolution.sourceDirectories.size} source directories",
         )
+
+        updateGroovyVersion(config, resolution.dependencies)
 
         compilationService.updateWorkspaceModel(
             workspaceRoot = workspaceRoot,
@@ -239,9 +246,11 @@ class ProjectStartupManager(
     private fun createErrorCallback(
         progressReporter: ProgressReporter,
         client: LanguageClient?,
+        config: ServerConfiguration,
         onError: (Exception) -> Unit,
     ): (Exception) -> Unit = { error ->
         logger.error("Failed to resolve dependencies", error)
+        updateGroovyVersion(config, emptyList())
         progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
         client?.showMessage(
             MessageParams().apply {
@@ -250,6 +259,11 @@ class ProjectStartupManager(
             },
         )
         onError(error)
+    }
+
+    private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
+        val info = groovyVersionResolver.resolve(dependencies, config.groovyLanguageVersion)
+        compilationService.updateGroovyVersion(info)
     }
 
     private fun startWorkspaceIndexing(client: LanguageClient?) {

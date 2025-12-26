@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
+import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -25,6 +26,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 private const val RETRY_DELAY_MS = 50L
 
@@ -42,6 +44,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
     private val errorHandler = CompilationErrorHandler()
     private val parser = GroovyParserFacade(parentClassLoader)
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
+    private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
 
     // Track ongoing compilation per URI for proper async coordination
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
@@ -478,6 +481,13 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         compilationJobs.clear()
         invalidateClassLoader()
     }
+
+    fun updateGroovyVersion(info: GroovyVersionInfo) {
+        groovyVersionInfo.set(info)
+        logger.info("Groovy version resolved: {} (source={})", info.version.raw, info.source)
+    }
+
+    fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.get()
 
     /**
      * Invalidates all cached data for a specific URI.

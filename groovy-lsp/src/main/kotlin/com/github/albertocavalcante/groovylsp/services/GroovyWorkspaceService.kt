@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.Version
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -57,6 +58,7 @@ class GroovyWorkspaceService(
 
             // Update Jenkins workspace configuration
             compilationService.workspaceManager.updateJenkinsConfiguration(newConfig)
+            updateGroovyVersion(newConfig)
             logger.info("Jenkins configuration updated")
         }
     }
@@ -164,6 +166,13 @@ class GroovyWorkspaceService(
     private fun classifyFileChange(uriString: String): FileType {
         val path = runCatching { java.net.URI.create(uriString).path }.getOrNull() ?: return FileType.OTHER
         return FileType.fromPath(path)
+    }
+
+    private fun updateGroovyVersion(config: ServerConfiguration) {
+        val resolver = GroovyVersionResolver()
+        val dependencies = compilationService.workspaceManager.getDependencyClasspath()
+        val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
+        compilationService.updateGroovyVersion(info)
     }
 
     override fun symbol(

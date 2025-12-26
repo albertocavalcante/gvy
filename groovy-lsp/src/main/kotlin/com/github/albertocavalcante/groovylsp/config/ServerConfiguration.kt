@@ -14,6 +14,7 @@ data class ServerConfiguration(
     val maxWorkspaceFiles: Int = 500,
     val maxNumberOfProblems: Int = 100,
     val javaHome: String? = null,
+    val groovyLanguageVersion: String? = null,
     val traceServer: TraceLevel = TraceLevel.OFF,
     val replEnabled: Boolean = true,
     val maxReplSessions: Int = 10,
@@ -85,6 +86,7 @@ data class ServerConfiguration(
                     maxWorkspaceFiles = (map["groovy.compilation.maxWorkspaceFiles"] as? Number)?.toInt() ?: 500,
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,
                     javaHome = map["groovy.java.home"] as? String,
+                    groovyLanguageVersion = map["groovy.language.version"] as? String,
                     traceServer = parseTraceLevel(map),
                     replEnabled = (map["groovy.repl.enabled"] as? Boolean) ?: true,
                     maxReplSessions = (map["groovy.repl.maxSessions"] as? Number)?.toInt() ?: 10,
@@ -153,5 +155,6 @@ data class ServerConfiguration(
     fun isWorkspaceTooLarge(fileCount: Int): Boolean = fileCount > maxWorkspaceFiles
 
     override fun toString(): String = "ServerConfiguration(mode=$compilationMode, incremental=$incrementalThreshold, " +
-        "maxFiles=$maxWorkspaceFiles, maxProblems=$maxNumberOfProblems, repl=$replEnabled)"
+        "maxFiles=$maxWorkspaceFiles, maxProblems=$maxNumberOfProblems, " +
+        "languageVersion=$groovyLanguageVersion, repl=$replEnabled)"
 }
