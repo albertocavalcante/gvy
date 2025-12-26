@@ -10,7 +10,7 @@ core.workflow(
     name = "push-to-vscode-groovy",
     
     origin = git.origin(
-        url = "https://github.com/albertocavalcante/groovy-lsp.git",
+        url = "https://github.com/albertocavalcante/groovy-devtools.git",
         ref = "main",
     ),
     
@@ -46,17 +46,17 @@ core.workflow(
             paths = glob(["package.json"]),
         ),
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-lsp.git",
+            before = "https://github.com/albertocavalcante/groovy-devtools.git",
             after = "https://github.com/albertocavalcante/vscode-groovy.git",
             paths = glob(["package.json"]),
         ),
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code",
+            before = "https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code",
             after = "https://github.com/albertocavalcante/vscode-groovy",
             paths = glob(["package.json", "README.md"]),
         ),
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-lsp/issues",
+            before = "https://github.com/albertocavalcante/groovy-devtools/issues",
             after = "https://github.com/albertocavalcante/vscode-groovy/issues",
             paths = glob(["package.json"]),
         ),
@@ -68,7 +68,7 @@ core.workflow(
         metadata.expose_label("Fixes"),
 
         # Add sync metadata to commit message
-        metadata.add_header("Synced-From", "https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code"),
+        metadata.add_header("Synced-From", "https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code"),
         metadata.add_header("Note", "This is a read-only mirror. Do not edit directly."),
     ],
 )
