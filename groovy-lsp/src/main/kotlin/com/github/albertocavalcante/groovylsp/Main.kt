@@ -1,10 +1,11 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovyformatter.OpenRewriteFormatter
+import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ExecuteCommandParams
-import org.eclipse.lsp4j.launch.LSPLauncher
+import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -311,7 +312,12 @@ private fun handleClientConnection(socket: java.net.Socket) {
 
 private fun startServer(input: InputStream, output: OutputStream) {
     val server = GroovyLanguageServer()
-    val launcher = LSPLauncher.createServerLauncher(server, input, output)
+    val launcher = Launcher.Builder<GroovyLanguageClient>()
+        .setLocalService(server)
+        .setRemoteInterface(GroovyLanguageClient::class.java)
+        .setInput(input)
+        .setOutput(output)
+        .create()
 
     val client = launcher.remoteProxy
     server.connect(client)

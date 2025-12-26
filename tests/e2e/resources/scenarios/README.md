@@ -23,6 +23,7 @@ This directory contains YAML scenario files that define end-to-end LSP test case
 | **Diagnostics** | `diagnostics-*` | Error reporting |
 | **Signature** | `signature-help` | Method signature help |
 | **Build Tools** | `gradle-hover-deps` | Gradle integration |
+| **CodeLens** | `codelens-spock` | Test CodeLens commands |
 | **Jenkins** | `jenkins-pipeline`, `jenkins-completion`, `jenkins-hover`, `jenkins-scripted` | Jenkins pipeline support |
 
 ## Server Mode Migration

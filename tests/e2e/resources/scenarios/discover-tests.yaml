@@ -16,16 +16,15 @@ steps:
       path: src/test/groovy/com/example/CalculatorSpec.groovy
       languageId: groovy
 
-  # Wait for Gradle dependency resolution to complete.
-  # In in-process mode, server->client notifications don't work until JSON-RPC
-  # connection is established (after first request/response cycle). Since
-  # initialized() triggers async resolution before this, we use a fixed wait.
-  # Gradle resolution typically takes 5-6s on warm cache, 60-180s on cold.
-  #
-  # TODO(#314): Replace with proper synchronization (e.g., waitNotification or polling).
-  #   See: https://github.com/albertocavalcante/groovy-lsp/issues/314
-  - wait:
-      duration: 10000
+  # Wait for server readiness after dependency resolution.
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 180000
 
   # Custom groovy/discoverTests request - uses typed GroovyLanguageServerProtocol proxy
   # for proper response deserialization. This is handled by CustomRequest.DiscoverTests

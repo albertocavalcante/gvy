@@ -1,0 +1,80 @@
+name: codelens-spock
+description: CodeLens should expose run/debug commands for Spock feature methods.
+server:
+  mode: stdio
+workspace:
+  fixture: spock-tests
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/test/groovy/com/example/CalculatorSpec.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        import spock.lang.Specification
+
+        class CalculatorSpec extends Specification {
+            def "should add two numbers"() {
+                given: "two numbers"
+                def a = 1
+                def b = 2
+
+                when: "adding them"
+                def result = a + b
+
+                then: "the result is correct"
+                result == 3
+            }
+
+            def "should subtract numbers"() {
+                expect:
+                5 - 3 == 2
+            }
+        }
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 180000
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: diagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: MATCHES_REGEX
+            value: ".*CalculatorSpec\\.groovy$"
+  - request:
+      method: textDocument/codeLens
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/test/groovy/com/example/CalculatorSpec.groovy"
+      saveAs: codelens
+  - assert:
+      source: codelens
+      checks:
+        - jsonPath: $
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $[?(@.command.command=='groovy.test.run')]
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $[?(@.command.command=='groovy.test.debug')]
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: $[?(@.command.command=='groovy.test.run')].command.arguments[0].suite
+          expect:
+            type: CONTAINS
+            value: "com.example.CalculatorSpec"
+        - jsonPath: $[?(@.command.command=='groovy.test.run')].command.arguments[0].test
+          expect:
+            type: CONTAINS
+            value: "should add two numbers"
+  - shutdown: {}
+  - exit: {}

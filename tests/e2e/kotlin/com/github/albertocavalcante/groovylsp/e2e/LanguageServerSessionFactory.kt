@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
+import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.groovylsp.testing.client.HarnessLanguageClient
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
-import org.eclipse.lsp4j.launch.LSPLauncher
 import org.eclipse.lsp4j.services.LanguageServer
 import org.slf4j.LoggerFactory
 import java.io.BufferedReader
@@ -146,12 +146,14 @@ class LanguageServerSessionFactory {
 
         val server = GroovyLanguageServer()
 
-        // Create the server-side launcher (this will handle server.connect() internally)
-        val serverLauncher = LSPLauncher.createServerLauncher(
-            server,
-            serverIn,
-            serverOut,
-        )
+        val serverLauncher = Launcher.Builder<GroovyLanguageClient>()
+            .setLocalService(server)
+            .setRemoteInterface(GroovyLanguageClient::class.java)
+            .setInput(serverIn)
+            .setOutput(serverOut)
+            .create()
+
+        server.connect(serverLauncher.remoteProxy)
 
         // Start the server's JSON-RPC listener in a background thread
         val serverListening = inProcessExecutor.submit {
