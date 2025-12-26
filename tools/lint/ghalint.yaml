@@ -3,7 +3,7 @@
 # ghalint - GitHub Actions Linter Configuration
 # https://github.com/suzuki-shunsuke/ghalint
 #
-# Run locally: ghalint run -c .github/ghalint.yaml
+# Run locally: ghalint run -c tools/lint/ghalint.yaml
 #
 # NOTE: Only certain policies can be excluded:
 # - deny_inherit_secrets

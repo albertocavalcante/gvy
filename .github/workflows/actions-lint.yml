@@ -29,11 +29,11 @@ jobs:
 
       - name: Run actionlint
         id: actionlint
-        run: actionlint -color
+        run: actionlint -color -config-file tools/lint/actionlint.yml
         continue-on-error: true
 
       - name: Run ghalint
-        run: ghalint -c .github/ghalint.yaml run
+        run: ghalint -c tools/lint/ghalint.yaml run
 
       - name: Fail if actionlint failed
         if: ${{ steps.actionlint.outcome == 'failure' }}

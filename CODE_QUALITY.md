@@ -148,7 +148,7 @@ fun validate(input: String): Boolean {
 
 ## Configuration Files
 
-- `detekt.yml` - Detekt rules and thresholds
+- `tools/lint/detekt.yml` - Detekt rules and thresholds
 - `.editorconfig` - IDE formatting settings
 - `build.gradle.kts` - Plugin configurations and tasks
 

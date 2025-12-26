@@ -1,0 +1,6 @@
+# actionlint config: register custom self-hosted runner labels.
+self-hosted-runner:
+  labels:
+    - magalu
+    - local-macos
+    - groovy-lsp

@@ -33,15 +33,17 @@ staged_sh_files=$(git diff --cached --name-only --diff-filter=d | grep -E '\.sh$
 if [ -n "$staged_sh_files" ]; then
     log_info "Running ShellCheck on staged files..."
     if command -v shellcheck >/dev/null 2>&1; then
-        # Check files one by one to give clear output
-        for file in $staged_sh_files; do
+        # Check files one by one to give clear output (handles spaces safely)
+        while IFS= read -r file; do
             if [ -f "$file" ]; then
-                if ! shellcheck "$file"; then
+                if ! shellcheck --rcfile tools/lint/shellcheckrc "$file"; then
                     log_error "ShellCheck failed for $file"
                     exit 1
                 fi
             fi
-        done
+        done <<EOF
+$staged_sh_files
+EOF
         log_info "ShellCheck passed."
     else
         log_warn "ShellCheck not found. Skipping shell script validation."
@@ -56,7 +58,7 @@ if [ -n "$staged_yml_files" ]; then
         log_info "Running ghalint on staged workflows..."
         # ghalint checks all workflows by default, but we want to ensure we don't block if only unrelated files change
         # However, ghalint usually runs on the whole dir. Let's just run it if any workflow is changed.
-        if ! ghalint; then
+        if ! ghalint -c tools/lint/ghalint.yaml run; then
             log_error "ghalint failed. Please fix workflow issues."
             exit 1
         fi

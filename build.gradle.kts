@@ -72,7 +72,7 @@ subprojects {
 
     // Code Quality Configuration
     detekt {
-        config.setFrom(rootProject.files("detekt.yml"))
+        config.setFrom(rootProject.files("tools/lint/detekt.yml"))
         buildUponDefaultConfig = true
         // Use per-module baseline if it exists, otherwise no baseline
         val moduleBaseline = file("detekt-baseline.xml")
@@ -168,7 +168,7 @@ subprojects {
     tasks.register<io.gitlab.arturbosch.detekt.Detekt>("detektAutoCorrect") {
         description = "Run detekt with auto-correct enabled"
         parallel = true
-        config.setFrom(rootProject.files("detekt.yml"))
+        config.setFrom(rootProject.files("tools/lint/detekt.yml"))
         buildUponDefaultConfig = true
         setSource(files("src"))
         autoCorrect = true
