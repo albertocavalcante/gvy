@@ -1,0 +1,72 @@
+name: folding-range-basic
+description: >
+  Test textDocument/foldingRange.
+  Verifies correct folding ranges for classes and methods.
+  
+  TODO(DEFERRED): #415 - Test disabled. Feature not implemented.
+  See: https://github.com/albertocavalcante/groovy-devtools/issues/415
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/FoldingTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class FoldingTest {
+            void method() {
+                println "fold me"
+            }
+        }
+  
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  - request:
+      method: textDocument/foldingRange
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/FoldingTest.groovy"
+      saveAs: foldingResult
+
+  # Verify folding ranges
+  # Expecting 2 ranges: Class (lines 0-4) and Method (lines 1-3)
+  - assert:
+      source: foldingResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 2
+            message: "Should return 2 folding ranges (Class + Method)"
+        
+        # Verify Class range
+        # Note: endLine 3 excludes the closing brace (line 4)
+        - jsonPath: $[?(@.startLine == 0 && @.endLine == 3)]
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should find class folding range 0-3"
+
+        # Verify Method range
+        # Note: endLine 2 excludes the closing brace (line 3)
+        - jsonPath: $[?(@.startLine == 1 && @.endLine == 2)]
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should find method folding range 1-2"
+
+  - shutdown: {}
+  - exit: {}

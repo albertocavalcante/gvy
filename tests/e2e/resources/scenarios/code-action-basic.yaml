@@ -1,0 +1,75 @@
+name: code-action-basic
+description: >
+  Test textDocument/codeAction.
+  Verifies that code action requests are handled correctly.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/CodeActionTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        import java.util.List
+        class CodeActionTest {
+        }
+  
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  # Request Code Actions on the import line
+  - request:
+      method: textDocument/codeAction
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/CodeActionTest.groovy"
+        range:
+          start:
+            line: 0
+            character: 0
+          end:
+            line: 0
+            character: 21
+        context:
+          diagnostics: []
+      saveAs: actionResult
+
+  # Verify response contains the "Format document" action
+  - assert:
+      source: actionResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should return 1 code action"
+        
+        # Strictly verify properties of the action
+        # Note: actionResult is a list of Either<Command, CodeAction>. The JSON serialization might wrap it.
+        # Based on failure log, it looks like: [{"right": {"title": "Format document", ...}}]
+        - jsonPath: $[0].right.title
+          expect:
+            type: EQUALS
+            value: "Format document"
+            message: "Action title should be 'Format document'"
+        
+        - jsonPath: $[0].right.kind
+          expect:
+            type: EQUALS
+            value: "source.fixAll"
+            message: "Action kind should be 'source.fixAll'"
+
+  - shutdown: {}
+  - exit: {}
