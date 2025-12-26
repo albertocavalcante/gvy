@@ -6,6 +6,14 @@ workspace:
 steps:
   - initialize: {}
   - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
   - openDocument:
       path: src/Main.groovy
       languageId: groovy
