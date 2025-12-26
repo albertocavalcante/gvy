@@ -2,7 +2,7 @@ name: Nightly Build
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * *" # Daily at 03:00 UTC
   workflow_dispatch:
     inputs:
       ref:

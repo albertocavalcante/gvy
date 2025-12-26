@@ -10,7 +10,7 @@ name: Extract Jenkins Metadata
 on:
   # Quarterly schedule - runs on the 1st of Jan, Apr, Jul, Oct
   schedule:
-    - cron: '0 0 1 1,4,7,10 *'
+    - cron: '0 0 1 1,4,7,10 *' # Quarterly on Jan/Apr/Jul/Oct 1st at 00:00 UTC
 
   # Manual trigger with version input
   workflow_dispatch:
@@ -125,4 +125,3 @@ jobs:
               body: body,
               labels: ['bug', 'ci']
             });
-

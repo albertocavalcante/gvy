@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
   schedule:
     # Run nightly at 3 AM UTC to clean up any leftover runners
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * *" # Daily at 03:00 UTC
 
 env:
   TF_CLOUD_ORGANIZATION: "alberto"
