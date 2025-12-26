@@ -107,17 +107,8 @@ cmd_build() {
     local VERSION_NO_PRFIX="${VERSION#vscode-groovy-v}"
     local VERSION_NO_V="${VERSION_NO_PRFIX#v}"
     
-    # Platform detection for local builds (CI usually handles this via matrix)
-    OS_TYPE=$(uname -s)
-    local PLATFORM="generic"
-    case "${OS_TYPE}" in
-        Linux*)     PLATFORM="linux-amd64";;
-        Darwin*)    PLATFORM="darwin-amd64";;
-        CYGWIN*|MINGW*|MSYS*) PLATFORM="windows-amd64";;
-        *)          PLATFORM="generic";;
-    esac
-
-    local TARGET_JAR="${DIST_DIR}/gls-${VERSION_NO_V}-${PLATFORM}.jar"
+    # Java JARs are platform-independent - no need for platform suffix
+    local TARGET_JAR="${DIST_DIR}/gls-${VERSION_NO_V}.jar"
     log_info "Copying JAR to ${TARGET_JAR}"
     cp "${JAR_FILE}" "${TARGET_JAR}"
 

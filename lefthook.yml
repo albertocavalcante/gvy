@@ -21,7 +21,7 @@ pre-commit:
       run: shellcheck --rcfile tools/lint/shellcheckrc {staged_files}
     workflow-lint:
       glob: '.github/workflows/*.{yml,yaml}'
-      run: ghalint -c tools/lint/ghalint.yaml run
+      run: ghalint -c tools/lint/ghalint.yaml run && actionlint {staged_files}
 
 commit-msg:
   commands:

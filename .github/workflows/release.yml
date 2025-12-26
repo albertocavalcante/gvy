@@ -128,6 +128,66 @@ jobs:
         name: "release-artifacts-${{ matrix.os }}"
         path: dist/*
         retention-days: 7
+
+  # Cross-platform smoke tests to verify JAR works on all supported platforms
+  smoke-test:
+    name: Smoke Test (${{ matrix.os }}, JDK ${{ matrix.java }})
+    needs: build-release
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2022, windows-11-arm]
+        java: [17, 21]
+        include:
+          # JDK 11 should fail due to bytecode version mismatch (target is JDK 17)
+          - os: ubuntu-24.04
+            java: 11
+            expected_fail: true
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: release-artifacts-*
+          merge-multiple: true
+          path: dist
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Verify Java version
+        run: java -version
+
+      - name: Run smoke test
+        id: smoke
+        shell: bash
+        continue-on-error: ${{ matrix.expected_fail == true }}
+        run: |
+          JAR_FILE=$(find dist -name "gls-*.jar" -type f | head -1)
+          if [[ -z "$JAR_FILE" ]]; then
+            echo "::error::No JAR file found in dist/"
+            exit 1
+          fi
+          echo "Testing JAR: $JAR_FILE"
+          java -jar "$JAR_FILE" --help
+          echo "✅ Smoke test passed!"
+
+      - name: Verify expected failure (JDK 11)
+        if: matrix.expected_fail == true
+        shell: bash
+        run: |
+          if [[ "${{ steps.smoke.outcome }}" == "success" ]]; then
+            echo "::error::JDK 11 smoke test unexpectedly succeeded! Check if bytecode target changed."
+            exit 1
+          fi
+          echo "✅ JDK 11 correctly failed with bytecode version mismatch"
+
   create-release:
     name: Create Release
     permissions:
@@ -189,30 +249,29 @@ jobs:
         ## Groovy DevTools ${VERSION}
 
         This release includes:
-        - **gls** (Groovy Language Server) - JAR download
+        - **gls** (Groovy Language Server) - Platform-independent JAR
         - **gvy** (IDE extension) - VS Code, Open VSX
 
         ### Installation
 
-        Download the appropriate JAR for your platform:
+        Download and run the JAR:
 
         \`\`\`bash
-        # Download JAR (replace linux-amd64 with your platform)
-        curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/gls-${VERSION#v}-linux-amd64.jar
+        # Download JAR
+        curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/gls-${VERSION#v}.jar
 
         # Verify checksum
         curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/checksums.txt
         sha256sum -c checksums.txt --ignore-missing
 
-        # Run the Language Server
-        java -jar gls-${VERSION#v}-linux-amd64.jar
+        # Run the Language Server (requires JDK 17+)
+        java -jar gls-${VERSION#v}.jar
         \`\`\`
 
-        ### Supported Platforms
+        ### Requirements
 
-        - **Linux AMD64** \`gls-${VERSION#v}-linux-amd64.jar\`
-        - **macOS AMD64** \`gls-${VERSION#v}-darwin-amd64.jar\`
-        - **Windows AMD64** \`gls-${VERSION#v}-windows-amd64.jar\`
+        - **Java 17+** (JDK 17, 21, or later)
+        - Works on all platforms: Linux, macOS, Windows (x64 and ARM64)
 
         ### Usage
 
@@ -308,7 +367,7 @@ jobs:
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
           formula-name: gls
-          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.version_no_v }}-generic.jar
+          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.version_no_v }}.jar
           commit-message: "chore: update gls to {{version}}"
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

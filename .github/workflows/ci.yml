@@ -421,13 +421,13 @@ jobs:
 
       # Verify JAR (already built by e2eTest via shadowJar dependency)
       - name: Verify JAR
-        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
+        if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: |-
           echo "Testing JAR with --help flag..."
           java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
 
       - name: Upload JAR artifact
-        if: (matrix.os == 'ubuntu-latest' && matrix.java == 17) || matrix.os == 'self-hosted'
+        if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
@@ -461,6 +461,51 @@ jobs:
             **/build/test-recording.jfr
           retention-days: 7
           if-no-files-found: ignore  # Don't fail if files don't exist (e.g., tests passed quickly)
+
+  # Cross-platform smoke tests - verify JAR works on key platforms
+  # Lighter weight than release matrix, runs on every main merge for faster feedback
+  smoke-test:
+    name: Smoke Test (${{ matrix.os }})
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Key platforms for quick validation (full matrix in release.yml)
+        os: [ubuntu-24.04, macos-15, windows-2022]
+    steps:
+      - name: Download JAR artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: groovy-lsp-jar-*
+          merge-multiple: true
+          path: dist
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Verify Java version
+        run: java -version
+
+      - name: Run smoke test
+        shell: bash
+        run: |
+          JAR_FILE=$(find dist -name "*.jar" -type f | head -1)
+          if [[ -z "$JAR_FILE" ]]; then
+            echo "::error::No JAR file found in dist/"
+            exit 1
+          fi
+          echo "Testing JAR: $JAR_FILE"
+          java -jar "$JAR_FILE" --help
+          echo "✅ Smoke test passed on ${{ matrix.os }}!"
+
   validate:
     name: Validation Check
     runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
