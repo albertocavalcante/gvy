@@ -18,7 +18,7 @@
         "editors/code": {
             "release-type": "node",
             "component": "vscode-groovy",
-            "include-component-in-tag": true,
+            "include-component-in-tag": false,
             "changelog-path": "CHANGELOG.md",
             "bump-minor-pre-major": true,
             "bump-patch-for-minor-pre-major": true,
