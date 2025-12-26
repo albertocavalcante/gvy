@@ -76,6 +76,7 @@ Use this path if the server throws `UnsupportedOperationException`, `Internal Er
 
 1.  **Disable Test**: Rename the scenario file to prefix it with an underscore (e.g., `_completion-basic.yaml`).
 2.  **Deferral**: Execute the `/defer` workflow to create a GitHub issue tracking the missing feature.
+    -   **Strict Rule**: In the issue body, reference the **Branch Name** (e.g., `feat/e2e-feature`) instead of a PR number. PR numbers are not deterministic and guessing them causes errors.
 3.  **Linkage**: Add a header to the YAML file referencing the issue:
     ```yaml
     # TODO(DEFERRED): #[IssueID] - Test disabled. Feature not implemented.
