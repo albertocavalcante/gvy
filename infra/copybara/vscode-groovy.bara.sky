@@ -15,7 +15,7 @@ core.workflow(
     ),
     
     destination = git.github_destination(
-        url = "https://github.com/albertocavalcante/vscode-groovy.git",
+        url = "git@github.com:albertocavalcante/vscode-groovy.git",
         push = "main",
     ),
     
