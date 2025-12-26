@@ -1,0 +1,78 @@
+name: formatting-basic
+description: >
+  Test textDocument/formatting. Documents Issue #393 (OpenRewrite formatter
+  regression that removes space after opening brace in closures).
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  # Wait for server to be ready before making requests
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # Test 1: Formatting returns edits (basic functionality test)
+  - openDocument:
+      path: src/FormatTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class FormatTest{def run(){println "test"}}
+  - request:
+      method: textDocument/formatting
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/FormatTest.groovy"
+        options:
+          tabSize: 4
+          insertSpaces: true
+      saveAs: formatResult
+
+  # Verify formatting returns edits for poorly formatted code
+  - assert:
+      source: formatResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: NOT_EMPTY
+            message: "Expected formatting edits for code that needs reformatting"
+
+  # Test 2: Document Issue #393 - closure brace spacing regression
+  # KNOWN BUG: formatter changes "{ a -> a * 2 }" to "{a -> a * 2 }"
+  # Expected behavior (when fixed): well-formatted code returns EMPTY edits
+  # Current behavior (broken): returns edits removing the space after "{"
+  # TODO: Change to EMPTY when Issue #393 is fixed
+  - openDocument:
+      path: src/ClosureSpacing.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        def doubled = [1, 2, 3].collect { a -> a * 2 }
+  - request:
+      method: textDocument/formatting
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ClosureSpacing.groovy"
+        options:
+          tabSize: 4
+          insertSpaces: true
+      saveAs: closureSpacingResult
+
+  # Assert current (buggy) behavior - formatter removes space after {
+  # This documents Issue #393 and will need to be changed to EMPTY when fixed
+  - assert:
+      source: closureSpacingResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: NOT_EMPTY
+            message: "Issue #393 ACTIVE: formatter incorrectly modifies closure brace spacing"
+
+  - shutdown: {}
+  - exit: {}
