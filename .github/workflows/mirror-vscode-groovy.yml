@@ -30,4 +30,4 @@ jobs:
           ssh_key: ${{ secrets.COPYBARA_SSH_KEY }}
           workflow: push-to-vscode-groovy
           copybara_options: "--force"
-          copybara_file: infra/copybara/vscode-groovy.bara.sky
+          custom_config: infra/copybara/vscode-groovy.bara.sky
