@@ -29,6 +29,12 @@ core.workflow(
         ]
     ),
     
+    mode = "ITERATIVE",
+    
+    # Preserve original author information
+    authoring = authoring.pass_thru("gls-bot <gls-bot@cavalcante.uk>"),
+    
+    # Improve commit message handling
     transformations = [
         # Move files from editors/code/ to root
         core.move("editors/code", ""),
@@ -55,14 +61,8 @@ core.workflow(
             paths = glob(["package.json"]),
         ),
         
-        # Add sync metadata to commit message
-        metadata.add_header(
-            "This commit was automatically synced from groovy-lsp monorepo.\n" +
-            "Source: https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code\n" +
-            "Do not edit this repository directly - changes will be overwritten.\n\n"
-        ),
+        # Add descriptive footer instead of header for cleaner log
+        metadata.expose_label("Co-authored-by"),
+        metadata.expose_label("Signed-off-by"),
     ],
-    
-    # All commits appear as from gls-bot (consistent with jenkins-extractor)
-    authoring = authoring.overwrite("gls-bot <gls-bot@cavalcante.uk>"),
 )
