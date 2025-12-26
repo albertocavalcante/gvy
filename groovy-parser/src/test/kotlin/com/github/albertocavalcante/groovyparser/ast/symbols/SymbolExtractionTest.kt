@@ -42,8 +42,8 @@ class SymbolExtractionTest {
         assertNotNull(ast, "AST should not be null")
 
         // Get visitor
-        val visitor = result.astVisitor
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = result.astModel
+        assertNotNull(visitor, "Should have AST model")
 
         // Build symbols
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
@@ -73,8 +73,8 @@ class SymbolExtractionTest {
 
         // Act
         val result = parser.parse(ParseRequest(uri = uri, content = content))
-        val visitor = result.astVisitor
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = result.astModel
+        assertNotNull(visitor, "Should have AST model")
 
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
 
@@ -102,8 +102,8 @@ class SymbolExtractionTest {
 
         // Act
         val result = parser.parse(ParseRequest(uri = uri, content = content))
-        val visitor = result.astVisitor
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = result.astModel
+        assertNotNull(visitor, "Should have AST model")
 
         val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
 
@@ -126,8 +126,8 @@ class SymbolExtractionTest {
 
         // Act
         val result = parser.parse(ParseRequest(uri = uri, content = content))
-        val visitor = result.astVisitor
-        assertNotNull(visitor, "Should have AST visitor")
+        val visitor = result.astModel
+        assertNotNull(visitor, "Should have AST model")
 
         val originalIndex = SymbolIndex()
         val newIndex = originalIndex.buildFromVisitor(visitor)

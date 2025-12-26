@@ -90,6 +90,5 @@
     <ID>UnusedParameter:MultipleDiagnosticsPropertyTest.kt$MultipleDiagnosticsPropertyTest$onlyRegistered: Boolean</ID>
     <ID>UnusedPrivateProperty:JenkinsDocProvider.kt$JenkinsDocProvider$private val logger = LoggerFactory.getLogger(JenkinsDocProvider::class.java)</ID>
     <ID>UnusedPrivateProperty:JenkinsStepCompletionProvider.kt$JenkinsStepCompletionProvider$private val logger = LoggerFactory.getLogger(JenkinsStepCompletionProvider::class.java)</ID>
-    <ID>UseCheckOrError:CompilationContext.kt$CompilationContext$throw IllegalStateException("Using legacy AstVisitor access with RecursiveAstVisitor")</ID>
   </CurrentIssues>
 </SmellBaseline>

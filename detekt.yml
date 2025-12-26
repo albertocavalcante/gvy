@@ -27,7 +27,6 @@ complexity:
     - '**/dsl/**'
     - '**/test/**'
     - '**/visitor/**'
-    - '**/AstVisitor.kt'
     thresholdInFiles: 20
     thresholdInClasses: 18
     thresholdInInterfaces: 13

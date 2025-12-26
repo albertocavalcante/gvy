@@ -1,10 +1,13 @@
 # Recursive Visitor Parity Status
 
+> NOTE: Legacy visitor support has been removed and `RecursiveAstVisitor` is now the only implementation.
+> This document is retained for historical context.
+
 This document tracks the parity status between the new `RecursiveAstVisitor` and the legacy `NodeVisitorDelegate`.
 
 ## Overview
 
-The `RecursiveAstVisitor` is designed to be a drop-in replacement for `NodeVisitorDelegate`, with improved architecture using composition over inheritance. During the migration period, both visitors run in parallel (when enabled via feature flag) to ensure behavioral compatibility.
+The `RecursiveAstVisitor` is designed to be a drop-in replacement for `NodeVisitorDelegate`, with improved architecture using composition over inheritance. During the migration period, both visitors ran in parallel under a feature flag to ensure behavioral compatibility.
 
 ## Parity Score: 100%
 
@@ -105,27 +108,12 @@ All 6 parity tests passing (including operator test suite):
 | Complex declaration expressions | ✅ PASS | Binary ops, ternary, GStrings, collections |
 | Groovy operator expressions | ✅ PASS | All operators tracked and validated |
 
-## Migration Strategy
+## Migration Status
 
-### Phase 1: Parallel Execution (CURRENT)
-- Both visitors run side-by-side when `useRecursiveVisitor=true`
-- Parity tests validate identical behavior
-- Production systems can test with feature flag
-
-### Phase 2: Gradual Rollout
-- Enable recursive visitor for specific LSP features
-- Monitor for regressions
-- Collect performance metrics
-
-### Phase 3: Default Switch
-- Make recursive visitor the default
-- Keep delegate available via opt-out flag
-- Deprecate delegate visitor
-
-### Phase 4: Removal
-- Remove delegate visitor entirely
-- Breaking change requiring major version bump
-- Estimated timeline: 3-6 months after Phase 3
+Migration complete:
+- `RecursiveAstVisitor` is the default and only visitor.
+- Legacy delegate visitor removed.
+- Feature flag removed.
 
 ## Performance Characteristics
 
@@ -147,11 +135,9 @@ When adding new AST node types or visitor methods:
 1. **Add to RecursiveAstVisitor first**: Implement in the recursive visitor with explicit tracking
 2. **Add parity test**: Create test case validating identical behavior
 3. **Document differences**: If intentional differences exist, document here
-4. **Update delegate if needed**: Only update delegate for critical bug fixes
 
 ## References
 
 - **Implementation**: `groovy-parser/src/main/kotlin/.../RecursiveAstVisitor.kt`
-- **Parity Tests**: `groovy-parser/src/test/kotlin/.../RecursiveVisitorParityTest.kt`
-- **Feature Flag**: `ParseRequest.useRecursiveVisitor`
+- **Parity Tests**: `groovy-parser/src/test/kotlin/.../RecursiveVisitorTraversalTest.kt`
 - **Refactoring Plan**: `PARSER_REFACTORING_PLAN.md`

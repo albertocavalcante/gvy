@@ -7,8 +7,10 @@ import java.net.URI
 
 /**
  * Common interface for AST models that provide node lookup and relationship tracking.
- * Abstraction over legacy [AstVisitor] and new [RecursiveAstVisitor].
+ * Implemented by [RecursiveAstVisitor].
  */
+// TODO(#367): Add tree-sitter-style S-expression AST query support.
+//   See: https://github.com/albertocavalcante/groovy-devtools/issues/367
 interface GroovyAstModel {
     /**
      * Returns the parent node of the given AST node.

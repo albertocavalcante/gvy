@@ -23,7 +23,7 @@ class SymbolQueryTest {
         val uri = URI.create("file:///test.groovy")
         val parser = GroovyParserFacade()
         val result = parser.parse(ParseRequest(uri, content))
-        val index = SymbolIndex().buildFromVisitor(result.astVisitor)
+        val index = SymbolIndex().buildFromVisitor(result.astModel)
 
         // Test name query
         val classSymbols = index.query {

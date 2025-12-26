@@ -1,14 +1,13 @@
 package com.github.albertocavalcante.groovyparser.ast.visitor
 
-import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
-import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ElvisOperatorExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.RangeExpression
 import org.codehaus.groovy.ast.expr.SpreadExpression
-import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -30,15 +29,10 @@ class RecursiveVisitorGroovyOperatorsTest {
         val result = fixture.parse(code, uri.toString())
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
 
-        val (delegateNodes, delegateParents) = collectWithDelegate(result)
-        val (recursiveNodes, recursiveParents) = collectWithRecursive(result, uri)
-
-        // Find range expressions
-        val rangeExpressions = delegateNodes.filterIsInstance<RangeExpression>()
+        val astModel = result.astModel
+        val rangeExpressions = astModel.getAllNodes().filterIsInstance<RangeExpression>()
         assertTrue(rangeExpressions.size >= 3, "Should have at least 3 range expressions")
-
-        assertNodeSetsMatch(delegateNodes, recursiveNodes)
-        assertParentRelationshipsMatch(delegateNodes, delegateParents, recursiveParents)
+        rangeExpressions.forEach { assertNotNull(astModel.getParent(it), "RangeExpression should have a parent") }
     }
 
     @Test
@@ -53,16 +47,10 @@ class RecursiveVisitorGroovyOperatorsTest {
         val result = fixture.parse(code, uri.toString())
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
 
-        val (delegateNodes, delegateParents) = collectWithDelegate(result)
-        val (recursiveNodes, recursiveParents) = collectWithRecursive(result, uri)
-
-        // Elvis extends TernaryExpression, so we might find them as Ternary or Elvis depending on how they are visited.
-        // But since the node instance itself IS an ElvisOperatorExpression, filterIsInstance should work.
-        val elvisExpressions = delegateNodes.filterIsInstance<ElvisOperatorExpression>()
+        val astModel = result.astModel
+        val elvisExpressions = astModel.getAllNodes().filterIsInstance<ElvisOperatorExpression>()
         assertTrue(elvisExpressions.isNotEmpty(), "Should have Elvis expressions")
-
-        assertNodeSetsMatch(delegateNodes, recursiveNodes)
-        assertParentRelationshipsMatch(delegateNodes, delegateParents, recursiveParents)
+        elvisExpressions.forEach { assertNotNull(astModel.getParent(it), "Elvis expression should have a parent") }
     }
 
     @Test
@@ -77,16 +65,12 @@ class RecursiveVisitorGroovyOperatorsTest {
         val result = fixture.parse(code, uri.toString())
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
 
-        val (delegateNodes, delegateParents) = collectWithDelegate(result)
-        val (recursiveNodes, recursiveParents) = collectWithRecursive(result, uri)
-
-        // PropertyExpression with isSafe() should be tracked
-        val safeNavs = delegateNodes.filterIsInstance<org.codehaus.groovy.ast.expr.PropertyExpression>()
+        val astModel = result.astModel
+        val safeNavs = astModel.getAllNodes()
+            .filterIsInstance<PropertyExpression>()
             .filter { it.isSafe }
         assertTrue(safeNavs.isNotEmpty(), "Should have safe navigation expressions")
-
-        assertNodeSetsMatch(delegateNodes, recursiveNodes)
-        assertParentRelationshipsMatch(delegateNodes, delegateParents, recursiveParents)
+        safeNavs.forEach { assertNotNull(astModel.getParent(it), "Safe navigation should have a parent") }
     }
 
     @Test
@@ -97,27 +81,19 @@ class RecursiveVisitorGroovyOperatorsTest {
             def list2 = [0, *list1, 4]
             def args = [1, 2]
             println(*args)
-            // Spread map is rarely used but we support it
-            // def map1 = [a: 1, b: 2]
-            // def map2 = [*:map1, c: 3] 
-            // Note: Spread map might be parsed differently in newer Groovy or requires specific context
         """.trimIndent()
 
         val result = fixture.parse(code, uri.toString())
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
 
-        val (delegateNodes, delegateParents) = collectWithDelegate(result)
-        val (recursiveNodes, recursiveParents) = collectWithRecursive(result, uri)
-
-        val spreadExprs = delegateNodes.filterIsInstance<SpreadExpression>()
+        val astModel = result.astModel
+        val spreadExprs = astModel.getAllNodes().filterIsInstance<SpreadExpression>()
         assertTrue(spreadExprs.isNotEmpty(), "Should have spread expressions")
-
-        assertNodeSetsMatch(delegateNodes, recursiveNodes)
-        assertParentRelationshipsMatch(delegateNodes, delegateParents, recursiveParents)
+        spreadExprs.forEach { assertNotNull(astModel.getParent(it), "Spread expression should have a parent") }
     }
 
     @Test
-    fun `combined groovy operators parity`() {
+    fun `combined groovy operators`() {
         val uri = URI.create("file:///operators-combined.groovy")
         val code = """
             class OperatorTest {
@@ -126,7 +102,6 @@ class RecursiveVisitorGroovyOperatorsTest {
                     def list2 = [0, *list1, 4]
 
                     def map1 = [a: 1]
-                    // def map2 = [*:map1, b: 2] // Spread map often tricky
 
                     def range = 0..10
                     def name = input ?: "default"
@@ -145,85 +120,10 @@ class RecursiveVisitorGroovyOperatorsTest {
         val result = fixture.parse(code, uri.toString())
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
 
-        val (delegateNodes, delegateParents) = collectWithDelegate(result)
-        val (recursiveNodes, recursiveParents) = collectWithRecursive(result, uri)
-
-        // Verify all operator types are present
-        assertTrue(delegateNodes.any { it is RangeExpression }, "Should have RangeExpression")
-        assertTrue(delegateNodes.any { it is ElvisOperatorExpression }, "Should have ElvisOperatorExpression")
-        assertTrue(delegateNodes.any { it is ListExpression }, "Should have ListExpression")
-        assertTrue(delegateNodes.any { it is MapExpression }, "Should have MapExpression")
-
-        assertNodeSetsMatch(delegateNodes, recursiveNodes)
-        assertParentRelationshipsMatch(delegateNodes, delegateParents, recursiveParents)
+        val allNodes = result.astModel.getAllNodes()
+        assertTrue(allNodes.any { it is RangeExpression }, "Should have RangeExpression")
+        assertTrue(allNodes.any { it is ElvisOperatorExpression }, "Should have ElvisOperatorExpression")
+        assertTrue(allNodes.any { it is ListExpression }, "Should have ListExpression")
+        assertTrue(allNodes.any { it is MapExpression }, "Should have MapExpression")
     }
-
-    // Helper methods
-    private fun collectWithDelegate(
-        result: com.github.albertocavalcante.groovyparser.api.ParseResult,
-    ): Pair<Set<ASTNode>, Map<ASTNode, ASTNode?>> {
-        val visitor = result.astVisitor!!
-        val nodes = visitor.getAllNodes().toSet()
-        val parents = nodes.associateWith { visitor.getParent(it) }
-        return nodes to parents
-    }
-
-    private fun collectWithRecursive(
-        result: com.github.albertocavalcante.groovyparser.api.ParseResult,
-        uri: URI,
-    ): Pair<Set<ASTNode>, Map<ASTNode, ASTNode?>> {
-        val tracker = NodeRelationshipTracker()
-        val recursiveVisitor = RecursiveAstVisitor(tracker)
-        recursiveVisitor.visitModule(result.ast!!, uri)
-        val nodes = tracker.getAllNodes().toSet()
-        val parents = nodes.associateWith { tracker.getParent(it) }
-        return nodes to parents
-    }
-
-    private fun assertNodeSetsMatch(delegateNodes: Set<ASTNode>, recursiveNodes: Set<ASTNode>) {
-        val missing = delegateNodes - recursiveNodes
-        val extra = recursiveNodes - delegateNodes
-
-        // Filter out known differences if any (none expected for operators now)
-
-        if (missing.isNotEmpty() || extra.isNotEmpty()) {
-            val missingStr = missing.joinToString("\n") { describe(it) }
-            val extraStr = extra.joinToString("\n") { describe(it) }
-            val msg = StringBuilder()
-            if (missing.isNotEmpty()) msg.append("Missing nodes (in delegate but not recursive):\n$missingStr\n")
-            if (extra.isNotEmpty()) msg.append("Extra nodes (in recursive but not delegate):\n$extraStr\n")
-            assertEquals(emptySet<ASTNode>(), missing, msg.toString())
-            assertEquals(emptySet<ASTNode>(), extra, msg.toString())
-        }
-    }
-
-    private fun assertParentRelationshipsMatch(
-        nodes: Set<ASTNode>,
-        delegateParents: Map<ASTNode, ASTNode?>,
-        recursiveParents: Map<ASTNode, ASTNode?>,
-    ) {
-        nodes.forEach { node ->
-            val delegateParent = delegateParents[node]
-            val recursiveParent = recursiveParents[node]
-
-            // Skip script-level statement parenting discrepancy (known issue/difference)
-            if (node is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
-                recursiveParent is org.codehaus.groovy.ast.ClassNode &&
-                (recursiveParent.isScript() || delegateParent == null)
-            ) {
-                return@forEach
-            }
-
-            // Skip if parents are effectively the same but different instances/proxies? No, should be same AST nodes.
-
-            assertEquals(
-                delegateParent,
-                recursiveParent,
-                "Parent mismatch for ${describe(node)}",
-            )
-        }
-    }
-
-    private fun describe(node: ASTNode?): String =
-        node?.let { "${it.javaClass.simpleName} @${it.lineNumber}:${it.columnNumber}" } ?: "null"
 }

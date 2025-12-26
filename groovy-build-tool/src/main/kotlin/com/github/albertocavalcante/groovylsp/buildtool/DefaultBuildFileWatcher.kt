@@ -101,7 +101,7 @@ internal class DefaultBuildFileWatcher(
     }
 
     @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
-    private suspend fun watchLoop() {
+    private fun watchLoop() {
         val watchService = this.watchService ?: return
 
         try {
@@ -125,7 +125,7 @@ internal class DefaultBuildFileWatcher(
         }
     }
 
-    private suspend fun pollWatchKey(watchService: WatchService): PollResult = try {
+    private fun pollWatchKey(watchService: WatchService): PollResult = try {
         val watchKey = watchService.poll(1, TimeUnit.SECONDS)
         if (watchKey == null) {
             PollResult.Timeout
@@ -142,13 +142,13 @@ internal class DefaultBuildFileWatcher(
         watchKey.reset()
     }
 
-    private suspend fun handlePollResult(result: PollResult): Boolean = when (result) {
+    private fun handlePollResult(result: PollResult): Boolean = when (result) {
         PollResult.Interrupted -> false
         PollResult.Timeout -> true
         is PollResult.Success -> handleWatchKey(result.watchKey)
     }
 
-    private suspend fun handleWatchKey(watchKey: WatchKey): Boolean {
+    private fun handleWatchKey(watchKey: WatchKey): Boolean {
         val projectDir = watchKeys[watchKey]
         if (projectDir == null) {
             handleUnknownWatchKey(watchKey)
@@ -157,7 +157,7 @@ internal class DefaultBuildFileWatcher(
         return processWatchKeyEvents(watchKey, projectDir)
     }
 
-    private suspend fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
+    private fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
         watchKey.pollEvents().forEach { event ->
             processWatchEvent(event, projectDir)
         }
@@ -172,7 +172,7 @@ internal class DefaultBuildFileWatcher(
     }
 
     @Suppress("TooGenericExceptionCaught")
-    private suspend fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
+    private fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
         val kind = event.kind()
 
         if (kind == StandardWatchEventKinds.OVERFLOW) {

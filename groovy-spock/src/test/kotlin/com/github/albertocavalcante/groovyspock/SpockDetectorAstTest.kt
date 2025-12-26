@@ -19,7 +19,7 @@ class SpockDetectorAstTest {
         val uri = URI.create("file:///src/test/groovy/com/example/FooSpec.groovy")
         val content = "class FooSpec extends spock.lang.Specification {}"
 
-        val result = parser.parse(ParseRequest(uri = uri, content = content, useRecursiveVisitor = true))
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
 
         assertTrue(result.isSuccessful)
         assertTrue(SpockDetector.isSpockSpec(uri, result))
@@ -35,7 +35,7 @@ class SpockDetectorAstTest {
             class FooSpec extends Specification {}
             """.trimIndent()
 
-        val result = parser.parse(ParseRequest(uri = uri, content = content, useRecursiveVisitor = true))
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
 
         assertTrue(result.isSuccessful)
         assertTrue(SpockDetector.isSpockSpec(uri, result))
@@ -51,7 +51,7 @@ class SpockDetectorAstTest {
             class FooSpec extends Specification {}
             """.trimIndent()
 
-        val result = parser.parse(ParseRequest(uri = uri, content = content, useRecursiveVisitor = true))
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
 
         assertTrue(result.isSuccessful)
         assertTrue(SpockDetector.isSpockSpec(uri, result))
@@ -84,7 +84,6 @@ class SpockDetectorAstTest {
                     uri = uri,
                     content = content,
                     workspaceSources = listOf(otherSpec),
-                    useRecursiveVisitor = true,
                 ),
             )
 
@@ -102,7 +101,7 @@ class SpockDetectorAstTest {
             }
             """.trimIndent()
 
-        val result = parser.parse(ParseRequest(uri = uri, content = content, useRecursiveVisitor = true))
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
 
         assertFalse(result.isSuccessful)
         assertTrue(SpockDetector.isSpockSpec(uri, result))

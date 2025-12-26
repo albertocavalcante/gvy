@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovyparser
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
@@ -137,20 +136,12 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             )
         }
 
-        val recursiveVisitor = if (request.useRecursiveVisitor && ast != null) {
-            val tracker = NodeRelationshipTracker()
-            val visitor = RecursiveAstVisitor(tracker)
-            visitor.visitModule(ast, request.uri)
-            visitor
-        } else {
-            null
-        }
+        val tracker = NodeRelationshipTracker()
+        val astModel = RecursiveAstVisitor(tracker)
+        ast?.let { astModel.visitModule(it, request.uri) }
 
-        val astVisitor = AstVisitor()
-        ast?.let { astVisitor.visitModule(it, sourceUnit, request.uri) }
         val symbolTable = SymbolTable()
-        val visitorForSymbols = recursiveVisitor ?: astVisitor
-        symbolTable.buildFromVisitor(visitorForSymbols)
+        symbolTable.buildFromVisitor(astModel)
 
         logger.debug(
             "Parsed {} -> success={}, diagnostics={}",
@@ -165,8 +156,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             sourceUnit = sourceUnit,
             diagnostics = diagnostics,
             symbolTable = symbolTable,
-            astVisitor = astVisitor,
-            recursiveVisitor = recursiveVisitor,
+            astModel = astModel,
             tokenIndex = tokenIndex,
         )
     }

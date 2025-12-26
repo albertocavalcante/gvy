@@ -8,7 +8,7 @@ import java.net.URI
 
 /**
  * Handles position-based queries on AST nodes.
- * Extracted from AstVisitor to provide focused query functionality.
+ * Extracted from the original visitor implementation to provide focused query functionality.
  *
  * NB: Coordinate Systems
  * - Groovy AST: 1-based line and column (line 1 = first line, column 1 = first character)

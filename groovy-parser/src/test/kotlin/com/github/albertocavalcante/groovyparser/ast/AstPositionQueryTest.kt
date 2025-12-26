@@ -30,8 +30,7 @@ class AstPositionQueryTest {
         """.trimIndent()
 
         val result = fixture.parse(code)
-        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val targetLine = code.lines().indexOfFirst { it.contains("new GenericPipelineDeclaration") }
@@ -62,8 +61,7 @@ class AstPositionQueryTest {
         """.trimIndent()
 
         val result = fixture.parse(code)
-        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val importLine = code.lines()[0]
@@ -87,8 +85,7 @@ class AstPositionQueryTest {
         """.trimIndent()
 
         val result = fixture.parse(code)
-        assertNotNull(result.astVisitor, "Expected visitor even if compilation has diagnostics")
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val extendsLine = code.lines()[2]
@@ -113,7 +110,7 @@ class AstPositionQueryTest {
 
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         // Traverse AST to find the BinaryExpression "1 + 2"
@@ -154,7 +151,7 @@ class AstPositionQueryTest {
         """.trimIndent()
 
         val result = fixture.parse(code)
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!
@@ -181,7 +178,7 @@ class AstPositionQueryTest {
         val code = "def s = \"hello \$name\""
 
         val result = fixture.parse(code)
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!
@@ -214,7 +211,7 @@ class AstPositionQueryTest {
         val code = "println(1, 2)"
 
         val result = fixture.parse(code)
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val uri = java.net.URI.create("file:///Test.groovy")
 
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!

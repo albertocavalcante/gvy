@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Tracks parent-child relationships between AST nodes and their URI mappings.
- * Extracted from AstVisitor to reduce function count and provide focused responsibility.
+ * Extracted from the original visitor implementation to provide focused responsibility.
  */
 class NodeRelationshipTracker {
     private val logger = LoggerFactory.getLogger(NodeRelationshipTracker::class.java)

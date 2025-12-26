@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-class NodeVisitorDelegateTest {
+class RecursiveAstVisitorTest {
 
     private val fixture = ParserTestFixture()
 
@@ -27,8 +27,8 @@ class NodeVisitorDelegateTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
-        val allNodes = visitor.getAllNodes()
+        val astModel = result.astModel
+        val allNodes = astModel.getAllNodes()
 
         // Verify WhileStatement is tracked
         val whileStmts = allNodes.filterIsInstance<WhileStatement>()
@@ -41,7 +41,7 @@ class NodeVisitorDelegateTest {
         assertTrue(allNodes.contains(loopBody), "Loop body should be tracked")
 
         // Verify body has parent relationship (body is not synthetic, so it should have a parent)
-        assertNotNull(visitor.getParent(loopBody), "Loop body should have a parent")
+        assertNotNull(astModel.getParent(loopBody), "Loop body should have a parent")
     }
 
     @Test
@@ -55,8 +55,8 @@ class NodeVisitorDelegateTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
-        val allNodes = visitor.getAllNodes()
+        val astModel = result.astModel
+        val allNodes = astModel.getAllNodes()
 
         // Verify DoWhileStatement is tracked
         val doWhileStmts = allNodes.filterIsInstance<DoWhileStatement>()
@@ -69,7 +69,7 @@ class NodeVisitorDelegateTest {
         assertTrue(allNodes.contains(loopBody), "Loop body should be tracked")
 
         // Verify body has parent relationship (body is not synthetic, so it should have a parent)
-        assertNotNull(visitor.getParent(loopBody), "Loop body should have a parent")
+        assertNotNull(astModel.getParent(loopBody), "Loop body should have a parent")
     }
 
     @Test
@@ -87,14 +87,15 @@ class NodeVisitorDelegateTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
-        val allNodes = visitor.getAllNodes()
+        val astModel = result.astModel
+        val allNodes = astModel.getAllNodes()
 
         // Verify TryCatchStatement is tracked
         val tryStmts = allNodes.filterIsInstance<TryCatchStatement>()
         assertEquals(1, tryStmts.size, "Should have tracked exactly one TryCatchStatement")
 
         val tryStmt = tryStmts[0]
+        assertNotNull(astModel.getParent(tryStmt), "TryCatchStatement should have a parent")
 
         // Verify catch statements are tracked (most important for this visitor)
         val catchStmts = allNodes.filterIsInstance<org.codehaus.groovy.ast.stmt.CatchStatement>()
@@ -106,7 +107,7 @@ class NodeVisitorDelegateTest {
 
         // Verify catch statements have parent relationships
         catchStmts.forEach { catchStmt ->
-            assertNotNull(visitor.getParent(catchStmt), "Each CatchStatement should have a parent")
+            assertNotNull(astModel.getParent(catchStmt), "Each CatchStatement should have a parent")
         }
     }
 
@@ -126,8 +127,8 @@ class NodeVisitorDelegateTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
-        val allNodes = visitor.getAllNodes()
+        val astModel = result.astModel
+        val allNodes = astModel.getAllNodes()
 
         // Verify SwitchStatement is tracked
         val switchStmts = allNodes.filterIsInstance<SwitchStatement>()
@@ -143,12 +144,12 @@ class NodeVisitorDelegateTest {
 
         // Verify tracked case statements have parent relationships
         caseStmts.forEach { caseStmt ->
-            assertNotNull(visitor.getParent(caseStmt), "Each tracked CaseStatement should have a parent")
+            assertNotNull(astModel.getParent(caseStmt), "Each tracked CaseStatement should have a parent")
         }
 
         // Verify tracked break statements have parent relationships
         breakStmts.forEach { breakStmt ->
-            assertNotNull(visitor.getParent(breakStmt), "Each tracked BreakStatement should have a parent")
+            assertNotNull(astModel.getParent(breakStmt), "Each tracked BreakStatement should have a parent")
         }
     }
 }

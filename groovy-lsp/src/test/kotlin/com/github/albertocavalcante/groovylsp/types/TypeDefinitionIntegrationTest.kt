@@ -2,7 +2,8 @@ package com.github.albertocavalcante.groovylsp.types
 
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ClassHelper
@@ -54,7 +55,7 @@ class TypeDefinitionIntegrationTest {
         logger.debug("Target position: line={}, col={}", position.line, position.character)
 
         val context = compileGroovy(cleanCode)
-        val node = context.astVisitor.getNodeAt(context.uri, position.toGroovyPosition())
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         logger.debug("Found node: {}", node?.javaClass?.simpleName)
         assertNotNull(node, "Should find AST node at position $position")
@@ -82,7 +83,7 @@ class TypeDefinitionIntegrationTest {
         logger.debug("Target position: line={}, col={}", position.line, position.character)
 
         val context = compileGroovy(cleanCode)
-        val node = context.astVisitor.getNodeAt(context.uri, position.toGroovyPosition())
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         logger.debug("Found node: {}", node?.javaClass?.simpleName)
         assertNotNull(node, "Should find AST node at position $position")
@@ -120,7 +121,7 @@ class TypeDefinitionIntegrationTest {
         logger.debug("Target position: line={}, col={}", position.line, position.character)
 
         val context = compileGroovy(cleanCode)
-        val node = context.astVisitor.getNodeAt(context.uri, position.toGroovyPosition())
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         logger.debug("Found node: {}", node?.javaClass?.simpleName)
         logger.debug("Node details: $node")
@@ -197,7 +198,7 @@ class TypeDefinitionIntegrationTest {
 
         val (cleanCode, position) = extractCursorPosition(code, "//^")
         val context = compileGroovy(cleanCode)
-        val node = context.astVisitor.getNodeAt(context.uri, position.toGroovyPosition())
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         if (node != null) {
             val type = typeResolver.resolveType(node, context)
@@ -222,7 +223,7 @@ class TypeDefinitionIntegrationTest {
     ) {
         val (cleanCode, position) = extractCursorPosition(code, cursorMarker)
         val context = compileGroovy(cleanCode)
-        val node = context.astVisitor.getNodeAt(context.uri, position.toGroovyPosition())
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         assertNotNull(node, "Should find AST node at position $position")
 
@@ -291,7 +292,8 @@ class TypeDefinitionIntegrationTest {
         val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
         compilationUnit.addSource(sourceUnit)
 
-        val astVisitor = AstVisitor()
+        val tracker = NodeRelationshipTracker()
+        val astModel = RecursiveAstVisitor(tracker)
         val uri = URI.create("file:///test.groovy")
 
         try {
@@ -300,13 +302,13 @@ class TypeDefinitionIntegrationTest {
 
             // Get the module and visit with our AST visitor
             val module = sourceUnit.ast
-            astVisitor.visitModule(module, sourceUnit, uri)
+            astModel.visitModule(module, uri)
 
             return CompilationContext(
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astModel = astVisitor,
+                astModel = astModel,
                 workspaceRoot = null,
             )
         } catch (e: Exception) {
@@ -314,13 +316,13 @@ class TypeDefinitionIntegrationTest {
             logger.warn("Compilation error, proceeding with partial AST: {}", e.message, e)
             // Even with compilation errors, we might have partial AST
             val module = sourceUnit.ast ?: ModuleNode(sourceUnit)
-            astVisitor.visitModule(module, sourceUnit, uri)
+            astModel.visitModule(module, uri)
 
             return CompilationContext(
                 uri = uri,
                 moduleNode = module,
                 compilationUnit = compilationUnit,
-                astModel = astVisitor,
+                astModel = astModel,
                 workspaceRoot = null,
             )
         }

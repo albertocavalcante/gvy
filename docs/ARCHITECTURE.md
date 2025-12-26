@@ -134,7 +134,7 @@ AST parsing with error recovery and visitor utilities.
 | `ErrorRecoveryParser` | Handles partial/broken code |
 | `AstUtils` | AST traversal utilities |
 | `PositionNodeVisitor` | Position-aware AST visitor |
-| `NodeVisitorDelegate` | Visitor composition |
+| `RecursiveAstVisitor` | AST traversal + parent tracking |
 
 **Visitor Pattern:**
 
@@ -471,4 +471,3 @@ class TestLspClient {
 ---
 
 *Last updated: December 21, 2025*
-

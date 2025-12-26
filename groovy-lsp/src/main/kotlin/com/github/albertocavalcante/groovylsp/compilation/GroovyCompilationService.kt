@@ -117,7 +117,6 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                useRecursiveVisitor = true,
                 compilePhase = compilePhase,
             ),
         )
@@ -160,7 +159,6 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = workspaceManager.getWorkspaceSources(),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                useRecursiveVisitor = true,
                 compilePhase = compilePhase,
             ),
         )
@@ -231,8 +229,6 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
                     // Don't add other sources - causes Script fallback
                     workspaceSources = emptyList(),
                     locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                    // Faster - don't need full traversal
-                    useRecursiveVisitor = false,
                     compilePhase = Phases.CONVERSION,
                 ),
             )
@@ -331,7 +327,6 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = emptyList(), // Don't recurse during indexing
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                useRecursiveVisitor = false, // Faster for indexing - don't need full AST traversal
             ),
         )
 

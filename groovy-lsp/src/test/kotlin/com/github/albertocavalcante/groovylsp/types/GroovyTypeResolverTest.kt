@@ -1,7 +1,8 @@
 package com.github.albertocavalcante.groovylsp.types
 
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ClassHelper
@@ -93,7 +94,7 @@ class GroovyTypeResolverTest {
         val source = StringReaderSource("// test", config)
         val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
         val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = AstVisitor()
+        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
 
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),
@@ -177,7 +178,7 @@ class GroovyTypeCalculatorTest {
         val source = StringReaderSource("// test", config)
         val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
         val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = AstVisitor()
+        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
 
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),
@@ -237,7 +238,7 @@ class DefaultTypeCalculatorTest {
         val source = StringReaderSource("// test", config)
         val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
         val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = AstVisitor()
+        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
 
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),

@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.toHoverString
 import org.codehaus.groovy.ast.expr.GStringExpression
@@ -17,7 +16,6 @@ class KitchenSinkCoverageTest {
 
     // Use the test's classloader to ensure Groovy classes (like @CompileStatic) are available
     private val parser = GroovyParserFacade(GroovyParserFacade::class.java.classLoader)
-    private val visitor = AstVisitor()
 
     @Test
     fun `parse and visit kitchen sink file covers many node types`() {
@@ -44,39 +42,42 @@ class KitchenSinkCoverageTest {
         assertTrue(result.isSuccessful, "Parsing failed with: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should not be null")
 
-        // 1. Visit the AST (Testing AstVisitor and NodeVisitorDelegate)
-        visitor.visitModule(result.ast!!, result.sourceUnit!!, uri)
-
-        val allNodes = visitor.getAllNodes()
-        val classNodes = visitor.getAllClassNodes()
+        // 1. Inspect AST model
+        val astModel = result.astModel
+        val allNodes = astModel.getAllNodes()
+        val classNodes = astModel.getAllClassNodes()
 
         // Assert we found the classes
         val mainClass =
             assertNotNull(classNodes.find { it.name == "com.example.KitchenSink" }, "Should find KitchenSink class")
 
-        val innerClass =
-            assertNotNull(classNodes.find { it.name == "com.example.KitchenSink\$Inner" }, "Should find Inner class")
+        assertNotNull(
+            classNodes.find { it.name == "com.example.KitchenSink\$Inner" },
+            "Should find Inner class",
+        )
 
         // Assert we found specific complex nodes
-        val tryCatch =
-            assertNotNull(allNodes.filterIsInstance<TryCatchStatement>().firstOrNull(), "Should find TryCatchStatement")
+        assertNotNull(
+            allNodes.filterIsInstance<TryCatchStatement>().firstOrNull(),
+            "Should find TryCatchStatement",
+        )
 
-        val gstring =
-            assertNotNull(allNodes.filterIsInstance<GStringExpression>().firstOrNull(), "Should find GStringExpression")
+        assertNotNull(
+            allNodes.filterIsInstance<GStringExpression>().firstOrNull(),
+            "Should find GStringExpression",
+        )
 
         // Check for the SwitchStatement (Testing coverage/bug)
-        val switchStmt =
-            assertNotNull(
-                allNodes.filterIsInstance<SwitchStatement>().firstOrNull(),
-                "Should find SwitchStatement (Testing coverage/bug)",
-            )
+        assertNotNull(
+            allNodes.filterIsInstance<SwitchStatement>().firstOrNull(),
+            "Should find SwitchStatement (Testing coverage/bug)",
+        )
 
         // Check for CaseStatement (also likely missing)
-        val caseStmt =
-            assertNotNull(
-                allNodes.filterIsInstance<org.codehaus.groovy.ast.stmt.CaseStatement>().firstOrNull(),
-                "Should find CaseStatement",
-            )
+        assertNotNull(
+            allNodes.filterIsInstance<org.codehaus.groovy.ast.stmt.CaseStatement>().firstOrNull(),
+            "Should find CaseStatement",
+        )
 
         // 2. Extract Symbols (Testing SymbolExtractor)
         val classSymbols = SymbolExtractor.extractClassSymbols(result.ast!!)

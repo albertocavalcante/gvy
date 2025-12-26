@@ -2,12 +2,12 @@ package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.io.path.createTempDirectory
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class GroovyParserFacadeTest {
@@ -85,7 +85,7 @@ class GroovyParserFacadeTest {
     }
 
     @Test
-    fun `parse with recursive visitor flag populates recursive visitor`() {
+    fun `parse populates recursive ast model by default`() {
         val code = """
             class Sample {
                 def method(int x) {
@@ -100,58 +100,19 @@ class GroovyParserFacadeTest {
             ParseRequest(
                 uri = URI.create("file:///Sample.groovy"),
                 content = code,
-                useRecursiveVisitor = true,
             ),
         )
 
         assertTrue(result.isSuccessful)
-        assertNotNull(result.recursiveVisitor, "Recursive visitor should be created when flag is enabled")
-        val recursiveNodes = result.recursiveVisitor!!.getAllNodes()
-        assertTrue(recursiveNodes.isNotEmpty(), "Recursive visitor should collect nodes")
+        assertTrue(result.astModel is RecursiveAstVisitor, "AST model should be RecursiveAstVisitor")
+        val recursiveNodes = result.astModel.getAllNodes()
+        assertTrue(recursiveNodes.isNotEmpty(), "AST model should collect nodes")
         val classCount = recursiveNodes.count { it is org.codehaus.groovy.ast.ClassNode }
         assertTrue(classCount >= 1, "Recursive visitor should track class nodes")
     }
 
     @Test
-    fun `astModel falls back to legacy visitor when recursive visitor is disabled`() {
-        val code = "class Legacy { String name }"
-
-        val result = parser.parse(
-            ParseRequest(
-                uri = URI.create("file:///Legacy.groovy"),
-                content = code,
-                useRecursiveVisitor = false,
-            ),
-        )
-
-        assertTrue(result.isSuccessful)
-        assertNotNull(result.astVisitor)
-        assertSame(result.astVisitor, result.astModel, "astModel should use legacy visitor when recursive is disabled")
-    }
-
-    @Test
-    fun `astModel prefers recursive visitor when enabled`() {
-        val code = "class Preferred { void run() {} }"
-
-        val result = parser.parse(
-            ParseRequest(
-                uri = URI.create("file:///Preferred.groovy"),
-                content = code,
-                useRecursiveVisitor = true,
-            ),
-        )
-
-        assertTrue(result.isSuccessful)
-        assertNotNull(result.recursiveVisitor)
-        assertSame(
-            result.recursiveVisitor,
-            result.astModel,
-            "astModel should point to recursive visitor when enabled",
-        )
-    }
-
-    @Test
-    fun `recursive visitor matches legacy node lookup for common constructs`() {
+    fun `astModel provides nodes at common positions`() {
         val code = """
             class Sample {
               def method(int x) {
@@ -163,23 +124,12 @@ class GroovyParserFacadeTest {
         """.trimIndent()
         val uri = URI.create("file:///Sample.groovy")
 
-        val legacy = parser.parse(
+        val result = parser.parse(
             ParseRequest(
                 uri = uri,
                 content = code,
-                useRecursiveVisitor = false,
             ),
-        ).astVisitor
-        val recursive = parser.parse(
-            ParseRequest(
-                uri = uri,
-                content = code,
-                useRecursiveVisitor = true,
-            ),
-        ).recursiveVisitor
-
-        requireNotNull(legacy) { "Legacy visitor missing" }
-        requireNotNull(recursive) { "Recursive visitor missing" }
+        )
 
         val positions = listOf(
             com.github.albertocavalcante.groovyparser.ast.types.Position(0, 6) to "class name",
@@ -190,15 +140,8 @@ class GroovyParserFacadeTest {
         )
 
         positions.forEach { (pos, label) ->
-            val legacyNode = legacy.getNodeAt(uri, pos)
-            val recursiveNode = recursive.getNodeAt(uri, pos)
-            assertNotNull(legacyNode, "Legacy visitor missing $label at $pos")
-            assertNotNull(recursiveNode, "Recursive visitor missing $label at $pos")
-            assertEquals(
-                legacyNode.javaClass,
-                recursiveNode.javaClass,
-                "Node type mismatch for $label at $pos",
-            )
+            val node = result.astModel.getNodeAt(uri, pos)
+            assertNotNull(node, "AST model missing $label at $pos")
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -42,11 +41,6 @@ data class CompilationContext(
      */
     val classpath: List<Path> = emptyList(),
 ) {
-    @Deprecated("Use astModel instead")
-    val astVisitor: AstVisitor
-        get() = astModel as? AstVisitor
-            ?: error("Using legacy AstVisitor access with RecursiveAstVisitor")
-
     companion object {
         /**
          * Creates a CompilationContext from a CompilationResult and additional info.

@@ -56,17 +56,8 @@ open class VisitorBenchmark {
     }
 
     @Benchmark
-    fun legacyOnly() {
-        // Runs only the legacy AstVisitor
-        val request = ParseRequest(uri, largeScript, useRecursiveVisitor = false)
-        parser.parse(request)
-    }
-
-    @Benchmark
-    fun legacyAndRecursive() {
-        // Runs both legacy AstVisitor AND RecursiveAstVisitor
-        // The delta represents the cost of the new visitor
-        val request = ParseRequest(uri, largeScript, useRecursiveVisitor = true)
+    fun recursiveVisitor() {
+        val request = ParseRequest(uri, largeScript)
         parser.parse(request)
     }
 }

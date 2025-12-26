@@ -35,7 +35,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful, "Parse should succeed")
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val classNode = result.ast!!.classes.find { it.name.contains("Foo") }
         assertNotNull(classNode, "Should find Foo class")
 
@@ -69,7 +69,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Should have visited nested classes
@@ -97,7 +97,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // All tracked nodes should have valid positions
@@ -137,8 +137,8 @@ class VisitorBehaviorTest {
 
         // Both files should be tracked by the same visitor if we're reusing it
         // For now, each parse creates its own visitor, so test isolation
-        val visitor1 = result1.astVisitor!!
-        val visitor2 = result2.astVisitor!!
+        val visitor1 = result1.astModel
+        val visitor2 = result2.astModel
 
         val nodes1 = visitor1.getNodes(uri1)
         val nodes2 = visitor2.getNodes(uri2)
@@ -162,7 +162,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Find the closure
@@ -203,7 +203,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Find method parameters
@@ -236,7 +236,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         val fields = allNodes.filterIsInstance<FieldNode>()
@@ -264,7 +264,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         val classNode = allNodes.filterIsInstance<ClassNode>().find { it.name.contains("Foo") }
@@ -307,7 +307,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Find fields - these should be tracked
@@ -321,9 +321,12 @@ class VisitorBehaviorTest {
             "Should have at least 2 fields with initializers, found ${fieldsWithInit.size}",
         )
 
-        // Note: Field initializer expressions are not currently visited by the visitor
-        // This is a known limitation that will be addressed in the recursive visitor refactoring (Phase 2)
-        // For now, we just verify that FieldNodes themselves are tracked
+        fieldsWithInit.forEach { field ->
+            assertTrue(
+                allNodes.contains(field.initialExpression),
+                "Initializer for field ${field.name} should be tracked",
+            )
+        }
     }
 
     @Test
@@ -339,7 +342,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Find import nodes
@@ -361,6 +364,31 @@ class VisitorBehaviorTest {
     }
 
     @Test
+    fun `tracks import and class header type references`() {
+        val code = """
+            import java.util.List
+            import java.util.ArrayList
+
+            class Foo extends ArrayList implements List {}
+            def list = new ArrayList()
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+
+        val visitor = result.astModel
+        val allNodes = visitor.getAllNodes()
+        val classNodes = allNodes.filterIsInstance<ClassNode>()
+
+        assertTrue(classNodes.any { it.name == "java.util.List" }, "Should track List type reference")
+        assertTrue(classNodes.any { it.name == "java.util.ArrayList" }, "Should track ArrayList type reference")
+        assertTrue(
+            visitor.getAllClassNodes().any { it.name.endsWith("Foo") },
+            "Should track Foo class definition",
+        )
+    }
+
+    @Test
     fun `tracks declaration expressions and their components`() {
         val code = """
             def x = 42
@@ -370,7 +398,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
         val allNodes = visitor.getAllNodes()
 
         // Find declarations
@@ -400,7 +428,7 @@ class VisitorBehaviorTest {
         val result = fixture.parse(code)
         assertTrue(result.isSuccessful)
 
-        val visitor = result.astVisitor!!
+        val visitor = result.astModel
 
         // The script generates a synthetic script class
         val scriptClass = result.ast!!.scriptClassDummy

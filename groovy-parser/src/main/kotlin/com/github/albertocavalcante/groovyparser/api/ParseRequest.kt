@@ -24,23 +24,6 @@ data class ParseRequest(
      * `SEMANTIC_ANALYSIS` transforms run.
      */
     val compilePhase: Int = Phases.CANONICALIZATION,
-    /**
-     * Feature flag to enable experimental recursive visitor alongside legacy delegate visitor.
-     *
-     * When enabled, both visitors run in parallel allowing:
-     * - Side-by-side comparison of outputs for validation
-     * - Gradual migration with rollback capability
-     * - Parity testing in production environments
-     *
-     * The recursive visitor uses composition over inheritance, avoiding tight coupling
-     * to Groovy's ClassCodeVisitorSupport and providing more control over AST traversal.
-     *
-     * Default: false (uses only delegate visitor for backward compatibility)
-     *
-     * @see RecursiveAstVisitor for the new implementation
-     * @see com.github.albertocavalcante.groovyparser.ast.visitor.NodeVisitorDelegate for the legacy implementation
-     */
-    val useRecursiveVisitor: Boolean = false,
 ) {
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

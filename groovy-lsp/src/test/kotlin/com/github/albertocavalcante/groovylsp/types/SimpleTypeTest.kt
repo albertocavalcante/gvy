@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.types
 
-import com.github.albertocavalcante.groovyparser.ast.AstVisitor
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -38,9 +39,10 @@ class SimpleTypeTest {
         assertTrue(module is ModuleNode, "Should be ModuleNode")
 
         // Try AST visitor
-        val astVisitor = AstVisitor()
+        val tracker = NodeRelationshipTracker()
+        val astVisitor = RecursiveAstVisitor(tracker)
         val uri = URI.create("file:///test.groovy")
-        astVisitor.visitModule(module, sourceUnit, uri)
+        astVisitor.visitModule(module, uri)
 
         val allNodes = astVisitor.getAllNodes()
         assertTrue(allNodes.isNotEmpty(), "Should have AST nodes")
