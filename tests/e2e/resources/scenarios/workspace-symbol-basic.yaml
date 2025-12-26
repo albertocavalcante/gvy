@@ -1,0 +1,70 @@
+name: workspace-symbol-basic
+description: >
+  Test workspace/symbol to find symbols by name.
+  Verifies that searching for classes and methods returns correct symbol information.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # Open a file to populate the workspace symbols
+  - openDocument:
+      path: src/SymbolTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Calculator {
+            int add(int a, int b) {
+                return a + b
+            }
+        }
+  
+  # Wait for diagnostics to ensure indexing/parsing is complete
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  # Test 1: Search for class "Calculator"
+  - request:
+      method: workspace/symbol
+      params:
+        query: "Calculator"
+      saveAs: classSymbolResult
+
+  # Verify class symbol found
+  - assert:
+      source: classSymbolResult
+      checks:
+        - jsonPath: $.items[?(@.name == 'Calculator' && @.kind == 'Class')]
+          expect:
+            type: NOT_EMPTY
+            message: "Should find Calculator class symbol"
+
+  # Test 2: Search for method "add"
+  - request:
+      method: workspace/symbol
+      params:
+        query: "add"
+      saveAs: methodSymbolResult
+
+  # Verify method symbol found
+  - assert:
+      source: methodSymbolResult
+      checks:
+        - jsonPath: $.items[?(@.name == 'add' && @.kind == 'Method' && @.containerName == 'Calculator')]
+          expect:
+            type: NOT_EMPTY
+            message: "Should find add method symbol"
+
+  - shutdown: {}
+  - exit: {}
