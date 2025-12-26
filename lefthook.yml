@@ -27,8 +27,8 @@ commit-msg:
   commands:
     "conventional-commit":
       run: |
-        commit_msg=$(cat {1})
-        if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .+$"; then
+        commit_msg=$(head -n1 {1})
+        if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+$"; then
           echo "Error: Commit message does not follow conventional commits format."
           echo "Example: feat(api): add new endpoint"
           exit 1

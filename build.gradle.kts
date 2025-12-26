@@ -285,7 +285,7 @@ tasks.register<Exec>("installLefthook") {
 
     executable = "lefthook"
     args("install", "-f")
-    isIgnoreExitValue = true // Don't fail the build if lefthook is missing
+    // Build fails if lefthook is not installed - intentional to ensure consistent hooks
 }
 
 // Ensure hooks are installed when building or checking
