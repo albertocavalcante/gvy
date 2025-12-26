@@ -1,9 +1,4 @@
-// TODO: Consider migrating from gradle-pre-commit-git-hooks to lefthook for:
-// - Faster hook execution (no Gradle daemon startup)
-// - Better cross-platform support
-// - Unified config with lefthook.yml (currently has separate YAML/Python hooks)
 plugins {
-    id("org.danilopianini.gradle-pre-commit-git-hooks") version "2.1.6"
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
@@ -14,21 +9,6 @@ dependencyResolutionManagement {
         // Gradle repository for Tooling API
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
     }
-}
-
-gitHooks {
-    preCommit {
-        from(file("tools/hooks/pre-commit"))
-    }
-
-    commitMsg {
-        conventionalCommits {
-            // Supports: feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test
-            defaultTypes()
-        }
-    }
-
-    createHooks(true) // Allow overwriting existing hooks
 }
 
 rootProject.name = "groovy-lsp-root"

@@ -1,12 +1,35 @@
 pre-commit:
   commands:
-    kotlin-format-check:
-      glob: '*.kt'
+    branch-check:
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" = "main" ]; then
+          echo "Direct commits to main branch are forbidden!"
+          exit 1
+        fi
+    kotlin-lint:
+      glob: '**/*.kt'
       run: ./gradlew spotlessCheck
-    yaml-format:
-      glob: '*.{yml,yaml}'
-      run: yq -i -P '.' {staged_files}
-    python-format:
-      glob: '*.py'
-      run: ruff format {staged_files} && ruff check --fix {staged_files}
-      # TODO: Add explicit dependency check for ruff in the future
+    yaml-lint:
+      glob: '**/*.{yml,yaml}'
+      run: yq '.' {staged_files} > /dev/null # Requires mikefarah/yq v4+
+    python-lint:
+      glob: '**/*.py'
+      run: ruff format --check {staged_files} && ruff check {staged_files}
+    shell-lint:
+      glob: '**/*.sh'
+      run: shellcheck --rcfile tools/lint/shellcheckrc {staged_files}
+    workflow-lint:
+      glob: '.github/workflows/*.{yml,yaml}'
+      run: ghalint -c tools/lint/ghalint.yaml run
+
+commit-msg:
+  commands:
+    "conventional-commit":
+      run: |
+        commit_msg=$(head -n1 {1})
+        if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+$"; then
+          echo "Error: Commit message does not follow conventional commits format."
+          echo "Example: feat(api): add new endpoint"
+          exit 1
+        fi

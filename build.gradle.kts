@@ -273,3 +273,22 @@ tasks.register("quality") {
     dependsOn(subprojects.map { it.tasks.named("quality") })
 }
 
+tasks.register<Exec>("installLefthook") {
+    description = "Install Git hooks using Lefthook"
+    group = "help"
+    
+    // Use layout to get project directory in a configuration-cache friendly way
+    val projectDir = layout.projectDirectory
+    onlyIf("Git repository must exist") {
+        projectDir.dir(".git").asFile.exists()
+    }
+
+    executable = "lefthook"
+    args("install", "-f")
+    // Build fails if lefthook is not installed - intentional to ensure consistent hooks
+}
+
+// Ensure hooks are installed when building or checking
+tasks.named("build") { dependsOn("installLefthook") }
+tasks.named("check") { dependsOn("installLefthook") }
+
