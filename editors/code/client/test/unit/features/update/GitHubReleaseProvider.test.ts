@@ -123,7 +123,7 @@ describe('GitHubReleaseProvider', () => {
 
             const [, options] = fetchStub.firstCall.args;
             assert.strictEqual(options.headers['Accept'], 'application/vnd.github.v3+json');
-            assert.strictEqual(options.headers['User-Agent'], 'vscode-groovy-extension');
+            assert.strictEqual(options.headers['User-Agent'], 'gvy-ide-extension');
         });
 
         it('uses AbortController signal for timeout', async () => {

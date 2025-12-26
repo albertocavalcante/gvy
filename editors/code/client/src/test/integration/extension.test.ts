@@ -5,12 +5,12 @@ suite('Extension Test Suite', () => {
     console.log('Start all tests.');
 
     test('Extension should be present', () => {
-        const extension = vscode.extensions.getExtension('albertocavalcante.vscode-groovy');
+        const extension = vscode.extensions.getExtension('albertocavalcante.gvy');
         assert.ok(extension, 'Extension should be found');
     });
 
     test('Extension should activate', async () => {
-        const extension = vscode.extensions.getExtension('albertocavalcante.vscode-groovy');
+        const extension = vscode.extensions.getExtension('albertocavalcante.gvy');
         assert.ok(extension, 'Extension should be present');
         await extension.activate();
         assert.ok(extension.isActive, 'Extension should be active');

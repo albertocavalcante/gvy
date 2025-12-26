@@ -25,7 +25,7 @@ export class GitHubReleaseProvider implements ReleaseProvider {
                 signal: controller.signal,
                 headers: {
                     Accept: 'application/vnd.github.v3+json',
-                    'User-Agent': 'vscode-groovy-extension'
+                    'User-Agent': 'gvy-ide-extension'
                 }
             });
 

@@ -1,7 +1,7 @@
 {
-  "name": "vscode-groovy",
-  "displayName": "Groovy Language Support",
-  "description": "Language support for Apache Groovy, Gradle, and Jenkins Pipeline",
+  "name": "gvy",
+  "displayName": "gvy - Groovy",
+  "description": "Groovy language support powered by gls (Groovy Language Server)",
   "version": "0.1.0-alpha.0",
   "publisher": "albertocavalcante",
   "license": "Apache-2.0",
@@ -23,9 +23,7 @@
     "onLanguage:jenkinsfile",
     "workspaceContains:**/Jenkinsfile",
     "workspaceContains:**/Jenkinsfile.*",
-    "workspaceContains:**/*.groovy",
-    "workspaceContains:**/*.gradle",
-    "workspaceContains:**/*.gradle.kts"
+    "workspaceContains:**/*.groovy"
   ],
   "main": "./client/out/extension.js",
   "contributes": {
