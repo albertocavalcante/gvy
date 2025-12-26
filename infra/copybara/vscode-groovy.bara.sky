@@ -68,7 +68,6 @@ core.workflow(
         metadata.expose_label("Fixes"),
 
         # Add sync metadata to commit message
-        # Add sync metadata to commit message
         metadata.add_header("Synced-From: https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code"),
         metadata.add_header("Note: This is a read-only mirror. Do not edit directly."),
     ],
