@@ -19,8 +19,6 @@
     "pipeline"
   ],
   "activationEvents": [
-    "onLanguage:groovy",
-    "onLanguage:jenkinsfile",
     "workspaceContains:**/Jenkinsfile",
     "workspaceContains:**/Jenkinsfile.*",
     "workspaceContains:**/*.groovy"
