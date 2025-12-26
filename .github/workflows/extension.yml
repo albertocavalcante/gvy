@@ -63,7 +63,7 @@ jobs:
           if [ -f "client/out/extension.js" ]; then
             size=$(stat -c%s client/out/extension.js 2>/dev/null || stat -f%z client/out/extension.js)
             echo "Bundle size: $size bytes"
-            if [ $size -gt 2000000 ]; then
+            if [ "$size" -gt 2000000 ]; then
               echo "❌ Bundle too large (>2MB)"
               exit 1
             fi
@@ -161,6 +161,6 @@ jobs:
       - name: Verify VSIX
         run: |
           echo "Generated VSIX files:"
-          ls -la *.vsix
-          npx @vscode/vsce ls *.vsix
+          ls -la -- ./*.vsix
+          npx @vscode/vsce ls -- ./*.vsix
         working-directory: editors/code

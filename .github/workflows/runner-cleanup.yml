@@ -72,10 +72,10 @@ jobs:
           echo "Running workflows: $RUNNING_WORKFLOWS"
           
           if [ "$RECENT_PRS" -gt 0 ] || [ "$RUNNING_WORKFLOWS" -gt 0 ]; then
-            echo "has_activity=true" >> $GITHUB_OUTPUT
+            echo "has_activity=true" >> "$GITHUB_OUTPUT"
             echo "✅ Recent activity detected - skipping cleanup"
           else
-            echo "has_activity=false" >> $GITHUB_OUTPUT
+            echo "has_activity=false" >> "$GITHUB_OUTPUT"
             echo "⚠️ No recent activity detected"
           fi
 
@@ -91,16 +91,16 @@ jobs:
           echo "Force cleanup: $FORCE"
           
           if [ "$HAS_RUNNERS" != "true" ]; then
-            echo "should_cleanup=false" >> $GITHUB_OUTPUT
+            echo "should_cleanup=false" >> "$GITHUB_OUTPUT"
             echo "📦 No runners to clean up"
           elif [ "$FORCE" == "true" ]; then
-            echo "should_cleanup=true" >> $GITHUB_OUTPUT
+            echo "should_cleanup=true" >> "$GITHUB_OUTPUT"
             echo "🔨 Force cleanup requested"
           elif [ "$HAS_ACTIVITY" == "true" ]; then
-            echo "should_cleanup=false" >> $GITHUB_OUTPUT
+            echo "should_cleanup=false" >> "$GITHUB_OUTPUT"
             echo "⏳ Skipping cleanup due to recent activity"
           else
-            echo "should_cleanup=true" >> $GITHUB_OUTPUT
+            echo "should_cleanup=true" >> "$GITHUB_OUTPUT"
             echo "🧹 Proceeding with cleanup"
           fi
 

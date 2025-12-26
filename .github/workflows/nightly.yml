@@ -110,25 +110,42 @@ jobs:
           PY
           )
           NIGHTLY_VERSION="${BASE_VERSION}-nightly.$(date -u +%Y%m%d%H%M)"
-          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "nightly_version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
-          echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+          {
+            echo "base_version=$BASE_VERSION"
+            echo "nightly_version=$NIGHTLY_VERSION"
+            echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Run lint checks
-        run: ./gradlew --no-daemon lint --stacktrace $GRADLE_SCAN_FLAG
+        run: |
+          args=(--no-daemon lint --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       - name: Run tests
         if: env.SKIP_TESTS_INPUT != 'true'
-        run: ./gradlew --no-daemon test :tests:e2eTest --stacktrace $GRADLE_SCAN_FLAG
+        run: |
+          args=(--no-daemon test :tests:e2eTest --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       - name: Build Shadow JAR
-        run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
+        run: |
+          args=(--no-daemon shadowJar --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       - name: Verify JAR
         shell: bash
         run: |
           set -euo pipefail
-          JAR_PATH=$(ls groovy-lsp/build/libs/groovy-lsp-*-all.jar | head -n 1)
+          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
           echo "Found JAR: $JAR_PATH"
           java -jar "$JAR_PATH" --help
 
@@ -138,7 +155,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          JAR_PATH=$(ls groovy-lsp/build/libs/groovy-lsp-*-all.jar | head -n 1)
+          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
           SHORT_SHA=$(git rev-parse --short HEAD)
           NIGHTLY_NAME="groovy-lsp-${{ steps.nightly_version.outputs.nightly_version }}-${SHORT_SHA}.jar"
           cp "$JAR_PATH" "dist/${NIGHTLY_NAME}"

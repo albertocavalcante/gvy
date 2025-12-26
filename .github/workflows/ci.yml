@@ -135,7 +135,7 @@ jobs:
         run: |
           # Priority: Input > Variable > Default(github-hosted)
           LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}"
-          echo "label=$LABEL" >> $GITHUB_OUTPUT
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
           echo "Checking availability for: $LABEL"
 
       # --- Magalu Check ---
@@ -155,7 +155,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
         run: |
           echo "Triggering runner-provision.yml..."
-          gh workflow run runner-provision.yml --repo ${{ github.repository }}
+          gh workflow run runner-provision.yml --repo "${{ github.repository }}"
           echo ""
           echo "⏳ Provisioning triggered. Manual approval may be required."
           echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
@@ -163,7 +163,7 @@ jobs:
           echo "ℹ️ This CI run will exit now to avoid wasting compute cycles."
           echo "::notice::CI exiting early. Will auto-resume via workflow_run after runner-provision.yml completes."
           # Set output to signal downstream jobs to skip
-          echo "provisioning_triggered=true" >> $GITHUB_OUTPUT
+          echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
 
       # --- Local macOS Check ---
       - name: Check Local macOS runner
@@ -299,7 +299,7 @@ jobs:
             echo "| **RAM** | $RAM |"
             echo "| **Disk** | $DISK |"
             echo "| **Hostname** | $HOSTNAME |"
-          } >> $GITHUB_STEP_SUMMARY
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
@@ -318,21 +318,21 @@ jobs:
         run: |-
           # Set scan flag
           if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> $GITHUB_ENV
+            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
           else
-            echo "GRADLE_SCAN_FLAG=" >> $GITHUB_ENV
+            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
           fi
 
           # Set test log level flag
           case "${{ github.event.inputs.test_log_level }}" in
             "info")
-              echo "TEST_LOG_FLAG=--info" >> $GITHUB_ENV
+              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
               ;;
             "debug")
-              echo "TEST_LOG_FLAG=--debug" >> $GITHUB_ENV
+              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
               ;;
             *)
-              echo "TEST_LOG_FLAG=" >> $GITHUB_ENV
+              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
               ;;
           esac
 
@@ -343,25 +343,51 @@ jobs:
 
       # Phase 1: Compile + Lint in single invocation with parallel execution
       - name: Compile and Lint
-        run: ./gradlew classes testClasses lint --parallel --build-cache --stacktrace $GRADLE_SCAN_FLAG
+        run: |
+          args=(classes testClasses lint --parallel --build-cache --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       # Phase 2: Unit Tests (generates coverage data in .ic files)
       - name: Run Unit Tests
         timeout-minutes: 20
-        run: ./gradlew test --parallel --build-cache --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: |
+          args=(test --parallel --build-cache --stacktrace)
+          if [[ -n "${TEST_LOG_FLAG}" ]]; then
+            args+=("${TEST_LOG_FLAG}")
+          fi
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       # Phase 3: Coverage Reports (reads .ic files from Phase 2)
       # NOTE: Split from test task to avoid Kover hang bug when running in same invocation
       # with --parallel. See: https://github.com/Kotlin/kotlinx-kover/issues/509
       - name: Generate Coverage Reports
-        run: ./gradlew koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace $GRADLE_SCAN_FLAG
+        run: |
+          args=(koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       # Phase 4: E2E Tests (automatically builds shadowJar via task dependency)
       # Skip on macOS - E2E tests are platform-independent LSP protocol tests
       - name: Run E2E Tests
         if: github.event_name == 'pull_request' || matrix.os != 'macos-15'
         timeout-minutes: 30
-        run: ./gradlew :tests:e2eTest --parallel --build-cache --stacktrace $TEST_LOG_FLAG $GRADLE_SCAN_FLAG
+        run: |
+          args=(:tests:e2eTest --parallel --build-cache --stacktrace)
+          if [[ -n "${TEST_LOG_FLAG}" ]]; then
+            args+=("${TEST_LOG_FLAG}")
+          fi
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       # Phase 5: SonarCloud (needs coverage reports from Phase 3)
       - name: SonarCloud Analysis
@@ -369,7 +395,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./gradlew sonar --info $GRADLE_SCAN_FLAG
+        run: |
+          args=(sonar --info)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
 
       - name: Generate Test Report
         uses: dorny/test-reporter@fe45e9537387dac839af0d33ba56eed8e24189e8 # v2.3.0
