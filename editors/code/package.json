@@ -518,11 +518,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/albertocavalcante/groovy-lsp.git",
+    "url": "https://github.com/albertocavalcante/groovy-devtools.git",
     "directory": "editors/code"
   },
   "bugs": {
-    "url": "https://github.com/albertocavalcante/groovy-lsp/issues"
+    "url": "https://github.com/albertocavalcante/groovy-devtools/issues"
   },
-  "homepage": "https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code#readme"
+  "homepage": "https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code#readme"
 }
