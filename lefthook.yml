@@ -5,7 +5,7 @@ pre-commit:
       run: ./gradlew spotlessCheck
     yaml-format:
       glob: '*.{yml,yaml}'
-      run: yq -i -P '.' {staged_files}
+      run: yq -i --unwrapScalar=false '.' {staged_files}
     python-format:
       glob: '*.py'
       run: ruff format {staged_files} && ruff check --fix {staged_files}
