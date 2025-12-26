@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.4.6](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.5...v0.4.6) (2025-12-26)
+
+
+### Features
+
+* **ci:** allow manual trigger for mirror workflow ([#330](https://github.com/albertocavalcante/groovy-devtools/issues/330)) ([662c275](https://github.com/albertocavalcante/groovy-devtools/commit/662c275417e6ff673b8a9df08ff6aad24368558b))
+* **ci:** default to GitHub-hosted runners in nightly/release workflows ([#321](https://github.com/albertocavalcante/groovy-devtools/issues/321)) ([3ce956b](https://github.com/albertocavalcante/groovy-devtools/commit/3ce956bb327a6fb68b2040bfc10da5c668c5135f))
+* implement groovy/status notification for server readiness ([#315](https://github.com/albertocavalcante/groovy-devtools/issues/315)) ([ff5df51](https://github.com/albertocavalcante/groovy-devtools/commit/ff5df5183a42a118655985c08ef5dbbc86239cba)), closes [#314](https://github.com/albertocavalcante/groovy-devtools/issues/314)
+* integrate vscode-groovy extension into monorepo ([6309756](https://github.com/albertocavalcante/groovy-devtools/commit/63097566621be0225d59e3706cebaa51546a483a))
+* integrate vscode-groovy extension into monorepo ([#325](https://github.com/albertocavalcante/groovy-devtools/issues/325)) ([3757e89](https://github.com/albertocavalcante/groovy-devtools/commit/3757e891ce598a9290c1266ed63416426079c80f))
+* **release:** Final Polish (Manifest, Config, Homebrew) ([#352](https://github.com/albertocavalcante/groovy-devtools/issues/352)) ([ac1fe4b](https://github.com/albertocavalcante/groovy-devtools/commit/ac1fe4ba87ba2f76bc468b6e50675894ac3dd7f8))
+* Unified Release Model & Groovy DevTools Brand ([#350](https://github.com/albertocavalcante/groovy-devtools/issues/350)) ([f7d657e](https://github.com/albertocavalcante/groovy-devtools/commit/f7d657e0f2c47082dc92a542a161a2207c8b61ff))
+* unified release model + gvy extension rebrand ([#347](https://github.com/albertocavalcante/groovy-devtools/issues/347)) ([57c4136](https://github.com/albertocavalcante/groovy-devtools/commit/57c4136d85168674574f681ad7dc3cdb839f9442))
+
+
+### Bug Fixes
+
+* add null checks in LSPToolService methods ([4cf9f46](https://github.com/albertocavalcante/groovy-devtools/commit/4cf9f4691973fa72d3bdaf66a4ac4f92a20dd0f4))
+* address bug and critical code smells ([#318](https://github.com/albertocavalcante/groovy-devtools/issues/318)) ([7615ce7](https://github.com/albertocavalcante/groovy-devtools/commit/7615ce7b51a2cb7f452f5a04b88379d44c4ac34f))
+* **ci:** update copybara-action to v1.2.5 ([#329](https://github.com/albertocavalcante/groovy-devtools/issues/329)) ([a9a7777](https://github.com/albertocavalcante/groovy-devtools/commit/a9a777716838f0768828bbf30312f80e97636f02))
+* **ci:** use correct input 'custom_config' for copybara action ([#332](https://github.com/albertocavalcante/groovy-devtools/issues/332)) ([1d68455](https://github.com/albertocavalcante/groovy-devtools/commit/1d68455aaf5420a24a8b69dec30d5c25201371dd))
+* **ci:** use pattern matching for OS detection in release workflow ([#324](https://github.com/albertocavalcante/groovy-devtools/issues/324)) ([adaa260](https://github.com/albertocavalcante/groovy-devtools/commit/adaa260e4c089eaf5e2c5cd76cf79da27bdc0f50))
+* **copybara:** preserve Closes/Fixes and add read-only warning ([#335](https://github.com/albertocavalcante/groovy-devtools/issues/335)) ([b5b28ab](https://github.com/albertocavalcante/groovy-devtools/commit/b5b28ab4a710324d3f2099141d3dba6114358daa))
+* correct VSIX path in release workflow ([e5d9079](https://github.com/albertocavalcante/groovy-devtools/commit/e5d907975d69234f2e564b8b483d4ba324dce222))
+* improve branch coverage accuracy ([755b42e](https://github.com/albertocavalcante/groovy-devtools/commit/755b42e017856825494adb8321e6b8193d9df528))
+* include resources/ in vscodeignore allowlist ([705b66d](https://github.com/albertocavalcante/groovy-devtools/commit/705b66d9879c198da636d47912bd59e634543128))
+* **infra:** use SSH URL for copybara destination ([#333](https://github.com/albertocavalcante/groovy-devtools/issues/333)) ([6808c89](https://github.com/albertocavalcante/groovy-devtools/commit/6808c893d74ec69962ff6643fc405942a6f9ecfa))
+* make KernelExecutor a functional interface ([#323](https://github.com/albertocavalcante/groovy-devtools/issues/323)) ([67df06b](https://github.com/albertocavalcante/groovy-devtools/commit/67df06ba0081d0f3b4a63100ccc35b8f4012e5df))
+* make SpockGenerator tests platform-agnostic ([426b557](https://github.com/albertocavalcante/groovy-devtools/commit/426b557d1f9927a11d0af797e7f49dc809dbbe40))
+* merge nested if statements in CompletionProvider ([#322](https://github.com/albertocavalcante/groovy-devtools/issues/322)) ([7936259](https://github.com/albertocavalcante/groovy-devtools/commit/7936259ec2d7617999c3a0f028b063bad3a848b5))
+* reset regex lastIndex in CoverageService to avoid skipping matches ([d236f8f](https://github.com/albertocavalcante/groovy-devtools/commit/d236f8f69eb983b7c31a4a051c1fc8424a5e0579))
+* resolve automated review findings ([c9967b5](https://github.com/albertocavalcante/groovy-devtools/commit/c9967b5293c20038308af52b28dd1558e6f91564))
+* resolve lint errors in AI features and tests ([27905e9](https://github.com/albertocavalcante/groovy-devtools/commit/27905e94f785f3306d2db088019f2c76cc23fe94))
+* **security:** add tag validation to prevent script injection ([#336](https://github.com/albertocavalcante/groovy-devtools/issues/336)) ([ff87914](https://github.com/albertocavalcante/groovy-devtools/commit/ff8791414d3305d99bb82902c1d4d60a229e14d2))
+* **security:** address workflow security vulnerabilities ([#317](https://github.com/albertocavalcante/groovy-devtools/issues/317)) ([b3dd802](https://github.com/albertocavalcante/groovy-devtools/commit/b3dd802b8eb9a0a799164d89324b317ef6eb85c7))
+* **test:** correct CoverageService relative path and resolve TS2349 ([8b0bfe9](https://github.com/albertocavalcante/groovy-devtools/commit/8b0bfe9e7514c7a6979e58a1045113311baef5dc))
+* **test:** simplify CoverageService file mocks to be unconditional ([3353871](https://github.com/albertocavalcante/groovy-devtools/commit/3353871f9d36cb6b736e05b511bfc6bd05fd0c57))
+* **test:** use default import for proxyquire to resolve TS2349 ([4192c25](https://github.com/albertocavalcante/groovy-devtools/commit/4192c257cc1e094f9ee3dd0ef35830fecbde47e3))
+* **test:** use noCallThru() in CoverageService test to force vscode mocking ([4919f44](https://github.com/albertocavalcante/groovy-devtools/commit/4919f442fa47e1aff51821d1f33cbcdff6306ff3))
+* **test:** use sinon.match for paths in CoverageService test to support Windows ([7265429](https://github.com/albertocavalcante/groovy-devtools/commit/7265429e2bcd4c8800db60a4f1ebdb8439592cca))
+
 ## [0.4.5](https://github.com/albertocavalcante/groovy-lsp/compare/v0.4.4...v0.4.5) (2025-12-24)
 
 
