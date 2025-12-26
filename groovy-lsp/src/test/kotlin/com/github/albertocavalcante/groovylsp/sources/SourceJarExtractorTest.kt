@@ -64,6 +64,23 @@ class SourceJarExtractorTest {
     }
 
     @Test
+    fun `extractAndIndex - rejects zip slip entries`() {
+        val sourceJar = createTestSourceJar(
+            "../../evil.java" to "class Evil {}",
+            "safe/Ok.java" to "package safe; class Ok {}",
+        )
+
+        val extractionRoot = tempDir.resolve("extracted")
+        val outsidePath = extractionRoot.parent.resolve("evil.java")
+
+        val index = extractor.extractAndIndex(sourceJar)
+
+        assertTrue(index.containsKey("safe.Ok"))
+        assertTrue(Files.exists(index["safe.Ok"]))
+        assertTrue(Files.notExists(outsidePath))
+    }
+
+    @Test
     fun `findSourceForClass - finds extracted class`() {
         val sourceJar = createTestSourceJar(
             "org/jenkins/Step.java" to "package org.jenkins; class Step {}",
