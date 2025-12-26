@@ -122,6 +122,24 @@ class JenkinsContextTest {
     }
 
     @Test
+    fun `should skip GDSL execution when disabled`() {
+        val marker = tempDir.resolve("gdsl-executed.txt")
+        val markerPath = marker.toAbsolutePath().toString().replace("\\", "\\\\")
+        val gdsl1 = tempDir.resolve("pipeline.gdsl")
+        Files.writeString(gdsl1, "new File(\"$markerPath\").text = \"executed\"")
+
+        val config = JenkinsConfiguration(
+            gdslPaths = listOf(gdsl1.toString()),
+            gdslExecutionEnabled = false,
+        )
+
+        val context = JenkinsContext(config, tempDir)
+        context.loadGdslMetadata()
+
+        assertTrue(Files.notExists(marker))
+    }
+
+    @Test
     fun `should report warnings for missing GDSL files`() {
         val config = JenkinsConfiguration(
             gdslPaths = listOf("/nonexistent/pipeline.gdsl"),

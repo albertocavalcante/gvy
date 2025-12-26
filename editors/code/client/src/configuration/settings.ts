@@ -69,6 +69,7 @@ export function affectsJenkinsConfiguration(event: ConfigurationChangeEvent): bo
     return affectsConfiguration(event, 'jenkins.filePatterns') ||
         affectsConfiguration(event, 'jenkins.sharedLibraries') ||
         affectsConfiguration(event, 'jenkins.gdslPaths') ||
+        affectsConfiguration(event, 'jenkins.gdslExecution.enabled') ||
         affectsConfiguration(event, 'jenkins.pluginsTxtPath') ||
         affectsConfiguration(event, 'jenkins.plugins') ||
         affectsConfiguration(event, 'jenkins.includeDefaultPlugins');
@@ -144,4 +145,3 @@ export function affectsUpdateConfiguration(event: ConfigurationChangeEvent): boo
         affectsConfiguration(event, 'update.checkIntervalHours') ||
         affectsConfiguration(event, 'update.notifications');
 }
-

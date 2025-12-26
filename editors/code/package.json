@@ -320,6 +320,11 @@
           "default": [],
           "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
         },
+        "groovy.jenkins.gdslExecution.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable execution of GDSL scripts. Disabled by default for security because GDSL runs arbitrary Groovy code. Only enable for trusted workspaces."
+        },
         "groovy.jenkins.pluginsTxtPath": {
           "type": "string",
           "description": "Explicit path to Jenkins plugins.txt (overrides auto-discovery)"

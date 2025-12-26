@@ -12,6 +12,7 @@ data class JenkinsConfiguration(
     val filePatterns: List<String> = listOf("Jenkinsfile", "vars/*.groovy"),
     val sharedLibraries: List<SharedLibrary> = emptyList(),
     val gdslPaths: List<String> = emptyList(),
+    val gdslExecutionEnabled: Boolean = false,
     val pluginConfig: PluginConfiguration = PluginConfiguration(),
 ) {
     companion object {
@@ -26,6 +27,7 @@ data class JenkinsConfiguration(
                 filePatterns = parseFilePatterns(map),
                 sharedLibraries = parseSharedLibraries(map),
                 gdslPaths = parseGdslPaths(map),
+                gdslExecutionEnabled = parseGdslExecutionEnabled(map),
                 pluginConfig = PluginConfiguration.fromMap(map),
             )
         } catch (e: Exception) {
@@ -63,6 +65,9 @@ data class JenkinsConfiguration(
             val paths = map["jenkins.gdslPaths"] as? List<*>
             return paths?.mapNotNull { it as? String } ?: emptyList()
         }
+
+        private fun parseGdslExecutionEnabled(map: Map<String, Any>): Boolean =
+            map["jenkins.gdslExecution.enabled"] as? Boolean ?: false
     }
 }
 

@@ -144,6 +144,7 @@ export function buildServerSettingsMap(): Record<string, unknown> {
         'jenkins.filePatterns': config.get<string[]>('jenkins.filePatterns', ['Jenkinsfile', 'vars/*.groovy']),
         'jenkins.sharedLibraries': config.get<JenkinsSharedLibrary[]>('jenkins.sharedLibraries', []),
         'jenkins.gdslPaths': config.get<string[]>('jenkins.gdslPaths', []),
+        'jenkins.gdslExecution.enabled': config.get<boolean>('jenkins.gdslExecution.enabled', false),
         'jenkins.plugins': config.get<string[]>('jenkins.plugins', []),
         'jenkins.includeDefaultPlugins': config.get<boolean>('jenkins.includeDefaultPlugins', true),
     };

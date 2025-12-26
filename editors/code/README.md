@@ -108,6 +108,9 @@ For Jenkins shared libraries:
   // GDSL files for DSL enhancements
   "groovy.jenkins.gdslPaths": ["/path/to/jenkins.gdsl"],
 
+  // Execute GDSL scripts (disabled by default for security)
+  "groovy.jenkins.gdslExecution.enabled": true,
+
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
   "groovy.jenkins.plugins": ["workflow-basic-steps", "pipeline-model-definition"],
