@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
+import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -45,6 +46,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
     private val parser = GroovyParserFacade(parentClassLoader)
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
+    private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
     // Track ongoing compilation per URI for proper async coordination
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
@@ -488,6 +490,22 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
     }
 
     fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.get()
+
+    fun updateSelectedWorker(worker: WorkerDescriptor?) {
+        selectedWorker.set(worker)
+        if (worker != null) {
+            logger.info(
+                "Worker selected: {} (range={}, features={})",
+                worker.id,
+                worker.supportedRange,
+                worker.capabilities.features,
+            )
+        } else {
+            logger.warn("No compatible worker selected")
+        }
+    }
+
+    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.get()
 
     /**
      * Invalidates all cached data for a specific URI.

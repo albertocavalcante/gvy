@@ -4,7 +4,11 @@ import com.github.albertocavalcante.groovylsp.Version
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
+import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
+import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
+import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -26,6 +30,7 @@ class GroovyWorkspaceService(
     private val compilationService: GroovyCompilationService,
     private val coroutineScope: CoroutineScope,
     private val textDocumentService: GroovyTextDocumentService? = null,
+    private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
 ) : WorkspaceService {
 
     private val logger = LoggerFactory.getLogger(GroovyWorkspaceService::class.java)
@@ -173,6 +178,12 @@ class GroovyWorkspaceService(
         val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
         compilationService.updateGroovyVersion(info)
+        selectWorker(info)
+    }
+
+    private fun selectWorker(info: GroovyVersionInfo, requiredFeatures: Set<WorkerFeature> = emptySet()) {
+        val selected = workerRouter.select(info, requiredFeatures)
+        compilationService.updateSelectedWorker(selected)
     }
 
     override fun symbol(
