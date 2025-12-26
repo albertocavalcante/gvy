@@ -28,6 +28,31 @@ In `config.json`, this setting is crucial for the VS Code extension (`editors/co
 
 By setting this to `false` (and managing versions in lockstep via the manifest), we ensure `release-please` supports our unified `v*` tagging strategy.
 
+### PR Title Pattern
+
+The `pull-request-title-pattern` option customizes the title of release PRs.
+
+```json
+"pull-request-title-pattern": "chore: release v${version}"
+```
+
+#### Available Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `${version}` | The computed semantic version | `v0.4.8` |
+| `${component}` | The package/component name (for monorepos) | `vscode-groovy` |
+| `${scope}` | Conventional commit scope (adds parentheses) | `(api)` |
+
+#### Default Pattern
+
+The default pattern is: `chore${scope}: release${component} ${version}`
+
+This produces titles like:
+- Single package: `chore: release v0.4.8`
+- With component: `chore: release vscode-groovy v0.4.8`
+- With scope: `chore(api): release v0.4.8`
+
 ## Reference
 
 - [Release Please Config Options](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#configuration)
