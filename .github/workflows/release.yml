@@ -322,7 +322,7 @@ jobs:
     if: ${{ !inputs.dry_run }}
     steps:
       - name: Update Homebrew Formula
-        uses: mislav/bump-homebrew-formula-action@v3
+        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
           formula-name: gls
