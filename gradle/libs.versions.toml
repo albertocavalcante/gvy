@@ -27,7 +27,7 @@ junit4 = "4.13.2"
 junitPlatform = "6.0.1"
 assertj = "3.27.6"
 mockk = "1.14.7"
-spock = "2.3-groovy-4.0"
+spock = "2.4-groovy-5.0"
 
 jackson = "2.20.1"
 jqwik = "1.9.3"
