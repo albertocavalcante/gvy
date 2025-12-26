@@ -13,7 +13,7 @@ class MainTest {
         val printStream = PrintStream(outContent)
 
         runVersion(printStream)
-        assertTrue(outContent.toString().contains("groovy-lsp version"))
+        assertTrue(outContent.toString().contains("gls version"))
     }
 
     @Test
@@ -22,7 +22,7 @@ class MainTest {
         val printStream = PrintStream(outContent)
 
         printHelp(printStream)
-        assertTrue(outContent.toString().contains("Groovy Language Server"))
+        assertTrue(outContent.toString().contains("gls - Groovy Language Server"))
     }
 
     @Test

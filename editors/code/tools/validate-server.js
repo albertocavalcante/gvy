@@ -12,7 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const SERVER_DIR = path.join(__dirname, "..", "server");
-const JAR_PATH = path.join(SERVER_DIR, "groovy-lsp.jar");
+const JAR_PATH = path.join(SERVER_DIR, "gls.jar");
 
 /**
  * Validates that a file is a valid JAR file

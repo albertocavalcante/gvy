@@ -62,7 +62,7 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 ## Stack & key paths
 
 - VS Code extension in TypeScript, bundled with esbuild (Node 20 target).
-- Groovy Language Server JAR lives in `server/groovy-lsp.jar`.
+- Groovy Language Server JAR lives in `server/gls.jar`.
 - Pinned LSP: `groovy-lsp v0.2.0`, universal `groovy-lsp-0.2.0-linux-amd64.jar` with checksum enforcement.
 - Client source: `client/src/**`; build output: `client/out/`.
 - Tools: `tools/prepare-server.js` (download/verify LSP), `tools/compute-groovy-cache-key.js`.

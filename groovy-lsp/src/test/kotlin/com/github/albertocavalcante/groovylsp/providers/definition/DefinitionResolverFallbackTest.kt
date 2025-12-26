@@ -72,7 +72,7 @@ class DefinitionResolverFallbackTest {
                 "jar:file:///home/user/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar!/org/apache/commons/lang3/StringUtils.class",
             )
             val extractedSourceUri = URI.create(
-                "file:///home/user/.groovy-lsp/cache/extracted-sources/org/apache/commons/lang3/StringUtils.java",
+                "file:///home/user/.gls/cache/extracted-sources/org/apache/commons/lang3/StringUtils.java",
             )
 
             every { compilationService.findClasspathClass("org.apache.commons.lang3.StringUtils") } returns jarUri
@@ -116,7 +116,7 @@ class DefinitionResolverFallbackTest {
             val jarUri = URI.create(
                 "jar:file:///home/user/.m2/repository/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar!/org/slf4j/Logger.class",
             )
-            val sourceUri = URI.create("file:///home/user/.groovy-lsp/cache/extracted-sources/org/slf4j/Logger.java")
+            val sourceUri = URI.create("file:///home/user/.gls/cache/extracted-sources/org/slf4j/Logger.java")
             every { compilationService.findClasspathClass("org.slf4j.Logger") } returns jarUri
 
             coEvery {
@@ -313,7 +313,7 @@ class DefinitionResolverFallbackTest {
                 "jar:file:///home/user/.m2/repository/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar!/com/google/gson/Gson.class",
             )
             val extractedSourceUri = URI.create(
-                "file:///home/user/.groovy-lsp/cache/extracted-sources/com/google/gson/Gson.java",
+                "file:///home/user/.gls/cache/extracted-sources/com/google/gson/Gson.java",
             )
             every { compilationService.findClasspathClass("com.google.gson.Gson") } returns jarUri
 

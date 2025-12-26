@@ -21,14 +21,14 @@ import java.nio.file.Path
  * - Jenkins version configuration
  * - Plugin version specifications
  *
- * Configuration is read from `.groovy-lsp/jenkins.json` in the workspace root.
+ * Configuration is read from `.gls/jenkins.json` in the workspace root.
  */
 class UserMetadataLoader(private val workspaceRoot: Path) {
     private val logger = LoggerFactory.getLogger(UserMetadataLoader::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
-        private const val CONFIG_DIR = ".groovy-lsp"
+        private const val CONFIG_DIR = ".gls"
         private const val CONFIG_FILE = "jenkins.json"
     }
 

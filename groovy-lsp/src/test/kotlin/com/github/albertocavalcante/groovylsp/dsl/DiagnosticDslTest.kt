@@ -37,7 +37,7 @@ class DiagnosticDslTest {
         assertEquals(0, diagnostic.range.start.character)
         assertEquals(0, diagnostic.range.end.line)
         assertEquals(0, diagnostic.range.end.character)
-        assertEquals("groovy-lsp", diagnostic.source)
+        assertEquals("gls", diagnostic.source)
         assertEquals(DiagnosticSeverity.Error, diagnostic.severity)
     }
 

@@ -22,7 +22,7 @@ export class ServerResolver {
         }
 
         const serverDir = context.asAbsolutePath('server');
-        const jarPath = path.join(serverDir, 'groovy-lsp.jar');
+        const jarPath = path.join(serverDir, 'gls.jar');
 
         if (this.fs.existsSync(jarPath)) {
             return jarPath;

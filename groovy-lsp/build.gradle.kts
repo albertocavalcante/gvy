@@ -260,7 +260,7 @@ application {
 }
 
 tasks.shadowJar {
-    archiveBaseName = "groovy-lsp"
+    archiveBaseName = "gls"
     archiveClassifier = "all"
 
     // Standard shadow JAR configuration - includes all runtimeClasspath by default
@@ -510,10 +510,10 @@ val shadowJarTask = tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks
 
 tasks.register<ReportJarCompositionTask>("reportShadowJarComposition") {
     group = "reporting"
-    description = "Report size breakdown of the shaded groovy-lsp uber jar."
+    description = "Report size breakdown of the shaded gls uber jar."
     dependsOn(shadowJarTask)
     jarFile.set(shadowJarTask.flatMap { it.archiveFile })
-    reportFile.set(layout.buildDirectory.file("reports/jar/groovy-lsp-shadow-composition.txt"))
+    reportFile.set(layout.buildDirectory.file("reports/jar/gls-shadow-composition.txt"))
 }
 
 tasks.register<ReportRuntimeClasspathArtifactsTask>("reportRuntimeClasspathArtifacts") {
@@ -586,7 +586,7 @@ abstract class SmokeShadowJarTask
             }
 
             val versionOut = runJar("version")
-            if (!versionOut.contains("groovy-lsp version")) {
+            if (!versionOut.contains("gls version")) {
                 throw GradleException(
                     "Smoke check failed: 'version' output did not contain expected marker. Output=$versionOut",
                 )
@@ -616,7 +616,7 @@ val proguardEnabled =
         .orElse(false)
 
 val proguardOutJar =
-    layout.buildDirectory.file("libs/groovy-lsp-${project.version}-all-proguard.jar")
+    layout.buildDirectory.file("libs/gls-${project.version}-all-proguard.jar")
 
 tasks.register<proguard.gradle.ProGuardTask>("proguardShadowJar") {
     group = "build"
@@ -651,7 +651,7 @@ tasks.register<ReportJarCompositionTask>("reportProguardJarComposition") {
     dependsOn("proguardShadowJar")
     enabled = proguardEnabled.get()
     jarFile.set(proguardOutJar)
-    reportFile.set(layout.buildDirectory.file("reports/jar/groovy-lsp-proguard-composition.txt"))
+    reportFile.set(layout.buildDirectory.file("reports/jar/gls-proguard-composition.txt"))
 }
 
 tasks.register<SmokeShadowJarTask>("smokeProguardJar") {

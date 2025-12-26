@@ -54,7 +54,7 @@ describe('ServerResolver', () => {
     });
 
     it('should resolve to the embedded server path when no custom path is configured', async () => {
-        const expectedPath = path.join('/mock/extension/root', 'server', 'groovy-lsp.jar');
+        const expectedPath = path.join('/mock/extension/root', 'server', 'gls.jar');
         mockFs.setExists(expectedPath, true);
 
         const result = await resolver.resolve(mockContext, { serverPath: undefined });
@@ -63,7 +63,7 @@ describe('ServerResolver', () => {
     });
 
     it('should throw an error when neither custom path nor embedded server exists', async () => {
-        const expectedPath = path.join('/mock/extension/root', 'server', 'groovy-lsp.jar');
+        const expectedPath = path.join('/mock/extension/root', 'server', 'gls.jar');
         mockFs.setExists(expectedPath, false);
 
         try {

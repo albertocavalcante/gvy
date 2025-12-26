@@ -27,7 +27,7 @@ class DiagnosticBuilder : LspBuilder<Diagnostic> {
     private var range: Range = LspDslUtils.pointRange(0, 0)
     private var severity: DiagnosticSeverity = DiagnosticSeverity.Error
     private var message: String = ""
-    private var source: String = "groovy-lsp"
+    private var source: String = "gls"
     private var code: Either<String, Int>? = null
 
     /**
@@ -77,7 +77,7 @@ class DiagnosticBuilder : LspBuilder<Diagnostic> {
     }
 
     /**
-     * Set the source (defaults to "groovy-lsp").
+     * Set the source (defaults to "gls").
      */
     fun source(source: String) {
         this.source = source
@@ -201,7 +201,7 @@ class SyntaxErrorBuilder {
     fun build(line: Int, message: String): Diagnostic = diagnostic {
         range(RangeBuilder.line(line))
         error(message)
-        source("groovy-lsp")
+        source("gls")
         code("syntax-error")
     }
 }
@@ -214,7 +214,7 @@ class TypeErrorBuilder {
     fun build(line: Int, startChar: Int, endChar: Int, message: String): Diagnostic = diagnostic {
         range(RangeBuilder.range(line, startChar, endChar))
         error(message)
-        source("groovy-lsp")
+        source("gls")
         code("type-error")
     }
 }

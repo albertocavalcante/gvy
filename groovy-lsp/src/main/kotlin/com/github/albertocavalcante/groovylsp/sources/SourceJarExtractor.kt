@@ -28,7 +28,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
     companion object {
         fun getDefaultExtractionDir(): Path {
             val home = System.getProperty("user.home")
-            return Path.of(home, ".groovy-lsp", "cache", "extracted-sources")
+            return Path.of(home, ".gls", "cache", "extracted-sources")
         }
     }
 

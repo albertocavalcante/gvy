@@ -15,8 +15,11 @@ import java.net.BindException
 import java.net.ServerSocket
 import kotlin.system.exitProcess
 
-private val logger = LoggerFactory.getLogger("GroovyLSP")
+private val logger = LoggerFactory.getLogger("gls")
 private const val DEFAULT_PORT = 8080
+
+// TODO(#340): Migrate to Clikt for CLI handling with ANSI color support.
+//   See: https://github.com/albertocavalcante/groovy-lsp/issues/340
 
 fun main(args: Array<String>) {
     // If no args or starts with stdio/socket directly (backward compatibility)
@@ -30,9 +33,9 @@ fun main(args: Array<String>) {
 
     try {
         when (command) {
-            "serve" -> {
-                // Parse serve-specific flags if any? For now just handle mode.
-                // Usage: serve [mode] [port]
+            "lsp", "serve" -> {
+                // Parse lsp-specific flags if any? For now just handle mode.
+                // Usage: lsp [mode] [port]  ("serve" kept for backward compatibility)
                 val mode = commandArgs.firstOrNull() ?: "stdio"
                 runServe(mode, commandArgs.drop(1))
             }
@@ -73,8 +76,8 @@ private fun runServe(mode: String, args: List<String>) {
         }
 
         else -> {
-            logger.error("Unknown serve mode: $mode")
-            println("Usage: groovy-lsp serve [stdio|socket] [options]")
+            logger.error("Unknown lsp mode: $mode")
+            println("Usage: gls lsp [stdio|socket] [options]")
             exitProcess(1)
         }
     }
@@ -82,8 +85,8 @@ private fun runServe(mode: String, args: List<String>) {
 
 fun runExecute(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        out.println("Usage: groovy-lsp execute <command> [arguments]")
-        out.println("Example: groovy-lsp execute groovy.version")
+        out.println("Usage: gls execute <command> [arguments]")
+        out.println("Example: gls execute groovy.version")
         exitProcess(1)
     }
 
@@ -114,7 +117,7 @@ fun runExecute(args: List<String>, out: PrintStream = System.out) {
 
 fun runCheck(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        out.println("Usage: groovy-lsp check [--workspace <dir>] <file> [file...]")
+        out.println("Usage: gls check [--workspace <dir>] <file> [file...]")
         exitProcess(1)
     }
 
@@ -216,7 +219,7 @@ fun runCheck(args: List<String>, out: PrintStream = System.out) {
 
 fun runFormat(args: List<String>, out: PrintStream = System.out) {
     if (args.isEmpty()) {
-        out.println("Usage: groovy-lsp format <file> [file...]")
+        out.println("Usage: gls format <file> [file...]")
         exitProcess(1)
     }
 
@@ -235,7 +238,7 @@ fun runFormat(args: List<String>, out: PrintStream = System.out) {
 }
 
 fun runVersion(out: PrintStream = System.out) {
-    out.println("groovy-lsp version ${Version.current}")
+    out.println("gls version ${Version.current}")
 }
 
 private fun runStdio() {
@@ -303,7 +306,7 @@ private fun handleClientConnection(socket: java.net.Socket) {
                 logger.error("Error handling client connection", e)
             }
         }
-    }, "groovy-lsp-client-${socket.inetAddress}").start()
+    }, "gls-client-${socket.inetAddress}").start()
 }
 
 private fun startServer(input: InputStream, output: OutputStream) {
@@ -320,24 +323,26 @@ private fun startServer(input: InputStream, output: OutputStream) {
 fun printHelp(out: PrintStream = System.out) {
     out.println(
         """
-        Groovy Language Server
+        gls - Groovy Language Server
 
-        Usage: groovy-lsp [command] [options]
+        Usage: gls [command] [options]
 
         Commands:
-          serve [mode]       Run the language server
+          lsp [mode]         Run the language server
                              Modes: stdio (default), socket [port]
-          execute <cmd>      Execute a custom LSP command
+          format <file>...   Format Groovy files
           check <file>...    Run diagnostics on specified files
+          execute <cmd>      Execute a custom LSP command
           version            Print the version
           help               Show this help message
 
         Examples:
-          groovy-lsp serve stdio             # Run in stdio mode
-          groovy-lsp serve socket 9000       # Run in socket mode on port 9000
-          groovy-lsp execute groovy.version  # Execute 'groovy.version' command
-          groovy-lsp check MyFile.groovy     # Check MyFile.groovy for errors
-          groovy-lsp version                 # Show version
+          gls                              # Run in stdio mode (default)
+          gls lsp socket 9000              # Run in socket mode on port 9000
+          gls format MyFile.groovy         # Format a file
+          gls check MyFile.groovy          # Check for errors
+          gls execute groovy.version       # Execute a custom command
+          gls version                      # Show version
         """.trimIndent(),
     )
 }

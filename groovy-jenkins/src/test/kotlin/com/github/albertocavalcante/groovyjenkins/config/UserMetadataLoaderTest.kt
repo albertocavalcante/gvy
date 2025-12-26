@@ -25,7 +25,7 @@ class UserMetadataLoaderTest {
     @Test
     fun `loads user GDSL file when configured`() {
         // Create config directory and files
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         // Create config file
@@ -65,7 +65,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `loads metadata overrides from config`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         Files.writeString(
@@ -100,7 +100,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `user metadata overrides bundled`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         // Override the sh step with custom config
@@ -140,7 +140,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `loads jenkinsVersion from config`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         Files.writeString(
@@ -161,7 +161,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `handles malformed config gracefully`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         Files.writeString(
@@ -178,7 +178,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `handles missing GDSL file gracefully`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         Files.writeString(
@@ -199,7 +199,7 @@ class UserMetadataLoaderTest {
 
     @Test
     fun `loads plugin configuration`() {
-        val configDir = tempDir.resolve(".groovy-lsp")
+        val configDir = tempDir.resolve(".gls")
         Files.createDirectories(configDir)
 
         Files.writeString(

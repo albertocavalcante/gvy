@@ -96,7 +96,7 @@ class CompilationErrorHandler {
             DiagnosticSeverity.Information -> info(message)
             DiagnosticSeverity.Hint -> info(message) // fallback to info for hint
         }
-        source("groovy-lsp")
+        source("gls")
         code("compilation-error")
     }
 

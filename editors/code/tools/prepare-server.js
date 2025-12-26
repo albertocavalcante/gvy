@@ -1,9 +1,9 @@
 /**
  * Prepares the Groovy Language Server JAR
  * Priority order:
- * 1. Use explicitly provided local JAR (--local/GROOVY_LSP_LOCAL_JAR)
- * 2. Use explicitly provided URL (--url/GROOVY_LSP_URL)
- * 3. Use existing server/groovy-lsp.jar if present (unless FORCE_DOWNLOAD=true)
+ * 1. Use explicitly provided local JAR (--local/GLS_LOCAL_JAR)
+ * 2. Use explicitly provided URL (--url/GLS_URL)
+ * 3. Use existing server/gls.jar if present (unless FORCE_DOWNLOAD=true)
  * 4. Copy from local groovy-lsp build if available and PREFER_LOCAL=true
  * 5. Download from GitHub releases (pinned, latest, nightly, or explicit tag)
  */
@@ -28,9 +28,9 @@ const {
 } = require("./github-token.js");
 
 const SERVER_DIR = path.join(__dirname, "..", "server");
-const CANONICAL_JAR_NAME = "groovy-lsp.jar";
+const CANONICAL_JAR_NAME = "gls.jar";
 const JAR_PATH = path.join(SERVER_DIR, CANONICAL_JAR_NAME);
-const VERSION_FILE = path.join(SERVER_DIR, ".groovy-lsp-version");
+const VERSION_FILE = path.join(SERVER_DIR, ".gls-version");
 
 // Pinned Groovy LSP release
 const PINNED_RELEASE_TAG = "v0.2.0";
@@ -119,7 +119,7 @@ function parseArgs(argv = []) {
 function findLocalGroovyLspJar() {
   const searchPaths = [
     // 1. Environment variable override
-    process.env.GROOVY_LSP_LOCAL_JAR,
+    process.env.GLS_LOCAL_JAR,
 
     // 2. Sibling directory (common for development)
     path.join(__dirname, "..", "..", "groovy-lsp", "build", "libs"),
@@ -152,10 +152,10 @@ function findLocalGroovyLspJar() {
   for (const searchPath of searchPaths) {
     try {
       // If it's a direct file path (from env var), check if it exists
-      if (searchPath === process.env.GROOVY_LSP_LOCAL_JAR) {
+      if (searchPath === process.env.GLS_LOCAL_JAR) {
         if (fs.existsSync(searchPath) && searchPath.endsWith(".jar")) {
           console.log(
-            `Found local JAR via GROOVY_LSP_LOCAL_JAR: ${searchPath}`,
+            `Found local JAR via GLS_LOCAL_JAR: ${searchPath}`,
           );
           return searchPath;
         }
@@ -233,10 +233,10 @@ function copyLocalJar(localJarPath, { forceDownload }) {
 }
 
 function deriveSelection(cliOptions) {
-  const explicitTag = cliOptions.tag || process.env.GROOVY_LSP_TAG || null;
+  const explicitTag = cliOptions.tag || process.env.GLS_TAG || null;
   const channel = (
     cliOptions.channel ||
-    process.env.GROOVY_LSP_CHANNEL ||
+    process.env.GLS_CHANNEL ||
     ""
   ).toLowerCase();
   const useNightly = cliOptions.nightly || channel === "nightly";
@@ -244,7 +244,7 @@ function deriveSelection(cliOptions) {
     !useNightly &&
     (cliOptions.latest ||
       channel === "release" ||
-      process.env.USE_LATEST_GROOVY_LSP === "true");
+      process.env.USE_LATEST_GLS === "true");
 
   if (explicitTag) {
     return { type: "tag", tag: explicitTag };
@@ -545,14 +545,14 @@ async function prepareServer(runtimeOptions = {}) {
     const explicitLocalJar =
       runtimeOptions.local ??
       cliOptions.local ??
-      process.env.GROOVY_LSP_LOCAL_JAR ??
+      process.env.GLS_LOCAL_JAR ??
       null;
     const explicitUrl =
-      runtimeOptions.url ?? cliOptions.url ?? process.env.GROOVY_LSP_URL ?? null;
+      runtimeOptions.url ?? cliOptions.url ?? process.env.GLS_URL ?? null;
     const explicitChecksum =
       runtimeOptions.checksum ??
       cliOptions.checksum ??
-      process.env.GROOVY_LSP_CHECKSUM ??
+      process.env.GLS_CHECKSUM ??
       null;
     const installedVersion = readInstalledVersion();
 
@@ -799,10 +799,10 @@ async function prepareServer(runtimeOptions = {}) {
       `Release page: https://github.com/albertocavalcante/groovy-lsp/releases/tag/${PINNED_RELEASE_TAG}`,
     );
     console.error(
-      "To try the latest available release instead, set USE_LATEST_GROOVY_LSP=true.",
+      "To try the latest available release instead, set USE_LATEST_GLS=true.",
     );
     console.error(
-      "To try the latest nightly, set GROOVY_LSP_CHANNEL=nightly or pass --nightly.",
+      "To try the latest nightly, set GLS_CHANNEL=nightly or pass --nightly.",
     );
     console.error("");
     console.error("You can also manually copy a JAR file to:");
@@ -866,7 +866,7 @@ Usage: node tools/prepare-server.js [options]
 Options:
   --tag <tag>            Download a specific Groovy LSP release tag (e.g. v0.2.0, nightly-*)
   --nightly              Download the latest nightly/prerelease build
-  --latest               Download the latest stable release (same as USE_LATEST_GROOVY_LSP=true)
+  --latest               Download the latest stable release (same as USE_LATEST_GLS=true)
   --channel <name>       Select channel: nightly | release
   --local <path>         Use a specific local groovy-lsp JAR (skips download)
   --url <url>            Download from a URL (supports GitHub Actions artifacts)
@@ -880,8 +880,8 @@ Notes:
   Precedence: --local > --url > existing bundled JAR > --prefer-local > GitHub download
 
 Environment:
-  GROOVY_LSP_TAG, GROOVY_LSP_CHANNEL=nightly|release, GROOVY_LSP_LOCAL_JAR,
-  GROOVY_LSP_URL, GROOVY_LSP_CHECKSUM, PREFER_LOCAL, USE_LATEST_GROOVY_LSP,
+  GLS_TAG, GLS_CHANNEL=nightly|release, GLS_LOCAL_JAR,
+  GLS_URL, GLS_CHECKSUM, PREFER_LOCAL, USE_LATEST_GLS,
   FORCE_DOWNLOAD, SKIP_PREPARE_SERVER.
 
 Token resolution (for GitHub API requests):

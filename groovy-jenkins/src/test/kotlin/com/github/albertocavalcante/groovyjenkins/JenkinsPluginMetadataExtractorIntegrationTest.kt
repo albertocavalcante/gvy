@@ -31,7 +31,7 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     companion object {
         private val TEST_PLUGINS_DIR: Path = Paths.get(
             System.getProperty("user.home"),
-            ".groovy-lsp",
+            ".gls",
             "cache",
             "test-plugins",
         )

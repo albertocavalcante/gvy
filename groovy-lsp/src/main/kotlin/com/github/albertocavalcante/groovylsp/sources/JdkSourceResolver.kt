@@ -14,7 +14,7 @@ import java.util.zip.ZipFile
  * - jrt:/java.base/java/util/Date.class -> java.util.Date
  * - jrt:/java.base/java/text/SimpleDateFormat.class -> java.text.SimpleDateFormat
  *
- * Extracts source files lazily (per-class) to ~/.groovy-lsp/cache/jdk-sources/
+ * Extracts source files lazily (per-class) to ~/.gls/cache/jdk-sources/
  */
 class JdkSourceResolver(
     private val jdkSourceDir: Path = getDefaultJdkSourceDir(),
@@ -28,7 +28,7 @@ class JdkSourceResolver(
     companion object {
         fun getDefaultJdkSourceDir(): Path {
             val home = System.getProperty("user.home")
-            return Path.of(home, ".groovy-lsp", "cache", "jdk-sources")
+            return Path.of(home, ".gls", "cache", "jdk-sources")
         }
     }
 

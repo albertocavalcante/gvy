@@ -250,7 +250,7 @@ Verify functionality on:
 
 1. Check VS Code Developer Console (`Help → Toggle Developer Tools`)
 2. Verify Java 17+ is installed: `java -version`
-3. Check Groovy Language Server JAR exists: `ls -la server/groovy-lsp.jar`
+3. Check Groovy Language Server JAR exists: `ls -la server/gls.jar`
 4. Review extension output panel
 
 ### Build Issues
