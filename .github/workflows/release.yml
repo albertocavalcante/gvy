@@ -135,6 +135,8 @@ jobs:
            cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-windows-amd64.jar
         elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-linux-amd64.jar
+          # Also create generic artifact for Homebrew
+          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-generic.jar
         elif [[ "${{ matrix.os }}" == macos* ]] || [[ "${{ matrix.os }}" == *macos* ]]; then
           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-darwin-amd64.jar
         elif [[ "${{ matrix.os }}" == windows* ]]; then
@@ -156,6 +158,7 @@ jobs:
     needs: build-release
     outputs:
       tag_name: ${{ steps.release_info.outputs.version }}
+      version_no_v: ${{ steps.release_info.outputs.version_no_v }}
       is_prerelease: ${{ steps.release_info.outputs.is_prerelease }}
       is_draft: ${{ steps.release_info.outputs.is_draft }}
     runs-on: ${{ (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && 'self-hosted' || (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || 'ubuntu-24.04' }}
@@ -275,6 +278,7 @@ jobs:
         fi
 
         echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "version_no_v=${VERSION#v}" >> $GITHUB_OUTPUT
         echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
         echo "is_draft=${IS_DRAFT}" >> $GITHUB_OUTPUT
 
@@ -326,7 +330,7 @@ jobs:
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
           formula-name: gls
-          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.tag_name }}-generic.jar
+          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.version_no_v }}-generic.jar
           commit-message: "chore: update gls to {{version}}"
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
