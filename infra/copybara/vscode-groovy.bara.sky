@@ -61,8 +61,16 @@ core.workflow(
             paths = glob(["package.json"]),
         ),
         
-        # Add descriptive footer instead of header for cleaner log
+        # Expose standard Git trailers and GitHub keywords to preserve them in the destination
         metadata.expose_label("Co-authored-by"),
         metadata.expose_label("Signed-off-by"),
+        metadata.expose_label("Closes"),
+        metadata.expose_label("Fixes"),
+
+        # Add sync metadata to commit message footer
+        metadata.add_footer(
+            "Synced from: https://github.com/albertocavalcante/groovy-lsp/tree/main/editors/code\n" +
+            "This is a read-only mirror. Do not edit directly."
+        ),
     ],
 )
