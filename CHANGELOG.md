@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.7](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.6...v0.4.7) (2025-12-26)
+
+
+### Features
+
+* centralized release script and pinned actions ([#358](https://github.com/albertocavalcante/groovy-devtools/issues/358)) ([6dbcfc3](https://github.com/albertocavalcante/groovy-devtools/commit/6dbcfc3cc07beddc039d6918637a22012c8fd0a1))
+
+
+### Bug Fixes
+
+* enable groovy/status readiness notifications ([#369](https://github.com/albertocavalcante/groovy-devtools/issues/369)) ([40755ec](https://github.com/albertocavalcante/groovy-devtools/commit/40755ec8961d23e15de71a82a3ab5f22b97b93a7))
+* **infra:** use single-string format for copybara add_header ([#354](https://github.com/albertocavalcante/groovy-devtools/issues/354)) ([9715e46](https://github.com/albertocavalcante/groovy-devtools/commit/9715e463c417753c3eadad1f335f96c1e7d8da5d))
+
 ## [0.4.6](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.5...v0.4.6) (2025-12-26)
 
 
