@@ -21,6 +21,7 @@ This directory contains YAML scenario files that define end-to-end LSP test case
 | **Completion** | `completion-basic`, `completion-gdk` | Code completion |
 | **Definition** | `definition-*` | Go-to-definition |
 | **Diagnostics** | `diagnostics-*` | Error reporting |
+| **Document Symbols** | `document-symbol-basic` | Document symbols |
 | **Signature** | `signature-help` | Method signature help |
 | **Build Tools** | `gradle-hover-deps` | Gradle integration |
 | **CodeLens** | `codelens-spock` | Test CodeLens commands |
