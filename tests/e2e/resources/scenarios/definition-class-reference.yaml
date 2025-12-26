@@ -5,6 +5,15 @@ workspace:
 steps:
   - initialize: {}
   - initialized: {}
+  # Wait for server to be ready before making requests
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 180000
   - openDocument:
       path: 'Classes.groovy'
       languageId: 'groovy'
