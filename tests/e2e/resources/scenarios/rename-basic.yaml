@@ -1,0 +1,51 @@
+name: rename-basic
+description: >
+  Test textDocument/rename to rename symbols.
+  Verifies that rename returns correct workspace edits for variables and methods.
+workspace:
+  fixture: definition-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # Test 1: Rename a local variable
+  - openDocument:
+      path: src/RenameTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        def myVariable = "hello"
+        println myVariable
+        def result = myVariable.toUpperCase()
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/RenameTest.groovy"
+        position:
+          line: 0
+          character: 4
+        newName: renamedVariable
+      saveAs: renameResult
+
+  # Verify rename returns workspace edits
+  - assert:
+      source: renameResult
+      checks:
+        - jsonPath: $.documentChanges[0].edits
+          expect:
+            type: SIZE
+            value: 3
+            message: "Should return 3 text edits for renamed variable (decl + 2 usages)"
+
+  - shutdown: {}
+  - exit: {}

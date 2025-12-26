@@ -1,0 +1,82 @@
+name: references-basic
+description: >
+  Test textDocument/references to find all references to a symbol.
+  Verifies that find references returns correct locations for classes, methods, and variables.
+workspace:
+  fixture: definition-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # Test 1: Find references to a class
+  - openDocument:
+      path: src/ReferencesTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Calculator {
+            int add(int a, int b) {
+                return a + b
+            }
+        }
+        
+        def calc1 = new Calculator()
+        def calc2 = new Calculator()
+        calc1.add(1, 2)
+        calc2.add(3, 4)
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ReferencesTest.groovy"
+        position:
+          line: 0
+          character: 6
+        context:
+          includeDeclaration: true
+      saveAs: classReferences
+
+  # Verify references found (declaration + 2 usages)
+  - assert:
+      source: classReferences
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 5
+            message: "Should find 5 references to Calculator class (decl + 2 usages with constructor/type duality)"
+
+  # Test 2: Find references to a method
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ReferencesTest.groovy"
+        position:
+          line: 1
+          character: 8
+        context:
+          includeDeclaration: true
+      saveAs: methodReferences
+
+  # Verify method references found
+  - assert:
+      source: methodReferences
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 3
+            message: "Should find 3 references to add method (def + 2 usages)"
+
+  - shutdown: {}
+  - exit: {}
