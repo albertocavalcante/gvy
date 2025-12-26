@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -110,27 +109,6 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
 
         return null
     }
-
-    /**
-     * Get a source file URI that can be used as a definition location.
-     *
-     * @param className Fully qualified class name
-     * @return URI pointing to the source file, or null if not found
-     */
-    fun getSourceUri(className: String): URI? {
-        val sourcePath = findSourceForClass(className) ?: return null
-        return sourcePath.toUri()
-    }
-
-    /**
-     * Check if we have already extracted sources for a given JAR.
-     */
-    fun isExtracted(sourceJarPath: Path): Boolean = extractionCache.containsKey(sourceJarPath)
-
-    /**
-     * Check if sources are available for a given class.
-     */
-    fun hasSourcesForClass(className: String): Boolean = findSourceForClass(className) != null
 
     /**
      * Get statistics about extracted sources.

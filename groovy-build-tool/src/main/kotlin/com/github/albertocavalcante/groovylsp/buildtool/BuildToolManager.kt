@@ -85,15 +85,9 @@ class BuildToolManager(
     /**
      * Checks if the workspace is a Gradle project.
      */
-    private fun isGradleProject(workspaceRoot: Path): Boolean {
-        val gradleFiles = listOf(
-            "build.gradle",
-            "build.gradle.kts",
-            "settings.gradle",
-            "settings.gradle.kts",
-        )
-        return gradleFiles.any { workspaceRoot.resolve(it).exists() }
-    }
+    private fun isGradleProject(workspaceRoot: Path): Boolean =
+        com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildFiles.fileNames
+            .any { workspaceRoot.resolve(it).exists() }
 
     /**
      * Checks if a BSP connection file exists.

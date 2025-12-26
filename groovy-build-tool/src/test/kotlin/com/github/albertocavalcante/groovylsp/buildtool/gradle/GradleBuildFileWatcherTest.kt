@@ -170,4 +170,43 @@ class GradleBuildFileWatcherTest {
 
         buildFileWatcher.stopWatching()
     }
+
+    @Test
+    @Timeout(5)
+    fun `debounces rapid build file changes`() = testScope.runTest {
+        val eventLatch = CountDownLatch(1)
+
+        val buildFileWatcher = GradleBuildFileWatcher(
+            coroutineScope = testScope,
+            onBuildFileChanged = {
+                callbackCount.incrementAndGet()
+                eventLatch.countDown()
+            },
+            debounceDelayMs = 200L,
+        )
+
+        buildFileWatcher.startWatching(tempDir)
+        assertTrue(buildFileWatcher.isWatching())
+
+        val buildFile = tempDir.resolve("build.gradle")
+        buildFile.createFile()
+        buildFile.writeText("// Initial content")
+        buildFile.writeText("// Update 1")
+        buildFile.writeText("// Update 2")
+
+        testDispatcher.scheduler.advanceTimeBy(250)
+        testDispatcher.scheduler.runCurrent()
+
+        assertTrue(
+            eventLatch.await(3, TimeUnit.SECONDS),
+            "Expected debounced build file change callback to complete within 3 seconds",
+        )
+
+        testDispatcher.scheduler.advanceTimeBy(250)
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(1, callbackCount.get(), "Expected a single debounced callback")
+
+        buildFileWatcher.stopWatching()
+    }
 }

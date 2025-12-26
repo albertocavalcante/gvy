@@ -28,7 +28,6 @@ class SourceNavigationServiceTest {
 
             val stats = service.getStatistics()
 
-            assertTrue(stats.containsKey("sourceJarsCached"), "Should contain sourceJarsCached key")
             assertTrue(stats.containsKey("extractorStats"), "Should contain extractorStats key")
         }
 
@@ -38,17 +37,17 @@ class SourceNavigationServiceTest {
 
             val stats = service.getStatistics()
 
-            assertTrue(stats["sourceJarsCached"] is Int, "sourceJarsCached should be Int")
             assertTrue(stats["extractorStats"] is Map<*, *>, "extractorStats should be Map")
         }
 
         @Test
-        fun `getStatistics starts with zero cached`() {
+        fun `getStatistics starts with zero extracted jars`() {
             val service = SourceNavigationService()
 
             val stats = service.getStatistics()
+            val extractorStats = stats["extractorStats"] as Map<*, *>
 
-            assertTrue((stats["sourceJarsCached"] as Int) == 0, "Should start with 0 cached")
+            assertTrue((extractorStats["extractedJars"] as Int) == 0, "Should start with 0 extracted jars")
         }
     }
 

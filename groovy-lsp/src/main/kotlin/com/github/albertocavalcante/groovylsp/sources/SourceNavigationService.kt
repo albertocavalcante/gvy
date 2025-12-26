@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Service for navigating to source code from binary class references.
@@ -29,9 +28,6 @@ class SourceNavigationService(
 ) : SourceNavigator {
 
     private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
-
-    // Cache: jar URI -> source JAR path (already downloaded)
-    private val sourceJarCache = ConcurrentHashMap<String, Path?>()
 
     /**
      * Navigate to source code for a class found in the classpath.
@@ -262,7 +258,6 @@ class SourceNavigationService(
      * Get service statistics.
      */
     fun getStatistics(): Map<String, Any> = mapOf(
-        "sourceJarsCached" to sourceJarCache.size,
         "extractorStats" to sourceExtractor.getStatistics(),
     )
 }

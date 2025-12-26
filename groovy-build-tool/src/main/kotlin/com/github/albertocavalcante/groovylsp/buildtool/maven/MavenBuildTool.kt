@@ -18,7 +18,8 @@ class MavenBuildTool : BuildTool {
 
     override val name: String = "Maven"
 
-    override fun canHandle(workspaceRoot: Path): Boolean = workspaceRoot.resolve("pom.xml").exists()
+    override fun canHandle(workspaceRoot: Path): Boolean =
+        MavenBuildFiles.fileNames.any { fileName -> workspaceRoot.resolve(fileName).exists() }
 
     override fun createWatcher(
         coroutineScope: kotlinx.coroutines.CoroutineScope,

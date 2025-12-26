@@ -1,190 +1,22 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
+import com.github.albertocavalcante.groovylsp.buildtool.DEFAULT_BUILD_FILE_CHANGE_DELAY_MS
+import com.github.albertocavalcante.groovylsp.buildtool.DefaultBuildFileWatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
-import java.nio.file.FileSystems
 import java.nio.file.Path
-import java.nio.file.StandardWatchEventKinds
-import java.nio.file.WatchEvent
-import java.nio.file.WatchKey
-import java.nio.file.WatchService
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.io.path.exists
-import kotlin.io.path.name
-
-private const val FILE_CHANGE_DELAY_MS = 500L
 
 /**
  * Watches Maven pom.xml files for changes and triggers dependency re-resolution.
  */
 class MavenBuildFileWatcher(
-    private val coroutineScope: CoroutineScope,
-    private val onBuildFileChanged: (Path) -> Unit,
-    private val debounceDelayMs: Long = FILE_CHANGE_DELAY_MS,
-) : BuildToolFileWatcher {
-    private val logger = LoggerFactory.getLogger(MavenBuildFileWatcher::class.java)
-    private var watchService: WatchService? = null
-    private var watchJob: Job? = null
-    private val watchKeys = ConcurrentHashMap<WatchKey, Path>()
-
-    private val buildFileNames = setOf("pom.xml")
-
-    private sealed class PollResult {
-        object Timeout : PollResult()
-        object Interrupted : PollResult()
-        data class Success(val watchKey: WatchKey) : PollResult()
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    override fun startWatching(projectDir: Path) {
-        if (watchJob?.isActive == true) {
-            logger.debug("Maven build file watcher already active for project")
-            return
-        }
-
-        try {
-            watchService = FileSystems.getDefault().newWatchService()
-
-            val watchKey = projectDir.register(
-                watchService,
-                StandardWatchEventKinds.ENTRY_MODIFY,
-                StandardWatchEventKinds.ENTRY_CREATE,
-                StandardWatchEventKinds.ENTRY_DELETE,
-            )
-            watchKeys[watchKey] = projectDir
-
-            logger.info("Started watching Maven build files in: $projectDir")
-
-            watchJob = coroutineScope.launch(Dispatchers.IO) {
-                watchLoop()
-            }
-        } catch (e: Exception) {
-            logger.error("Failed to start Maven build file watcher", e)
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    override fun stopWatching() {
-        try {
-            watchJob?.cancel()
-            watchJob = null
-
-            watchKeys.keys.forEach { key -> key.cancel() }
-            watchKeys.clear()
-
-            watchService?.close()
-            watchService = null
-
-            logger.info("Stopped Maven build file watcher")
-        } catch (e: Exception) {
-            logger.warn("Error stopping Maven build file watcher", e)
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
-    private suspend fun watchLoop() {
-        val watchService = this.watchService ?: return
-        try {
-            while (coroutineScope.isActive) {
-                val result = pollWatchKey(watchService)
-                val shouldContinue = handlePollResult(result)
-                if (!shouldContinue) {
-                    break
-                }
-            }
-        } catch (e: java.nio.file.ClosedWatchServiceException) {
-            if (watchJob != null) {
-                logger.warn("Watch service closed unexpectedly", e)
-                throw e
-            }
-            logger.debug("Watch service closed, terminating watch loop.")
-            return
-        } catch (e: Exception) {
-            logger.error("Error in Maven build file watch loop", e)
-            throw e
-        }
-    }
-
-    private suspend fun pollWatchKey(watchService: WatchService): PollResult = try {
-        val watchKey = watchService.poll(
-            java.util.concurrent.TimeUnit.SECONDS.toMillis(1),
-            java.util.concurrent.TimeUnit.MILLISECONDS,
-        )
-        if (watchKey == null) {
-            PollResult.Timeout
-        } else {
-            PollResult.Success(watchKey)
-        }
-    } catch (e: InterruptedException) {
-        logger.debug("Watch service interrupted")
-        PollResult.Interrupted
-    }
-
-    private suspend fun handlePollResult(result: PollResult): Boolean = when (result) {
-        PollResult.Interrupted -> false
-        PollResult.Timeout -> true
-        is PollResult.Success -> handleWatchKey(result.watchKey)
-    }
-
-    private suspend fun handleWatchKey(watchKey: WatchKey): Boolean {
-        val projectDir = watchKeys[watchKey]
-        if (projectDir == null) {
-            watchKey.reset()
-            return true
-        }
-        return processWatchKeyEvents(watchKey, projectDir)
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
-        watchKey.pollEvents().forEach { event ->
-            processWatchEvent(event, projectDir)
-        }
-
-        val stillValid = watchKey.reset()
-        if (!stillValid) {
-            watchKeys.remove(watchKey)
-        }
-        return stillValid
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
-        val kind = event.kind()
-        if (kind == StandardWatchEventKinds.OVERFLOW) return
-
-        val filename = event.context() as? Path ?: return
-        if (!buildFileNames.contains(filename.name)) return
-
-        val fullPath = projectDir.resolve(filename)
-
-        when (kind) {
-            StandardWatchEventKinds.ENTRY_CREATE,
-            StandardWatchEventKinds.ENTRY_MODIFY,
-            -> {
-                if (fullPath.exists()) {
-                    logger.info("Maven build file changed: ${filename.name}")
-                    if (debounceDelayMs > 0) delay(debounceDelayMs)
-                    try {
-                        onBuildFileChanged(projectDir)
-                    } catch (e: Exception) {
-                        logger.error("Error handling Maven build file change", e)
-                    }
-                }
-            }
-
-            StandardWatchEventKinds.ENTRY_DELETE -> {
-                logger.info("Maven build file deleted: ${filename.name}")
-            }
-        }
-    }
-
-    override fun isWatching(): Boolean = watchJob?.isActive == true
-}
+    coroutineScope: CoroutineScope,
+    onBuildFileChanged: (Path) -> Unit,
+    debounceDelayMs: Long = DEFAULT_BUILD_FILE_CHANGE_DELAY_MS,
+) : BuildToolFileWatcher by DefaultBuildFileWatcher(
+    logLabel = "Maven",
+    coroutineScope = coroutineScope,
+    onBuildFileChanged = onBuildFileChanged,
+    buildFileNames = MavenBuildFiles.fileNames,
+    debounceDelayMs = debounceDelayMs,
+)

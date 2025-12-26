@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -191,16 +192,32 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `getNodePositionDebugString provides useful debug info`() = runTest {
-        val groovyCode = "class TestClass {}"
-        val uri = URI.create("file:///test.groovy")
-        val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
-        val classNode = ast.classes.first()
+    fun `nodeContainsPositionRelaxed uses token length when end columns are missing`() {
+        val node = VariableExpression("Example")
+        node.setLineNumber(2)
+        node.setColumnNumber(4)
+        node.setLastLineNumber(0)
+        node.setLastColumnNumber(0)
 
-        val debugString = CoordinateSystem.getNodePositionDebugString(classNode)
-        assertNotNull(debugString)
-        assertTrue(debugString.contains("Groovy"))
-        assertTrue(debugString.contains("LSP"))
+        // LSP coordinates are 0-based (line 1, character 3 is Groovy 2:4).
+        val inside = CoordinateSystem.nodeContainsPositionRelaxed(node, 1, 5) { node.name.length }
+        val outside = CoordinateSystem.nodeContainsPositionRelaxed(node, 1, 20) { node.name.length }
+
+        assertTrue(inside)
+        assertFalse(outside)
+    }
+
+    @Test
+    fun `nodeContainsPositionRelaxed returns false for invalid node positions`() {
+        val node = VariableExpression("Bad")
+        node.setLineNumber(0)
+        node.setColumnNumber(0)
+        node.setLastLineNumber(0)
+        node.setLastColumnNumber(0)
+
+        val result = CoordinateSystem.nodeContainsPositionRelaxed(node, 0, 0) { node.name.length }
+
+        assertFalse(result)
     }
 
     @Test

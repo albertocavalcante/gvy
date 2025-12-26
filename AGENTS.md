@@ -59,6 +59,7 @@ These rules apply to ALL tasks. Violation is unacceptable.
 
 ### GitHub CLI
 - **Use `gh` for GitHub content** — Never WebFetch for GitHub URLs
+- **Use temp files for PR bodies** — Write PR descriptions to a temporary `.md` file and pass it with `gh pr create/edit --body-file`; delete the temp file afterward.
 
 ## Planning Standards
 

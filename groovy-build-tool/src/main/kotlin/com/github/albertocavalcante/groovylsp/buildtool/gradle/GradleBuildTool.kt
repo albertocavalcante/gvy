@@ -29,20 +29,11 @@ class GradleBuildTool(
     /**
      * Checks if the given directory is a Gradle project.
      */
-    override fun canHandle(workspaceRoot: Path): Boolean {
-        val gradleFiles = listOf(
-            "build.gradle",
-            "build.gradle.kts",
-            "settings.gradle",
-            "settings.gradle.kts",
-        )
-
-        return gradleFiles.any { fileName ->
-            val candidate = workspaceRoot.resolve(fileName)
-            val present = candidate.exists()
-            logger.debug("Gradle probe: {} present={}", candidate, present)
-            present
-        }
+    override fun canHandle(workspaceRoot: Path): Boolean = GradleBuildFiles.fileNames.any { fileName ->
+        val candidate = workspaceRoot.resolve(fileName)
+        val present = candidate.exists()
+        logger.debug("Gradle probe: {} present={}", candidate, present)
+        present
     }
 
     /**

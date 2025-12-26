@@ -97,30 +97,6 @@ class SourceJarExtractorTest {
     }
 
     @Test
-    fun `getSourceUri - returns valid URI for found class`() {
-        val sourceJar = createTestSourceJar(
-            "com/test/Hello.java" to "package com.test; class Hello {}",
-        )
-
-        extractor.extractAndIndex(sourceJar)
-
-        val uri = extractor.getSourceUri("com.test.Hello")
-        assertNotNull(uri)
-        assertTrue(uri.toString().contains("Hello.java"))
-    }
-
-    @Test
-    fun `hasSourcesForClass - returns true when extracted`() {
-        val sourceJar = createTestSourceJar(
-            "com/test/Foo.java" to "class Foo {}",
-        )
-
-        extractor.extractAndIndex(sourceJar)
-
-        assertTrue(extractor.hasSourcesForClass("com.test.Foo"))
-    }
-
-    @Test
     fun `getStatistics - returns correct counts`() {
         val sourceJar = createTestSourceJar(
             "com/a/A.java" to "class A {}",

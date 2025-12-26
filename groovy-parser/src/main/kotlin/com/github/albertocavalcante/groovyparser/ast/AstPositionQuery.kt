@@ -53,9 +53,9 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
         // Filter nodes that contain the position and find the smallest one.
         val matchingNodes = nodes.filter { node ->
-            val valid = node.hasValidPosition()
-            val contains = node.containsPosition(groovyLine, groovyCharacter)
-            valid && contains
+            CoordinateSystem.nodeContainsPositionRelaxed(node, lspLine, lspCharacter) {
+                it.tokenLengthHint()
+            }
         }
 
         // NOTE: Heuristic / tradeoff:
@@ -113,58 +113,6 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 }
             },
         )
-    }
-
-    /**
-     * Check if a node has valid position information.
-     * Relaxed validation: Some nodes (like VariableExpression) might only have start coordinates.
-     */
-    private fun ASTNode.hasValidPosition(): Boolean = lineNumber > 0 && columnNumber > 0
-
-    /**
-     * Check if this node contains the given position using Groovy coordinates.
-     * NB: This expects 1-based Groovy coordinates, not 0-based LSP coordinates.
-     */
-    private fun ASTNode.containsPosition(line: Int, character: Int): Boolean {
-        // If we don't have end coordinates, assume it's a single point or small range
-        val endLine = if (lastLineNumber > 0) lastLineNumber else lineNumber
-        val endColumn = if (lastColumnNumber > 0) {
-            lastColumnNumber
-        } else {
-            // Many Groovy AST nodes only provide a start column.
-            // Use a token-length heuristic for common identifier nodes to make "go to definition"
-            // clickable anywhere within the identifier (not just the first character).
-            val tokenLen = tokenLengthHint()
-            if (tokenLen != null && tokenLen > 0) {
-                columnNumber + tokenLen - 1
-            } else {
-                columnNumber + 1 // Minimum 1 char width
-            }
-        }
-
-        // Check if position is within the node's bounds using Groovy 1-based coordinates
-        return when {
-            line < lineNumber || line > endLine -> false
-            line == lineNumber && line == endLine -> {
-                // Single line: check column bounds
-                character >= columnNumber && character <= endColumn
-            }
-
-            line == lineNumber -> {
-                // First line: check from column to end of line
-                character >= columnNumber
-            }
-
-            line == endLine -> {
-                // Last line: check from beginning to column
-                character <= endColumn
-            }
-
-            else -> {
-                // Middle lines: always valid
-                true
-            }
-        }
     }
 
     private fun ASTNode.tokenLengthHint(): Int? = when (this) {

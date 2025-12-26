@@ -186,6 +186,50 @@ object CoordinateSystem {
         nodeContainsPosition(node, position.line, position.character)
 
     /**
+     * Position containment check that tolerates missing end coordinates.
+     *
+     * Uses token length hints when lastColumnNumber is unavailable to widen the match.
+     * This is intended for nodes where Groovy only provides start coordinates.
+     */
+    fun nodeContainsPositionRelaxed(
+        node: ASTNode,
+        lspLine: Int,
+        lspCharacter: Int,
+        tokenLengthHint: ((ASTNode) -> Int?)? = null,
+    ): Boolean {
+        if (node.lineNumber <= 0 || node.columnNumber <= 0) {
+            return false
+        }
+
+        val groovyPos = lspToGroovy(lspLine, lspCharacter)
+        val endLine = if (node.lastLineNumber > 0) node.lastLineNumber else node.lineNumber
+        val endColumn = if (node.lastColumnNumber > 0) {
+            node.lastColumnNumber
+        } else {
+            val tokenLen = tokenLengthHint?.invoke(node) ?: 0
+            if (tokenLen > 0) {
+                node.columnNumber + tokenLen - 1
+            } else {
+                node.columnNumber + 1
+            }
+        }
+
+        return when {
+            groovyPos.line < node.lineNumber || groovyPos.line > endLine -> false
+            groovyPos.line == node.lineNumber && groovyPos.line == endLine -> {
+                groovyPos.column >= node.columnNumber && groovyPos.column <= endColumn
+            }
+            groovyPos.line == node.lineNumber -> {
+                groovyPos.column >= node.columnNumber
+            }
+            groovyPos.line == endLine -> {
+                groovyPos.column <= endColumn
+            }
+            else -> true
+        }
+    }
+
+    /**
      * Position containment check using Groovy coordinates.
      * This is where the actual containment logic lives.
      */
@@ -237,39 +281,4 @@ object CoordinateSystem {
     // ===========================================
     // DEBUGGING AND UTILITIES
     // ===========================================
-
-    /**
-     * Get a debug string for a node's position information.
-     */
-    fun getNodePositionDebugString(node: ASTNode): String {
-        if (!isValidNodePosition(node)) {
-            return "INVALID_POSITION"
-        }
-
-        val groovyStart = GroovyPosition(node.lineNumber, node.columnNumber)
-        val groovyEnd = GroovyPosition(node.lastLineNumber, node.lastColumnNumber)
-        val lspStart = groovyStart.toLsp()
-        val lspEnd = groovyEnd.toLsp()
-
-        return "Groovy(${groovyStart.line}:${groovyStart.column}-${groovyEnd.line}:${groovyEnd.column}) " +
-            "LSP(${lspStart.line}:${lspStart.character}-${lspEnd.line}:${lspEnd.character})"
-    }
-
-    /**
-     * Debug helper to check position containment with detailed logging.
-     */
-    fun debugNodeContainsPosition(node: ASTNode, lspPosition: LspPosition): Boolean {
-        logger.debug("=== POSITION CONTAINMENT DEBUG ===")
-        logger.debug("Node: ${node.javaClass.simpleName}")
-        logger.debug("Node position: ${getNodePositionDebugString(node)}")
-        logger.debug("Query position LSP: $lspPosition")
-        logger.debug("Query position Groovy: ${lspPosition.toGroovy()}")
-
-        val result = nodeContainsPosition(node, lspPosition)
-
-        logger.debug("Result: $result")
-        logger.debug("=== END POSITION DEBUG ===")
-
-        return result
-    }
 }
