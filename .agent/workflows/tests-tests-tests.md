@@ -78,9 +78,10 @@ Use this path if the server throws `UnsupportedOperationException`, `Internal Er
 2.  **Deferral**: Execute the `/defer` workflow to create a GitHub issue tracking the missing feature.
 3.  **Linkage**: Add a header to the YAML file referencing the issue:
     ```yaml
-    # TODO(DEFERRED): #[IssueID] - Test disabled. Feature not implemented.
-    # See: https://github.com/albertocavalcante/groovy-devtools/issues/[IssueID]
+    # TODO(DEFERRED): #<issue-id> - Test disabled. Feature not implemented.
+    # See: https://github.com/albertocavalcante/groovy-devtools/issues/<issue-id>
     ```
+
 4.  **Result**: The file is committed as a specification for future implementation.
 
 ## Phase 5: Submission
