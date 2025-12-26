@@ -242,12 +242,12 @@ jobs:
 
     # SLSA Level 3 Provenance Attestation
     - name: Generate provenance attestation for JAR
-      uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
       with:
         subject-path: dist/gls-*.jar
 
     - name: Generate provenance attestation for VSIX
-      uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
       with:
         subject-path: dist/*.vsix
       continue-on-error: true  # VSIX may not exist in all cases
