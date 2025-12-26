@@ -48,6 +48,18 @@ jobs:
         java:
           - 17
     steps:
+    - name: Validate tag input
+      if: github.event.inputs.tag != ''
+      shell: bash
+      env:
+        TAG_INPUT: ${{ github.event.inputs.tag }}
+      run: |
+        # Validate tag matches expected version format (v1.2.3 or v1.2.3-rc.1 or vscode-groovy-v1.2.3)
+        if [[ ! "$TAG_INPUT" =~ ^(v|vscode-groovy-v)?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+          echo "::error::Invalid tag format: $TAG_INPUT. Expected formats: v1.2.3, v1.2.3-rc.1, or vscode-groovy-v1.2.3"
+          exit 1
+        fi
+        echo "Tag validation passed: $TAG_INPUT"
     - name: Checkout code
       uses: actions/checkout@v6
       with:
@@ -146,6 +158,18 @@ jobs:
     runs-on: ${{ (github.event.inputs.runner_label == 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted') && 'self-hosted' || (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || 'ubuntu-24.04' }}
     if: "${{ !inputs.dry_run }}"
     steps:
+    - name: Validate tag input
+      if: github.event.inputs.tag != ''
+      shell: bash
+      env:
+        TAG_INPUT: ${{ github.event.inputs.tag }}
+      run: |
+        # Validate tag matches expected version format (v1.2.3 or v1.2.3-rc.1 or vscode-groovy-v1.2.3)
+        if [[ ! "$TAG_INPUT" =~ ^(v|vscode-groovy-v)?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
+          echo "::error::Invalid tag format: $TAG_INPUT. Expected formats: v1.2.3, v1.2.3-rc.1, or vscode-groovy-v1.2.3"
+          exit 1
+        fi
+        echo "Tag validation passed: $TAG_INPUT"
     - name: Checkout code
       uses: actions/checkout@v6
       with:
