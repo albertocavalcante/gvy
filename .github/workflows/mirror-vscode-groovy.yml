@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'editors/code/**'
+  workflow_dispatch:
 
 jobs:
   mirror:
