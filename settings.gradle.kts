@@ -18,40 +18,7 @@ dependencyResolutionManagement {
 
 gitHooks {
     preCommit {
-        from {
-            """
-            #!/bin/sh
-            # Cross-platform: sh works on all systems via Git
-
-            # Check not on main branch (works on Windows/Mac/Linux)
-            branch=${'$'}(git rev-parse --abbrev-ref HEAD)
-            if [ "${'$'}branch" = "main" ]; then
-                echo "ERROR: Direct commits to main branch are forbidden!"
-                echo "Please create a feature branch: git checkout -b your-branch-name"
-                exit 1
-            fi
-
-            echo "Running auto-formatting and code quality fixes..."
-
-            # Store list of staged files (only .kt files for Kotlin formatting)
-            staged_kt_files=${'$'}(git diff --cached --name-only --diff-filter=d | grep -E '\.kt${'$'}' || true)
-
-            # Run auto-fixers (spotlessApply + detektAutoCorrect)
-            ./gradlew lintFix --quiet || exit 1
-
-            # Re-stage any modified files that were originally staged
-            # This handles files that were formatted by spotlessApply
-            if [ -n "${'$'}staged_kt_files" ]; then
-                for file in ${'$'}staged_kt_files; do
-                    if [ -f "${'$'}file" ]; then
-                        git add "${'$'}file"
-                    fi
-                done
-            fi
-
-            echo "✓ Code formatting applied and files re-staged"
-            """
-        }
+        from(file("tools/hooks/pre-commit"))
     }
 
     commitMsg {

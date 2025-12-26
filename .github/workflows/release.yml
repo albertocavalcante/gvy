@@ -60,17 +60,17 @@ jobs:
         fi
         echo "Tag validation passed: $TAG_INPUT"
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
         ref: ${{ github.event.inputs.tag || github.ref }}
     - name: "Set up JDK ${{ matrix.java }}"
-      uses: actions/setup-java@v5
+      uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
       with:
         distribution: temurin
         java-version: "${{ matrix.java }}"
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v5
+      uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
       with:
         cache-read-only: false
     - name: Set Gradle scan flag
@@ -105,48 +105,20 @@ jobs:
         # Set outputs for downstream jobs
         echo "build_version=${TAG}" >> $GITHUB_OUTPUT
         echo "build_commit=${COMMIT_SHA}" >> $GITHUB_OUTPUT
-    - name: Validate Gradle Wrapper
-      run: ./gradlew --no-daemon --version
-    - name: Verify version detection
-      run: |
-        echo "Verifying smart version detection..."
-        ./gradlew --no-daemon printVersion
-        echo "Expected release version (without SNAPSHOT): ${BUILD_VERSION#v}"
-    - name: Compile and Test
-      run: ./gradlew --no-daemon compileKotlin compileTestKotlin test --stacktrace $GRADLE_SCAN_FLAG
-    - name: Build Shadow JAR
-      run: ./gradlew --no-daemon shadowJar --stacktrace $GRADLE_SCAN_FLAG
-    - name: Test JAR
+    - name: Validate Release Script
+      run: ./tools/release.sh validate --version "${{ env.BUILD_VERSION }}"
+
+    - name: Build with Release Script
       shell: bash
       run: |
-        echo "Testing JAR with --help flag..."
-        java -jar groovy-lsp/build/libs/gls-*-all.jar --help
-    - name: Prepare artifacts
-      shell: bash
-      run: |
-        mkdir -p dist
-        # Copy JAR with version in filename
-        # Use pattern matching to handle versioned runner labels (e.g., ubuntu-24.04, macos-14)
-        if [ "${{ matrix.os }}" = "self-hosted" ]; then
-           # On self-hosted, we assume the JAR is portable and generate all platform variants
-           echo "Generating all platform artifacts from single build..."
-           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-linux-amd64.jar
-           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-darwin-amd64.jar
-           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-windows-amd64.jar
-        elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
-          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-linux-amd64.jar
-          # Also create generic artifact for Homebrew
-          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-generic.jar
-        elif [[ "${{ matrix.os }}" == macos* ]] || [[ "${{ matrix.os }}" == *macos* ]]; then
-          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-darwin-amd64.jar
-        elif [[ "${{ matrix.os }}" == windows* ]]; then
-          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-windows-amd64.jar
-        else
-          echo "Unknown OS: ${{ matrix.os }}, creating generic artifact"
-          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-generic.jar
-        fi
+        ./tools/release.sh build --version "${{ env.BUILD_VERSION }}"
+        
+    - name: Generate Checksums
+      run: ./tools/release.sh checksums
+    - name: Run Smoke Tests
+      run: ./tools/release.sh smoke-test
     - name: Upload release artifacts
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: "release-artifacts-${{ matrix.os }}"
         path: dist/*
@@ -177,12 +149,12 @@ jobs:
         fi
         echo "Tag validation passed: $TAG_INPUT"
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
         ref: ${{ github.event.inputs.tag || github.ref }}
     - name: Download all artifacts
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         merge-multiple: true
         path: artifacts
@@ -191,18 +163,13 @@ jobs:
       run: |
         mkdir -p dist
         echo "Downloaded artifacts:"
-        find artifacts -type f -name "*.jar" | sort
+        find artifacts -type f | sort
 
         # Move all artifacts to dist directory
         cp -r artifacts/* dist/ 2>/dev/null || true
-
-        # Generate checksums
-        cd dist
-        if ls *.jar 1> /dev/null 2>&1; then
-          sha256sum *.jar > checksums.txt
-          echo "Checksums generated:"
-          cat checksums.txt
-        fi
+        
+        # Checksums are already generated by release script
+        cat dist/checksums.txt || echo "No checksums found"
     - name: Generate release notes
       id: release_notes
       shell: bash
@@ -287,7 +254,7 @@ jobs:
         echo "- Prerelease: ${IS_PRERELEASE}"
         echo "- Draft: ${IS_DRAFT}"
     - name: Create GitHub release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
       with:
         tag_name: "${{ steps.release_info.outputs.version }}"
         draft: "${{ steps.release_info.outputs.is_draft }}"
@@ -296,8 +263,8 @@ jobs:
         body_path: release-notes.md
         generate_release_notes: true
         files: |
-          dist/gls-*.jar
-          dist/checksums.txt
+        files: |
+          dist/*
         fail_on_unmatched_files: false
         make_latest: "${{ steps.release_info.outputs.is_prerelease == 'false' }}"
     - name: Release summary
@@ -313,7 +280,7 @@ jobs:
         echo ""
         echo "📋 Artifacts included:"
         cd dist
-        for file in gls-*.jar checksums.txt; do
+        for file in *; do
           if [[ -f "$file" ]]; then
             size=$(ls -lh "$file" | awk '{print $5}')
             echo "  - $file ($size)"
@@ -326,7 +293,7 @@ jobs:
     if: ${{ !inputs.dry_run }}
     steps:
       - name: Update Homebrew Formula
-        uses: mislav/bump-homebrew-formula-action@v3.6
+        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
           formula-name: gls
@@ -346,46 +313,54 @@ jobs:
 
     defaults:
       run:
-        working-directory: editors/code
+        working-directory: .
 
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ needs.create-release.outputs.tag_name }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: editors/code/package-lock.json
 
       - name: Setup Java
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
           distribution: temurin
           java-version: 17
 
       - name: Install dependencies
+        working-directory: editors/code
         run: npm ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build extension
-        run: |
-          npm run compile
-          npm run package
-
+      - name: Download release artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          # We need any valid VSIX. Since artifacts are uploaded per-OS, 
+          # we look for the one that likely contains it. 
+          # To be robust, we fetch all and merge, or just use a stable name if we had one.
+          # The build job uses: name: "release-artifacts-${{ matrix.os }}"
+          # If we don't know which OS ran, download-artifact v4+ can download ALL if we omit name.
+          pattern: release-artifacts-*
+          merge-multiple: true
+          path: dist
+          
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }}
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }} --packagePath dist/*.vsix
 
       # Uncomment when ready to publish to Open VSX
       # - name: Publish to Open VSX Registry
       #   run: npx ovsx publish -p ${{ secrets.OVSX_TOKEN }}
 
       - name: Upload VSIX to release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
-          files: editors/code/*.vsix
+          files: dist/*.vsix
           tag_name: ${{ needs.create-release.outputs.tag_name }}

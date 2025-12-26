@@ -116,3 +116,13 @@ ext-test: $(EXT_DIR)/node_modules
 
 ext-package: $(EXT_DIR)/node_modules
 	cd $(EXT_DIR) && npm run package
+
+# Release
+release: release-build
+
+release-build:
+	./tools/release.sh build --version v0.0.0-dryrun --dry-run
+	@echo "Run 'make release-publish' to perform real build"
+
+release-publish:
+	./tools/release.sh build --version $(shell ./gradlew printVersion -q)
