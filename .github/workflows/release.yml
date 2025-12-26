@@ -121,7 +121,7 @@ jobs:
       shell: bash
       run: |
         echo "Testing JAR with --help flag..."
-        java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
+        java -jar groovy-lsp/build/libs/gls-*-all.jar --help
     - name: Prepare artifacts
       shell: bash
       run: |
@@ -131,18 +131,18 @@ jobs:
         if [ "${{ matrix.os }}" = "self-hosted" ]; then
            # On self-hosted, we assume the JAR is portable and generate all platform variants
            echo "Generating all platform artifacts from single build..."
-           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
-           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
-           cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-linux-amd64.jar
+           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-darwin-amd64.jar
+           cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-windows-amd64.jar
         elif [[ "${{ matrix.os }}" == ubuntu* ]]; then
-          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-linux-amd64.jar
+          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-linux-amd64.jar
         elif [[ "${{ matrix.os }}" == macos* ]] || [[ "${{ matrix.os }}" == *macos* ]]; then
-          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-darwin-amd64.jar
+          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-darwin-amd64.jar
         elif [[ "${{ matrix.os }}" == windows* ]]; then
-          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-windows-amd64.jar
+          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-windows-amd64.jar
         else
           echo "Unknown OS: ${{ matrix.os }}, creating generic artifact"
-          cp groovy-lsp/build/libs/groovy-lsp-*-all.jar dist/groovy-lsp-${BUILD_VERSION#v}-generic.jar
+          cp groovy-lsp/build/libs/gls-*-all.jar dist/gls-${BUILD_VERSION#v}-generic.jar
         fi
     - name: Upload release artifacts
       uses: actions/upload-artifact@v6
@@ -214,21 +214,21 @@ jobs:
 
         \`\`\`bash
         # Download JAR (replace linux-amd64 with your platform)
-        curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/groovy-lsp-${VERSION#v}-linux-amd64.jar
+        curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/gls-${VERSION#v}-linux-amd64.jar
 
         # Verify checksum
         curl -LO https://github.com/${{ github.repository }}/releases/download/${VERSION}/checksums.txt
         sha256sum -c checksums.txt --ignore-missing
 
         # Run the Language Server
-        java -jar groovy-lsp-${VERSION#v}-linux-amd64.jar
+        java -jar gls-${VERSION#v}-linux-amd64.jar
         \`\`\`
 
         ### Supported Platforms
 
-        - **Linux AMD64** \`groovy-lsp-${VERSION#v}-linux-amd64.jar\`
-        - **macOS AMD64** \`groovy-lsp-${VERSION#v}-darwin-amd64.jar\`
-        - **Windows AMD64** \`groovy-lsp-${VERSION#v}-windows-amd64.jar\`
+        - **Linux AMD64** \`gls-${VERSION#v}-linux-amd64.jar\`
+        - **macOS AMD64** \`gls-${VERSION#v}-darwin-amd64.jar\`
+        - **Windows AMD64** \`gls-${VERSION#v}-windows-amd64.jar\`
 
         ### Usage
 
@@ -281,11 +281,11 @@ jobs:
         tag_name: "${{ steps.release_info.outputs.version }}"
         draft: "${{ steps.release_info.outputs.is_draft }}"
         prerelease: "${{ steps.release_info.outputs.is_prerelease }}"
-        name: "Groovy LSP ${{ steps.release_info.outputs.version }}"
+        name: "gls ${{ steps.release_info.outputs.version }}"
         body_path: release-notes.md
         generate_release_notes: true
         files: |
-          dist/groovy-lsp-*.jar
+          dist/gls-*.jar
           dist/checksums.txt
         fail_on_unmatched_files: false
         make_latest: "${{ steps.release_info.outputs.is_prerelease == 'false' }}"
@@ -302,7 +302,7 @@ jobs:
         echo ""
         echo "📋 Artifacts included:"
         cd dist
-        for file in groovy-lsp-*.jar checksums.txt; do
+        for file in gls-*.jar checksums.txt; do
           if [[ -f "$file" ]]; then
             size=$(ls -lh "$file" | awk '{print $5}')
             echo "  - $file ($size)"
