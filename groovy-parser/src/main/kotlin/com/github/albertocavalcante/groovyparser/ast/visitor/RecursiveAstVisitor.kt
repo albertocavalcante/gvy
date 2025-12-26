@@ -130,6 +130,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
             }
             classNode.properties?.forEach { visitProperty(it) }
             classNode.fields.forEach { visitField(it) }
+            classNode.declaredConstructors.forEach { visitMethod(it) }
             classNode.methods.forEach { visitMethod(it) }
             classNode.objectInitializerStatements?.forEach { visitStatement(it) }
             classNode.innerClasses.forEach { visitClass(it) }

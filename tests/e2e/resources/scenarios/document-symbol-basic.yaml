@@ -40,16 +40,30 @@ steps:
   - assert:
       source: documentSymbols
       checks:
-        - jsonPath: $
+        - jsonPath: $.length()
+          expect:
+            type: EQUALS
+            value: 7
+        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Class')]"
           expect:
             type: NOT_EMPTY
-        - jsonPath: $[*].right.name
+        - jsonPath: "$.[?(@.right.name == 'Widget' && @.right.kind == 'Method')]"
           expect:
-            type: CONTAINS
-            value: Widget
-        - jsonPath: $[*].right.name
+            type: NOT_EMPTY
+        - jsonPath: "$.[?(@.right.name == 'compute' && @.right.kind == 'Method')]"
           expect:
-            type: CONTAINS
-            value: compute
+            type: NOT_EMPTY
+        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Property')]"
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Field')]"
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: "$.[?(@.right.name == 'name' && @.right.kind == 'Variable')]"
+          expect:
+            type: NOT_EMPTY
+        - jsonPath: "$.[?(@.right.name == 'value' && @.right.kind == 'Variable')]"
+          expect:
+            type: NOT_EMPTY
   - shutdown: {}
   - exit: {}

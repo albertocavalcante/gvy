@@ -25,6 +25,7 @@ import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefin
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -489,7 +490,7 @@ class GroovyTextDocumentService(
         val uri = java.net.URI.create(params.textDocument.uri)
         val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
 
-        storage.getSymbols(uri).mapNotNull { symbol ->
+        storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
             symbol.toDocumentSymbol()?.let { Either.forRight<SymbolInformation, DocumentSymbol>(it) }
                 ?: symbol.toSymbolInformation()?.let { Either.forLeft<SymbolInformation, DocumentSymbol>(it) }
         }
@@ -713,4 +714,9 @@ class GroovyTextDocumentService(
             }
         }
     }
+}
+
+private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
+    is Symbol.Variable -> isParameter
+    else -> true
 }

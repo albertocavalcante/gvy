@@ -3,8 +3,10 @@ package com.github.albertocavalcante.groovylsp.providers.symbols
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.eclipse.lsp4j.SymbolKind
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -75,5 +77,28 @@ class SymbolLspExtensionsTest {
         assertEquals(SymbolKind.Method, symbolInformation.kind)
         assertEquals(uri.toString(), symbolInformation.location.uri)
         assertEquals("public String greet(String name)", methodSymbol.signature)
+    }
+
+    @Test
+    fun `constructor symbol uses fallback name when owner missing`() {
+        val constructorNode = ConstructorNode(
+            Modifier.PUBLIC,
+            arrayOf(Parameter(ClassHelper.STRING_TYPE, "name")),
+            ClassNode.EMPTY_ARRAY,
+            BlockStatement(),
+        ).apply {
+            setLineNumber(1)
+            setColumnNumber(1)
+            setLastLineNumber(1)
+            setLastColumnNumber(10)
+        }
+        val uri = URI.create("file:///test.groovy")
+
+        val constructorSymbol = Symbol.Method.from(constructorNode, uri)
+
+        val documentSymbol = constructorSymbol.toDocumentSymbol()
+        assertNotNull(documentSymbol)
+        require(documentSymbol != null)
+        assertEquals("constructor", documentSymbol.name)
     }
 }
