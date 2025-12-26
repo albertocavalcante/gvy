@@ -316,6 +316,21 @@ jobs:
           fi
         done
 
+  publish-homebrew:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - name: Update Homebrew Formula
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          homebrew-tap: albertocavalcante/homebrew-tap
+          formula-name: gls
+          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.tag_name }}-generic.jar
+          commit-message: "chore: update gls to {{version}}"
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
   # VS Code Extension publish (unified release - triggers on v* tags)
   publish-extension:
     name: Publish VS Code Extension
