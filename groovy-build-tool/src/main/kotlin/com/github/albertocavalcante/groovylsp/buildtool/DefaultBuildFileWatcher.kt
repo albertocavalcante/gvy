@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +26,19 @@ internal const val DEFAULT_BUILD_FILE_CHANGE_DELAY_MS = 500L
 
 /**
  * Default build file watcher implementation shared across build tools.
+ *
+ * Monitors filesystem changes for specified build files and triggers callbacks
+ * when changes are detected. Uses debouncing to avoid excessive callback invocations.
+ *
+ * @param logLabel Label used in log messages to identify the build tool (e.g., "Gradle", "Maven").
+ * @param coroutineScope The coroutine scope for launching watch and debounce jobs.
+ * @param onBuildFileChanged Callback invoked when a build file changes. Receives the project directory path.
+ * @param buildFileNames Set of build file names to monitor (e.g., "build.gradle", "pom.xml").
+ * @param debounceDelayMs Delay in milliseconds before invoking the callback after detecting a change.
+ *                        Helps avoid multiple callbacks for rapid successive changes.
+ * @param dispatcher The coroutine dispatcher to use for debounce callbacks. Defaults to [Dispatchers.IO].
+ *                   Can be injected for testing with [kotlinx.coroutines.test.StandardTestDispatcher].
+ *                   Note: The file watch loop always runs on [Dispatchers.IO] as it requires real file system polling.
  */
 internal class DefaultBuildFileWatcher(
     private val logLabel: String,
@@ -32,6 +46,7 @@ internal class DefaultBuildFileWatcher(
     private val onBuildFileChanged: (Path) -> Unit,
     private val buildFileNames: Set<String>,
     private val debounceDelayMs: Long = DEFAULT_BUILD_FILE_CHANGE_DELAY_MS,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : BuildToolFileWatcher {
     private val logger = LoggerFactory.getLogger(DefaultBuildFileWatcher::class.java)
     private var watchService: WatchService? = null
@@ -75,7 +90,7 @@ internal class DefaultBuildFileWatcher(
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     override fun stopWatching() {
         try {
             debounceJob?.cancel()
@@ -96,7 +111,7 @@ internal class DefaultBuildFileWatcher(
         } catch (e: IOException) {
             logger.warn("IO error stopping {} build file watcher", logLabel, e)
         } catch (e: ClosedWatchServiceException) {
-            // Already closed, ignore
+            // Already closed, ignore - this is expected when stopping an already-stopped watcher
         }
     }
 
@@ -116,8 +131,9 @@ internal class DefaultBuildFileWatcher(
             if (watchJob != null) {
                 logger.warn("Watch service closed unexpectedly", e)
                 throw e
+            } else {
+                logger.debug("Watch service closed, terminating watch loop.")
             }
-            logger.debug("Watch service closed, terminating watch loop.")
         } catch (e: IOException) {
             logger.error("IO error in {} build file watch loop", logLabel, e)
         } catch (e: Exception) {
@@ -183,37 +199,83 @@ internal class DefaultBuildFileWatcher(
         val filename = event.context() as? Path ?: return
         val filenameStr = filename.name
 
-        if (!buildFileNames.contains(filenameStr)) {
+        if (!shouldHandleBuildFile(filenameStr)) {
             return
         }
 
         val fullPath = projectDir.resolve(filename)
+        handleBuildFileEvent(kind, fullPath, filenameStr, projectDir)
+    }
 
+    /**
+     * Determines if a file should be monitored based on its name.
+     *
+     * @param filename The name of the file to check.
+     * @return `true` if the file is a build file that should be monitored, `false` otherwise.
+     */
+    private fun shouldHandleBuildFile(filename: String): Boolean = buildFileNames.contains(filename)
+
+    /**
+     * Handles different types of build file events (create, modify, delete).
+     *
+     * @param kind The type of file system event.
+     * @param fullPath The full path to the affected file.
+     * @param filenameStr The filename string for logging.
+     * @param projectDir The project directory path.
+     */
+    private fun handleBuildFileEvent(kind: WatchEvent.Kind<*>, fullPath: Path, filenameStr: String, projectDir: Path) {
         when (kind) {
             StandardWatchEventKinds.ENTRY_CREATE,
             StandardWatchEventKinds.ENTRY_MODIFY,
-            -> {
-                if (fullPath.exists()) {
-                    logger.info("{} build file changed: {}", logLabel, filenameStr)
-
-                    debounceJob?.cancel()
-                    debounceJob = coroutineScope.launch(Dispatchers.IO) {
-                        if (debounceDelayMs > 0) {
-                            delay(debounceDelayMs)
-                        }
-                        try {
-                            onBuildFileChanged(projectDir)
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            logger.error("{} build file change handling failed for {}", logLabel, filenameStr, e)
-                        }
-                    }
-                }
-            }
+            -> handleBuildFileModification(fullPath, filenameStr, projectDir)
 
             StandardWatchEventKinds.ENTRY_DELETE -> {
                 logger.info("{} build file deleted: {}", logLabel, filenameStr)
+            }
+        }
+    }
+
+    /**
+     * Handles build file creation or modification events.
+     *
+     * Schedules a debounced callback to process the change. If the file doesn't exist,
+     * the event is ignored (might be a transient editor operation).
+     *
+     * @param fullPath The full path to the modified file.
+     * @param filenameStr The filename string for logging.
+     * @param projectDir The project directory path.
+     */
+    private fun handleBuildFileModification(fullPath: Path, filenameStr: String, projectDir: Path) {
+        if (!fullPath.exists()) {
+            return
+        }
+
+        logger.info("{} build file changed: {}", logLabel, filenameStr)
+        scheduleDebouncedCallback(projectDir, filenameStr)
+    }
+
+    /**
+     * Schedules a debounced callback to handle build file changes.
+     *
+     * Cancels any pending callback and schedules a new one after the configured delay.
+     * This prevents excessive callbacks when files are rapidly modified.
+     *
+     * @param projectDir The project directory path to pass to the callback.
+     * @param filenameStr The filename string for error logging.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun scheduleDebouncedCallback(projectDir: Path, filenameStr: String) {
+        debounceJob?.cancel()
+        debounceJob = coroutineScope.launch(dispatcher) {
+            if (debounceDelayMs > 0) {
+                delay(debounceDelayMs)
+            }
+            try {
+                onBuildFileChanged(projectDir)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("{} build file change handling failed for {}", logLabel, filenameStr, e)
             }
         }
     }
