@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.4.8](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.7...v0.4.8) (2025-12-27)
+
+
+### Features
+
+* add cross-platform smoke tests and simplify JAR naming ([#400](https://github.com/albertocavalcante/groovy-devtools/issues/400)) ([6da4140](https://github.com/albertocavalcante/groovy-devtools/commit/6da41407fafeb293448d28d29e6392e1e895cc12))
+* gate GDSL execution behind config flag ([#390](https://github.com/albertocavalcante/groovy-devtools/issues/390)) ([1dc3d46](https://github.com/albertocavalcante/groovy-devtools/commit/1dc3d46a545d6f96cddb8021bc71f8d8ed7aee3e))
+* gate release on smoke tests and add SLSA provenance attestation ([#403](https://github.com/albertocavalcante/groovy-devtools/issues/403)) ([83f8923](https://github.com/albertocavalcante/groovy-devtools/commit/83f892309702a1d22ebd6573a3774d3876945e49))
+* **jenkins:** deterministic vars ordering ([#434](https://github.com/albertocavalcante/groovy-devtools/issues/434)) ([8dac781](https://github.com/albertocavalcante/groovy-devtools/commit/8dac7815d3bacb2beaa5c2fcb0099a70e3592137))
+* **jenkins:** stabilize metadata ordering ([#439](https://github.com/albertocavalcante/groovy-devtools/issues/439)) ([097ce1d](https://github.com/albertocavalcante/groovy-devtools/commit/097ce1d2db58f9f9f44924e88003b0dc6a760f2a))
+* **lsp:** add classpath indexer ([#442](https://github.com/albertocavalcante/groovy-devtools/issues/442)) ([7b97419](https://github.com/albertocavalcante/groovy-devtools/commit/7b9741907498420c71280dc4133202af13f85e9c))
+* **lsp:** add Groovy version resolution ([#406](https://github.com/albertocavalcante/groovy-devtools/issues/406)) ([a370a5b](https://github.com/albertocavalcante/groovy-devtools/commit/a370a5b068f50a43b100784f794df8513e2cd730))
+* **lsp:** add worker handshake protocol ([#409](https://github.com/albertocavalcante/groovy-devtools/issues/409)) ([72b9b8b](https://github.com/albertocavalcante/groovy-devtools/commit/72b9b8bbe28f44ec86471fdcdd54f6a351b6756b))
+* **lsp:** add worker router ([#416](https://github.com/albertocavalcante/groovy-devtools/issues/416)) ([7ceb8fb](https://github.com/albertocavalcante/groovy-devtools/commit/7ceb8fb1aca0c59fda150a3c01e5d0f240b09a7c))
+* **lsp:** allow configurable worker descriptors ([#428](https://github.com/albertocavalcante/groovy-devtools/issues/428)) ([47e1b2b](https://github.com/albertocavalcante/groovy-devtools/commit/47e1b2b91eaad8bcbaa257eadf1e8c5f43b5c0e5))
+* **lsp:** clear caches on worker switch ([#424](https://github.com/albertocavalcante/groovy-devtools/issues/424)) ([11e255d](https://github.com/albertocavalcante/groovy-devtools/commit/11e255dd6c132b796332a818f79b1aed08a017fe))
+* **lsp:** route parsing via worker sessions ([#423](https://github.com/albertocavalcante/groovy-devtools/issues/423)) ([5baa28b](https://github.com/albertocavalcante/groovy-devtools/commit/5baa28bc3fc24b74a5774f1fd940dfe85c458ece))
+* **lsp:** select worker during startup ([#419](https://github.com/albertocavalcante/groovy-devtools/issues/419)) ([b0a1d04](https://github.com/albertocavalcante/groovy-devtools/commit/b0a1d045f729404f932ef62571ef5666ba8a4334))
+* **lsp:** select workers by version range ([#411](https://github.com/albertocavalcante/groovy-devtools/issues/411)) ([331844b](https://github.com/albertocavalcante/groovy-devtools/commit/331844b9e70ea7a2e50239c2412bc3406c364e4f))
+* **lsp:** stabilize classpath completions ([#438](https://github.com/albertocavalcante/groovy-devtools/issues/438)) ([567cfae](https://github.com/albertocavalcante/groovy-devtools/commit/567cfae1025d9ebb7cf48e3ea032211bae3f9206))
+* migrate to lefthook ([#398](https://github.com/albertocavalcante/groovy-devtools/issues/398)) ([b04c600](https://github.com/albertocavalcante/groovy-devtools/commit/b04c600d784c1f9236be596b5ecf550206b793e5))
+* **parser:** add AST query parser ([#447](https://github.com/albertocavalcante/groovy-devtools/issues/447)) ([5e643cf](https://github.com/albertocavalcante/groovy-devtools/commit/5e643cf8d9c582c4e0c5ea005e334ac13508f704))
+* **parser:** track AST children ([#446](https://github.com/albertocavalcante/groovy-devtools/issues/446)) ([1bb917b](https://github.com/albertocavalcante/groovy-devtools/commit/1bb917beb671869fe49dd11d24888082e0326098))
+* **tests:** add enhanced E2E scenarios for references, rename, and completion ([#429](https://github.com/albertocavalcante/groovy-devtools/issues/429)) ([578c5da](https://github.com/albertocavalcante/groovy-devtools/commit/578c5da9f522d70d2690ce4471d767126bb96831))
+
+
+### Bug Fixes
+
+* add version number to release-please PR titles ([#399](https://github.com/albertocavalcante/groovy-devtools/issues/399)) ([0aa853e](https://github.com/albertocavalcante/groovy-devtools/commit/0aa853e433483e404b782f73f247b4a1c1853c8c))
+* **ci:** align nightly jar name ([#452](https://github.com/albertocavalcante/groovy-devtools/issues/452)) ([e8dfad7](https://github.com/albertocavalcante/groovy-devtools/commit/e8dfad7f63d760257c22ccf072a9773b23c63b34))
+* **ci:** harden GitHub Actions against ref injection attacks ([#435](https://github.com/albertocavalcante/groovy-devtools/issues/435)) ([82cf1d6](https://github.com/albertocavalcante/groovy-devtools/commit/82cf1d662cf0bb00c0bde41ac909a4ccb2609719))
+* **ci:** rebuild shadow jar for verification ([#450](https://github.com/albertocavalcante/groovy-devtools/issues/450)) ([2429402](https://github.com/albertocavalcante/groovy-devtools/commit/2429402966f194de89267ef14d85b4701e1d58db))
+* **deps:** update dependency org.openrewrite:rewrite-groovy to v8.70.1 ([#394](https://github.com/albertocavalcante/groovy-devtools/issues/394)) ([deedfab](https://github.com/albertocavalcante/groovy-devtools/commit/deedfab1ad489139b52a83b4a1caefb260624132))
+* **deps:** update dependency org.openrewrite:rewrite-groovy to v8.70.2 ([#402](https://github.com/albertocavalcante/groovy-devtools/issues/402)) ([d0241d4](https://github.com/albertocavalcante/groovy-devtools/commit/d0241d4bfb92fa22d046a85fb2d163affb7332d0))
+* log CancellationException at `DEBUG` level in DiagnosticsService ([#451](https://github.com/albertocavalcante/groovy-devtools/issues/451)) ([014b83f](https://github.com/albertocavalcante/groovy-devtools/commit/014b83f71df20b29f8dc42f2603ffe9d3d14e737))
+* narrow editors server ignore ([#391](https://github.com/albertocavalcante/groovy-devtools/issues/391)) ([ff01ada](https://github.com/albertocavalcante/groovy-devtools/commit/ff01adaa8be3d318215ed0a1125df5d766a7f311))
+* prevent zip slip in source jar extraction ([#381](https://github.com/albertocavalcante/groovy-devtools/issues/381)) ([760020d](https://github.com/albertocavalcante/groovy-devtools/commit/760020dfd493d42ebe3a70093f6fbecaba4c6413))
+
 ## [0.4.7](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.6...v0.4.7) (2025-12-26)
 
 
