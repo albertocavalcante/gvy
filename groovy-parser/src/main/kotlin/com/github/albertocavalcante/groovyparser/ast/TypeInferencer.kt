@@ -24,6 +24,13 @@ import org.codehaus.groovy.syntax.Types
  */
 object TypeInferencer {
 
+    // Type constants to avoid duplication
+    private const val TYPE_STRING = "java.lang.String"
+    private const val TYPE_OBJECT = "java.lang.Object"
+    private const val TYPE_CLASS = "java.lang.Class"
+    private const val TYPE_BOOLEAN = "boolean"
+    private const val TYPE_INT = "int"
+
     /**
      * Infer the type of a variable declaration.
      * Prefers explicit type annotations over inference.
@@ -40,7 +47,7 @@ object TypeInferencer {
         // Otherwise, try to infer from initializer
         return declaration.rightExpression
             ?.let { inferExpressionType(it) }
-            ?: "java.lang.Object"
+            ?: TYPE_OBJECT
     }
 
     /**
@@ -114,11 +121,11 @@ object TypeInferencer {
      * For well-known methods on Object, we can infer types without full resolution.
      */
     private fun inferMethodCallType(call: MethodCallExpression): String = when (call.methodAsString) {
-        "toString" -> "java.lang.String"
-        "hashCode" -> "int"
-        "getClass" -> "java.lang.Class"
-        "equals" -> "boolean"
-        "clone" -> call.objectExpression?.type?.name ?: "java.lang.Object"
+        "toString" -> TYPE_STRING
+        "hashCode" -> TYPE_INT
+        "getClass" -> TYPE_CLASS
+        "equals" -> TYPE_BOOLEAN
+        "clone" -> call.objectExpression?.type?.name ?: TYPE_OBJECT
         else -> call.type.name
     }
 
@@ -139,10 +146,10 @@ object TypeInferencer {
 
         return when {
             // String concatenation always produces String
-            isStringConcatenation(leftType, rightType, operation) -> "java.lang.String"
+            isStringConcatenation(leftType, rightType, operation) -> TYPE_STRING
 
             // Comparison operators always produce boolean
-            isComparisonOperation(operation) -> "boolean"
+            isComparisonOperation(operation) -> TYPE_BOOLEAN
 
             // Numeric operations use type promotion
             isNumericOperation(operation) -> promoteNumericTypes(leftType, rightType)
@@ -156,7 +163,7 @@ object TypeInferencer {
     }
 
     private fun isStringConcatenation(leftType: String, rightType: String, operation: Int): Boolean =
-        operation == Types.PLUS && (leftType == "java.lang.String" || rightType == "java.lang.String")
+        operation == Types.PLUS && (leftType == TYPE_STRING || rightType == TYPE_STRING)
 
     private fun isComparisonOperation(operation: Int): Boolean = operation in listOf(
         Types.COMPARE_EQUAL,
@@ -194,7 +201,7 @@ object TypeInferencer {
         // If either operand is not a known numeric type, we cannot safely promote.
         // A safe fallback is Object, as Groovy's operator overloading is complex.
         if (leftPrecedence == 0 || rightPrecedence == 0) {
-            return "java.lang.Object"
+            return TYPE_OBJECT
         }
 
         val resultPrecedence = maxOf(leftPrecedence, rightPrecedence)

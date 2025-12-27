@@ -9,6 +9,8 @@ import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 
 object SpockDetector {
+    private const val SPOCK_SPECIFICATION_FQN = "spock.lang.Specification"
+
     private val spockImportRegex = Regex("(?m)^\\s*import\\s+spock\\.")
     private val spockExtendsRegex =
         Regex("(?m)^\\s*(?:abstract\\s+)?class\\s+\\w+.*\\bextends\\s+spock\\.lang\\.Specification\\b")
@@ -55,10 +57,11 @@ object SpockDetector {
         // Fallback: If parsing resulted in a Script node (typically due to missing classpath),
         // check if the module imports Spock. This allows detection even when 'extends Specification'
         // resolution failed and the parser fell back to Script.
-        if (module != null && classNode.superClass?.name == "groovy.lang.Script") {
-            if (isSpockSpecImported(module)) {
-                return true
-            }
+        if (module != null &&
+            classNode.superClass?.name == "groovy.lang.Script" &&
+            isSpockSpecImported(module)
+        ) {
+            return true
         }
 
         return hierarchy.any {
@@ -84,7 +87,7 @@ object SpockDetector {
     }
 
     private fun ClassNode.isSpecification(module: ModuleNode?): Boolean {
-        if (name == "spock.lang.Specification") return true
+        if (name == SPOCK_SPECIFICATION_FQN) return true
 
         if (nameWithoutPackage == "Specification" && module != null) {
             return isSpockSpecImported(module)
@@ -98,7 +101,7 @@ object SpockDetector {
     fun getSpecificationClassNode(parseResult: ParseResult): ClassNode? {
         val classLoader = parseResult.compilationUnit.classLoader
         if (classLoader is GroovyClassLoader) {
-            return runCatching { classLoader.loadClass("spock.lang.Specification") }
+            return runCatching { classLoader.loadClass(SPOCK_SPECIFICATION_FQN) }
                 .map { ClassHelper.make(it) }
                 .getOrNull()
         }
@@ -110,7 +113,7 @@ object SpockDetector {
             module.imports
                 .asSequence()
                 .mapNotNull(ImportNode::getClassName)
-                .any { it == "spock.lang.Specification" }
+                .any { it == SPOCK_SPECIFICATION_FQN }
 
         if (spockSpecImported) return true
 
