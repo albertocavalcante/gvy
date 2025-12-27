@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +21,7 @@ class TestRequestDelegate(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
     private val buildToolManagerProvider: () -> BuildToolManager?,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val logger = LoggerFactory.getLogger(TestRequestDelegate::class.java)
 
@@ -27,7 +29,7 @@ class TestRequestDelegate(
         logger.info("Received groovy/discoverTests request for: ${params.workspaceUri}")
 
         return coroutineScope.future {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 val provider = TestDiscoveryProvider(compilationService)
                 val result = provider.discoverTests(params.workspaceUri)
                 logger.info("discoverTests returning ${result.size} test suites: ${result.map { it.suite }}")

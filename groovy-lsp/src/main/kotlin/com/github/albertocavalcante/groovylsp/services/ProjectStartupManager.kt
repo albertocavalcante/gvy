@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,6 +46,7 @@ class ProjectStartupManager(
     private val availableBuildTools: List<BuildTool>,
     private val coroutineScope: CoroutineScope,
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
+    private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val logger = LoggerFactory.getLogger(ProjectStartupManager::class.java)
     private val groovyVersionResolver = GroovyVersionResolver()
@@ -305,7 +307,7 @@ class ProjectStartupManager(
             initialMessage = "Indexing ${sourceUris.size} Groovy files...",
         )
 
-        coroutineScope.launch(Dispatchers.Default) {
+        coroutineScope.launch(indexingDispatcher) {
             try {
                 compilationService.indexAllWorkspaceSources(sourceUris) { indexed, total ->
                     val percentage = if (total > 0) (indexed * PERCENTAGE_MULTIPLIER / total) else 0
