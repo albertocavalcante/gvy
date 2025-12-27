@@ -1,0 +1,86 @@
+name: document-highlight-basic
+description: >
+  Test textDocument/documentHighlight.
+  Verifies that all occurrences of a symbol are highlighted.
+  
+  TODO(DEFERRED): #420 - Test disabled. Feature not implemented.
+  See: https://github.com/albertocavalcante/groovy-devtools/issues/420
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/HighlightTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class HighlightTest {
+            void method() {
+                def foo = 1
+                println foo
+                def bar = foo + 1
+            }
+        }
+  
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  # Trigger highlight on 'foo' declaration (line 2, char 20)
+  - request:
+      method: textDocument/documentHighlight
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/HighlightTest.groovy"
+        position:
+          line: 2
+          character: 12
+      saveAs: highlightResult
+
+  # Verify highlights
+  # Expecting 3 occurrences:
+  # 1. Declaration: def foo = 1 (Line 2)
+  # 2. Usage: println foo (Line 3)
+  # 3. Usage: def bar = foo + 1 (Line 4)
+  - assert:
+      source: highlightResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 3
+            message: "Should find 3 highlights for 'foo'"
+        
+        # Verify Declaration (Line 2)
+        - jsonPath: $.items[?(@.range.start.line == 2)]
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should highlight declaration on line 2"
+
+        # Verify Usage 1 (Line 3)
+        - jsonPath: $.items[?(@.range.start.line == 3)]
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should highlight usage on line 3"
+
+        # Verify Usage 2 (Line 4)
+        - jsonPath: $.items[?(@.range.start.line == 4)]
+          expect:
+            type: SIZE
+            value: 1
+            message: "Should highlight usage on line 4"
+
+  - shutdown: {}
+  - exit: {}
