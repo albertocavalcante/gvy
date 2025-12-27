@@ -424,16 +424,12 @@ jobs:
         if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
         run: |-
           set -euo pipefail
-          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
-          if [[ -z "$JAR_PATH" ]]; then
-            echo "Shadow JAR not found; building..."
-            args=(:groovy-lsp:shadowJar --parallel --build-cache --stacktrace)
-            if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-              args+=("${GRADLE_SCAN_FLAG}")
-            fi
-            ./gradlew "${args[@]}"
-            JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
+          args=(:groovy-lsp:shadowJar --parallel --build-cache --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
           fi
+          ./gradlew "${args[@]}"
+          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
           if [[ -z "$JAR_PATH" ]]; then
             echo "::error::Shadow JAR not found in groovy-lsp/build/libs"
             exit 1
