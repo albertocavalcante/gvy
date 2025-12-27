@@ -243,6 +243,45 @@ class MetadataMergerTest {
         assertTrue(merged.agentTypes.containsKey("docker"))
     }
 
+    @Test
+    fun `merge sorts step keys deterministically`() {
+        val bundled = createBundledMetadata(
+            steps = linkedMapOf(
+                "zeta" to stepMetadata("zeta"),
+                "alpha" to stepMetadata("alpha"),
+            ),
+        )
+        val stable = linkedMapOf(
+            "beta" to stepMetadata("beta"),
+        )
+
+        val merged = MetadataMerger.merge(bundled, stable)
+
+        assertEquals(listOf("alpha", "beta", "zeta"), merged.steps.keys.toList())
+    }
+
+    @Test
+    fun `merge sorts global variable keys deterministically`() {
+        val bundled = createBundledMetadata(
+            globalVariables = linkedMapOf(
+                "params" to GlobalVariableMetadata(
+                    name = "params",
+                    type = "ParamsVariable",
+                    documentation = "Build parameters",
+                ),
+                "env" to GlobalVariableMetadata(
+                    name = "env",
+                    type = "EnvActionImpl",
+                    documentation = "Environment variables",
+                ),
+            ),
+        )
+
+        val merged = MetadataMerger.merge(bundled, emptyMap())
+
+        assertEquals(listOf("env", "params"), merged.globalVariables.keys.toList())
+    }
+
     // Helper to create test metadata
     private fun createBundledMetadata(
         steps: Map<String, JenkinsStepMetadata> = emptyMap(),
@@ -256,5 +295,12 @@ class MetadataMergerTest {
         postConditions = postConditions,
         declarativeOptions = declarativeOptions,
         agentTypes = agentTypes,
+    )
+
+    private fun stepMetadata(name: String) = JenkinsStepMetadata(
+        name = name,
+        plugin = "test-plugin",
+        parameters = emptyMap(),
+        documentation = "Step $name",
     )
 }

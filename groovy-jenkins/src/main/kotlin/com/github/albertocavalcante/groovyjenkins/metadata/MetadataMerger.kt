@@ -47,11 +47,11 @@ object MetadataMerger {
         BundledJenkinsMetadata(
             // Prefer version from b (right side) if available, else keep a's version
             jenkinsVersion = b.jenkinsVersion ?: a.jenkinsVersion,
-            steps = combinedSteps,
-            globalVariables = a.globalVariables + b.globalVariables,
-            postConditions = a.postConditions + b.postConditions,
-            declarativeOptions = a.declarativeOptions + b.declarativeOptions,
-            agentTypes = a.agentTypes + b.agentTypes,
+            steps = sortByKey(combinedSteps),
+            globalVariables = mergeAndSort(a.globalVariables, b.globalVariables),
+            postConditions = mergeAndSort(a.postConditions, b.postConditions),
+            declarativeOptions = mergeAndSort(a.declarativeOptions, b.declarativeOptions),
+            agentTypes = mergeAndSort(a.agentTypes, b.agentTypes),
         )
     }
 
@@ -96,7 +96,7 @@ object MetadataMerger {
             )
 
         return bundledMetadataSemigroup.run {
-            combine(combine(bundled, stableMetadata), userMetadata)
+            combineAll(bundled, listOf(stableMetadata, userMetadata), this)
         }
     }
 
@@ -138,7 +138,9 @@ object MetadataMerger {
             ),
         )
 
-        return sources.reduce { acc, next -> bundledMetadataSemigroup.run { combine(acc, next) } }
+        return bundledMetadataSemigroup.run {
+            combineAll(sources.first(), sources.drop(1), this)
+        }
     }
 
     /**
@@ -146,6 +148,13 @@ object MetadataMerger {
      */
     fun mergeStepParameters(base: JenkinsStepMetadata, overlay: JenkinsStepMetadata): JenkinsStepMetadata =
         stepMetadataSemigroup.run { combine(base, overlay) }
+
+    private fun <V> mergeAndSort(left: Map<String, V>, right: Map<String, V>): Map<String, V> = sortByKey(left + right)
+
+    private fun <V> sortByKey(values: Map<String, V>): Map<String, V> =
+        values.entries.sortedBy { it.key }.associate { it.toPair() }
+
+    private fun <A> combineAll(seed: A, rest: List<A>, semigroup: Semigroup<A>): A = rest.fold(seed, semigroup::combine)
 
     /**
      * Merge with enrichment metadata.
