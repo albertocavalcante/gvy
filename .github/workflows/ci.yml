@@ -44,7 +44,7 @@ env:
   PRIMARY_OS: >-
     ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && 'local-macos' ||
         (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && 'magalu' ||
-        (vars.CI_PRIMARY_OS || 'macos-15') }}
+        (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
 concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
   # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
