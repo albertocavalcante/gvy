@@ -38,6 +38,13 @@ on:
     workflows: ['Infra: Provision Magalu Runner']
     types: [completed]
     branches: [main]
+env:
+  # Preferred OS for single-run checks (Verify JAR, Sonar, artifacts).
+  # Override via repo variable CI_PRIMARY_OS (e.g., ubuntu-24.04).
+  PRIMARY_OS: >-
+    ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && 'local-macos' ||
+        (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && 'magalu' ||
+        (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
 concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
   # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
@@ -400,7 +407,7 @@ jobs:
 
       # Phase 5: SonarCloud (needs coverage reports from Phase 3)
       - name: SonarCloud Analysis
-        if: (matrix.os == 'ubuntu-24.04' || matrix.os == 'self-hosted') && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
+        if: matrix.os == env.PRIMARY_OS && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -420,18 +427,32 @@ jobs:
           reporter: java-junit
 
       # Verify JAR (already built by e2eTest via shadowJar dependency)
+      - name: Resolve shadow JAR
+        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
+        id: resolve-jar
+        shell: bash
+        run: |-
+          set -euo pipefail
+          shopt -s nullglob
+          jar_files=(groovy-lsp/build/libs/gls-*-all.jar)
+          if [[ ${#jar_files[@]} -eq 0 ]]; then
+            echo "::error::Shadow JAR not found in groovy-lsp/build/libs"
+            exit 1
+          fi
+          echo "jar_path=${jar_files[0]}" >> "$GITHUB_OUTPUT"
+
       - name: Verify JAR
-        if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
+        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
         run: |-
           echo "Testing JAR with --help flag..."
-          java -jar groovy-lsp/build/libs/groovy-lsp-*-all.jar --help
+          java -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
 
       - name: Upload JAR artifact
-        if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
+        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
-          path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
+          path: ${{ steps.resolve-jar.outputs.jar_path }}
           retention-days: 7
 
       - name: Upload Test Results
