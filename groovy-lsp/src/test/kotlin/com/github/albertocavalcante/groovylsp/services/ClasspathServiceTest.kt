@@ -168,4 +168,18 @@ class ClasspathServiceTest {
         val names = results.map { it.simpleName }
         assertThat(names).isSorted
     }
+
+    @Test
+    fun `should return deterministic class variants`() {
+        val index = ClasspathService.ClassIndex()
+        index.add("List", "java.util.List")
+        index.add("List", "java.awt.List")
+        index.add("List", "java.util.List")
+        index.add("Map", "java.util.Map")
+
+        val snapshot = index.snapshot()
+
+        assertThat(snapshot["List"]).containsExactly("java.awt.List", "java.util.List")
+        assertThat(snapshot["Map"]).containsExactly("java.util.Map")
+    }
 }

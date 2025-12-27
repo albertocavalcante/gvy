@@ -19,7 +19,7 @@ class ClasspathService {
     private var currentClassLoader: ClassLoader = ClassLoader.getSystemClassLoader()
 
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
-    private val classIndex = ConcurrentHashMap<String, MutableList<String>>()
+    private val classIndex = ClassIndex()
     private val isIndexed = AtomicBoolean(false)
 
     /**
@@ -72,17 +72,13 @@ class ClasspathService {
                                 return@forEach
                             }
 
-                            classIndex.compute(simpleName) { _, list ->
-                                val newList = list ?: mutableListOf()
-                                newList.add(fullName)
-                                newList
-                            }
+                            classIndex.add(simpleName, fullName)
                         }
                     }
 
                 isIndexed.set(true)
                 val elapsedMs = System.currentTimeMillis() - startTime
-                logger.info("Indexed ${classIndex.size} class names in ${elapsedMs}ms")
+                logger.info("Indexed ${classIndex.size()} class names in ${elapsedMs}ms")
             } catch (e: Exception) {
                 logger.error("Failed to index classes", e)
             }
@@ -103,9 +99,12 @@ class ClasspathService {
         val results = mutableListOf<ClassInfo>()
 
         // Find all simple names that start with the prefix (case-insensitive)
-        classIndex.entries
-            .filter { it.key.startsWith(prefix, ignoreCase = true) }
-            .sortedBy { it.key }
+        classIndex.snapshot()
+            .asSequence()
+            .filter { (simpleName, _) -> simpleName.startsWith(prefix, ignoreCase = true) }
+            .sortedWith(
+                compareBy<Map.Entry<String, List<String>>> { it.key },
+            )
             .take(maxResults)
             .forEach { (simpleName, fullNames) ->
                 // For each matching simple name, add all fully qualified variants
@@ -153,6 +152,28 @@ class ClasspathService {
         null
     } catch (e: NoClassDefFoundError) {
         null
+    }
+
+    internal class ClassIndex {
+        private val index = ConcurrentHashMap<String, MutableSet<String>>()
+
+        fun add(simpleName: String, fullName: String) {
+            index.compute(simpleName) { _, existing ->
+                val entries = existing ?: linkedSetOf()
+                entries.add(fullName)
+                entries
+            }
+        }
+
+        fun snapshot(): Map<String, List<String>> = index.entries.associate { (simple, fullNames) ->
+            simple to fullNames.sorted()
+        }
+
+        fun size(): Int = index.size
+
+        fun clear() {
+            index.clear()
+        }
     }
 }
 
