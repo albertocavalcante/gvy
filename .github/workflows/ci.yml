@@ -420,8 +420,10 @@ jobs:
           reporter: java-junit
 
       # Verify JAR (already built by e2eTest via shadowJar dependency)
-      - name: Verify JAR
+      - name: Resolve shadow JAR
         if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
+        id: resolve-jar
+        shell: bash
         run: |-
           set -euo pipefail
           shopt -s nullglob
@@ -435,20 +437,24 @@ jobs:
             ./gradlew "${args[@]}"
             jar_files=(groovy-lsp/build/libs/groovy-lsp-*-all.jar)
           fi
-          JAR_PATH=${jar_files[0]-}
-          if [[ -z "$JAR_PATH" ]]; then
+          if [[ ${#jar_files[@]} -eq 0 ]]; then
             echo "::error::Shadow JAR not found in groovy-lsp/build/libs"
             exit 1
           fi
+          echo "jar_path=${jar_files[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify JAR
+        if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
+        run: |-
           echo "Testing JAR with --help flag..."
-          java -jar "$JAR_PATH" --help
+          java -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
 
       - name: Upload JAR artifact
         if: (matrix.os == 'ubuntu-24.04' && matrix.java == 17) || matrix.os == 'self-hosted'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
-          path: groovy-lsp/build/libs/groovy-lsp-*-all.jar
+          path: ${{ steps.resolve-jar.outputs.jar_path }}
           retention-days: 7
 
       - name: Upload Test Results
