@@ -4,7 +4,9 @@ import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
+import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
+import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -44,6 +46,10 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
     private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
     private val parser = GroovyParserFacade(parentClassLoader)
+    private val workerSessionManager = WorkerSessionManager(
+        defaultSession = InProcessWorkerSession(parser),
+        sessionFactory = { InProcessWorkerSession(parser) },
+    )
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
@@ -114,7 +120,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         // Parse the source code
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
         // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
-        val parseResult = parser.parse(
+        val parseResult = workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
@@ -156,7 +162,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
 
-        return parser.parse(
+        return workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
@@ -224,7 +230,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
             }
             val content = fileContent ?: return null
             logger.info("Content starts with: '${content.take(50).replace("\n", "\\n")}'")
-            val parseResult = parser.parse(
+            val parseResult = workerSessionManager.parse(
                 ParseRequest(
                     uri = uri,
                     content = content,
@@ -324,7 +330,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         // Parse the source code for indexing
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
         // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
-        val parseResult = parser.parse(
+        val parseResult = workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
@@ -493,6 +499,7 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
 
     fun updateSelectedWorker(worker: WorkerDescriptor?) {
         selectedWorker.set(worker)
+        workerSessionManager.select(worker)
         if (worker != null) {
             logger.info(
                 "Worker selected: {} (range={}, features={})",
