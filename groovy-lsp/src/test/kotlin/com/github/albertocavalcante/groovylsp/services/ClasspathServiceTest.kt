@@ -3,6 +3,9 @@ package com.github.albertocavalcante.groovylsp.services
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.net.URLClassLoader
+import java.nio.file.Path
 
 /**
  * Unit tests for ClasspathService.
@@ -12,9 +15,12 @@ class ClasspathServiceTest {
 
     private lateinit var classpathService: ClasspathService
 
+    @TempDir
+    lateinit var tempDir: Path
+
     @BeforeEach
     fun setUp() {
-        classpathService = ClasspathService()
+        classpathService = ClasspathService(defaultIndex())
     }
 
     @Test
@@ -121,10 +127,8 @@ class ClasspathServiceTest {
     fun `should index classes from classpath`() {
         classpathService.indexAllClasses()
 
-        // After indexing, we should have indexed classes from libraries (Groovy, AssertJ, etc.)
-        // ClassGraph indexes classpath JARs but may not index JRE bootstrap classes
         val results = classpathService.findClassesByPrefix("String")
-        assertThat(results).isNotEmpty // Should find library classes starting with "String"
+        assertThat(results).isNotEmpty
     }
 
     @Test
@@ -145,14 +149,12 @@ class ClasspathServiceTest {
         val results = classpathService.findClassesByPrefix("Assert")
 
         assertThat(results).isNotEmpty
-        // Should find classes from test libraries like AssertJ
         assertThat(results).hasSizeGreaterThan(1) // Multiple " Assert" classes exist
     }
 
     @Test
     fun `should limit results by maxResults parameter`() {
         classpathService.indexAllClasses()
-
         val results = classpathService.findClassesByPrefix("", maxResults = 10)
 
         assertThat(results).hasSizeLessThanOrEqualTo(10)
@@ -201,8 +203,113 @@ class ClasspathServiceTest {
             "com.other.Fake",
         )
     }
+
+    @Test
+    fun `passes classpath entries to indexer`() {
+        val root = tempDir.resolve("entries")
+        val first = root.resolve("first")
+        val second = root.resolve("second")
+
+        root.toFile().mkdirs()
+        first.toFile().mkdirs()
+        second.toFile().mkdirs()
+
+        val fakeIndex = RecordingClasspathIndex()
+        val service = ClasspathService(fakeIndex)
+
+        service.updateClasspath(listOf(first, second))
+        service.indexAllClasses()
+
+        assertThat(fakeIndex.entries).containsExactly(first.toString(), second.toString())
+    }
+
+    @Test
+    fun `uses classloader urls when classpath entries are empty`() {
+        val root = tempDir.resolve("loader")
+        val first = root.resolve("first")
+        val second = root.resolve("second")
+
+        root.toFile().mkdirs()
+        first.toFile().mkdirs()
+        second.toFile().mkdirs()
+
+        val fakeIndex = RecordingClasspathIndex()
+        val service = ClasspathService(fakeIndex)
+
+        URLClassLoader(arrayOf(first.toUri().toURL(), second.toUri().toURL()), null).use { loader ->
+            setCurrentClassLoader(service, loader)
+            service.indexAllClasses()
+        }
+
+        assertThat(fakeIndex.entries).containsExactly(first.toString(), second.toString())
+    }
+
+    @Test
+    fun `uses provided reflection for methods`() {
+        val reflection = RecordingClasspathReflection()
+        val service = ClasspathService(defaultIndex(), reflection)
+
+        service.getMethods("java.lang.String")
+
+        assertThat(reflection.methodCalls).containsExactly("java.lang.String")
+    }
+
+    @Test
+    fun `uses provided reflection for class loading`() {
+        val reflection = RecordingClasspathReflection().apply {
+            loadResult = String::class.java
+        }
+        val service = ClasspathService(defaultIndex(), reflection)
+
+        val loaded = service.loadClass("java.lang.String")
+
+        assertThat(loaded).isEqualTo(String::class.java)
+        assertThat(reflection.loadCalls).containsExactly("java.lang.String")
+    }
 }
 
+private fun defaultIndex(): ClasspathIndex = FakeClasspathIndex(
+    listOf(
+        IndexedClass("StringArbitrary", "com.example.StringArbitrary"),
+        IndexedClass("String", "java.lang.String"),
+        IndexedClass("Stringable", "com.example.Stringable"),
+        IndexedClass("Assert", "org.assertj.core.api.Assert"),
+        IndexedClass("Assert", "org.junit.Assert"),
+    ),
+)
+
 private class FakeClasspathIndex(private val entries: List<IndexedClass>) : ClasspathIndex {
-    override fun index(classLoader: ClassLoader): List<IndexedClass> = entries
+    override fun index(classpathEntries: List<String>): List<IndexedClass> = entries
+}
+
+private class RecordingClasspathIndex : ClasspathIndex {
+    val entries = mutableListOf<String>()
+
+    override fun index(classpathEntries: List<String>): List<IndexedClass> {
+        entries.clear()
+        entries.addAll(classpathEntries)
+        return emptyList()
+    }
+}
+
+private class RecordingClasspathReflection : ClasspathReflection {
+    val methodCalls = mutableListOf<String>()
+    val loadCalls = mutableListOf<String>()
+    var loadResult: Class<*>? = null
+
+    override fun getMethods(className: String): List<ReflectedMethod> {
+        methodCalls.add(className)
+        return emptyList()
+    }
+
+    override fun loadClass(className: String): Class<*>? {
+        loadCalls.add(className)
+        return loadResult
+    }
+}
+
+private fun setCurrentClassLoader(service: ClasspathService, classLoader: ClassLoader) {
+    val field = ClasspathService::class.java.getDeclaredField("currentClassLoader")
+    field.isAccessible = true
+    field.set(service, classLoader)
 }

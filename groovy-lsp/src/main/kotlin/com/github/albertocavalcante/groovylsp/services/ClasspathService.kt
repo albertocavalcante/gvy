@@ -1,9 +1,10 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import org.slf4j.LoggerFactory
-import java.lang.reflect.Modifier
+import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -11,11 +12,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
  * Acts as the "Window to the World" for the LSP.
  */
-class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspathIndex()) {
+class ClasspathService(
+    private val classpathIndex: ClasspathIndex = JvmClasspathIndex(),
+    reflectionProvider: ClasspathReflection? = null,
+) {
     private val logger = LoggerFactory.getLogger(ClasspathService::class.java)
 
     // Start with the system classloader to access JDK and Groovy runtime
     private var currentClassLoader: ClassLoader = ClassLoader.getSystemClassLoader()
+    private var classpathEntries: List<String> = emptyList()
+    private val reflection: ClasspathReflection =
+        reflectionProvider ?: JvmClasspathReflection { currentClassLoader }
 
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
     private val classIndex = ClassIndex()
@@ -28,12 +35,14 @@ class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspath
      */
     fun updateClasspath(paths: List<Path>) {
         val oldClassLoader = currentClassLoader
+        val oldClasspathEntries = classpathEntries
         try {
             logger.info("Updating classpath with ${paths.size} paths")
             val urls = paths.map { it.toUri().toURL() }.toTypedArray()
             // Parent is null to strictly separate (or system to inherit JDK/Groovy)
             // We likely want system as parent to get the GDK classes
             currentClassLoader = URLClassLoader(urls, ClassLoader.getSystemClassLoader())
+            classpathEntries = paths.map { it.toString() }
 
             // Invalidate index when classpath changes
             isIndexed.set(false)
@@ -42,6 +51,7 @@ class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspath
             logger.error("Failed to update classpath", e)
             // Restore previous classloader to maintain consistent state
             currentClassLoader = oldClassLoader
+            classpathEntries = oldClasspathEntries
         }
     }
 
@@ -59,7 +69,7 @@ class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspath
             val startTime = System.currentTimeMillis()
 
             try {
-                classpathIndex.index(currentClassLoader).forEach { entry ->
+                classpathIndex.index(resolveClasspathEntries()).forEach { entry ->
                     classIndex.add(entry.simpleName, entry.fullName)
                 }
 
@@ -70,6 +80,35 @@ class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspath
                 logger.error("Failed to index classes", e)
             }
         }
+    }
+
+    private fun resolveClasspathEntries(): List<String> {
+        if (classpathEntries.isNotEmpty()) {
+            return classpathEntries
+        }
+
+        val urlEntries = (currentClassLoader as? URLClassLoader)
+            ?.urLs
+            ?.mapNotNull { url ->
+                if (url.protocol != "file") {
+                    return@mapNotNull null
+                }
+                runCatching { Paths.get(url.toURI()).toString() }.getOrNull()
+            }
+            .orEmpty()
+        if (urlEntries.isNotEmpty()) {
+            return urlEntries.distinct()
+        }
+
+        val classpathProperty = System.getProperty("java.class.path").orEmpty()
+        if (classpathProperty.isBlank()) {
+            return emptyList()
+        }
+
+        return classpathProperty
+            .split(File.pathSeparator)
+            .filter { it.isNotBlank() }
+            .distinct()
     }
 
     /**
@@ -107,39 +146,12 @@ class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspath
     /**
      * Tries to load a class by name and returns its reflected methods.
      */
-    fun getMethods(className: String): List<ReflectedMethod> = try {
-        val clazz = currentClassLoader.loadClass(className)
-        clazz.methods.map { method ->
-            ReflectedMethod(
-                name = method.name,
-                returnType = method.returnType.simpleName, // Simplified for now
-                parameters = method.parameterTypes.map { it.simpleName },
-                isStatic = Modifier.isStatic(method.modifiers),
-                isPublic = Modifier.isPublic(method.modifiers),
-                doc = "JDK/Classpath method from ${clazz.simpleName}",
-            )
-        }
-    } catch (e: ClassNotFoundException) {
-        logger.debug("Class not found on classpath: $className")
-        emptyList()
-    } catch (e: NoClassDefFoundError) {
-        logger.debug("Class definition not found: $className")
-        emptyList()
-    } catch (e: Exception) {
-        logger.error("Error reflecting on class $className", e)
-        emptyList()
-    }
+    fun getMethods(className: String): List<ReflectedMethod> = reflection.getMethods(className)
 
     /**
      * Tries to load a class by name.
      */
-    fun loadClass(className: String): Class<*>? = try {
-        currentClassLoader.loadClass(className)
-    } catch (e: ClassNotFoundException) {
-        null
-    } catch (e: NoClassDefFoundError) {
-        null
-    }
+    fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
 
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()

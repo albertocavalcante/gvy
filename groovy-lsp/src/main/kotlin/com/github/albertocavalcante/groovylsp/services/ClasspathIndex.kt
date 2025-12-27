@@ -6,31 +6,37 @@ import org.slf4j.LoggerFactory
 data class IndexedClass(val simpleName: String, val fullName: String)
 
 interface ClasspathIndex {
-    fun index(classLoader: ClassLoader): List<IndexedClass>
+    fun index(classpathEntries: List<String>): List<IndexedClass>
 }
 
 class JvmClasspathIndex : ClasspathIndex {
     private val logger = LoggerFactory.getLogger(JvmClasspathIndex::class.java)
 
-    override fun index(classLoader: ClassLoader): List<IndexedClass> {
+    override fun index(classpathEntries: List<String>): List<IndexedClass> {
         val results = mutableListOf<IndexedClass>()
 
-        ClassGraph()
+        val classGraph = ClassGraph()
             .enableClassInfo()
-            .overrideClassLoaders(classLoader)
-            .scan().use { scanResult ->
-                scanResult.allClasses.forEach { classInfo ->
-                    val simpleName = classInfo.simpleName
-                    val fullName = classInfo.name
+            .enableSystemJarsAndModules()
+        val configured = if (classpathEntries.isEmpty()) {
+            classGraph
+        } else {
+            classGraph.overrideClasspath(classpathEntries)
+        }
 
-                    // Skip anonymous classes and synthetic classes
-                    if (simpleName.contains('$') || classInfo.isSynthetic) {
-                        return@forEach
-                    }
+        configured.scan().use { scanResult ->
+            scanResult.allClasses.forEach { classInfo ->
+                val simpleName = classInfo.simpleName
+                val fullName = classInfo.name
 
-                    results.add(IndexedClass(simpleName, fullName))
+                // Skip anonymous classes & synthetic classes
+                if (simpleName.contains('$') || classInfo.isSynthetic) {
+                    return@forEach
                 }
+
+                results.add(IndexedClass(simpleName, fullName))
             }
+        }
 
         logger.debug("JvmClasspathIndex produced {} classes", results.size)
         return results
