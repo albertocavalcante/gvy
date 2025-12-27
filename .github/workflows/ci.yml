@@ -436,15 +436,6 @@ jobs:
           shopt -s nullglob
           jar_files=(groovy-lsp/build/libs/gls-*-all.jar)
           if [[ ${#jar_files[@]} -eq 0 ]]; then
-            echo "Shadow JAR not found; building..."
-            args=(:groovy-lsp:shadowJar --parallel --build-cache --stacktrace)
-            if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-              args+=("${GRADLE_SCAN_FLAG}")
-            fi
-            ./gradlew "${args[@]}"
-            jar_files=(groovy-lsp/build/libs/gls-*-all.jar)
-          fi
-          if [[ ${#jar_files[@]} -eq 0 ]]; then
             echo "::error::Shadow JAR not found in groovy-lsp/build/libs"
             exit 1
           fi
