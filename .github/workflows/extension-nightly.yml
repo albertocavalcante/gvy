@@ -42,10 +42,35 @@ jobs:
       PUBLISH_PRERELEASE_INPUT: ${{ github.event.inputs.publish_prerelease || 'false' }}
 
     steps:
+      - name: Validate ref input
+        if: github.event.inputs.ref != ''
+        shell: bash
+        env:
+          REF_INPUT: ${{ github.event.inputs.ref }}
+        run: |
+          # Validate ref matches expected formats: branch names or commit SHAs
+          # Allowed: main, feature/foo, v1.2.3, 40-char hex SHA
+          if [[ ! "$REF_INPUT" =~ ^[a-zA-Z0-9][a-zA-Z0-9._/-]*$ ]] && \
+             [[ ! "$REF_INPUT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid ref format: $REF_INPUT"
+            exit 1
+          fi
+          echo "Ref validation passed: $REF_INPUT"
+
+      - name: Determine checkout ref
+        id: checkout_ref
+        shell: bash
+        env:
+          REF_INPUT: ${{ github.event.inputs.ref }}
+        run: |
+          # Use validated input or default to main
+          CHECKOUT_REF="${REF_INPUT:-main}"
+          echo "ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
-          ref: ${{ github.event.inputs.ref || 'main' }}
+          ref: ${{ steps.checkout_ref.outputs.ref }}
           persist-credentials: false
 
       - name: Setup Node.js

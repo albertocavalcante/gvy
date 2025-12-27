@@ -59,11 +59,23 @@ jobs:
           exit 1
         fi
         echo "Tag validation passed: $TAG_INPUT"
+
+    - name: Determine checkout ref
+      id: checkout_ref
+      shell: bash
+      env:
+        TAG_INPUT: ${{ github.event.inputs.tag }}
+        DEFAULT_REF: ${{ github.ref }}
+      run: |
+        # Use validated tag input or fall back to github.ref
+        CHECKOUT_REF="${TAG_INPUT:-$DEFAULT_REF}"
+        echo "ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
+
     - name: Checkout code
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
-        ref: ${{ github.event.inputs.tag || github.ref }}
+        ref: ${{ steps.checkout_ref.outputs.ref }}
         persist-credentials: false
     - name: "Set up JDK ${{ matrix.java }}"
       uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
@@ -216,11 +228,23 @@ jobs:
           exit 1
         fi
         echo "Tag validation passed: $TAG_INPUT"
+
+    - name: Determine checkout ref
+      id: checkout_ref
+      shell: bash
+      env:
+        TAG_INPUT: ${{ github.event.inputs.tag }}
+        DEFAULT_REF: ${{ github.ref }}
+      run: |
+        # Use validated tag input or fall back to github.ref
+        CHECKOUT_REF="${TAG_INPUT:-$DEFAULT_REF}"
+        echo "ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
+
     - name: Checkout code
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
-        ref: ${{ github.event.inputs.tag || github.ref }}
+        ref: ${{ steps.checkout_ref.outputs.ref }}
         persist-credentials: false
     - name: Download all artifacts
       uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
