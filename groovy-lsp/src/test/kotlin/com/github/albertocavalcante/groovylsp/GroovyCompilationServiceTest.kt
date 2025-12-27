@@ -1,6 +1,11 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.test.parseGroovyVersion
+import com.github.albertocavalcante.groovylsp.version.GroovyVersionRange
+import com.github.albertocavalcante.groovylsp.worker.WorkerCapabilities
+import com.github.albertocavalcante.groovylsp.worker.WorkerConnector
+import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.BeforeEach
@@ -128,6 +133,42 @@ class GroovyCompilationServiceTest {
         assertNotNull(updatedAst)
         // Should be different AST instances after content change
         assertNotSame(originalAst, updatedAst)
+    }
+
+    @Test
+    fun `updateSelectedWorker clears cache when worker changes`() = runBlocking {
+        val groovyContent = """
+            class WorkerSwitch {
+                String name = "cache"
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test/WorkerSwitch.groovy")
+
+        compilationService.compile(uri, groovyContent)
+        assertNotNull(compilationService.getParseResult(uri))
+
+        compilationService.updateSelectedWorker(workerDescriptor("worker-a"))
+
+        assertNull(compilationService.getParseResult(uri))
+    }
+
+    @Test
+    fun `updateSelectedWorker keeps cache when worker unchanged`() = runBlocking {
+        val groovyContent = """
+            class SameWorker {
+                String name = "cache"
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test/SameWorker.groovy")
+        val worker = workerDescriptor("worker-a")
+
+        compilationService.updateSelectedWorker(worker)
+        compilationService.compile(uri, groovyContent)
+        assertNotNull(compilationService.getParseResult(uri))
+
+        compilationService.updateSelectedWorker(worker)
+
+        assertNotNull(compilationService.getParseResult(uri))
     }
 
     @Test
@@ -260,4 +301,11 @@ class GroovyCompilationServiceTest {
         assertNotNull(result)
         assertEquals(content, result.sourceText, "Source text should be preserved in cached result")
     }
+
+    private fun workerDescriptor(id: String): WorkerDescriptor = WorkerDescriptor(
+        id = id,
+        supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("4.0.0")),
+        capabilities = WorkerCapabilities(),
+        connector = WorkerConnector.InProcess,
+    )
 }
