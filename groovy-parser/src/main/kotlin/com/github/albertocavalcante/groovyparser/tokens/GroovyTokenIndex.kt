@@ -63,16 +63,25 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
         private val LINE_COMMENT_NAMES = setOf("SINGLE_LINE_COMMENT", "SH_COMMENT")
         private val STRING_LITERAL_NAMES = setOf("StringLiteral", "SQ_STRING", "DQ_STRING", "TQS", "StringLiteralPart")
 
+        /** Collects spans during token processing. */
+        private class SpanCollector {
+            private val spans = mutableListOf<TokenSpan>()
+            fun add(span: TokenSpan) = spans.add(span)
+            fun firstOrNull() = spans.firstOrNull()
+            fun lastOrNull() = spans.lastOrNull()
+            fun toSortedList(): List<TokenSpan> = spans.sortedBy { it.start }
+        }
+
         /** Build index from source using Groovy lexer. */
         fun build(source: String): GroovyTokenIndex {
-            val spans = mutableListOf<TokenSpan>()
+            val collector = SpanCollector()
 
             val lexer = createLexer(source) ?: return GroovyTokenIndex(emptyList())
 
-            handleShebang(source, spans)
-            processAllTokens(lexer, spans)
+            handleShebang(source, collector)
+            processAllTokens(lexer, collector)
 
-            return GroovyTokenIndex(spans.sortedBy { it.start })
+            return GroovyTokenIndex(collector.toSortedList())
         }
 
         private fun createLexer(source: String): GroovyLangLexer? = try {
@@ -82,39 +91,39 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             null
         }
 
-        private fun handleShebang(source: String, spans: MutableList<TokenSpan>) {
+        private fun handleShebang(source: String, collector: SpanCollector) {
             if (source.startsWith("#!")) {
                 val firstNewLine = source.indexOf('\n')
                 val end = if (firstNewLine != -1) firstNewLine else source.length
-                spans.add(TokenSpan(0, end, TokenContext.LineComment))
+                collector.add(TokenSpan(0, end, TokenContext.LineComment))
             }
         }
 
         @Suppress("TooGenericExceptionCaught") // Lexer can throw various ANTLR exceptions
         private fun processAllTokens(
             lexer: GroovyLangLexer,
-            spans: MutableList<TokenSpan>,
+            collector: SpanCollector,
         ) {
             try {
                 while (true) {
-                    val token = fetchNextToken(lexer, spans) ?: break
+                    val token = fetchNextToken(lexer, collector) ?: break
                     if (token.type == Token.EOF) break
 
-                    processToken(token, lexer, spans)
+                    processToken(token, lexer, collector)
                 }
             } catch (e: Throwable) {
                 logger.debug("Ignoring throwable during token indexing for resiliency", e)
             }
         }
 
-        private fun fetchNextToken(lexer: GroovyLangLexer, spans: MutableList<TokenSpan>): Token? = try {
+        private fun fetchNextToken(lexer: GroovyLangLexer, collector: SpanCollector): Token? = try {
             lexer.nextToken()
         } catch (e: Throwable) {
-            logger.debug("Lexer error at offset {}: {}", spans.lastOrNull()?.end ?: 0, e.message)
+            logger.debug("Lexer error at offset {}: {}", collector.lastOrNull()?.end ?: 0, e.message)
             null
         }
 
-        private fun processToken(token: Token, lexer: GroovyLangLexer, spans: MutableList<TokenSpan>) {
+        private fun processToken(token: Token, lexer: GroovyLangLexer, collector: SpanCollector) {
             val symbolicName = lexer.vocabulary.getSymbolicName(token.type) ?: ""
             val text = token.text ?: ""
 
@@ -122,10 +131,10 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             if (context == TokenContext.Code) return
 
             // Avoid adding a duplicate span for a shebang if it was already handled manually.
-            if (token.startIndex == 0 && spans.firstOrNull()?.start == 0) {
+            if (token.startIndex == 0 && collector.firstOrNull()?.start == 0) {
                 return
             }
-            spans.add(TokenSpan(token.startIndex, token.stopIndex + 1, context))
+            collector.add(TokenSpan(token.startIndex, token.stopIndex + 1, context))
         }
 
         private fun mapTokenToContext(symbolicName: String, text: String): TokenContext = when {
