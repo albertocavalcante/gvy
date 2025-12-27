@@ -147,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
+          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'gls-*-all.jar' -print -quit)
           echo "Found JAR: $JAR_PATH"
           java -jar "$JAR_PATH" --help
 
@@ -157,7 +157,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'groovy-lsp-*-all.jar' -print -quit)
+          JAR_PATH=$(find groovy-lsp/build/libs -maxdepth 1 -name 'gls-*-all.jar' -print -quit)
           SHORT_SHA=$(git rev-parse --short HEAD)
           NIGHTLY_NAME="groovy-lsp-${{ steps.nightly_version.outputs.nightly_version }}-${SHORT_SHA}.jar"
           cp "$JAR_PATH" "dist/${NIGHTLY_NAME}"
