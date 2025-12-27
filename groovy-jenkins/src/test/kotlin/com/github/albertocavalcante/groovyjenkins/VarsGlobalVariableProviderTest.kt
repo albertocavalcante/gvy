@@ -32,4 +32,19 @@ class VarsGlobalVariableProviderTest {
         assertTrue(vars.any { it.name == "log" })
         assertTrue(vars.any { it.name == "Utils" })
     }
+
+    @Test
+    fun `should return variables in deterministic name order`() {
+        val varsDir = tempDir.resolve("vars")
+        Files.createDirectory(varsDir)
+
+        Files.writeString(varsDir.resolve("b.groovy"), "def call() { }")
+        Files.writeString(varsDir.resolve("A.groovy"), "def call() { }")
+        Files.writeString(varsDir.resolve("c.groovy"), "def call() { }")
+
+        val provider = VarsGlobalVariableProvider(tempDir)
+        val vars = provider.getGlobalVariables()
+
+        assertEquals(listOf("A", "b", "c"), vars.map { it.name })
+    }
 }

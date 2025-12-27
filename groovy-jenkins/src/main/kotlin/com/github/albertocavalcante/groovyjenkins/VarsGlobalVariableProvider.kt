@@ -2,6 +2,8 @@
 
 package com.github.albertocavalcante.groovyjenkins
 
+import arrow.core.Either
+import arrow.core.getOrElse
 import com.vladsch.flexmark.html2md.converter.FlexmarkHtmlConverter
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
@@ -41,7 +43,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
             return emptyList()
         }
 
-        return try {
+        return Either.catch {
             Files.list(varsDir).use { stream ->
                 stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".groovy") }
                     .map { path ->
@@ -52,8 +54,10 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
                     }
                     .toList()
             }
-        } catch (e: Exception) {
-            logger.error("Failed to scan vars directory", e)
+        }.map { variables ->
+            variables.sortedWith(compareBy({ it.name.lowercase() }, { it.name }))
+        }.getOrElse { error ->
+            logger.error("Failed to scan vars directory", error)
             emptyList()
         }
     }
