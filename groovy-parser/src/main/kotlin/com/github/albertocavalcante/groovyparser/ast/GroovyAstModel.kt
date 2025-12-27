@@ -18,6 +18,11 @@ interface GroovyAstModel {
     fun getParent(node: ASTNode): ASTNode?
 
     /**
+     * Returns the direct children of the given AST node.
+     */
+    fun getChildren(node: ASTNode): List<ASTNode>
+
+    /**
      * Returns the source URI associated with the given AST node.
      */
     fun getUri(node: ASTNode): URI?

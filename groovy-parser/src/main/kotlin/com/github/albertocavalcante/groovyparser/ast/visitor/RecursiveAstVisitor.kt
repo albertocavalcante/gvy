@@ -56,6 +56,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     private val positionQuery = AstPositionQuery(tracker)
 
     override fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
+    override fun getChildren(node: ASTNode): List<ASTNode> = tracker.getChildren(node)
     override fun getUri(node: ASTNode): URI? = tracker.getUri(node)
     override fun getNodes(uri: URI): List<ASTNode> = tracker.getNodes(uri)
     override fun getAllNodes(): List<ASTNode> = tracker.getAllNodes()

@@ -18,6 +18,9 @@ class DocumentationServiceTest {
     // Simple mock model - just returns null for everything
     private val mockModel = object : GroovyAstModel {
         override fun getParent(node: ASTNode) = null
+
+        // getChildren is non-null by contract, so return an empty list for this stub.
+        override fun getChildren(node: ASTNode) = emptyList<ASTNode>()
         override fun getUri(node: ASTNode) = null
         override fun getNodes(uri: URI) = emptyList<ASTNode>()
         override fun getAllNodes() = emptyList<ASTNode>()

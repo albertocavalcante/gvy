@@ -31,6 +31,7 @@ class NodeRelationshipTracker {
     // Use identity semantics for ASTNode keys to avoid collisions from overridden equals/hashCode (e.g., ClassNode).
     // Synchronization is sufficient here because writes happen during compilation and reads are short-lived queries.
     private val parentMap = Collections.synchronizedMap(IdentityHashMap<ASTNode, ASTNode>())
+    private val childrenMap = Collections.synchronizedMap(IdentityHashMap<ASTNode, MutableSet<ASTNode>>())
 
     // URI mapping for nodes
     // NOTE: Tradeoff:
@@ -43,7 +44,11 @@ class NodeRelationshipTracker {
     fun pushNode(node: ASTNode, currentUri: URI?) {
         // Track parent-child relationship
         if (nodeStack.isNotEmpty()) {
-            parentMap[node] = nodeStack.last()
+            val parent = nodeStack.last()
+            parentMap[node] = parent
+            childrenMap.computeIfAbsent(parent) {
+                Collections.synchronizedSet(Collections.newSetFromMap(IdentityHashMap()))
+            }.add(node)
         }
 
         // Add to stack
@@ -94,6 +99,11 @@ class NodeRelationshipTracker {
      * Get the parent of the specified node.
      */
     fun getParent(node: ASTNode): ASTNode? = parentMap[node]
+
+    /**
+     * Get the direct children of the specified node.
+     */
+    fun getChildren(node: ASTNode): List<ASTNode> = childrenMap[node]?.toList() ?: emptyList()
 
     /**
      * Get the URI associated with the specified node.
@@ -193,6 +203,7 @@ class NodeRelationshipTracker {
         classNodesByUri.clear()
         modulesByUri.clear()
         parentMap.clear()
+        childrenMap.clear()
         nodeUriMap.clear()
     }
 
