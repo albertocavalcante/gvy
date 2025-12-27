@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import io.github.classgraph.ClassGraph
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 import java.net.URLClassLoader
@@ -12,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
  * Acts as the "Window to the World" for the LSP.
  */
-class ClasspathService {
+class ClasspathService(private val classpathIndex: ClasspathIndex = JvmClasspathIndex()) {
     private val logger = LoggerFactory.getLogger(ClasspathService::class.java)
 
     // Start with the system classloader to access JDK and Groovy runtime
@@ -47,7 +46,7 @@ class ClasspathService {
     }
 
     /**
-     * Indexes all classes from the classpath using ClassGraph.
+     * Indexes all classes from the classpath.
      * This is called lazily on first type parameter completion request.
      */
     fun indexAllClasses() {
@@ -60,21 +59,9 @@ class ClasspathService {
             val startTime = System.currentTimeMillis()
 
             try {
-                ClassGraph()
-                    .enableClassInfo()
-                    .scan().use { result ->
-                        result.allClasses.forEach { classInfo ->
-                            val simpleName = classInfo.simpleName
-                            val fullName = classInfo.name
-
-                            // Skip anonymous classes and synthetic classes
-                            if (simpleName.contains('$') || classInfo.isSynthetic) {
-                                return@forEach
-                            }
-
-                            classIndex.add(simpleName, fullName)
-                        }
-                    }
+                classpathIndex.index(currentClassLoader).forEach { entry ->
+                    classIndex.add(entry.simpleName, entry.fullName)
+                }
 
                 isIndexed.set(true)
                 val elapsedMs = System.currentTimeMillis() - startTime

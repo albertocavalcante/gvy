@@ -182,4 +182,27 @@ class ClasspathServiceTest {
         assertThat(snapshot["List"]).containsExactly("java.awt.List", "java.util.List")
         assertThat(snapshot["Map"]).containsExactly("java.util.Map")
     }
+
+    @Test
+    fun `uses provided classpath index`() {
+        val fakeIndex = FakeClasspathIndex(
+            listOf(
+                IndexedClass("Fake", "com.example.Fake"),
+                IndexedClass("Fake", "com.example.Fake"),
+                IndexedClass("Fake", "com.other.Fake"),
+            ),
+        )
+        val service = ClasspathService(fakeIndex)
+
+        val results = service.findClassesByPrefix("Fake")
+
+        assertThat(results.map { it.fullName }).containsExactly(
+            "com.example.Fake",
+            "com.other.Fake",
+        )
+    }
+}
+
+private class FakeClasspathIndex(private val entries: List<IndexedClass>) : ClasspathIndex {
+    override fun index(classLoader: ClassLoader): List<IndexedClass> = entries
 }
