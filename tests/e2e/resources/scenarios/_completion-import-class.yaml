@@ -1,0 +1,78 @@
+# TODO(DEFERRED): #431 - Test disabled. Cross-file completion not working.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/431
+name: completion-import-class
+description: Completion for class should include auto-import text edit.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Setup: Define a utility class in a package
+  - openDocument:
+      path: src/main/groovy/com/utils/StringUtils.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.utils
+        
+        class StringUtils {
+            static String reverse(String s) {
+                return s.reverse()
+            }
+        }
+
+  # Setup: File that needs the import
+  - openDocument:
+      path: src/main/groovy/App.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class App {
+            void run() {
+                StringU
+            }
+        }
+
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 30000
+
+  # Request completion for StringUtils
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/App.groovy"
+        position:
+          line: 2
+          character: 15
+      saveAs: completionResult
+
+  - assert:
+      source: completionResult
+      checks:
+        # Verify item exists
+        - jsonPath: "$.items[?(@.label == 'StringUtils')]"
+          expect:
+            type: SIZE
+            value: 1
+        
+        # Verify additionalTextEdits has exactly one element
+        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits.length()"
+          expect:
+            type: EQUALS
+            value: 1
+        
+        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits[0].newText"
+          expect:
+            type: CONTAINS
+            value: "import com.utils.StringUtils"
+
+  - shutdown: {}
+  - exit: {}

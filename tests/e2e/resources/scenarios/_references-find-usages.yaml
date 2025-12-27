@@ -1,0 +1,115 @@
+# TODO(DEFERRED): #430 - Test disabled. Cross-file references not working.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/430
+name: references-find-usages
+description: Find all references for methods and classes with strict count validation.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Setup: Define a class with a method
+  - openDocument:
+      path: src/main/groovy/Definitions.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+        
+        class Service {
+            void performAction() {
+                println "Action"
+            }
+        }
+
+  # Setup: Use the class and method in another file
+  - openDocument:
+      path: src/main/groovy/Usages.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+        
+        class Client {
+            void run() {
+                Service s = new Service()
+                s.performAction()
+                s.performAction() // Double usage
+            }
+        }
+
+  # Wait for compilation/indexing
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 30000
+
+  # Test 1: Find references for 'performAction' from definition site
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Definitions.groovy"
+        position:
+          line: 3
+          character: 20 # 'performAction'
+        context:
+          includeDeclaration: true
+      saveAs: methodReferences
+      
+  - assert:
+      source: methodReferences
+      checks:
+        # Expect 3 references: 1 decl + 2 usages
+        - jsonPath: $.length()
+          expect:
+            type: EQUALS
+            value: 3
+        # Validate Declaration
+        - jsonPath: "$[?(@.uri == '{{workspace.uri}}src/main/groovy/Definitions.groovy' && @.range.start.line == 3)]"
+          expect:
+            type: SIZE
+            value: 1
+        # Validate Usage 1
+        - jsonPath: "$[?(@.uri == '{{workspace.uri}}src/main/groovy/Usages.groovy' && @.range.start.line == 5)]"
+          expect:
+            type: SIZE
+            value: 1
+        # Validate Usage 2
+        - jsonPath: "$[?(@.uri == '{{workspace.uri}}src/main/groovy/Usages.groovy' && @.range.start.line == 6)]"
+          expect:
+            type: SIZE
+            value: 1
+
+  # Test 2: Find references for 'Service' class
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Definitions.groovy"
+        position:
+          line: 2
+          character: 10 # 'Service'
+        context:
+          includeDeclaration: true
+      saveAs: classReferences
+      
+  - assert:
+      source: classReferences
+      checks:
+        # Expect 3 references: 1 Decl + 1 Var Type + 1 Constructor Call
+        - jsonPath: $.length()
+          expect:
+            type: GTE
+            value: 2
+        - jsonPath: "$[?(@.uri == '{{workspace.uri}}src/main/groovy/Definitions.groovy')]"
+          expect:
+            type: SIZE
+            value: 1
+
+  - shutdown: {}
+  - exit: {}

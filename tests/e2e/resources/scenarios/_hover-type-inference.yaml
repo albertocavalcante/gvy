@@ -1,0 +1,95 @@
+# TODO(DEFERRED): #432 - Test disabled. Hover shows raw AST instead of inferred type.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/432
+name: hover-type-inference
+description: Hover on def variables shows inferred types.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  - openDocument:
+      path: src/main/groovy/Inference.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class Inference {
+            void run() {
+                def num = 42
+                def list = [1, 2, 3]
+                def map = [key: "value"]
+            }
+        }
+
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 30000
+
+  # Hover on 'num'
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Inference.groovy"
+        position:
+          line: 2
+          character: 14
+      saveAs: hoverNum
+
+  - assert:
+      source: hoverNum
+      checks:
+        - jsonPath: $.contents.value
+          expect:
+            type: CONTAINS
+            value: "Integer" # Check if it infers Integer
+
+  # Hover on 'list'
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Inference.groovy"
+        position:
+          line: 3
+          character: 15
+      saveAs: hoverList
+
+  - assert:
+      source: hoverList
+      checks:
+        - jsonPath: $.contents.value
+          expect:
+            type: CONTAINS
+            value: "List"
+        - jsonPath: $.contents.value
+          expect:
+            type: CONTAINS
+            value: "Integer" # List<Integer> ideally
+
+  # Hover on 'map'
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Inference.groovy"
+        position:
+          line: 4
+          character: 14
+      saveAs: hoverMap
+
+  - assert:
+      source: hoverMap
+      checks:
+        - jsonPath: $.contents.value
+          expect:
+            type: CONTAINS
+            value: "Map"
+
+  - shutdown: {}
+  - exit: {}

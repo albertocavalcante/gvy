@@ -1,0 +1,76 @@
+# TODO(DEFERRED): #431 - Test disabled. Workspace symbols don't include dynamic docs.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/431
+name: workspace-symbols
+description: Search for symbols across the workspace.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Setup: Define distinct symbols
+  - openDocument:
+      path: src/main/groovy/Symbols.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class UniqueController {
+            void uniqueMethod() {}
+        }
+
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 30000
+
+  # Search for 'Unique'
+  - request:
+      method: workspace/symbol
+      params:
+        query: "Unique"
+      saveAs: symbolResult
+
+  - assert:
+      source: symbolResult
+      checks:
+        # Expect Controller and Method (depending on how fuzzy search works)
+        # Usually exact or prefix match
+        - jsonPath: $.length()
+          expect:
+            type: GTE
+            value: 1
+        
+        - jsonPath: "$[?(@.name == 'UniqueController')]"
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: "$[?(@.name == 'UniqueController')].kind"
+          expect:
+            type: EQUALS
+            value: 5 # Class = 5
+
+  # Search for 'uniqueMethod'
+  - request:
+      method: workspace/symbol
+      params:
+        query: "uniqueMethod"
+      saveAs: methodSymbolResult
+
+  - assert:
+      source: methodSymbolResult
+      checks:
+        - jsonPath: "$.[?(@.name == 'uniqueMethod')]"
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: "$.[?(@.name == 'uniqueMethod')].kind"
+          expect:
+            type: EQUALS
+            value: 6 # Method = 6
+
+  - shutdown: {}
+  - exit: {}

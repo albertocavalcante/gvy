@@ -1,0 +1,83 @@
+# TODO(DEFERRED): #430 - Test disabled. Cross-file rename not working.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/430
+name: rename-symbol
+description: Rename a method reference across multiple files.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  # Setup: Define a class with a method
+  - openDocument:
+      path: src/main/groovy/Definitions.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+        
+        class Service {
+            void performAction() {
+                println "Old Action"
+            }
+        }
+
+  # Setup: Usage in another file
+  - openDocument:
+      path: src/main/groovy/Usages.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+        
+        class Client {
+            void run() {
+                Service s = new Service()
+                s.performAction()
+            }
+        }
+
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 30000
+
+  # Rename 'performAction' to 'doSomething'
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/main/groovy/Definitions.groovy"
+        position:
+          line: 3
+          character: 20
+        newName: "doSomething"
+      saveAs: renameResult
+
+  - assert:
+      source: renameResult
+      checks:
+        # We expect changes as documentChanges array
+        - jsonPath: $.documentChanges.length()
+          expect:
+            type: EQUALS
+            value: 2 # Changes in Definitions.groovy and Usages.groovy
+        
+        # Validate change in Definitions.groovy
+        - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Definitions.groovy')].edits[0].newText"
+          expect:
+            type: EQUALS
+            value: "doSomething"
+            
+        # Validate change in Usages.groovy
+        - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Usages.groovy')].edits[0].newText"
+          expect:
+            type: EQUALS
+            value: "doSomething"
+
+  - shutdown: {}
+  - exit: {}

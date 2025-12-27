@@ -1,0 +1,62 @@
+# TODO(DEFERRED): #433 - Test disabled. Semantic diagnostics need @TypeChecked.
+# See: https://github.com/albertocavalcante/groovy-devtools/issues/433
+name: diagnostics-semantic-errors
+description: Detects semantic errors like undefined variables and type mismatches.
+workspace:
+  fixture: gradle-dependency
+steps:
+  - initialize: {}
+  - initialized: {}
+  
+  - openDocument:
+      path: src/main/groovy/SemanticErrors.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class SemanticErrors {
+            void run() {
+                // Undefined variable
+                println undefinedVar
+                
+                // Type mismatch (if strict)
+                int x = "string"
+            }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: semanticDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: MATCHES_REGEX
+            value: ".*SemanticErrors\\.groovy$"
+        - jsonPath: $.diagnostics
+          expect:
+            type: NOT_EMPTY
+
+  - assert:
+      source: semanticDiagnostics
+      checks:
+        # Expect error for undefined variable
+        - jsonPath: "$.diagnostics[?(@.message =~ '.*undefinedVar.*')]"
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: "$.diagnostics[?(@.message =~ '.*undefinedVar.*')].severity"
+          expect:
+            type: EQUALS
+            value: 1 # Error = 1
+        - jsonPath: "$.diagnostics[?(@.message =~ '.*undefinedVar.*')].range.start.line"
+          expect:
+            type: EQUALS
+            value: 3
+          
+        # Expect error for type mismatch
+        - jsonPath: $.diagnostics.length()
+          expect:
+            type: GTE
+            value: 1
+
+  - shutdown: {}
+  - exit: {}
