@@ -31,7 +31,7 @@ class NodeRelationshipTracker {
     // Use identity semantics for ASTNode keys to avoid collisions from overridden equals/hashCode (e.g., ClassNode).
     // Synchronization is sufficient here because writes happen during compilation and reads are short-lived queries.
     private val parentMap = Collections.synchronizedMap(IdentityHashMap<ASTNode, ASTNode>())
-    private val childrenMap = Collections.synchronizedMap(IdentityHashMap<ASTNode, MutableSet<ASTNode>>())
+    private val childrenMap = Collections.synchronizedMap(IdentityHashMap<ASTNode, OrderedIdentitySet<ASTNode>>())
 
     // URI mapping for nodes
     // NOTE: Tradeoff:
@@ -46,9 +46,7 @@ class NodeRelationshipTracker {
         if (nodeStack.isNotEmpty()) {
             val parent = nodeStack.last()
             parentMap[node] = parent
-            childrenMap.computeIfAbsent(parent) {
-                Collections.synchronizedSet(Collections.newSetFromMap(IdentityHashMap()))
-            }.add(node)
+            childrenMap.computeIfAbsent(parent) { OrderedIdentitySet() }.add(node)
         }
 
         // Add to stack
@@ -211,4 +209,22 @@ class NodeRelationshipTracker {
      * Get the current stack depth for debugging.
      */
     fun getStackDepth(): Int = nodeStack.size
+
+    private class OrderedIdentitySet<T : Any> {
+        private val index = IdentityHashMap<T, Unit>()
+        private val items = mutableListOf<T>()
+        private val lock = Any()
+
+        fun add(item: T) {
+            synchronized(lock) {
+                if (index.containsKey(item)) return
+                index[item] = Unit
+                items.add(item)
+            }
+        }
+
+        fun toList(): List<T> = synchronized(lock) {
+            items.toList()
+        }
+    }
 }

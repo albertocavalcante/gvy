@@ -35,8 +35,8 @@ class NodeRelationshipTrackerTest {
 
         val children = tracker.getChildren(parent)
         assertEquals(2, children.size)
-        assertTrue(children.contains(childA))
-        assertTrue(children.contains(childB))
+        assertTrue(children[0] === childA)
+        assertTrue(children[1] === childB)
     }
 
     @Test
