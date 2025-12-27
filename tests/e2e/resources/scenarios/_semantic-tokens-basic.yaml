@@ -1,0 +1,64 @@
+name: semantic-tokens-basic
+description: >
+  Test textDocument/semanticTokens/full.
+  Verifies that semantic tokens are returned for a Groovy file.
+  
+  TODO(DEFERRED): #426 - Feature not implemented.
+  See: https://github.com/albertocavalcante/groovy-devtools/issues/426
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize:
+      capabilities:
+        textDocument:
+          semanticTokens:
+            tokenTypes:
+              - class
+              - property
+              - method
+            tokenModifiers:
+              - static
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/SemanticTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class MyClass {
+            int myField = 123
+        }
+  
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 10000
+
+  - request:
+      method: textDocument/semanticTokens/full
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/SemanticTest.groovy"
+      saveAs: tokensResult
+
+  # Verify tokens
+  # The 'data' field contains an array of integers.
+  # We at least want to ensure it's not empty and has multiple of 5 integers.
+  - assert:
+      source: tokensResult
+      checks:
+        - jsonPath: $.data
+          expect:
+            type: NOT_EMPTY
+            value: "true"
+            message: "Should return semantic tokens"
+
+  - shutdown: {}
+  - exit: {}
