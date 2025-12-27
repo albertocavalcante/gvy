@@ -13,11 +13,13 @@ This workflow defines the required process for addressing PR review comments. Ev
    gh pr view <PR_NUMBER> --repo <OWNER>/<REPO>
    ```
 
-2. List unresolved review threads with IDs and comment IDs (GraphQL).
+2. List unresolved review threads with IDs and comment IDs (GraphQL). Capture `pullRequest.id` for Phase 3.
    ```bash
-   gh api graphql -f query='query {
+   gh api graphql -f query=- <<'EOF'
+   query {
      repository(owner:"<OWNER>", name:"<REPO>") {
        pullRequest(number:<PR_NUMBER>) {
+         id
          reviewThreads(first:50) {
            nodes {
              id
@@ -29,8 +31,10 @@ This workflow defines the required process for addressing PR review comments. Ev
          }
        }
      }
-   }'
+   }
+   EOF
    ```
+   NOTE: If the PR has more than 50 threads or 10 comments per thread, increase `first:` or paginate.
 
 ## Phase 2: Address Comments (TDD Required)
 
@@ -49,22 +53,26 @@ For each review thread you fixed:
 
 1. Reply to the specific comment with the commit that fixes it.
    ```bash
-   gh api graphql -f query='mutation {
+   gh api graphql -f query=- <<'EOF'
+   mutation {
      addPullRequestReviewComment(input:{
        pullRequestId:"<PR_NODE_ID>",
        inReplyTo:"<COMMENT_NODE_ID>",
        body:"Fixed in <COMMIT_SHA>."
      }) { comment { id } }
-   }'
+   }
+   EOF
    ```
 
 2. Resolve the thread.
    ```bash
-   gh api graphql -f query='mutation {
+   gh api graphql -f query=- <<'EOF'
+   mutation {
      resolveReviewThread(input:{threadId:"<THREAD_NODE_ID>"}) {
        thread { isResolved }
      }
-   }'
+   }
+   EOF
    ```
 
 ## Phase 4: Verify
@@ -76,13 +84,15 @@ For each review thread you fixed:
 
 2. Re-check unresolved threads.
    ```bash
-   gh api graphql -f query='query {
+   gh api graphql -f query=- <<'EOF'
+   query {
      repository(owner:"<OWNER>", name:"<REPO>") {
        pullRequest(number:<PR_NUMBER>) {
          reviewThreads(first:50) { nodes { id isResolved } }
        }
      }
-   }'
+   }
+   EOF
    ```
 
 ## Expected Behavior
