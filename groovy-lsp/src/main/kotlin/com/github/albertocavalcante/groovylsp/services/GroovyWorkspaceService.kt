@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
 import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
+import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import kotlinx.coroutines.CoroutineScope
@@ -178,11 +179,16 @@ class GroovyWorkspaceService(
         val dependencies = compilationService.workspaceManager.getDependencyClasspath()
         val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
         compilationService.updateGroovyVersion(info)
-        selectWorker(info)
+        selectWorker(info, config)
     }
 
-    private fun selectWorker(info: GroovyVersionInfo, requiredFeatures: Set<WorkerFeature> = emptySet()) {
-        val selected = workerRouter.select(info, requiredFeatures)
+    private fun selectWorker(
+        info: GroovyVersionInfo,
+        config: ServerConfiguration,
+        requiredFeatures: Set<WorkerFeature> = emptySet(),
+    ) {
+        val router = resolveWorkerRouter(config)
+        val selected = router.select(info, requiredFeatures)
         val changed = compilationService.updateSelectedWorker(selected)
         if (changed) {
             val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
@@ -195,6 +201,13 @@ class GroovyWorkspaceService(
                 compilationService.indexAllWorkspaceSources(sourceUris)
             }
         }
+    }
+
+    private fun resolveWorkerRouter(config: ServerConfiguration): WorkerRouter {
+        if (config.workerDescriptors.isEmpty()) {
+            return workerRouter
+        }
+        return WorkerRouterFactory.fromConfig(config)
     }
 
     override fun symbol(

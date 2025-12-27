@@ -19,6 +19,7 @@ data class ServerConfiguration(
     val replEnabled: Boolean = true,
     val maxReplSessions: Int = 10,
     val replSessionTimeoutMinutes: Int = 60,
+    val workerDescriptors: List<WorkerDescriptorConfig> = emptyList(),
 
     // CodeNarc configuration
     val codeNarcEnabled: Boolean = true,
@@ -91,6 +92,7 @@ data class ServerConfiguration(
                     replEnabled = (map["groovy.repl.enabled"] as? Boolean) ?: true,
                     maxReplSessions = (map["groovy.repl.maxSessions"] as? Number)?.toInt() ?: 10,
                     replSessionTimeoutMinutes = (map["groovy.repl.sessionTimeoutMinutes"] as? Number)?.toInt() ?: 60,
+                    workerDescriptors = parseWorkerDescriptors(map),
 
                     // CodeNarc configuration
                     codeNarcEnabled = (map["groovy.codenarc.enabled"] as? Boolean) ?: true,
@@ -122,6 +124,38 @@ data class ServerConfiguration(
                     CompilationMode.WORKSPACE
                 }
             }
+        }
+
+        private fun parseWorkerDescriptors(map: Map<String, Any>): List<WorkerDescriptorConfig> {
+            val rawWorkers = map["groovy.workers"] as? List<*> ?: return emptyList()
+            return rawWorkers.mapNotNull { entry ->
+                val entryMap = entry as? Map<*, *> ?: run {
+                    logger.warn("Invalid worker descriptor entry: expected map, got {}", entry?.javaClass?.simpleName)
+                    return@mapNotNull null
+                }
+                val id = entryMap["id"] as? String
+                val minVersion = entryMap["minVersion"] as? String
+                if (id.isNullOrBlank() || minVersion.isNullOrBlank()) {
+                    logger.warn("Invalid worker descriptor entry: missing id or minVersion")
+                    return@mapNotNull null
+                }
+                val maxVersion = entryMap["maxVersion"] as? String
+                val features = parseWorkerFeatures(entryMap["features"])
+                val connector = entryMap["connector"] as? String ?: "in-process"
+                WorkerDescriptorConfig(
+                    id = id,
+                    minVersion = minVersion,
+                    maxVersion = maxVersion,
+                    features = features,
+                    connector = connector,
+                )
+            }
+        }
+
+        private fun parseWorkerFeatures(raw: Any?): Set<String> = when (raw) {
+            is List<*> -> raw.filterIsInstance<String>().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            is String -> raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            else -> emptySet()
         }
 
         private fun parseTraceLevel(map: Map<String, Any>): TraceLevel {

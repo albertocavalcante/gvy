@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
 import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
+import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -269,12 +270,24 @@ class ProjectStartupManager(
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
         val info = groovyVersionResolver.resolve(dependencies, config.groovyLanguageVersion)
         compilationService.updateGroovyVersion(info)
-        selectWorker(info)
+        selectWorker(info, config)
     }
 
-    internal fun selectWorker(info: GroovyVersionInfo, requiredFeatures: Set<WorkerFeature> = emptySet()) {
-        val selected = workerRouter.select(info, requiredFeatures)
+    internal fun selectWorker(
+        info: GroovyVersionInfo,
+        config: ServerConfiguration,
+        requiredFeatures: Set<WorkerFeature> = emptySet(),
+    ) {
+        val router = resolveWorkerRouter(config)
+        val selected = router.select(info, requiredFeatures)
         compilationService.updateSelectedWorker(selected)
+    }
+
+    private fun resolveWorkerRouter(config: ServerConfiguration): WorkerRouter {
+        if (config.workerDescriptors.isEmpty()) {
+            return workerRouter
+        }
+        return WorkerRouterFactory.fromConfig(config)
     }
 
     private fun startWorkspaceIndexing(client: LanguageClient?) {
