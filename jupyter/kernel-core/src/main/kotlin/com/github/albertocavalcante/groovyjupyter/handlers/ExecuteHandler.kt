@@ -113,7 +113,7 @@ class ExecuteHandler(
                 val errorContent = mapOf(
                     "ename" to (result.errorName ?: "Error"),
                     "evalue" to (result.errorValue ?: ""),
-                    "traceback" to (result.traceback ?: emptyList<String>()),
+                    "traceback" to result.traceback,
                 )
                 val errorMsg = request.createReply(MessageType.ERROR).apply {
                     content = errorContent
@@ -126,7 +126,7 @@ class ExecuteHandler(
                     "execution_count" to executionCount,
                     "ename" to (result.errorName ?: "Error"),
                     "evalue" to (result.errorValue ?: ""),
-                    "traceback" to (result.traceback ?: emptyList<String>()),
+                    "traceback" to result.traceback,
                 )
                 val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
                     content = replyContent

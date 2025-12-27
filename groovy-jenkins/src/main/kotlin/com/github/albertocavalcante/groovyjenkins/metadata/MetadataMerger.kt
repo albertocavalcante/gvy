@@ -23,7 +23,7 @@ object MetadataMerger {
     private val stepMetadataSemigroup: Semigroup<JenkinsStepMetadata> = Semigroup { a, b ->
         // b overrides a, but we merge parameters
         a.copy(
-            plugin = b.plugin ?: a.plugin,
+            plugin = b.plugin,
             documentation = b.documentation ?: a.documentation,
             parameters = a.parameters + b.parameters, // Right overrides Left keys
         )

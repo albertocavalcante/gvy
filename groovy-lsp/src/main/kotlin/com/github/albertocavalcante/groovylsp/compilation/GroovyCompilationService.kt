@@ -342,15 +342,10 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         )
 
         val astModel = parseResult.astModel
-        if (astModel != null) {
-            val index = SymbolIndex().buildFromVisitor(astModel)
-            symbolStorageCache.put(uri, index)
-            logger.debug("Indexed workspace file: $uri")
-            index
-        } else {
-            logger.debug("Failed to build AST model for indexing: $uri")
-            null
-        }
+        val index = SymbolIndex().buildFromVisitor(astModel)
+        symbolStorageCache.put(uri, index)
+        logger.debug("Indexed workspace file: $uri")
+        index
     } catch (e: Exception) {
         logger.warn("Failed to index workspace file: $uri", e)
         null
