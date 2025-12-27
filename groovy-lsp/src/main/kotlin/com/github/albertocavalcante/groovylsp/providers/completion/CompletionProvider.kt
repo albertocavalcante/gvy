@@ -666,7 +666,6 @@ object CompletionProvider {
         builder: CompletionsBuilder,
     ) {
         val gdkMethods = compilationService.gdkProvider.getMethodsForType(className)
-        // logger.debug("Found {} GDK methods for type {}", gdkMethods.size, className)
 
         gdkMethods.forEach { gdkMethod ->
             builder.method(
@@ -701,7 +700,6 @@ object CompletionProvider {
         builder: CompletionsBuilder,
     ) {
         val classpathMethods = compilationService.classpathService.getMethods(className)
-        // logger.debug("Found {} classpath methods for type {}", classpathMethods.size, className)
 
         classpathMethods.forEach { method ->
             // Only add public instance methods
