@@ -4,6 +4,7 @@ import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
@@ -275,6 +276,35 @@ class DiagnosticsServiceTest {
         // For now, we verify the service doesn't crash and returns empty list
     }
 
+    @Test
+    fun `propagates CancellationException when coroutine is cancelled`() = runBlocking {
+        // Given: A slow provider that we can cancel mid-execution
+        val slowProvider = TestStreamingDiagnosticProvider(
+            id = "slow-provider",
+            diagnosticsToEmit = listOf(createTestDiagnostic("Will never emit", 1)),
+            delayBeforeEmit = 1000, // 1 second delay
+        )
+
+        val service = DiagnosticsService(
+            providers = listOf(slowProvider),
+            config = DiagnosticConfig(),
+        )
+
+        // When: We cancel the coroutine mid-execution using withTimeout
+        val exception = kotlin.runCatching {
+            kotlinx.coroutines.withTimeout(50) {
+                // Cancel after 50ms
+                service.getDiagnostics(testUri, "test content")
+            }
+        }.exceptionOrNull()
+
+        // Then: Verify that cancellation exception was thrown
+        assertTrue(
+            exception is kotlinx.coroutines.TimeoutCancellationException,
+            "Timeout should cause CancellationException, got: ${exception?.javaClass?.simpleName}",
+        )
+    }
+
     // ==================== Integration Tests ====================
 
     @Test
@@ -355,10 +385,15 @@ class DiagnosticsServiceTest {
         private val diagnosticsToEmit: List<Diagnostic> = emptyList(),
         private val shouldFail: Boolean = false,
         private val shouldFailAfterEmitting: Boolean = false,
+        private val delayBeforeEmit: Long = 0,
     ) : StreamingDiagnosticProvider {
         override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
             if (shouldFail) {
                 throw RuntimeException("Provider $id failed")
+            }
+
+            if (delayBeforeEmit > 0) {
+                kotlinx.coroutines.delay(delayBeforeEmit)
             }
 
             diagnosticsToEmit.forEach { emit(it) }

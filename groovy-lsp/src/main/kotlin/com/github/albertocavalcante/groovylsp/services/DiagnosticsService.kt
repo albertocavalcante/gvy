@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
@@ -39,8 +40,10 @@ class DiagnosticsService(
      * NOTE: Uses flatMapMerge for concurrent provider execution. This is a performance
      * optimization that allows multiple slow providers (like CodeNarc) to run in parallel.
      *
-     * TODO: Add performance metrics to track per-provider execution time
-     * TODO: Consider adding timeout per provider to prevent hanging
+     * TODO(#454): Add performance metrics to track per-provider execution time.
+     *   See: https://github.com/albertocavalcante/groovy-lsp/issues/454
+     * TODO(#455): Consider adding timeout per provider to prevent hanging.
+     *   See: https://github.com/albertocavalcante/groovy-lsp/issues/455
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun getDiagnostics(uri: URI, content: String): List<Diagnostic> = withContext(Dispatchers.IO) {
@@ -75,14 +78,20 @@ class DiagnosticsService(
                             val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
                             logger.debug("Provider {} completed in {}ms", provider.id, elapsedMs)
                         } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                             // NOTE: Error isolation - one provider failure doesn't stop others
-                            // TODO: Consider publishing provider-specific error diagnostics
+                            // TODO(#456): Consider publishing provider-specific error diagnostics.
+                            //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
                             logger.error("Provider {} failed for {}: {}", provider.id, uri, e.message, e)
                             // Don't re-throw - continue with other providers
                         }
                     }
                 }
                 .toList()
+        } catch (e: CancellationException) {
+            // Job cancellation is expected during rapid document edits (debouncing)
+            logger.debug("Diagnostic collection cancelled for {}", uri)
+            throw e // Re-throw to preserve cancellation
         } catch (e: Exception) {
             // NOTE: This should rarely happen due to per-provider error handling above
             logger.error("Unexpected error during diagnostic collection for {}", uri, e)
