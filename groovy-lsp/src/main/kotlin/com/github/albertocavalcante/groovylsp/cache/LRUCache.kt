@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cache
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.LinkedHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -18,62 +17,31 @@ import kotlin.concurrent.write
  * @param maxSize Maximum number of entries to keep in cache
  */
 class LRUCache<K, V>(private val maxSize: Int) {
-
-    private data class CacheEntry<K, V>(val key: K, var value: V, var accessTime: Long = System.nanoTime())
-
-    private val cache = ConcurrentHashMap<K, CacheEntry<K, V>>()
-    private val accessOrder = ConcurrentLinkedQueue<K>()
     private val lock = ReentrantReadWriteLock()
+    private val cache =
+        object : LinkedHashMap<K, V>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>): Boolean = size > maxSize
+        }
 
     /**
-     * Get value from cache, updating access time
+     * Get value from cache, updating access order.
      */
-    fun get(key: K): V? = lock.read {
-        cache[key]?.let { entry ->
-            entry.accessTime = System.nanoTime()
-            // Move to end of access queue (most recently used)
-            accessOrder.remove(key)
-            accessOrder.offer(key)
-            entry.value
-        }
-    }
+    fun get(key: K): V? = lock.write { cache[key] }
 
     /**
      * Put value in cache, evicting old entries if necessary
      */
-    fun put(key: K, value: V): V? = lock.write {
-        val existing = cache[key]
-        val entry = CacheEntry(key, value)
-
-        cache[key] = entry
-
-        if (existing == null) {
-            accessOrder.offer(key)
-            evictIfNecessary()
-        } else {
-            // Update existing entry position in access order
-            accessOrder.remove(key)
-            accessOrder.offer(key)
-        }
-
-        existing?.value
-    }
+    fun put(key: K, value: V): V? = lock.write { cache.put(key, value) }
 
     /**
      * Remove entry from cache
      */
-    fun remove(key: K): V? = lock.write {
-        accessOrder.remove(key)
-        cache.remove(key)?.value
-    }
+    fun remove(key: K): V? = lock.write { cache.remove(key) }
 
     /**
      * Clear all entries
      */
-    fun clear() = lock.write {
-        cache.clear()
-        accessOrder.clear()
-    }
+    fun clear() = lock.write { cache.clear() }
 
     /**
      * Get current cache size
@@ -88,27 +56,13 @@ class LRUCache<K, V>(private val maxSize: Int) {
     /**
      * Get all keys in access order (least to most recently used)
      */
-    fun keys(): List<K> = lock.read { accessOrder.toList() }
+    fun keys(): List<K> = lock.read { cache.keys.toList() }
 
     /**
      * Returns an immutable snapshot of the current cache contents.
      */
     fun snapshot(): Map<K, V> = lock.read {
-        cache.entries.associate { (key, entry) -> key to entry.value }
-    }
-
-    /**
-     * Evict least recently used entries if cache exceeds max size
-     */
-    private fun evictIfNecessary() {
-        while (cache.size > maxSize) {
-            val lruKey = accessOrder.poll()
-            if (lruKey != null) {
-                cache.remove(lruKey)
-            } else {
-                break // Queue is empty but cache isn't - shouldn't happen
-            }
-        }
+        LinkedHashMap<K, V>(cache.size).apply { putAll(cache) }
     }
 
     /**
@@ -124,3 +78,6 @@ class LRUCache<K, V>(private val maxSize: Int) {
 
     data class CacheStats(val size: Int, val maxSize: Int, val hitRate: Double)
 }
+
+private const val DEFAULT_INITIAL_CAPACITY = 16
+private const val DEFAULT_LOAD_FACTOR = 0.75f
