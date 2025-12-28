@@ -44,6 +44,8 @@ arrow = "2.2.1"
 flexmark = "0.64.8"
 bsp4j = "2.1.1"
 jeromq = "0.6.0"
+clikt = "5.0.3"
+mordant = "3.0.2"
 
 [libraries]
 # Plugins (libraries for plugins block)
@@ -129,6 +131,10 @@ maven-resolver-transport-http = { module = "org.apache.maven.resolver:maven-reso
 
 # Jupyter Kernel Protocol
 jeromq = { module = "org.zeromq:jeromq", version.ref = "jeromq" }
+
+# CLI
+clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
+mordant = { module = "com.github.ajalt.mordant:mordant", version.ref = "mordant" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
