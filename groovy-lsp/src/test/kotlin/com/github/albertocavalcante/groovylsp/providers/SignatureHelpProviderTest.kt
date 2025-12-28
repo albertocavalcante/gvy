@@ -189,11 +189,20 @@ class SignatureHelpProviderTest {
         val position = Position(0, 8)
         val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
 
-        // Should find at least one println signature from groovy.lang.Script
+        // Should find both println() and println(Object) from groovy.lang.Script
+        val labels = result.signatures.map { it.label }
+        assertEquals(
+            2,
+            result.signatures.size,
+            "Expected 2 signatures for println() GDK method, but found: $labels",
+        )
         assertTrue(
-            result.signatures.isNotEmpty(),
-            "Expected signatures for println() GDK method, but got empty. " +
-                "Signatures: ${result.signatures.map { it.label }}",
+            labels.any { it == "void println()" },
+            "Missing signature for println() without arguments. Found: $labels",
+        )
+        assertTrue(
+            labels.any { it.startsWith("void println(Object") },
+            "Missing signature for println(Object). Found: $labels",
         )
     }
 }

@@ -100,18 +100,26 @@ class SignatureHelpProvider(
     }
 
     /**
-     * Find methods from groovy.lang.Script that match the given name.
-     * Converts java.lang.reflect.Method to MethodNode for compatibility with existing code.
+     * Cache of Script methods grouped by name for efficient lookup.
+     * Initialized lazily to avoid reflection overhead until needed.
      */
-    private fun findScriptMethods(methodName: String): List<MethodNode> = try {
-        val scriptClass = groovy.lang.Script::class.java
-        scriptClass.methods
-            .filter { it.name == methodName && Modifier.isPublic(it.modifiers) }
-            .map { it.toMethodNode() }
-    } catch (e: Exception) {
-        logger.debug("Failed to resolve Script methods for {}: {}", methodName, e.message)
-        emptyList()
+    private val scriptMethodsByName by lazy {
+        try {
+            groovy.lang.Script::class.java.methods
+                .filter { Modifier.isPublic(it.modifiers) }
+                .groupBy { it.name }
+        } catch (e: Exception) {
+            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
+            emptyMap<String, List<Method>>()
+        }
     }
+
+    /**
+     * Find methods from groovy.lang.Script that match the given name.
+     * Uses cached methods for efficiency.
+     */
+    private fun findScriptMethods(methodName: String): List<MethodNode> =
+        scriptMethodsByName[methodName]?.map { it.toMethodNode() } ?: emptyList()
 
     /**
      * Convert a reflection Method to a MethodNode for signature generation.
