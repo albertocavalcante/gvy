@@ -44,7 +44,7 @@ arrow = "2.2.1"
 flexmark = "0.64.8"
 bsp4j = "2.1.1"
 jeromq = "0.6.0"
-clikt = "5.0.0"
+clikt = "5.0.3"
 mordant = "3.0.0"
 
 [libraries]

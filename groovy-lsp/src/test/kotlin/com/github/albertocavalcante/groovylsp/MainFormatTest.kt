@@ -1,7 +1,13 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.subcommands
+import com.github.albertocavalcante.groovylsp.cli.CheckCommand
+import com.github.albertocavalcante.groovylsp.cli.ExecuteCommand
 import com.github.albertocavalcante.groovylsp.cli.FormatCommand
+import com.github.albertocavalcante.groovylsp.cli.GlsCommand
+import com.github.albertocavalcante.groovylsp.cli.LspCommand
+import com.github.albertocavalcante.groovylsp.cli.VersionCommand
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -11,6 +17,22 @@ import java.io.PrintStream
 
 class MainFormatTest {
 
+    /**
+     * Helper to run a subcommand through the root GlsCommand,
+     * ensuring proper context setup (e.g., Terminal object).
+     */
+    private fun runWithContext(vararg args: String) {
+        GlsCommand()
+            .subcommands(
+                LspCommand(),
+                FormatCommand(),
+                CheckCommand(),
+                ExecuteCommand(),
+                VersionCommand(),
+            )
+            .main(args.toList())
+    }
+
     @Test
     fun `format prints formatted content for a file`() {
         val tempFile = File.createTempFile("Format", ".groovy")
@@ -18,7 +40,7 @@ class MainFormatTest {
         tempFile.deleteOnExit()
 
         val output = captureOutput {
-            FormatCommand().main(listOf(tempFile.absolutePath))
+            runWithContext("format", tempFile.absolutePath)
         }
 
         assertTrue(output.contains("class A"), "Expected formatted output to include class declaration, got: $output")
@@ -28,7 +50,7 @@ class MainFormatTest {
     fun `format throws for missing files`() {
         // Clikt will throw an exception for non-existent files when mustExist = true
         assertThrows<com.github.ajalt.clikt.core.BadParameterValue> {
-            FormatCommand().main(listOf("does-not-exist.groovy"))
+            runWithContext("format", "does-not-exist.groovy")
         }
     }
 

@@ -17,10 +17,26 @@ import java.io.PrintStream
 
 class MainTest {
 
+    /**
+     * Helper to run a subcommand through the root GlsCommand,
+     * ensuring proper context setup (e.g., Terminal object).
+     */
+    private fun runWithContext(vararg args: String) {
+        GlsCommand()
+            .subcommands(
+                LspCommand(),
+                FormatCommand(),
+                CheckCommand(),
+                ExecuteCommand(),
+                VersionCommand(),
+            )
+            .main(args.toList())
+    }
+
     @Test
     fun `test version command outputs version string`() {
         val output = captureOutput {
-            VersionCommand().main(emptyList())
+            runWithContext("version")
         }
         assertTrue(output.contains("gls") && output.contains("version"))
     }
@@ -50,7 +66,7 @@ class MainTest {
         tempFile.writeText("class Test { void foo() { println 'bar' } }")
 
         val output = captureOutput {
-            FormatCommand().main(listOf(tempFile.absolutePath))
+            runWithContext("format", tempFile.absolutePath)
         }
 
         // The formatter should produce some output (the formatted file content)
@@ -63,7 +79,7 @@ class MainTest {
         tempFile.writeText("class Test { void foo() { println 'bar' } }")
 
         val output = captureOutput {
-            CheckCommand().main(listOf(tempFile.absolutePath))
+            runWithContext("check", tempFile.absolutePath)
         }
 
         // Valid file should produce "OK" output
@@ -76,7 +92,7 @@ class MainTest {
         errorFile.writeText("class Error { void foo() { println 'bar' ") // Missing closing braces
 
         val output = captureOutput {
-            CheckCommand().main(listOf(errorFile.absolutePath))
+            runWithContext("check", errorFile.absolutePath)
         }
 
         // The check command should output the error file path or an ERROR severity
@@ -89,7 +105,7 @@ class MainTest {
     @Test
     fun `test execute command runs groovy version`() {
         val output = captureOutput {
-            ExecuteCommand().main(listOf("groovy.version"))
+            runWithContext("execute", "groovy.version")
         }
 
         // Should output something containing version info
