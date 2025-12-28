@@ -22,6 +22,27 @@ import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
+/**
+ * Creates a minimal CompilationContext for unit testing.
+ * Shared by all type resolution test classes in this file.
+ */
+private fun createTestContext(): CompilationContext {
+    val config = CompilerConfiguration()
+    val classLoader = GroovyClassLoader()
+    val compilationUnit = CompilationUnit(config, null, classLoader)
+    val source = StringReaderSource("// test", config)
+    val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
+    val moduleNode = ModuleNode(sourceUnit)
+    val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
+
+    return CompilationContext(
+        uri = URI.create("file:///test.groovy"),
+        moduleNode = moduleNode,
+        astModel = astVisitor,
+        workspaceRoot = null,
+    )
+}
+
 class GroovyTypeResolverTest {
 
     private lateinit var typeResolver: GroovyTypeResolver
@@ -36,10 +57,10 @@ class GroovyTypeResolverTest {
         // Given
         val intType = ClassHelper.int_TYPE
         val field = FieldNode("testField", 0, intType, null, null)
-        val dummyContext = createMinimalContext()
+        val context = createTestContext()
 
         // When
-        val result = typeResolver.resolveType(field, dummyContext)
+        val result = typeResolver.resolveType(field, context)
 
         // Then
         assertEquals(intType, result)
@@ -50,10 +71,10 @@ class GroovyTypeResolverTest {
         // Given
         val booleanType = ClassHelper.boolean_TYPE
         val method = MethodNode("testMethod", 0, booleanType, emptyArray(), emptyArray(), null)
-        val dummyContext = createMinimalContext()
+        val context = createTestContext()
 
         // When
-        val result = typeResolver.resolveType(method, dummyContext)
+        val result = typeResolver.resolveType(method, context)
 
         // Then
         assertEquals(booleanType, result)
@@ -64,10 +85,10 @@ class GroovyTypeResolverTest {
         // Given
         val doubleType = ClassHelper.double_TYPE
         val parameter = Parameter(doubleType, "param")
-        val dummyContext = createMinimalContext()
+        val context = createTestContext()
 
         // When
-        val result = typeResolver.resolveType(parameter, dummyContext)
+        val result = typeResolver.resolveType(parameter, context)
 
         // Then
         assertEquals(doubleType, result)
@@ -77,32 +98,13 @@ class GroovyTypeResolverTest {
     fun `resolveClassLocation for primitive type returns null`() = runTest {
         // Given
         val primitiveType = ClassHelper.int_TYPE
-        val dummyContext = createMinimalContext()
+        val context = createTestContext()
 
         // When
-        val result = typeResolver.resolveClassLocation(primitiveType, dummyContext)
+        val result = typeResolver.resolveClassLocation(primitiveType, context)
 
         // Then
         assertNull(result)
-    }
-
-    private fun createMinimalContext(): CompilationContext {
-        // Create a minimal context for testing - we can't easily mock everything
-        val config = CompilerConfiguration()
-        val classLoader = GroovyClassLoader()
-        val compilationUnit = CompilationUnit(config, null, classLoader)
-        val source = StringReaderSource("// test", config)
-        val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
-        val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
-
-        return CompilationContext(
-            uri = URI.create("file:///test.groovy"),
-            moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
-            astModel = astVisitor,
-            workspaceRoot = null,
-        )
     }
 }
 
@@ -141,10 +143,10 @@ class GroovyTypeCalculatorTest {
         typeCalculator.register(highPriorityCalculator)
 
         val expression = VariableExpression("test") // Use real expression
-        val dummyContext = createDummyContext()
+        val context = createTestContext()
 
         // When
-        val result = typeCalculator.calculateType(expression, dummyContext)
+        val result = typeCalculator.calculateType(expression, context)
 
         // Then
         assertEquals(ClassHelper.STRING_TYPE, result) // High priority calculator should win
@@ -162,31 +164,13 @@ class GroovyTypeCalculatorTest {
 
         typeCalculator.register(calculator)
         val expression = VariableExpression("test")
-        val dummyContext = createDummyContext()
+        val context = createTestContext()
 
         // When
-        val result = typeCalculator.calculateType(expression, dummyContext)
+        val result = typeCalculator.calculateType(expression, context)
 
         // Then
         assertNull(result)
-    }
-
-    private fun createDummyContext(): CompilationContext {
-        val config = CompilerConfiguration()
-        val classLoader = GroovyClassLoader()
-        val compilationUnit = CompilationUnit(config, null, classLoader)
-        val source = StringReaderSource("// test", config)
-        val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
-        val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
-
-        return CompilationContext(
-            uri = URI.create("file:///test.groovy"),
-            moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
-            astModel = astVisitor,
-            workspaceRoot = null,
-        )
     }
 }
 
@@ -208,10 +192,10 @@ class DefaultTypeCalculatorTest {
         val expression = VariableExpression("test")
         val stringType = ClassHelper.STRING_TYPE
         expression.type = stringType
-        val dummyContext = createDummyContext()
+        val context = createTestContext()
 
         // When
-        val result = calculator.calculateType(expression, dummyContext)
+        val result = calculator.calculateType(expression, context)
 
         // Then
         assertEquals(stringType, result)
@@ -222,30 +206,12 @@ class DefaultTypeCalculatorTest {
         // Given
         val expression = VariableExpression("test")
         // expression.type is null by default
-        val dummyContext = createDummyContext()
+        val context = createTestContext()
 
         // When
-        val result = calculator.calculateType(expression, dummyContext)
+        val result = calculator.calculateType(expression, context)
 
         // Then
         assertNull(result)
-    }
-
-    private fun createDummyContext(): CompilationContext {
-        val config = CompilerConfiguration()
-        val classLoader = GroovyClassLoader()
-        val compilationUnit = CompilationUnit(config, null, classLoader)
-        val source = StringReaderSource("// test", config)
-        val sourceUnit = SourceUnit("test.groovy", source, config, classLoader, compilationUnit.errorCollector)
-        val moduleNode = ModuleNode(sourceUnit)
-        val astVisitor = RecursiveAstVisitor(NodeRelationshipTracker())
-
-        return CompilationContext(
-            uri = URI.create("file:///test.groovy"),
-            moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
-            astModel = astVisitor,
-            workspaceRoot = null,
-        )
     }
 }

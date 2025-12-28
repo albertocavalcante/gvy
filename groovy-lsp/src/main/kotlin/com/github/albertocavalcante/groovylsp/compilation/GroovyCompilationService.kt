@@ -560,7 +560,6 @@ class GroovyCompilationService(
         return CompilationContext(
             uri = uri,
             moduleNode = ast,
-            compilationUnit = parseResult.compilationUnit,
             astModel = parseResult.astModel,
             workspaceRoot = workspaceManager.getWorkspaceRoot(),
             classpath = workspaceManager.getDependencyClasspath(),

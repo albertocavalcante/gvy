@@ -307,7 +307,6 @@ class TypeDefinitionIntegrationTest {
             return CompilationContext(
                 uri = uri,
                 moduleNode = module,
-                compilationUnit = compilationUnit,
                 astModel = astModel,
                 workspaceRoot = null,
             )
@@ -321,7 +320,6 @@ class TypeDefinitionIntegrationTest {
             return CompilationContext(
                 uri = uri,
                 moduleNode = module,
-                compilationUnit = compilationUnit,
                 astModel = astModel,
                 workspaceRoot = null,
             )
