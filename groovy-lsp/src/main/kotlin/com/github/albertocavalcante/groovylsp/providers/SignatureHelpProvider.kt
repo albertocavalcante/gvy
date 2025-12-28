@@ -195,7 +195,6 @@ class SignatureHelpProvider(
         }.toMutableList()
 
         return SignatureInformation().apply {
-            // Format: "returnType methodName(params)" matching Metals/IDE convention
             label = buildString {
                 append(returnType.nameWithoutPackage)
                 append(" ")
