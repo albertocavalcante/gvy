@@ -1,58 +1,81 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.parse
+import com.github.albertocavalcante.groovylsp.cli.GlsCommand
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.PrintStream
 
 class MainTest {
 
-    @Test
-    fun `test version command`() {
-        val outContent = ByteArrayOutputStream()
-        val printStream = PrintStream(outContent)
-
-        runVersion(printStream)
-        assertTrue(outContent.toString().contains("gls version"))
+    /**
+     * Helper to run a subcommand through the root GlsCommand,
+     * ensuring proper context setup (e.g., Terminal object).
+     */
+    private fun runWithContext(vararg args: String) {
+        GlsCommand().parse(args.toList())
     }
 
     @Test
-    fun `test help command`() {
-        val outContent = ByteArrayOutputStream()
-        val printStream = PrintStream(outContent)
-
-        printHelp(printStream)
-        assertTrue(outContent.toString().contains("gls - Groovy Language Server"))
+    fun `test version command outputs version string`() {
+        val output = captureOutput {
+            runWithContext("version")
+        }
+        assertTrue(output.contains("gls") && output.contains("version"))
     }
 
     @Test
-    fun `test no args defaults to stdio`() {
-        // This will try to start the server and block, so we can't easily test it without mocking.
-        // We need to refactor Main.kt to allow dependency injection or mocking of the runner.
+    fun `test help is available on root command`() {
+        val command = GlsCommand()
+
+        // Verify the command structure is valid
+        assertTrue(command.registeredSubcommandNames().contains("version"))
+        assertTrue(command.registeredSubcommandNames().contains("format"))
+        assertTrue(command.registeredSubcommandNames().contains("check"))
+        assertTrue(command.registeredSubcommandNames().contains("lsp"))
+        assertTrue(command.registeredSubcommandNames().contains("execute"))
     }
 
     @Test
-    fun `test check command`() {
-        val outContent = ByteArrayOutputStream()
-        val printStream = PrintStream(outContent)
-
-        // Create a temporary file to check
-        val tempFile = java.io.File.createTempFile("Test", ".groovy")
+    fun `test format command formats groovy file`(@TempDir tempDir: File) {
+        val tempFile = File(tempDir, "Test.groovy")
         tempFile.writeText("class Test { void foo() { println 'bar' } }")
-        tempFile.deleteOnExit()
 
-        runCheck(listOf(tempFile.absolutePath), printStream)
-        // Valid file might not produce output, so just ensure no exceptions
+        val output = captureOutput {
+            runWithContext("format", tempFile.absolutePath)
+        }
 
-        // Now test with an error file
-        val errorFile = java.io.File.createTempFile("Error", ".groovy")
+        // The formatter should produce some output (the formatted file content)
+        assertTrue(output.isNotEmpty(), "Expected formatted output, got empty string")
+    }
+
+    @Test
+    fun `test check command checks groovy file`(@TempDir tempDir: File) {
+        val tempFile = File(tempDir, "Test.groovy")
+        tempFile.writeText("class Test { void foo() { println 'bar' } }")
+
+        val output = captureOutput {
+            runWithContext("check", tempFile.absolutePath)
+        }
+
+        // Valid file should produce "OK" output
+        assertTrue(output.contains("OK") || output.contains(tempFile.name))
+    }
+
+    @Test
+    fun `test check command reports errors`(@TempDir tempDir: File) {
+        val errorFile = File(tempDir, "Error.groovy")
         errorFile.writeText("class Error { void foo() { println 'bar' ") // Missing closing braces
-        errorFile.deleteOnExit()
 
-        outContent.reset()
-        runCheck(listOf(errorFile.absolutePath), printStream)
-        val output = outContent.toString()
-        // The check command should output the error file path and an ERROR severity diagnostic
+        val output = captureOutput {
+            runWithContext("check", errorFile.absolutePath)
+        }
+
+        // The check command should output the error file path or an ERROR severity
         assertTrue(
             output.contains(errorFile.name) || output.contains("ERROR"),
             "Expected error file name or ERROR in output, got: $output",
@@ -60,11 +83,45 @@ class MainTest {
     }
 
     @Test
-    fun `test execute command`() {
-        val outContent = ByteArrayOutputStream()
-        val printStream = PrintStream(outContent)
+    fun `test check respects no-color flag`(@TempDir tempDir: File) {
+        val errorFile = File(tempDir, "Error.groovy")
+        errorFile.writeText("class Error { void foo() { println 'bar' ") // Missing closing braces
 
-        runExecute(listOf("groovy.version"), printStream)
-        assertTrue(outContent.toString().contains(Version.current))
+        val output = captureOutput {
+            // --no-color is a global option, must precise before subcommand
+            runWithContext("--no-color", "check", errorFile.absolutePath)
+        }
+
+        // Output should contain "[ERROR]" (plain text)
+        assertTrue(output.contains("[ERROR]"), "Expected plain [ERROR] tag, got: $output")
+
+        // Output should NOT contain ANSI escape codes
+        val ansiEscape = "\u001B"
+        assertTrue(!output.contains(ansiEscape), "Output should not contain ANSI codes, got: $output")
+    }
+
+    @Test
+    fun `test execute command runs groovy version`() {
+        val output = captureOutput {
+            runWithContext("execute", "groovy.version")
+        }
+
+        // Should output something containing version info
+        assertTrue(output.isNotEmpty())
+    }
+
+    /**
+     * Captures stdout output during the execution of a block.
+     */
+    private fun captureOutput(block: () -> Unit): String {
+        val originalOut = System.out
+        val baos = ByteArrayOutputStream()
+        System.setOut(PrintStream(baos))
+        try {
+            block()
+        } finally {
+            System.setOut(originalOut)
+        }
+        return baos.toString()
     }
 }

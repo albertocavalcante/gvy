@@ -4,7 +4,6 @@ import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking

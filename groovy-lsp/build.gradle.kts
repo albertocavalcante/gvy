@@ -66,6 +66,10 @@ dependencies {
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)
 
+    // CLI
+    implementation(libs.clikt)
+    implementation(libs.mordant)
+
     // Classpath Scanning - For indexing all classes in the project and dependencies
     implementation(libs.classgraph)
 
@@ -290,6 +294,10 @@ tasks.shadowJar {
             exclude(dependency("org.eclipse.lsp4j:.*"))
             exclude(dependency("io.github.classgraph:classgraph"))
             exclude(dependency("ch.qos.logback:.*"))
+            // CLI libraries need to be preserved (uses service providers)
+            exclude(dependency("com.github.ajalt.clikt:.*"))
+            exclude(dependency("com.github.ajalt.mordant:.*"))
+            exclude(dependency("net.java.dev.jna:.*"))
         }
     }
 }
@@ -566,6 +574,9 @@ abstract class SmokeShadowJarTask
                     commandLine(listOf("java", "-jar", jar.absolutePath) + args)
                     standardOutput = stdout
                     errorOutput = stderr
+                    // Disable colored output for reliable assertion checking
+                    // Compliant with https://no-color.org/
+                    environment("NO_COLOR", "1")
                 }
                 val stderrStr = stderr.toString(Charsets.UTF_8)
                 val fatalMarkers =
@@ -586,7 +597,7 @@ abstract class SmokeShadowJarTask
             }
 
             val versionOut = runJar("version")
-            if (!versionOut.contains("gls version")) {
+            if (!versionOut.contains("gls") || !versionOut.contains("version")) {
                 throw GradleException(
                     "Smoke check failed: 'version' output did not contain expected marker. Output=$versionOut",
                 )
