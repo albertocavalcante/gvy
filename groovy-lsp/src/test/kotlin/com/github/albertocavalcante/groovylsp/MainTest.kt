@@ -83,6 +83,24 @@ class MainTest {
     }
 
     @Test
+    fun `test check respects no-color flag`(@TempDir tempDir: File) {
+        val errorFile = File(tempDir, "Error.groovy")
+        errorFile.writeText("class Error { void foo() { println 'bar' ") // Missing closing braces
+
+        val output = captureOutput {
+            // --no-color is a global option, must precise before subcommand
+            runWithContext("--no-color", "check", errorFile.absolutePath)
+        }
+
+        // Output should contain "[ERROR]" (plain text)
+        assertTrue(output.contains("[ERROR]"), "Expected plain [ERROR] tag, got: $output")
+
+        // Output should NOT contain ANSI escape codes
+        val ansiEscape = "\u001B"
+        assertTrue(!output.contains(ansiEscape), "Output should not contain ANSI codes, got: $output")
+    }
+
+    @Test
     fun `test execute command runs groovy version`() {
         val output = captureOutput {
             runWithContext("execute", "groovy.version")
