@@ -167,7 +167,9 @@ function findLocalGroovyLspJar() {
         const jarFiles = fs
           .readdirSync(searchPath)
           .filter(
-            (file) => file.endsWith(".jar") && file.includes("groovy-lsp"),
+            (file) =>
+              file.endsWith(".jar") &&
+              (file.includes("groovy-lsp") || file.startsWith("gls-")),
           )
           .sort(); // Sort to get consistent results
 
