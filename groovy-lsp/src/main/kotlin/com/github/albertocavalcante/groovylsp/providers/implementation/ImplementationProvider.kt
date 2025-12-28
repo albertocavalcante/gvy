@@ -211,10 +211,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
      * Check if a class implements a specific interface.
      */
     private fun implementsInterface(classSymbol: Symbol.Class, targetInterface: ClassNode): Boolean {
-        // Direct interface check
+        // Direct interface check using fully qualified name
         return classSymbol.interfaces.any { iface ->
-            iface.name == targetInterface.name ||
-                iface.nameWithoutPackage == targetInterface.nameWithoutPackage
+            iface.name == targetInterface.name
         }
 
         // TODO(#413): Add transitive interface checking
@@ -230,12 +229,10 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
             return implementsInterface(classSymbol, ownerClass)
         }
 
-        // Check if extends abstract class
+        // Check if extends abstract class using fully qualified name
         val superClass = classSymbol.superClass
         if (superClass != null) {
-            if (superClass.name == ownerClass.name ||
-                superClass.nameWithoutPackage == ownerClass.nameWithoutPackage
-            ) {
+            if (superClass.name == ownerClass.name) {
                 return true
             }
         }
@@ -270,16 +267,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
     }
 
     /**
-     * Check if two type names match (handles FQN vs simple name).
+     * Check if two type names match using fully qualified names.
      */
-    private fun typesMatch(type1: String, type2: String): Boolean {
-        if (type1 == type2) return true
-
-        // Try simple name comparison
-        val simple1 = type1.substringAfterLast('.')
-        val simple2 = type2.substringAfterLast('.')
-        return simple1 == simple2
-    }
+    private fun typesMatch(type1: String, type2: String): Boolean = type1 == type2
 
     /**
      * Emit a location if not already emitted.
