@@ -177,6 +177,15 @@ class SignatureHelpProvider(
             }
     }
 
+    // TODO(#466): Add documentation support for signatures
+    //   - Needs GroovyDoc parser integration or AST GroovyDoc nodes
+    //   - See SIGNATURE.md for implementation details
+
+    // TODO(#466): Use offset-based RangeLabel for parameter highlighting
+    //   - This allows editors to highlight the exact parameter range in the signature label
+    //   - Requires tracking character offsets while building the label string
+    //   - See SIGNATURE.md for implementation details
+
     private fun MethodNode.toSignatureInformation(): SignatureInformation {
         val methodParameters = parameters
         val parametersInfo = methodParameters.map { parameter ->
