@@ -229,10 +229,16 @@ class SignatureHelpProvider(
     // --- Converters ---
 
     private fun MethodNode.toSignatureInformation(): SignatureInformation {
+        // NOTE: Heuristic - We display all array parameters as `Type[]` instead of trying to
+        // detect varargs (`Type...`). This is because Groovy's MethodNode doesn't expose a
+        // reliable `isVargsMethod()` flag, and incorrectly guessing would show `String[]` as
+        // `String...` which is misleading. The trade-off is that true varargs methods will
+        // display as `Type[]` instead of `Type...`, but this is semantically correct and
+        // avoids user confusion.
         val paramsInfo = parameters.map { param ->
             val typeName = when {
                 param.isDynamicTyped -> "def"
-                param.type.isArray() -> param.type.componentType.nameWithoutPackage + "..."
+                param.type.isArray() -> param.type.componentType.nameWithoutPackage + "[]"
                 else -> param.type.nameWithoutPackage
             }
             val defaultValue = param.initialExpression?.text?.let { " = $it" } ?: ""
