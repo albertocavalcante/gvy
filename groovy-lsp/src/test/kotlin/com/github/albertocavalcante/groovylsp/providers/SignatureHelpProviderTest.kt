@@ -42,7 +42,7 @@ class SignatureHelpProviderTest {
         assertEquals(0, result.activeParameter)
         assertEquals(1, result.signatures.size)
         val signature = result.signatures.first()
-        assertEquals("myMethod(String arg1, int arg2)", signature.label)
+        assertEquals("Object myMethod(String arg1, int arg2)", signature.label)
         val parameterLabels = signature.parameters.mapNotNull { it.label?.left }
         assertEquals(listOf("String arg1", "int arg2"), parameterLabels)
     }
@@ -172,5 +172,37 @@ class SignatureHelpProviderTest {
             }
         }
         error("Snippet '$snippet' not found in source")
+    }
+
+    @Test
+    fun `returns signatures for Script-level println GDK method`() = runTest {
+        // println() is a GDK method inherited from groovy.lang.Script
+        val uri = URI.create("file:///ScriptPrintln.groovy")
+        val source = """
+            println("hello")
+        """.trimIndent()
+
+        compile(uri, source)
+
+        // Position inside println parens: println("hello")
+        //                                       ^ char 8
+        val position = Position(0, 8)
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        // Should find both println() and println(Object) from groovy.lang.Script
+        val labels = result.signatures.map { it.label }
+        assertEquals(
+            2,
+            result.signatures.size,
+            "Expected 2 signatures for println() GDK method, but found: $labels",
+        )
+        assertTrue(
+            labels.any { it == "void println()" },
+            "Missing signature for println() without arguments. Found: $labels",
+        )
+        assertTrue(
+            labels.any { it.startsWith("void println(Object") },
+            "Missing signature for println(Object). Found: $labels",
+        )
     }
 }
