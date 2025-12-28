@@ -3,7 +3,10 @@ package com.github.albertocavalcante.groovylsp.providers
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.services.GdkExtensionMethod
+import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
 import org.codehaus.groovy.ast.ASTNode
@@ -22,8 +25,6 @@ import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
-import java.lang.reflect.Method
-import java.lang.reflect.Modifier
 import java.net.URI
 
 class SignatureHelpProvider(
@@ -45,11 +46,11 @@ class SignatureHelpProvider(
     private data class SignatureContext(
         val methodCall: MethodCallExpression,
         val nodeAtPosition: ASTNode,
-        val declarations: List<MethodNode>,
+        val signatures: List<SignatureInformation>,
         val astVisitor: GroovyAstModel,
     )
 
-    @Suppress("ReturnCount")
+    @Suppress("ReturnCount", "LongMethod", "ComplexMethod")
     private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
         val astVisitor = compilationService.getAstModel(documentUri) ?: run {
             logger.debug("No AST visitor available for {}", documentUri)
@@ -65,7 +66,6 @@ class SignatureHelpProvider(
             logger.debug("No AST node found at $position for $documentUri")
             return null
         }
-        logger.debug("Node at $position is ${nodeAtPosition.javaClass.simpleName}")
 
         val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos) ?: run {
             logger.debug("No method call expression near $position for $documentUri")
@@ -77,86 +77,110 @@ class SignatureHelpProvider(
             return null
         }
 
-        // Try local declarations first
-        var declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+        val allSignatures = mutableListOf<SignatureInformation>()
 
-        // Fallback: Try Script methods for GDK support (e.g., println)
-        if (declarations.isEmpty()) {
-            declarations = findScriptMethods(methodName)
-            if (declarations.isNotEmpty()) {
-                logger.debug("Found {} Script methods for '{}'", declarations.size, methodName)
+        // 1. Source (Local Declarations)
+        val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+        allSignatures.addAll(declarations.map { it.toSignatureInformation() })
+
+        // 2 + 3. Receiver Resolution (GDK & Classpath)
+        // Determine the type of the object the method is being called on
+        var receiverType = if (methodCall.isImplicitThis) {
+            // Implicit 'this' call (e.g. println) -> usually Script or enclosing class
+            "groovy.lang.Script"
+        } else {
+            // Explicit receiver (e.g. list.each) -> Infer type
+            val objExpr = methodCall.objectExpression
+            var type = TypeInferencer.inferExpressionType(objExpr)
+
+            // Refine type if it's Object/Dynamic and likely a variable
+            if ((type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression) {
+                val resolvedVar = symbolTable.resolveSymbol(objExpr, astVisitor)
+                if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
+                    // Infer from initializer (e.g. def list = [])
+                    resolvedVar.initialExpression?.let { init ->
+                        val inferred = TypeInferencer.inferExpressionType(init)
+                        if (inferred != "java.lang.Object") {
+                            type = inferred
+                        }
+                    }
+                }
+            }
+            type
+        }
+
+        // Sanitize type name (remove generics) for reflection/GDK lookup
+        val targetType = receiverType.substringBefore("<")
+
+        val gdkProvider = compilationService.gdkProvider
+        val classpathService = compilationService.classpathService
+
+        // 1. AST Methods (Local)
+        val astMethods: List<MethodNode> = methodCall.methodAsString?.let { name ->
+            if (methodCall.isImplicitThis) {
+                findScriptMethods(name)
+            } else {
+                emptyList()
+            }
+        } ?: emptyList()
+        allSignatures.addAll(astMethods.map { node -> node.toSignatureInformation() })
+
+        // 2. GDK Extension Methods (e.g. .each, .collect)
+        val gdkMethods = gdkProvider.getMethodsForType(targetType)
+            .filter { it.name == methodName }
+        allSignatures.addAll(gdkMethods.map { it.toSignatureInformation() })
+
+        // 3. Classpath Methods (e.g. ArrayList.add, String.substring)
+        // If the type is standard (not Object/dynamic), check classpath reflection
+        if (targetType != "java.lang.Object" && targetType != "java.lang.Class") {
+            try {
+                // We use ClasspathService to find methods on the inferred type
+                val methods = classpathService.getMethods(targetType)
+                    .filter { it.name == methodName && it.isPublic }
+                allSignatures.addAll(methods.map { it.toSignatureInformation() })
+            } catch (e: Exception) {
+                logger.debug("Failed to reflect on type $targetType: ${e.message}")
             }
         }
 
-        // TODO(#466): Extend to support classpath types and receiver type inference.
-        //   See: https://github.com/albertocavalcante/groovy-devtools/issues/466
+        // If we still have nothing and implicit this, verify Object methods just in case
+        if (allSignatures.isEmpty() && methodCall.isImplicitThis) {
+            val objectMethods = classpathService.getMethods("java.lang.Object")
+                .filter { it.name == methodName }
+            allSignatures.addAll(objectMethods.map { it.toSignatureInformation() })
+        }
 
-        if (declarations.isEmpty()) {
-            logger.debug("No matching declarations found for method $methodName in $documentUri")
+        if (allSignatures.isEmpty()) {
+            logger.debug("No signatures found for $methodName on type $receiverType")
             return null
         }
 
-        return SignatureContext(methodCall, nodeAtPosition, declarations, astVisitor)
-    }
+        // Deduplicate signatures based on label
+        val distinctSignatures = allSignatures.distinctBy { it.label }
 
-    /**
-     * Cache of Script methods grouped by name for efficient lookup.
-     * Initialized lazily to avoid reflection overhead until needed.
-     */
-    private val scriptMethodsByName by lazy {
-        try {
-            groovy.lang.Script::class.java.methods
-                .filter { Modifier.isPublic(it.modifiers) }
-                .groupBy { it.name }
-        } catch (e: Exception) {
-            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
-            emptyMap<String, List<Method>>()
-        }
-    }
-
-    /**
-     * Find methods from groovy.lang.Script that match the given name.
-     * Uses cached methods for efficiency.
-     */
-    private fun findScriptMethods(methodName: String): List<MethodNode> =
-        scriptMethodsByName[methodName]?.map { it.toMethodNode() } ?: emptyList()
-
-    /**
-     * Convert a reflection Method to a MethodNode for signature generation.
-     */
-    private fun Method.toMethodNode(): MethodNode {
-        val params = parameters.map { param ->
-            Parameter(org.codehaus.groovy.ast.ClassHelper.make(param.type), param.name)
-        }.toTypedArray()
-
-        return MethodNode(
-            name,
-            Modifier.PUBLIC,
-            org.codehaus.groovy.ast.ClassHelper.make(returnType),
-            params,
-            emptyArray(),
-            null,
-        )
+        return SignatureContext(methodCall, nodeAtPosition, distinctSignatures, astVisitor)
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
-        val signatures = context.declarations.map { it.toSignatureInformation() }.toMutableList()
+        val signatures = context.signatures
         val activeParameter = determineActiveParameter(
             context.methodCall,
             context.nodeAtPosition,
             position.toGroovyPosition(),
             context.astVisitor,
         )
-        val normalizedActiveParameter = signatures.firstOrNull()
-            ?.parameters
-            ?.lastIndex
-            ?.takeIf { it >= 0 }
-            ?.let { activeParameter.coerceIn(0, it) }
-            ?: 0
+        // Normalize active parameter to prevent out-of-bounds
+        // We take the max parameter count of available signatures to be safe,
+        // or just clamp to the first signature (standard LSP behavior is a bit vague here)
+        // Better: checking against each signature's param count is client responsibility.
+        // We simply provide the index derived from cursor.
+        // But for safety against client crashes:
+        val maxParams = signatures.maxOfOrNull { it.parameters.size } ?: 0
+        val normalizedActiveParameter = activeParameter.coerceAtMost(maxParams + 1) // +1 for varargs tolerance
 
         return SignatureHelp().apply {
             this.signatures = signatures
-            this.activeSignature = 0
+            this.activeSignature = 0 // Best match logic could go here
             this.activeParameter = normalizedActiveParameter
         }
     }
@@ -177,48 +201,66 @@ class SignatureHelpProvider(
             }
     }
 
-    // TODO(#466): Add documentation support for signatures
-    //   - Needs GroovyDoc parser integration or AST GroovyDoc nodes
-    //   - See SIGNATURE.md for implementation details
-
-    // TODO(#466): Use offset-based RangeLabel for parameter highlighting
-    //   - This allows editors to highlight the exact parameter range in the signature label
-    //   - Requires tracking character offsets while building the label string
-    //   - See SIGNATURE.md for implementation details
+    // --- Converters ---
 
     private fun MethodNode.toSignatureInformation(): SignatureInformation {
-        val methodParameters = parameters
-        val parametersInfo = methodParameters.map { parameter ->
-            ParameterInformation().apply {
-                label = Either.forLeft(parameter.toSignatureLabel())
-            }
-        }.toMutableList()
-
-        return SignatureInformation().apply {
-            label = buildString {
-                append(returnType.nameWithoutPackage)
-                append(" ")
-                append(name)
-                append("(")
-                append(methodParameters.joinToString(", ") { it.toSignatureLabel() })
-                append(")")
-            }
-            this.parameters = parametersInfo
+        val paramsInfo = parameters.map { param ->
+            val typeName = if (param.isDynamicTyped) "def" else param.type.nameWithoutPackage
+            val paramLabel = "$typeName ${param.name}"
+            ParameterInformation().apply { label = Either.forLeft(paramLabel) }
         }
+
+        val label = buildString {
+            append(returnType.nameWithoutPackage).append(" ")
+            append(name).append("(")
+            append(paramsInfo.joinToString(", ") { (it.label.left as String) })
+            append(")")
+        }
+
+        return SignatureInformation(label, null as String?, paramsInfo)
     }
 
-    private fun Parameter.toSignatureLabel(): String {
-        val typeName = when {
-            isDynamicTyped -> "def"
-            else -> type.nameWithoutPackage
+    private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
+        val paramsInfo = parameters.map { param ->
+            // GDK params are just type names usually (from simpleName)
+            // We can improve this if GDK provider gives more info.
+            // For now, assume "Type arg" pattern or just "Type"
+            ParameterInformation().apply { label = Either.forLeft(param) }
         }
-        return buildString {
-            append("$typeName $name")
-            initialExpression?.takeIf { it.text.isNotBlank() }?.let { expr ->
-                append(" = ${expr.text}")
-            }
+
+        val label = buildString {
+            append(returnType).append(" ")
+            append(name).append("(")
+            append(parameters.joinToString(", "))
+            append(")")
         }
+
+        return SignatureInformation(label, doc.takeIf { it.isNotBlank() } as String?, paramsInfo)
     }
+
+    private fun ReflectedMethod.toSignatureInformation(): SignatureInformation {
+        val paramsInfo = parameters.map { paramType ->
+            // ReflectedMethod params are currently just type strings?
+            // Checking ReflectedMethod definition: val parameters: List<String>
+            // These are FQCNs or SimpleNames.
+            // We ideally want "Type argName", but reflection only gives names if -parameters is on.
+            // Usually just type.
+            ParameterInformation().apply { label = Either.forLeft(paramType) }
+        }
+
+        // Simplistic label generation
+        val retTypeSimple = returnType.substringAfterLast('.')
+        val label = buildString {
+            append(retTypeSimple).append(" ")
+            append(name).append("(")
+            append(paramsInfo.joinToString(", ") { (it.label.left as String).substringAfterLast('.') })
+            append(")")
+        }
+
+        return SignatureInformation(label, doc.takeIf { it.isNotBlank() } as String?, paramsInfo)
+    }
+
+    // --- Helpers ---
 
     private fun determineActiveParameter(
         methodCall: MethodCallExpression,
@@ -227,7 +269,6 @@ class SignatureHelpProvider(
         astVisitor: GroovyAstModel,
     ): Int {
         val arguments = methodCall.argumentExpressions()
-
         arguments.forEachIndexed { index, argument ->
             if (argument == nodeAtPosition || astVisitor.contains(argument, nodeAtPosition)) {
                 return index
@@ -236,7 +277,6 @@ class SignatureHelpProvider(
                 return index
             }
         }
-
         return estimateParameterIndex(arguments, position)
     }
 
@@ -257,9 +297,7 @@ class SignatureHelpProvider(
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         other: com.github.albertocavalcante.groovyparser.ast.types.Position,
     ): Boolean {
-        if (position.line != other.line) {
-            return position.line < other.line
-        }
+        if (position.line != other.line) return position.line < other.line
         return position.character < other.character
     }
 
@@ -273,16 +311,12 @@ class SignatureHelpProvider(
         while (current != null && current !is MethodCallExpression) {
             current = astVisitor.getParent(current)
         }
-        if (current is MethodCallExpression) {
-            return current
-        }
+        if (current is MethodCallExpression) return current
 
         return astVisitor.getNodes(documentUri)
             .asSequence()
             .filterIsInstance<MethodCallExpression>()
-            .firstOrNull { methodCall ->
-                methodCall.containsPosition(position.line, position.character)
-            }
+            .firstOrNull { it.containsPosition(position.line, position.character) }
     }
 
     private fun MethodCallExpression.argumentExpressions(): List<Expression> = when (val args = arguments) {
@@ -293,7 +327,6 @@ class SignatureHelpProvider(
 
     private fun MethodCallExpression.extractMethodName(): String? {
         methodAsString?.let { return it }
-
         val methodExpression = method
         return when (methodExpression) {
             is ConstantExpression -> methodExpression.value?.toString()
@@ -305,5 +338,34 @@ class SignatureHelpProvider(
 
     private fun emptySignatureHelp(): SignatureHelp = SignatureHelp().apply {
         signatures = mutableListOf()
+    }
+    // --- Script Method Helpers ---
+
+    private val scriptMethodsByName by lazy {
+        try {
+            groovy.lang.Script::class.java.methods
+                .filter { java.lang.reflect.Modifier.isPublic(it.modifiers) }
+                .groupBy { it.name }
+        } catch (e: Exception) {
+            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
+            emptyMap<String, List<java.lang.reflect.Method>>()
+        }
+    }
+
+    private fun findScriptMethods(methodName: String): List<MethodNode> =
+        scriptMethodsByName[methodName]?.map { it.toMethodNode() } ?: emptyList()
+
+    private fun java.lang.reflect.Method.toMethodNode(): MethodNode {
+        val params = parameters.map { p ->
+            org.codehaus.groovy.ast.Parameter(org.codehaus.groovy.ast.ClassHelper.make(p.type), p.name)
+        }.toTypedArray()
+        return MethodNode(
+            name,
+            modifiers,
+            org.codehaus.groovy.ast.ClassHelper.make(returnType),
+            params,
+            org.codehaus.groovy.ast.ClassNode.EMPTY_ARRAY,
+            null,
+        )
     }
 }
