@@ -37,10 +37,11 @@ steps:
   - assert:
       source: signatureHelp
       checks:
+        # Format: "returnType methodName(params)"
         - jsonPath: $.signatures[0].label
           expect:
             type: EQUALS
-            value: "myMethod(String arg1, int arg2)"
+            value: "Object myMethod(String arg1, int arg2)"
         - jsonPath: $.signatures[0].parameters[*].label.left
           expect:
             type: EQUALS
@@ -55,5 +56,14 @@ steps:
           expect:
             type: EQUALS
             value: 0
+
+        # TODO(#466): Add documentation support for signatures
+        #   - Needs GroovyDoc parser integration
+        #   - See SIGNATURE.md for details
+
+        # TODO(#466): Use offset-based RangeLabel for parameter highlighting
+        #   - This allows editors to highlight exact parameter ranges in signature
+        #   - See SIGNATURE.md for details
+
   - shutdown: {}
   - exit: {}

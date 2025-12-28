@@ -22,6 +22,8 @@ import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.net.URI
 
 class SignatureHelpProvider(
@@ -75,13 +77,66 @@ class SignatureHelpProvider(
             return null
         }
 
-        val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+        // Try local declarations first
+        var declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+
+        // Fallback: Try Script methods for GDK support (e.g., println)
+        if (declarations.isEmpty()) {
+            declarations = findScriptMethods(methodName)
+            if (declarations.isNotEmpty()) {
+                logger.debug("Found {} Script methods for '{}'", declarations.size, methodName)
+            }
+        }
+
+        // TODO(#466): Extend to support classpath types and receiver type inference.
+        //   See: https://github.com/albertocavalcante/groovy-devtools/issues/466
+
         if (declarations.isEmpty()) {
             logger.debug("No matching declarations found for method $methodName in $documentUri")
             return null
         }
 
         return SignatureContext(methodCall, nodeAtPosition, declarations, astVisitor)
+    }
+
+    /**
+     * Cache of Script methods grouped by name for efficient lookup.
+     * Initialized lazily to avoid reflection overhead until needed.
+     */
+    private val scriptMethodsByName by lazy {
+        try {
+            groovy.lang.Script::class.java.methods
+                .filter { Modifier.isPublic(it.modifiers) }
+                .groupBy { it.name }
+        } catch (e: Exception) {
+            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
+            emptyMap<String, List<Method>>()
+        }
+    }
+
+    /**
+     * Find methods from groovy.lang.Script that match the given name.
+     * Uses cached methods for efficiency.
+     */
+    private fun findScriptMethods(methodName: String): List<MethodNode> =
+        scriptMethodsByName[methodName]?.map { it.toMethodNode() } ?: emptyList()
+
+    /**
+     * Convert a reflection Method to a MethodNode for signature generation.
+     */
+    private fun Method.toMethodNode(): MethodNode {
+        val params = parameters.map { param ->
+            Parameter(org.codehaus.groovy.ast.ClassHelper.make(param.type), param.name)
+        }.toTypedArray()
+
+        return MethodNode(
+            name,
+            Modifier.PUBLIC,
+            org.codehaus.groovy.ast.ClassHelper.make(returnType),
+            params,
+            emptyArray(),
+            null,
+        )
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
@@ -122,6 +177,15 @@ class SignatureHelpProvider(
             }
     }
 
+    // TODO(#466): Add documentation support for signatures
+    //   - Needs GroovyDoc parser integration or AST GroovyDoc nodes
+    //   - See SIGNATURE.md for implementation details
+
+    // TODO(#466): Use offset-based RangeLabel for parameter highlighting
+    //   - This allows editors to highlight the exact parameter range in the signature label
+    //   - Requires tracking character offsets while building the label string
+    //   - See SIGNATURE.md for implementation details
+
     private fun MethodNode.toSignatureInformation(): SignatureInformation {
         val methodParameters = parameters
         val parametersInfo = methodParameters.map { parameter ->
@@ -132,6 +196,8 @@ class SignatureHelpProvider(
 
         return SignatureInformation().apply {
             label = buildString {
+                append(returnType.nameWithoutPackage)
+                append(" ")
                 append(name)
                 append("(")
                 append(methodParameters.joinToString(", ") { it.toSignatureLabel() })
