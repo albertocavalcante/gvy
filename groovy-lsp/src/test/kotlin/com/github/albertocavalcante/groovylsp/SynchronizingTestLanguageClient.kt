@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.services.LanguageClient
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -18,16 +19,21 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Test language client that provides proper synchronization instead of flaky delays.
  * This allows tests to wait for specific events rather than guessing timing.
+ *
+ * Uses per-URI queues to support concurrent tests without race conditions.
  */
 class SynchronizingTestLanguageClient : LanguageClient {
 
-    // Storage for events
+    // Per-URI diagnostics queues for thread-safe, order-preserving storage
+    private val diagnosticsQueues = ConcurrentHashMap<String, LinkedBlockingQueue<PublishDiagnosticsParams>>()
+
+    // Legacy single-value storage for backwards compatibility with simple await methods
     private val diagnosticsRef = AtomicReference<PublishDiagnosticsParams?>()
     private val messagesRef = AtomicReference<MutableList<MessageParams>>(mutableListOf())
 
     private val messagesQueue = LinkedBlockingQueue<MessageParams>()
 
-    // Synchronization primitives
+    // Synchronization primitives (legacy, kept for simple await methods)
     private var diagnosticsLatch = CountDownLatch(1)
     private var messagesLatch = CountDownLatch(1)
 
@@ -36,6 +42,7 @@ class SynchronizingTestLanguageClient : LanguageClient {
 
     /**
      * Published diagnostics (may be null if none published yet)
+     * Note: In parallel scenarios, use awaitDiagnosticsForUri instead.
      */
     val diagnostics: PublishDiagnosticsParams?
         get() = diagnosticsRef.get()
@@ -51,6 +58,11 @@ class SynchronizingTestLanguageClient : LanguageClient {
     }
 
     override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams) {
+        // Store in per-URI queue for reliable multi-file testing
+        diagnosticsQueues.computeIfAbsent(diagnostics.uri) { LinkedBlockingQueue() }
+            .offer(diagnostics)
+
+        // Also update legacy storage for backwards compatibility
         diagnosticsRef.set(diagnostics)
         diagnosticsLatch.countDown()
     }
@@ -80,8 +92,8 @@ class SynchronizingTestLanguageClient : LanguageClient {
         CompletableFuture.completedFuture(emptyList())
 
     /**
-     * Wait for diagnostics to be published.
-     * This is the main replacement for delay() in tests.
+     * Wait for diagnostics to be published (any URI).
+     * Note: In parallel test scenarios, prefer awaitDiagnosticsForUri.
      *
      * @param timeoutMs Maximum time to wait in milliseconds
      * @return The published diagnostics
@@ -122,7 +134,9 @@ class SynchronizingTestLanguageClient : LanguageClient {
 
     /**
      * Wait for diagnostics to be published for a specific URI.
-     * Useful when multiple files might be compiled.
+     * This is the preferred method for multi-file or parallel test scenarios.
+     *
+     * Uses per-URI queues to avoid race conditions when multiple files are compiled.
      *
      * @param expectedUri The URI we're waiting for diagnostics on
      * @param timeoutMs Maximum time to wait
@@ -130,11 +144,9 @@ class SynchronizingTestLanguageClient : LanguageClient {
      * @throws TimeoutException if diagnostics for the URI not published within timeout
      */
     fun awaitDiagnosticsForUri(expectedUri: String, timeoutMs: Long = this.timeoutMs): PublishDiagnosticsParams {
-        val diagnostics = awaitDiagnostics(timeoutMs)
-        if (diagnostics.uri != expectedUri) {
-            error("Expected diagnostics for URI '$expectedUri' but got '${diagnostics.uri}'")
-        }
-        return diagnostics
+        val queue = diagnosticsQueues.computeIfAbsent(expectedUri) { LinkedBlockingQueue() }
+        return queue.poll(timeoutMs, TimeUnit.MILLISECONDS)
+            ?: throw TimeoutException("Diagnostics for URI '$expectedUri' not published within ${timeoutMs}ms")
     }
 
     /**
@@ -143,6 +155,7 @@ class SynchronizingTestLanguageClient : LanguageClient {
      */
     fun reset() {
         diagnosticsRef.set(null)
+        diagnosticsQueues.clear()
         messagesRef.set(mutableListOf())
         diagnosticsLatch = CountDownLatch(1)
         messagesLatch = CountDownLatch(1)

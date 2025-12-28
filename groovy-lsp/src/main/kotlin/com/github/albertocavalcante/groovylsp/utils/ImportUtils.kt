@@ -59,7 +59,7 @@ object ImportUtils {
      *
      * NOTE: HEURISTIC - This is a fallback when AST is unavailable.
      * Uses simple line-by-line scanning, doesn't handle all edge cases.
-     * TODO: Remove once all callers provide AST. Deterministic: [extractExistingImportsFromAst].
+     * It is retained to support auto-import when the file is in a non-parsable state.
      *
      * @param content The file content
      * @return Set of fully qualified names that are already imported
@@ -95,7 +95,7 @@ object ImportUtils {
      *
      * NOTE: HEURISTIC - This is a fallback when AST is unavailable.
      * Uses simple line-by-line scanning.
-     * TODO: Remove once all callers provide AST. Deterministic: [findImportInsertPositionFromAst].
+     * It is retained to support auto-import when the file is in a non-parsable state.
      *
      * @param content The file content
      * @return Position for inserting a new import
