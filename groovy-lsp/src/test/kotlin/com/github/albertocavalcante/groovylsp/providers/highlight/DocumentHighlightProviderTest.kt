@@ -70,14 +70,52 @@ class DocumentHighlightProviderTest {
         )
 
         // Assert
-        assertFalse(highlights.isEmpty(), "Should find highlights for counter")
+        assertEquals(4, highlights.size, "Should find 4 highlights for 'counter'")
 
         // Count writes (declaration + assignment) and reads
         val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
         val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
 
-        assertTrue(writes.isNotEmpty(), "Should have at least one write (declaration)")
-        assertTrue(reads.isNotEmpty(), "Should have at least one read")
+        assertEquals(2, writes.size, "Should find 2 write highlights (declaration and assignment)")
+        assertEquals(2, reads.size, "Should find 2 read highlights (RHS of assignment and println)")
+    }
+
+    @Test
+    fun `test highlight with prefix and postfix operators`() = runTest {
+        // Arrange
+        val content = """
+            def i = 0
+            i++
+            ++i
+            println i
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find highlights for 'i'
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 4),
+        )
+
+        // Assert
+        assertEquals(4, highlights.size, "Should find 4 highlights for 'i'")
+
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+
+        // Expected writes:
+        // 1. def i = 0
+        // 2. i++
+        // 3. ++i
+        assertEquals(3, writes.size, "Should find 3 write highlights (declaration, postfix, prefix)")
+
+        // Expected reads:
+        // 1. println i
+        assertEquals(1, reads.size, "Should find 1 read highlight (println)")
     }
 
     @Test

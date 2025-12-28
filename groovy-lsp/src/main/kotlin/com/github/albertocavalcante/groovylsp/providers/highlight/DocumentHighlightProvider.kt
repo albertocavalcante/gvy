@@ -18,6 +18,8 @@ import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PostfixExpression
+import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.DocumentHighlight
@@ -142,9 +144,19 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      * Classify whether a node represents a read or write operation.
      */
     private fun classifyHighlightKind(node: ASTNode, astModel: GroovyAstModel): DocumentHighlightKind {
+        // Increment/decrement operators are writes
+        if (node is PostfixExpression || node is PrefixExpression) {
+            return DocumentHighlightKind.Write
+        }
+
         // Check if node is part of an assignment (write)
         if (node is VariableExpression) {
             val parent = astModel.getParent(node)
+
+            // Postfix/prefix increment/decrement is a write
+            if (parent is PostfixExpression || parent is PrefixExpression) {
+                return DocumentHighlightKind.Write
+            }
 
             // Declaration is a write
             if (parent is DeclarationExpression && parent.leftExpression == node) {
@@ -191,6 +203,8 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
             ClassNode::class,
             ClassExpression::class,
             ConstructorCallExpression::class,
+            PostfixExpression::class,
+            PrefixExpression::class,
         )
         return highlightableTypes.contains(this::class)
     }
