@@ -191,6 +191,8 @@ class SignatureHelpProviderTest {
 
         // Should find both println() and println(Object) from groovy.lang.Script
         val labels = result.signatures.map { it.label }
+        // Note: With GDK and Classpath integration, this might return more than 2.
+        // Keeping "2" or greater for safety during merge resolution.
         assertTrue(
             result.signatures.size >= 2,
             "Expected at least 2 signatures for println() GDK method, but found: ${result.signatures.size}. Labels: $labels",
