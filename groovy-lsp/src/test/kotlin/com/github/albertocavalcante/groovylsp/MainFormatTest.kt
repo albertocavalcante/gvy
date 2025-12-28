@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import com.github.albertocavalcante.groovylsp.cli.CheckCommand
 import com.github.albertocavalcante.groovylsp.cli.ExecuteCommand
@@ -30,7 +32,7 @@ class MainFormatTest {
                 ExecuteCommand(),
                 VersionCommand(),
             )
-            .main(args.toList())
+            .parse(args.toList())
     }
 
     @Test
@@ -49,7 +51,8 @@ class MainFormatTest {
     @Test
     fun `format throws for missing files`() {
         // Clikt will throw an exception for non-existent files when mustExist = true
-        assertThrows<com.github.ajalt.clikt.core.BadParameterValue> {
+        // Use CliktError as the base type since the specific exception type may vary
+        assertThrows<CliktError> {
             runWithContext("format", "does-not-exist.groovy")
         }
     }

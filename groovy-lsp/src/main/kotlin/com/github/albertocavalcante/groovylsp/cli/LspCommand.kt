@@ -40,7 +40,7 @@ class LspCommand : CliktCommand(name = "lsp") {
             "stdio" -> runStdio()
             "socket" -> runSocket(port)
             else -> {
-                // Use Clikt's fail() for idiomatic error handling
+                echo("Unknown mode: $mode. Use 'stdio' or 'socket'.", err = true)
                 throw ProgramResult(1)
             }
         }

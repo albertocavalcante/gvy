@@ -74,8 +74,7 @@ class CheckCommand : CliktCommand(name = "check") {
     private fun checkFiles(server: GroovyLanguageServer) {
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
         if (service == null) {
-            // Use ProgramResult for proper Clikt error handling instead of exitProcess
-            // This ensures the finally block runs for cleanup
+            logger.error("Failed to retrieve GroovyTextDocumentService")
             throw ProgramResult(1)
         }
 
