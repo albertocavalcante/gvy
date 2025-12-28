@@ -2,13 +2,7 @@ package com.github.albertocavalcante.groovylsp
 
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.parse
-import com.github.ajalt.clikt.core.subcommands
-import com.github.albertocavalcante.groovylsp.cli.CheckCommand
-import com.github.albertocavalcante.groovylsp.cli.ExecuteCommand
-import com.github.albertocavalcante.groovylsp.cli.FormatCommand
 import com.github.albertocavalcante.groovylsp.cli.GlsCommand
-import com.github.albertocavalcante.groovylsp.cli.LspCommand
-import com.github.albertocavalcante.groovylsp.cli.VersionCommand
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -23,15 +17,7 @@ class MainTest {
      * ensuring proper context setup (e.g., Terminal object).
      */
     private fun runWithContext(vararg args: String) {
-        GlsCommand()
-            .subcommands(
-                LspCommand(),
-                FormatCommand(),
-                CheckCommand(),
-                ExecuteCommand(),
-                VersionCommand(),
-            )
-            .parse(args.toList())
+        GlsCommand().parse(args.toList())
     }
 
     @Test
@@ -45,13 +31,6 @@ class MainTest {
     @Test
     fun `test help is available on root command`() {
         val command = GlsCommand()
-            .subcommands(
-                LspCommand(),
-                FormatCommand(),
-                CheckCommand(),
-                ExecuteCommand(),
-                VersionCommand(),
-            )
 
         // Verify the command structure is valid
         assertTrue(command.registeredSubcommandNames().contains("version"))
