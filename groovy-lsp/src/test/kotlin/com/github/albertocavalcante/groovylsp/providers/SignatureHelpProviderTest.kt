@@ -329,7 +329,10 @@ class SignatureHelpProviderTest {
         val paramLabels = signature.parameters.mapNotNull { it.label?.left }
 
         // Verify default values are present
-        assertTrue(paramLabels[0].contains(" = World"), "Label should contain default value 'World': ${paramLabels[0]}")
+        assertTrue(
+            paramLabels[0].contains(" = \"World\""),
+            "Label should contain default value 'World': ${paramLabels[0]}",
+        )
         assertTrue(paramLabels[1].contains(" = 3"), "Label should contain default value '3': ${paramLabels[1]}")
     }
 

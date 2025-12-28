@@ -134,7 +134,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
                 else -> this.name.length
             }
-        is org.codehaus.groovy.ast.expr.ConstructorCallExpression -> this.type.nameWithoutPackage.length
+        is org.codehaus.groovy.ast.expr.ConstructorCallExpression -> (this.type.nameWithoutPackage.length) + 1
         is org.codehaus.groovy.ast.expr.ClassExpression -> this.type.nameWithoutPackage.length
         is org.codehaus.groovy.ast.expr.MethodCallExpression -> {
             val methodName =
