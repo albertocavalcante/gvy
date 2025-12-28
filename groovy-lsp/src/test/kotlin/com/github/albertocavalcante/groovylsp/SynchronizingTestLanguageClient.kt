@@ -59,8 +59,11 @@ class SynchronizingTestLanguageClient : LanguageClient {
 
     override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams) {
         // Store in per-URI queue for reliable multi-file testing
-        diagnosticsQueues.computeIfAbsent(diagnostics.uri) { LinkedBlockingQueue() }
-            .offer(diagnostics)
+        // Skip null URIs as ConcurrentHashMap doesn't allow null keys
+        if (diagnostics.uri != null) {
+            diagnosticsQueues.computeIfAbsent(diagnostics.uri) { LinkedBlockingQueue() }
+                .offer(diagnostics)
+        }
 
         // Also update legacy storage for backwards compatibility
         diagnosticsRef.set(diagnostics)
