@@ -378,6 +378,7 @@ class GroovyCompilationService(
         uris.chunked(INDEXING_BATCH_SIZE).forEach { batch ->
             coroutineScope {
                 batch.forEach { uri ->
+                    @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
                     launch(ioDispatcher) {
                         indexFileWithProgress(uri, indexed, total, onProgress)
                     }
@@ -425,6 +426,7 @@ class GroovyCompilationService(
         }
 
         // Start new compilation on IO dispatcher for file operations
+        @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
         val deferred = scope.async(ioDispatcher) {
             try {
                 compile(uri, content)
