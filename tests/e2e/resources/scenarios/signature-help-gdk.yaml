@@ -1,5 +1,7 @@
 name: signature-help-gdk
 description: Verify GDK and Classpath method resolution with Type Inference
+workspace:
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}
