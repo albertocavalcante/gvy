@@ -1,0 +1,76 @@
+name: signature-help-gdk
+description: Verify GDK and Classpath method resolution with Type Inference
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            value: Ready
+      timeoutMs: 60000
+  - openDocument:
+      path: test.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        ["a", "b"].get(0)
+        ["a", "b"].each {}
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}test.groovy"
+        position:
+          line: 0
+          character: 15 # ["a", "b"].get( -> cursor at 15
+      saveAs: helpGet
+  - assert:
+      source: helpGet
+      checks:
+        # Check Classpath resolution for ArrayList.get
+        # exact label depends on JDK/Parameter names. likely "Object get(int arg0)"
+        - jsonPath: $.signatures[*].label
+          expect:
+            type: CONTAINS
+            value: "Object get(int)" # Reflection usually lacks param names
+        # Fallback if names are missing
+        # - jsonPath: $.signatures[*].label
+        #   expect:
+        #     type: REGEX
+        #     value: "Object get\\(int .*\\)"
+
+  - changeDocument:
+      path: test.groovy
+      version: 2
+      contentChanges:
+        - text: |
+            ["a", "b"].get(0)
+            ["a", "b"].each({})
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}test.groovy"
+        position:
+          line: 1
+          character: 16 # ["a", "b"].each( -> cursor right after (
+      saveAs: helpEach
+  - assert:
+      source: helpEach
+      checks:
+         # Check GDK resolution for DefaultGroovyMethods.each
+         # It returns original list (List) or Object (depends on DGM version)
+         # DGM.each(List self, Closure closure)
+         # In signature help, we hide self.
+         # So: "List each(Closure closure)"
+        - jsonPath: $.signatures[0].label
+          expect:
+             type: EQUALS
+             value: "List each(Closure)"
+
+  - shutdown: {}
+  - exit: {}
