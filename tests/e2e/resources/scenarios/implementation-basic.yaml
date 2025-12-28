@@ -1,13 +1,8 @@
-name: _implementation-basic
+name: implementation-basic
 description: >
   Test textDocument/implementation to navigate to implementations.
   Verifies that requesting implementation on an interface works.
-  
-  TODO(DEFERRED): #413 - This test is disabled (prefixed with _) because the server
-  does not yet implement textDocument/implementation (throws UnsupportedOperationException).
-  See: https://github.com/albertocavalcante/groovy-devtools/issues/413
-  Enable this test once the feature is implemented.
-  
+
 workspace:
   fixture: empty-workspace
 steps:

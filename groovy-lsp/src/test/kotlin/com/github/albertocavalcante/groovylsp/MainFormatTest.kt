@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.ajalt.clikt.core.CliktError
-import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.parse
 import com.github.albertocavalcante.groovylsp.cli.GlsCommand
 import org.junit.jupiter.api.Assertions.assertTrue
