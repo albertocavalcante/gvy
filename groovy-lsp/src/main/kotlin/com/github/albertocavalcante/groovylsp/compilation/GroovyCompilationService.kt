@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,10 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val RETRY_DELAY_MS = 50L
 
-class GroovyCompilationService(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
+class GroovyCompilationService(
+    private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
     companion object {
         /**
          * Batch size for parallel workspace indexing.
@@ -368,12 +372,13 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
         val total = uris.size
         val indexed = AtomicInteger(0)
 
-        // Index files in truly parallel batches using launch
+        // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
+        // No Dispatchers.IO needed: all called functions are suspend (non-blocking)
         uris.chunked(INDEXING_BATCH_SIZE).forEach { batch ->
             coroutineScope {
                 batch.forEach { uri ->
-                    launch(Dispatchers.IO) {
+                    launch {
                         indexFileWithProgress(uri, indexed, total, onProgress)
                     }
                 }
@@ -419,8 +424,8 @@ class GroovyCompilationService(private val parentClassLoader: ClassLoader = Clas
             }
         }
 
-        // Start new compilation
-        val deferred = scope.async(Dispatchers.IO) {
+        // Start new compilation on IO dispatcher for file operations
+        val deferred = scope.async(ioDispatcher) {
             try {
                 compile(uri, content)
             } finally {
