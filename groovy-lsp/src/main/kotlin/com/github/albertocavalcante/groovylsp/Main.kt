@@ -1,13 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.ajalt.clikt.core.main
-import com.github.ajalt.clikt.core.subcommands
-import com.github.albertocavalcante.groovylsp.cli.CheckCommand
-import com.github.albertocavalcante.groovylsp.cli.ExecuteCommand
-import com.github.albertocavalcante.groovylsp.cli.FormatCommand
 import com.github.albertocavalcante.groovylsp.cli.GlsCommand
-import com.github.albertocavalcante.groovylsp.cli.LspCommand
-import com.github.albertocavalcante.groovylsp.cli.VersionCommand
 
 /**
  * Entry point for the Groovy Language Server CLI.
@@ -20,12 +14,4 @@ import com.github.albertocavalcante.groovylsp.cli.VersionCommand
  * - execute: Execute custom LSP commands
  * - version: Print version
  */
-fun main(args: Array<String>) = GlsCommand()
-    .subcommands(
-        LspCommand(),
-        FormatCommand(),
-        CheckCommand(),
-        ExecuteCommand(),
-        VersionCommand(),
-    )
-    .main(args)
+fun main(args: Array<String>) = GlsCommand().main(args)
