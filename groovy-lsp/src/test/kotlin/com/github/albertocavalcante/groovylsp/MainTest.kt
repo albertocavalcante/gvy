@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
 import com.github.albertocavalcante.groovylsp.cli.CheckCommand
 import com.github.albertocavalcante.groovylsp.cli.ExecuteCommand
@@ -30,7 +31,7 @@ class MainTest {
                 ExecuteCommand(),
                 VersionCommand(),
             )
-            .main(args.toList())
+            .parse(args.toList())
     }
 
     @Test
