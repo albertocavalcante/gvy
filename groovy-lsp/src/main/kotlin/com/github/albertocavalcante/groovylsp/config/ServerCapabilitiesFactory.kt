@@ -48,6 +48,9 @@ object ServerCapabilitiesFactory {
             // References
             referencesProvider = Either.forLeft(true)
 
+            // Document highlight support
+            documentHighlightProvider = Either.forLeft(true)
+
             // Type definition support
             typeDefinitionProvider = Either.forLeft(true)
 

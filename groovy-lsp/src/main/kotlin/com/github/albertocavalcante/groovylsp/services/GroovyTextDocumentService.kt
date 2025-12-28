@@ -17,6 +17,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
+import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
@@ -49,6 +50,8 @@ import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
 import org.eclipse.lsp4j.DocumentFormattingParams
+import org.eclipse.lsp4j.DocumentHighlight
+import org.eclipse.lsp4j.DocumentHighlightParams
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.Hover
@@ -158,6 +161,10 @@ class GroovyTextDocumentService(
 
     private val testCodeLensProvider by lazy {
         TestCodeLensProvider(compilationService)
+    }
+
+    private val documentHighlightProvider by lazy {
+        DocumentHighlightProvider(compilationService)
     }
 
     override fun signatureHelp(
@@ -524,6 +531,40 @@ class GroovyTextDocumentService(
             Either.forLeft(emptyList())
         }
     }
+
+    override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =
+        coroutineScope.future {
+            logger.debug(
+                "Document highlight requested for ${params.textDocument.uri} at " +
+                    "${params.position.line}:${params.position.character}",
+            )
+
+            try {
+                val uri = java.net.URI.create(params.textDocument.uri)
+                val compilationResult = ensureCompiledOrCompileNow(uri)
+                if (compilationResult == null) {
+                    logger.warn("Document $uri not compiled, cannot provide highlights")
+                    return@future emptyList()
+                }
+
+                val highlights = documentHighlightProvider.provideHighlights(
+                    params.textDocument.uri,
+                    params.position,
+                )
+
+                logger.debug("Found ${highlights.size} highlights")
+                highlights
+            } catch (e: IllegalArgumentException) {
+                logger.error("Invalid arguments finding highlights", e)
+                emptyList()
+            } catch (e: IllegalStateException) {
+                logger.error("Invalid state finding highlights", e)
+                emptyList()
+            } catch (e: Exception) {
+                logger.error("Unexpected error finding highlights", e)
+                emptyList()
+            }
+        }
 
     override fun documentSymbol(
         params: DocumentSymbolParams,
