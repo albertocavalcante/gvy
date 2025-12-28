@@ -3,7 +3,7 @@ description: >
   Test textDocument/signatureHelp.
   Verifies that available signatures are returned for a method call.
 workspace:
- fixture: empty-workspace
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}
@@ -32,8 +32,15 @@ steps:
       timeoutMs: 10000
 
   # Trigger signature help inside parens of println()
-  # Line 2: "        println()"
-  # Position 16 is right after '('
+  # Line 2 ("        println()"). 4 tabs = 8 spaces (if converted)? or just spaces?
+  # Text: "        println()"
+  # Indices:
+  # 0-7: spaces
+  # 8-14: println
+  # 15: (
+  # 16: )
+  # We want position 16 (after '(') or 15 (at '(')?
+  # Usually inside parens is index of '(' + 1. So 16.
   - request:
       method: textDocument/signatureHelp
       params:
@@ -44,12 +51,11 @@ steps:
           character: 16
       saveAs: sigHelpResult
 
-  # Verify we get at least one println signature
-  # Script.println() has multiple overloads, so check signatures is not empty
+  # Verify signatures
   - assert:
       source: sigHelpResult
       checks:
-        # Check that we got signatures (not empty)
+        # Check that we got println overloads from groovy.lang.Script
         - jsonPath: $.signatures.length()
           expect:
             type: EQUALS
@@ -61,6 +67,21 @@ steps:
           expect:
             type: EQUALS
             value: 0
+            
+        # Check activeParameter is 0 (cursor at first param position)
+        - jsonPath: $.activeParameter
+          expect:
+            type: EQUALS
+            value: 0
+
+        # TODO(#466): Add strict label assertions once we improve signature formatting
+        #   Currently signatures use simplified format "println()" without modifiers.
+        #   Ideal format: "public void println()" matching IDE conventions.
+        # - jsonPath: $.signatures[?(@.label == 'public void println()')]
+        #   expect:
+        #     type: SIZE
+        #     value: 1
+        #     message: "Should find 'public void println()' signature"
 
   - shutdown: {}
   - exit: {}

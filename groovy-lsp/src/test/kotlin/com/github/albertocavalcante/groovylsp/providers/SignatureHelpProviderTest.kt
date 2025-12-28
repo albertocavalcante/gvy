@@ -42,7 +42,7 @@ class SignatureHelpProviderTest {
         assertEquals(0, result.activeParameter)
         assertEquals(1, result.signatures.size)
         val signature = result.signatures.first()
-        assertEquals("myMethod(String arg1, int arg2)", signature.label)
+        assertEquals("Object myMethod(String arg1, int arg2)", signature.label)
         val parameterLabels = signature.parameters.mapNotNull { it.label?.left }
         assertEquals(listOf("String arg1", "int arg2"), parameterLabels)
     }
