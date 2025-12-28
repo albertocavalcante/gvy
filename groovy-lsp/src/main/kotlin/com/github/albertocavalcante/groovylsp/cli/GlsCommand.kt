@@ -6,7 +6,6 @@ import com.github.ajalt.clikt.core.context
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.mordant.rendering.AnsiLevel
-import com.github.ajalt.mordant.rendering.TextColors.brightGreen
 import com.github.ajalt.mordant.terminal.Terminal
 
 /**
@@ -56,7 +55,8 @@ class GlsCommand : CliktCommand(name = "gls") {
 
         // If no subcommand is provided, default to LSP stdio mode
         if (currentContext.invokedSubcommand == null) {
-            terminal.println(brightGreen("Starting gls in stdio mode..."))
+            // Note: Do NOT print to stdout here - it would corrupt LSP JSON-RPC protocol
+            // in stdio mode since stdout is used for LSP communication
             LspCommand().run()
         }
     }
