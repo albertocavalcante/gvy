@@ -151,8 +151,28 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
             }
         }
 
-        val result: InitializeResult = context.session.server.initialize(params)
-            .get(30_000L, TimeUnit.MILLISECONDS)
+        val future = context.session.server.initialize(params)
+
+        val timeoutMs = 30_000L
+        val start = System.currentTimeMillis()
+        val process = context.session.process
+
+        while (!future.isDone) {
+            if (process != null && !process.isAlive) {
+                // If the process has exited, we can't possibly succeed.
+                // Read stderr to capture the error reason if possible (though stderr pump is async)
+                throw IllegalStateException(
+                    "Language server process exited prematurely with code ${process.exitValue()} while waiting for initialization",
+                )
+            }
+            if (System.currentTimeMillis() - start > timeoutMs) {
+                throw TimeoutException("Timed out waiting for initialize response ($timeoutMs ms)")
+            }
+            // Sleep briefly to avoid busy wait
+            Thread.sleep(50)
+        }
+
+        val result: InitializeResult = future.get()
 
         context.state.initializedResult = result
         // Serialize LSP4J result back to JsonElement using Gson bridge

@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.file
+import com.github.ajalt.mordant.rendering.AnsiLevel
 import com.github.ajalt.mordant.rendering.TextColors.brightRed
 import com.github.ajalt.mordant.rendering.TextColors.brightYellow
 import com.github.ajalt.mordant.rendering.TextColors.cyan
@@ -95,15 +96,22 @@ class CheckCommand : CliktCommand(name = "check") {
                 terminal.println(green("OK: ${file.path}"))
             } else {
                 for (d in diagnostics) {
-                    val severity = when (d.severity) {
-                        DiagnosticSeverity.Error -> brightRed("ERROR")
-                        DiagnosticSeverity.Warning -> brightYellow("WARNING")
-                        DiagnosticSeverity.Information -> cyan("INFO")
-                        DiagnosticSeverity.Hint -> green("HINT")
-                        else -> "UNKNOWN"
+                    val (label, style) = when (d.severity) {
+                        DiagnosticSeverity.Error -> "ERROR" to brightRed
+                        DiagnosticSeverity.Warning -> "WARNING" to brightYellow
+                        DiagnosticSeverity.Information -> "INFO" to cyan
+                        DiagnosticSeverity.Hint -> "HINT" to green
+                        else -> "UNKNOWN" to null
                     }
+
+                    val severityString = if (terminal.info.ansiLevel == AnsiLevel.NONE) {
+                        label
+                    } else {
+                        style?.invoke(label) ?: label
+                    }
+
                     terminal.println(
-                        "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}",
+                        "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severityString] ${d.message}",
                     )
                 }
             }

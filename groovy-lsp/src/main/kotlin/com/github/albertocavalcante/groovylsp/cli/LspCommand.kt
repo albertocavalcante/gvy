@@ -61,7 +61,7 @@ class LspCommand : CliktCommand(name = "lsp") {
         startServer(input, output)
     }
 
-    private fun runSocket(port: Int) {
+    internal fun runSocket(port: Int) {
         try {
             ServerSocket(port).use { serverSocket ->
                 logger.info("Listening on port $port...")
