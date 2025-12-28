@@ -99,7 +99,6 @@ class GroovyTypeResolverTest {
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),
             moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
             astModel = astVisitor,
             workspaceRoot = null,
         )
@@ -183,7 +182,6 @@ class GroovyTypeCalculatorTest {
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),
             moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
             astModel = astVisitor,
             workspaceRoot = null,
         )
@@ -243,7 +241,6 @@ class DefaultTypeCalculatorTest {
         return CompilationContext(
             uri = URI.create("file:///test.groovy"),
             moduleNode = moduleNode,
-            compilationUnit = compilationUnit,
             astModel = astVisitor,
             workspaceRoot = null,
         )
