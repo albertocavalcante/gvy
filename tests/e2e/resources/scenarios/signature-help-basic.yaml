@@ -32,15 +32,8 @@ steps:
       timeoutMs: 10000
 
   # Trigger signature help inside parens of println()
-  # Line 2 ("        println()"). 4 tabs = 8 spaces (if converted)? or just spaces?
-  # Text: "        println()"
-  # Indices:
-  # 0-7: spaces
-  # 8-14: println
-  # 15: (
-  # 16: )
-  # We want position 16 (after '(') or 15 (at '(')?
-  # Usually inside parens is index of '(' + 1. So 16.
+  # Line 2: "        println()"
+  # Index 16 is right after '('
   - request:
       method: textDocument/signatureHelp
       params:
@@ -55,12 +48,13 @@ steps:
   - assert:
       source: sigHelpResult
       checks:
-        # Check that we got println overloads from groovy.lang.Script
+        # Check that we got println overloads (Script + GDK + Classpath)
+        # Should be 4 signatures total
         - jsonPath: $.signatures.length()
           expect:
             type: EQUALS
-            value: 2
-            message: "Expected 2 println() overloads from groovy.lang.Script"
+            value: 4
+            message: "Expected 4 println() overloads (Script + GDK)"
 
         # Check that activeSignature is set
         - jsonPath: $.activeSignature
@@ -77,11 +71,6 @@ steps:
         # TODO(#466): Add strict label assertions once we improve signature formatting
         #   Currently signatures use simplified format "println()" without modifiers.
         #   Ideal format: "public void println()" matching IDE conventions.
-        # - jsonPath: $.signatures[?(@.label == 'public void println()')]
-        #   expect:
-        #     type: SIZE
-        #     value: 1
-        #     message: "Should find 'public void println()' signature"
 
   - shutdown: {}
   - exit: {}
