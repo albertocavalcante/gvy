@@ -4,9 +4,21 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.DocumentHighlight
 import org.eclipse.lsp4j.DocumentHighlightKind
@@ -73,7 +85,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     private fun findHighlights(
         definition: ASTNode,
         astModel: GroovyAstModel,
-        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        symbolTable: SymbolTable,
         documentUri: URI,
     ): List<DocumentHighlight> {
         val highlights = mutableListOf<DocumentHighlight>()
@@ -87,8 +99,8 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
                 val isMatch = when {
                     nodeDefinition == null -> false
                     nodeDefinition == definition -> true
-                    nodeDefinition is org.codehaus.groovy.ast.Parameter &&
-                        definition is org.codehaus.groovy.ast.Parameter ->
+                    nodeDefinition is Parameter &&
+                        definition is Parameter ->
                         areParametersEqual(nodeDefinition, definition)
                     else -> false
                 }
@@ -140,7 +152,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
             }
 
             // Assignment to this variable is a write
-            if (parent is org.codehaus.groovy.ast.expr.BinaryExpression) {
+            if (parent is BinaryExpression) {
                 val isAssignment = parent.operation.text in listOf("=", "+=", "-=", "*=", "/=", "%=")
                 if (isAssignment && parent.leftExpression == node) {
                     return DocumentHighlightKind.Write
@@ -149,7 +161,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         }
 
         // Parameters are declarations (write)
-        if (node is org.codehaus.groovy.ast.Parameter) {
+        if (node is Parameter) {
             return DocumentHighlightKind.Write
         }
 
@@ -169,16 +181,16 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         val highlightableTypes = setOf(
             VariableExpression::class,
             DeclarationExpression::class,
-            org.codehaus.groovy.ast.Parameter::class,
-            org.codehaus.groovy.ast.Variable::class,
-            org.codehaus.groovy.ast.expr.MethodCallExpression::class,
-            org.codehaus.groovy.ast.MethodNode::class,
-            org.codehaus.groovy.ast.FieldNode::class,
-            org.codehaus.groovy.ast.PropertyNode::class,
-            org.codehaus.groovy.ast.expr.PropertyExpression::class,
-            org.codehaus.groovy.ast.ClassNode::class,
-            org.codehaus.groovy.ast.expr.ClassExpression::class,
-            org.codehaus.groovy.ast.expr.ConstructorCallExpression::class,
+            Parameter::class,
+            Variable::class,
+            MethodCallExpression::class,
+            MethodNode::class,
+            FieldNode::class,
+            PropertyNode::class,
+            PropertyExpression::class,
+            ClassNode::class,
+            ClassExpression::class,
+            ConstructorCallExpression::class,
         )
         return highlightableTypes.contains(this::class)
     }
@@ -186,10 +198,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     /**
      * Compare two Parameters for equality.
      */
-    private fun areParametersEqual(
-        p1: org.codehaus.groovy.ast.Parameter,
-        p2: org.codehaus.groovy.ast.Parameter,
-    ): Boolean {
+    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
         if (p1.name != p2.name) return false
 
         val t1 = p1.type?.name
