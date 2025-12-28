@@ -264,11 +264,6 @@ class SignatureHelpProviderTest {
         val (outerLineIndex, outerLine) = lineContaining(source, "printResult(sum")
         val outerPos = Position(outerLineIndex, outerLine.indexOf("printResult") + "printResult".length)
 
-        // Debug AST resolution
-        val astModel = compilationService.getAstModel(uri)!!
-        val nodeAt = astModel.getNodeAt(uri, outerPos.toGroovyPosition())
-        assertNotNull(nodeAt, "AST Node at $outerPos is null")
-
         val outerResult = signatureHelpProvider.provideSignatureHelp(uri.toString(), outerPos)
         assertEquals("void printResult(int val)", outerResult.signatures.firstOrNull()?.label ?: "null")
     }
@@ -316,11 +311,6 @@ class SignatureHelpProviderTest {
         // Position at opening parenthesis: `method(|)`
         val (lineIndex, line) = lineContaining(source, "method()")
         val position = Position(lineIndex, line.indexOf("method") + "method".length)
-
-        // Debug AST resolution
-        val astModel = compilationService.getAstModel(uri)!!
-        val nodeAt = astModel.getNodeAt(uri, position.toGroovyPosition())
-        assertNotNull(nodeAt, "AST Node at $position is null")
 
         val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
 
