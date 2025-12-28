@@ -122,15 +122,13 @@ class SignatureHelpProvider(
             .filter { it.name == methodName }
         signatures.addAll(gdkMethods.map { it.toSignatureInformation() })
 
-        // 4. Classpath Methods
-        if (targetType != "java.lang.Object" && targetType != "java.lang.Class") {
-            try {
-                val methods = compilationService.classpathService.getMethods(targetType)
-                    .filter { it.name == methodName && it.isPublic }
-                signatures.addAll(methods.map { it.toSignatureInformation() })
-            } catch (e: Exception) {
-                logger.debug("Failed to reflect on type $targetType: ${e.message}")
-            }
+        // 4. Classpath Methods (includes java.lang.Object for explicit Object receivers)
+        try {
+            val methods = compilationService.classpathService.getMethods(targetType)
+                .filter { it.name == methodName && it.isPublic }
+            signatures.addAll(methods.map { it.toSignatureInformation() })
+        } catch (e: Exception) {
+            logger.debug("Failed to reflect on type $targetType: ${e.message}")
         }
 
         // Fallback: Check Object methods for implicit this if nothing else found
