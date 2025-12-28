@@ -63,18 +63,34 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
 - VS Code extension in TypeScript, bundled with esbuild (Node 20 target).
 - Groovy Language Server JAR lives in `server/gls.jar`.
-- Pinned LSP: `groovy-lsp v0.2.0`, universal `groovy-lsp-0.2.0-linux-amd64.jar` with checksum enforcement.
+- Pinned LSP: `groovy-lsp v0.4.8`, universal `gls-0.4.8.jar` with checksum enforcement.
 - Client source: `client/src/**`; build output: `client/out/`.
 - Tools: `tools/prepare-server.js` (download/verify LSP), `tools/compute-groovy-cache-key.js`.
 - CI: `.github/workflows/*.yml` (publish requires successful LSP bundle).
 
 ## Environment toggles
 
-- `USE_LATEST_GROOVY_LSP=true` — opt into latest release (uses `checksums.txt` when present).
-- `FORCE_DOWNLOAD=true` — redownload the server JAR even if present.
-- `PREFER_LOCAL=true` — use a locally built groovy-lsp JAR if found.
-- `REQUIRE_SERVER_BUNDLE=true` — fail build if server bundling fails (publish).
-- `SKIP_PREPARE_SERVER=true` — skip server prep (used in some CI paths).
+**Version Selection** (new defaults as of v0.4.9):
+- **Default**: Fetches latest stable release from GitHub
+- `GLS_TAG=v0.4.8` — Use specific version
+- `GLS_CHANNEL=nightly` — Use latest nightly build
+- `GLS_CHANNEL=pinned` — Use pinned v0.4.8 (stable fallback)
+- `GLS_USE_PINNED=true` — Alternative to GLS_CHANNEL=pinned
+
+**Local Development** (auto-detected in monorepo):
+- Monorepo: Automatically uses `../groovy-lsp/build/libs/` if available
+- `PREFER_LOCAL=true` — Force local build search
+- Override: `GLS_CHANNEL=release` to force download
+
+**Other Toggles**:
+- `FORCE_DOWNLOAD=true` — Redownload the server JAR even if present
+- `GLS_ALLOW_PINNED_FALLBACK=true` — Fall back to pinned on network failure
+- `REQUIRE_SERVER_BUNDLE=true` — Fail build if server bundling fails (publish)
+- `SKIP_PREPARE_SERVER=true` — Skip server prep (used in some CI paths)
+
+**Migration from v0.4.8**:
+- Old: `USE_LATEST_GLS=true` to get latest
+- New: Latest is default, use `GLS_USE_PINNED=true` for pinned
 
 ## Git & workflow
 
