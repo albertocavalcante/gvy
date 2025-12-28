@@ -143,7 +143,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                     is org.codehaus.groovy.ast.expr.VariableExpression -> methodExpr.name
                     else -> null
                 }
-            methodName?.length
+            (methodName?.length ?: 0) + 1
         }
         is org.codehaus.groovy.ast.ImportNode -> {
             this.type?.nameWithoutPackage?.length

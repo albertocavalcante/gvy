@@ -261,10 +261,8 @@ class SignatureHelpProviderTest {
         assertEquals("int sum(int a, int b)", innerResult.signatures.firstOrNull()?.label ?: "null")
 
         // Case 2: Inside outer call `printResult(...)`
-        // TODO(#469): Fix AST node resolution for outer calls in test environment
-        // Currently fails because findMethodCall doesn't walk up correctly from the token at '('
-        /*
-        val outerPos = positionAfter(source, "printResult")
+        val (outerLineIndex, outerLine) = lineContaining(source, "printResult(sum")
+        val outerPos = Position(outerLineIndex, outerLine.indexOf("printResult") + "printResult".length)
 
         // Debug AST resolution
         val astModel = compilationService.getAstModel(uri)!!
@@ -273,7 +271,6 @@ class SignatureHelpProviderTest {
 
         val outerResult = signatureHelpProvider.provideSignatureHelp(uri.toString(), outerPos)
         assertEquals("void printResult(int val)", outerResult.signatures.firstOrNull()?.label ?: "null")
-         */
     }
 
     @Test
@@ -303,7 +300,6 @@ class SignatureHelpProviderTest {
         val uri = URI.create("file:///SignatureHelpDefaults.groovy")
         val source = """
             class Defaults {
-                // TODO(#469): Verify default parameter label generation once test AST resolution is fixed
                 def method(String name = "World", int retries = 3) {}
                 def run() {
                     method()
@@ -318,8 +314,8 @@ class SignatureHelpProviderTest {
         assertTrue(declarations != null && declarations.isNotEmpty(), "Symbol table missing method")
 
         // Position at opening parenthesis: `method(|)`
-        /*
-        val position = positionAfter(source, "method")
+        val (lineIndex, line) = lineContaining(source, "method()")
+        val position = Position(lineIndex, line.indexOf("method") + "method".length)
 
         // Debug AST resolution
         val astModel = compilationService.getAstModel(uri)!!
@@ -333,16 +329,14 @@ class SignatureHelpProviderTest {
         val paramLabels = signature.parameters.mapNotNull { it.label?.left }
 
         // Verify default values are present
-        assertTrue(paramLabels[0].contains(" = \"World\""), "Label should contain default value 'World': ${paramLabels[0]}")
+        assertTrue(paramLabels[0].contains(" = World"), "Label should contain default value 'World': ${paramLabels[0]}")
         assertTrue(paramLabels[1].contains(" = 3"), "Label should contain default value '3': ${paramLabels[1]}")
-         */
     }
 
     // --- Edge Case Tests ---
 
     @Test
-    fun `TODO - displays array parameters correctly as Type brackets`() = runTest {
-        // TODO(#469): AST node resolution at parenthesis boundary needs improvement
+    fun `displays array parameters correctly as Type brackets`() = runTest {
         val uri = URI.create("file:///ArrayParam.groovy")
         val source = """
             class ArrayProcessor {
@@ -355,15 +349,14 @@ class SignatureHelpProviderTest {
 
         compile(uri, source)
         // Currently affected by AST resolution - documenting expected behavior
-        /*
-        val position = positionAfter(source, "process(")
+        val (lineIndex, line) = lineContaining(source, "process(null")
+        val position = Position(lineIndex, line.indexOf("process") + "process".length)
         val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
 
         val signature = result.signatures.first()
         val paramLabels = signature.parameters.mapNotNull { it.label?.left }
         assertEquals("String[] items", paramLabels[0], "First param should be String[]")
         assertEquals("int[] counts", paramLabels[1], "Second param should be int[]")
-         */
     }
 
     @Test
@@ -393,9 +386,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `TODO - handles explicit Object receiver for hashCode`() = runTest {
-        // TODO(#469): AST node resolution at method call boundaries needs improvement
-        // When fixed, this test should verify signature help for Object methods
+    fun `handles explicit Object receiver for hashCode`() = runTest {
         val uri = URI.create("file:///ExplicitObject.groovy")
         val source = """
             class ObjectTest {
@@ -409,11 +400,9 @@ class SignatureHelpProviderTest {
         compile(uri, source)
         // Currently fails due to AST node resolution at parenthesis boundary
         // When supported:
-        /*
         val position = positionAfter(source, "obj.hashCode(")
         val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
         assertTrue(result.signatures.isNotEmpty(), "Should find Object.hashCode() signature")
-         */
     }
 
     // --- Future Improvement Tests (Disabled with TODOs) ---
