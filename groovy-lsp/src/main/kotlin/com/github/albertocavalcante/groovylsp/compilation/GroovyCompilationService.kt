@@ -374,11 +374,11 @@ class GroovyCompilationService(
 
         // Index files in parallel batches
         // NOTE: Batch size balances parallelism with resource usage
-        // No Dispatchers.IO needed: all called functions are suspend (non-blocking)
+        // Uses ioDispatcher since call chain includes blocking I/O (Files.readString)
         uris.chunked(INDEXING_BATCH_SIZE).forEach { batch ->
             coroutineScope {
                 batch.forEach { uri ->
-                    launch {
+                    launch(ioDispatcher) {
                         indexFileWithProgress(uri, indexed, total, onProgress)
                     }
                 }
