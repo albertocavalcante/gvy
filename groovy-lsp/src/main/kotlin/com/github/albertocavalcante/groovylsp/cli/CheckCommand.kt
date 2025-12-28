@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
@@ -21,7 +22,6 @@ import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.slf4j.LoggerFactory
 import java.io.File
-import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger(CheckCommand::class.java)
 
@@ -74,8 +74,9 @@ class CheckCommand : CliktCommand(name = "check") {
     private fun checkFiles(server: GroovyLanguageServer) {
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
         if (service == null) {
-            logger.error("Failed to retrieve GroovyTextDocumentService")
-            exitProcess(1)
+            // Use ProgramResult for proper Clikt error handling instead of exitProcess
+            // This ensures the finally block runs for cleanup
+            throw ProgramResult(1)
         }
 
         runBlocking {

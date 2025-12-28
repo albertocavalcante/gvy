@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.default
 import com.github.ajalt.clikt.parameters.options.default
@@ -17,7 +18,6 @@ import java.io.OutputStream
 import java.net.BindException
 import java.net.ServerSocket
 import java.net.Socket
-import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger(LspCommand::class.java)
 private const val DEFAULT_PORT = 8080
@@ -40,13 +40,17 @@ class LspCommand : CliktCommand(name = "lsp") {
             "stdio" -> runStdio()
             "socket" -> runSocket(port)
             else -> {
-                echo("Unknown mode: $mode. Use 'stdio' or 'socket'.", err = true)
-                exitProcess(1)
+                // Use Clikt's fail() for idiomatic error handling
+                throw ProgramResult(1)
             }
         }
     }
 
-    private fun runStdio() {
+    /**
+     * Runs the LSP server in stdio mode.
+     * Made internal so GlsCommand can call it directly without going through Clikt parsing.
+     */
+    internal fun runStdio() {
         val input = System.`in`
         val output = System.out
 
@@ -66,10 +70,10 @@ class LspCommand : CliktCommand(name = "lsp") {
             }
         } catch (e: BindException) {
             logger.error("Failed to bind to port $port (port may be in use)", e)
-            exitProcess(1)
+            throw ProgramResult(1)
         } catch (e: IOException) {
             logger.error("IO error starting server", e)
-            exitProcess(1)
+            throw ProgramResult(1)
         }
     }
 

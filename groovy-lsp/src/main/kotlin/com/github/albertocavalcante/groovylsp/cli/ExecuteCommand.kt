@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
+import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
@@ -9,7 +10,6 @@ import com.github.ajalt.mordant.terminal.Terminal
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import org.eclipse.lsp4j.ExecuteCommandParams
 import org.slf4j.LoggerFactory
-import kotlin.system.exitProcess
 
 private val logger = LoggerFactory.getLogger(ExecuteCommand::class.java)
 
@@ -38,7 +38,8 @@ class ExecuteCommand : CliktCommand(name = "execute") {
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             logger.error("Error executing command '$command'", e)
-            exitProcess(1)
+            // Re-throw as ProgramResult to ensure finally block runs for cleanup
+            throw ProgramResult(1)
         } finally {
             server.shutdown().get()
         }

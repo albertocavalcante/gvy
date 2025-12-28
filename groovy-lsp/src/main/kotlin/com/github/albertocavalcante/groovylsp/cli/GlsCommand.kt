@@ -9,11 +9,6 @@ import com.github.ajalt.mordant.rendering.AnsiLevel
 import com.github.ajalt.mordant.terminal.Terminal
 
 /**
- * Key for storing the Terminal in the Clikt context.
- */
-object TerminalKey
-
-/**
  * Root command for the Groovy Language Server CLI.
  *
  * This command serves as the entry point and delegates to subcommands.
@@ -56,8 +51,10 @@ class GlsCommand : CliktCommand(name = "gls") {
         // If no subcommand is provided, default to LSP stdio mode
         if (currentContext.invokedSubcommand == null) {
             // Note: Do NOT print to stdout here - it would corrupt LSP JSON-RPC protocol
-            // in stdio mode since stdout is used for LSP communication
-            LspCommand().run()
+            // in stdio mode since stdout is used for LSP communication.
+            // Call runStdio() directly to avoid going through Clikt argument parsing
+            // which would create a new context and lose our Terminal configuration.
+            LspCommand().runStdio()
         }
     }
 }
