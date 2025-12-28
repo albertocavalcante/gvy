@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.cli
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.context
+import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.mordant.rendering.AnsiLevel
@@ -34,6 +35,15 @@ class GlsCommand : CliktCommand(name = "gls") {
                 GlsHelpFormatter(ctx)
             }
         }
+        subcommands(
+            LspCommand(),
+            CheckCommand(),
+            ExecuteCommand(),
+            FormatCommand(),
+            VersionCommand(),
+            StdioCommand(),
+            SocketCommand(),
+        )
     }
 
     override fun run() {

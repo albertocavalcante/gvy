@@ -255,7 +255,7 @@ class LanguageServerSessionFactory {
  * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
  */
 class LanguageServerSession(
-    private val process: Process?,
+    val process: Process?,
     val server: LanguageServer,
     val endpoint: RemoteEndpoint,
     val client: HarnessLanguageClient,
