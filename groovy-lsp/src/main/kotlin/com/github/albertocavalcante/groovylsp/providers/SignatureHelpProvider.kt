@@ -242,7 +242,7 @@ class SignatureHelpProvider(
                 else -> param.type.nameWithoutPackage
             }
             val defaultValue = param.initialExpression?.let { expr ->
-                val text = expr.text
+                val text = expr.text ?: return@let ""
                 if (expr is ConstantExpression && expr.type.name == "java.lang.String") {
                     " = \"$text\""
                 } else {
