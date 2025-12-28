@@ -241,7 +241,14 @@ class SignatureHelpProvider(
                 param.type.isArray() -> param.type.componentType.nameWithoutPackage + "[]"
                 else -> param.type.nameWithoutPackage
             }
-            val defaultValue = param.initialExpression?.text?.let { " = $it" } ?: ""
+            val defaultValue = param.initialExpression?.let { expr ->
+                val text = expr.text
+                if (expr is ConstantExpression && expr.type.name == "java.lang.String") {
+                    " = \"$text\""
+                } else {
+                    " = $text"
+                }
+            } ?: ""
             val paramLabel = "$typeName ${param.name}$defaultValue"
             ParameterInformation().apply { label = Either.forLeft(paramLabel) }
         }
