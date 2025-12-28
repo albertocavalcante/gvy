@@ -571,11 +571,21 @@ async function prepareServer(runtimeOptions = {}) {
     const installedVersion = readInstalledVersion();
 
     // Auto-detect monorepo and prefer local build
+    // Only activate if no explicit version/channel selection is made
     const isMonorepo = detectMonorepoEnvironment();
+    const hasExplicitVersionSelection =
+      cliOptions.tag ||
+      cliOptions.nightly ||
+      cliOptions.latest ||
+      cliOptions.channel ||
+      process.env.GLS_TAG ||
+      process.env.GLS_CHANNEL ||
+      process.env.GLS_USE_PINNED === "true" ||
+      process.env.USE_LATEST_GLS === "true";
+
     const autoPreferLocal = isMonorepo &&
                             !explicitUrl &&
-                            !cliOptions.tag &&
-                            !cliOptions.nightly;
+                            !hasExplicitVersionSelection;
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 
