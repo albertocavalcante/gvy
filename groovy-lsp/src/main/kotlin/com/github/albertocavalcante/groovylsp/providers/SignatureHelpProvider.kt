@@ -50,7 +50,7 @@ class SignatureHelpProvider(
         val astVisitor: GroovyAstModel,
     )
 
-    @Suppress("ReturnCount", "LongMethod", "ComplexMethod")
+    @Suppress("ReturnCount")
     private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
         val astVisitor = compilationService.getAstModel(documentUri) ?: run {
             logger.debug("No AST visitor available for {}", documentUri)
@@ -79,79 +79,16 @@ class SignatureHelpProvider(
 
         val allSignatures = mutableListOf<SignatureInformation>()
 
-        // 1. Source (Local Declarations)
+        // 1. Local Methods (Source)
         val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
         allSignatures.addAll(declarations.map { it.toSignatureInformation() })
 
-        // 2 + 3. Receiver Resolution (GDK & Classpath)
-        // Determine the type of the object the method is being called on
-        var receiverType = if (methodCall.isImplicitThis) {
-            // Implicit 'this' call (e.g. println) -> usually Script or enclosing class
-            "groovy.lang.Script"
-        } else {
-            // Explicit receiver (e.g. list.each) -> Infer type
-            val objExpr = methodCall.objectExpression
-            var type = TypeInferencer.inferExpressionType(objExpr)
-
-            // Refine type if it's Object/Dynamic and likely a variable
-            if ((type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression) {
-                val resolvedVar = symbolTable.resolveSymbol(objExpr, astVisitor)
-                if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
-                    // Infer from initializer (e.g. def list = [])
-                    resolvedVar.initialExpression?.let { init ->
-                        val inferred = TypeInferencer.inferExpressionType(init)
-                        if (inferred != "java.lang.Object") {
-                            type = inferred
-                        }
-                    }
-                }
-            }
-            type
-        }
-
-        // Sanitize type name (remove generics) for reflection/GDK lookup
-        val targetType = receiverType.substringBefore("<")
-
-        val gdkProvider = compilationService.gdkProvider
-        val classpathService = compilationService.classpathService
-
-        // 1. AST Methods (Local)
-        val astMethods: List<MethodNode> = methodCall.methodAsString?.let { name ->
-            if (methodCall.isImplicitThis) {
-                findScriptMethods(name)
-            } else {
-                emptyList()
-            }
-        } ?: emptyList()
-        allSignatures.addAll(astMethods.map { node -> node.toSignatureInformation() })
-
-        // 2. GDK Extension Methods (e.g. .each, .collect)
-        val gdkMethods = gdkProvider.getMethodsForType(targetType)
-            .filter { it.name == methodName }
-        allSignatures.addAll(gdkMethods.map { it.toSignatureInformation() })
-
-        // 3. Classpath Methods (e.g. ArrayList.add, String.substring)
-        // If the type is standard (not Object/dynamic), check classpath reflection
-        if (targetType != "java.lang.Object" && targetType != "java.lang.Class") {
-            try {
-                // We use ClasspathService to find methods on the inferred type
-                val methods = classpathService.getMethods(targetType)
-                    .filter { it.name == methodName && it.isPublic }
-                allSignatures.addAll(methods.map { it.toSignatureInformation() })
-            } catch (e: Exception) {
-                logger.debug("Failed to reflect on type $targetType: ${e.message}")
-            }
-        }
-
-        // If we still have nothing and implicit this, verify Object methods just in case
-        if (allSignatures.isEmpty() && methodCall.isImplicitThis) {
-            val objectMethods = classpathService.getMethods("java.lang.Object")
-                .filter { it.name == methodName }
-            allSignatures.addAll(objectMethods.map { it.toSignatureInformation() })
-        }
+        // 2-4. Resolved Methods (Superclass, GDK, Classpath)
+        val resolvedSignatures = resolveMethodsOnReceiver(methodCall, methodName, symbolTable, astVisitor)
+        allSignatures.addAll(resolvedSignatures)
 
         if (allSignatures.isEmpty()) {
-            logger.debug("No signatures found for $methodName on type $receiverType")
+            logger.debug("No signatures found for $methodName")
             return null
         }
 
@@ -159,6 +96,83 @@ class SignatureHelpProvider(
         val distinctSignatures = allSignatures.distinctBy { it.label }
 
         return SignatureContext(methodCall, nodeAtPosition, distinctSignatures, astVisitor)
+    }
+
+    private fun resolveMethodsOnReceiver(
+        methodCall: MethodCallExpression,
+        methodName: String,
+        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        astVisitor: GroovyAstModel,
+    ): List<SignatureInformation> {
+        val signatures = mutableListOf<SignatureInformation>()
+
+        // Determine the type of the object the method is being called on
+        val receiverType = resolveReceiverType(methodCall, symbolTable, astVisitor)
+        val targetType = receiverType.substringBefore("<")
+
+        // 2. Script Methods (Implicit 'this')
+        // Methods from groovy.lang.Script superclass if applicable
+        if (methodCall.isImplicitThis) {
+            val scriptMethods = findScriptMethods(methodName)
+            signatures.addAll(scriptMethods.map { it.toSignatureInformation() })
+        }
+
+        // 3. GDK Extension Methods
+        val gdkMethods = compilationService.gdkProvider.getMethodsForType(targetType)
+            .filter { it.name == methodName }
+        signatures.addAll(gdkMethods.map { it.toSignatureInformation() })
+
+        // 4. Classpath Methods
+        if (targetType != "java.lang.Object" && targetType != "java.lang.Class") {
+            try {
+                val methods = compilationService.classpathService.getMethods(targetType)
+                    .filter { it.name == methodName && it.isPublic }
+                signatures.addAll(methods.map { it.toSignatureInformation() })
+            } catch (e: Exception) {
+                logger.debug("Failed to reflect on type $targetType: ${e.message}")
+            }
+        }
+
+        // Fallback: Check Object methods for implicit this if nothing else found
+        if (signatures.isEmpty() && methodCall.isImplicitThis) {
+            val objectMethods = compilationService.classpathService.getMethods("java.lang.Object")
+                .filter { it.name == methodName }
+            signatures.addAll(objectMethods.map { it.toSignatureInformation() })
+        }
+
+        return signatures
+    }
+
+    private fun resolveReceiverType(
+        methodCall: MethodCallExpression,
+        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        astVisitor: GroovyAstModel,
+    ): String {
+        if (methodCall.isImplicitThis) {
+            // Try to find enclosing class
+            var current: ASTNode? = methodCall
+            while (current != null && current !is org.codehaus.groovy.ast.ClassNode) {
+                current = astVisitor.getParent(current)
+            }
+            return (current as? org.codehaus.groovy.ast.ClassNode)?.name ?: "groovy.lang.Script"
+        }
+
+        val objExpr = methodCall.objectExpression
+        var type = TypeInferencer.inferExpressionType(objExpr)
+
+        if ((type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression) {
+            val resolvedVar = symbolTable.resolveSymbol(objExpr, astVisitor)
+            if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
+                val init = resolvedVar.initialExpression
+                if (init != null) {
+                    val inferred = TypeInferencer.inferExpressionType(init)
+                    if (inferred != "java.lang.Object") {
+                        type = inferred
+                    }
+                }
+            }
+        }
+        return type
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
@@ -175,8 +189,21 @@ class SignatureHelpProvider(
         // Better: checking against each signature's param count is client responsibility.
         // We simply provide the index derived from cursor.
         // But for safety against client crashes:
+        // Limit active parameter to valid range [0, maxParams - 1] (or 0 if empty)
+        // We use maxParams not maxParams - 1 because we want to allow typing the "next" parameter
+        // or varargs, but staying reasonably within bounds prevents client confusion.
+        // Actually, LSP spec says: "If the active parameter is out of bounds, the client
+        // should decide how to handle it (e.g. highlight nothing or the last parameter)."
+        // But to be safe, we clamp to available parameters.
         val maxParams = signatures.maxOfOrNull { it.parameters.size } ?: 0
-        val normalizedActiveParameter = activeParameter.coerceAtMost(maxParams + 1) // +1 for varargs tolerance
+        // Clamp to [0, maxParams] (allow one past end for "next" param indication, or just maxParams-1?)
+        // The user feedback specifically requested strict bounds, likely similar to [0, lastIndex].
+        // But if I am at cursor position for arg 2 in a 2-arg method, I might be typing the 3rd arg.
+        // Standard practice: activeParameter can be >= parameters.length (meaning too many args).
+        // However, user feedback says: "For a method with 2 parameters... this allows indices up to 3... cause LSP clients to receive out-of-bounds".
+        // So I will clamp to (parameters.size - 1).coerceAtLeast(0).
+        val lastIndex = maxParams.coerceAtLeast(1) - 1 // If maxParams=0 -> lastIndex=0. If maxParams=2 -> lastIndex=1.
+        val normalizedActiveParameter = activeParameter.coerceIn(0, lastIndex)
 
         return SignatureHelp().apply {
             this.signatures = signatures
@@ -205,8 +232,13 @@ class SignatureHelpProvider(
 
     private fun MethodNode.toSignatureInformation(): SignatureInformation {
         val paramsInfo = parameters.map { param ->
-            val typeName = if (param.isDynamicTyped) "def" else param.type.nameWithoutPackage
-            val paramLabel = "$typeName ${param.name}"
+            val typeName = when {
+                param.isDynamicTyped -> "def"
+                param.type.isArray() -> param.type.componentType.nameWithoutPackage + "..."
+                else -> param.type.nameWithoutPackage
+            }
+            val defaultValue = param.initialExpression?.text?.let { " = $it" } ?: ""
+            val paramLabel = "$typeName ${param.name}$defaultValue"
             ParameterInformation().apply { label = Either.forLeft(paramLabel) }
         }
 
