@@ -173,4 +173,27 @@ class SignatureHelpProviderTest {
         }
         error("Snippet '$snippet' not found in source")
     }
+
+    @Test
+    fun `returns signatures for Script-level println GDK method`() = runTest {
+        // println() is a GDK method inherited from groovy.lang.Script
+        val uri = URI.create("file:///ScriptPrintln.groovy")
+        val source = """
+            println("hello")
+        """.trimIndent()
+
+        compile(uri, source)
+
+        // Position inside println parens: println("hello")
+        //                                       ^ char 8
+        val position = Position(0, 8)
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        // Should find at least one println signature from groovy.lang.Script
+        assertTrue(
+            result.signatures.isNotEmpty(),
+            "Expected signatures for println() GDK method, but got empty. " +
+                "Signatures: ${result.signatures.map { it.label }}",
+        )
+    }
 }

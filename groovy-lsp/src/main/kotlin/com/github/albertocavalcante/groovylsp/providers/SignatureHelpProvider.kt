@@ -22,6 +22,8 @@ import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.net.URI
 
 class SignatureHelpProvider(
@@ -75,13 +77,58 @@ class SignatureHelpProvider(
             return null
         }
 
-        val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+        // Try local declarations first
+        var declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+
+        // Fallback: Try Script methods for GDK support (e.g., println)
+        if (declarations.isEmpty()) {
+            declarations = findScriptMethods(methodName)
+            if (declarations.isNotEmpty()) {
+                logger.debug("Found {} Script methods for '{}'", declarations.size, methodName)
+            }
+        }
+
+        // TODO(#466): Extend to support classpath types and receiver type inference.
+        //   See: https://github.com/albertocavalcante/groovy-devtools/issues/466
+
         if (declarations.isEmpty()) {
             logger.debug("No matching declarations found for method $methodName in $documentUri")
             return null
         }
 
         return SignatureContext(methodCall, nodeAtPosition, declarations, astVisitor)
+    }
+
+    /**
+     * Find methods from groovy.lang.Script that match the given name.
+     * Converts java.lang.reflect.Method to MethodNode for compatibility with existing code.
+     */
+    private fun findScriptMethods(methodName: String): List<MethodNode> = try {
+        val scriptClass = groovy.lang.Script::class.java
+        scriptClass.methods
+            .filter { it.name == methodName && Modifier.isPublic(it.modifiers) }
+            .map { it.toMethodNode() }
+    } catch (e: Exception) {
+        logger.debug("Failed to resolve Script methods for {}: {}", methodName, e.message)
+        emptyList()
+    }
+
+    /**
+     * Convert a reflection Method to a MethodNode for signature generation.
+     */
+    private fun Method.toMethodNode(): MethodNode {
+        val params = parameters.map { param ->
+            Parameter(org.codehaus.groovy.ast.ClassHelper.make(param.type), param.name)
+        }.toTypedArray()
+
+        return MethodNode(
+            name,
+            Modifier.PUBLIC,
+            org.codehaus.groovy.ast.ClassHelper.make(returnType),
+            params,
+            emptyArray(),
+            null,
+        )
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
