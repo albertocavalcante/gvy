@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
+import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
@@ -55,77 +56,72 @@ class DefinitionProvider(
     /**
      * Provide definitions as LocationLink objects for enhanced navigation.
      */
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     fun provideDefinitionLinks(uri: String, position: Position): Flow<LocationLink> = flow {
         logger.debug("Providing definition links for $uri at ${position.line}:${position.character}")
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
+        val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        val ast = compilationService.getAst(documentUri) ?: return@flow
-        val visitor = compilationService.getAstModel(documentUri) ?: return@flow
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
-
-        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
+        val resolver = DefinitionResolver(context.visitor, context.symbolTable, compilationService, sourceNavigator)
 
         // Find the origin node at the position
-        val originNode = visitor.getNodeAt(documentUri, position.toGroovyPosition())
+        val originNode = context.visitor.getNodeAt(documentUri, position.toGroovyPosition())
         if (originNode == null) {
             logger.debug("No origin node found at position")
             return@flow
         }
 
-        // Find the definition
-        try {
-            val result = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
-            if (result != null) {
-                when (result) {
-                    is DefinitionResolver.DefinitionResult.Source -> {
-                        // Use the visitor-derived URI when possible; fall back to result.uri for synthetic nodes
-                        // (e.g., Jenkins vars) that aren't in the visitor's AST.
-                        val targetUri = result.node.toLspLocation(visitor)?.uri
-                            ?: result.uri.toString()
-                        val targetRange = result.node.toLspRange()
-                            ?: EMPTY_RANGE
-                        val originRange = originNode.toLspRange()
-                            ?: EMPTY_RANGE
-                        val locationLink = LocationLink(
-                            targetUri,
-                            targetRange,
-                            targetRange,
-                            originRange,
-                        )
-                        logger.debug(
-                            "Found definition link to ${locationLink.targetUri}:${locationLink.targetRange}",
-                        )
-                        emit(locationLink)
-                    }
+        val locationLink = resolveDefinitionLink(resolver, documentUri, position, originNode, context.visitor)
+        if (locationLink != null) {
+            emit(locationLink)
+        }
+    }
 
-                    is DefinitionResolver.DefinitionResult.Binary -> {
-                        // Handle binary definition
-                        val locationLink = LocationLink().apply {
-                            targetUri = result.uri.toString()
-                            val range = result.range ?: EMPTY_RANGE
-                            targetRange = range
-                            targetSelectionRange = range
-                            originSelectionRange = originNode.toLspRange()
-                        }
-                        logger.debug("Found binary definition link to ${locationLink.targetUri}")
-                        emit(locationLink)
-                    }
+    @Suppress("TooGenericExceptionCaught") // Catch-all serves as final fallback for unexpected errors
+    private suspend fun resolveDefinitionLink(
+        resolver: DefinitionResolver,
+        documentUri: URI,
+        position: Position,
+        originNode: ASTNode,
+        visitor: GroovyAstModel,
+    ): LocationLink? = try {
+        val result = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
+        result?.let { createLocationLink(it, originNode, visitor) }
+    } catch (e: Exception) {
+        when (e) {
+            is CancellationException -> {
+                logger.debug("Definition link resolution cancelled by client")
+                throw e // Must re-throw to preserve coroutine cancellation
+            }
+            is GroovyLspException -> logger.debug("Definition link resolution failed: ${e.message}")
+            is IllegalArgumentException -> logger.warn("Invalid arguments during definition link resolution", e)
+            is IllegalStateException -> logger.warn("Invalid state during definition link resolution", e)
+            else -> logger.warn("Unexpected error during definition link resolution", e)
+        }
+        null
+    }
+
+    private fun createLocationLink(
+        result: DefinitionResolver.DefinitionResult,
+        originNode: ASTNode,
+        visitor: GroovyAstModel,
+    ): LocationLink {
+        val originRange = originNode.toLspRange() ?: EMPTY_RANGE
+
+        return when (result) {
+            is DefinitionResolver.DefinitionResult.Source -> {
+                val targetUri = result.node.toLspLocation(visitor)?.uri ?: result.uri.toString()
+                val targetRange = result.node.toLspRange() ?: EMPTY_RANGE
+                LocationLink(targetUri, targetRange, targetRange, originRange).also {
+                    logger.debug("Found definition link to ${it.targetUri}:${it.targetRange}")
                 }
             }
-        } catch (e: GroovyLspException) {
-            // Handle expected LSP exceptions by not emitting anything (empty result)
-            logger.debug("Definition link resolution failed: ${e.message}")
-        } catch (e: IllegalArgumentException) {
-            logger.warn("Invalid arguments during definition link resolution", e)
-        } catch (e: IllegalStateException) {
-            logger.warn("Invalid state during definition link resolution", e)
-        } catch (e: CancellationException) {
-            // Client cancelled the request - this is expected, log at debug level
-            logger.debug("Definition link resolution cancelled by client")
-        } catch (e: Exception) {
-            logger.warn("Unexpected error during definition link resolution", e)
+            is DefinitionResolver.DefinitionResult.Binary -> {
+                val range = result.range ?: EMPTY_RANGE
+                LocationLink(result.uri.toString(), range, range, originRange).also {
+                    logger.debug("Found binary definition link to ${it.targetUri}")
+                }
+            }
         }
     }
 
