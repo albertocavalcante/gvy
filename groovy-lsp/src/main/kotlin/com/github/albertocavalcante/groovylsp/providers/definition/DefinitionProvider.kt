@@ -87,20 +87,17 @@ class DefinitionProvider(
     ): LocationLink? = try {
         val result = resolver.findDefinitionAt(documentUri, position.toGroovyPosition())
         result?.let { createLocationLink(it, originNode, visitor) }
-    } catch (e: GroovyLspException) {
-        logger.debug("Definition link resolution failed: ${e.message}")
-        null
-    } catch (e: IllegalArgumentException) {
-        logger.warn("Invalid arguments during definition link resolution", e)
-        null
-    } catch (e: IllegalStateException) {
-        logger.warn("Invalid state during definition link resolution", e)
-        null
-    } catch (e: CancellationException) {
-        logger.debug("Definition link resolution cancelled by client")
-        null
     } catch (e: Exception) {
-        logger.warn("Unexpected error during definition link resolution", e)
+        when (e) {
+            is CancellationException -> {
+                logger.debug("Definition link resolution cancelled by client")
+                throw e // Must re-throw to preserve coroutine cancellation
+            }
+            is GroovyLspException -> logger.debug("Definition link resolution failed: ${e.message}")
+            is IllegalArgumentException -> logger.warn("Invalid arguments during definition link resolution", e)
+            is IllegalStateException -> logger.warn("Invalid state during definition link resolution", e)
+            else -> logger.warn("Unexpected error during definition link resolution", e)
+        }
         null
     }
 
