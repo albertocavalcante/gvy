@@ -67,7 +67,7 @@ steps:
          # So: "List each(Closure closure)"
         - jsonPath: $.signatures[0].label
           expect:
-             type: CONTAINS
+             type: EQUALS
              value: "List each(Closure)"
 
   - shutdown: {}
