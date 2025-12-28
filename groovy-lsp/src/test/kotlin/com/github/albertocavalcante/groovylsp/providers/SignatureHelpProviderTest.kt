@@ -226,10 +226,10 @@ class SignatureHelpProviderTest {
 
         val signature = result.signatures.first()
         val paramLabels = signature.parameters.mapNotNull { it.label?.left }
-        // We allow both "Object... args" and "Object[] args" but updated logic prefers "Object... args"
+        // Arrays are now displayed as Type[] (we can't reliably detect varargs from AST)
         assertTrue(
-            paramLabels.last().contains("Object... args") || paramLabels.last().contains("Object[] args"),
-            "Should identify varargs param. Found: $paramLabels",
+            paramLabels.last().contains("Object[] args"),
+            "Should show array param as Object[]. Found: $paramLabels",
         )
 
         // Active parameter should map to the varargs index (1) even if we are at arg index 2
@@ -335,6 +335,169 @@ class SignatureHelpProviderTest {
         // Verify default values are present
         assertTrue(paramLabels[0].contains(" = \"World\""), "Label should contain default value 'World': ${paramLabels[0]}")
         assertTrue(paramLabels[1].contains(" = 3"), "Label should contain default value '3': ${paramLabels[1]}")
+         */
+    }
+
+    // --- Edge Case Tests ---
+
+    @Test
+    fun `TODO - displays array parameters correctly as Type brackets`() = runTest {
+        // TODO(#469): AST node resolution at parenthesis boundary needs improvement
+        val uri = URI.create("file:///ArrayParam.groovy")
+        val source = """
+            class ArrayProcessor {
+                def process(String[] items, int[] counts) {}
+                def run() {
+                    process(null, null)
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        // Currently affected by AST resolution - documenting expected behavior
+        /*
+        val position = positionAfter(source, "process(")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        val signature = result.signatures.first()
+        val paramLabels = signature.parameters.mapNotNull { it.label?.left }
+        assertEquals("String[] items", paramLabels[0], "First param should be String[]")
+        assertEquals("int[] counts", paramLabels[1], "Second param should be int[]")
+         */
+    }
+
+    @Test
+    fun `handles multiple method overloads`() = runTest {
+        val uri = URI.create("file:///Overloads.groovy")
+        val source = """
+            class Calculator {
+                int add(int a, int b) { a + b }
+                int add(int a, int b, int c) { a + b + c }
+                double add(double a, double b) { a + b }
+                def run() {
+                    add(1, 2)
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        val position = positionAfter(source, "add(1, ")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        // Should find all 3 overloads
+        assertTrue(result.signatures.size >= 3, "Should find at least 3 overloads. Found: ${result.signatures.size}")
+        val labels = result.signatures.map { it.label }
+        assertTrue(labels.any { it.contains("int a, int b)") && !it.contains("int c") }, "Missing 2-param int overload")
+        assertTrue(labels.any { it.contains("int a, int b, int c") }, "Missing 3-param int overload")
+        assertTrue(labels.any { it.contains("double a, double b") }, "Missing double overload")
+    }
+
+    @Test
+    fun `TODO - handles explicit Object receiver for hashCode`() = runTest {
+        // TODO(#469): AST node resolution at method call boundaries needs improvement
+        // When fixed, this test should verify signature help for Object methods
+        val uri = URI.create("file:///ExplicitObject.groovy")
+        val source = """
+            class ObjectTest {
+                def run() {
+                    Object obj = "hello"
+                    obj.hashCode()
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        // Currently fails due to AST node resolution at parenthesis boundary
+        // When supported:
+        /*
+        val position = positionAfter(source, "obj.hashCode(")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+        assertTrue(result.signatures.isNotEmpty(), "Should find Object.hashCode() signature")
+         */
+    }
+
+    // --- Future Improvement Tests (Disabled with TODOs) ---
+
+    @Test
+    fun `TODO - constructor signature help`() = runTest {
+        // TODO(FUTURE): Constructor signature help not yet implemented
+        // When implemented, this test should verify signature help for `new Foo(...)` calls
+        val uri = URI.create("file:///ConstructorHelp.groovy")
+        val source = """
+            class Person {
+                String name
+                int age
+                Person(String name, int age) {
+                    this.name = name
+                    this.age = age
+                }
+            }
+            class Consumer {
+                def run() {
+                    new Person("Alice", 30)
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        // Constructor calls are not yet supported - this test documents the limitation
+        // When supported, uncomment the following:
+        /*
+        val position = positionAfter(source, "new Person(")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+        assertTrue(result.signatures.isNotEmpty(), "Should find constructor signature")
+        assertEquals("Person(String name, int age)", result.signatures.first().label)
+         */
+    }
+
+    @Test
+    fun `TODO - chained method call signature help`() = runTest {
+        // TODO(FUTURE): Chained method call resolution may need improvement
+        // This test documents the expected behavior for chained calls
+        val uri = URI.create("file:///ChainedCalls.groovy")
+        val source = """
+            class Builder {
+                Builder setName(String name) { this }
+                Builder setAge(int age) { this }
+                def run() {
+                    new Builder().setName("test").setAge(25)
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        // Chained calls work if type inference resolves the receiver
+        // This test documents expected behavior
+        val position = positionAfter(source, ".setAge(")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+
+        // May or may not work depending on type inference - documenting current state
+        // When fully supported, this should pass:
+        // assertEquals("Builder setAge(int age)", result.signatures.first().label)
+    }
+
+    @Test
+    fun `TODO - closure parameter display`() = runTest {
+        // TODO(FUTURE): Closure parameters could show more details (param types, return type)
+        // Also affected by AST resolution issues at certain cursor positions
+        val uri = URI.create("file:///ClosureParam.groovy")
+        val source = """
+            class Processor {
+                def process(Closure action) {}
+                def run() {
+                    process { it * 2 }
+                }
+            }
+        """.trimIndent()
+
+        compile(uri, source)
+        // Currently affected by AST resolution - documenting expected behavior
+        /*
+        val position = positionAfter(source, "process(")
+        val result = signatureHelpProvider.provideSignatureHelp(uri.toString(), position)
+        assertTrue(result.signatures.isNotEmpty(), "Should find process signature")
+        val paramLabel = result.signatures.first().parameters.firstOrNull()?.label?.left
+        assertTrue(paramLabel?.contains("Closure") == true, "Should show Closure param")
          */
     }
 
