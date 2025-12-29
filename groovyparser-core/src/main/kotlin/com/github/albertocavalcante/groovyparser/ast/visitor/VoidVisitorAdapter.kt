@@ -9,18 +9,32 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.BitwiseNegationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClassExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapEntryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
@@ -244,6 +258,70 @@ open class VoidVisitorAdapter<A> : VoidVisitor<A> {
         n.arguments.forEach { visitExpression(it, arg) }
     }
 
+    // New expressions (Groovy-specific)
+
+    override fun visit(n: ElvisExpr, arg: A) {
+        visitExpression(n.expression, arg)
+        visitExpression(n.defaultValue, arg)
+    }
+
+    override fun visit(n: SpreadExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: SpreadMapExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: AttributeExpr, arg: A) {
+        visitExpression(n.objectExpression, arg)
+    }
+
+    override fun visit(n: BitwiseNegationExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: NotExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: PostfixExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: PrefixExpr, arg: A) {
+        visitExpression(n.expression, arg)
+    }
+
+    override fun visit(n: MethodPointerExpr, arg: A) {
+        visitExpression(n.objectExpression, arg)
+        visitExpression(n.methodName, arg)
+    }
+
+    override fun visit(n: MethodReferenceExpr, arg: A) {
+        visitExpression(n.objectExpression, arg)
+        visitExpression(n.methodName, arg)
+    }
+
+    override fun visit(n: LambdaExpr, arg: A) {
+        n.parameters.forEach { visit(it, arg) }
+        n.body?.let { visitStatement(it, arg) }
+    }
+
+    override fun visit(n: DeclarationExpr, arg: A) {
+        visitExpression(n.variableExpression, arg)
+        visitExpression(n.rightExpression, arg)
+    }
+
+    override fun visit(n: ClassExpr, arg: A) {
+        // Leaf node
+    }
+
+    override fun visit(n: ArrayExpr, arg: A) {
+        n.sizeExpressions.forEach { visitExpression(it, arg) }
+        n.initExpressions.forEach { visitExpression(it, arg) }
+    }
+
     /**
      * Dispatches to the appropriate visit method for the statement type.
      */
@@ -285,6 +363,21 @@ open class VoidVisitorAdapter<A> : VoidVisitor<A> {
             is UnaryExpr -> visit(expr, arg)
             is CastExpr -> visit(expr, arg)
             is ConstructorCallExpr -> visit(expr, arg)
+            // New expressions
+            is ElvisExpr -> visit(expr, arg)
+            is SpreadExpr -> visit(expr, arg)
+            is SpreadMapExpr -> visit(expr, arg)
+            is AttributeExpr -> visit(expr, arg)
+            is BitwiseNegationExpr -> visit(expr, arg)
+            is NotExpr -> visit(expr, arg)
+            is PostfixExpr -> visit(expr, arg)
+            is PrefixExpr -> visit(expr, arg)
+            is MethodPointerExpr -> visit(expr, arg)
+            is MethodReferenceExpr -> visit(expr, arg)
+            is LambdaExpr -> visit(expr, arg)
+            is DeclarationExpr -> visit(expr, arg)
+            is ClassExpr -> visit(expr, arg)
+            is ArrayExpr -> visit(expr, arg)
         }
     }
 }

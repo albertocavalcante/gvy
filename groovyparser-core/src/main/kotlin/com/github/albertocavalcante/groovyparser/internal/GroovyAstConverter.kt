@@ -11,19 +11,33 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.BitwiseNegationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClassExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapEntryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
@@ -47,21 +61,32 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ArrayExpression
+import org.codehaus.groovy.ast.expr.AttributeExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.BitwiseNegationExpression
 import org.codehaus.groovy.ast.expr.CastExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.ElvisOperatorExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.LambdaExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapEntryExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.MethodPointerExpression
+import org.codehaus.groovy.ast.expr.MethodReferenceExpression
 import org.codehaus.groovy.ast.expr.NotExpression
 import org.codehaus.groovy.ast.expr.PostfixExpression
 import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
 import org.codehaus.groovy.ast.expr.TernaryExpression
 import org.codehaus.groovy.ast.expr.UnaryMinusExpression
 import org.codehaus.groovy.ast.expr.UnaryPlusExpression
@@ -427,6 +452,7 @@ internal class GroovyAstConverter {
     // ========== Expression Conversion ==========
 
     private fun convertExpression(expr: GroovyExpression): Expression = when (expr) {
+        // Common expressions
         is MethodCallExpression -> convertMethodCallExpression(expr)
         is ConstantExpression -> convertConstantExpression(expr)
         is VariableExpression -> convertVariableExpression(expr)
@@ -437,14 +463,32 @@ internal class GroovyAstConverter {
         is ListExpression -> convertListExpression(expr)
         is MapExpression -> convertMapExpression(expr)
         is RangeExpression -> convertRangeExpression(expr)
+        // Ternary and Elvis (must check Elvis first as it extends Ternary)
+        is ElvisOperatorExpression -> convertElvisExpression(expr)
         is TernaryExpression -> convertTernaryExpression(expr)
+        // Unary expressions
         is NotExpression -> convertNotExpression(expr)
         is UnaryMinusExpression -> convertUnaryMinusExpression(expr)
         is UnaryPlusExpression -> convertUnaryPlusExpression(expr)
+        is BitwiseNegationExpression -> convertBitwiseNegationExpression(expr)
         is PrefixExpression -> convertPrefixExpression(expr)
         is PostfixExpression -> convertPostfixExpression(expr)
+        // Type expressions
         is CastExpression -> convertCastExpression(expr)
+        is ClassExpression -> convertClassExpression(expr)
         is ConstructorCallExpression -> convertConstructorCallExpression(expr)
+        is ArrayExpression -> convertArrayExpression(expr)
+        // Spread expressions
+        is SpreadExpression -> convertSpreadExpression(expr)
+        is SpreadMapExpression -> convertSpreadMapExpression(expr)
+        // Method references
+        is MethodPointerExpression -> convertMethodPointerExpression(expr)
+        is MethodReferenceExpression -> convertMethodReferenceExpression(expr)
+        // Lambda and Declaration
+        is LambdaExpression -> convertLambdaExpression(expr)
+        is DeclarationExpression -> convertDeclarationExpression(expr)
+        // Attribute access
+        is AttributeExpression -> convertAttributeExpression(expr)
         else -> {
             // Fallback: create a constant with the text representation
             val constant = ConstantExpr(expr.text)
@@ -639,6 +683,103 @@ internal class GroovyAstConverter {
 
         setRange(constructorCall, expr)
         return constructorCall
+    }
+
+    private fun convertElvisExpression(expr: ElvisOperatorExpression): ElvisExpr {
+        val value = convertExpression(expr.trueExpression)
+        val defaultValue = convertExpression(expr.falseExpression)
+        val elvis = ElvisExpr(value, defaultValue)
+        setRange(elvis, expr)
+        return elvis
+    }
+
+    private fun convertBitwiseNegationExpression(expr: BitwiseNegationExpression): BitwiseNegationExpr {
+        val inner = convertExpression(expr.expression)
+        val bitwise = BitwiseNegationExpr(inner)
+        setRange(bitwise, expr)
+        return bitwise
+    }
+
+    private fun convertClassExpression(expr: ClassExpression): ClassExpr {
+        val classExpr = ClassExpr(expr.type?.name ?: "Object")
+        setRange(classExpr, expr)
+        return classExpr
+    }
+
+    private fun convertArrayExpression(expr: ArrayExpression): ArrayExpr {
+        val elementType = expr.elementType?.name ?: "Object"
+        val sizes = expr.sizeExpression?.map { convertExpression(it) } ?: emptyList()
+        val inits = expr.expressions?.map { convertExpression(it) } ?: emptyList()
+        val array = ArrayExpr(elementType, sizes, inits)
+        setRange(array, expr)
+        return array
+    }
+
+    private fun convertSpreadExpression(expr: SpreadExpression): SpreadExpr {
+        val inner = convertExpression(expr.expression)
+        val spread = SpreadExpr(inner)
+        setRange(spread, expr)
+        return spread
+    }
+
+    private fun convertSpreadMapExpression(expr: SpreadMapExpression): SpreadMapExpr {
+        val inner = convertExpression(expr.expression)
+        val spreadMap = SpreadMapExpr(inner)
+        setRange(spreadMap, expr)
+        return spreadMap
+    }
+
+    private fun convertMethodPointerExpression(expr: MethodPointerExpression): MethodPointerExpr {
+        val obj = convertExpression(expr.expression)
+        val method = convertExpression(expr.methodName)
+        val methodPointer = MethodPointerExpr(obj, method)
+        setRange(methodPointer, expr)
+        return methodPointer
+    }
+
+    private fun convertMethodReferenceExpression(expr: MethodReferenceExpression): MethodReferenceExpr {
+        val obj = convertExpression(expr.expression)
+        val method = convertExpression(expr.methodName)
+        val methodRef = MethodReferenceExpr(obj, method)
+        setRange(methodRef, expr)
+        return methodRef
+    }
+
+    private fun convertLambdaExpression(expr: LambdaExpression): LambdaExpr {
+        val lambda = LambdaExpr()
+
+        expr.parameters?.forEach { param ->
+            val parameter = Parameter(
+                name = param.name,
+                type = param.type?.name ?: "Object",
+            )
+            setRange(parameter, param)
+            lambda.addParameter(parameter)
+        }
+
+        expr.code?.let { code ->
+            lambda.body = convertStatement(code)
+        }
+
+        setRange(lambda, expr)
+        return lambda
+    }
+
+    private fun convertDeclarationExpression(expr: DeclarationExpression): DeclarationExpr {
+        val variable = convertExpression(expr.leftExpression)
+        val right = convertExpression(expr.rightExpression)
+        val typeName = expr.leftExpression.type?.name ?: "def"
+        val declaration = DeclarationExpr(variable, right, typeName)
+        setRange(declaration, expr)
+        return declaration
+    }
+
+    private fun convertAttributeExpression(expr: AttributeExpression): AttributeExpr {
+        val obj = convertExpression(expr.objectExpression)
+        val attrName = expr.propertyAsString ?: expr.property?.text ?: "unknown"
+        val attribute = AttributeExpr(obj, attrName)
+        setRange(attribute, expr)
+        return attribute
     }
 
     // ========== Annotation Conversion ==========
