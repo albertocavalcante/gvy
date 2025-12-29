@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.Range
+import com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc
 
 /**
  * Represents a comment in the source code.
@@ -52,12 +53,14 @@ class BlockComment(content: String, range: Range? = null) : Comment(content, ran
 }
 
 /**
- * A Javadoc comment starting with slash-star-star.
+ * A Javadoc/Groovydoc comment starting with slash-star-star.
  *
  * Example:
  * ```groovy
  * /** This is a Javadoc comment. @param x the parameter */
  * ```
+ *
+ * Use [parse] to extract structured information like @param, @return tags.
  */
 class JavadocComment(content: String, range: Range? = null) : Comment(content, range) {
     override val isLineComment: Boolean = false
@@ -65,6 +68,21 @@ class JavadocComment(content: String, range: Range? = null) : Comment(content, r
 
     /** Returns true since Javadoc is a special form of block comment */
     val isJavadoc: Boolean = true
+
+    /** Alias for Groovy naming convention */
+    val isGroovydoc: Boolean = true
+
+    /**
+     * Parses the Javadoc/Groovydoc content into structured form.
+     *
+     * Extracts:
+     * - Description (text before block tags)
+     * - Block tags (@param, @return, @throws, etc.)
+     * - Inline tags ({@code}, {@link}, etc.)
+     *
+     * @return the parsed Groovydoc structure
+     */
+    fun parse(): Groovydoc = Groovydoc.parse(content)
 
     override fun toString(): String = "/** $content */"
 }
