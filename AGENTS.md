@@ -42,6 +42,38 @@ make run-stdio      # Run LSP in stdio mode
 
 > If you need to use Gradle directly (e.g., for specific task arguments), try to use the `make` wrappers first, or fall back to `./gradlew` only when necessary.
 
+## Debugging & Experimentation
+
+When investigating Groovy AST behavior, **run quick `groovy` scripts** to verify assumptions:
+
+```bash
+groovy -e '
+import org.codehaus.groovy.ast.*
+import org.codehaus.groovy.control.*
+
+def code = """
+def method1(param) { println param }
+def method2(param) { println param }
+"""
+
+def ast = new CompilationUnit().tap {
+    addSource("test", code)
+    compile(Phases.SEMANTIC_ANALYSIS)
+}.ast.modules[0]
+
+def m1 = ast.classes[0].methods.find { it.name == "method1" }
+def m2 = ast.classes[0].methods.find { it.name == "method2" }
+
+println "m1.param line: ${m1.parameters[0].lineNumber}"
+println "m2.param line: ${m2.parameters[0].lineNumber}"
+println "Same object? ${m1.parameters[0].is(m2.parameters[0])}"
+'
+```
+
+This is faster than writing tests and helps understand:
+- What fields AST nodes actually have
+- Whether identity vs equals() matters
+- How Groovy's compiler populates positions, types, etc.
 
 ## Critical Rules
 
