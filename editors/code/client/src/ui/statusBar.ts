@@ -489,7 +489,7 @@ export async function showStatusMenu(manager: StatusBarManager): Promise<void> {
         items.push({
             label: '$(warning) View Problems',
             description: 'Show workspace problems',
-            command: 'workbench.actions.view.problems',
+            command: 'workbench.action.problems.focus',
         });
         items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
     }

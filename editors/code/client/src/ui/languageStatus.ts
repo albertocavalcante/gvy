@@ -57,7 +57,7 @@ export class LanguageStatusManager implements vscode.Disposable {
         } else if (state === 'degraded') {
             this.serverStatusItem.command = {
                 title: 'View Problems',
-                command: 'workbench.actions.view.problems',
+                command: 'workbench.action.problems.focus',
             };
         } else {
             this.serverStatusItem.command = {
