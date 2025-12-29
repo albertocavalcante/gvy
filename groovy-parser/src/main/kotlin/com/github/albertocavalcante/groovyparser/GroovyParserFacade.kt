@@ -16,6 +16,9 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.jar.JarFile
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
 
@@ -23,6 +26,28 @@ import kotlin.io.path.isRegularFile
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
  */
 class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
+
+    companion object {
+        /**
+         * Path to the service provider configuration file for AST transformations.
+         * This file is located in META-INF/services/ and lists all global AST transformation classes.
+         */
+        private const val AST_TRANSFORMATION_SERVICE_FILE =
+            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+
+        /**
+         * Comment character for Java ServiceLoader configuration files.
+         *
+         * Per [java.util.ServiceLoader] specification:
+         * "Blank lines and comments beginning with '#' are ignored. Comments extend to the end of a line."
+         *
+         * Note: This is NOT related to Groovy syntax (which uses // for comments).
+         * This is the Java SPI (Service Provider Interface) format.
+         *
+         * @see <a href="https://docs.oracle.com/javase/8/docs/api/java/util/ServiceLoader.html">ServiceLoader</a>
+         */
+        private const val SERVICE_FILE_COMMENT_CHAR = '#'
+    }
 
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
 
@@ -110,7 +135,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     }
 
     private fun parseInternal(request: ParseRequest): ParseResult {
-        val config = createCompilerConfiguration()
+        // Collect all classpath entries for transformation scanning
+        val allClasspath = request.classpath + request.sourceRoots
+        val config = createCompilerConfiguration(allClasspath)
         // Use configured parent classloader (default is platform/bootstrap to avoid pollution)
         val classLoader = GroovyClassLoader(parentClassLoader)
 
@@ -176,21 +203,92 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         )
     }
 
-    private fun createCompilerConfiguration(): CompilerConfiguration = CompilerConfiguration().apply {
-        targetDirectory = null
-        debug = true
-        optimizationOptions = mapOf(
-            CompilerConfiguration.GROOVYDOC to true,
-        )
-        sourceEncoding = "UTF-8"
+    /**
+     * Creates a compiler configuration with global AST transformations disabled.
+     *
+     * This prevents NoClassDefFoundError when the project classpath contains AST transformation
+     * classes that conflict with the LSP's bundled Groovy version. For LSP purposes, we only
+     * need AST structure for navigation/completion - not transformation execution.
+     *
+     * @param classpath The classpath entries to scan for AST transformations
+     */
+    private fun createCompilerConfiguration(classpath: List<Path>): CompilerConfiguration =
+        CompilerConfiguration().apply {
+            targetDirectory = null
+            debug = true
+            optimizationOptions = mapOf(
+                CompilerConfiguration.GROOVYDOC to true,
+            )
+            sourceEncoding = "UTF-8"
+
+            // Scan and disable external AST transformations to prevent classloader conflicts
+            val externalTransforms = scanForAstTransformations(classpath)
+            if (externalTransforms.isNotEmpty()) {
+                disabledGlobalASTTransformations = externalTransforms
+                logger.info("Disabled {} AST transformations from project classpath", externalTransforms.size)
+            }
+        }
+
+    /**
+     * Scans classpath entries for global AST transformation service files and extracts class names.
+     *
+     * This reads the META-INF/services/org.codehaus.groovy.transform.ASTTransformation files
+     * without loading the transformation classes, which prevents NoClassDefFoundError.
+     *
+     * @param classpath The classpath entries to scan (JARs and directories)
+     * @return Set of fully qualified transformation class names
+     */
+    @Suppress("TooGenericExceptionCaught") // Need to catch all IO/archive exceptions
+    private fun scanForAstTransformations(classpath: List<Path>): Set<String> {
+        val transformNames = mutableSetOf<String>()
+
+        for (path in classpath) {
+            try {
+                when {
+                    path.extension.equals("jar", ignoreCase = true) && Files.exists(path) -> {
+                        scanJarForTransformations(path, transformNames)
+                    }
+
+                    Files.isDirectory(path) -> {
+                        scanDirectoryForTransformations(path, transformNames)
+                    }
+                }
+            } catch (e: Exception) {
+                logger.debug("Failed to scan {} for transformations: {}", path, e.message)
+            }
+        }
+
+        return transformNames
+    }
+
+    private fun scanJarForTransformations(jarPath: Path, names: MutableSet<String>) {
+        JarFile(jarPath.toFile()).use { jar ->
+            jar.getEntry(AST_TRANSFORMATION_SERVICE_FILE)?.let { entry ->
+                jar.getInputStream(entry).bufferedReader().useLines { lines ->
+                    lines.map { it.substringBefore(SERVICE_FILE_COMMENT_CHAR).trim() }
+                        .filter { it.isNotBlank() }
+                        .forEach { names += it }
+                }
+            }
+        }
+    }
+
+    private fun scanDirectoryForTransformations(dirPath: Path, names: MutableSet<String>) {
+        val serviceFilePath = dirPath.resolve(AST_TRANSFORMATION_SERVICE_FILE)
+        if (Files.exists(serviceFilePath)) {
+            Files.readAllLines(serviceFilePath)
+                .map { it.substringBefore(SERVICE_FILE_COMMENT_CHAR).trim() }
+                .filter { it.isNotBlank() }
+                .forEach { names += it }
+        }
     }
 
     private fun addWorkspaceSources(compilationUnit: CompilationUnit, request: ParseRequest) {
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.extension.equals("groovy", ignoreCase = true) &&
-                    it.isRegularFile()
+                        it.extension.equals("groovy", ignoreCase = true) &&
+                        it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {
