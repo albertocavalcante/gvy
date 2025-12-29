@@ -34,6 +34,19 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
          */
         private const val AST_TRANSFORMATION_SERVICE_FILE =
             "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+
+        /**
+         * Comment character for Java ServiceLoader configuration files.
+         *
+         * Per [java.util.ServiceLoader] specification:
+         * "Blank lines and comments beginning with '#' are ignored. Comments extend to the end of a line."
+         *
+         * Note: This is NOT related to Groovy syntax (which uses // for comments).
+         * This is the Java SPI (Service Provider Interface) format.
+         *
+         * @see <a href="https://docs.oracle.com/javase/8/docs/api/java/util/ServiceLoader.html">ServiceLoader</a>
+         */
+        private const val SERVICE_FILE_COMMENT_CHAR = '#'
     }
 
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
@@ -252,7 +265,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         JarFile(jarPath.toFile()).use { jar ->
             jar.getEntry(AST_TRANSFORMATION_SERVICE_FILE)?.let { entry ->
                 jar.getInputStream(entry).bufferedReader().useLines { lines ->
-                    lines.map { it.substringBefore('#').trim() }
+                    lines.map { it.substringBefore(SERVICE_FILE_COMMENT_CHAR).trim() }
                         .filter { it.isNotBlank() }
                         .forEach { names += it }
                 }
@@ -264,7 +277,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val serviceFilePath = dirPath.resolve(AST_TRANSFORMATION_SERVICE_FILE)
         if (Files.exists(serviceFilePath)) {
             Files.readAllLines(serviceFilePath)
-                .map { it.substringBefore('#').trim() }
+                .map { it.substringBefore(SERVICE_FILE_COMMENT_CHAR).trim() }
                 .filter { it.isNotBlank() }
                 .forEach { names += it }
         }
@@ -274,8 +287,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.extension.equals("groovy", ignoreCase = true) &&
-                    it.isRegularFile()
+                        it.extension.equals("groovy", ignoreCase = true) &&
+                        it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {
