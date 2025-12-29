@@ -44,7 +44,7 @@ make run-stdio      # Run LSP in stdio mode
 
 ## Debugging & Troubleshooting
 
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive debugging procedures including:
+See [kb/TROUBLESHOOTING.md](kb/TROUBLESHOOTING.md) for comprehensive debugging procedures including:
 - Groovy AST experimentation with `groovy -e`
 - Test debugging techniques (System.err.println, test reports)
 - Compilation phase issues
