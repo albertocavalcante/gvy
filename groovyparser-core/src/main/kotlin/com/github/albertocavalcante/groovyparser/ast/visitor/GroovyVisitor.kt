@@ -9,18 +9,32 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.BitwiseNegationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClassExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapEntryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
@@ -105,4 +119,20 @@ interface GroovyVisitor<R, A> {
     fun visit(n: UnaryExpr, arg: A): R
     fun visit(n: CastExpr, arg: A): R
     fun visit(n: ConstructorCallExpr, arg: A): R
+
+    // New expressions (Groovy-specific)
+    fun visit(n: ElvisExpr, arg: A): R
+    fun visit(n: SpreadExpr, arg: A): R
+    fun visit(n: SpreadMapExpr, arg: A): R
+    fun visit(n: AttributeExpr, arg: A): R
+    fun visit(n: BitwiseNegationExpr, arg: A): R
+    fun visit(n: NotExpr, arg: A): R
+    fun visit(n: PostfixExpr, arg: A): R
+    fun visit(n: PrefixExpr, arg: A): R
+    fun visit(n: MethodPointerExpr, arg: A): R
+    fun visit(n: MethodReferenceExpr, arg: A): R
+    fun visit(n: LambdaExpr, arg: A): R
+    fun visit(n: DeclarationExpr, arg: A): R
+    fun visit(n: ClassExpr, arg: A): R
+    fun visit(n: ArrayExpr, arg: A): R
 }
