@@ -43,7 +43,7 @@ help:
 
 # Quick JAR build without tests (most common during development)
 jar:
-	./gradlew build -x test -x koverVerify -x detekt -x spotlessKotlinCheck -x spotlessMarkdownCheck $(GRADLE_ARGS)
+	./gradlew build -x test -x koverVerify -x detekt -x spotlessCheck $(GRADLE_ARGS)
 
 # Full build with tests
 build:
