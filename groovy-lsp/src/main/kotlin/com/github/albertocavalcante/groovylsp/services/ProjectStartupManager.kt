@@ -36,6 +36,7 @@ import java.nio.file.Paths
 private const val PERCENTAGE_MULTIPLIER = 100
 private const val POLLING_INTERVAL_MS = 100L
 private const val MILLIS_PER_SECOND = 1000L
+private const val STATUS_UPDATE_INTERVAL_MS = 100L
 
 /**
  * Callback type for status updates.
@@ -327,11 +328,16 @@ class ProjectStartupManager(
 
         coroutineScope.launch(indexingDispatcher) {
             try {
+                var lastStatusUpdate = System.currentTimeMillis()
                 compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
                     val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
                     indexingProgressReporter.updateProgress("Indexed $indexed/$totalFiles files", percentage)
-                    // Send status update with file counts for every file (can be throttled if needed)
-                    onStatusUpdate(Health.Ok, false, "Indexing $indexed/$totalFiles files", indexed, totalFiles)
+                    // Throttle status updates to avoid excessive notifications
+                    val now = System.currentTimeMillis()
+                    if (now - lastStatusUpdate >= STATUS_UPDATE_INTERVAL_MS || indexed == totalFiles) {
+                        onStatusUpdate(Health.Ok, false, "Indexing $indexed/$totalFiles files", indexed, totalFiles)
+                        lastStatusUpdate = now
+                    }
                 }
                 indexingProgressReporter.complete("✅ Indexed $total files")
                 logger.info("Workspace indexing complete: $total files")
