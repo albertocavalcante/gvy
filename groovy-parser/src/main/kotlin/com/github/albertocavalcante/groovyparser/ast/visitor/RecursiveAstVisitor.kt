@@ -186,8 +186,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         statement.visit(codeVisitor)
     }
 
-    private fun shouldTrack(node: ASTNode): Boolean =
-        (node.lineNumber > 0 && node.columnNumber > 0) || node is Parameter
+    private fun shouldTrack(node: ASTNode): Boolean = node.lineNumber > 0 && node.columnNumber > 0
 
     private inline fun track(node: ASTNode, block: () -> Unit) {
         if (shouldTrack(node)) {
