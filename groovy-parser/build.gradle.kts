@@ -8,6 +8,7 @@ version = rootProject.version
 
 dependencies {
     implementation(project(":groovy-common"))
+    api(project(":groovyparser-core"))
     api(libs.groovy.core)
     implementation(libs.groovy.macro)
 
