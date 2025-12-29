@@ -39,6 +39,14 @@ help:
 	@echo "  ext-build   - Build the extension"
 	@echo "  ext-test    - Run extension tests"
 	@echo "  ext-package - Package the extension (.vsix)"
+	@echo ""
+	@echo "Install Extension to Editors:"
+	@echo "  ext-vscode    - Install to VS Code"
+	@echo "  ext-cursor    - Install to Cursor"
+	@echo "  ext-windsurf  - Install to Windsurf"
+	@echo "  ext-agy       - Install to Antigravity"
+	@echo "  ext-kiro      - Install to Kiro"
+	@echo "  ext-editors   - Install to all available editors"
 
 
 # Quick JAR build without tests (most common during development)
@@ -116,6 +124,46 @@ ext-test: $(EXT_DIR)/node_modules
 
 ext-package: $(EXT_DIR)/node_modules
 	cd $(EXT_DIR) && pnpm run package
+
+# Install extension to editors (VS Code forks)
+# Usage: make ext-vscode, make ext-cursor, make ext-agy, make ext-kiro, make ext-editors
+EXT_VSIX := $(shell ls -t $(EXT_DIR)/gvy-*.vsix 2>/dev/null | head -1)
+
+ext-vscode: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	code --install-extension $(EXT_VSIX) --force
+	@echo "✅ Installed to VS Code"
+
+ext-cursor: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	cursor --install-extension $(EXT_VSIX) --force
+	@echo "✅ Installed to Cursor"
+
+ext-agy: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	agy --install-extension $(EXT_VSIX) --force
+	@echo "✅ Installed to Antigravity"
+
+ext-kiro: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	kiro --install-extension $(EXT_VSIX) --force
+	@echo "✅ Installed to Kiro"
+
+ext-windsurf: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	@command -v windsurf >/dev/null 2>&1 && windsurf --install-extension $(EXT_VSIX) --force \
+		|| command -v surf >/dev/null 2>&1 && surf --install-extension $(EXT_VSIX) --force \
+		|| (echo "❌ Neither 'windsurf' nor 'surf' command found"; exit 1)
+	@echo "✅ Installed to Windsurf"
+
+ext-editors: ext-package
+	@if [ -z "$(EXT_VSIX)" ]; then echo "❌ No VSIX found. Run 'make ext-package' first."; exit 1; fi
+	@echo "Installing $(EXT_VSIX) to all available editors..."
+	@command -v code >/dev/null 2>&1 && code --install-extension $(EXT_VSIX) --force && echo "✅ VS Code" || echo "⏭️  VS Code not found"
+	@command -v cursor >/dev/null 2>&1 && cursor --install-extension $(EXT_VSIX) --force && echo "✅ Cursor" || echo "⏭️  Cursor not found"
+	@(command -v windsurf >/dev/null 2>&1 && windsurf --install-extension $(EXT_VSIX) --force || command -v surf >/dev/null 2>&1 && surf --install-extension $(EXT_VSIX) --force) && echo "✅ Windsurf" || echo "⏭️  Windsurf not found"
+	@command -v agy >/dev/null 2>&1 && agy --install-extension $(EXT_VSIX) --force && echo "✅ Antigravity" || echo "⏭️  Antigravity not found"
+	@command -v kiro >/dev/null 2>&1 && kiro --install-extension $(EXT_VSIX) --force && echo "✅ Kiro" || echo "⏭️  Kiro not found"
 
 # Release
 release: release-build
