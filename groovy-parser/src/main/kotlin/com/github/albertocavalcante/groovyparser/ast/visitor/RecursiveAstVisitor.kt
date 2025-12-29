@@ -23,6 +23,8 @@ import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PostfixExpression
+import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.RangeExpression
 import org.codehaus.groovy.ast.expr.SpreadExpression
@@ -325,6 +327,14 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
             visitWithTracking(expression) { super.visitPropertyExpression(it) }
+        }
+
+        override fun visitPostfixExpression(expression: PostfixExpression) {
+            visitWithTracking(expression) { super.visitPostfixExpression(it) }
+        }
+
+        override fun visitPrefixExpression(expression: PrefixExpression) {
+            visitWithTracking(expression) { super.visitPrefixExpression(it) }
         }
 
         override fun visitVariableExpression(expression: VariableExpression) {

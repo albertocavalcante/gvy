@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
@@ -49,6 +50,8 @@ import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.DidSaveTextDocumentParams
 import org.eclipse.lsp4j.DocumentFormattingParams
+import org.eclipse.lsp4j.DocumentHighlight
+import org.eclipse.lsp4j.DocumentHighlightParams
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.Hover
@@ -61,6 +64,8 @@ import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameParams
+import org.eclipse.lsp4j.SemanticTokens
+import org.eclipse.lsp4j.SemanticTokensParams
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
@@ -158,6 +163,10 @@ class GroovyTextDocumentService(
 
     private val testCodeLensProvider by lazy {
         TestCodeLensProvider(compilationService)
+    }
+
+    private val documentHighlightProvider by lazy {
+        DocumentHighlightProvider(compilationService)
     }
 
     override fun signatureHelp(
@@ -525,6 +534,38 @@ class GroovyTextDocumentService(
         }
     }
 
+    override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =
+        coroutineScope.future {
+            logger.debug(
+                "Document highlight requested for ${params.textDocument.uri} at " +
+                    "${params.position.line}:${params.position.character}",
+            )
+
+            try {
+                val uri = java.net.URI.create(params.textDocument.uri)
+                val compilationResult = ensureCompiledOrCompileNow(uri)
+                if (compilationResult == null) {
+                    logger.warn("Document $uri not compiled, cannot provide highlights")
+                    return@future emptyList()
+                }
+
+                val highlights = documentHighlightProvider.provideHighlights(
+                    params.textDocument.uri,
+                    params.position,
+                )
+
+                logger.debug("Found ${highlights.size} highlights")
+                highlights
+            } catch (e: Exception) {
+                when (e) {
+                    is IllegalArgumentException -> logger.error("Invalid arguments finding highlights", e)
+                    is IllegalStateException -> logger.error("Invalid state finding highlights", e)
+                    else -> logger.error("Unexpected error finding highlights", e)
+                }
+                emptyList()
+            }
+        }
+
     override fun documentSymbol(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
@@ -603,58 +644,57 @@ class GroovyTextDocumentService(
         testCodeLensProvider.provideCodeLenses(uri)
     }
 
-    override fun semanticTokensFull(
-        params: org.eclipse.lsp4j.SemanticTokensParams,
-    ): CompletableFuture<org.eclipse.lsp4j.SemanticTokens> = coroutineScope.future {
-        logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
+    override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
+        coroutineScope.future {
+            logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
 
-        val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = java.net.URI.create(params.textDocument.uri)
 
-        try {
-            // Ensure document is compiled
-            val compilationResult = compilationService.ensureCompiled(uri)
-            if (compilationResult == null) {
-                logger.warn("Document $uri not compiled, returning empty tokens")
-                return@future org.eclipse.lsp4j.SemanticTokens(emptyList())
+            try {
+                // Ensure document is compiled
+                val compilationResult = compilationService.ensureCompiled(uri)
+                if (compilationResult == null) {
+                    logger.warn("Document $uri not compiled, returning empty tokens")
+                    return@future SemanticTokens(emptyList())
+                }
+
+                // Get AST model
+                val astModel = compilationService.getAstModel(uri)
+                if (astModel == null) {
+                    logger.warn("No AST model available for $uri, returning empty tokens")
+                    return@future SemanticTokens(emptyList())
+                }
+
+                // Check if this is a Jenkins file
+                val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
+
+                // Get vars/ global variable names for semantic highlighting
+                val varsNames = compilationService.workspaceManager.getJenkinsGlobalVariables()
+                    .map { it.name }
+                    .toSet()
+
+                // Get Jenkins-specific tokens (built-in blocks + vars/ globals)
+                val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(
+                    astModel,
+                    uri,
+                    isJenkinsFile,
+                    varsNames,
+                )
+
+                // TODO: Add general Groovy syntax tokens (keywords, operators, literals)
+                // val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(...)
+
+                // Combine all tokens and encode
+                val allTokens = jenkinsTokens // + groovyTokens
+                val encodedData = encodeSemanticTokens(allTokens)
+
+                logger.debug("Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)")
+                SemanticTokens(encodedData)
+            } catch (e: Exception) {
+                logger.error("Failed to generate semantic tokens for $uri", e)
+                SemanticTokens(emptyList())
             }
-
-            // Get AST model
-            val astModel = compilationService.getAstModel(uri)
-            if (astModel == null) {
-                logger.warn("No AST model available for $uri, returning empty tokens")
-                return@future org.eclipse.lsp4j.SemanticTokens(emptyList())
-            }
-
-            // Check if this is a Jenkins file
-            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
-
-            // Get vars/ global variable names for semantic highlighting
-            val varsNames = compilationService.workspaceManager.getJenkinsGlobalVariables()
-                .map { it.name }
-                .toSet()
-
-            // Get Jenkins-specific tokens (built-in blocks + vars/ globals)
-            val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(
-                astModel,
-                uri,
-                isJenkinsFile,
-                varsNames,
-            )
-
-            // TODO: Add general Groovy syntax tokens (keywords, operators, literals)
-            // val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(...)
-
-            // Combine all tokens and encode
-            val allTokens = jenkinsTokens // + groovyTokens
-            val encodedData = encodeSemanticTokens(allTokens)
-
-            logger.debug("Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)")
-            org.eclipse.lsp4j.SemanticTokens(encodedData)
-        } catch (e: Exception) {
-            logger.error("Failed to generate semantic tokens for $uri", e)
-            org.eclipse.lsp4j.SemanticTokens(emptyList())
         }
-    }
 
     /**
      * Encode semantic tokens using LSP relative encoding format.
