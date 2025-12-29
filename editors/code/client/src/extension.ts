@@ -5,8 +5,9 @@
 
 import * as vscode from "vscode";
 import { initializeClient, startClient, stopClient, getClient } from "./server/client";
-import { registerStatusBarItem } from "./ui/statusBar";
-import { registerCommands, initializeUpdateService } from "./commands";
+import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
+import { createLanguageStatusManager, disposeLanguageStatusManager } from "./ui/languageStatus";
+import { registerCommands, initializeUpdateService, setServerOutputChannel } from "./commands";
 import { setupConfigurationWatcher } from "./configuration/watcher";
 import { getUpdateConfiguration } from "./configuration/settings";
 import { registerFormatting } from "./features/formatting/formatter";
@@ -26,12 +27,25 @@ export async function activate(context: vscode.ExtensionContext) {
     console.log("Groovy Language Extension is activating...");
 
     try {
+        // Get extension version for status bar
+        const extensionVersion = (context.extension.packageJSON.version as string) || 'unknown';
+
         // Initialize the LSP client with context
         initializeClient(context);
 
-        // Register status bar indicator
-        const statusBarDisposable = registerStatusBarItem();
+        // Register status bar indicator with version info
+        const statusBarDisposable = registerStatusBarItem(undefined, extensionVersion);
         context.subscriptions.push(statusBarDisposable);
+
+        // Create server output channel and link to status bar
+        const serverOutputChannel = vscode.window.createOutputChannel("Groovy Language Server");
+        context.subscriptions.push(serverOutputChannel);
+        setServerOutputChannel(serverOutputChannel);
+        getStatusBarManager()?.setOutputChannel(serverOutputChannel);
+
+        // Create Language Status Items for rich status display
+        createLanguageStatusManager();
+        context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
         // Register commands
         registerCommands(context);
@@ -71,7 +85,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Initialize update service for LSP version checking
         // Uses extension version from package.json (which bundles the LSP)
-        const extensionVersion = context.extension.packageJSON.version as string;
         const updateService = initializeUpdateService(context, extensionVersion);
         const updateConfig = getUpdateConfiguration();
         if (updateConfig.checkOnStartup) {

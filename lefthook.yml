@@ -10,6 +10,9 @@ pre-commit:
     kotlin-lint:
       glob: '**/*.kt'
       run: ./gradlew spotlessCheck
+    extension-lint:
+      glob: 'editors/code/**/*.ts'
+      run: cd editors/code && pnpm run check-types && pnpm run lint
     yaml-lint:
       glob: '**/*.{yml,yaml}'
       run: yq '.' {staged_files} > /dev/null # Requires mikefarah/yq v4+

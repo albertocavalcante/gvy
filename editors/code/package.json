@@ -41,6 +41,22 @@
         "title": "Groovy: Check for Language Server Updates"
       },
       {
+        "command": "groovy.stopServer",
+        "title": "Groovy: Stop Language Server"
+      },
+      {
+        "command": "groovy.openLogs",
+        "title": "Groovy: Open Server Logs"
+      },
+      {
+        "command": "groovy.showStatusMenu",
+        "title": "Groovy: Show Server Status Menu"
+      },
+      {
+        "command": "groovy.reportIssue",
+        "title": "Groovy: Report Issue"
+      },
+      {
         "command": "groovy.gradle.build",
         "title": "Gradle: Build"
       },
@@ -202,6 +218,36 @@
           ],
           "default": "off",
           "description": "Trace communication with Groovy Language Server"
+        },
+        "groovy.statusBar.show": {
+          "type": "string",
+          "enum": [
+            "always",
+            "onGroovyFile",
+            "never"
+          ],
+          "default": "onGroovyFile",
+          "enumDescriptions": [
+            "Always show the status bar item",
+            "Only show when editing Groovy files",
+            "Never show the status bar item"
+          ],
+          "description": "When to show the Groovy server status bar item"
+        },
+        "groovy.statusBar.clickAction": {
+          "type": "string",
+          "enum": [
+            "menu",
+            "logs",
+            "restart"
+          ],
+          "default": "menu",
+          "enumDescriptions": [
+            "Open the server action menu",
+            "Open the server output logs",
+            "Restart the language server"
+          ],
+          "description": "Action to perform when clicking the status bar item"
         },
         "groovy.server.maxNumberOfProblems": {
           "scope": "resource",

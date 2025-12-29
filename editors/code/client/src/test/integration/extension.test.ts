@@ -23,6 +23,12 @@ suite('Extension Test Suite', () => {
         assert.ok(commands.includes('groovy.restartServer'), 'Should register restart server command');
         assert.ok(commands.includes('groovy.checkForUpdates'), 'Should register check for updates command');
 
+        // Status bar commands
+        assert.ok(commands.includes('groovy.showStatusMenu'), 'Should register show status menu command');
+        assert.ok(commands.includes('groovy.openLogs'), 'Should register open logs command');
+        assert.ok(commands.includes('groovy.stopServer'), 'Should register stop server command');
+        assert.ok(commands.includes('groovy.reportIssue'), 'Should register report issue command');
+
         // Gradle commands
         assert.ok(commands.includes('groovy.gradle.build'), 'Should register gradle build command');
         assert.ok(commands.includes('groovy.gradle.test'), 'Should register gradle test command');
@@ -43,5 +49,25 @@ suite('Extension Test Suite', () => {
         assert.ok(config.has('java.home'), 'Should have java.home configuration');
         assert.ok(config.has('trace.server'), 'Should have trace.server configuration');
         assert.ok(config.has('compilation.mode'), 'Should have compilation.mode configuration');
+    });
+
+    test('Status bar configuration should have correct structure', () => {
+        const config = vscode.workspace.getConfiguration('groovy');
+
+        // Status bar visibility setting
+        assert.ok(config.has('statusBar.show'), 'Should have statusBar.show configuration');
+        const showValue = config.get<string>('statusBar.show');
+        assert.ok(
+            ['always', 'onGroovyFile', 'never'].includes(showValue || 'onGroovyFile'),
+            'statusBar.show should have valid enum value'
+        );
+
+        // Status bar click action setting
+        assert.ok(config.has('statusBar.clickAction'), 'Should have statusBar.clickAction configuration');
+        const clickValue = config.get<string>('statusBar.clickAction');
+        assert.ok(
+            ['menu', 'logs', 'restart'].includes(clickValue || 'menu'),
+            'statusBar.clickAction should have valid enum value'
+        );
     });
 });
