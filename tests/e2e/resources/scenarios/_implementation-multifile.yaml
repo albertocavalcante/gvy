@@ -136,7 +136,7 @@ steps:
   - assert:
       source: multiFileInterfaceResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -147,7 +147,7 @@ steps:
                   character: 0
             message: "Should find UserRepository in different file"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -174,7 +174,7 @@ steps:
   - assert:
       source: multiFileMethodResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -185,7 +185,7 @@ steps:
                   character: 4
             message: "Should find UserRepository.save() in different file"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -212,7 +212,7 @@ steps:
   - assert:
       source: fqnTestAResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -223,7 +223,7 @@ steps:
                   character: 0
             message: "Should find com.a.Circle (implements com.a.Shape)"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
@@ -246,7 +246,7 @@ steps:
   - assert:
       source: fqnTestBResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -257,7 +257,7 @@ steps:
                   character: 0
             message: "Should find com.b.Rectangle (implements com.b.Shape)"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
