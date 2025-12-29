@@ -122,6 +122,37 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
+    fun `test highlight with compound assignments`() = runTest {
+        // Arrange
+        val content = """
+            def x = 1
+            x += 2
+            x **= 3
+            println x
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 4),
+        )
+
+        // Assert
+        assertEquals(4, highlights.size, "Should find 4 highlights")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+
+        // Writes: declaration, +=, **=
+        assertEquals(3, writes.size, "Should find 3 writes")
+        // Reads: println
+        assertEquals(1, reads.size, "Should find 1 read")
+    }
+
+    @Test
     fun `test no highlights for position with no symbol`() = runTest {
         // Arrange
         val content = """
