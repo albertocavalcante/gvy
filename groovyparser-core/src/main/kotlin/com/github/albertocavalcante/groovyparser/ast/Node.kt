@@ -13,11 +13,18 @@ abstract class Node {
         internal set
 
     /** The source range of this node */
-    var range: Range? = null
+    open var range: Range? = null
         internal set
 
     /** Annotations on this node */
     val annotations: MutableList<AnnotationExpr> = mutableListOf()
+
+    /** Comment that appears immediately before this node */
+    var comment: Comment? = null
+        internal set
+
+    /** Orphan comments associated with this node (not attributed to children) */
+    val orphanComments: MutableList<Comment> = mutableListOf()
 
     /**
      * Returns the parent node wrapped in an Optional.
@@ -28,6 +35,11 @@ abstract class Node {
      * Returns the range wrapped in an Optional.
      */
     fun getRange(): Optional<Range> = Optional.ofNullable(range)
+
+    /**
+     * Returns the comment wrapped in an Optional.
+     */
+    fun getComment(): Optional<Comment> = Optional.ofNullable(comment)
 
     /**
      * Returns all direct child nodes.
@@ -58,6 +70,33 @@ abstract class Node {
      */
     val isNonCps: Boolean
         get() = hasAnnotation("NonCPS")
+
+    /**
+     * Sets a comment on this node.
+     */
+    fun setComment(comment: Comment?) {
+        this.comment = comment
+        comment?.let { setAsParentNodeOf(it) }
+    }
+
+    /**
+     * Adds an orphan comment to this node.
+     */
+    fun addOrphanComment(comment: Comment) {
+        orphanComments.add(comment)
+        setAsParentNodeOf(comment)
+    }
+
+    /**
+     * Returns all comments associated with this node (direct + orphan).
+     */
+    fun getAllContainedComments(): List<Comment> = buildList {
+        comment?.let { add(it) }
+        addAll(orphanComments)
+        getChildNodes().forEach { child ->
+            addAll(child.getAllContainedComments())
+        }
+    }
 
     /**
      * Sets the parent node for this node and all its children.

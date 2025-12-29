@@ -29,6 +29,22 @@ class ParserConfiguration {
         private set
 
     /**
+     * Lenient mode for error recovery.
+     * When true, the parser will try to recover from errors and return
+     * partial ASTs when possible, collecting all errors as problems.
+     * When false, parsing stops at the first critical error.
+     */
+    var lenientMode: Boolean = true
+        private set
+
+    /**
+     * Whether to collect warnings in addition to errors.
+     * When true, warnings will be included in the problems list.
+     */
+    var collectWarnings: Boolean = true
+        private set
+
+    /**
      * Sets the language level.
      */
     fun setLanguageLevel(level: GroovyLanguageLevel): ParserConfiguration {
@@ -65,6 +81,23 @@ class ParserConfiguration {
      */
     fun setAttributeComments(attributeComments: Boolean): ParserConfiguration {
         this.attributeComments = attributeComments
+        return this
+    }
+
+    /**
+     * Sets lenient mode for error recovery.
+     * When true (default), tries to recover and return partial ASTs.
+     */
+    fun setLenientMode(lenient: Boolean): ParserConfiguration {
+        this.lenientMode = lenient
+        return this
+    }
+
+    /**
+     * Sets whether to collect warnings.
+     */
+    fun setCollectWarnings(collect: Boolean): ParserConfiguration {
+        this.collectWarnings = collect
         return this
     }
 }

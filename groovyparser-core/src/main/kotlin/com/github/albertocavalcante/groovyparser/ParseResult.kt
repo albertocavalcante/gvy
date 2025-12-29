@@ -11,10 +11,23 @@ import java.util.function.Consumer
  */
 class ParseResult<T>(private val resultValue: T?, private val problemList: List<Problem>) {
     /**
-     * Returns true if parsing was successful (no problems and result is present).
+     * Returns true if parsing was successful (no errors and result is present).
+     * Note: warnings don't affect success status.
      */
     val isSuccessful: Boolean
-        get() = problemList.isEmpty() && resultValue != null
+        get() = !hasErrors && resultValue != null
+
+    /**
+     * Returns true if there are any errors (not warnings).
+     */
+    val hasErrors: Boolean
+        get() = problemList.any { it.severity == ProblemSeverity.ERROR }
+
+    /**
+     * Returns true if there are any warnings.
+     */
+    val hasWarnings: Boolean
+        get() = problemList.any { it.severity == ProblemSeverity.WARNING }
 
     /**
      * Returns the parsed result wrapped in an Optional.
@@ -29,6 +42,29 @@ class ParseResult<T>(private val resultValue: T?, private val problemList: List<
         get() = problemList
 
     /**
+     * Returns only the errors (not warnings or info).
+     */
+    val errors: List<Problem>
+        get() = problemList.filter { it.severity == ProblemSeverity.ERROR }
+
+    /**
+     * Returns only the warnings.
+     */
+    val warnings: List<Problem>
+        get() = problemList.filter { it.severity == ProblemSeverity.WARNING }
+
+    /**
+     * Returns problems filtered by the given severity.
+     */
+    fun problemsBySeverity(severity: ProblemSeverity): List<Problem> = problemList.filter { it.severity == severity }
+
+    /**
+     * Returns problems at least as severe as the given threshold.
+     */
+    fun problemsAtLeast(threshold: ProblemSeverity): List<Problem> =
+        problemList.filter { it.severity.isAtLeast(threshold) }
+
+    /**
      * Executes the given consumer if parsing was successful.
      */
     fun ifSuccessful(consumer: Consumer<T>) {
@@ -37,9 +73,22 @@ class ParseResult<T>(private val resultValue: T?, private val problemList: List<
         }
     }
 
-    override fun toString(): String = if (isSuccessful) {
-        "ParseResult[successful]"
-    } else {
-        "ParseResult[failed, ${problems.size} problem(s)]"
+    /**
+     * Returns the result if present, otherwise throws an exception with problems.
+     */
+    fun getOrThrow(): T {
+        if (resultValue != null) return resultValue
+        throw ParseProblemException(problemList)
+    }
+
+    override fun toString(): String {
+        val errorCount = errors.size
+        val warningCount = warnings.size
+        return when {
+            isSuccessful && warningCount == 0 -> "ParseResult[successful]"
+            isSuccessful -> "ParseResult[successful, $warningCount warning(s)]"
+            resultValue != null -> "ParseResult[partial, $errorCount error(s), $warningCount warning(s)]"
+            else -> "ParseResult[failed, $errorCount error(s)]"
+        }
     }
 }
