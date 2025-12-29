@@ -288,6 +288,50 @@ class RulesetResolverTest {
         )
     }
 
+    @Test
+    fun `Jenkins ruleset should include ONLY Jenkins-specific rules (not generic rules)`(@TempDir tempDir: Path) {
+        // Given: Jenkins project
+        Files.createFile(tempDir.resolve("Jenkinsfile"))
+
+        val context = createWorkspaceContext(tempDir, enabled = true)
+        val config = resolver.resolve(context)
+
+        // Then: Jenkins ruleset should NOT include generic rulesets
+        assertNotNull(config.rulesetContent)
+
+        // ❌ Should NOT include generic rulesets (these cause noise)
+        // Note: Check for actual ruleset() directives, not comments
+        assertTrue(
+            !config.rulesetContent.contains("ruleset('rulesets/basic.xml')"),
+            "Jenkins ruleset should NOT include ruleset('rulesets/basic.xml') directive (causes ~30 style warnings). " +
+                "Only Jenkins CPS rules should be included.",
+        )
+        assertTrue(
+            !config.rulesetContent.contains("ruleset('rulesets/imports.xml')"),
+            "Jenkins ruleset should NOT include ruleset('rulesets/imports.xml') directive (import organization is not critical for Jenkinsfiles).",
+        )
+        assertTrue(
+            !config.rulesetContent.contains("ruleset('rulesets/formatting.xml')"),
+            "Jenkins ruleset should NOT include ruleset('rulesets/formatting.xml') directive " +
+                "(includes Indentation rule that caused 15 warnings). " +
+                "Format-on-save should handle formatting instead.",
+        )
+
+        // ✅ Should ONLY include Jenkins CPS rules
+        assertTrue(
+            config.rulesetContent.contains("rulesets/jenkins.xml"),
+            "Jenkins ruleset should include rulesets/jenkins.xml for CPS safety rules.",
+        )
+
+        // ✅ Should include critical correctness rules (defined inline, not from bundled rulesets)
+        assertTrue(
+            config.rulesetContent.contains("CatchException") ||
+                config.rulesetContent.contains("CatchThrowable") ||
+                config.rulesetContent.contains("UnusedVariable"),
+            "Jenkins ruleset should include critical correctness rules defined inline (not from bundled rulesets).",
+        )
+    }
+
     // Helper functions
 
     private fun createWorkspaceContext(
