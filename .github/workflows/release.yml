@@ -145,7 +145,7 @@ jobs:
   # TODO(#461): Migrate to JDK 21 baseline and drop JDK 17 support entirely.
   #   Temurin doesn't provide JDK 17 for Windows ARM, requiring matrix exclusions.
   #   JDK 21 is the current LTS and available on all platforms.
-  #   See: https://github.com/albertocavalcante/groovy-devtools/issues/461
+  #   See: https://github.com/albertocavalcante/gvy/issues/461
   smoke-test:
     name: Smoke Test (${{ matrix.os }}, JDK ${{ matrix.java }})
     needs: build-release
@@ -434,8 +434,9 @@ jobs:
         uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
+          base-branch: main
           formula-name: gls
-          download-url: https://github.com/albertocavalcante/groovy-devtools/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.version_no_v }}.jar
+          download-url: https://github.com/albertocavalcante/gvy/releases/download/${{ needs.create-release.outputs.tag_name }}/gls-${{ needs.create-release.outputs.version_no_v }}.jar
           commit-message: "chore: update gls to {{version}}"
         env:
           COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
