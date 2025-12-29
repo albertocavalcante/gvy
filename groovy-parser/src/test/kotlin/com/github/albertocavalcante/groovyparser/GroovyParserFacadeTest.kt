@@ -226,4 +226,144 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast, "AST should be populated")
         assertEquals(0, result.diagnostics.size, "No diagnostics expected")
     }
+
+    @Test
+    fun `parse succeeds for class extending custom superclass with AST transforms on classpath`() {
+        // This test simulates the Spock scenario:
+        // - Class extends a superclass that may not be on the classpath (e.g., spock.lang.Specification)
+        // - Classpath contains AST transformation service files
+        // Previously this would cause NoClassDefFoundError when Groovy tried to load transformations
+
+        // Create a classpath directory with AST transformation service file
+        val classpathDir = tempDir.resolve("spock-like-classpath")
+        Files.createDirectories(classpathDir)
+
+        val servicesDir = classpathDir.resolve("META-INF/services")
+        Files.createDirectories(servicesDir)
+
+        val serviceFile = servicesDir.resolve("org.codehaus.groovy.transform.ASTTransformation")
+        Files.writeString(
+            serviceFile,
+            """
+            # Fake Spock-like transform
+            org.spockframework.compiler.SpockTransform
+            """.trimIndent(),
+        )
+
+        // Code that extends a superclass (like Spock's Specification)
+        val code = """
+            class MySpecTest extends spock.lang.Specification {
+                def "should work"() {
+                    expect:
+                    true
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///MySpecTest.groovy"),
+                content = code,
+                classpath = listOf(classpathDir),
+            ),
+        )
+
+        // The parser should succeed without NoClassDefFoundError
+        // Note: the class may have diagnostics about unresolved superclass, but the parser shouldn't crash
+        assertNotNull(result.ast, "AST should not be null even with unresolved superclass")
+    }
+
+    @Test
+    fun `parse succeeds with multiple JARs containing different AST transformation service files`() {
+        // Test that multiple JARs with transformation services don't cause issues
+
+        val jar1Path = tempDir.resolve("transform1.jar")
+        JarOutputStream(Files.newOutputStream(jar1Path)).use { jos ->
+            val entry = JarEntry("META-INF/services/org.codehaus.groovy.transform.ASTTransformation")
+            jos.putNextEntry(entry)
+            jos.write("com.example.Transform1\ncom.example.Transform2\n".toByteArray())
+            jos.closeEntry()
+        }
+
+        val jar2Path = tempDir.resolve("transform2.jar")
+        JarOutputStream(Files.newOutputStream(jar2Path)).use { jos ->
+            val entry = JarEntry("META-INF/services/org.codehaus.groovy.transform.ASTTransformation")
+            jos.putNextEntry(entry)
+            jos.write("org.another.Transform3\n".toByteArray())
+            jos.closeEntry()
+        }
+
+        val code = """
+            class MultiJarTest {
+                String name = "test"
+                def method() { println name }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///MultiJarTest.groovy"),
+                content = code,
+                classpath = listOf(jar1Path, jar2Path),
+            ),
+        )
+
+        assertTrue(result.isSuccessful, "Parse should succeed with multiple JARs containing transformation services")
+        assertNotNull(result.ast, "AST should be populated")
+        assertEquals(0, result.diagnostics.size, "No diagnostics expected")
+    }
+
+    @Test
+    fun `parse maintains AST structure when transforms are filtered`() {
+        // Verify that filtering AST transformations doesn't break the AST structure
+        val classpathDir = tempDir.resolve("struct-test-classpath")
+        Files.createDirectories(classpathDir)
+
+        val servicesDir = classpathDir.resolve("META-INF/services")
+        Files.createDirectories(servicesDir)
+
+        val serviceFile = servicesDir.resolve("org.codehaus.groovy.transform.ASTTransformation")
+        Files.writeString(serviceFile, "com.fake.Transform\n")
+
+        val code = """
+            class Person {
+                String name
+                int age
+                
+                def greet(String greeting) {
+                    return greeting + ", " + name
+                }
+                
+                static void main(String[] args) {
+                    def p = new Person(name: "Alice", age: 30)
+                    println p.greet("Hello")
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Person.groovy"),
+                content = code,
+                classpath = listOf(classpathDir),
+            ),
+        )
+
+        assertTrue(result.isSuccessful)
+        assertNotNull(result.ast)
+
+        // Verify AST structure
+        val classes = result.ast!!.classes
+        assertTrue(classes.any { it.nameWithoutPackage == "Person" }, "Should find Person class")
+
+        val personClass = classes.first { it.nameWithoutPackage == "Person" }
+        val fields = personClass.fields.map { it.name }
+        assertTrue(fields.contains("name"), "Should find 'name' field")
+        assertTrue(fields.contains("age"), "Should find 'age' field")
+
+        val methods = personClass.methods.map { it.name }
+        assertTrue(methods.contains("greet"), "Should find 'greet' method")
+        assertTrue(methods.contains("main"), "Should find 'main' method")
+    }
 }
+
