@@ -169,7 +169,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
 
                 // Check if this class implements our target interface
                 if (implementsInterface(classSymbol, targetInterface)) {
-                    emitUniqueLocation(classSymbol.node, originVisitor, emittedLocations)
+                    // Get the correct visitor for this file's URI (fixes cross-file discovery)
+                    val fileVisitor = compilationService.getAstModel(uri) ?: originVisitor
+                    emitUniqueLocation(classSymbol.node, fileVisitor, emittedLocations)
                 }
             }
         }
@@ -201,7 +203,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
                 }
 
                 if (matchingMethod != null) {
-                    emitUniqueLocation(matchingMethod, originVisitor, emittedLocations)
+                    // Get the correct visitor for this file's URI (fixes cross-file discovery)
+                    val fileVisitor = compilationService.getAstModel(uri) ?: originVisitor
+                    emitUniqueLocation(matchingMethod, fileVisitor, emittedLocations)
                 }
             }
         }
@@ -267,9 +271,18 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
     }
 
     /**
-     * Check if two type names match using fully qualified names.
+     * Check if two type names match, handling FQN vs simple name differences.
+     * For example, "String" should match "java.lang.String".
      */
-    private fun typesMatch(type1: String, type2: String): Boolean = type1 == type2
+    private fun typesMatch(type1: String, type2: String): Boolean {
+        // Fast path: exact match
+        if (type1 == type2) return true
+
+        // Handle FQN vs simple name (e.g., String vs java.lang.String)
+        val simple1 = type1.substringAfterLast('.')
+        val simple2 = type2.substringAfterLast('.')
+        return simple1 == simple2 && simple1.isNotEmpty()
+    }
 
     /**
      * Emit a location if not already emitted.

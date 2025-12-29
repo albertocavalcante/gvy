@@ -387,4 +387,74 @@ class ImplementationProviderTest {
         assertEquals(6, areaImpls[0].range.start.line, "area() implementation at line 6")
         assertEquals(7, perimeterImpls[0].range.start.line, "perimeter() implementation at line 7")
     }
+
+    @Test
+    fun `test find implementation across multiple files`() = runTest {
+        // Arrange - Create interface in one file
+        val interfaceUri = URI.create("file:///interface.groovy")
+        val interfaceContent = """
+            interface Shape {
+                def area()
+            }
+        """.trimIndent()
+
+        val interfaceResult = compilationService.compile(interfaceUri, interfaceContent)
+        assertTrue(interfaceResult.isSuccess, "Interface compilation should succeed")
+
+        // Create implementation in a different file
+        // Note: Use unqualified name - Groovy allows this even without classpath
+        // The symbol table tracks interface names as strings, so matching works
+        val implUri = URI.create("file:///impl.groovy")
+        val implContent = """
+            class Circle implements Shape {
+                def area() { return 3.14 }
+            }
+        """.trimIndent()
+
+        // Even if compilation has warnings about Shape not found,
+        // the symbol table will still record that Circle implements "Shape"
+        compilationService.compile(implUri, implContent)
+
+        // Act - Find implementations of 'Shape' interface from interface file
+        val implementations = implementationProvider.provideImplementations(
+            interfaceUri.toString(),
+            Position(0, 10), // pointing at 'Shape' in interface declaration
+        ).toList()
+
+        // Assert - Should find Circle in the different file
+        assertEquals(1, implementations.size, "Should find implementation in different file")
+        val impl = implementations[0]
+        assertEquals(implUri.toString(), impl.uri, "Implementation should be in impl.groovy")
+        assertEquals(0, impl.range.start.line, "Circle class starts at line 0")
+    }
+
+    @Test
+    fun `test method signature matching with FQN vs simple name types`() = runTest {
+        // Arrange - Interface uses FQN, implementation uses simple name
+        val content = """
+            interface Processor {
+                def process(java.lang.String input)
+            }
+            
+            class SimpleProcessor implements Processor {
+                def process(String input) { return input }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find implementations of 'process' method (with FQN parameter)
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(1, 8), // pointing at 'process' method in interface
+        ).toList()
+
+        // Assert - Should find SimpleProcessor.process despite String vs java.lang.String
+        assertEquals(1, implementations.size, "Should match method despite FQN vs simple name difference")
+        val impl = implementations[0]
+        assertEquals(5, impl.range.start.line, "SimpleProcessor.process at line 5")
+    }
 }
