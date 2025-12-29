@@ -7,10 +7,12 @@ A standalone Groovy parsing library with a JavaParser-inspired API, designed for
 - **JavaParser-like API**: Familiar API design for Java/Kotlin developers
 - **Custom AST nodes**: Clean, well-documented AST hierarchy with position tracking
 - **Visitor pattern**: `VoidVisitor` and `GroovyVisitor<R>` for type-safe AST traversal
+- **Comment preservation**: Extract and attach comments (line, block, Javadoc) to AST nodes
 - **Multi-version support**: Parse Groovy 2.4 through 5.x
 - **File-based parsing**: Parse from `File`, `Path`, `InputStream`, or `Reader`
 - **Extension points**: SPI for AST transforms and Jenkins CPS analysis
 - **Jenkins CPS support**: Built-in analyzer for detecting CPS compatibility issues
+- **Error recovery**: Lenient mode returns partial ASTs with detailed problem reports
 - **Type-safe**: Written in Kotlin with null-safety
 
 ## Installation
@@ -338,6 +340,94 @@ unit.types.forEach { type ->
     }
 }
 ```
+
+## Comment Preservation
+
+Comments are automatically extracted and attached to AST nodes:
+
+```kotlin
+val code = """
+    /** This is a Javadoc comment for Person. */
+    class Person {
+        /** The person's name. */
+        String name
+        
+        // Regular line comment
+        void greet() {
+            println "Hello!"
+        }
+    }
+""".trimIndent()
+
+val unit = StaticGroovyParser.parse(code)
+val personClass = unit.types[0] as ClassDeclaration
+
+// Get the class's attached comment
+personClass.comment?.let { comment ->
+    println("Class doc: ${comment.content}")
+    if (comment is JavadocComment) {
+        println("(It's a Javadoc!)")
+    }
+}
+
+// Get all comments in the AST
+val allComments = unit.getAllContainedComments()
+allComments.forEach { println(it) }
+```
+
+### Comment Types
+
+- `LineComment`: Single-line comments starting with `//`
+- `BlockComment`: Multi-line comments enclosed in `/* ... */`
+- `JavadocComment`: Documentation comments starting with `/** ... */`
+
+### Disabling Comment Attribution
+
+Comment extraction can be disabled for performance:
+
+```kotlin
+val config = ParserConfiguration()
+    .setAttributeComments(false)
+val parser = GroovyParser(config)
+```
+
+## Error Recovery
+
+The parser operates in lenient mode by default, attempting to recover from errors and return partial ASTs:
+
+```kotlin
+val code = """
+    class Foo {
+        def bar() {
+            // Missing closing braces...
+"""
+
+val parser = GroovyParser()
+val result = parser.parse(code)
+
+// Check for errors
+if (result.hasErrors) {
+    result.errors.forEach { error ->
+        println("${error.severity}: ${error.message} at ${error.position}")
+    }
+}
+
+// Even with errors, you may get a partial AST
+result.result.ifPresent { unit ->
+    println("Partial parse found ${unit.types.size} types")
+}
+
+// Strict mode fails immediately on errors
+val strictConfig = ParserConfiguration().setLenientMode(false)
+val strictParser = GroovyParser(strictConfig)
+```
+
+### Problem Severity Levels
+
+- `ERROR`: Fatal errors that prevent parsing
+- `WARNING`: Non-fatal issues (when `collectWarnings` is enabled)
+- `INFO`: Informational messages
+- `HINT`: Suggestions and style hints
 
 ## API Reference
 
