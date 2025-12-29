@@ -236,11 +236,13 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         }
 
         // Get parameters from the scope (either MethodNode or ClosureExpression)
-        val scopeParams = when (scope) {
-            is MethodNode -> scope.parameters?.toList() ?: emptyList()
-            is ClosureExpression -> scope.parameters?.toList() ?: emptyList()
-            else -> emptyList()
-        }
+        val scopeParams = (
+            when (scope) {
+                is MethodNode -> scope.parameters
+                is ClosureExpression -> scope.parameters
+                else -> null
+            }
+            )?.toList() ?: emptyList()
 
         // Check if both parameters belong to this scope
         val p1InScope = scopeParams.any { it.name == p1.name && isSameParameter(it, p1) }

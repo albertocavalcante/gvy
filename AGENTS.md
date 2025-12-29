@@ -84,16 +84,49 @@ These rules apply to ALL tasks. Violation is unacceptable.
 - **Stage files explicitly** — Use `git add file1.kt file2.kt`, NEVER `git add .`
 - **Verify branch** — Run `git branch --show-current` before any commit
 
-### Git Worktrees (preferred for clean PRs)
-- **Create from main** — `git fetch origin main` then `git worktree add -b <branch> ../<repo>-<branch> origin/main`
-- **Pick a sibling path** — Use a path at the same level as the repo, e.g. `../groovy-lsp-codeql`
-- **Keep changes isolated** — Do work only inside the worktree path for that PR
-- **Push from the worktree** — `git push -u origin <branch>`
-- **Clean up after merge** — `git worktree remove <path>` then `git worktree prune`
-- **Optional housekeeping** — `git worktree list` to verify what’s active and remove stale entries
+### Git Worktrees (REQUIRED for new PRs)
+
+**ALWAYS** use worktrees for new feature branches. Never work directly in main worktree.
+
+```bash
+# Step 1: Fetch latest main
+git fetch origin main
+
+# Step 2: Create worktree with new branch from origin/main
+git worktree add -b fix/my-feature ../groovy-lsp-my-feature origin/main
+
+# Step 3: Work ONLY in the new worktree directory
+cd ../groovy-lsp-my-feature
+
+# Step 4: Push and create PR
+git push -u origin fix/my-feature
+gh pr create --base main
+
+# Step 5: After PR merge, clean up
+git worktree remove ../groovy-lsp-my-feature
+git worktree prune
+```
+
+### Test-Driven Development (MANDATORY)
+
+**NEVER** implement fixes before writing a failing test. The sequence is non-negotiable:
+
+1. **RED**: Write test that reproduces the bug or specifies the feature
+2. **RUN**: Execute test, verify it FAILS (if it passes, your test is wrong)
+3. **GREEN**: Implement minimal code to make test pass
+4. **RUN**: Execute test, verify it PASSES
+5. **REFACTOR**: Clean up code while keeping tests green
+
+```bash
+# Example TDD workflow
+./gradlew test --tests "*.MyTest.test my failing case"  # Must FAIL first
+# ... implement fix ...
+./gradlew test --tests "*.MyTest.test my failing case"  # Must PASS now
+```
+
+**Violations**: Implementing code before test fails = revert and start over.
 
 ### Code Quality
-- **TDD required** — Red → Green → Refactor
 - **Fix lint before commit** — `./gradlew lintFix`
 - **Backtick test names** — `@Test fun \`descriptive name\`()` not camelCase
 
