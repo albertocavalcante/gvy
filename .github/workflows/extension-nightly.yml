@@ -116,8 +116,8 @@ jobs:
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5
         with:
           path: |
-            editors/code/server/groovy-lsp.jar
-            editors/code/server/.groovy-lsp-version
+            editors/code/server/gls.jar
+            editors/code/server/.gls-version
           key: groovy-lsp-${{ runner.os }}-${{ steps.groovy_lsp_cache.outputs.tag }}-${{ steps.groovy_lsp_cache.outputs.hash }}
 
       - name: Install dependencies

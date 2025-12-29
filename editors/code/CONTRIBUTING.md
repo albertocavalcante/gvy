@@ -21,17 +21,17 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 
 2. **Install dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Prepare the Groovy Language Server**
    ```bash
-   npm run prepare-server
+   pnpm run prepare-server
    ```
 
 4. **Compile the extension**
    ```bash
-   npm run compile
+   pnpm run compile
    ```
 
 ## Development Workflow
@@ -54,12 +54,12 @@ gvy/
 
 ### Available Scripts
 
-- `npm run compile` - Compile TypeScript and bundle with esbuild
-- `npm run watch` - Watch mode for development
-- `npm run lint` - Run ESLint
-- `npm run check-types` - TypeScript type checking
-- `npm run package` - Build and package VSIX
-- `npm run prepare-server` - Download/prepare Groovy Language Server
+- `pnpm run compile` - Compile TypeScript and bundle with esbuild
+- `pnpm run watch` - Watch mode for development
+- `pnpm run lint` - Run ESLint
+- `pnpm run check-types` - TypeScript type checking
+- `pnpm run package` - Build and package VSIX
+- `pnpm run prepare-server` - Download/prepare Groovy Language Server
 
 ### Updating the Pinned LSP Version
 

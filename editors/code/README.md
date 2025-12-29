@@ -192,8 +192,8 @@ Want to contribute? Check out the [Contributing Guide](CONTRIBUTING.md).
 
 ```bash
 git clone https://github.com/albertocavalcante/gvy.git
-npm install
-npm run compile
+pnpm install
+pnpm run compile
 ```
 
 ## Copilot coding agent

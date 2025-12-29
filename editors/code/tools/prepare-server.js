@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const os = require("node:os");
+const { execSync } = require("node:child_process");
 const { validateJarFile } = require("./validate-server.js");
 const { extractOrCopyJar, isZipFile } = require("./zip.js");
 const { HttpError, downloadToFile } = require("./http.js");
@@ -580,8 +581,6 @@ function getMonorepoRoot() {
  * @throws {Error} If not in monorepo or build fails
  */
 function buildLocalJar() {
-  const { execSync } = require("node:child_process");
-
   if (!detectMonorepoEnvironment()) {
     throw new Error(
       "--build-local requires a monorepo environment (groovy-lsp sibling directory not found)",
