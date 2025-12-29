@@ -1,13 +1,19 @@
 name: implementation-basic
 description: >
-  Test textDocument/implementation to navigate to implementations.
-  Verifies that requesting implementation on an interface works.
+  Basic smoke test for textDocument/implementation.
+  Tests the simplest case: interface with single concrete implementation.
+
+  For comprehensive testing, see:
+  - implementation-comprehensive.yaml (all currently supported features)
+  - _implementation-transitive.yaml (TODO: transitive interface/superclass)
+  - _implementation-multifile.yaml (TODO: multi-file and FQN validation)
 
 workspace:
   fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}
+
   # Wait for server to be ready
   - waitNotification:
       method: groovy/status
@@ -26,41 +32,36 @@ steps:
         interface Shape {
             def area()
         }
-        
+
         class Square implements Shape {
             def area() { return 100 }
         }
-        
+
+        # Concrete class - should NOT be an implementation target
+        class ConcreteShape {
+            def area() { return 50 }
+        }
+
         Shape myShape = new Square()
-  
+
   # Wait for diagnostics
   - waitNotification:
       method: textDocument/publishDiagnostics
       timeoutMs: 10000
 
-  # Test 1: Find implementation of Interface
-  # Trigger on 'Shape' in 'Shape myShape' (line 8, char 0-5)
+  # ============================================================================
+  # TEST 1: Find implementation of Interface
+  # ============================================================================
+  # Trigger on 'Shape' in 'Shape myShape' (line 12, char 0-5)
   - request:
       method: textDocument/implementation
       params:
         textDocument:
           uri: "{{workspace.uri}}src/ImplTest.groovy"
         position:
-          line: 8
+          line: 12
           character: 2
       saveAs: implResult
-
-  # Find implementation of Method
-  # Trigger on 'area' in 'interface Shape { def area() }' (line 1, char 16)
-  - request:
-      method: textDocument/implementation
-      params:
-        textDocument:
-          uri: "{{workspace.uri}}src/ImplTest.groovy"
-        position:
-          line: 1
-          character: 16
-      saveAs: methodImplResult
 
   # Verify interface implementation found (Square class)
   - assert:
@@ -69,7 +70,7 @@ steps:
         - jsonPath: $
           expect:
             type: CONTAINS
-            value: 
+            value:
               uri: "{{workspace.uri}}src/ImplTest.groovy"
               range:
                 start:
@@ -80,6 +81,20 @@ steps:
                   character: 1
             message: "Should find Square class implementation"
 
+  # ============================================================================
+  # TEST 2: Find implementation of Method
+  # ============================================================================
+  # Trigger on 'area' in 'interface Shape { def area() }' (line 1, char 8)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ImplTest.groovy"
+        position:
+          line: 1
+          character: 8
+      saveAs: methodImplResult
+
   # Verify method implementation found (Square.area)
   - assert:
       source: methodImplResult
@@ -88,15 +103,83 @@ steps:
           expect:
             type: CONTAINS
             value:
-                uri: "{{workspace.uri}}src/ImplTest.groovy"
-                range:
-                    start:
-                        line: 5
-                        character: 4
-                    end:
-                        line: 5
-                        character: 29
+              uri: "{{workspace.uri}}src/ImplTest.groovy"
+              range:
+                start:
+                  line: 5
+                  character: 4
+                end:
+                  line: 5
+                  character: 29
             message: "Should find Square.area implementation"
+
+  # ============================================================================
+  # TEST 3: Concrete class should return empty results
+  # ============================================================================
+  # Trigger on 'ConcreteShape' class (line 8, char 6)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ImplTest.groovy"
+        position:
+          line: 8
+          character: 6
+      saveAs: concreteClassResult
+
+  # Verify no implementations for concrete class
+  - assert:
+      source: concreteClassResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: EQUALS
+            value: []
+            message: "Concrete class should have no implementations"
+
+  # ============================================================================
+  # TEST 4: Concrete method should return empty results
+  # ============================================================================
+  # Trigger on 'area' method in ConcreteShape (line 9, char 8)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ImplTest.groovy"
+        position:
+          line: 9
+          character: 8
+      saveAs: concreteMethodResult
+
+  # Verify no implementations for concrete method
+  - assert:
+      source: concreteMethodResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: EQUALS
+            value: []
+            message: "Concrete method should have no implementations"
 
   - shutdown: {}
   - exit: {}
+
+# ============================================================================
+# TODO: Features not covered by this basic test
+# ============================================================================
+#
+# See implementation-comprehensive.yaml for:
+# - Multiple classes implementing same interface
+# - Abstract methods and abstract classes
+# - Methods with parameters
+# - Excluding abstract classes from results
+#
+# See _implementation-transitive.yaml for planned features:
+# - TODO(#413): Transitive interface checking (A extends B, C implements A)
+# - TODO(#413): Superclass interfaces (Shape implements Drawable, Circle extends Shape)
+# - TODO(#413): Multi-level inheritance chains
+#
+# See _implementation-multifile.yaml for:
+# - Cross-file implementation discovery
+# - Package-qualified name (FQN) validation
+# - Same simple name in different packages

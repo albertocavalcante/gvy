@@ -1,0 +1,300 @@
+name: implementation-comprehensive
+description: >
+  Comprehensive test for textDocument/implementation covering all supported scenarios
+  and documenting future enhancements with TODO comments.
+
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # ============================================================================
+  # Test File 1: Interface with multiple implementations
+  # ============================================================================
+  - openDocument:
+      path: src/MultipleImpls.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        interface Calculator {
+            def add(int a, int b)
+            def subtract(int a, int b)
+        }
+
+        class BasicCalculator implements Calculator {
+            def add(int a, int b) { return a + b }
+            def subtract(int a, int b) { return a - b }
+        }
+
+        class ScientificCalculator implements Calculator {
+            def add(int a, int b) { return a + b }
+            def subtract(int a, int b) { return a - b }
+            def multiply(int a, int b) { return a * b }
+        }
+
+        # Abstract class should NOT appear in results
+        abstract class AbstractCalculator implements Calculator {
+            abstract def divide(int a, int b)
+        }
+
+  # ============================================================================
+  # Test File 2: Abstract class with concrete implementation
+  # ============================================================================
+  - openDocument:
+      path: src/AbstractImpl.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        abstract class Animal {
+            abstract def makeSound()
+            def sleep() { return "zzz" }
+        }
+
+        class Dog extends Animal {
+            def makeSound() { return "Woof" }
+        }
+
+        class Cat extends Animal {
+            def makeSound() { return "Meow" }
+        }
+
+  # Wait for compilation
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 15000
+
+  # ============================================================================
+  # TEST 1: Interface -> Multiple class implementations
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+        position:
+          line: 0
+          character: 10  # On 'Calculator' interface
+      saveAs: multipleImplsResult
+
+  # Should find BasicCalculator and ScientificCalculator, but NOT AbstractCalculator
+  - assert:
+      source: multipleImplsResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+              range:
+                start:
+                  line: 5
+                  character: 0
+            message: "Should find BasicCalculator"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+              range:
+                start:
+                  line: 10
+                  character: 0
+            message: "Should find ScientificCalculator"
+
+  # ============================================================================
+  # TEST 2: Interface method with parameters -> Multiple implementations
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+        position:
+          line: 1
+          character: 8  # On 'add' method in interface
+      saveAs: methodWithParamsResult
+
+  # Should find both add() implementations
+  - assert:
+      source: methodWithParamsResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+              range:
+                start:
+                  line: 6
+                  character: 4
+            message: "Should find BasicCalculator.add()"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+              range:
+                start:
+                  line: 11
+                  character: 4
+            message: "Should find ScientificCalculator.add()"
+
+  # ============================================================================
+  # TEST 3: Abstract method -> Concrete implementations
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+        position:
+          line: 1
+          character: 17  # On 'makeSound' abstract method
+      saveAs: abstractMethodResult
+
+  # Should find Dog.makeSound() and Cat.makeSound()
+  - assert:
+      source: abstractMethodResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+              range:
+                start:
+                  line: 6
+                  character: 4
+            message: "Should find Dog.makeSound()"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+              range:
+                start:
+                  line: 10
+                  character: 4
+            message: "Should find Cat.makeSound()"
+
+  # ============================================================================
+  # TEST 4: Abstract class -> Concrete implementations
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+        position:
+          line: 0
+          character: 17  # On 'Animal' abstract class
+      saveAs: abstractClassResult
+
+  # Should find Dog and Cat classes
+  - assert:
+      source: abstractClassResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+              range:
+                start:
+                  line: 5
+                  character: 0
+            message: "Should find Dog class"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/AbstractImpl.groovy"
+              range:
+                start:
+                  line: 9
+                  character: 0
+            message: "Should find Cat class"
+
+  # ============================================================================
+  # TEST 5: Verify abstract classes are excluded from interface implementations
+  # ============================================================================
+  - assert:
+      source: multipleImplsResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: NOT_CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultipleImpls.groovy"
+              range:
+                start:
+                  line: 16
+                  character: 0
+            message: "Should NOT find AbstractCalculator (abstract classes excluded)"
+
+  - shutdown: {}
+  - exit: {}
+
+# ============================================================================
+# TODO: Future test scenarios (not yet supported)
+# ============================================================================
+#
+# TODO(#413): Transitive interface checking
+# - openDocument:
+#     path: src/TransitiveInterfaces.groovy
+#     text: |
+#       interface A { def methodA() }
+#       interface B extends A { def methodB() }
+#       class C implements B {
+#           def methodA() { return "A" }
+#           def methodB() { return "B" }
+#       }
+#
+# When requesting implementations of interface A:
+# - Should find class C (because B extends A, and C implements B)
+# - Currently: Only finds direct implementations
+#
+# ============================================================================
+# TODO(#413): Superclass interface inheritance
+# - openDocument:
+#     path: src/SuperclassInterfaces.groovy
+#     text: |
+#       interface Drawable { def draw() }
+#       abstract class Shape implements Drawable {
+#           abstract def area()
+#       }
+#       class Circle extends Shape {
+#           def draw() { return "circle" }
+#           def area() { return 3.14 }
+#       }
+#
+# When requesting implementations of interface Drawable:
+# - Should find class Circle (because Shape implements Drawable, Circle extends Shape)
+# - Currently: Won't find Circle unless it directly implements Drawable
+#
+# ============================================================================
+# TODO: Multi-file implementation discovery
+# - Create interfaces in one file, implementations in other files
+# - Verify cross-file implementation discovery works
+# - This should already work but needs explicit E2E validation
+#
+# ============================================================================
+# TODO: Package-qualified interface matching
+# - Test that com.a.Shape and com.b.Shape are treated as different interfaces
+# - Verify FQN comparison prevents false matches
+# - Add test with same-named interfaces in different packages

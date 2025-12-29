@@ -1,0 +1,294 @@
+name: implementation-multifile
+description: >
+  DISABLED: Test for multi-file implementation discovery and edge cases.
+  This test validates that implementation discovery works across multiple files
+  and handles package-qualified names correctly.
+
+  This test should already work with current implementation but needs validation.
+  Enable once ready to verify cross-file behavior.
+
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # ============================================================================
+  # Scenario 1: Interface in one file, implementations in multiple other files
+  # ============================================================================
+  - openDocument:
+      path: src/interfaces/Repository.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package interfaces
+
+        interface Repository {
+            def save(Object entity)
+            def findById(String id)
+            def delete(String id)
+        }
+
+  - openDocument:
+      path: src/impls/UserRepository.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package impls
+
+        import interfaces.Repository
+
+        class UserRepository implements Repository {
+            def save(Object entity) { return "saved" }
+            def findById(String id) { return "user" }
+            def delete(String id) { return "deleted" }
+        }
+
+  - openDocument:
+      path: src/impls/ProductRepository.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package impls
+
+        import interfaces.Repository
+
+        class ProductRepository implements Repository {
+            def save(Object entity) { return "saved" }
+            def findById(String id) { return "product" }
+            def delete(String id) { return "deleted" }
+        }
+
+  # ============================================================================
+  # Scenario 2: Same simple name, different packages (FQN test)
+  # ============================================================================
+  - openDocument:
+      path: src/com/a/Shape.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.a
+
+        interface Shape {
+            def area()
+        }
+
+  - openDocument:
+      path: src/com/b/Shape.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.b
+
+        interface Shape {
+            def perimeter()
+        }
+
+  - openDocument:
+      path: src/com/a/Circle.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.a
+
+        class Circle implements Shape {
+            def area() { return 3.14 }
+        }
+
+  - openDocument:
+      path: src/com/b/Rectangle.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.b
+
+        class Rectangle implements Shape {
+            def perimeter() { return 40 }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # ============================================================================
+  # TEST 1: Multi-file interface implementation discovery
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/interfaces/Repository.groovy"
+        position:
+          line: 2
+          character: 10  # On 'Repository' interface
+      saveAs: multiFileInterfaceResult
+
+  - assert:
+      source: multiFileInterfaceResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/UserRepository.groovy"
+              range:
+                start:
+                  line: 4
+                  character: 0
+            message: "Should find UserRepository in different file"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/ProductRepository.groovy"
+              range:
+                start:
+                  line: 4
+                  character: 0
+            message: "Should find ProductRepository in different file"
+
+  # ============================================================================
+  # TEST 2: Multi-file method implementation discovery
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/interfaces/Repository.groovy"
+        position:
+          line: 3
+          character: 8  # On 'save' method
+      saveAs: multiFileMethodResult
+
+  - assert:
+      source: multiFileMethodResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/UserRepository.groovy"
+              range:
+                start:
+                  line: 5
+                  character: 4
+            message: "Should find UserRepository.save() in different file"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/ProductRepository.groovy"
+              range:
+                start:
+                  line: 5
+                  character: 4
+            message: "Should find ProductRepository.save() in different file"
+
+  # ============================================================================
+  # TEST 3: FQN matching - com.a.Shape should only find com.a.Circle
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/com/a/Shape.groovy"
+        position:
+          line: 2
+          character: 10  # On 'Shape' in com.a
+      saveAs: fqnTestAResult
+
+  - assert:
+      source: fqnTestAResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/com/a/Circle.groovy"
+              range:
+                start:
+                  line: 2
+                  character: 0
+            message: "Should find com.a.Circle (implements com.a.Shape)"
+
+        - jsonPath: $
+          expect:
+            type: NOT_CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/com/b/Rectangle.groovy"
+            message: "Should NOT find com.b.Rectangle (implements com.b.Shape, not com.a.Shape)"
+
+  # ============================================================================
+  # TEST 4: FQN matching - com.b.Shape should only find com.b.Rectangle
+  # ============================================================================
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/com/b/Shape.groovy"
+        position:
+          line: 2
+          character: 10  # On 'Shape' in com.b
+      saveAs: fqnTestBResult
+
+  - assert:
+      source: fqnTestBResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/com/b/Rectangle.groovy"
+              range:
+                start:
+                  line: 2
+                  character: 0
+            message: "Should find com.b.Rectangle (implements com.b.Shape)"
+
+        - jsonPath: $
+          expect:
+            type: NOT_CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/com/a/Circle.groovy"
+            message: "Should NOT find com.a.Circle (implements com.a.Shape, not com.b.Shape)"
+
+  - shutdown: {}
+  - exit: {}
+
+# ============================================================================
+# Edge Cases to Consider:
+# ============================================================================
+#
+# 1. Circular dependencies (should be prevented by compiler)
+# 2. Self-implementing interfaces (pathological case)
+# 3. Very large inheritance hierarchies (performance)
+# 4. Interfaces in JAR dependencies (external classes)
+# 5. Inner classes implementing interfaces
+# 6. Generic interfaces with type parameters
+# 7. Groovy traits (similar to interfaces with default implementations)
+#
+# ============================================================================
+# Notes on Current Implementation:
+# ============================================================================
+#
+# The current implementation uses:
+# - compilationService.getAllSymbolStorages() to iterate all files
+# - Fully qualified name (FQN) comparison to match interfaces/classes
+#
+# This should already support multi-file scenarios, but needs explicit
+# E2E validation to ensure:
+# - Symbol tables are populated across all files
+# - Compilation service maintains all symbol storages
+# - Cross-file references are resolved correctly
