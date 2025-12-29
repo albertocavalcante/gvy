@@ -17,7 +17,7 @@ A standalone Groovy parsing library with a JavaParser-inspired API.
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/albertocavalcante/groovy-lsp")
+        url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
         credentials {
             username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
             password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
@@ -35,7 +35,7 @@ dependencies {
 ```groovy
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/albertocavalcante/groovy-lsp")
+        url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
         credentials {
             username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
             password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
