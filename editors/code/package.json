@@ -475,12 +475,13 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run prepare-server && node tools/validate-server.js && npm run package-build",
+    "vscode:prepublish": "pnpm run prepare-server && node tools/validate-server.js && pnpm run package-build",
     "prepare-server": "node tools/prepare-server.js",
     "prepare-server:local": "PREFER_LOCAL=true node tools/prepare-server.js",
     "prepare-server:download": "FORCE_DOWNLOAD=true node tools/prepare-server.js",
-    "compile": "npm run check-types && npm run lint && node esbuild.js",
-    "package-build": "npm run check-types && npm run lint && node esbuild.js --production",
+    "prepare-server:build": "BUILD_LOCAL=true node tools/prepare-server.js",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "package-build": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
@@ -490,13 +491,13 @@
     "format:check": "prettier --check .",
     "package": "vsce package",
     "install-extension": "node tools/install-extension.js",
-    "clean": "rm -rf client/out/ server/*.jar server/.groovy-lsp-version",
-    "postinstall": "cd client && npm install && cd .. && npm run prepare-server",
+    "clean": "rm -rf client/out/ server/*.jar server/.gls-version",
+    "postinstall": "cd client && pnpm install && cd .. && pnpm run prepare-server",
     "test": "mocha",
     "test:watch": "mocha --watch",
     "compile:tests": "tsc -b client/tsconfig.json",
-    "test:integration": "npm run compile:tests && vscode-test",
-    "test:all": "npm run test && npm run test:integration"
+    "test:integration": "pnpm run compile:tests && vscode-test",
+    "test:all": "pnpm run test && pnpm run test:integration"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
@@ -523,11 +524,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/albertocavalcante/groovy-devtools.git",
+    "url": "https://github.com/albertocavalcante/gvy.git",
     "directory": "editors/code"
   },
   "bugs": {
-    "url": "https://github.com/albertocavalcante/groovy-devtools/issues"
+    "url": "https://github.com/albertocavalcante/gvy/issues"
   },
-  "homepage": "https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code#readme"
+  "homepage": "https://github.com/albertocavalcante/gvy/tree/main/editors/code#readme"
 }
