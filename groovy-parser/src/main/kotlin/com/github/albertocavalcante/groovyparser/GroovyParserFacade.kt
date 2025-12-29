@@ -26,6 +26,13 @@ import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
 
 /**
+ * Path to the service provider configuration file for AST transformations.
+ * This file is located in META-INF/services/ and lists all global AST transformation classes.
+ */
+private const val AST_TRANSFORMATION_SERVICE_FILE =
+    "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+
+/**
  * A GroovyClassLoader that filters out AST transformation service discovery.
  *
  * This prevents NoClassDefFoundError when project classpath contains transformation classes
@@ -36,21 +43,17 @@ import kotlin.io.path.isRegularFile
  * @see GroovyParserFacade for usage context
  */
 private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
-    companion object {
-        private const val AST_TRANSFORM_SERVICE =
-            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
-    }
 
     override fun getResources(name: String): Enumeration<URL> {
         // Filter out AST transformation service discovery from this classloader
-        if (name == AST_TRANSFORM_SERVICE) {
+        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
             return Collections.emptyEnumeration()
         }
         return super.getResources(name)
     }
 
     override fun getResource(name: String): URL? {
-        if (name == AST_TRANSFORM_SERVICE) {
+        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
             return null
         }
         return super.getResource(name)
@@ -63,13 +66,6 @@ private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLo
 class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
 
     companion object {
-        /**
-         * Path to the service provider configuration file for AST transformations.
-         * This file is located in META-INF/services/ and lists all global AST transformation classes.
-         */
-        private const val AST_TRANSFORMATION_SERVICE_FILE =
-            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
-
         /**
          * Comment character for Java ServiceLoader configuration files.
          *
@@ -330,8 +326,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.extension.equals("groovy", ignoreCase = true) &&
-                    it.isRegularFile()
+                        it.extension.equals("groovy", ignoreCase = true) &&
+                        it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {
