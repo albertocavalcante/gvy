@@ -100,10 +100,9 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
                 val isMatch = when {
                     nodeDefinition == null -> false
+                    nodeDefinition is Parameter && definition is Parameter ->
+                        areParametersEqual(nodeDefinition, definition, node, definition, astModel)
                     nodeDefinition == definition -> true
-                    nodeDefinition is Parameter &&
-                        definition is Parameter ->
-                        areParametersEqual(nodeDefinition, definition)
                     else -> false
                 }
 
@@ -210,18 +209,31 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     }
 
     /**
-     * Compare two Parameters for equality.
+     * Compare two Parameters for equality, including scope check.
      */
-    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
+    private fun areParametersEqual(
+        p1: Parameter,
+        p2: Parameter,
+        n1: ASTNode,
+        n2: ASTNode,
+        astModel: GroovyAstModel,
+    ): Boolean {
         if (p1.name != p2.name) return false
 
-        val t1 = p1.type?.name
-        val t2 = p2.type?.name
+        // Check if they are in the same enclosing method/scope.
+        // This is crucial because SymbolRegistry might return the same Parameter instance
+        // for different methods due to not being scope-aware.
+        val method1 = findEnclosingMethod(n1, astModel)
+        val method2 = findEnclosingMethod(n2, astModel)
 
-        if (t1 == t2) return true
+        return method1 == method2
+    }
 
-        val s1 = t1?.substringAfterLast('.')
-        val s2 = t2?.substringAfterLast('.')
-        return s1 == s2
+    private fun findEnclosingMethod(node: ASTNode, astModel: GroovyAstModel): MethodNode? {
+        var current: ASTNode? = node
+        while (current != null && current !is MethodNode) {
+            current = astModel.getParent(current)
+        }
+        return current as? MethodNode
     }
 }
