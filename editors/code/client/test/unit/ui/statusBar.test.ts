@@ -449,6 +449,94 @@ describe('StatusBar', () => {
         });
     });
 
+    describe('smart visibility settings', () => {
+        it('should always show when setting is "always"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'always';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.show.calledOnce);
+            assert.isFalse(statusBarItemStub.hide.called);
+        });
+
+        it('should never show when setting is "never"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'never';
+                    return defaultValue;
+                })
+            });
+            mockVscode.languages.match.returns(1); // Even with Groovy file
+            mockVscode.window.activeTextEditor = { document: {} };
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.hide.calledOnce);
+            assert.isFalse(statusBarItemStub.show.called);
+        });
+
+        it('should only show on Groovy files when setting is "onGroovyFile"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'onGroovyFile';
+                    return defaultValue;
+                })
+            });
+            mockVscode.languages.match.returns(0); // No match
+            mockVscode.window.activeTextEditor = { document: {} };
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.hide.calledOnce);
+        });
+    });
+
+    describe('click action settings', () => {
+        it('should set menu command when clickAction is "menu"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'menu';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.showStatusMenu');
+        });
+
+        it('should set logs command when clickAction is "logs"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'logs';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.openLogs');
+        });
+
+        it('should set restart command when clickAction is "restart"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'restart';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.restartServer');
+        });
+    });
+
     describe('tooltip content', () => {
         let stateChangeHandler: any;
 
