@@ -94,9 +94,9 @@ git worktree prune
 
 ```bash
 # Example TDD workflow
-./gradlew test --tests "*.MyTest.test my failing case"  # Must FAIL first
+./gradlew test --tests "*MyTest.*my failing case*"  # Must FAIL first
 # ... implement fix ...
-./gradlew test --tests "*.MyTest.test my failing case"  # Must PASS now
+./gradlew test --tests "*MyTest.*my failing case*"  # Must PASS now
 ```
 
 **Violations**: Implementing code before test fails = revert and start over.
