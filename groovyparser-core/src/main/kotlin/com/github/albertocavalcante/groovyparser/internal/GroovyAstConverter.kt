@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovyparser.internal
 
 import com.github.albertocavalcante.groovyparser.Position
 import com.github.albertocavalcante.groovyparser.Range
+import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration
 import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration
@@ -11,41 +12,76 @@ import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MapEntryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
+import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.BreakStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause
+import com.github.albertocavalcante.groovyparser.ast.stmt.ContinueStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.IfStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.Statement
+import com.github.albertocavalcante.groovyparser.ast.stmt.SwitchStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapEntryExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.NotExpression
+import org.codehaus.groovy.ast.expr.PostfixExpression
+import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
+import org.codehaus.groovy.ast.expr.TernaryExpression
+import org.codehaus.groovy.ast.expr.UnaryMinusExpression
+import org.codehaus.groovy.ast.expr.UnaryPlusExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.EmptyStatement
 import java.lang.reflect.Modifier
 import org.codehaus.groovy.ast.expr.Expression as GroovyExpression
+import org.codehaus.groovy.ast.stmt.AssertStatement as GroovyAssertStatement
 import org.codehaus.groovy.ast.stmt.BlockStatement as GroovyBlockStatement
+import org.codehaus.groovy.ast.stmt.BreakStatement as GroovyBreakStatement
+import org.codehaus.groovy.ast.stmt.CaseStatement as GroovyCaseStatement
+import org.codehaus.groovy.ast.stmt.ContinueStatement as GroovyContinueStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement as GroovyExpressionStatement
 import org.codehaus.groovy.ast.stmt.ForStatement as GroovyForStatement
 import org.codehaus.groovy.ast.stmt.IfStatement as GroovyIfStatement
 import org.codehaus.groovy.ast.stmt.ReturnStatement as GroovyReturnStatement
 import org.codehaus.groovy.ast.stmt.Statement as GroovyStatement
+import org.codehaus.groovy.ast.stmt.SwitchStatement as GroovySwitchStatement
+import org.codehaus.groovy.ast.stmt.ThrowStatement as GroovyThrowStatement
+import org.codehaus.groovy.ast.stmt.TryCatchStatement as GroovyTryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement as GroovyWhileStatement
 
 /**
@@ -135,6 +171,9 @@ internal class GroovyAstConverter {
             isScript = classNode.isScript,
         )
 
+        // Convert annotations
+        convertAnnotations(classNode.annotations, classDecl)
+
         // Set superclass
         classNode.superClass?.let { superClass ->
             if (superClass.name != "java.lang.Object" && superClass.name != "groovy.lang.Script") {
@@ -163,6 +202,7 @@ internal class GroovyAstConverter {
             field.isStatic = Modifier.isStatic(propertyNode.modifiers)
             field.isFinal = Modifier.isFinal(propertyNode.modifiers)
             field.hasInitializer = propertyNode.field?.hasInitialExpression() ?: false
+            convertAnnotations(propertyNode.annotations, field)
             setRange(field, propertyNode)
             classDecl.addField(field)
         }
@@ -191,6 +231,7 @@ internal class GroovyAstConverter {
         field.isStatic = Modifier.isStatic(fieldNode.modifiers)
         field.isFinal = Modifier.isFinal(fieldNode.modifiers)
         field.hasInitializer = fieldNode.hasInitialExpression()
+        convertAnnotations(fieldNode.annotations, field)
         setRange(field, fieldNode)
         return field
     }
@@ -205,12 +246,16 @@ internal class GroovyAstConverter {
         method.isAbstract = Modifier.isAbstract(methodNode.modifiers)
         method.isFinal = Modifier.isFinal(methodNode.modifiers)
 
+        // Convert annotations
+        convertAnnotations(methodNode.annotations, method)
+
         // Convert parameters
         methodNode.parameters?.forEach { param ->
             val parameter = Parameter(
                 name = param.name,
                 type = param.type?.name ?: "Object",
             )
+            convertAnnotations(param.annotations, parameter)
             setRange(parameter, param)
             method.addParameter(parameter)
         }
@@ -233,6 +278,12 @@ internal class GroovyAstConverter {
         is GroovyIfStatement -> convertIfStatement(stmt)
         is GroovyForStatement -> convertForStatement(stmt)
         is GroovyWhileStatement -> convertWhileStatement(stmt)
+        is GroovyTryCatchStatement -> convertTryCatchStatement(stmt)
+        is GroovySwitchStatement -> convertSwitchStatement(stmt)
+        is GroovyThrowStatement -> convertThrowStatement(stmt)
+        is GroovyAssertStatement -> convertAssertStatement(stmt)
+        is GroovyBreakStatement -> convertBreakStatement(stmt)
+        is GroovyContinueStatement -> convertContinueStatement(stmt)
         is EmptyStatement -> null
         else -> {
             // For unknown statement types, wrap in a block if possible
@@ -293,6 +344,86 @@ internal class GroovyAstConverter {
         return whileStmt
     }
 
+    private fun convertTryCatchStatement(stmt: GroovyTryCatchStatement): TryCatchStatement {
+        val tryBlock = convertStatement(stmt.tryStatement) ?: BlockStatement()
+        val tryCatch = TryCatchStatement(tryBlock)
+
+        stmt.catchStatements?.forEach { catchStmt ->
+            val param = Parameter(
+                name = catchStmt.variable?.name ?: "e",
+                type = catchStmt.exceptionType?.name ?: "Exception",
+            )
+            val body = convertStatement(catchStmt.code) ?: BlockStatement()
+            val catchClause = CatchClause(param, body)
+            setRange(catchClause, catchStmt)
+            tryCatch.addCatchClause(catchClause)
+        }
+
+        stmt.finallyStatement?.let { finallyStmt ->
+            if (finallyStmt !is EmptyStatement) {
+                tryCatch.finallyBlock = convertStatement(finallyStmt)
+            }
+        }
+
+        setRange(tryCatch, stmt)
+        return tryCatch
+    }
+
+    private fun convertSwitchStatement(stmt: GroovySwitchStatement): SwitchStatement {
+        val expression = convertExpression(stmt.expression)
+        val switch = SwitchStatement(expression)
+
+        stmt.caseStatements?.forEach { caseStmt ->
+            val caseExpr = convertExpression(caseStmt.expression)
+            val caseBody = convertStatement(caseStmt.code) ?: BlockStatement()
+            val case = com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement(caseExpr, caseBody)
+            setRange(case, caseStmt)
+            switch.addCase(case)
+        }
+
+        stmt.defaultStatement?.let { defaultStmt ->
+            if (defaultStmt !is EmptyStatement) {
+                switch.defaultCase = convertStatement(defaultStmt)
+            }
+        }
+
+        setRange(switch, stmt)
+        return switch
+    }
+
+    private fun convertThrowStatement(stmt: GroovyThrowStatement): ThrowStatement {
+        val expr = convertExpression(stmt.expression)
+        val throwStmt = ThrowStatement(expr)
+        setRange(throwStmt, stmt)
+        return throwStmt
+    }
+
+    private fun convertAssertStatement(stmt: GroovyAssertStatement): AssertStatement {
+        val condition = convertExpression(stmt.booleanExpression.expression)
+        val message = stmt.messageExpression?.let {
+            if (it !is ConstantExpression || it.value != null) {
+                convertExpression(it)
+            } else {
+                null
+            }
+        }
+        val assertStmt = AssertStatement(condition, message)
+        setRange(assertStmt, stmt)
+        return assertStmt
+    }
+
+    private fun convertBreakStatement(stmt: GroovyBreakStatement): BreakStatement {
+        val breakStmt = BreakStatement(stmt.label)
+        setRange(breakStmt, stmt)
+        return breakStmt
+    }
+
+    private fun convertContinueStatement(stmt: GroovyContinueStatement): ContinueStatement {
+        val continueStmt = ContinueStatement(stmt.label)
+        setRange(continueStmt, stmt)
+        return continueStmt
+    }
+
     // ========== Expression Conversion ==========
 
     private fun convertExpression(expr: GroovyExpression): Expression = when (expr) {
@@ -303,6 +434,17 @@ internal class GroovyAstConverter {
         is PropertyExpression -> convertPropertyExpression(expr)
         is ClosureExpression -> convertClosureExpression(expr)
         is GStringExpression -> convertGStringExpression(expr)
+        is ListExpression -> convertListExpression(expr)
+        is MapExpression -> convertMapExpression(expr)
+        is RangeExpression -> convertRangeExpression(expr)
+        is TernaryExpression -> convertTernaryExpression(expr)
+        is NotExpression -> convertNotExpression(expr)
+        is UnaryMinusExpression -> convertUnaryMinusExpression(expr)
+        is UnaryPlusExpression -> convertUnaryPlusExpression(expr)
+        is PrefixExpression -> convertPrefixExpression(expr)
+        is PostfixExpression -> convertPostfixExpression(expr)
+        is CastExpression -> convertCastExpression(expr)
+        is ConstructorCallExpression -> convertConstructorCallExpression(expr)
         else -> {
             // Fallback: create a constant with the text representation
             val constant = ConstantExpr(expr.text)
@@ -402,8 +544,127 @@ internal class GroovyAstConverter {
         return gstring
     }
 
+    private fun convertListExpression(expr: ListExpression): ListExpr {
+        val list = ListExpr()
+        expr.expressions?.forEach { element ->
+            list.addElement(convertExpression(element))
+        }
+        setRange(list, expr)
+        return list
+    }
+
+    private fun convertMapExpression(expr: MapExpression): MapExpr {
+        val map = MapExpr()
+        expr.mapEntryExpressions?.forEach { entry ->
+            val key = convertExpression(entry.keyExpression)
+            val value = convertExpression(entry.valueExpression)
+            val mapEntry = MapEntryExpr(key, value)
+            setRange(mapEntry, entry)
+            map.addEntry(mapEntry)
+        }
+        setRange(map, expr)
+        return map
+    }
+
+    private fun convertRangeExpression(expr: RangeExpression): RangeExpr {
+        val from = convertExpression(expr.from)
+        val to = convertExpression(expr.to)
+        val range = RangeExpr(from, to, expr.isInclusive)
+        setRange(range, expr)
+        return range
+    }
+
+    private fun convertTernaryExpression(expr: TernaryExpression): TernaryExpr {
+        val condition = convertExpression(expr.booleanExpression.expression)
+        val trueExpr = convertExpression(expr.trueExpression)
+        val falseExpr = convertExpression(expr.falseExpression)
+        val ternary = TernaryExpr(condition, trueExpr, falseExpr)
+        setRange(ternary, expr)
+        return ternary
+    }
+
+    private fun convertNotExpression(expr: NotExpression): UnaryExpr {
+        val inner = convertExpression(expr.expression)
+        val unary = UnaryExpr(inner, "!", true)
+        setRange(unary, expr)
+        return unary
+    }
+
+    private fun convertUnaryMinusExpression(expr: UnaryMinusExpression): UnaryExpr {
+        val inner = convertExpression(expr.expression)
+        val unary = UnaryExpr(inner, "-", true)
+        setRange(unary, expr)
+        return unary
+    }
+
+    private fun convertUnaryPlusExpression(expr: UnaryPlusExpression): UnaryExpr {
+        val inner = convertExpression(expr.expression)
+        val unary = UnaryExpr(inner, "+", true)
+        setRange(unary, expr)
+        return unary
+    }
+
+    private fun convertPrefixExpression(expr: PrefixExpression): UnaryExpr {
+        val inner = convertExpression(expr.expression)
+        val unary = UnaryExpr(inner, expr.operation?.text ?: "++", true)
+        setRange(unary, expr)
+        return unary
+    }
+
+    private fun convertPostfixExpression(expr: PostfixExpression): UnaryExpr {
+        val inner = convertExpression(expr.expression)
+        val unary = UnaryExpr(inner, expr.operation?.text ?: "++", false)
+        setRange(unary, expr)
+        return unary
+    }
+
+    private fun convertCastExpression(expr: CastExpression): CastExpr {
+        val inner = convertExpression(expr.expression)
+        val targetType = expr.type?.name ?: "Object"
+        val cast = CastExpr(inner, targetType, expr.isCoerce)
+        setRange(cast, expr)
+        return cast
+    }
+
+    private fun convertConstructorCallExpression(expr: ConstructorCallExpression): ConstructorCallExpr {
+        val typeName = expr.type?.name ?: "Object"
+        val constructorCall = ConstructorCallExpr(typeName)
+
+        val args = expr.arguments
+        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
+            args.expressions?.forEach { arg ->
+                constructorCall.addArgument(convertExpression(arg))
+            }
+        }
+
+        setRange(constructorCall, expr)
+        return constructorCall
+    }
+
+    // ========== Annotation Conversion ==========
+
+    private fun convertAnnotations(
+        annotations: List<AnnotationNode>?,
+        target: com.github.albertocavalcante.groovyparser.ast.Node,
+    ) {
+        annotations?.forEach { ann ->
+            val annotation = AnnotationExpr(ann.classNode?.name ?: "Unknown")
+
+            // Convert annotation members
+            ann.members?.forEach { (name, value) ->
+                annotation.addMember(name, convertExpression(value))
+            }
+
+            setRange(annotation, ann)
+            target.addAnnotation(annotation)
+        }
+    }
+
     private fun convertConstructor(constructorNode: MethodNode, className: String): ConstructorDeclaration {
         val constructor = ConstructorDeclaration(name = className)
+
+        // Convert annotations
+        convertAnnotations(constructorNode.annotations, constructor)
 
         // Convert parameters
         constructorNode.parameters?.forEach { param ->
@@ -411,6 +672,7 @@ internal class GroovyAstConverter {
                 name = param.name,
                 type = param.type?.name ?: "Object",
             )
+            convertAnnotations(param.annotations, parameter)
             setRange(parameter, param)
             constructor.addParameter(parameter)
         }

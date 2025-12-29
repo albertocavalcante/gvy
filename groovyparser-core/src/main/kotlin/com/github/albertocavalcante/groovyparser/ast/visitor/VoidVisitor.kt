@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast.visitor
 
+import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration
 import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration
@@ -9,17 +10,33 @@ import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MapEntryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
+import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.BreakStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause
+import com.github.albertocavalcante.groovyparser.ast.stmt.ContinueStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.IfStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.SwitchStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
 
 /**
@@ -49,6 +66,7 @@ interface VoidVisitor<A> {
     fun visit(n: CompilationUnit, arg: A)
     fun visit(n: PackageDeclaration, arg: A)
     fun visit(n: ImportDeclaration, arg: A)
+    fun visit(n: AnnotationExpr, arg: A)
 
     // Body declarations
     fun visit(n: ClassDeclaration, arg: A)
@@ -64,6 +82,14 @@ interface VoidVisitor<A> {
     fun visit(n: ForStatement, arg: A)
     fun visit(n: WhileStatement, arg: A)
     fun visit(n: ReturnStatement, arg: A)
+    fun visit(n: TryCatchStatement, arg: A)
+    fun visit(n: CatchClause, arg: A)
+    fun visit(n: SwitchStatement, arg: A)
+    fun visit(n: CaseStatement, arg: A)
+    fun visit(n: ThrowStatement, arg: A)
+    fun visit(n: AssertStatement, arg: A)
+    fun visit(n: BreakStatement, arg: A)
+    fun visit(n: ContinueStatement, arg: A)
 
     // Expressions
     fun visit(n: MethodCallExpr, arg: A)
@@ -73,4 +99,12 @@ interface VoidVisitor<A> {
     fun visit(n: PropertyExpr, arg: A)
     fun visit(n: ClosureExpr, arg: A)
     fun visit(n: GStringExpr, arg: A)
+    fun visit(n: ListExpr, arg: A)
+    fun visit(n: MapExpr, arg: A)
+    fun visit(n: MapEntryExpr, arg: A)
+    fun visit(n: RangeExpr, arg: A)
+    fun visit(n: TernaryExpr, arg: A)
+    fun visit(n: UnaryExpr, arg: A)
+    fun visit(n: CastExpr, arg: A)
+    fun visit(n: ConstructorCallExpr, arg: A)
 }
