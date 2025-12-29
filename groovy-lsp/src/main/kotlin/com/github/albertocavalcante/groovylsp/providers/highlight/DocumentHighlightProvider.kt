@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -101,7 +102,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
                 val isMatch = when {
                     nodeDefinition == null -> false
                     nodeDefinition is Parameter && definition is Parameter ->
-                        areParametersEqual(nodeDefinition, definition)
+                        areParametersEqual(nodeDefinition, definition, astModel)
                     nodeDefinition == definition -> true
                     else -> false
                 }
@@ -218,13 +219,10 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     /**
      * Compare two Parameters for equality.
      *
-     * Uses identity check first, then falls back to position comparison.
-     * Scope checking is unnecessary because:
-     * - Each method/closure has distinct Parameter objects
-     * - Groovy's accessedVariable correctly points to the owning scope's Parameter
-     * - Identity/position comparison is sufficient to distinguish same-named params
+     * Uses identity check first, then position comparison. For parameters without
+     * valid position info, falls back to checking if they're declared in the same scope.
      */
-    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
+    private fun areParametersEqual(p1: Parameter, p2: Parameter, astModel: GroovyAstModel): Boolean {
         if (p1.name != p2.name) return false
         // Identity check - same object reference
         if (p1 === p2) return true
@@ -232,7 +230,23 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         if (p1.lineNumber > 0 && p2.lineNumber > 0) {
             return p1.lineNumber == p2.lineNumber && p1.columnNumber == p2.columnNumber
         }
-        // Can't reliably determine - return false to avoid cross-scope matches
-        return false
+        // Fallback: check if both parameters are declared in the same scope
+        val scope1 = findDeclaringScope(p1, astModel)
+        val scope2 = findDeclaringScope(p2, astModel)
+        return scope1 != null && scope1 === scope2
+    }
+
+    /**
+     * Find the MethodNode or ClosureExpression that declares this parameter.
+     * Searches by checking if the parameter is in the scope's parameters array.
+     */
+    private fun findDeclaringScope(param: Parameter, astModel: GroovyAstModel): ASTNode? {
+        for (node in astModel.getAllNodes()) {
+            when (node) {
+                is MethodNode -> if (node.parameters.any { it === param }) return node
+                is ClosureExpression -> if (node.parameters.any { it === param }) return node
+            }
+        }
+        return null
     }
 }
