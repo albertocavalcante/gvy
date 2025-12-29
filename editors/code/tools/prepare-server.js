@@ -40,6 +40,35 @@ const PINNED_DOWNLOAD_URL = `https://github.com/albertocavalcante/gvy/releases/d
 const PINNED_JAR_SHA256 =
   "552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2";
 
+/**
+ * Sanitizes user-controlled strings for safe logging
+ * Prevents log injection attacks by removing:
+ * - Newlines (\n, \r) - prevents fake log entries
+ * - ANSI escape codes - prevents terminal manipulation
+ * - Control characters - prevents binary/malicious content
+ * @param {string} str - User-controlled string to sanitize
+ * @param {number} maxLength - Maximum length before truncation (default: 500)
+ * @returns {string} Sanitized string safe for logging
+ */
+function sanitizeForLog(str, maxLength = 500) {
+  if (typeof str !== "string") {
+    return String(str);
+  }
+
+  // Remove ANSI escape codes (e.g., \x1b[31m for colors)
+  let sanitized = str.replace(/\x1b\[[0-9;]*m/g, "");
+
+  // Remove all control characters (ASCII 0-31 except tab) including newlines
+  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, "");
+
+  // Truncate if too long
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.substring(0, maxLength) + "... (truncated)";
+  }
+
+  return sanitized;
+}
+
 function expectValue(argv, index, flag) {
   if (index >= argv.length || argv[index].startsWith("--")) {
     throw new Error(`Missing value for ${flag} option.`);
@@ -211,7 +240,7 @@ function copyLocalJar(localJarPath, { forceDownload }) {
   }
 
   if (shouldCopy) {
-    console.log(`Copying from local build: ${localJarPath}`);
+    console.log(`Copying from local build: ${sanitizeForLog(localJarPath)}`);
     fs.copyFileSync(localJarPath, JAR_PATH);
 
     // Validate destination JAR after copying
@@ -275,7 +304,7 @@ async function resolveTarget(selection, { authToken } = {}) {
     const checksum = await fetchChecksumForAsset(info.assets, jarAsset.name, {
       authToken,
     });
-    console.log(`${logMessage}: ${info.tag_name}`);
+    console.log(`${logMessage}: ${sanitizeForLog(info.tag_name)}`);
     return {
       tag: info.tag_name,
       assetName: jarAsset.name,
@@ -478,7 +507,9 @@ async function downloadFromUrl(url, expectedChecksum) {
  * Downloads the target release JAR from GitHub
  */
 async function downloadRelease(target) {
-  console.log(`Downloading Groovy LSP ${target.tag} (${target.assetName})...`);
+  console.log(
+    `Downloading Groovy LSP ${sanitizeForLog(target.tag)} (${sanitizeForLog(target.assetName)})...`,
+  );
   await downloadToFile(target.downloadUrl, JAR_PATH);
 
   // Validate downloaded JAR
@@ -632,7 +663,9 @@ async function prepareServer(runtimeOptions = {}) {
 
           if (jarFiles.length > 0) {
             jarToUse = path.join(buildLibs, jarFiles[0]);
-            console.log(`Found JAR in build directory: ${jarToUse}`);
+            console.log(
+              `Found JAR in build directory: ${sanitizeForLog(jarToUse)}`,
+            );
           } else {
             throw new Error(
               `No groovy-lsp JAR found in ${buildLibs}. Did you run the build?`,
@@ -647,7 +680,9 @@ async function prepareServer(runtimeOptions = {}) {
 
           if (jarFiles.length > 0) {
             jarToUse = path.join(resolvedLocal, jarFiles[0]);
-            console.log(`Found JAR in directory: ${jarToUse}`);
+            console.log(
+              `Found JAR in directory: ${sanitizeForLog(jarToUse)}`,
+            );
           } else {
             throw new Error(
               `No JAR files found in directory: ${resolvedLocal}`,
@@ -656,7 +691,9 @@ async function prepareServer(runtimeOptions = {}) {
         }
       }
 
-      console.log(`Using explicitly provided local JAR: ${jarToUse}`);
+      console.log(
+        `Using explicitly provided local JAR: ${sanitizeForLog(jarToUse)}`,
+      );
       copyLocalJar(jarToUse, { forceDownload });
       return;
     }
@@ -778,7 +815,9 @@ async function prepareServer(runtimeOptions = {}) {
     }
 
     // Download from GitHub releases
-    console.log(`Downloading Groovy LSP release (${target.tag})...`);
+    console.log(
+      `Downloading Groovy LSP release (${sanitizeForLog(target.tag)})...`,
+    );
     await downloadRelease(target);
 
     // Final validation - ensure JAR is valid before completing
@@ -787,9 +826,11 @@ async function prepareServer(runtimeOptions = {}) {
         validateJarFile(JAR_PATH);
         console.log(`\u2713 Final validation: ${CANONICAL_JAR_NAME} is valid`);
       } catch (error) {
-        console.error(`\u274c Final validation failed: ${error.message}`);
+        console.error(
+          `\u274c Final validation failed: ${sanitizeForLog(error.message)}`,
+        );
         throw new Error(
-          `Server JAR validation failed at completion: ${error.message}`,
+          `Server JAR validation failed at completion: ${sanitizeForLog(error.message)}`,
         );
       }
     } else {
@@ -797,7 +838,7 @@ async function prepareServer(runtimeOptions = {}) {
     }
   } catch (error) {
     console.error("❌ Error preparing Groovy Language Server:");
-    console.error(error.message);
+    console.error(sanitizeForLog(error.message));
 
     if (error instanceof HttpError && error.isGitHubRateLimit) {
       const reset = error.rateLimit?.reset
@@ -837,7 +878,10 @@ async function prepareServer(runtimeOptions = {}) {
           console.log("✅ Fallback successful!");
           return;
         } catch (fallbackError) {
-          console.error("❌ Fallback also failed:", fallbackError.message);
+          console.error(
+            "❌ Fallback also failed:",
+            sanitizeForLog(fallbackError.message),
+          );
         }
       }
     }
@@ -846,7 +890,7 @@ async function prepareServer(runtimeOptions = {}) {
     if (requestedSelection) {
       const selectionLabel =
         requestedSelection.type === "tag"
-          ? `tag:${requestedSelection.tag}`
+          ? `tag:${sanitizeForLog(requestedSelection.tag)}`
           : requestedSelection.type;
       console.error(`Requested selection: ${selectionLabel}`);
     }
