@@ -90,8 +90,23 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val cls = classes[0]
         // Use safe call for superClass - it's null for interfaces
         val isScript = cls.superClass?.name == "groovy.lang.Script"
-        logger.info("shouldRetryAtConversion: isScript=$isScript for ${cls.name}")
-        return isScript
+        if (!isScript) {
+            logger.info("shouldRetryAtConversion: false - not a Script for ${cls.name}")
+            return false
+        }
+
+        // Check if the source code actually contains a class declaration.
+        // If it doesn't, this is an intentional script (not a class that got converted to Script).
+        // We only want to retry for classes that got incorrectly converted to Script due to
+        // unresolved superclass (e.g., "extends spock.lang.Specification" when Spock isn't on classpath).
+        val hasClassKeyword = request.content.contains(Regex("""\bclass\s+\w+"""))
+        if (!hasClassKeyword) {
+            logger.debug("shouldRetryAtConversion: false - intentional script (no class keyword)")
+            return false
+        }
+
+        logger.info("shouldRetryAtConversion: true - class ${cls.name} was converted to Script")
+        return true
     }
 
     private fun parseInternal(request: ParseRequest): ParseResult {
