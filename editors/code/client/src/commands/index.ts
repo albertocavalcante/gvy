@@ -1,15 +1,55 @@
-import { ExtensionContext, commands, Disposable, window } from 'vscode';
-import { restartClient, getClient } from '../server/client';
+import { ExtensionContext, commands, Disposable, window, Uri } from 'vscode';
+import { restartClient, stopClient, getClient } from '../server/client';
 import { ExecuteCommandRequest } from 'vscode-languageclient';
 import { UpdateService } from '../features/update/UpdateService';
+import { showStatusMenu, getStatusBarManager } from '../ui/statusBar';
 
 let updateService: UpdateService | null = null;
+let serverOutputChannel: import('vscode').OutputChannel | null = null;
+
+/**
+ * Sets the server output channel for the openLogs command
+ */
+export function setServerOutputChannel(channel: import('vscode').OutputChannel): void {
+    serverOutputChannel = channel;
+    getStatusBarManager()?.setOutputChannel(channel);
+}
 
 /**
  * Registers all extension commands
  */
 export function registerCommands(context: ExtensionContext): Disposable[] {
     const disposables: Disposable[] = [];
+
+    // Register status menu command
+    const showStatusMenuCommand = commands.registerCommand('groovy.showStatusMenu', async () => {
+        const manager = getStatusBarManager();
+        if (manager) {
+            await showStatusMenu(manager);
+        }
+    });
+    disposables.push(showStatusMenuCommand);
+
+    // Register open logs command
+    const openLogsCommand = commands.registerCommand('groovy.openLogs', () => {
+        if (serverOutputChannel) {
+            serverOutputChannel.show();
+        } else {
+            window.showWarningMessage('Server output channel is not available');
+        }
+    });
+    disposables.push(openLogsCommand);
+
+    // Register stop server command
+    const stopServerCommand = commands.registerCommand('groovy.stopServer', async () => {
+        try {
+            await stopClient();
+            window.showInformationMessage('Groovy Language Server stopped');
+        } catch (error) {
+            window.showErrorMessage(`Failed to stop server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    });
+    disposables.push(stopServerCommand);
 
     // Register restart server command
     const restartServerCommand = commands.registerCommand('groovy.restartServer', async () => {
@@ -53,6 +93,13 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
         }
     });
     disposables.push(checkForUpdatesCommand);
+
+    // Register report issue command
+    const reportIssueCommand = commands.registerCommand('groovy.reportIssue', async () => {
+        const url = 'https://github.com/albertocavalcante/gvy/issues/new';
+        await commands.executeCommand('vscode.open', Uri.parse(url));
+    });
+    disposables.push(reportIssueCommand);
 
     // Add all disposables to context subscriptions
     context.subscriptions.push(...disposables);

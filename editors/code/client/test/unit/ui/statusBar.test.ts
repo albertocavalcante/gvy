@@ -15,16 +15,39 @@ describe('StatusBar', () => {
             text: '',
             tooltip: undefined,
             backgroundColor: undefined,
+            color: undefined,
+            command: undefined,
+            name: '',
             show: sinon.stub(),
+            hide: sinon.stub(),
             dispose: sinon.stub()
         };
 
         mockVscode = {
             window: {
-                createStatusBarItem: sinon.stub().returns(statusBarItemStub)
+                createStatusBarItem: sinon.stub().returns(statusBarItemStub),
+                onDidChangeActiveTextEditor: sinon.stub().returns({ dispose: sinon.stub() }),
+                showQuickPick: sinon.stub().resolves(undefined),
+                activeTextEditor: undefined
+            },
+            workspace: {
+                getConfiguration: sinon.stub().returns({
+                    get: sinon.stub().callsFake((key: string, defaultValue: any) => defaultValue)
+                }),
+                onDidChangeConfiguration: sinon.stub().returns({ dispose: sinon.stub() })
+            },
+            languages: {
+                match: sinon.stub().returns(0) // Default: no match
+            },
+            commands: {
+                executeCommand: sinon.stub().resolves()
             },
             StatusBarAlignment: {
+                Left: 1,
                 Right: 2
+            },
+            QuickPickItemKind: {
+                Separator: -1
             },
             ThemeColor: sinon.stub().callsFake((id: string) => ({ id })),
             MarkdownString: sinon.stub().callsFake(() => {
@@ -59,6 +82,18 @@ describe('StatusBar', () => {
             onProgress: sinon.stub().returns({ dispose: sinon.stub() })
         };
 
+        // Mock languageStatus module to avoid transitive vscode import
+        const mockLanguageStatus = {
+            getLanguageStatusManager: sinon.stub().returns(undefined),
+            createLanguageStatusManager: sinon.stub().returns({
+                updateServerStatus: sinon.stub(),
+                updateJavaRuntime: sinon.stub(),
+                updateBuildTool: sinon.stub(),
+                dispose: sinon.stub()
+            }),
+            disposeLanguageStatusManager: sinon.stub()
+        };
+
         // Load module with mocked dependencies
         statusBarModule = proxyquire.noCallThru()('../../../src/ui/statusBar', {
             'vscode': mockVscode,
@@ -67,7 +102,8 @@ describe('StatusBar', () => {
                 WorkDoneProgressBegin: {},
                 WorkDoneProgressReport: {},
                 WorkDoneProgressEnd: {}
-            }
+            },
+            './languageStatus': mockLanguageStatus
         });
     });
 
@@ -80,16 +116,18 @@ describe('StatusBar', () => {
             statusBarModule.registerStatusBarItem();
 
             assert.isTrue(mockVscode.window.createStatusBarItem.calledOnce);
-            assert.isTrue(statusBarItemStub.show.calledOnce);
+            // With smart visibility, hide is called when no active editor
+            assert.isTrue(statusBarItemStub.hide.calledOnce);
         });
 
-        it('should dispose previous item on re-register', () => {
-            statusBarModule.registerStatusBarItem();
-            const firstDispose = statusBarItemStub.dispose;
+        it('should show status bar when active editor matches Groovy files', () => {
+            // Simulate a Groovy file being active
+            mockVscode.languages.match.returns(1); // Match found
+            mockVscode.window.activeTextEditor = { document: {} };
 
             statusBarModule.registerStatusBarItem();
 
-            assert.isTrue(firstDispose.calledOnce);
+            assert.isTrue(statusBarItemStub.show.calledOnce);
         });
 
         it('should return disposable', () => {
@@ -157,7 +195,7 @@ describe('StatusBar', () => {
         it('should update status bar text to stopped when client is undefined', () => {
             statusBarModule.setClient(undefined);
 
-            assert.include(statusBarItemStub.text, '$(stop)');
+            assert.include(statusBarItemStub.text, '$(stop-circle)');
         });
 
         it('should update status bar text when client state changes', () => {
@@ -167,7 +205,7 @@ describe('StatusBar', () => {
             const stateChangeHandler = clientStub.onDidChangeState.firstCall.args[0];
             stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
-            assert.include(statusBarItemStub.text, '$(check)');
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
     });
 
@@ -216,7 +254,7 @@ describe('StatusBar', () => {
                 message: 'Complete'
             });
 
-            assert.include(statusBarItemStub.text, '$(check)');
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
 
         it('should handle concurrent progress tasks', () => {
@@ -236,14 +274,14 @@ describe('StatusBar', () => {
                 kind: 'end'
             });
 
-            assert.notInclude(statusBarItemStub.text, '$(check)');
+            assert.notInclude(statusBarItemStub.text, '$(pass-filled)');
 
             // End second task - NOW should transition to ready
             progressHandler({
                 kind: 'end'
             });
 
-            assert.include(statusBarItemStub.text, '$(check)');
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
     });
 
@@ -342,13 +380,13 @@ describe('StatusBar', () => {
         it('should transition to ready when client is Running', () => {
             stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
-            assert.include(statusBarItemStub.text, '$(check)');
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
 
         it('should transition to starting when client is Starting', () => {
             stateChangeHandler({ newState: mockLanguageClient.State.Starting });
 
-            assert.include(statusBarItemStub.text, '$(sync~spin)');
+            assert.include(statusBarItemStub.text, '$(loading~spin)');
             assert.notInclude(statusBarItemStub.text, 'Deps');
             assert.notInclude(statusBarItemStub.text, 'Indexing');
         });
@@ -356,7 +394,7 @@ describe('StatusBar', () => {
         it('should transition to stopped when client is Stopped', () => {
             stateChangeHandler({ newState: mockLanguageClient.State.Stopped });
 
-            assert.include(statusBarItemStub.text, '$(stop)');
+            assert.include(statusBarItemStub.text, '$(stop-circle)');
             assert.isDefined(statusBarItemStub.backgroundColor);
             assert.equal(statusBarItemStub.backgroundColor.id, 'statusBarItem.errorBackground');
         });
@@ -411,11 +449,99 @@ describe('StatusBar', () => {
         });
     });
 
+    describe('smart visibility settings', () => {
+        it('should always show when setting is "always"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'always';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.show.calledOnce);
+            assert.isFalse(statusBarItemStub.hide.called);
+        });
+
+        it('should never show when setting is "never"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'never';
+                    return defaultValue;
+                })
+            });
+            mockVscode.languages.match.returns(1); // Even with Groovy file
+            mockVscode.window.activeTextEditor = { document: {} };
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.hide.calledOnce);
+            assert.isFalse(statusBarItemStub.show.called);
+        });
+
+        it('should only show on Groovy files when setting is "onGroovyFile"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.show') return 'onGroovyFile';
+                    return defaultValue;
+                })
+            });
+            mockVscode.languages.match.returns(0); // No match
+            mockVscode.window.activeTextEditor = { document: {} };
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.isTrue(statusBarItemStub.hide.calledOnce);
+        });
+    });
+
+    describe('click action settings', () => {
+        it('should set menu command when clickAction is "menu"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'menu';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.showStatusMenu');
+        });
+
+        it('should set logs command when clickAction is "logs"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'logs';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.openLogs');
+        });
+
+        it('should set restart command when clickAction is "restart"', () => {
+            mockVscode.workspace.getConfiguration.returns({
+                get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+                    if (key === 'statusBar.clickAction') return 'restart';
+                    return defaultValue;
+                })
+            });
+
+            statusBarModule.registerStatusBarItem();
+
+            assert.equal(statusBarItemStub.command, 'groovy.restartServer');
+        });
+    });
+
     describe('tooltip content', () => {
         let stateChangeHandler: any;
 
         beforeEach(() => {
-            statusBarModule.registerStatusBarItem();
+            statusBarModule.registerStatusBarItem(undefined, '0.4.8');
             statusBarModule.setClient(clientStub);
             stateChangeHandler = clientStub.onDidChangeState.firstCall.args[0];
         });
@@ -427,8 +553,8 @@ describe('StatusBar', () => {
             assert.isDefined(tooltip);
             assert.isTrue(tooltip.isTrusted);
             assert.isTrue(tooltip.supportThemeIcons);
-            assert.isTrue(tooltip.supportHtml);
-            assert.include(tooltip.value, 'ready');
+            // New tooltip format uses "Ready" not "ready"
+            assert.include(tooltip.value, 'Ready');
         });
 
         it('should include progress message in tooltip when active', () => {
@@ -449,11 +575,12 @@ describe('StatusBar', () => {
             assert.include(tooltip.value, 'groovy.restartServer');
         });
 
-        it('should include check updates button when ready', () => {
+        it('should include reload button when ready', () => {
             stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
             const tooltip = statusBarItemStub.tooltip;
-            assert.include(tooltip.value, 'groovy.checkForUpdates');
+            // New tooltip has Reload instead of check for updates inline
+            assert.include(tooltip.value, 'groovy.gradle.refresh');
         });
     });
 });
