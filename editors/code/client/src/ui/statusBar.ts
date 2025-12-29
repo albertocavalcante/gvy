@@ -253,8 +253,6 @@ export class StatusBarManager implements vscode.Disposable {
      * Based on rust-analyzer's experimental/serverStatus pattern.
      */
     private handleGroovyStatus(params: GroovyStatusParams): void {
-        console.log('Received groovy/status:', JSON.stringify(params));
-
         // Update server health
         this.serverHealth = params.health;
 

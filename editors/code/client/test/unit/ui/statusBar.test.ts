@@ -80,6 +80,7 @@ describe('StatusBar', () => {
             state: State.Stopped,
             onDidChangeState: sinon.stub().returns({ dispose: sinon.stub() }),
             onProgress: sinon.stub().returns({ dispose: sinon.stub() }),
+            // Basic stub required by all tests; individual suites may override with more specific behavior
             onNotification: sinon.stub().returns({ dispose: sinon.stub() })
         };
 
