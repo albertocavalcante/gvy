@@ -457,4 +457,84 @@ class ImplementationProviderTest {
         val impl = implementations[0]
         assertEquals(5, impl.range.start.line, "SimpleProcessor.process at line 5")
     }
+
+    @Test
+    fun `test find transitive interface implementation`() = runTest {
+        // Arrange: B extends A, C implements B -> find C when looking for A
+        val content = """
+            interface A { def methodA() }
+            interface B extends A { def methodB() }
+            class C implements B {
+                def methodA() { "A" }
+                def methodB() { "B" }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///TransitiveTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of A
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 10), // On 'A'
+        ).toList()
+
+        // Assert: Should find C
+        assertEquals(1, implementations.size, "Should find transitive implementation C")
+        assertEquals(2, implementations[0].range.start.line, "Implementation should be class C")
+    }
+
+    @Test
+    fun `test find superclass interface implementation`() = runTest {
+        // Arrange: Shape implements Drawable, Circle extends Shape -> find Circle for Drawable
+        val content = """
+            interface Drawable { def draw() }
+            abstract class Shape implements Drawable {
+                abstract def area()
+            }
+            class Circle extends Shape {
+                def draw() { "circle" }
+                def area() { 3.14 }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///SuperclassInterfaceTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of Drawable
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 10), // On 'Drawable'
+        ).toList()
+
+        // Assert: Should find Circle (but NOT Shape because it's abstract)
+        assertEquals(1, implementations.size, "Should find Circle via superclass interface")
+        assertEquals(4, implementations[0].range.start.line, "Implementation should be class Circle")
+    }
+
+    @Test
+    fun `test find abstract class implementation`() = runTest {
+        // Arrange: Animal (abstract) <- Dog (concrete)
+        val content = """
+            abstract class Animal {
+                abstract def makeSound()
+            }
+            class Dog extends Animal {
+                def makeSound() { "Woof" }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///AbstractClassTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of Animal
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 15), // On 'Animal'
+        ).toList()
+
+        // Assert: Should find Dog
+        assertEquals(1, implementations.size, "Should find implementation Dog for abstract class Animal")
+        assertEquals(3, implementations[0].range.start.line, "Implementation should be class Dog")
+    }
 }

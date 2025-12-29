@@ -43,7 +43,7 @@ steps:
             def multiply(int a, int b) { return a * b }
         }
 
-        # Abstract class should NOT appear in results
+        // Abstract class should NOT appear in results
         abstract class AbstractCalculator implements Calculator {
             abstract def divide(int a, int b)
         }

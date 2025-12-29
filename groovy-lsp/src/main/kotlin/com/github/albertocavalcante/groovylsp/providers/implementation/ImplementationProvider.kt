@@ -63,6 +63,7 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
      */
     private sealed class ImplementationTarget {
         data class InterfaceClass(val classNode: ClassNode) : ImplementationTarget()
+        data class AbstractClass(val classNode: ClassNode) : ImplementationTarget()
         data class InterfaceMethod(val methodNode: MethodNode, val ownerInterface: ClassNode) : ImplementationTarget()
         data class AbstractMethod(val methodNode: MethodNode, val ownerClass: ClassNode) : ImplementationTarget()
     }
@@ -95,11 +96,13 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
 
         return when (node) {
             is ClassNode -> {
-                if (node.isInterface) {
-                    ImplementationTarget.InterfaceClass(node)
-                } else {
-                    logger.debug("Node is a concrete class, no implementations to find")
-                    null
+                when {
+                    node.isInterface -> ImplementationTarget.InterfaceClass(node)
+                    node.isAbstract -> ImplementationTarget.AbstractClass(node)
+                    else -> {
+                        logger.debug("Node is a concrete class, no implementations to find")
+                        null
+                    }
                 }
             }
 
@@ -109,9 +112,11 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
                     declaringClass?.isInterface == true -> {
                         ImplementationTarget.InterfaceMethod(node, declaringClass)
                     }
+
                     node.isAbstract && declaringClass != null -> {
                         ImplementationTarget.AbstractMethod(node, declaringClass)
                     }
+
                     else -> {
                         logger.debug("Node is a concrete method, no implementations to find")
                         null
@@ -135,16 +140,42 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
     ) {
         when (target) {
             is ImplementationTarget.InterfaceClass -> findInterfaceImplementations(target.classNode, originVisitor)
+            is ImplementationTarget.AbstractClass -> findAbstractClassImplementations(target.classNode, originVisitor)
             is ImplementationTarget.InterfaceMethod -> findMethodImplementations(
                 target.methodNode,
                 target.ownerInterface,
                 originVisitor,
             )
+
             is ImplementationTarget.AbstractMethod -> findMethodImplementations(
                 target.methodNode,
                 target.ownerClass,
                 originVisitor,
             )
+        }
+    }
+
+    /**
+     * Find all classes extending an abstract class.
+     */
+    private suspend fun ProducerScope<Location>.findAbstractClassImplementations(
+        targetClass: ClassNode,
+        originVisitor: GroovyAstModel,
+    ) {
+        val emittedLocations = mutableSetOf<String>()
+
+        for ((uri, index) in compilationService.getAllSymbolStorages()) {
+            val classSymbols = index.findAll<Symbol.Class>(uri)
+
+            for (classSymbol in classSymbols) {
+                // Must be a concrete class that extends the target
+                if (classSymbol.isInterface || classSymbol.isAbstract) continue
+
+                if (implementsOrExtends(classSymbol, targetClass)) {
+                    val fileVisitor = compilationService.getAstModel(uri) ?: originVisitor
+                    emitUniqueLocation(classSymbol.node, fileVisitor, emittedLocations)
+                }
+            }
         }
     }
 
@@ -215,13 +246,46 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
      * Check if a class implements a specific interface.
      */
     private fun implementsInterface(classSymbol: Symbol.Class, targetInterface: ClassNode): Boolean {
+        val targetName = targetInterface.name
+
         // Direct interface check using fully qualified name
-        return classSymbol.interfaces.any { iface ->
-            iface.name == targetInterface.name
+        if (classSymbol.interfaces.any { it.name == targetName }) return true
+
+        // Transitive interface checking
+        for (iface in classSymbol.interfaces) {
+            if (hasInterfaceTransitive(iface, targetName, mutableSetOf())) return true
         }
 
-        // TODO(#413): Add transitive interface checking
-        // TODO(#413): Check superclass interfaces
+        // Check superclass interfaces
+        val superClass = classSymbol.superClass
+        if (superClass != null) {
+            if (hasInterfaceTransitive(superClass, targetName, mutableSetOf())) return true
+        }
+
+        return false
+    }
+
+    private fun hasInterfaceTransitive(
+        current: ClassNode,
+        targetName: String,
+        visited: MutableSet<String>,
+    ): Boolean {
+        if (!visited.add(current.name)) return false
+
+        if (current.name == targetName) return true
+
+        // Check implemented interfaces
+        for (iface in current.interfaces) {
+            if (hasInterfaceTransitive(iface, targetName, visited)) return true
+        }
+
+        // Check superclass
+        val superClass = current.superClass
+        if (superClass != null) {
+            if (hasInterfaceTransitive(superClass, targetName, visited)) return true
+        }
+
+        return false
     }
 
     /**
@@ -233,16 +297,21 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
             return implementsInterface(classSymbol, ownerClass)
         }
 
-        // Check if extends abstract class using fully qualified name
-        val superClass = classSymbol.superClass
-        if (superClass != null) {
-            if (superClass.name == ownerClass.name) {
-                return true
-            }
-        }
+        // Check if extends class using fully qualified name (transitive)
+        return extendsClassTransitive(classSymbol.superClass, ownerClass.name, mutableSetOf())
+    }
 
-        // TODO(#413): Add transitive superclass checking
-        return false
+    private fun extendsClassTransitive(
+        current: ClassNode?,
+        targetName: String,
+        visited: MutableSet<String>,
+    ): Boolean {
+        if (current == null) return false
+        if (!visited.add(current.name)) return false
+
+        if (current.name == targetName) return true
+
+        return extendsClassTransitive(current.superClass, targetName, visited)
     }
 
     /**

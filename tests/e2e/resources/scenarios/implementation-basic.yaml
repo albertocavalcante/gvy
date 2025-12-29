@@ -37,7 +37,7 @@ steps:
             def area() { return 100 }
         }
 
-        # Concrete class - should NOT be an implementation target
+        // Concrete class - should NOT be an implementation target
         class ConcreteShape {
             def area() { return 50 }
         }
