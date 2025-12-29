@@ -198,6 +198,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
                 // Skip abstract classes for now (could be configurable)
                 if (classSymbol.isAbstract) continue
 
+                // Skip the interface itself (or placeholders with same name)
+                if (classSymbol.name == targetInterface.name) continue
+
                 // Check if this class implements our target interface
                 if (implementsInterface(classSymbol, targetInterface)) {
                     // Get the correct visitor for this file's URI (fixes cross-file discovery)
@@ -246,23 +249,9 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
      * Check if a class implements a specific interface.
      */
     private fun implementsInterface(classSymbol: Symbol.Class, targetInterface: ClassNode): Boolean {
-        val targetName = targetInterface.name
-
-        // Direct interface check using fully qualified name
-        if (classSymbol.interfaces.any { it.name == targetName }) return true
-
-        // Transitive interface checking
-        for (iface in classSymbol.interfaces) {
-            if (hasInterfaceTransitive(iface, targetName, mutableSetOf())) return true
-        }
-
-        // Check superclass interfaces
-        val superClass = classSymbol.superClass
-        if (superClass != null) {
-            if (hasInterfaceTransitive(superClass, targetName, mutableSetOf())) return true
-        }
-
-        return false
+        // The hasInterfaceTransitive function already explores both interfaces and superclasses.
+        // We can simplify this by starting the search from the class node itself.
+        return hasInterfaceTransitive(classSymbol.node, targetInterface.name, mutableSetOf())
     }
 
     private fun hasInterfaceTransitive(current: ClassNode, targetName: String, visited: MutableSet<String>): Boolean {
