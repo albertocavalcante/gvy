@@ -48,7 +48,7 @@ publishing {
             pom {
                 name.set("GroovyParser Core")
                 description.set("A standalone Groovy parsing library with JavaParser-inspired API")
-                url.set("https://github.com/albertocavalcante/groovy-lsp")
+                url.set("https://github.com/albertocavalcante/gvy")
 
                 licenses {
                     license {
@@ -65,9 +65,9 @@ publishing {
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/albertocavalcante/groovy-lsp.git")
-                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/groovy-lsp.git")
-                    url.set("https://github.com/albertocavalcante/groovy-lsp")
+                    connection.set("scm:git:git://github.com/albertocavalcante/gvy.git")
+                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/gvy.git")
+                    url.set("https://github.com/albertocavalcante/gvy")
                 }
             }
         }
@@ -76,7 +76,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/albertocavalcante/groovy-lsp")
+            url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
             credentials {
                 username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
                 password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String?
