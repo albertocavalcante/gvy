@@ -69,7 +69,7 @@ class DefaultCpsAnalyzerTest {
     }
 
     @Test
-    fun `method with NonCPS annotation is detected`() {
+    fun `method with NonCPS annotation is detected and skipped`() {
         val unit = StaticGroovyParser.parse(
             """
             import com.cloudbees.groovy.cps.NonCPS
@@ -77,6 +77,7 @@ class DefaultCpsAnalyzerTest {
             class Pipeline {
                 @NonCPS
                 String helper() {
+                    Thread.sleep(1000) // This would be flagged in CPS context
                     return "help"
                 }
             }
@@ -86,9 +87,36 @@ class DefaultCpsAnalyzerTest {
         val classDecl = unit.types[0] as ClassDeclaration
         val method = classDecl.methods[0]
 
-        // Note: Annotation detection requires native AST access
-        // This test verifies the API works, actual detection depends on impl
-        analyzer.isNonCps(method) // Should not throw
+        // Verify annotation is detected
+        assertThat(method.isNonCps).isTrue()
+        assertThat(analyzer.isNonCps(method)).isTrue()
+
+        // @NonCPS methods should not be analyzed for CPS violations
+        val violations = analyzer.getCpsViolations(method)
+        assertThat(violations).isEmpty()
+    }
+
+    @Test
+    fun `regular method with Thread sleep is flagged`() {
+        val unit = StaticGroovyParser.parse(
+            """
+            class Pipeline {
+                String helper() {
+                    Thread.sleep(1000)
+                    return "help"
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val classDecl = unit.types[0] as ClassDeclaration
+        val method = classDecl.methods[0]
+
+        // Non-annotated methods should be analyzed
+        assertThat(method.isNonCps).isFalse()
+        val violations = analyzer.getCpsViolations(method)
+        assertThat(violations).isNotEmpty
+        assertThat(violations.any { it.type == CpsViolationType.NON_WHITELISTED_METHOD }).isTrue()
     }
 
     @Test
