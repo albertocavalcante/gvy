@@ -16,11 +16,46 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Collections
+import java.util.Enumeration
 import java.util.jar.JarFile
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
+
+/**
+ * A GroovyClassLoader that filters out AST transformation service discovery.
+ *
+ * This prevents NoClassDefFoundError when project classpath contains transformation classes
+ * that reference Groovy classes not visible to the isolated classloader. By filtering out
+ * the service file discovery, we prevent Groovy's CompilationUnit from attempting to load
+ * project-specific transformations that would fail due to classloader isolation.
+ *
+ * @see GroovyParserFacade for usage context
+ */
+private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
+    companion object {
+        private const val AST_TRANSFORM_SERVICE =
+            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+    }
+
+    override fun getResources(name: String): Enumeration<URL> {
+        // Filter out AST transformation service discovery from this classloader
+        if (name == AST_TRANSFORM_SERVICE) {
+            return Collections.emptyEnumeration()
+        }
+        return super.getResources(name)
+    }
+
+    override fun getResource(name: String): URL? {
+        if (name == AST_TRANSFORM_SERVICE) {
+            return null
+        }
+        return super.getResource(name)
+    }
+}
 
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
@@ -138,13 +173,21 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
         val config = createCompilerConfiguration(allClasspath)
-        // Use configured parent classloader (default is platform/bootstrap to avoid pollution)
-        val classLoader = GroovyClassLoader(parentClassLoader)
 
+        // Main classloader: uses TransformFilteringClassLoader to prevent discovery of project
+        // AST transformations that would cause NoClassDefFoundError due to classloader isolation.
+        // The filtering classloader returns empty results for META-INF/services/...ASTTransformation.
+        val classLoader = TransformFilteringClassLoader(parentClassLoader)
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
 
-        val compilationUnit = CompilationUnit(config, null, classLoader)
+        // Transform loader: has access to bundled Groovy via the LSP's classloader.
+        // This allows Groovy's built-in transformations to work correctly while project-specific
+        // transformations are disabled. No project classpath is added to keep it isolated.
+        val transformLoader = GroovyClassLoader(GroovyParserFacade::class.java.classLoader)
+
+        // Use 4-arg constructor with separate transform loader for proper classloader isolation
+        val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
 
         val source = StringReaderSource(request.content, config)
         val sourceUnit = SourceUnit(request.sourceUnitName, source, config, classLoader, compilationUnit.errorCollector)
