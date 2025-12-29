@@ -221,5 +221,6 @@ class GroovyParserFacadeTest {
 
         assertTrue(result.isSuccessful, "Parse should succeed with JAR containing transformation service file")
         assertNotNull(result.ast, "AST should be populated")
+        assertEquals(0, result.diagnostics.size, "No diagnostics expected")
     }
 }

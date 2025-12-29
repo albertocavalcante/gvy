@@ -27,6 +27,15 @@ import kotlin.io.path.isRegularFile
  */
 class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
 
+    companion object {
+        /**
+         * Path to the service provider configuration file for AST transformations.
+         * This file is located in META-INF/services/ and lists all global AST transformation classes.
+         */
+        private const val AST_TRANSFORMATION_SERVICE_FILE =
+            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+    }
+
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
 
     /**
@@ -219,17 +228,16 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     @Suppress("TooGenericExceptionCaught") // Need to catch all IO/archive exceptions
     private fun scanForAstTransformations(classpath: List<Path>): Set<String> {
         val transformNames = mutableSetOf<String>()
-        val serviceFile = "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 
         for (path in classpath) {
             try {
                 when {
-                    path.toString().endsWith(".jar") && Files.exists(path) -> {
-                        scanJarForTransformations(path, serviceFile, transformNames)
+                    path.extension.equals("jar", ignoreCase = true) && Files.exists(path) -> {
+                        scanJarForTransformations(path, transformNames)
                     }
 
                     Files.isDirectory(path) -> {
-                        scanDirectoryForTransformations(path, serviceFile, transformNames)
+                        scanDirectoryForTransformations(path, transformNames)
                     }
                 }
             } catch (e: Exception) {
@@ -240,9 +248,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         return transformNames
     }
 
-    private fun scanJarForTransformations(jarPath: Path, serviceFile: String, names: MutableSet<String>) {
+    private fun scanJarForTransformations(jarPath: Path, names: MutableSet<String>) {
         JarFile(jarPath.toFile()).use { jar ->
-            jar.getEntry(serviceFile)?.let { entry ->
+            jar.getEntry(AST_TRANSFORMATION_SERVICE_FILE)?.let { entry ->
                 jar.getInputStream(entry).bufferedReader().useLines { lines ->
                     lines.filter { it.isNotBlank() && !it.startsWith("#") }
                         .forEach { names += it.trim() }
@@ -251,8 +259,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
     }
 
-    private fun scanDirectoryForTransformations(dirPath: Path, serviceFile: String, names: MutableSet<String>) {
-        val serviceFilePath = dirPath.resolve(serviceFile)
+    private fun scanDirectoryForTransformations(dirPath: Path, names: MutableSet<String>) {
+        val serviceFilePath = dirPath.resolve(AST_TRANSFORMATION_SERVICE_FILE)
         if (Files.exists(serviceFilePath)) {
             Files.readAllLines(serviceFilePath)
                 .filter { it.isNotBlank() && !it.startsWith("#") }
@@ -264,8 +272,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.extension.equals("groovy", ignoreCase = true) &&
-                    it.isRegularFile()
+                        it.extension.equals("groovy", ignoreCase = true) &&
+                        it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {
