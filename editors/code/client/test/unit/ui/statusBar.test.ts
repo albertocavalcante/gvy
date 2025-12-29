@@ -79,7 +79,9 @@ describe('StatusBar', () => {
         clientStub = {
             state: State.Stopped,
             onDidChangeState: sinon.stub().returns({ dispose: sinon.stub() }),
-            onProgress: sinon.stub().returns({ dispose: sinon.stub() })
+            onProgress: sinon.stub().returns({ dispose: sinon.stub() }),
+            // Basic stub required by all tests; individual suites may override with more specific behavior
+            onNotification: sinon.stub().returns({ dispose: sinon.stub() })
         };
 
         // Mock languageStatus module to avoid transitive vscode import
@@ -581,6 +583,157 @@ describe('StatusBar', () => {
             const tooltip = statusBarItemStub.tooltip;
             // New tooltip has Reload instead of check for updates inline
             assert.include(tooltip.value, 'groovy.gradle.refresh');
+        });
+    });
+
+    describe('groovy/status notification handling', () => {
+        let statusHandler: any;
+
+        beforeEach(() => {
+            // Add onNotification mock to client
+            clientStub.onNotification = sinon.stub().callsFake((method: string, handler: any) => {
+                if (method === 'groovy/status') {
+                    statusHandler = handler;
+                }
+                return { dispose: sinon.stub() };
+            });
+
+            statusBarModule.registerStatusBarItem();
+            statusBarModule.setClient(clientStub);
+        });
+
+        it('should register groovy/status notification handler', () => {
+            assert.isTrue(clientStub.onNotification.calledWith('groovy/status', sinon.match.func));
+        });
+
+        it('should transition to ready when health is ok and quiescent is true', () => {
+            statusHandler({
+                health: 'ok',
+                quiescent: true,
+                message: 'Ready'
+            });
+
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
+        });
+
+        it('should transition to degraded when health is error', () => {
+            statusHandler({
+                health: 'error',
+                quiescent: true,
+                message: 'Build configuration error'
+            });
+
+            assert.include(statusBarItemStub.text, '$(warning)');
+        });
+
+        it('should transition to degraded when health is warning', () => {
+            statusHandler({
+                health: 'warning',
+                quiescent: true,
+                message: 'Some dependencies could not be resolved'
+            });
+
+            assert.include(statusBarItemStub.text, '$(warning)');
+        });
+
+        it('should transition to indexing when not quiescent and message contains indexing', () => {
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Indexing 50/100 files',
+                filesIndexed: 50,
+                filesTotal: 100
+            });
+
+            // Should show file counts in status bar
+            assert.include(statusBarItemStub.text, '50/100');
+        });
+
+        it('should transition to resolving-deps when not quiescent and message contains dependencies', () => {
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Resolving dependencies...'
+            });
+
+            assert.include(statusBarItemStub.text, 'Deps');
+        });
+
+        it('should show file counts during indexing', () => {
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Indexing 25/50 files',
+                filesIndexed: 25,
+                filesTotal: 50
+            });
+
+            assert.include(statusBarItemStub.text, '25/50');
+        });
+
+        it('should clear file counts when quiescent', () => {
+            // First set file counts
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Indexing 25/50 files',
+                filesIndexed: 25,
+                filesTotal: 50
+            });
+
+            // Then transition to ready
+            statusHandler({
+                health: 'ok',
+                quiescent: true,
+                message: 'Ready'
+            });
+
+            // File counts should not be shown
+            assert.notInclude(statusBarItemStub.text, '/');
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
+        });
+
+        it('should ignore progress inference when receiving groovy/status notifications', () => {
+            // First receive a groovy/status notification with file counts
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Indexing 10/100 files',
+                filesIndexed: 10,
+                filesTotal: 100
+            });
+
+            // Then receive a progress notification (legacy fallback)
+            const progressHandler = clientStub.onProgress.firstCall.args[2];
+            progressHandler({
+                kind: 'begin',
+                message: 'Resolving dependencies' // Would normally trigger resolving-deps
+            });
+
+            // Should still show indexing with file counts, not deps
+            // (because groovy/status takes precedence)
+            assert.include(statusBarItemStub.text, '10/100');
+        });
+
+        it('should update progress message from groovy/status', () => {
+            statusHandler({
+                health: 'ok',
+                quiescent: false,
+                message: 'Indexing workspace files...'
+            });
+
+            const tooltip = statusBarItemStub.tooltip;
+            assert.include(tooltip.value, 'Indexing workspace files');
+        });
+
+        it('should handle missing optional fields', () => {
+            // Minimal notification with only required fields
+            statusHandler({
+                health: 'ok',
+                quiescent: true
+            });
+
+            assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
     });
 });
