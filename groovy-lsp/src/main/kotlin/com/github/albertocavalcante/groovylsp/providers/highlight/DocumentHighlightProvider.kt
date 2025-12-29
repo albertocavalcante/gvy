@@ -100,8 +100,11 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
                 val isMatch = when {
                     nodeDefinition == null -> false
-                    nodeDefinition is Parameter && definition is Parameter ->
-                        areParametersEqual(nodeDefinition, definition, node, astModel)
+                    // For Parameters, use strict identity comparison only
+                    definition is Parameter ->
+                        nodeDefinition is Parameter &&
+                            areParametersEqual(nodeDefinition, definition)
+                    // For other types, use equals comparison
                     nodeDefinition == definition -> true
                     else -> false
                 }
@@ -216,53 +219,11 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     }
 
     /**
-     * Compare two Parameters for equality, including scope check.
-     * Uses the enclosing method of the reference node to verify parameters are in the same scope.
+     * Compare two Parameters for equality using identity comparison.
+     *
+     * Identity is authoritative because Groovy's VariableScopeVisitor ensures that
+     * accessedVariable points to the exact same Parameter object as the declaration.
+     * This is deterministic and avoids false positives from position/scope fallbacks.
      */
-    private fun areParametersEqual(
-        p1: Parameter,
-        p2: Parameter,
-        referenceNode: ASTNode,
-        astModel: GroovyAstModel,
-    ): Boolean {
-        if (p1.name != p2.name) return false
-
-        // Find the method containing the reference (VariableExpression)
-        val method = findEnclosingMethod(referenceNode, astModel)
-        if (method == null) {
-            logger.debug("Parameter scope check: method not found for ${p1.name}")
-            return false
-        }
-
-        // Check if both parameters belong to this method
-        val methodParams = method.parameters?.toList() ?: emptyList()
-        val p1InMethod = methodParams.any { it.name == p1.name && isSameParameter(it, p1) }
-        val p2InMethod = methodParams.any { it.name == p2.name && isSameParameter(it, p2) }
-
-        return p1InMethod && p2InMethod
-    }
-
-    /**
-     * Check if two Parameter instances refer to the same parameter.
-     * Uses identity check first, then falls back to position comparison.
-     * Returns false if we can't reliably determine equality (conservative approach).
-     */
-    private fun isSameParameter(p1: Parameter, p2: Parameter): Boolean {
-        // Identity check - same object reference
-        if (p1 === p2) return true
-        // Position comparison if both have valid positions
-        if (p1.lineNumber > 0 && p2.lineNumber > 0) {
-            return p1.lineNumber == p2.lineNumber && p1.columnNumber == p2.columnNumber
-        }
-        // Can't reliably determine - return false to avoid cross-scope matches
-        return false
-    }
-
-    private fun findEnclosingMethod(node: ASTNode, astModel: GroovyAstModel): MethodNode? {
-        var current: ASTNode? = node
-        while (current != null && current !is MethodNode) {
-            current = astModel.getParent(current)
-        }
-        return current as? MethodNode
-    }
+    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean = p1 === p2
 }

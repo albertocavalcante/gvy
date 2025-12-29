@@ -14,6 +14,9 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class SymbolStorage {
 
+    // TODO(#480): Variable declarations use Map<String, Variable> which causes same-named
+    //   variables to overwrite each other. Should use MutableList<Variable> like methods do.
+    //   See: https://github.com/albertocavalcante/gvy/issues/480
     val variableDeclarations = ConcurrentHashMap<URI, MutableMap<String, Variable>>()
     val methodDeclarations = ConcurrentHashMap<URI, MutableMap<String, MutableList<MethodNode>>>()
     val classDeclarations = ConcurrentHashMap<URI, MutableMap<String, ClassNode>>()
