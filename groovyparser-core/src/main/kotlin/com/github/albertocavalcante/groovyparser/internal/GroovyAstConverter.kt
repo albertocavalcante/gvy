@@ -111,13 +111,30 @@ import org.codehaus.groovy.ast.stmt.WhileStatement as GroovyWhileStatement
 
 /**
  * Converts Groovy's native AST (ModuleNode) to our custom AST (CompilationUnit).
+ *
+ * Supports optional source-based comment extraction when source is provided.
  */
 internal class GroovyAstConverter {
 
+    /** Parser for extracting comments from source positions */
+    private var commentParser: SourcePositionCommentParser? = null
+
+    /** Track the last position processed for comment extraction */
+    private var lastLine: Int = 1
+    private var lastColumn: Int = 1
+
     /**
      * Converts a native Groovy ModuleNode to a CompilationUnit.
+     *
+     * @param moduleNode the native Groovy AST
+     * @param source optional source code for comment extraction
      */
-    fun convert(moduleNode: ModuleNode): CompilationUnit {
+    fun convert(moduleNode: ModuleNode, source: String? = null): CompilationUnit {
+        // Initialize comment parser if source is provided
+        commentParser = source?.let { SourcePositionCommentParser(it) }
+        lastLine = 1
+        lastColumn = 1
+
         val unit = CompilationUnit()
 
         // Convert package declaration
@@ -140,12 +157,46 @@ internal class GroovyAstConverter {
             unit.addImport(convertStaticStarImport(importNode))
         }
 
-        // Convert classes
+        // Convert classes (with comment attachment)
+        // Comments are attached to each class based on the gap before its position
         moduleNode.classes?.forEach { classNode ->
-            unit.addType(convertClass(classNode))
+            val classDecl = convertClass(classNode)
+            attachLeadingComment(classDecl, classNode)
+            unit.addType(classDecl)
         }
 
         return unit
+    }
+
+    /**
+     * Attaches a leading comment to a node based on source position.
+     */
+    private fun attachLeadingComment(
+        node: com.github.albertocavalcante.groovyparser.ast.Node,
+        nativeNode: org.codehaus.groovy.ast.ASTNode,
+    ) {
+        if (commentParser == null || nativeNode.lineNumber <= 0) return
+
+        val comments = commentParser?.extractCommentsBetween(
+            lastLine,
+            lastColumn,
+            nativeNode.lineNumber,
+            nativeNode.columnNumber,
+        ) ?: return
+
+        // Attach the last comment as the node's leading comment (typically Javadoc)
+        val leadingComment = comments.lastOrNull()
+        if (leadingComment != null) {
+            node.setComment(leadingComment)
+            // Other comments become orphans
+            comments.dropLast(1).forEach { node.addOrphanComment(it) }
+        }
+
+        // Update position tracker
+        if (nativeNode.lastLineNumber > 0) {
+            lastLine = nativeNode.lastLineNumber
+            lastColumn = nativeNode.lastColumnNumber
+        }
     }
 
     private fun convertImport(importNode: ImportNode): ImportDeclaration {
@@ -214,7 +265,9 @@ internal class GroovyAstConverter {
         // Convert fields (properties in Groovy are converted to fields)
         classNode.fields?.forEach { fieldNode ->
             if (!fieldNode.isSynthetic) {
-                classDecl.addField(convertField(fieldNode))
+                val field = convertField(fieldNode)
+                attachLeadingComment(field, fieldNode)
+                classDecl.addField(field)
             }
         }
 
@@ -229,18 +282,23 @@ internal class GroovyAstConverter {
             field.hasInitializer = propertyNode.field?.hasInitialExpression() ?: false
             convertAnnotations(propertyNode.annotations, field)
             setRange(field, propertyNode)
+            attachLeadingComment(field, propertyNode)
             classDecl.addField(field)
         }
 
         // Convert constructors
         classNode.declaredConstructors?.forEach { constructorNode ->
-            classDecl.addConstructor(convertConstructor(constructorNode, classNode.nameWithoutPackage))
+            val constructor = convertConstructor(constructorNode, classNode.nameWithoutPackage)
+            attachLeadingComment(constructor, constructorNode)
+            classDecl.addConstructor(constructor)
         }
 
         // Convert methods
         classNode.methods?.forEach { methodNode ->
             if (!methodNode.isSynthetic) {
-                classDecl.addMethod(convertMethod(methodNode))
+                val method = convertMethod(methodNode)
+                attachLeadingComment(method, methodNode)
+                classDecl.addMethod(method)
             }
         }
 
