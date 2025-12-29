@@ -225,10 +225,5 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      * accessedVariable points to the exact same Parameter object as the declaration.
      * This is deterministic and avoids false positives from position/scope fallbacks.
      */
-    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
-        if (p1.name != p2.name) return false
-        // Identity is authoritative: Groovy's VariableScopeVisitor ensures
-        // accessedVariable points to the same Parameter object as the declaration
-        return p1 === p2
-    }
+    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean = p1 === p2
 }

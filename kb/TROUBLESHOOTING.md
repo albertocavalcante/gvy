@@ -232,12 +232,13 @@ System.err.println(
 
 JUnit captures stdout/stderr. To see debug output:
 
-**Option 1: Use System.err.println**
+#### Option 1: Use System.err.println
+
 ```kotlin
 System.err.println("DEBUG: value=$value")
 ```
 
-**Option 2: Check test reports**
+#### Option 2: Check test reports
 ```bash
 # Run test
 ./gradlew :groovy-lsp:test --tests "*.MyTest.my test name"
