@@ -252,8 +252,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         JarFile(jarPath.toFile()).use { jar ->
             jar.getEntry(AST_TRANSFORMATION_SERVICE_FILE)?.let { entry ->
                 jar.getInputStream(entry).bufferedReader().useLines { lines ->
-                    lines.filter { it.isNotBlank() && !it.startsWith("#") }
-                        .forEach { names += it.trim() }
+                    lines.map { it.substringBefore('#').trim() }
+                        .filter { it.isNotBlank() }
+                        .forEach { names += it }
                 }
             }
         }
@@ -263,8 +264,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val serviceFilePath = dirPath.resolve(AST_TRANSFORMATION_SERVICE_FILE)
         if (Files.exists(serviceFilePath)) {
             Files.readAllLines(serviceFilePath)
-                .filter { it.isNotBlank() && !it.startsWith("#") }
-                .forEach { names += it.trim() }
+                .map { it.substringBefore('#').trim() }
+                .filter { it.isNotBlank() }
+                .forEach { names += it }
         }
     }
 
@@ -272,8 +274,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                        it.extension.equals("groovy", ignoreCase = true) &&
-                        it.isRegularFile()
+                    it.extension.equals("groovy", ignoreCase = true) &&
+                    it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {

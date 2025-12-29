@@ -4,11 +4,12 @@ import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
-import kotlin.io.path.createTempDirectory
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -16,7 +17,9 @@ import kotlin.test.assertTrue
 class GroovyParserFacadeTest {
 
     private val parser = GroovyParserFacade()
-    private val tempDir = kotlin.io.path.createTempDirectory("parser-test")
+
+    @TempDir
+    lateinit var tempDir: Path
 
     @Test
     fun `parse valid groovy snippet`() {
