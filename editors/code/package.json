@@ -489,7 +489,7 @@
     "lint": "eslint client/src/**/*.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "package": "vsce package",
+    "package": "vsce package --no-dependencies",
     "install-extension": "node tools/install-extension.js",
     "clean": "rm -rf client/out/ server/*.jar server/.gls-version",
     "postinstall": "cd client && pnpm install && cd .. && pnpm run prepare-server",
