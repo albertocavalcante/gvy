@@ -164,7 +164,14 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
             // Assignment to this variable is a write
             if (parent is BinaryExpression) {
-                val isAssignment = parent.operation.text in listOf("=", "+=", "-=", "*=", "/=", "%=")
+                // Include all assignment operators: standard, arithmetic, bitwise, shift, and power
+                val assignmentOperators = setOf(
+                    "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic
+                    "&=", "|=", "^=", // Bitwise
+                    "<<=", ">>=", ">>>=", // Shift
+                    "**=", // Power
+                )
+                val isAssignment = parent.operation.text in assignmentOperators
                 if (isAssignment && parent.leftExpression == node) {
                     return DocumentHighlightKind.Write
                 }
@@ -225,6 +232,9 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         // for different methods due to not being scope-aware.
         val method1 = findEnclosingMethod(n1, astModel)
         val method2 = findEnclosingMethod(n2, astModel)
+
+        // If parent methods can't be found (e.g. tracking failure), assume different scopes to avoid leaks
+        if (method1 == null || method2 == null) return false
 
         return method1 == method2
     }

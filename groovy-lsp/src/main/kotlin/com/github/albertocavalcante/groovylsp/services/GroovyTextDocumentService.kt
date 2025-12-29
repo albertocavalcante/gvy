@@ -16,8 +16,8 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
-import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
+import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
