@@ -107,14 +107,15 @@ version:
 # VS Code Extension (editors/code/)
 EXT_DIR := editors/code
 
-# Smart install: Only runs pnpm install if package.json/lock has changed or node_modules is missing
-$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml
+# Smart install: Runs pnpm install if package.json/lock has changed (root OR client) or node_modules is missing
+# Note: postinstall in root package.json handles client deps via "cd client && pnpm install"
+$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml $(EXT_DIR)/client/package.json $(EXT_DIR)/client/pnpm-lock.yaml
 	cd $(EXT_DIR) && pnpm install
 	@touch $@
 
-# Explicit clean install
+# Explicit clean install (force reinstall all deps)
 ext-install:
-	cd $(EXT_DIR) && pnpm install --frozen-lockfile
+	cd $(EXT_DIR) && pnpm install
 
 ext-build: $(EXT_DIR)/node_modules
 	cd $(EXT_DIR) && pnpm run compile
