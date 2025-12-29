@@ -47,6 +47,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_PREPARE_SERVER: false
+          # Note: Tests with latest LSP release (default behavior)
+          # To pin for stability if needed: GLS_USE_PINNED: true
 
       - name: Lint
         run: npm run lint

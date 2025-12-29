@@ -61,23 +61,28 @@ vscode-groovy/
 - `npm run package` - Build and package VSIX
 - `npm run prepare-server` - Download/prepare Groovy Language Server
 
-### Updating the embedded Groovy LSP
+### Updating the Pinned LSP Version
 
-1. Find the newest release at https://github.com/albertocavalcante/groovy-lsp/releases and note:
-   - `PINNED_RELEASE_TAG` (e.g., `v0.2.0`)
-   - `PINNED_JAR_ASSET` (the universal JAR to download)
-2. Get the SHA-256 from `checksums.txt` in that release:
+When a new stable LSP version is released:
+
+1. Update `editors/code/tools/prepare-server.js`:
+   - `PINNED_RELEASE_TAG = "v0.x.y"`
+   - `PINNED_JAR_ASSET = "gls-0.x.y.jar"`
+   - `PINNED_DOWNLOAD_URL = ...`
+   - `PINNED_JAR_SHA256 = "..."` (get from release checksums.txt)
+
+2. Update `editors/code/AGENTS.md`:
+   - Update "Pinned LSP" line with new version
+
+3. Test fallback behavior:
    ```bash
-   curl -L "https://github.com/albertocavalcante/groovy-lsp/releases/download/<TAG>/checksums.txt"
+   GLS_USE_PINNED=true npm run prepare-server
    ```
-   Copy the checksum line for the chosen JAR into `PINNED_JAR_SHA256` in `tools/prepare-server.js`.
-3. Clear old artifacts and re-fetch:
-   ```bash
-   npm run clean
-   npm run prepare-server
-   ```
-4. (Optional) To experiment with the newest groovy-lsp release without changing the pinned defaults, run with `USE_LATEST_GROOVY_LSP=true npm run prepare-server`. If a `checksums.txt` asset exists in the release, the script will verify the downloaded JAR automatically.
-5. Commit the updated constants and regenerated cache key (the script hash changes automatically).
+
+Note: Users get the **latest release by default**. The pinned version serves as:
+- Fallback for network issues (with `GLS_ALLOW_PINNED_FALLBACK=true`)
+- Explicit stability option (with `GLS_USE_PINNED=true`)
+- Emergency escape hatch if latest has critical bugs
 
 ### Testing the Extension
 
