@@ -35,6 +35,22 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
     private val logger = LoggerFactory.getLogger(GroovyParser::class.java)
     private val converter = GroovyAstConverter()
 
+    companion object {
+        private val sharedConverter = GroovyAstConverter()
+
+        /**
+         * Converts a native Groovy ModuleNode to our custom CompilationUnit.
+         *
+         * This is useful when you already have a ModuleNode from another parser
+         * (like GroovyParserFacade) and want to use the JavaParser-like AST.
+         *
+         * @param moduleNode the native Groovy ModuleNode
+         * @return the converted CompilationUnit
+         */
+        fun convertFromNative(moduleNode: org.codehaus.groovy.ast.ModuleNode): CompilationUnit =
+            sharedConverter.convert(moduleNode)
+    }
+
     /**
      * Parses Groovy source code and returns a [ParseResult] containing
      * the [CompilationUnit] or any problems encountered.
