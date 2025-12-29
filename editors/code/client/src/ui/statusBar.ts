@@ -17,6 +17,28 @@ export type ServerState =
     | 'degraded';
 
 /**
+ * Server health status (follows rust-analyzer pattern)
+ */
+export type ServerHealth = 'ok' | 'warning' | 'error';
+
+/**
+ * Groovy server status notification parameters.
+ * Based on rust-analyzer's `experimental/serverStatus` notification pattern.
+ */
+export interface GroovyStatusParams {
+    /** Server functional state (ok, warning, error) */
+    health: ServerHealth;
+    /** Whether there is any pending background work */
+    quiescent: boolean;
+    /** Optional human-readable message */
+    message?: string;
+    /** Current number of files indexed (for progress display) */
+    filesIndexed?: number;
+    /** Total number of files to index (for progress display) */
+    filesTotal?: number;
+}
+
+/**
  * Document selector for Groovy-related files.
  * Note: .gradle files are registered as 'groovy' language in package.json.
  * We do NOT include .gradle.kts - those are Kotlin files, not supported.
@@ -61,6 +83,12 @@ export class StatusBarManager implements vscode.Disposable {
     private extensionVersion: string;
     private serverVersion: string = 'unknown';
     private outputChannel: vscode.OutputChannel | undefined;
+
+    // Server status notification fields (from groovy/status)
+    private quiescent: boolean = true;
+    private filesIndexed: number | undefined;
+    private filesTotal: number | undefined;
+    private serverHealth: ServerHealth = 'ok';
 
     private disposables: vscode.Disposable[] = [];
     private clientDisposables: vscode.Disposable[] = [];
@@ -182,6 +210,10 @@ export class StatusBarManager implements vscode.Disposable {
         this.currentState = 'stopped';
         this.currentProgressMessage = undefined;
         this.activeProgressCount = 0;
+        this.quiescent = true;
+        this.filesIndexed = undefined;
+        this.filesTotal = undefined;
+        this.serverHealth = 'ok';
 
         if (this.currentClient) {
             // Listen for state changes
@@ -192,13 +224,97 @@ export class StatusBarManager implements vscode.Disposable {
                 })
             );
 
-            // Listen for progress notifications
+            // Listen for groovy/status notifications (primary status source)
+            this.clientDisposables.push(
+                this.setupGroovyStatusHandling(this.currentClient)
+            );
+
+            // Listen for progress notifications (fallback for generic progress)
             this.clientDisposables.push(
                 this.setupProgressHandling(this.currentClient)
             );
         }
 
         this.updateView();
+    }
+
+    /**
+     * Sets up handling for groovy/status notifications.
+     * This is the primary status source (replaces inference from progress messages).
+     */
+    private setupGroovyStatusHandling(client: LanguageClient): vscode.Disposable {
+        return client.onNotification('groovy/status', (params: GroovyStatusParams) => {
+            this.handleGroovyStatus(params);
+        });
+    }
+
+    /**
+     * Handles groovy/status notifications from the server.
+     * Based on rust-analyzer's experimental/serverStatus pattern.
+     */
+    private handleGroovyStatus(params: GroovyStatusParams): void {
+        // Update server health
+        this.serverHealth = params.health;
+
+        // Update quiescent state
+        this.quiescent = params.quiescent;
+
+        // Update file counts
+        this.filesIndexed = params.filesIndexed;
+        this.filesTotal = params.filesTotal;
+
+        // Update message
+        if (params.message) {
+            this.currentProgressMessage = params.message;
+        } else if (params.quiescent) {
+            this.currentProgressMessage = undefined;
+        }
+
+        // Map health + quiescent to ServerState
+        this.updateStateFromStatus(params);
+
+        this.updateView();
+    }
+
+    /**
+     * Maps groovy/status health and quiescent to our ServerState
+     */
+    private updateStateFromStatus(params: GroovyStatusParams): void {
+        // Error health always means degraded
+        if (params.health === 'error') {
+            this.currentState = 'degraded';
+            return;
+        }
+
+        // Warning health means degraded
+        if (params.health === 'warning') {
+            this.currentState = 'degraded';
+            return;
+        }
+
+        // Not quiescent means server is working
+        if (!params.quiescent) {
+            // Determine specific state from message
+            const message = (params.message || '').toLowerCase();
+            if (message.includes('resolving') || message.includes('dependencies')) {
+                this.currentState = 'resolving-deps';
+            } else if (message.includes('indexing')) {
+                this.currentState = 'indexing';
+            } else if (message.includes('initializing') || message.includes('starting')) {
+                this.currentState = 'starting';
+            } else {
+                // Default to indexing if we have file counts
+                if (params.filesTotal && params.filesTotal > 0) {
+                    this.currentState = 'indexing';
+                } else {
+                    this.currentState = 'starting';
+                }
+            }
+            return;
+        }
+
+        // Quiescent and healthy = ready
+        this.currentState = 'ready';
     }
 
     /**
@@ -267,9 +383,17 @@ export class StatusBarManager implements vscode.Disposable {
     }
 
     /**
-     * Infers server state from progress message content
+     * Infers server state from progress message content.
+     * @deprecated This is a fallback for servers that don't send groovy/status.
+     *             New servers should use groovy/status notifications instead.
      */
     private inferStateFromMessage(message: string): void {
+        // Skip inference if we've received groovy/status notifications
+        // (indicated by having explicit file counts or recent status update)
+        if (this.filesTotal !== undefined) {
+            return;
+        }
+
         // Check for errors FIRST
         if (message.includes('failed') || message.includes('error')) {
             this.currentState = 'degraded';
@@ -340,7 +464,9 @@ export class StatusBarManager implements vscode.Disposable {
             langStatus.updateServerStatus(
                 this.currentState,
                 this.serverVersion,
-                this.currentProgressMessage
+                this.currentProgressMessage,
+                this.filesIndexed,
+                this.filesTotal
             );
         }
     }
@@ -355,13 +481,19 @@ export class StatusBarManager implements vscode.Disposable {
     }
 
     /**
-     * Gets the suffix for the status bar text
+     * Gets the suffix for the status bar text.
+     * Shows file counts during indexing if available.
      */
     private getStateSuffix(): string {
         switch (this.currentState) {
             case 'resolving-deps':
                 return 'Deps';
             case 'indexing':
+                // Show file counts if available (e.g., "23/456")
+                if (this.filesTotal !== undefined && this.filesTotal > 0) {
+                    const indexed = this.filesIndexed ?? 0;
+                    return `${indexed}/${this.filesTotal}`;
+                }
                 return 'Indexing';
             case 'starting':
                 return 'Starting';
@@ -425,6 +557,12 @@ export class StatusBarManager implements vscode.Disposable {
             case 'resolving-deps':
                 return 'Resolving Dependencies...';
             case 'indexing':
+                // Show file counts if available
+                if (this.filesTotal !== undefined && this.filesTotal > 0) {
+                    const indexed = this.filesIndexed ?? 0;
+                    const pct = Math.round((indexed / this.filesTotal) * 100);
+                    return `Indexing ${indexed}/${this.filesTotal} files (${pct}%)`;
+                }
                 return 'Indexing...';
             case 'ready':
                 return 'Ready';
