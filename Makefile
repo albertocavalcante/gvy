@@ -99,23 +99,23 @@ version:
 # VS Code Extension (editors/code/)
 EXT_DIR := editors/code
 
-# Smart install: Only runs npm install if package.json/lock has changed or node_modules is missing
-$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/package-lock.json
-	cd $(EXT_DIR) && npm install
+# Smart install: Only runs pnpm install if package.json/lock has changed or node_modules is missing
+$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml
+	cd $(EXT_DIR) && pnpm install
 	@touch $@
 
 # Explicit clean install
 ext-install:
-	cd $(EXT_DIR) && npm ci
+	cd $(EXT_DIR) && pnpm install --frozen-lockfile
 
 ext-build: $(EXT_DIR)/node_modules
-	cd $(EXT_DIR) && npm run compile
+	cd $(EXT_DIR) && pnpm run compile
 
 ext-test: $(EXT_DIR)/node_modules
-	cd $(EXT_DIR) && npm test
+	cd $(EXT_DIR) && pnpm test
 
 ext-package: $(EXT_DIR)/node_modules
-	cd $(EXT_DIR) && npm run package
+	cd $(EXT_DIR) && pnpm run package
 
 # Release
 release: release-build

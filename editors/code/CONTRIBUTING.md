@@ -15,23 +15,23 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/albertocavalcante/vscode-groovy.git
-   cd vscode-groovy
+   git clone https://github.com/albertocavalcante/gvy.git
+   cd gvy
    ```
 
 2. **Install dependencies**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Prepare the Groovy Language Server**
    ```bash
-   npm run prepare-server
+   pnpm run prepare-server
    ```
 
 4. **Compile the extension**
    ```bash
-   npm run compile
+   pnpm run compile
    ```
 
 ## Development Workflow
@@ -39,7 +39,7 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 ### Project Structure
 
 ```
-vscode-groovy/
+gvy/
 ├── client/src/          # Extension source code
 │   ├── commands/        # VS Code commands
 │   ├── configuration/   # Configuration management
@@ -54,12 +54,12 @@ vscode-groovy/
 
 ### Available Scripts
 
-- `npm run compile` - Compile TypeScript and bundle with esbuild
-- `npm run watch` - Watch mode for development
-- `npm run lint` - Run ESLint
-- `npm run check-types` - TypeScript type checking
-- `npm run package` - Build and package VSIX
-- `npm run prepare-server` - Download/prepare Groovy Language Server
+- `pnpm run compile` - Compile TypeScript and bundle with esbuild
+- `pnpm run watch` - Watch mode for development
+- `pnpm run lint` - Run ESLint
+- `pnpm run check-types` - TypeScript type checking
+- `pnpm run package` - Build and package VSIX
+- `pnpm run prepare-server` - Download/prepare Groovy Language Server
 
 ### Updating the Pinned LSP Version
 
@@ -273,8 +273,8 @@ Verify functionality on:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/albertocavalcante/vscode-groovy/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/albertocavalcante/vscode-groovy/discussions)
+- **Issues**: [GitHub Issues](https://github.com/albertocavalcante/gvy/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/albertocavalcante/gvy/discussions)
 - **Documentation**: Check the [README](README.md) and [CI/CD Setup](.github/CI_CD_SETUP.md)
 
 ## Release Process

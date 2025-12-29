@@ -77,8 +77,23 @@ jobs:
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: editors/code/package-lock.json
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+        with:
+          version: 10
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm store
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('editors/code/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
       - name: Setup Java
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5
@@ -101,12 +116,12 @@ jobs:
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5
         with:
           path: |
-            editors/code/server/groovy-lsp.jar
-            editors/code/server/.groovy-lsp-version
+            editors/code/server/gls.jar
+            editors/code/server/.gls-version
           key: groovy-lsp-${{ runner.os }}-${{ steps.groovy_lsp_cache.outputs.tag }}-${{ steps.groovy_lsp_cache.outputs.hash }}
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SKIP_PREPARE_SERVER: false
@@ -119,22 +134,22 @@ jobs:
           set -euo pipefail
           BASE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
           NIGHTLY_VERSION="${BASE_VERSION}-nightly.$(date -u +%Y%m%d%H%M)"
-          npm version "$NIGHTLY_VERSION" --no-git-tag-version
+          pnpm version "$NIGHTLY_VERSION" --no-git-tag-version
           echo "nightly_version=$NIGHTLY_VERSION" >> "$GITHUB_OUTPUT"
           echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Build extension
-        run: npm run compile
+        run: pnpm run compile
 
       - name: Run tests
         if: env.SKIP_TESTS_INPUT != 'true'
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
-          npm test
+          pnpm test
 
       - name: Package VSIX
-        run: npm run package
+        run: pnpm run package
         env:
           SKIP_PREPARE_SERVER: true
 

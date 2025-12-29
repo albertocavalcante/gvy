@@ -1,16 +1,21 @@
 # Copybara configuration for syncing editors/code/ to vscode-groovy mirror
 #
-# This workflow syncs changes from the groovy-lsp monorepo to the standalone
+# This workflow syncs changes from the gvy monorepo to the standalone
 # vscode-groovy repository. The mirror is read-only; all development happens
 # in the monorepo.
 #
 # Usage: copybara copy.bara.sky push-to-vscode-groovy
+#
+# URL Transformation Strategy:
+# - Transform: repository, homepage, issues, discussions, clone URLs (user-facing)
+# - Keep as-is: release/download URLs (releases are published on gvy)
+# - Keep as-is: CI badge URLs (CI runs on gvy)
 
 core.workflow(
     name = "push-to-vscode-groovy",
     
     origin = git.origin(
-        url = "https://github.com/albertocavalcante/groovy-devtools.git",
+        url = "https://github.com/albertocavalcante/gvy.git",
         ref = "main",
     ),
     
@@ -34,31 +39,57 @@ core.workflow(
     # Preserve original author information
     authoring = authoring.pass_thru("gls-bot <gls-bot@cavalcante.uk>"),
     
-    # Improve commit message handling
     transformations = [
         # Move files from editors/code/ to root
         core.move("editors/code", ""),
         
-        # Revert monorepo-specific package.json changes
+        # Remove monorepo-specific package.json directory field
         core.replace(
             before = '"directory": "editors/code"',
             after = "",
             paths = glob(["package.json"]),
         ),
+        
+        # Transform repository .git URLs
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-devtools.git",
+            before = "https://github.com/albertocavalcante/gvy.git",
             after = "https://github.com/albertocavalcante/vscode-groovy.git",
-            paths = glob(["package.json"]),
+            paths = glob(["package.json", "README.md", "CONTRIBUTING.md"]),
         ),
+        
+        # Transform homepage URLs (remove /tree/main/editors/code path)
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code",
+            before = "https://github.com/albertocavalcante/gvy/tree/main/editors/code",
             after = "https://github.com/albertocavalcante/vscode-groovy",
             paths = glob(["package.json", "README.md"]),
         ),
+        
+        # Transform issues URLs
         core.replace(
-            before = "https://github.com/albertocavalcante/groovy-devtools/issues",
+            before = "https://github.com/albertocavalcante/gvy/issues",
             after = "https://github.com/albertocavalcante/vscode-groovy/issues",
-            paths = glob(["package.json"]),
+            paths = glob(["package.json", "README.md", "CONTRIBUTING.md", "client/src/server/client.ts"]),
+        ),
+        
+        # Transform discussions URLs
+        core.replace(
+            before = "https://github.com/albertocavalcante/gvy/discussions",
+            after = "https://github.com/albertocavalcante/vscode-groovy/discussions",
+            paths = glob(["CONTRIBUTING.md"]),
+        ),
+        
+        # Transform standalone GitHub URLs in markdown links [GitHub](url)
+        core.replace(
+            before = "https://github.com/albertocavalcante/gvy)",
+            after = "https://github.com/albertocavalcante/vscode-groovy)",
+            paths = glob(["README.md"]),
+        ),
+        
+        # Transform clone directory name in docs
+        core.replace(
+            before = "cd gvy",
+            after = "cd vscode-groovy",
+            paths = glob(["README.md", "CONTRIBUTING.md"]),
         ),
         
         # Expose standard Git trailers and GitHub keywords to preserve them in the destination
@@ -68,7 +99,7 @@ core.workflow(
         metadata.expose_label("Fixes"),
 
         # Add sync metadata to commit message
-        metadata.add_header("Synced-From: https://github.com/albertocavalcante/groovy-devtools/tree/main/editors/code"),
+        metadata.add_header("Synced-From: https://github.com/albertocavalcante/gvy/tree/main/editors/code"),
         metadata.add_header("Note: This is a read-only mirror. Do not edit directly."),
     ],
 )
