@@ -326,8 +326,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                        it.extension.equals("groovy", ignoreCase = true) &&
-                        it.isRegularFile()
+                    it.extension.equals("groovy", ignoreCase = true) &&
+                    it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {

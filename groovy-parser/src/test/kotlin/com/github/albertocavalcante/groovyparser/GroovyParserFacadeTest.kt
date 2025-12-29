@@ -366,4 +366,3 @@ class GroovyParserFacadeTest {
         assertTrue(methods.contains("main"), "Should find 'main' method")
     }
 }
-
