@@ -64,7 +64,7 @@ async function getServerJarPath(): Promise<string> {
 
         window.showErrorMessage(message, 'Open Issues').then(selection => {
             if (selection === 'Open Issues') {
-                commands.executeCommand('vscode.open', 'https://github.com/albertocavalcante/groovy-devtools/issues');
+                commands.executeCommand('vscode.open', 'https://github.com/albertocavalcante/gvy/issues');
             }
         });
 

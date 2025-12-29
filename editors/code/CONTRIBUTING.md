@@ -15,8 +15,8 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/albertocavalcante/vscode-groovy.git
-   cd vscode-groovy
+   git clone https://github.com/albertocavalcante/gvy.git
+   cd gvy
    ```
 
 2. **Install dependencies**
@@ -39,7 +39,7 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 ### Project Structure
 
 ```
-vscode-groovy/
+gvy/
 ├── client/src/          # Extension source code
 │   ├── commands/        # VS Code commands
 │   ├── configuration/   # Configuration management
@@ -273,8 +273,8 @@ Verify functionality on:
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/albertocavalcante/vscode-groovy/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/albertocavalcante/vscode-groovy/discussions)
+- **Issues**: [GitHub Issues](https://github.com/albertocavalcante/gvy/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/albertocavalcante/gvy/discussions)
 - **Documentation**: Check the [README](README.md) and [CI/CD Setup](.github/CI_CD_SETUP.md)
 
 ## Release Process

@@ -88,6 +88,7 @@ function parseArgs(argv = []) {
     forceDownload: false,
     channel: null,
     preferLocal: false,
+    buildLocal: false,
     help: false,
     unknown: [],
   };
@@ -129,6 +130,9 @@ function parseArgs(argv = []) {
         break;
       case "--prefer-local":
         parsed.preferLocal = true;
+        break;
+      case "--build-local":
+        parsed.buildLocal = true;
         break;
       case "--help":
       case "-h":
@@ -561,6 +565,48 @@ function detectMonorepoEnvironment() {
 }
 
 /**
+ * Gets the monorepo root directory
+ * @returns {string} Path to monorepo root
+ */
+function getMonorepoRoot() {
+  const toolsDir = __dirname; // /path/to/editors/code/tools
+  const extensionRoot = path.join(toolsDir, "..");
+  return path.join(extensionRoot, "..", "..");
+}
+
+/**
+ * Builds the local JAR by invoking 'make jar' in the monorepo root.
+ * Only works in a monorepo environment.
+ * @throws {Error} If not in monorepo or build fails
+ */
+function buildLocalJar() {
+  const { execSync } = require("node:child_process");
+
+  if (!detectMonorepoEnvironment()) {
+    throw new Error(
+      "--build-local requires a monorepo environment (groovy-lsp sibling directory not found)",
+    );
+  }
+
+  const monorepoRoot = getMonorepoRoot();
+  console.log("🔨 Building local JAR via 'make jar'...");
+  console.log(`   Working directory: ${monorepoRoot}`);
+
+  try {
+    execSync("make jar", {
+      cwd: monorepoRoot,
+      stdio: "inherit",
+      env: { ...process.env },
+    });
+    console.log("✓ Local JAR build completed");
+  } catch (error) {
+    throw new Error(
+      `Failed to build local JAR: ${error.message || "make jar failed"}`,
+    );
+  }
+}
+
+/**
  * Main function to prepare the server JAR
  */
 async function prepareServer(runtimeOptions = {}) {
@@ -589,6 +635,9 @@ async function prepareServer(runtimeOptions = {}) {
     const preferLocal =
       runtimeOptions.preferLocal ??
       (cliOptions.preferLocal || process.env.PREFER_LOCAL === "true");
+    const buildLocal =
+      runtimeOptions.buildLocal ??
+      (cliOptions.buildLocal || process.env.BUILD_LOCAL === "true");
     const explicitLocalJar =
       runtimeOptions.local ??
       cliOptions.local ??
@@ -706,12 +755,25 @@ async function prepareServer(runtimeOptions = {}) {
     }
 
     // Try local build first if preferred
-    if (effectivePreferLocal) {
-      const localJarPath = findLocalGroovyLspJar();
+    if (effectivePreferLocal || buildLocal) {
+      let localJarPath = findLocalGroovyLspJar();
+
+      // If no local JAR found and buildLocal is set, try to build it
+      if (!localJarPath && buildLocal) {
+        console.log("No local JAR found, attempting to build...");
+        buildLocalJar();
+        // After building, try to find the JAR again
+        localJarPath = findLocalGroovyLspJar();
+      }
 
       if (localJarPath) {
         copyLocalJar(localJarPath, { forceDownload });
         return;
+      } else if (buildLocal) {
+        // If buildLocal was set but we still don't have a JAR, that's an error
+        throw new Error(
+          "BUILD_LOCAL=true but no JAR found after build. Check 'make jar' output for errors.",
+        );
       } else {
         console.log(
           "PREFER_LOCAL=true but no local JAR found, falling back to download...",
@@ -969,6 +1031,7 @@ Options:
   --url <url>            Download from a URL (supports GitHub Actions artifacts)
   --checksum <sha256>    Optional SHA256 checksum for URL downloads
   --prefer-local         Prefer local groovy-lsp builds from common paths
+  --build-local          Build local JAR via 'make jar' if not found (monorepo only)
   --force-download       Always download/copy even if a JAR already exists
   --print-release-tag    Print the pinned release tag and exit
   -h, --help             Show this help message
@@ -988,6 +1051,7 @@ Environment Variables:
 
   Download Behavior:
     PREFER_LOCAL=true         Use local build from ../groovy-lsp/build/libs/
+    BUILD_LOCAL=true          Build local JAR via 'make jar' if not found (monorepo only)
     FORCE_DOWNLOAD=true       Re-download even if JAR exists
     GLS_ALLOW_PINNED_FALLBACK=true  Fall back to pinned on network failure
     SKIP_PREPARE_SERVER=true  Skip server preparation entirely

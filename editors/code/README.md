@@ -1,6 +1,6 @@
 # Groovy Language Support
 
-[![CI](https://github.com/albertocavalcante/vscode-groovy/actions/workflows/main.yml/badge.svg)](https://github.com/albertocavalcante/vscode-groovy/actions/workflows/main.yml)
+[![CI](https://github.com/albertocavalcante/gvy/actions/workflows/main.yml/badge.svg)](https://github.com/albertocavalcante/gvy/actions/workflows/main.yml)
 
 A VS Code extension that adds Groovy language support with syntax highlighting, code completion, and error checking.
 
@@ -191,7 +191,7 @@ When dependencies are loading, you may see import errors. The status bar shows "
 Want to contribute? Check out the [Contributing Guide](CONTRIBUTING.md).
 
 ```bash
-git clone https://github.com/albertocavalcante/vscode-groovy.git
+git clone https://github.com/albertocavalcante/gvy.git
 npm install
 npm run compile
 ```
@@ -216,4 +216,4 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guid
 
 ---
 
-**Links:** [GitHub](https://github.com/albertocavalcante/vscode-groovy) • [Issues](https://github.com/albertocavalcante/vscode-groovy/issues) • [Language Server](https://github.com/albertocavalcante/groovy-lsp)
+**Links:** [GitHub](https://github.com/albertocavalcante/gvy) • [Issues](https://github.com/albertocavalcante/gvy/issues) • [Language Server](https://github.com/albertocavalcante/gvy)

@@ -16,5 +16,5 @@
 
 !client/out/extension.js
 
-!server/groovy-lsp.jar
-!server/.groovy-lsp-version
+!server/gls.jar
+!server/.gls-version
