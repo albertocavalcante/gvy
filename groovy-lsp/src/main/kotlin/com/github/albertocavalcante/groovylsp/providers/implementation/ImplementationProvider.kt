@@ -265,11 +265,7 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         return false
     }
 
-    private fun hasInterfaceTransitive(
-        current: ClassNode,
-        targetName: String,
-        visited: MutableSet<String>,
-    ): Boolean {
+    private fun hasInterfaceTransitive(current: ClassNode, targetName: String, visited: MutableSet<String>): Boolean {
         if (!visited.add(current.name)) return false
 
         if (current.name == targetName) return true
@@ -301,11 +297,7 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         return extendsClassTransitive(classSymbol.superClass, ownerClass.name, mutableSetOf())
     }
 
-    private fun extendsClassTransitive(
-        current: ClassNode?,
-        targetName: String,
-        visited: MutableSet<String>,
-    ): Boolean {
+    private fun extendsClassTransitive(current: ClassNode?, targetName: String, visited: MutableSet<String>): Boolean {
         if (current == null) return false
         if (!visited.add(current.name)) return false
 

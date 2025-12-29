@@ -165,7 +165,7 @@ class GroovyTextDocumentService(
     ): CompletableFuture<org.eclipse.lsp4j.SignatureHelp> = coroutineScope.future {
         logger.debug(
             "Signature help requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
+                "${params.position.line}:${params.position.character}",
         )
         signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
     }
@@ -318,7 +318,7 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             logger.debug(
                 "Completion requested for ${params.textDocument.uri} at " +
-                        "${params.position.line}:${params.position.character}",
+                    "${params.position.line}:${params.position.character}",
             )
 
             val basicCompletions = GroovyCompletions.basic()
@@ -341,7 +341,7 @@ class GroovyTextDocumentService(
                 val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
                 if (metadata != null) {
                     JenkinsStepCompletionProvider.getStepCompletions(metadata) +
-                            JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
+                        JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
                 } else {
                     emptyList()
                 }
@@ -361,7 +361,7 @@ class GroovyTextDocumentService(
     override fun hover(params: HoverParams): CompletableFuture<Hover> = coroutineScope.future {
         logger.debug(
             "Hover requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
+                "${params.position.line}:${params.position.character}",
         )
 
         // Use the new HoverProvider for actual symbol information
@@ -388,7 +388,7 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             logger.debug(
                 "Definition requested for ${params.textDocument.uri} at " +
-                        "${params.position.line}:${params.position.character}",
+                    "${params.position.line}:${params.position.character}",
             )
 
             val uri = java.net.URI.create(params.textDocument.uri)
@@ -437,7 +437,7 @@ class GroovyTextDocumentService(
     override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
         logger.debug(
             "References requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
+                "${params.position.line}:${params.position.character}",
         )
 
         try {
@@ -474,7 +474,7 @@ class GroovyTextDocumentService(
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
         logger.debug(
             "Type definition requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
+                "${params.position.line}:${params.position.character}",
         )
 
         return typeDefinitionProvider.provideTypeDefinition(params).thenApply { locations ->
@@ -495,7 +495,7 @@ class GroovyTextDocumentService(
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
         logger.debug(
             "Implementation requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
+                "${params.position.line}:${params.position.character}",
         )
 
         try {
@@ -546,7 +546,7 @@ class GroovyTextDocumentService(
     override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> = coroutineScope.future {
         logger.debug(
             "Rename requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character} to '${params.newName}'",
+                "${params.position.line}:${params.position.character} to '${params.newName}'",
         )
 
         try {
@@ -584,7 +584,7 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             logger.debug(
                 "Code action requested for ${params.textDocument.uri} at " +
-                        "${params.range.start.line}:${params.range.start.character}",
+                    "${params.range.start.line}:${params.range.start.character}",
             )
 
             val actions = codeActionProvider.provideCodeActions(params)
