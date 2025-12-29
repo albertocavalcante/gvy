@@ -332,6 +332,82 @@ class RulesetResolverTest {
         )
     }
 
+    @Test
+    fun `Jenkins ruleset should specify correct priorities for rules`(@TempDir tempDir: Path) {
+        // Given: Jenkins project
+        Files.createFile(tempDir.resolve("Jenkinsfile"))
+
+        val context = createWorkspaceContext(tempDir, enabled = true)
+        val config = resolver.resolve(context)
+
+        // Then: Jenkins CPS rules should be priority 1 (critical)
+        assertNotNull(config.rulesetContent)
+        assertTrue(
+            config.rulesetContent.contains("priority = 1"),
+            "Jenkins CPS rules should be marked as priority 1 (critical errors).",
+        )
+
+        // And: Correctness rules should be priority 1 or 2
+        assertTrue(
+            config.rulesetContent.contains("CatchException") &&
+                (
+                    config.rulesetContent.contains("priority = 1") ||
+                        config.rulesetContent.contains("priority = 2")
+                    ),
+            "Critical correctness rules should have priority 1 or 2.",
+        )
+    }
+
+    @Test
+    fun `Jenkins ruleset should document why style rules are excluded`(@TempDir tempDir: Path) {
+        // Given: Jenkins project
+        Files.createFile(tempDir.resolve("Jenkinsfile"))
+
+        val context = createWorkspaceContext(tempDir, enabled = true)
+        val config = resolver.resolve(context)
+
+        // Then: Ruleset should have documentation explaining exclusions
+        assertNotNull(config.rulesetContent)
+        assertTrue(
+            config.rulesetContent.contains("EXPLICITLY EXCLUDED") ||
+                config.rulesetContent.contains("INTENTIONALLY EXCLUDED"),
+            "Jenkins ruleset should document why generic rules are excluded.",
+        )
+
+        // And: Should explain the rationale
+        assertTrue(
+            config.rulesetContent.contains("DSL") ||
+                config.rulesetContent.contains("formatting") ||
+                config.rulesetContent.contains("style"),
+            "Ruleset should explain that Jenkinsfiles have unique formatting needs.",
+        )
+    }
+
+    @Test
+    fun `Jenkins ruleset should be concise and focused on pipeline safety`(@TempDir tempDir: Path) {
+        // Given: Jenkins project
+        Files.createFile(tempDir.resolve("Jenkinsfile"))
+
+        val context = createWorkspaceContext(tempDir, enabled = true)
+        val config = resolver.resolve(context)
+
+        // Then: Ruleset should mention CPS and safety
+        assertNotNull(config.rulesetContent)
+        assertTrue(
+            config.rulesetContent.contains("CPS") ||
+                config.rulesetContent.contains("Jenkins"),
+            "Jenkins ruleset should reference CPS (Continuation Passing Style) safety.",
+        )
+
+        // And: Should focus on breaking issues, not style
+        assertTrue(
+            config.rulesetContent.contains("break") ||
+                config.rulesetContent.contains("critical") ||
+                config.rulesetContent.contains("safety"),
+            "Ruleset description should emphasize preventing runtime breakage.",
+        )
+    }
+
     // Helper functions
 
     private fun createWorkspaceContext(
