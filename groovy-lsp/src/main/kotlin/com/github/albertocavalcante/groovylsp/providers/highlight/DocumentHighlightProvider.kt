@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -217,7 +218,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
     /**
      * Compare two Parameters for equality, including scope check.
-     * Uses the enclosing method of the reference node to verify parameters are in the same scope.
+     * Uses the enclosing parameter scope (method or closure) to verify parameters are in the same scope.
      */
     private fun areParametersEqual(
         p1: Parameter,
@@ -227,19 +228,25 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     ): Boolean {
         if (p1.name != p2.name) return false
 
-        // Find the method containing the reference (VariableExpression)
-        val method = findEnclosingMethod(referenceNode, astModel)
-        if (method == null) {
-            logger.debug("Parameter scope check: method not found for ${p1.name}")
+        // Find the scope containing the reference (method or closure)
+        val scope = findEnclosingParameterScope(referenceNode, astModel)
+        if (scope == null) {
+            logger.debug("Parameter scope check: scope not found for ${p1.name}")
             return false
         }
 
-        // Check if both parameters belong to this method
-        val methodParams = method.parameters?.toList() ?: emptyList()
-        val p1InMethod = methodParams.any { it.name == p1.name && isSameParameter(it, p1) }
-        val p2InMethod = methodParams.any { it.name == p2.name && isSameParameter(it, p2) }
+        // Get parameters from the scope (either MethodNode or ClosureExpression)
+        val scopeParams = when (scope) {
+            is MethodNode -> scope.parameters?.toList() ?: emptyList()
+            is ClosureExpression -> scope.parameters?.toList() ?: emptyList()
+            else -> emptyList()
+        }
 
-        return p1InMethod && p2InMethod
+        // Check if both parameters belong to this scope
+        val p1InScope = scopeParams.any { it.name == p1.name && isSameParameter(it, p1) }
+        val p2InScope = scopeParams.any { it.name == p2.name && isSameParameter(it, p2) }
+
+        return p1InScope && p2InScope
     }
 
     /**
@@ -258,11 +265,18 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         return false
     }
 
-    private fun findEnclosingMethod(node: ASTNode, astModel: GroovyAstModel): MethodNode? {
+    /**
+     * Find the enclosing scope that can have parameters (MethodNode or ClosureExpression).
+     * Closures are checked first since they're more immediate scopes for closure parameters.
+     */
+    private fun findEnclosingParameterScope(node: ASTNode, astModel: GroovyAstModel): ASTNode? {
         var current: ASTNode? = node
-        while (current != null && current !is MethodNode) {
+        while (current != null) {
+            if (current is ClosureExpression || current is MethodNode) {
+                return current
+            }
             current = astModel.getParent(current)
         }
-        return current as? MethodNode
+        return null
     }
 }
