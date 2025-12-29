@@ -6,6 +6,7 @@
     "vscode": "^1.100.0"
   },
   "dependencies": {
+    "jdk-utils": "^0.6.0",
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.5"
   },

@@ -6,7 +6,7 @@ import {
     ServerOptions,
     State
 } from 'vscode-languageclient/node';
-import { validateJava, showJavaError } from '../java/validator';
+import { validateJava, showJavaError, getJavaExecutable } from '../java/validator';
 import { setClient } from '../ui/statusBar';
 import { getConfiguration } from '../configuration/settings';
 import { ServerResolver } from '../services/ServerResolver';
@@ -84,7 +84,7 @@ async function createServerOptions(): Promise<ServerOptions> {
         throw new Error(`Java validation failed: ${javaValidation.error}`);
     }
 
-    const javaExecutable = javaValidation.path!;
+    const javaExecutable = getJavaExecutable(javaValidation.resolution);
 
     // Server launch options
     const serverOptions: ServerOptions = {
