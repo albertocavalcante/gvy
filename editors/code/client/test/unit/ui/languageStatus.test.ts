@@ -163,6 +163,40 @@ describe('LanguageStatus', () => {
             assert.include(serverStatusItemStub.detail, 'Analyzing files');
         });
 
+        it('should show file counts during indexing', () => {
+            const manager = languageStatusModule.createLanguageStatusManager();
+            manager.updateServerStatus('indexing', 'unknown', undefined, 25, 100);
+
+            // Should show file counts in text
+            assert.include(serverStatusItemStub.text, '25/100');
+            // Should show detailed progress in detail
+            assert.include(serverStatusItemStub.detail, 'Indexing 25 of 100 files');
+        });
+
+        it('should show percentage during indexing', () => {
+            const manager = languageStatusModule.createLanguageStatusManager();
+            manager.updateServerStatus('indexing', 'unknown', undefined, 50, 100);
+
+            // Should show percentage in detail
+            assert.include(serverStatusItemStub.detail, '50%');
+        });
+
+        it('should handle zero filesTotal during indexing', () => {
+            const manager = languageStatusModule.createLanguageStatusManager();
+            manager.updateServerStatus('indexing', 'unknown', undefined, 0, 0);
+
+            // Should fall back to generic indexing text
+            assert.include(serverStatusItemStub.text, 'Indexing');
+            assert.notInclude(serverStatusItemStub.text, '/');
+        });
+
+        it('should use message when no file counts provided', () => {
+            const manager = languageStatusModule.createLanguageStatusManager();
+            manager.updateServerStatus('indexing', 'unknown', 'Custom indexing message');
+
+            assert.include(serverStatusItemStub.detail, 'Custom indexing message');
+        });
+
         it('should update text for ready state with version', () => {
             const manager = languageStatusModule.createLanguageStatusManager();
             manager.updateServerStatus('ready', '0.4.8');
