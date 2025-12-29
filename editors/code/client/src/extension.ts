@@ -6,7 +6,7 @@
 import * as vscode from "vscode";
 import { initializeClient, startClient, stopClient, getClient } from "./server/client";
 import { registerStatusBarItem, getStatusBarManager } from "./ui/statusBar";
-import { createLanguageStatusManager, disposeLanguageStatusManager, getLanguageStatusManager } from "./ui/languageStatus";
+import { createLanguageStatusManager, disposeLanguageStatusManager } from "./ui/languageStatus";
 import { registerCommands, initializeUpdateService, setServerOutputChannel } from "./commands";
 import { setupConfigurationWatcher } from "./configuration/watcher";
 import { getUpdateConfiguration } from "./configuration/settings";
@@ -44,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
         getStatusBarManager()?.setOutputChannel(serverOutputChannel);
 
         // Create Language Status Items for rich status display
-        const languageStatusManager = createLanguageStatusManager();
+        createLanguageStatusManager();
         context.subscriptions.push({ dispose: () => disposeLanguageStatusManager() });
 
         // Register commands
