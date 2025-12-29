@@ -312,9 +312,9 @@ object JsonExpectationEvaluator {
     }
 
     private fun isEmpty(actual: JsonElement?): Boolean = actual == null || actual is JsonNull ||
-            (actual is JsonPrimitive && actual.isString && actual.content.isEmpty()) ||
-            (actual is JsonArray && actual.isEmpty()) ||
-            (actual is JsonObject && actual.isEmpty())
+        (actual is JsonPrimitive && actual.isString && actual.content.isEmpty()) ||
+        (actual is JsonArray && actual.isEmpty()) ||
+        (actual is JsonObject && actual.isEmpty())
 
     private fun isGreaterThanOrEqual(actual: JsonElement?, expected: JsonElement?): Boolean {
         if (actual == null || expected == null) return false

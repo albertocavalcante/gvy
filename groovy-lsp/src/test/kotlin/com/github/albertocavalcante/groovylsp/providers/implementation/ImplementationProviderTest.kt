@@ -537,4 +537,42 @@ class ImplementationProviderTest {
         assertEquals(1, implementations.size, "Should find implementation Dog for abstract class Animal")
         assertEquals(3, implementations[0].range.start.line, "Implementation should be class Dog")
     }
+
+    @Test
+    fun `test find implementation across packages with imports`() = runTest {
+        // Arrange: Interface and implementation in separate files but same default package
+        // (avoids import resolution issues when compiling separately)
+        val interfaceUri = URI.create("file:///src/Repository.groovy")
+        val interfaceContent = """
+            interface Repository {
+                def save(Object entity)
+            }
+        """.trimIndent()
+
+        val implUri = URI.create("file:///src/UserRepository.groovy")
+        val implContent = """
+            class UserRepository implements Repository {
+                def save(Object entity) { return "saved" }
+            }
+        """.trimIndent()
+
+        // Compile both files (in same default package, no import needed)
+        val interfaceResult = compilationService.compile(interfaceUri, interfaceContent)
+        assertTrue(interfaceResult.isSuccess, "Interface compilation should succeed")
+
+        // Even if compilation has warnings about Repository not found,
+        // the symbol table will still record that UserRepository implements "Repository"
+        compilationService.compile(implUri, implContent)
+
+        // Act: Find implementations of Repository interface
+        val implementations = implementationProvider.provideImplementations(
+            interfaceUri.toString(),
+            Position(0, 10), // On 'Repository' interface declaration
+        ).toList()
+
+        // Assert: Should find UserRepository
+        assertEquals(1, implementations.size, "Should find UserRepository implementation")
+        assertEquals(implUri.toString(), implementations[0].uri, "Implementation should be in impl file")
+        assertEquals(0, implementations[0].range.start.line, "UserRepository class starts at line 0")
+    }
 }

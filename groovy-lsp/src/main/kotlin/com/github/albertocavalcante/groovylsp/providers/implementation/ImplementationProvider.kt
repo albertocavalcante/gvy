@@ -257,7 +257,8 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
     private fun hasInterfaceTransitive(current: ClassNode, targetName: String, visited: MutableSet<String>): Boolean {
         if (!visited.add(current.name)) return false
 
-        if (current.name == targetName) return true
+        // Hybrid matching: try FQN first, then simple name fallback
+        if (matchesName(current.name, targetName)) return true
 
         // Check implemented interfaces
         for (iface in current.interfaces) {
@@ -271,6 +272,21 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         }
 
         return false
+    }
+
+    /**
+     * Matches names using hybrid approach:
+     * 1. Exact FQN match
+     * 2. Simple name match (fallback for unresolved imports)
+     */
+    private fun matchesName(candidateName: String, targetName: String): Boolean {
+        // Exact FQN match
+        if (candidateName == targetName) return true
+
+        // Simple name match (extract simple name from both)
+        val candidateSimple = candidateName.substringAfterLast('.')
+        val targetSimple = targetName.substringAfterLast('.')
+        return candidateSimple == targetSimple
     }
 
     /**
