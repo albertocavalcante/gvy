@@ -31,3 +31,6 @@ include("jupyter:kernels:groovy")
 include("jupyter:kernels:jenkins")
 include("groovy-repl")
 include("tools:jenkins-extractor")
+
+// Standalone GroovyParser library (JavaParser-inspired API)
+include("groovyparser-core")
