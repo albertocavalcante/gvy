@@ -38,6 +38,12 @@ private const val POLLING_INTERVAL_MS = 100L
 private const val MILLIS_PER_SECOND = 1000L
 
 /**
+ * Callback type for status updates.
+ * Parameters: health, quiescent, message, filesIndexed, filesTotal
+ */
+typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?) -> Unit
+
+/**
  * Manages project startup lifecycle: dependency resolution, file watching, and indexing.
  * De-clutters the main LanguageServer class.
  */
@@ -111,6 +117,8 @@ class ProjectStartupManager(
 
     /**
      * Starts async dependency resolution and subsequent indexing.
+     *
+     * @param onStatusUpdate Callback for status notifications (follows rust-analyzer pattern)
      */
     @Suppress("TooGenericExceptionCaught")
     fun startAsyncDependencyResolution(
@@ -118,21 +126,20 @@ class ProjectStartupManager(
         initParams: InitializeParams?,
         initOptionsMap: Map<String, Any>?,
         textDocumentServiceRefresh: () -> Unit,
-        onReady: () -> Unit = {},
-        onError: (Exception) -> Unit = {},
+        onStatusUpdate: StatusUpdateCallback = { _, _, _, _, _ -> },
     ) {
         val config = ServerConfiguration.fromMap(initOptionsMap)
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
             updateGroovyVersion(config, emptyList())
-            onReady() // Still signal Ready to prevent clients from hanging
+            onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null)
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info("No workspace root found - running in light mode without dependencies")
             updateGroovyVersion(config, emptyList())
-            onReady() // Still signal Ready in light mode
+            onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null)
             return
         }
 
@@ -140,6 +147,10 @@ class ProjectStartupManager(
         logger.info(
             "Client connection status: ${if (client != null) "connected" else "NULL - notifications will not be sent"}",
         )
+
+        // Send resolving deps status
+        onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null)
+
         if (client != null) {
             logger.info("Sending 'Resolving build dependencies' notification to client")
             client.showMessage(
@@ -159,16 +170,16 @@ class ProjectStartupManager(
 
         dependencyManager.startAsyncResolution(
             workspaceRoot = workspaceRoot,
-            onProgress = createProgressCallback(progressReporter, client),
+            onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
             onComplete = createCompletionCallback(
                 workspaceRoot,
                 config,
                 textDocumentServiceRefresh,
                 progressReporter,
                 client,
-                onReady,
+                onStatusUpdate,
             ),
-            onError = createErrorCallback(progressReporter, client, config, onError),
+            onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
         )
 
         progressReporter.startDependencyResolution()
@@ -195,8 +206,11 @@ class ProjectStartupManager(
     private fun createProgressCallback(
         progressReporter: ProgressReporter,
         client: LanguageClient?,
+        onStatusUpdate: StatusUpdateCallback,
     ): (Int, String) -> Unit = { percentage, message ->
         progressReporter.updateProgress(message, percentage)
+        // Send status update for dependency resolution progress
+        onStatusUpdate(Health.Ok, false, message, null, null)
         if (message.contains("Downloading Gradle distribution")) {
             client?.showMessage(
                 MessageParams().apply {
@@ -213,7 +227,7 @@ class ProjectStartupManager(
         textDocumentServiceRefresh: () -> Unit,
         progressReporter: ProgressReporter,
         client: LanguageClient?,
-        onReady: () -> Unit,
+        onStatusUpdate: StatusUpdateCallback,
     ): (WorkspaceResolution) -> Unit = { resolution ->
         logger.info(
             "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
@@ -245,17 +259,14 @@ class ProjectStartupManager(
             logger.warn("Cannot send completion showMessage - client is null")
         }
 
-        startWorkspaceIndexing(client)
-
-        // Signal that server is ready after dependency resolution and indexing starts
-        onReady()
+        startWorkspaceIndexing(client, onStatusUpdate)
     }
 
     private fun createErrorCallback(
         progressReporter: ProgressReporter,
         client: LanguageClient?,
         config: ServerConfiguration,
-        onError: (Exception) -> Unit,
+        onStatusUpdate: StatusUpdateCallback,
     ): (Exception) -> Unit = { error ->
         logger.error("Failed to resolve dependencies", error)
         updateGroovyVersion(config, emptyList())
@@ -266,7 +277,8 @@ class ProjectStartupManager(
                 message = "Could not load build dependencies - LSP will work with project files only"
             },
         )
-        onError(error)
+        // Signal warning state but still quiescent (ready for requests, but degraded)
+        onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
     }
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
@@ -292,32 +304,44 @@ class ProjectStartupManager(
         return WorkerRouterFactory.fromConfig(config)
     }
 
-    private fun startWorkspaceIndexing(client: LanguageClient?) {
+    private fun startWorkspaceIndexing(client: LanguageClient?, onStatusUpdate: StatusUpdateCallback) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             logger.debug("No workspace sources to index")
+            // No files to index, signal ready
+            onStatusUpdate(Health.Ok, true, "Ready", null, null)
             return
         }
 
-        logger.info("Starting workspace indexing: ${sourceUris.size} files")
+        val total = sourceUris.size
+        logger.info("Starting workspace indexing: $total files")
+
+        // Send initial indexing status with file counts
+        onStatusUpdate(Health.Ok, false, "Indexing $total files...", 0, total)
 
         val indexingProgressReporter = ProgressReporter(client)
         indexingProgressReporter.startDependencyResolution(
             title = "Indexing workspace",
-            initialMessage = "Indexing ${sourceUris.size} Groovy files...",
+            initialMessage = "Indexing $total Groovy files...",
         )
 
         coroutineScope.launch(indexingDispatcher) {
             try {
-                compilationService.indexAllWorkspaceSources(sourceUris) { indexed, total ->
-                    val percentage = if (total > 0) (indexed * PERCENTAGE_MULTIPLIER / total) else 0
-                    indexingProgressReporter.updateProgress("Indexed $indexed/$total files", percentage)
+                compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
+                    val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
+                    indexingProgressReporter.updateProgress("Indexed $indexed/$totalFiles files", percentage)
+                    // Send status update with file counts for every file (can be throttled if needed)
+                    onStatusUpdate(Health.Ok, false, "Indexing $indexed/$totalFiles files", indexed, totalFiles)
                 }
-                indexingProgressReporter.complete("✅ Indexed ${sourceUris.size} files")
-                logger.info("Workspace indexing complete: ${sourceUris.size} files")
+                indexingProgressReporter.complete("✅ Indexed $total files")
+                logger.info("Workspace indexing complete: $total files")
+                // Signal ready after indexing completes
+                onStatusUpdate(Health.Ok, true, "Ready", total, total)
             } catch (e: Exception) {
                 logger.error("Workspace indexing failed", e)
                 indexingProgressReporter.completeWithError("Failed to index workspace: ${e.message}")
+                // Signal warning state but still quiescent
+                onStatusUpdate(Health.Warning, true, "Indexing failed: ${e.message}", null, null)
             }
         }
     }

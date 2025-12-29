@@ -39,11 +39,17 @@ export class LanguageStatusManager implements vscode.Disposable {
     /**
      * Updates the server status display
      */
-    updateServerStatus(state: ServerState, version: string, message?: string): void {
+    updateServerStatus(
+        state: ServerState,
+        version: string,
+        message?: string,
+        filesIndexed?: number,
+        filesTotal?: number
+    ): void {
         this.serverState = state;
         this.serverVersion = version;
 
-        const { text, detail, severity } = this.getServerStatusDisplay(state, message);
+        const { text, detail, severity } = this.getServerStatusDisplay(state, message, filesIndexed, filesTotal);
         this.serverStatusItem.text = text;
         this.serverStatusItem.detail = detail;
         this.serverStatusItem.severity = severity;
@@ -70,7 +76,12 @@ export class LanguageStatusManager implements vscode.Disposable {
     /**
      * Gets the display properties for a server state
      */
-    private getServerStatusDisplay(state: ServerState, message?: string): {
+    private getServerStatusDisplay(
+        state: ServerState,
+        message?: string,
+        filesIndexed?: number,
+        filesTotal?: number
+    ): {
         text: string;
         detail: string;
         severity: vscode.LanguageStatusSeverity;
@@ -94,12 +105,24 @@ export class LanguageStatusManager implements vscode.Disposable {
                     detail: message || 'Resolving project dependencies...',
                     severity: vscode.LanguageStatusSeverity.Information,
                 };
-            case 'indexing':
+            case 'indexing': {
+                // Show file counts if available
+                let indexingText = '$(loading~spin) Indexing';
+                let indexingDetail = message || 'Analyzing source files...';
+
+                if (filesTotal !== undefined && filesTotal > 0) {
+                    const indexed = filesIndexed ?? 0;
+                    const pct = Math.round((indexed / filesTotal) * 100);
+                    indexingText = `$(loading~spin) ${indexed}/${filesTotal}`;
+                    indexingDetail = `Indexing ${indexed} of ${filesTotal} files (${pct}%)`;
+                }
+
                 return {
-                    text: '$(loading~spin) Indexing',
-                    detail: message || 'Analyzing source files...',
+                    text: indexingText,
+                    detail: indexingDetail,
                     severity: vscode.LanguageStatusSeverity.Information,
                 };
+            }
             case 'ready':
                 return {
                     text: `$(pass-filled) v${this.serverVersion}`,
