@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast.body
 
 import com.github.albertocavalcante.groovyparser.ast.Node
+import com.github.albertocavalcante.groovyparser.ast.stmt.Statement
 
 /**
  * Represents a method declaration.
@@ -9,6 +10,13 @@ class MethodDeclaration(val name: String, val returnType: String) : Node() {
 
     /** Method parameters */
     val parameters: MutableList<Parameter> = mutableListOf()
+
+    /** The method body (null for abstract methods) */
+    var body: Statement? = null
+        internal set(value) {
+            field = value
+            setAsParentNodeOf(value)
+        }
 
     /** Whether this method is static */
     var isStatic: Boolean = false
@@ -27,7 +35,12 @@ class MethodDeclaration(val name: String, val returnType: String) : Node() {
         setAsParentNodeOf(parameter)
     }
 
-    override fun getChildNodes(): List<Node> = parameters.toList()
+    override fun getChildNodes(): List<Node> {
+        val children = mutableListOf<Node>()
+        children.addAll(parameters)
+        body?.let { children.add(it) }
+        return children
+    }
 
     override fun toString(): String {
         val staticStr = if (isStatic) "static " else ""
