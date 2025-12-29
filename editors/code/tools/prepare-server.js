@@ -675,7 +675,7 @@ async function prepareServer(runtimeOptions = {}) {
     const effectiveBuildLocal = buildLocal || autoBuildLocal;
 
     if (autoPreferLocal) {
-      console.log("📦 Monorepo detected - will use local build" + (autoBuildLocal ? " (auto-build enabled)" : ""));
+      console.log(`📦 Monorepo detected - will use local build${autoBuildLocal ? " (auto-build enabled)" : ""}`);
     }
 
     // Hard local override (highest precedence)
