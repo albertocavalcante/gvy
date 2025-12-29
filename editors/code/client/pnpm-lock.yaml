@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      jdk-utils:
+        specifier: ^0.6.0
+        version: 0.6.0
       vscode-languageclient:
         specifier: ^9.0.1
         version: 9.0.1
@@ -370,6 +373,10 @@ packages:
   jackspeak@4.1.1:
     resolution: {integrity: sha512-zptv57P3GpL+O0I7VdMJNBZCu+BPHVQUk55Ft8/QCJjTVxrnJHuVuX/0Bl2A6/+2oyR/ZMEuFKwmzqqZ/U5nPQ==}
     engines: {node: 20 || >=22}
+
+  jdk-utils@0.6.0:
+    resolution: {integrity: sha512-/CHgo6Q5xyfW/+vWXLz7cAb+iwIye3mNo7SV8UTHsbLhRykk+N7LzKXRlCvdeoblyuTrA8pb00iZX8De3txvWQ==}
+    hasBin: true
 
   js-yaml@4.1.1:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
@@ -967,6 +974,8 @@ snapshots:
   jackspeak@4.1.1:
     dependencies:
       '@isaacs/cliui': 8.0.2
+
+  jdk-utils@0.6.0: {}
 
   js-yaml@4.1.1:
     dependencies:
