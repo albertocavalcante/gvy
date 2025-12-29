@@ -188,6 +188,13 @@ sealed class Symbol {
         val fullyQualifiedName: String
             get() = if (packageName?.isNotEmpty() == true) "$packageName.$name" else name
 
+        /**
+         * Fully qualified names of implemented interfaces.
+         * Uses ClassNode.name which should contain FQN after import resolution.
+         */
+        val interfaceNames: List<String>
+            get() = interfaces.map { it.name }
+
         companion object {
             fun from(classNode: ClassNode, uri: URI): Class = Class(
                 name = classNode.nameWithoutPackage,

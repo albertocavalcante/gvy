@@ -157,4 +157,41 @@ class SymbolExtractionTest {
         // Assert - Should handle missing URIs gracefully
         assertNull(symbols, "Should return null for non-existent URI in empty storage")
     }
+
+    @Test
+    fun `test class interfaceNames contains FQN for imported interfaces`() {
+        // Arrange - Class implements interface from different package via import
+        val content = """
+            package impls
+            
+            import interfaces.Repository
+            
+            class UserRepository implements Repository {
+                def save(Object entity) { return "saved" }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///src/impls/UserRepository.groovy")
+
+        // Act
+        val result = parser.parse(ParseRequest(uri = uri, content = content))
+        val visitor = result.astModel
+        assertNotNull(visitor, "Should have AST model")
+
+        val symbolIndex = SymbolIndex().buildFromVisitor(visitor)
+
+        // Find the UserRepository class symbol
+        val allSymbols = symbolIndex.symbols[uri] ?: persistentListOf()
+        val classSymbols = allSymbols.filterIsInstance<Symbol.Class>()
+        val userRepoSymbol = classSymbols.find { it.name == "UserRepository" }
+
+        // Assert
+        assertNotNull(userRepoSymbol, "Should find UserRepository class symbol")
+
+        // Key assertion: interfaceNames should contain FQN, not simple name
+        assertTrue(
+            userRepoSymbol!!.interfaceNames.contains("interfaces.Repository"),
+            "interfaceNames should contain FQN 'interfaces.Repository', but was: ${userRepoSymbol.interfaceNames}",
+        )
+    }
 }

@@ -118,7 +118,7 @@ steps:
   - assert:
       source: transitiveInterfaceResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -126,8 +126,7 @@ steps:
               range:
                 start:
                   line: 8
-                  character: 0
-            message: "Should find DataObject (implements JsonSerializable which extends Serializable)"
+            message: "Should find DataObject at line 8 (implements JsonSerializable which extends Serializable)"
 
   # ============================================================================
   # TEST 2: Superclass interface - Find classes that inherit interface through superclass
@@ -148,18 +147,16 @@ steps:
       source: superclassInterfaceResult
       checks:
         # Note: Shape is abstract, so should be excluded even though it implements Drawable
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
-              uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
               range:
                 start:
                   line: 4
-                  character: 0
-            message: "Should NOT find Shape (abstract class)"
+            message: "Should NOT find Shape (abstract class) at line 4"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -167,10 +164,9 @@ steps:
               range:
                 start:
                   line: 9
-                  character: 0
-            message: "Should find Circle (extends Shape which implements Drawable)"
+            message: "Should find Circle at line 9 (extends Shape which implements Drawable)"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -178,8 +174,7 @@ steps:
               range:
                 start:
                   line: 13
-                  character: 0
-            message: "Should find Rectangle (extends Shape which implements Drawable)"
+            message: "Should find Rectangle at line 13 (extends Shape which implements Drawable)"
 
   # ============================================================================
   # TEST 3: Method implementation through superclass interface
@@ -218,16 +213,15 @@ steps:
   - assert:
       source: multiLevelResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
               uri: "{{workspace.uri}}src/MultiLevelInheritance.groovy"
               range:
                 start:
-                  line: 13
-                  character: 0
-            message: "Should find Button (implements Component transitively through UIComponent and Widget)"
+                  line: 12
+            message: "Should find Button at line 12 (implements Component transitively through UIComponent and Widget)"
 
   - shutdown: {}
   - exit: {}

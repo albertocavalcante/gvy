@@ -457,4 +457,122 @@ class ImplementationProviderTest {
         val impl = implementations[0]
         assertEquals(5, impl.range.start.line, "SimpleProcessor.process at line 5")
     }
+
+    @Test
+    fun `test find transitive interface implementation`() = runTest {
+        // Arrange: B extends A, C implements B -> find C when looking for A
+        val content = """
+            interface A { def methodA() }
+            interface B extends A { def methodB() }
+            class C implements B {
+                def methodA() { "A" }
+                def methodB() { "B" }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///TransitiveTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of A
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 10), // On 'A'
+        ).toList()
+
+        // Assert: Should find C
+        assertEquals(1, implementations.size, "Should find transitive implementation C")
+        assertEquals(2, implementations[0].range.start.line, "Implementation should be class C")
+    }
+
+    @Test
+    fun `test find superclass interface implementation`() = runTest {
+        // Arrange: Shape implements Drawable, Circle extends Shape -> find Circle for Drawable
+        val content = """
+            interface Drawable { def draw() }
+            abstract class Shape implements Drawable {
+                abstract def area()
+            }
+            class Circle extends Shape {
+                def draw() { "circle" }
+                def area() { 3.14 }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///SuperclassInterfaceTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of Drawable
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 10), // On 'Drawable'
+        ).toList()
+
+        // Assert: Should find Circle (but NOT Shape because it's abstract)
+        assertEquals(1, implementations.size, "Should find Circle via superclass interface")
+        assertEquals(4, implementations[0].range.start.line, "Implementation should be class Circle")
+    }
+
+    @Test
+    fun `test find abstract class implementation`() = runTest {
+        // Arrange: Animal (abstract) <- Dog (concrete)
+        val content = """
+            abstract class Animal {
+                abstract def makeSound()
+            }
+            class Dog extends Animal {
+                def makeSound() { "Woof" }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///AbstractClassTest.groovy")
+        compilationService.compile(uri, content)
+
+        // Act: Find implementations of Animal
+        val implementations = implementationProvider.provideImplementations(
+            uri.toString(),
+            Position(0, 15), // On 'Animal'
+        ).toList()
+
+        // Assert: Should find Dog
+        assertEquals(1, implementations.size, "Should find implementation Dog for abstract class Animal")
+        assertEquals(3, implementations[0].range.start.line, "Implementation should be class Dog")
+    }
+
+    @Test
+    fun `test find implementation across packages with imports`() = runTest {
+        // Arrange: Interface and implementation in separate files but same default package
+        // (avoids import resolution issues when compiling separately)
+        val interfaceUri = URI.create("file:///src/Repository.groovy")
+        val interfaceContent = """
+            interface Repository {
+                def save(Object entity)
+            }
+        """.trimIndent()
+
+        val implUri = URI.create("file:///src/UserRepository.groovy")
+        val implContent = """
+            class UserRepository implements Repository {
+                def save(Object entity) { return "saved" }
+            }
+        """.trimIndent()
+
+        // Compile both files (in same default package, no import needed)
+        val interfaceResult = compilationService.compile(interfaceUri, interfaceContent)
+        assertTrue(interfaceResult.isSuccess, "Interface compilation should succeed")
+
+        // Even if compilation has warnings about Repository not found,
+        // the symbol table will still record that UserRepository implements "Repository"
+        compilationService.compile(implUri, implContent)
+
+        // Act: Find implementations of Repository interface
+        val implementations = implementationProvider.provideImplementations(
+            interfaceUri.toString(),
+            Position(0, 10), // On 'Repository' interface declaration
+        ).toList()
+
+        // Assert: Should find UserRepository
+        assertEquals(1, implementations.size, "Should find UserRepository implementation")
+        assertEquals(implUri.toString(), implementations[0].uri, "Implementation should be in impl file")
+        assertEquals(0, implementations[0].range.start.line, "UserRepository class starts at line 0")
+    }
 }

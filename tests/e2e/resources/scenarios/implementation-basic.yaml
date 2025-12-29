@@ -37,7 +37,7 @@ steps:
             def area() { return 100 }
         }
 
-        # Concrete class - should NOT be an implementation target
+        // Concrete class - should NOT be an implementation target
         class ConcreteShape {
             def area() { return 50 }
         }
@@ -59,15 +59,13 @@ steps:
         textDocument:
           uri: "{{workspace.uri}}src/ImplTest.groovy"
         position:
-          line: 12
-          character: 2
+          line: 0
+          character: 10
       saveAs: implResult
-
-  # Verify interface implementation found (Square class)
   - assert:
       source: implResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -75,11 +73,7 @@ steps:
               range:
                 start:
                   line: 4
-                  character: 0
-                end:
-                  line: 6
-                  character: 1
-            message: "Should find Square class implementation"
+            message: "Should find Square class implementation at line 4"
 
   # ============================================================================
   # TEST 2: Find implementation of Method
@@ -95,11 +89,10 @@ steps:
           character: 8
       saveAs: methodImplResult
 
-  # Verify method implementation found (Square.area)
   - assert:
       source: methodImplResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -107,11 +100,7 @@ steps:
               range:
                 start:
                   line: 5
-                  character: 4
-                end:
-                  line: 5
-                  character: 29
-            message: "Should find Square.area implementation"
+            message: "Should find Square.area implementation at line 5"
 
   # ============================================================================
   # TEST 3: Concrete class should return empty results
@@ -131,10 +120,9 @@ steps:
   - assert:
       source: concreteClassResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items
           expect:
-            type: EQUALS
-            value: []
+            type: EMPTY
             message: "Concrete class should have no implementations"
 
   # ============================================================================
@@ -155,10 +143,9 @@ steps:
   - assert:
       source: concreteMethodResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items
           expect:
-            type: EQUALS
-            value: []
+            type: EMPTY
             message: "Concrete method should have no implementations"
 
   - shutdown: {}

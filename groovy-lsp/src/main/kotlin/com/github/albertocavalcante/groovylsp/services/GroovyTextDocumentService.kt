@@ -486,7 +486,10 @@ class GroovyTextDocumentService(
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    private val implementationProvider by lazy {
+        ImplementationProvider(compilationService)
+    }
+
     override fun implementation(
         params: ImplementationParams,
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
@@ -503,7 +506,6 @@ class GroovyTextDocumentService(
                 return@future Either.forLeft(emptyList())
             }
 
-            val implementationProvider = ImplementationProvider(compilationService)
             val locations = implementationProvider.provideImplementations(
                 params.textDocument.uri,
                 params.position,
