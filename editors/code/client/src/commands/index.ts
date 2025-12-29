@@ -42,8 +42,12 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
 
     // Register stop server command
     const stopServerCommand = commands.registerCommand('groovy.stopServer', async () => {
-        await stopClient();
-        window.showInformationMessage('Groovy Language Server stopped');
+        try {
+            await stopClient();
+            window.showInformationMessage('Groovy Language Server stopped');
+        } catch (error) {
+            window.showErrorMessage(`Failed to stop server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     });
     disposables.push(stopServerCommand);
 

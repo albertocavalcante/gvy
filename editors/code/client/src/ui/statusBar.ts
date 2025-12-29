@@ -63,6 +63,7 @@ export class StatusBarManager implements vscode.Disposable {
     private outputChannel: vscode.OutputChannel | undefined;
 
     private disposables: vscode.Disposable[] = [];
+    private clientDisposables: vscode.Disposable[] = [];
 
     constructor(extensionVersion: string) {
         this.extensionVersion = extensionVersion;
@@ -173,11 +174,9 @@ export class StatusBarManager implements vscode.Disposable {
      * Sets the Language Client and subscribes to its events
      */
     setClient(client: LanguageClient | undefined): void {
-        // Clean up previous subscriptions
-        this.disposables
-            .filter(d => d !== this.statusBarItem)
-            .forEach(d => d.dispose());
-        this.disposables = this.disposables.filter(d => d === this.statusBarItem);
+        // Clean up previous client subscriptions
+        this.clientDisposables.forEach(d => d.dispose());
+        this.clientDisposables = [];
 
         this.currentClient = client;
         this.currentState = 'stopped';
@@ -186,7 +185,7 @@ export class StatusBarManager implements vscode.Disposable {
 
         if (this.currentClient) {
             // Listen for state changes
-            this.disposables.push(
+            this.clientDisposables.push(
                 this.currentClient.onDidChangeState((event) => {
                     this.updateStateFromClient(event.newState);
                     this.updateView();
@@ -194,7 +193,7 @@ export class StatusBarManager implements vscode.Disposable {
             );
 
             // Listen for progress notifications
-            this.disposables.push(
+            this.clientDisposables.push(
                 this.setupProgressHandling(this.currentClient)
             );
         }
@@ -465,6 +464,7 @@ export class StatusBarManager implements vscode.Disposable {
     dispose(): void {
         this.statusBarItem.dispose();
         this.disposables.forEach(d => d.dispose());
+        this.clientDisposables.forEach(d => d.dispose());
     }
 }
 
@@ -557,8 +557,7 @@ export async function showStatusMenu(manager: StatusBarManager): Promise<void> {
     items.push({
         label: '$(github) Report Issue',
         description: 'Report a bug or request a feature',
-        command: 'vscode.open',
-        args: ['https://github.com/albertocavalcante/gvy/issues/new'],
+        command: 'groovy.reportIssue',
     });
 
     // Show the quick pick

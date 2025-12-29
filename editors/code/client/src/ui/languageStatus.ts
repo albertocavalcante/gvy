@@ -208,14 +208,6 @@ export class LanguageStatusManager implements vscode.Disposable {
         }
     }
 
-    /**
-     * Hides all status items (e.g., when no Groovy files are open)
-     */
-    hideAll(): void {
-        // Language status items are automatically hidden when no matching documents are open
-        // This method is for explicit hiding if needed
-    }
-
     dispose(): void {
         this.serverStatusItem.dispose();
         this.javaRuntimeItem?.dispose();

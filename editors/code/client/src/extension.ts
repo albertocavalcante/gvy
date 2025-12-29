@@ -28,7 +28,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     try {
         // Get extension version for status bar
-        const extensionVersion = context.extension.packageJSON.version as string;
+        const extensionVersion = (context.extension.packageJSON.version as string) || 'unknown';
 
         // Initialize the LSP client with context
         initializeClient(context);
