@@ -148,15 +148,39 @@ function parseArgs(argv = []) {
 }
 
 /**
+ * Walks up the directory tree to find the monorepo root.
+ * Looks for groovy-lsp/build.gradle.kts as a marker.
+ * This approach is robust to directory structure changes.
+ * @returns {string|null} Path to monorepo root, or null if not found
+ */
+function findMonorepoRoot() {
+  let current = __dirname;
+  const root = path.parse(current).root;
+
+  while (current !== root) {
+    const marker = path.join(current, "groovy-lsp", "build.gradle.kts");
+    if (fs.existsSync(marker)) {
+      return current;
+    }
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+/**
  * Finds local Groovy LSP JAR file in common development locations
+ * @returns {string|null} Path to JAR file, or null if not found
  */
 function findLocalGroovyLspJar() {
+  // Find monorepo root by walking up directory tree (robust to refactoring)
+  const monorepoRoot = findMonorepoRoot();
+
   const searchPaths = [
     // 1. Environment variable override
     process.env.GLS_LOCAL_JAR,
 
-    // 2. Sibling directory (common for development)
-    path.join(__dirname, "..", "..", "groovy-lsp", "build", "libs"),
+    // 2. Monorepo sibling directory (most common for development)
+    monorepoRoot ? path.join(monorepoRoot, "groovy-lsp", "build", "libs") : null,
 
     // 3. Common workspace patterns
     path.join(
@@ -553,26 +577,15 @@ async function downloadRelease(target) {
  * @returns {boolean} True if groovy-lsp sibling directory exists
  */
 function detectMonorepoEnvironment() {
-  const toolsDir = __dirname; // /path/to/editors/code/tools
-  const extensionRoot = path.join(toolsDir, "..");
-  const monorepoRoot = path.join(extensionRoot, "..", "..");
-  const glsBuildFile = path.join(monorepoRoot, "groovy-lsp", "build.gradle.kts");
-
-  try {
-    return fs.existsSync(glsBuildFile);
-  } catch {
-    return false;
-  }
+  return findMonorepoRoot() !== null;
 }
 
 /**
  * Gets the monorepo root directory
- * @returns {string} Path to monorepo root
+ * @returns {string|null} Path to monorepo root, or null if not in monorepo
  */
 function getMonorepoRoot() {
-  const toolsDir = __dirname; // /path/to/editors/code/tools
-  const extensionRoot = path.join(toolsDir, "..");
-  return path.join(extensionRoot, "..", "..");
+  return findMonorepoRoot();
 }
 
 /**
