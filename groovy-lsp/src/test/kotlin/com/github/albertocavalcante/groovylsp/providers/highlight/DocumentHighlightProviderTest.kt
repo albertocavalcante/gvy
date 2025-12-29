@@ -318,6 +318,33 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
+    fun `test highlight method parameter referenced inside closure`() = runTest {
+        // Arrange - method parameter used inside a nested closure
+        val content = """
+            def method(x) {
+                def closure = { println x }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - highlight 'x' inside the closure
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(1, 28), // pointing at 'x' in println inside closure
+        )
+
+        // Assert - should find declaration (line 0) and usage inside closure (line 1)
+        assertEquals(2, highlights.size, "Should find 2 highlights for method param used in closure")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+        assertEquals(1, writes.size, "Should find 1 write (parameter declaration)")
+        assertEquals(1, reads.size, "Should find 1 read (usage inside closure)")
+    }
+
+    @Test
     fun `test highlight with bitwise compound assignments`() = runTest {
         // Arrange
         val content = """

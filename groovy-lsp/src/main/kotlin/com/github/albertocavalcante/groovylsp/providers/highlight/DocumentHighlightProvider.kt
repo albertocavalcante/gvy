@@ -15,7 +15,6 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
-import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -102,7 +101,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
                 val isMatch = when {
                     nodeDefinition == null -> false
                     nodeDefinition is Parameter && definition is Parameter ->
-                        areParametersEqual(nodeDefinition, definition, node, astModel)
+                        areParametersEqual(nodeDefinition, definition)
                     nodeDefinition == definition -> true
                     else -> false
                 }
@@ -217,46 +216,16 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     }
 
     /**
-     * Compare two Parameters for equality, including scope check.
-     * Uses the enclosing parameter scope (method or closure) to verify parameters are in the same scope.
-     */
-    private fun areParametersEqual(
-        p1: Parameter,
-        p2: Parameter,
-        referenceNode: ASTNode,
-        astModel: GroovyAstModel,
-    ): Boolean {
-        if (p1.name != p2.name) return false
-
-        // Find the scope containing the reference (method or closure)
-        val scope = findEnclosingParameterScope(referenceNode, astModel)
-        if (scope == null) {
-            logger.debug("Parameter scope check: scope not found for ${p1.name}")
-            return false
-        }
-
-        // Get parameters from the scope (either MethodNode or ClosureExpression)
-        val scopeParams = (
-            when (scope) {
-                is MethodNode -> scope.parameters
-                is ClosureExpression -> scope.parameters
-                else -> null
-            }
-            )?.toList() ?: emptyList()
-
-        // Check if both parameters belong to this scope
-        val p1InScope = scopeParams.any { it.name == p1.name && isSameParameter(it, p1) }
-        val p2InScope = scopeParams.any { it.name == p2.name && isSameParameter(it, p2) }
-
-        return p1InScope && p2InScope
-    }
-
-    /**
-     * Check if two Parameter instances refer to the same parameter.
+     * Compare two Parameters for equality.
+     *
      * Uses identity check first, then falls back to position comparison.
-     * Returns false if we can't reliably determine equality (conservative approach).
+     * Scope checking is unnecessary because:
+     * - Each method/closure has distinct Parameter objects
+     * - Groovy's accessedVariable correctly points to the owning scope's Parameter
+     * - Identity/position comparison is sufficient to distinguish same-named params
      */
-    private fun isSameParameter(p1: Parameter, p2: Parameter): Boolean {
+    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
+        if (p1.name != p2.name) return false
         // Identity check - same object reference
         if (p1 === p2) return true
         // Position comparison if both have valid positions
@@ -265,20 +234,5 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         }
         // Can't reliably determine - return false to avoid cross-scope matches
         return false
-    }
-
-    /**
-     * Find the enclosing scope that can have parameters (MethodNode or ClosureExpression).
-     * Closures are checked first since they're more immediate scopes for closure parameters.
-     */
-    private fun findEnclosingParameterScope(node: ASTNode, astModel: GroovyAstModel): ASTNode? {
-        var current: ASTNode? = node
-        while (current != null) {
-            if (current is ClosureExpression || current is MethodNode) {
-                return current
-            }
-            current = astModel.getParent(current)
-        }
-        return null
     }
 }
