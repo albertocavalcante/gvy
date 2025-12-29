@@ -80,10 +80,8 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
     }
 
     override fun isNonCps(node: Node): Boolean {
-        // In the custom AST, we don't have annotation info directly
-        // This would need to be checked against the native AST or via metadata
-        // For now, return false - subclasses can override with native AST access
-        return false
+        // Check for @NonCPS annotation using the Node.isNonCps helper
+        return node.isNonCps
     }
 
     private fun analyzeNode(node: Node, violations: MutableList<CpsViolation>, inClosure: Boolean) {
@@ -95,7 +93,10 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
                 node.methods.forEach { analyzeNode(it, violations, inClosure) }
             }
             is MethodDeclaration -> {
-                node.body?.let { analyzeNode(it, violations, inClosure) }
+                // Skip @NonCPS annotated methods - they don't need CPS analysis
+                if (!node.isNonCps) {
+                    node.body?.let { analyzeNode(it, violations, inClosure) }
+                }
             }
             is BlockStatement -> {
                 node.statements.forEach { analyzeNode(it, violations, inClosure) }
