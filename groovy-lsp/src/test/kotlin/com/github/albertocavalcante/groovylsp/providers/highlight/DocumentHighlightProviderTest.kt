@@ -44,8 +44,11 @@ class DocumentHighlightProviderTest {
         )
 
         // Assert
-        assertFalse(highlights.isEmpty(), "Should find highlights for local variable")
         assertEquals(3, highlights.size, "Should find declaration + 2 usages")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+        assertEquals(1, writes.size, "Should find 1 write (declaration)")
+        assertEquals(2, reads.size, "Should find 2 reads (usages)")
     }
 
     @Test
@@ -179,8 +182,14 @@ class DocumentHighlightProviderTest {
         )
 
         // Assert
-        assertFalse(highlights.isEmpty(), "Should find highlights for method")
-        assertTrue(highlights.size >= 2, "Should find at least declaration + calls")
+        assertEquals(3, highlights.size, "Should find declaration + 2 calls")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+        // Method declarations are considered reads for now as they are not assignments,
+        // but we might want to classify them as Write in the future.
+        // Currently DocumentHighlightProvider.classifyHighlightKind returns Read for MethodNode.
+        assertEquals(0, writes.size, "Method declaration and calls are currently classified as Read")
+        assertEquals(3, reads.size, "Should find 3 reads (1 declaration + 2 calls)")
     }
 
     @Test
@@ -206,7 +215,45 @@ class DocumentHighlightProviderTest {
         )
 
         // Assert
-        assertFalse(highlights.isEmpty(), "Should find highlights for parameter")
-        assertTrue(highlights.size >= 1, "Should find at least one reference")
+        assertEquals(3, highlights.size, "Should find 1 declaration + 2 usages")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+        assertEquals(1, writes.size, "Should find 1 write (parameter declaration)")
+        assertEquals(2, reads.size, "Should find 2 reads (usages)")
+    }
+
+    @Test
+    fun `test highlight parameter references with scoping`() = runTest {
+        // Arrange
+        val content = """
+            def method1(param) {
+                println param
+            }
+            def method2(param) {
+                println param
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+
+        // Compile the content
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find highlights for 'param' in method1
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(1, 12), // pointing at 'param' in println of method1
+        )
+
+        // Assert
+        // Should find declaration (line 0) and usage (line 1) in method1
+        // Should NOT find anything in method2 (lines 3, 4)
+        assertEquals(2, highlights.size, "Should only find 2 highlights for method1's param")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+        assertEquals(1, writes.size, "Should find 1 write (parameter declaration)")
+        assertEquals(1, reads.size, "Should find 1 read (usage)")
+        assertTrue(highlights.all { it.range.start.line <= 1 }, "All highlights should be in method1")
     }
 }
