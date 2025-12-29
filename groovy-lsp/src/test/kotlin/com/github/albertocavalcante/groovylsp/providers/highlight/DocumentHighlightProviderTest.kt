@@ -287,4 +287,227 @@ class DocumentHighlightProviderTest {
         assertEquals(1, reads.size, "Should find 1 read (usage)")
         assertTrue(highlights.all { it.range.start.line <= 1 }, "All highlights should be in method1")
     }
+
+    @Test
+    fun `test highlight with bitwise compound assignments`() = runTest {
+        // Arrange
+        val content = """
+            def flags = 0xFF
+            flags &= 0x0F
+            flags |= 0x10
+            flags ^= 0x01
+            println flags
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 4),
+        )
+
+        // Assert
+        assertEquals(5, highlights.size, "Should find 5 highlights")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+
+        // Writes: declaration, &=, |=, ^=
+        assertEquals(4, writes.size, "Should find 4 writes (declaration + 3 bitwise assignments)")
+        // Reads: println
+        assertEquals(1, reads.size, "Should find 1 read")
+    }
+
+    @Test
+    fun `test highlight with shift compound assignments`() = runTest {
+        // Arrange
+        val content = """
+            def bits = 1
+            bits <<= 2
+            bits >>= 1
+            println bits
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 4),
+        )
+
+        // Assert
+        assertEquals(4, highlights.size, "Should find 4 highlights")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+
+        // Writes: declaration, <<=, >>=
+        assertEquals(3, writes.size, "Should find 3 writes (declaration + 2 shift assignments)")
+        // Reads: println
+        assertEquals(1, reads.size, "Should find 1 read")
+    }
+
+    @Test
+    fun `test highlight field references`() = runTest {
+        // Arrange
+        val content = """
+            class MyClass {
+                def myField = "initial"
+                
+                def useField() {
+                    println myField
+                    myField = "updated"
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find highlights for 'myField' at declaration
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(1, 8),
+        )
+
+        // Assert
+        assertFalse(highlights.isEmpty(), "Should find highlights for field")
+    }
+
+    @Test
+    fun `test highlight class references`() = runTest {
+        // Arrange
+        val content = """
+            class Person {
+                String name
+            }
+            def p = new Person()
+            Person other = null
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find highlights for 'Person' class
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 6),
+        )
+
+        // Assert - Should find class declaration and usages
+        assertFalse(highlights.isEmpty(), "Should find highlights for class")
+    }
+
+    @Test
+    fun `test highlight at position zero`() = runTest {
+        // Arrange - variable at very beginning of file
+        val content = """def x = 1
+println x"""
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act - Find highlights at position (0, 0)
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 0),
+        )
+
+        // Assert - Should handle position 0,0 gracefully
+        // The exact behavior depends on what's at position 0,0
+        // This test ensures no exceptions are thrown
+        assertTrue(true, "Should not throw exception at position 0,0")
+    }
+
+    @Test
+    fun `test no cross-file highlights`() = runTest {
+        // Arrange - Compile two files with same variable name
+        val uri1 = URI.create("file:///file1.groovy")
+        val uri2 = URI.create("file:///file2.groovy")
+
+        val content1 = """
+            def sharedName = "file1"
+            println sharedName
+        """.trimIndent()
+
+        val content2 = """
+            def sharedName = "file2"
+            println sharedName
+        """.trimIndent()
+
+        // Compile both files
+        val result1 = compilationService.compile(uri1, content1)
+        val result2 = compilationService.compile(uri2, content2)
+        assertTrue(result1.isSuccess, "Compilation of file1 should succeed")
+        assertTrue(result2.isSuccess, "Compilation of file2 should succeed")
+
+        // Act - Find highlights for 'sharedName' in file1
+        val highlights = highlightProvider.provideHighlights(
+            uri1.toString(),
+            Position(0, 4),
+        )
+
+        // Assert - Should only find 2 highlights (both in file1), not 4 (from both files)
+        assertEquals(2, highlights.size, "Should only find highlights in current file, not cross-file")
+    }
+
+    @Test
+    fun `test highlight for unresolvable symbol returns empty`() = runTest {
+        // Arrange - Reference to undefined variable
+        val content = """
+            println undefinedVariable
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        // Act - Try to find highlights for undefined variable
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 8),
+        )
+
+        // Assert - Should return empty list for unresolvable symbols
+        assertTrue(highlights.isEmpty(), "Should return empty for unresolvable symbol")
+    }
+
+    @Test
+    fun `test highlight with multiple assignment operators`() = runTest {
+        // Arrange - Test various assignment operators together
+        val content = """
+            def v = 10
+            v -= 2
+            v *= 3
+            v /= 2
+            v %= 3
+            println v
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // Act
+        val highlights = highlightProvider.provideHighlights(
+            uri.toString(),
+            Position(0, 4),
+        )
+
+        // Assert
+        assertEquals(6, highlights.size, "Should find 6 highlights")
+        val writes = highlights.filter { it.kind == DocumentHighlightKind.Write }
+        val reads = highlights.filter { it.kind == DocumentHighlightKind.Read }
+
+        // Writes: declaration, -=, *=, /=, %=
+        assertEquals(5, writes.size, "Should find 5 writes")
+        // Reads: println
+        assertEquals(1, reads.size, "Should find 1 read")
+    }
 }

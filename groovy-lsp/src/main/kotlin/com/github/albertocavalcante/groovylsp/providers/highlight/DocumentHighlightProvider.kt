@@ -93,7 +93,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         val highlights = mutableListOf<DocumentHighlight>()
         val seen = mutableSetOf<String>()
 
-        astModel.getAllNodes()
+        astModel.getNodes(documentUri)
             .filter { it.hasValidPosition() }
             .forEach { node ->
                 val nodeDefinition = node.resolveToDefinition(astModel, symbolTable, strict = false)
@@ -227,14 +227,14 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     ): Boolean {
         if (p1.name != p2.name) return false
 
-        // Check if they are in the same enclosing method/scope.
-        // This is crucial because SymbolRegistry might return the same Parameter instance
-        // for different methods due to not being scope-aware.
         val method1 = findEnclosingMethod(n1, astModel)
         val method2 = findEnclosingMethod(n2, astModel)
 
         // If parent methods can't be found (e.g. tracking failure), assume different scopes to avoid leaks
-        if (method1 == null || method2 == null) return false
+        if (method1 == null || method2 == null) {
+            logger.debug("Parameter scope check: method not found for ${p1.name}")
+            return false
+        }
 
         return method1 == method2
     }
