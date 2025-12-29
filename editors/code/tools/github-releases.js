@@ -1,7 +1,7 @@
 const { fetchJson, fetchText } = require("./http.js");
 
 const OWNER = "albertocavalcante";
-const REPO = "groovy-lsp";
+const REPO = "gvy";
 const GITHUB_API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}`;
 
 const GITHUB_RELEASE_API = `${GITHUB_API_BASE}/releases/latest`;

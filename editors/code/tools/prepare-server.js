@@ -33,12 +33,41 @@ const JAR_PATH = path.join(SERVER_DIR, CANONICAL_JAR_NAME);
 const VERSION_FILE = path.join(SERVER_DIR, ".gls-version");
 
 // Pinned Groovy LSP release
-const PINNED_RELEASE_TAG = "v0.2.0";
-const PINNED_JAR_ASSET = "groovy-lsp-0.2.0-linux-amd64.jar";
-// v0.2.0 ships a single universal JAR; reuse the linux-amd64 artifact for all platforms
-const PINNED_DOWNLOAD_URL = `https://github.com/albertocavalcante/groovy-lsp/releases/download/${PINNED_RELEASE_TAG}/${PINNED_JAR_ASSET}`;
+const PINNED_RELEASE_TAG = "v0.4.8";
+const PINNED_JAR_ASSET = "gls-0.4.8.jar";
+// Ships a single universal JAR; use gls artifact for all platforms
+const PINNED_DOWNLOAD_URL = `https://github.com/albertocavalcante/gvy/releases/download/${PINNED_RELEASE_TAG}/${PINNED_JAR_ASSET}`;
 const PINNED_JAR_SHA256 =
-  "0ec247be16c0cce5217a1bd4b6242f67c9ed002e486b749479d50c980a328601";
+  "552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2";
+
+/**
+ * Sanitizes user-controlled strings for safe logging
+ * Prevents log injection attacks by removing:
+ * - Newlines (\n, \r) - prevents fake log entries
+ * - ANSI escape codes - prevents terminal manipulation
+ * - Control characters - prevents binary/malicious content
+ * @param {string} str - User-controlled string to sanitize
+ * @param {number} maxLength - Maximum length before truncation (default: 500)
+ * @returns {string} Sanitized string safe for logging
+ */
+function sanitizeForLog(str, maxLength = 500) {
+  if (typeof str !== "string") {
+    return String(str);
+  }
+
+  // Remove ANSI escape codes (e.g., \x1b[31m for colors)
+  let sanitized = str.replace(/\x1b\[[0-9;]*m/g, "");
+
+  // Remove all control characters (ASCII 0-31 except tab) including newlines
+  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, "");
+
+  // Truncate if too long
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.substring(0, maxLength) + "... (truncated)";
+  }
+
+  return sanitized;
+}
 
 function expectValue(argv, index, flag) {
   if (index >= argv.length || argv[index].startsWith("--")) {
@@ -167,7 +196,9 @@ function findLocalGroovyLspJar() {
         const jarFiles = fs
           .readdirSync(searchPath)
           .filter(
-            (file) => file.endsWith(".jar") && file.includes("groovy-lsp"),
+            (file) =>
+              file.endsWith(".jar") &&
+              (file.includes("groovy-lsp") || file.startsWith("gls-")),
           )
           .sort(); // Sort to get consistent results
 
@@ -209,7 +240,7 @@ function copyLocalJar(localJarPath, { forceDownload }) {
   }
 
   if (shouldCopy) {
-    console.log(`Copying from local build: ${localJarPath}`);
+    console.log(`Copying from local build: ${sanitizeForLog(localJarPath)}`);
     fs.copyFileSync(localJarPath, JAR_PATH);
 
     // Validate destination JAR after copying
@@ -240,12 +271,9 @@ function deriveSelection(cliOptions) {
     ""
   ).toLowerCase();
   const useNightly = cliOptions.nightly || channel === "nightly";
-  const useLatestRelease =
-    !useNightly &&
-    (cliOptions.latest ||
-      channel === "release" ||
-      process.env.USE_LATEST_GLS === "true");
+  const usePinned = process.env.GLS_USE_PINNED === "true" || channel === "pinned";
 
+  // Priority: tag > nightly > pinned > latest (default)
   if (explicitTag) {
     return { type: "tag", tag: explicitTag };
   }
@@ -254,11 +282,11 @@ function deriveSelection(cliOptions) {
     return { type: "nightly" };
   }
 
-  if (useLatestRelease) {
-    return { type: "latest" };
+  if (usePinned) {
+    return { type: "pinned" };
   }
 
-  return { type: "pinned" };
+  return { type: "latest" };
 }
 
 async function resolveTarget(selection, { authToken } = {}) {
@@ -276,7 +304,7 @@ async function resolveTarget(selection, { authToken } = {}) {
     const checksum = await fetchChecksumForAsset(info.assets, jarAsset.name, {
       authToken,
     });
-    console.log(`${logMessage}: ${info.tag_name}`);
+    console.log(`${logMessage}: ${sanitizeForLog(info.tag_name)}`);
     return {
       tag: info.tag_name,
       assetName: jarAsset.name,
@@ -479,7 +507,9 @@ async function downloadFromUrl(url, expectedChecksum) {
  * Downloads the target release JAR from GitHub
  */
 async function downloadRelease(target) {
-  console.log(`Downloading Groovy LSP ${target.tag} (${target.assetName})...`);
+  console.log(
+    `Downloading Groovy LSP ${sanitizeForLog(target.tag)} (${sanitizeForLog(target.assetName)})...`,
+  );
   await downloadToFile(target.downloadUrl, JAR_PATH);
 
   // Validate downloaded JAR
@@ -511,6 +541,23 @@ async function downloadRelease(target) {
   }
   writeInstalledVersion(target.tag);
   console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
+}
+
+/**
+ * Detects if we're running inside the monorepo
+ * @returns {boolean} True if groovy-lsp sibling directory exists
+ */
+function detectMonorepoEnvironment() {
+  const toolsDir = __dirname; // /path/to/editors/code/tools
+  const extensionRoot = path.join(toolsDir, "..");
+  const monorepoRoot = path.join(extensionRoot, "..", "..");
+  const glsBuildFile = path.join(monorepoRoot, "groovy-lsp", "build.gradle.kts");
+
+  try {
+    return fs.existsSync(glsBuildFile);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -556,6 +603,29 @@ async function prepareServer(runtimeOptions = {}) {
       null;
     const installedVersion = readInstalledVersion();
 
+    // Auto-detect monorepo and prefer local build
+    // Only activate if no explicit version/channel selection is made
+    const isMonorepo = detectMonorepoEnvironment();
+    const hasExplicitVersionSelection =
+      cliOptions.tag ||
+      cliOptions.nightly ||
+      cliOptions.latest ||
+      cliOptions.channel ||
+      process.env.GLS_TAG ||
+      process.env.GLS_CHANNEL ||
+      process.env.GLS_USE_PINNED === "true" ||
+      process.env.USE_LATEST_GLS === "true";
+
+    const autoPreferLocal = isMonorepo &&
+                            !explicitUrl &&
+                            !hasExplicitVersionSelection;
+
+    const effectivePreferLocal = preferLocal || autoPreferLocal;
+
+    if (autoPreferLocal) {
+      console.log("📦 Monorepo detected - using local build if available");
+    }
+
     // Hard local override (highest precedence)
     if (explicitLocalJar) {
       const resolvedLocal = path.resolve(explicitLocalJar);
@@ -593,7 +663,9 @@ async function prepareServer(runtimeOptions = {}) {
 
           if (jarFiles.length > 0) {
             jarToUse = path.join(buildLibs, jarFiles[0]);
-            console.log(`Found JAR in build directory: ${jarToUse}`);
+            console.log(
+              `Found JAR in build directory: ${sanitizeForLog(jarToUse)}`,
+            );
           } else {
             throw new Error(
               `No groovy-lsp JAR found in ${buildLibs}. Did you run the build?`,
@@ -608,7 +680,9 @@ async function prepareServer(runtimeOptions = {}) {
 
           if (jarFiles.length > 0) {
             jarToUse = path.join(resolvedLocal, jarFiles[0]);
-            console.log(`Found JAR in directory: ${jarToUse}`);
+            console.log(
+              `Found JAR in directory: ${sanitizeForLog(jarToUse)}`,
+            );
           } else {
             throw new Error(
               `No JAR files found in directory: ${resolvedLocal}`,
@@ -617,7 +691,9 @@ async function prepareServer(runtimeOptions = {}) {
         }
       }
 
-      console.log(`Using explicitly provided local JAR: ${jarToUse}`);
+      console.log(
+        `Using explicitly provided local JAR: ${sanitizeForLog(jarToUse)}`,
+      );
       copyLocalJar(jarToUse, { forceDownload });
       return;
     }
@@ -630,7 +706,7 @@ async function prepareServer(runtimeOptions = {}) {
     }
 
     // Try local build first if preferred
-    if (preferLocal) {
+    if (effectivePreferLocal) {
       const localJarPath = findLocalGroovyLspJar();
 
       if (localJarPath) {
@@ -739,7 +815,9 @@ async function prepareServer(runtimeOptions = {}) {
     }
 
     // Download from GitHub releases
-    console.log(`Downloading Groovy LSP release (${target.tag})...`);
+    console.log(
+      `Downloading Groovy LSP release (${sanitizeForLog(target.tag)})...`,
+    );
     await downloadRelease(target);
 
     // Final validation - ensure JAR is valid before completing
@@ -748,9 +826,11 @@ async function prepareServer(runtimeOptions = {}) {
         validateJarFile(JAR_PATH);
         console.log(`\u2713 Final validation: ${CANONICAL_JAR_NAME} is valid`);
       } catch (error) {
-        console.error(`\u274c Final validation failed: ${error.message}`);
+        console.error(
+          `\u274c Final validation failed: ${sanitizeForLog(error.message)}`,
+        );
         throw new Error(
-          `Server JAR validation failed at completion: ${error.message}`,
+          `Server JAR validation failed at completion: ${sanitizeForLog(error.message)}`,
         );
       }
     } else {
@@ -758,7 +838,7 @@ async function prepareServer(runtimeOptions = {}) {
     }
   } catch (error) {
     console.error("❌ Error preparing Groovy Language Server:");
-    console.error(error.message);
+    console.error(sanitizeForLog(error.message));
 
     if (error instanceof HttpError && error.isGitHubRateLimit) {
       const reset = error.rateLimit?.reset
@@ -783,26 +863,43 @@ async function prepareServer(runtimeOptions = {}) {
       console.error(
         "Network error. Please check your internet connection or try again later.",
       );
+
+      // Offer pinned fallback as escape hatch
+      if (requestedSelection?.type === "latest" && process.env.GLS_ALLOW_PINNED_FALLBACK === "true") {
+        console.warn("");
+        console.warn(`⚠️  Attempting fallback to pinned version (${PINNED_RELEASE_TAG})...`);
+        try {
+          await downloadRelease({
+            tag: PINNED_RELEASE_TAG,
+            assetName: PINNED_JAR_ASSET,
+            downloadUrl: PINNED_DOWNLOAD_URL,
+            checksum: PINNED_JAR_SHA256,
+          });
+          console.log("✅ Fallback successful!");
+          return;
+        } catch (fallbackError) {
+          console.error(
+            "❌ Fallback also failed:",
+            sanitizeForLog(fallbackError.message),
+          );
+        }
+      }
     }
 
     console.error("");
     if (requestedSelection) {
       const selectionLabel =
         requestedSelection.type === "tag"
-          ? `tag:${requestedSelection.tag}`
+          ? `tag:${sanitizeForLog(requestedSelection.tag)}`
           : requestedSelection.type;
       console.error(`Requested selection: ${selectionLabel}`);
     }
-    console.error(`Default pinned release: ${PINNED_RELEASE_TAG}`);
-    console.error(`Default pinned asset: ${PINNED_JAR_ASSET}`);
+    console.error(`Pinned fallback available: ${PINNED_RELEASE_TAG}`);
+    console.error(`Release page: https://github.com/albertocavalcante/gvy/releases/tag/${PINNED_RELEASE_TAG}`);
+    console.error("To use pinned version: GLS_USE_PINNED=true or GLS_CHANNEL=pinned");
+    console.error("To enable auto-fallback on network errors: GLS_ALLOW_PINNED_FALLBACK=true");
     console.error(
-      `Release page: https://github.com/albertocavalcante/groovy-lsp/releases/tag/${PINNED_RELEASE_TAG}`,
-    );
-    console.error(
-      "To try the latest available release instead, set USE_LATEST_GLS=true.",
-    );
-    console.error(
-      "To try the latest nightly, set GLS_CHANNEL=nightly or pass --nightly.",
+      "To try the latest nightly: GLS_CHANNEL=nightly or pass --nightly",
     );
     console.error("");
     console.error("You can also manually copy a JAR file to:");
@@ -864,10 +961,10 @@ function printHelp() {
 Usage: node tools/prepare-server.js [options]
 
 Options:
-  --tag <tag>            Download a specific Groovy LSP release tag (e.g. v0.2.0, nightly-*)
+  --tag <tag>            Download a specific Groovy LSP release tag (e.g. v0.4.8, nightly-*)
   --nightly              Download the latest nightly/prerelease build
-  --latest               Download the latest stable release (same as USE_LATEST_GLS=true)
-  --channel <name>       Select channel: nightly | release
+  --latest               Download the latest stable release (now the default)
+  --channel <name>       Select channel: nightly | release | pinned
   --local <path>         Use a specific local groovy-lsp JAR (skips download)
   --url <url>            Download from a URL (supports GitHub Actions artifacts)
   --checksum <sha256>    Optional SHA256 checksum for URL downloads
@@ -878,11 +975,28 @@ Options:
 
 Notes:
   Precedence: --local > --url > existing bundled JAR > --prefer-local > GitHub download
+  Default: Downloads latest stable release from GitHub
+  Monorepo: Auto-detected - local build used automatically
 
-Environment:
-  GLS_TAG, GLS_CHANNEL=nightly|release, GLS_LOCAL_JAR,
-  GLS_URL, GLS_CHECKSUM, PREFER_LOCAL, USE_LATEST_GLS,
-  FORCE_DOWNLOAD, SKIP_PREPARE_SERVER.
+Environment Variables:
+  Version Selection:
+    GLS_TAG=<version>         Use specific version (e.g., v0.4.8)
+    GLS_CHANNEL=nightly       Use latest nightly build
+    GLS_CHANNEL=release       Use latest stable release (default)
+    GLS_CHANNEL=pinned        Use pinned version (v0.4.8)
+    GLS_USE_PINNED=true       Alternative to GLS_CHANNEL=pinned
+
+  Download Behavior:
+    PREFER_LOCAL=true         Use local build from ../groovy-lsp/build/libs/
+    FORCE_DOWNLOAD=true       Re-download even if JAR exists
+    GLS_ALLOW_PINNED_FALLBACK=true  Fall back to pinned on network failure
+    SKIP_PREPARE_SERVER=true  Skip server preparation entirely
+
+  Advanced:
+    GLS_LOCAL_JAR=<path>      Use JAR from specific path
+    GLS_URL=<url>             Download from custom URL
+    GLS_CHECKSUM=<sha256>     Verify custom download
+    GITHUB_TOKEN / GH_TOKEN   GitHub API authentication
 
 Token resolution (for GitHub API requests):
   GH_TOKEN > GITHUB_TOKEN > gh auth token
