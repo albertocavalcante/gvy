@@ -670,12 +670,15 @@ async function prepareServer(runtimeOptions = {}) {
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 
-    // In monorepo, auto-build local JAR if not found (unless BUILD_LOCAL=false)
-    const autoBuildLocal = autoPreferLocal && process.env.BUILD_LOCAL !== "false";
+    // In monorepo, auto-build local JAR if not found
+    // Disabled in CI environments (CI=true) and when BUILD_LOCAL=false
+    const isCI = process.env.CI === "true";
+    const autoBuildLocal = autoPreferLocal && !isCI && process.env.BUILD_LOCAL !== "false";
     const effectiveBuildLocal = buildLocal || autoBuildLocal;
 
     if (autoPreferLocal) {
-      console.log(`📦 Monorepo detected - will use local build${autoBuildLocal ? " (auto-build enabled)" : ""}`);
+      const buildStatus = autoBuildLocal ? " (auto-build enabled)" : isCI ? " (auto-build disabled in CI)" : "";
+      console.log(`📦 Monorepo detected - will use local build${buildStatus}`);
     }
 
     // Hard local override (highest precedence)
@@ -970,14 +973,13 @@ async function prepareServer(runtimeOptions = {}) {
     console.error("You can also manually copy a JAR file to:");
     console.error(`  ${JAR_PATH}`);
 
-    const requireBundle = process.env.REQUIRE_SERVER_BUNDLE === "true";
     const ignoreFailure = process.env.IGNORE_DOWNLOAD_FAILURE === "true";
-    const isCI = !!(process.env.CI || process.env.GITHUB_ACTIONS);
 
-    // Allow CI runs (except when REQUIRE_SERVER_BUNDLE=true) to continue without failing installation
-    if (!requireBundle && (ignoreFailure || isCI)) {
+    // Only ignore failure if explicitly requested via IGNORE_DOWNLOAD_FAILURE=true
+    // CI should NOT silently ignore failures - tests need the JAR
+    if (ignoreFailure) {
       console.warn(
-        "\n⚠️ WARNING: Server JAR download failed, but ignoring failure (CI/GITHUB_ACTIONS/IGNORE_DOWNLOAD_FAILURE).",
+        "\n⚠️ WARNING: Server JAR preparation failed, but ignoring (IGNORE_DOWNLOAD_FAILURE=true).",
       );
       console.warn(
         "The extension will NOT work without the server JAR unless a custom path is configured.",
@@ -1035,7 +1037,7 @@ Options:
   --checksum <sha256>    Optional SHA256 checksum for URL downloads
   --prefer-local         Prefer local groovy-lsp builds from common paths
   --build-local          Build local JAR via 'make jar' if not found (monorepo only)
-                         NOTE: Auto-enabled in monorepo; disable with BUILD_LOCAL=false
+                         NOTE: Auto-enabled in monorepo (disabled in CI); use BUILD_LOCAL=false to disable
   --force-download       Always download/copy even if a JAR already exists
   --print-release-tag    Print the pinned release tag and exit
   -h, --help             Show this help message
