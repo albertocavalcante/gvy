@@ -394,7 +394,7 @@ jobs:
       # Skip on macOS - E2E tests are platform-independent LSP protocol tests
       - name: Run E2E Tests
         if: github.event_name == 'pull_request' || matrix.os != 'macos-15'
-        timeout-minutes: 30
+        timeout-minutes: 15
         run: |
           args=(:tests:e2eTest --parallel --build-cache --stacktrace)
           if [[ -n "${TEST_LOG_FLAG}" ]]; then
