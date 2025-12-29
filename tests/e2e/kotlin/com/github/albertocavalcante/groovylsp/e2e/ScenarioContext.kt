@@ -252,7 +252,33 @@ object JsonExpectationEvaluator {
         if (actual == null || expected == null) return false
         return when (actual) {
             is JsonPrimitive -> actual.isString && actual.content.contains(expected.jsonPrimitive.content)
-            is JsonArray -> actual.any { element -> element == expected }
+            is JsonArray -> actual.any { element -> structurallyContains(element, expected) }
+            else -> false
+        }
+    }
+
+    /**
+     * Checks if [actual] structurally contains [expected] as a subset.
+     * All fields specified in [expected] must exist in [actual] with matching values.
+     * Extra fields in [actual] are allowed (not compared).
+     */
+    private fun structurallyContains(actual: JsonElement?, expected: JsonElement?): Boolean {
+        if (expected == null || expected is JsonNull) return true
+        if (actual == null || actual is JsonNull) return false
+
+        return when {
+            expected is JsonPrimitive && actual is JsonPrimitive -> actual == expected
+            expected is JsonObject && actual is JsonObject -> {
+                expected.entries.all { (key, value) ->
+                    actual.containsKey(key) && structurallyContains(actual[key], value)
+                }
+            }
+
+            expected is JsonArray && actual is JsonArray -> {
+                // All elements in expected must be structurally contained in some element of actual
+                expected.all { exp -> actual.any { act -> structurallyContains(act, exp) } }
+            }
+
             else -> false
         }
     }
@@ -286,9 +312,9 @@ object JsonExpectationEvaluator {
     }
 
     private fun isEmpty(actual: JsonElement?): Boolean = actual == null || actual is JsonNull ||
-        (actual is JsonPrimitive && actual.isString && actual.content.isEmpty()) ||
-        (actual is JsonArray && actual.isEmpty()) ||
-        (actual is JsonObject && actual.isEmpty())
+            (actual is JsonPrimitive && actual.isString && actual.content.isEmpty()) ||
+            (actual is JsonArray && actual.isEmpty()) ||
+            (actual is JsonObject && actual.isEmpty())
 
     private fun isGreaterThanOrEqual(actual: JsonElement?, expected: JsonElement?): Boolean {
         if (actual == null || expected == null) return false

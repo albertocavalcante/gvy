@@ -91,7 +91,7 @@ steps:
   - assert:
       source: multipleImplsResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -102,7 +102,7 @@ steps:
                   character: 0
             message: "Should find BasicCalculator"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -130,7 +130,7 @@ steps:
   - assert:
       source: methodWithParamsResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -141,7 +141,7 @@ steps:
                   character: 4
             message: "Should find BasicCalculator.add()"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -169,7 +169,7 @@ steps:
   - assert:
       source: abstractMethodResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -180,7 +180,7 @@ steps:
                   character: 4
             message: "Should find Dog.makeSound()"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -208,7 +208,7 @@ steps:
   - assert:
       source: abstractClassResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -219,7 +219,7 @@ steps:
                   character: 0
             message: "Should find Dog class"
 
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: CONTAINS
             value:
@@ -236,7 +236,7 @@ steps:
   - assert:
       source: multipleImplsResult
       checks:
-        - jsonPath: $
+        - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
