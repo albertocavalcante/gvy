@@ -1,0 +1,278 @@
+name: implementation-transitive
+description: >
+  DISABLED: Test for transitive interface and superclass implementation discovery.
+  This test is disabled (prefixed with _) because the features are not yet implemented.
+
+  Related TODOs:
+  - TODO(#413): Add transitive interface checking
+  - TODO(#413): Check superclass interfaces
+  - TODO(#413): Add transitive superclass checking
+
+  Enable this test once the TODO items are implemented.
+
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+
+  # Wait for server to be ready
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.status
+          expect:
+            type: EQUALS
+            value: Ready
+      timeoutMs: 60000
+
+  # ============================================================================
+  # Scenario 1: Transitive interface inheritance (B extends A, C implements B)
+  # ============================================================================
+  - openDocument:
+      path: src/TransitiveInterfaces.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        interface Serializable {
+            def serialize()
+        }
+
+        interface JsonSerializable extends Serializable {
+            def toJson()
+        }
+
+        class DataObject implements JsonSerializable {
+            def serialize() { return "serialized" }
+            def toJson() { return "{}" }
+        }
+
+  # ============================================================================
+  # Scenario 2: Superclass implements interface (Shape implements Drawable, Circle extends Shape)
+  # ============================================================================
+  - openDocument:
+      path: src/SuperclassInterface.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        interface Drawable {
+            def draw()
+        }
+
+        abstract class Shape implements Drawable {
+            abstract def area()
+            def draw() { return "drawing" }
+        }
+
+        class Circle extends Shape {
+            def area() { return 3.14 }
+        }
+
+        class Rectangle extends Shape {
+            def area() { return 100 }
+        }
+
+  # ============================================================================
+  # Scenario 3: Multi-level inheritance (A -> B -> C -> ConcreteClass)
+  # ============================================================================
+  - openDocument:
+      path: src/MultiLevelInheritance.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        interface Component {
+            def render()
+        }
+
+        interface UIComponent extends Component {
+            def handleEvent()
+        }
+
+        abstract class Widget implements UIComponent {
+            def handleEvent() { return "handled" }
+        }
+
+        class Button extends Widget {
+            def render() { return "button" }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 15000
+
+  # ============================================================================
+  # TEST 1: Transitive interface - Find implementations of base interface
+  # ============================================================================
+  # When cursor is on 'Serializable' interface, should find DataObject
+  # (even though DataObject implements JsonSerializable, not Serializable directly)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/TransitiveInterfaces.groovy"
+        position:
+          line: 0
+          character: 10  # On 'Serializable'
+      saveAs: transitiveInterfaceResult
+
+  - assert:
+      source: transitiveInterfaceResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/TransitiveInterfaces.groovy"
+              range:
+                start:
+                  line: 8
+                  character: 0
+            message: "Should find DataObject (implements JsonSerializable which extends Serializable)"
+
+  # ============================================================================
+  # TEST 2: Superclass interface - Find classes that inherit interface through superclass
+  # ============================================================================
+  # When cursor is on 'Drawable' interface, should find Circle and Rectangle
+  # (even though they don't directly implement Drawable, their superclass Shape does)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
+        position:
+          line: 0
+          character: 10  # On 'Drawable'
+      saveAs: superclassInterfaceResult
+
+  - assert:
+      source: superclassInterfaceResult
+      checks:
+        # Note: Shape is abstract, so should be excluded even though it implements Drawable
+        - jsonPath: $
+          expect:
+            type: NOT_CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
+              range:
+                start:
+                  line: 4
+                  character: 0
+            message: "Should NOT find Shape (abstract class)"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
+              range:
+                start:
+                  line: 9
+                  character: 0
+            message: "Should find Circle (extends Shape which implements Drawable)"
+
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
+              range:
+                start:
+                  line: 13
+                  character: 0
+            message: "Should find Rectangle (extends Shape which implements Drawable)"
+
+  # ============================================================================
+  # TEST 3: Method implementation through superclass interface
+  # ============================================================================
+  # When cursor is on 'draw()' in Drawable, should find Shape.draw()
+  # and potentially Circle and Rectangle if they override it
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/SuperclassInterface.groovy"
+        position:
+          line: 1
+          character: 8  # On 'draw' method
+      saveAs: superclassMethodResult
+
+  # Note: Currently Shape.draw() is concrete, so Circle/Rectangle inherit it
+  # If they don't override, should we show Shape.draw() or the inheriting classes?
+  # This is a design decision to make when implementing.
+
+  # ============================================================================
+  # TEST 4: Multi-level inheritance - Three levels deep
+  # ============================================================================
+  # When cursor is on 'Component' interface, should find Button
+  # (Component -> UIComponent -> Widget -> Button)
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/MultiLevelInheritance.groovy"
+        position:
+          line: 0
+          character: 10  # On 'Component'
+      saveAs: multiLevelResult
+
+  - assert:
+      source: multiLevelResult
+      checks:
+        - jsonPath: $
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/MultiLevelInheritance.groovy"
+              range:
+                start:
+                  line: 13
+                  character: 0
+            message: "Should find Button (implements Component transitively through UIComponent and Widget)"
+
+  - shutdown: {}
+  - exit: {}
+
+# ============================================================================
+# Implementation Notes:
+# ============================================================================
+#
+# Algorithm for transitive interface checking:
+# 1. For each class, collect all interfaces it implements (direct + inherited)
+# 2. For each interface in the list, recursively add parent interfaces
+# 3. Check if target interface is in the collected set
+#
+# Example implementation (pseudo-code):
+# ```
+# fun getAllInterfaces(classSymbol: Symbol.Class): Set<ClassNode> {
+#     val result = mutableSetOf<ClassNode>()
+#
+#     // Add direct interfaces
+#     result.addAll(classSymbol.interfaces)
+#
+#     // Add interfaces from each direct interface (recursive)
+#     classSymbol.interfaces.forEach { iface ->
+#         result.addAll(getAllParentInterfaces(iface))
+#     }
+#
+#     // Add interfaces from superclass (if any)
+#     classSymbol.superClass?.let { superClass ->
+#         result.addAll(getAllInterfaces(superClass))
+#     }
+#
+#     return result
+# }
+#
+# fun getAllParentInterfaces(classNode: ClassNode): Set<ClassNode> {
+#     val result = mutableSetOf<ClassNode>()
+#     classNode.interfaces.forEach { parent ->
+#         result.add(parent)
+#         result.addAll(getAllParentInterfaces(parent))
+#     }
+#     return result
+# }
+# ```
+#
+# Performance considerations:
+# - Cache results per class to avoid repeated traversal
+# - Be careful of circular dependencies (though Groovy compiler should prevent this)
+# - Consider depth limits for pathological cases

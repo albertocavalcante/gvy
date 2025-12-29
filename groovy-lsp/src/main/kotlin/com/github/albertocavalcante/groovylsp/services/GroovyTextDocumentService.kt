@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
@@ -52,6 +53,7 @@ import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.DocumentSymbolParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.ImplementationParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
@@ -480,6 +482,43 @@ class GroovyTextDocumentService(
             Either.forLeft<List<Location>, List<LocationLink>>(locations)
         }.exceptionally { e ->
             logger.error("Error providing type definition", e)
+            Either.forLeft(emptyList())
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    override fun implementation(
+        params: ImplementationParams,
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
+        logger.debug(
+            "Implementation requested for ${params.textDocument.uri} at " +
+                "${params.position.line}:${params.position.character}",
+        )
+
+        try {
+            val uri = java.net.URI.create(params.textDocument.uri)
+            val compilationResult = ensureCompiledOrCompileNow(uri)
+            if (compilationResult == null) {
+                logger.warn("Document $uri not compiled, cannot provide implementations")
+                return@future Either.forLeft(emptyList())
+            }
+
+            val implementationProvider = ImplementationProvider(compilationService)
+            val locations = implementationProvider.provideImplementations(
+                params.textDocument.uri,
+                params.position,
+            ).toList()
+
+            logger.debug("Found ${locations.size} implementations")
+            Either.forLeft(locations)
+        } catch (e: IllegalArgumentException) {
+            logger.error("Invalid arguments finding implementations", e)
+            Either.forLeft(emptyList())
+        } catch (e: IllegalStateException) {
+            logger.error("Invalid state finding implementations", e)
+            Either.forLeft(emptyList())
+        } catch (e: Exception) {
+            logger.error("Unexpected error finding implementations", e)
             Either.forLeft(emptyList())
         }
     }
