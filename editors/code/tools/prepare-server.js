@@ -670,8 +670,12 @@ async function prepareServer(runtimeOptions = {}) {
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 
+    // In monorepo, auto-build local JAR if not found (unless BUILD_LOCAL=false)
+    const autoBuildLocal = autoPreferLocal && process.env.BUILD_LOCAL !== "false";
+    const effectiveBuildLocal = buildLocal || autoBuildLocal;
+
     if (autoPreferLocal) {
-      console.log("📦 Monorepo detected - using local build if available");
+      console.log("📦 Monorepo detected - will use local build" + (autoBuildLocal ? " (auto-build enabled)" : ""));
     }
 
     // Hard local override (highest precedence)
@@ -754,12 +758,12 @@ async function prepareServer(runtimeOptions = {}) {
     }
 
     // Try local build first if preferred
-    if (effectivePreferLocal || buildLocal) {
+    if (effectivePreferLocal || effectiveBuildLocal) {
       let localJarPath = findLocalGroovyLspJar();
 
-      // If no local JAR found and buildLocal is set, try to build it
-      if (!localJarPath && buildLocal) {
-        console.log("No local JAR found, attempting to build...");
+      // If no local JAR found and buildLocal is enabled, try to build it
+      if (!localJarPath && effectiveBuildLocal) {
+        console.log("No local JAR found, building via 'make jar'...");
         buildLocalJar();
         // After building, try to find the JAR again
         localJarPath = findLocalGroovyLspJar();
@@ -768,10 +772,10 @@ async function prepareServer(runtimeOptions = {}) {
       if (localJarPath) {
         copyLocalJar(localJarPath, { forceDownload });
         return;
-      } else if (buildLocal) {
-        // If buildLocal was set but we still don't have a JAR, that's an error
+      } else if (effectiveBuildLocal) {
+        // If buildLocal was enabled but we still don't have a JAR, that's an error
         throw new Error(
-          "BUILD_LOCAL=true but no JAR found after build. Check 'make jar' output for errors.",
+          "Build completed but no JAR found. Check 'make jar' output for errors.",
         );
       } else {
         console.log(
@@ -1031,6 +1035,7 @@ Options:
   --checksum <sha256>    Optional SHA256 checksum for URL downloads
   --prefer-local         Prefer local groovy-lsp builds from common paths
   --build-local          Build local JAR via 'make jar' if not found (monorepo only)
+                         NOTE: Auto-enabled in monorepo; disable with BUILD_LOCAL=false
   --force-download       Always download/copy even if a JAR already exists
   --print-release-tag    Print the pinned release tag and exit
   -h, --help             Show this help message
