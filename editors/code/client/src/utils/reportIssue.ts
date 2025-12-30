@@ -61,7 +61,6 @@ export function extractRelevantLogs(logs: string, maxLength: number = 3000): str
     }
 
     const lines = logs.split('\n');
-    const priorityLines: string[] = [];
     const contextLines: Map<number, string> = new Map();
 
     // Find priority lines and their surrounding context
@@ -81,7 +80,6 @@ export function extractRelevantLogs(logs: string, maxLength: number = 3000): str
                     contextLines.set(i, lines[i]);
                 }
             }
-            priorityLines.push(line);
         }
     });
 

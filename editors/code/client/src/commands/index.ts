@@ -111,10 +111,11 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
                     command: 'groovy.version',
                     arguments: []
                 });
-                serverVersion = String(version) || 'unknown';
+                serverVersion = version ? String(version) : 'unknown';
             }
-        } catch {
+        } catch (error) {
             // Fall back to unknown
+            console.error('Failed to retrieve server version for bug report:', error);
         }
 
         // Build system info
