@@ -3,12 +3,21 @@ import { determineStateFromStatus, inferStateFromMessage, GroovyStatusParams } f
 
 describe('Status Utils', () => {
     describe('determineStateFromStatus', () => {
-        it('should return degraded on error', () => {
+        it('should return error state on error health', () => {
             const params: GroovyStatusParams = {
                 health: 'error',
                 quiescent: true
             };
-            assert.strictEqual(determineStateFromStatus(params), 'degraded');
+            assert.strictEqual(determineStateFromStatus(params), 'error');
+        });
+
+        it('should return error state when errorCode is present', () => {
+            const params: GroovyStatusParams = {
+                health: 'ok',
+                quiescent: true,
+                errorCode: 'GRADLE_JDK_INCOMPATIBLE'
+            };
+            assert.strictEqual(determineStateFromStatus(params), 'error');
         });
 
         it('should return degraded on warning', () => {
