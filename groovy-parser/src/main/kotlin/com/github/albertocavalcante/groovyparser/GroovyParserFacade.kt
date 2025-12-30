@@ -78,6 +78,19 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
          * @see <a href="https://docs.oracle.com/javase/8/docs/api/java/util/ServiceLoader.html">ServiceLoader</a>
          */
         private const val SERVICE_FILE_COMMENT_CHAR = '#'
+
+        /**
+         * Shared transform loader that has access to bundled Groovy via the LSP's classloader.
+         * This allows Groovy's built-in transformations to work correctly while project-specific
+         * transformations are disabled.
+         *
+         * This is a singleton to prevent resource leaks - GroovyClassLoader extends URLClassLoader
+         * which holds native resources. Since no project classpath is added, reusing this instance
+         * is safe and efficient.
+         */
+        private val transformLoader: GroovyClassLoader by lazy {
+            GroovyClassLoader(GroovyParserFacade::class.java.classLoader)
+        }
     }
 
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
@@ -177,12 +190,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
 
-        // Transform loader: has access to bundled Groovy via the LSP's classloader.
-        // This allows Groovy's built-in transformations to work correctly while project-specific
-        // transformations are disabled. No project classpath is added to keep it isolated.
-        val transformLoader = GroovyClassLoader(GroovyParserFacade::class.java.classLoader)
-
-        // Use 4-arg constructor with separate transform loader for proper classloader isolation
+        // Use 4-arg constructor with separate transform loader for proper classloader isolation.
+        // transformLoader is a singleton (see companion object) to prevent resource leaks.
         val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
 
         val source = StringReaderSource(request.content, config)
@@ -326,8 +335,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.extension.equals("groovy", ignoreCase = true) &&
-                    it.isRegularFile()
+                        it.extension.equals("groovy", ignoreCase = true) &&
+                        it.isRegularFile()
             }
             .forEach { path ->
                 runCatching {
