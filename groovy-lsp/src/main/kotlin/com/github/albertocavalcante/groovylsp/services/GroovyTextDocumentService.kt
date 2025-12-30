@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
@@ -167,6 +168,10 @@ class GroovyTextDocumentService(
 
     private val documentHighlightProvider by lazy {
         DocumentHighlightProvider(compilationService)
+    }
+
+    private val foldingRangeProvider by lazy {
+        FoldingRangeProvider(compilationService)
     }
 
     override fun signatureHelp(
@@ -642,6 +647,22 @@ class GroovyTextDocumentService(
         compilationService.ensureCompiled(uri)
 
         testCodeLensProvider.provideCodeLenses(uri)
+    }
+
+    override fun foldingRange(
+        params: org.eclipse.lsp4j.FoldingRangeRequestParams,
+    ): CompletableFuture<List<org.eclipse.lsp4j.FoldingRange>> = coroutineScope.future {
+        logger.debug("Folding range requested for ${params.textDocument.uri}")
+        val uri = java.net.URI.create(params.textDocument.uri)
+
+        // Ensure file is compiled before providing folding ranges
+        val compilationResult = ensureCompiledOrCompileNow(uri)
+        if (compilationResult == null) {
+            logger.warn("Document $uri not compiled, cannot provide folding ranges")
+            return@future emptyList()
+        }
+
+        foldingRangeProvider.provideFoldingRanges(uri)
     }
 
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =

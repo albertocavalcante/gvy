@@ -72,6 +72,9 @@ object ServerCapabilitiesFactory {
             codeLensProvider = CodeLensOptions().apply {
                 resolveProvider = false
             }
+
+            // Folding range support
+            foldingRangeProvider = Either.forLeft(true)
         }
 
         val serverInfo = ServerInfo().apply {
