@@ -23,7 +23,7 @@ export interface SystemInfo {
  * Lines matching these patterns are prioritized in the extracted logs.
  */
 const PRIORITY_PATTERNS = [
-    // Java stacktraces
+    // Java stacktraces 
     /^\s+at\s+[\w.$]+\([\w.$:]+\)/,
     /^[\w.$]+Exception:/,
     /^[\w.$]+Error:/,
