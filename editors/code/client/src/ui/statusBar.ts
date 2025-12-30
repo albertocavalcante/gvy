@@ -3,40 +3,10 @@ import { State, LanguageClient, ProgressType } from 'vscode-languageclient/node'
 import { WorkDoneProgressBegin, WorkDoneProgressReport, WorkDoneProgressEnd } from 'vscode-languageserver-protocol';
 import { getLanguageStatusManager } from './languageStatus';
 
+import { ServerState, ServerHealth, GroovyStatusParams, determineStateFromStatus, inferStateFromMessage } from './statusUtils';
+
 const TITLE = 'Groovy';
 
-/**
- * Server activity state - more granular than just Running/Stopped
- */
-export type ServerState =
-    | 'stopped'
-    | 'starting'
-    | 'resolving-deps'
-    | 'indexing'
-    | 'ready'
-    | 'degraded';
-
-/**
- * Server health status (follows rust-analyzer pattern)
- */
-export type ServerHealth = 'ok' | 'warning' | 'error';
-
-/**
- * Groovy server status notification parameters.
- * Based on rust-analyzer's `experimental/serverStatus` notification pattern.
- */
-export interface GroovyStatusParams {
-    /** Server functional state (ok, warning, error) */
-    health: ServerHealth;
-    /** Whether there is any pending background work */
-    quiescent: boolean;
-    /** Optional human-readable message */
-    message?: string;
-    /** Current number of files indexed (for progress display) */
-    filesIndexed?: number;
-    /** Total number of files to index (for progress display) */
-    filesTotal?: number;
-}
 
 /**
  * Document selector for Groovy-related files.
@@ -280,41 +250,7 @@ export class StatusBarManager implements vscode.Disposable {
      * Maps groovy/status health and quiescent to our ServerState
      */
     private updateStateFromStatus(params: GroovyStatusParams): void {
-        // Error health always means degraded
-        if (params.health === 'error') {
-            this.currentState = 'degraded';
-            return;
-        }
-
-        // Warning health means degraded
-        if (params.health === 'warning') {
-            this.currentState = 'degraded';
-            return;
-        }
-
-        // Not quiescent means server is working
-        if (!params.quiescent) {
-            // Determine specific state from message
-            const message = (params.message || '').toLowerCase();
-            if (message.includes('resolving') || message.includes('dependencies')) {
-                this.currentState = 'resolving-deps';
-            } else if (message.includes('indexing')) {
-                this.currentState = 'indexing';
-            } else if (message.includes('initializing') || message.includes('starting')) {
-                this.currentState = 'starting';
-            } else {
-                // Default to indexing if we have file counts
-                if (params.filesTotal && params.filesTotal > 0) {
-                    this.currentState = 'indexing';
-                } else {
-                    this.currentState = 'starting';
-                }
-            }
-            return;
-        }
-
-        // Quiescent and healthy = ready
-        this.currentState = 'ready';
+        this.currentState = determineStateFromStatus(params);
     }
 
     /**
@@ -388,35 +324,9 @@ export class StatusBarManager implements vscode.Disposable {
      *             New servers should use groovy/status notifications instead.
      */
     private inferStateFromMessage(message: string): void {
-        // Skip inference if we've received groovy/status notifications
-        // (indicated by having explicit file counts or recent status update)
-        if (this.filesTotal !== undefined) {
-            return;
-        }
-
-        // Check for errors FIRST
-        if (message.includes('failed') || message.includes('error')) {
-            this.currentState = 'degraded';
-        } else if (
-            message.includes('resolving') ||
-            message.includes('gradle') ||
-            message.includes('maven') ||
-            message.includes('dependencies') ||
-            message.includes('connecting')
-        ) {
-            this.currentState = 'resolving-deps';
-        } else if (
-            message.includes('indexing') ||
-            message.includes('compiling') ||
-            message.includes('analyzing')
-        ) {
-            this.currentState = 'indexing';
-        } else if (
-            message.includes('ready') ||
-            message.includes('complete') ||
-            message.includes('loaded')
-        ) {
-            this.currentState = 'ready';
+        const inferred = inferStateFromMessage(message, this.filesTotal);
+        if (inferred) {
+            this.currentState = inferred;
         }
     }
 
