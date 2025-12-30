@@ -1,7 +1,6 @@
-@file:Suppress("NestedBlockDepth") // AST traversal has inherent nesting
-
 package com.github.albertocavalcante.groovyjenkins
 
+import com.github.albertocavalcante.groovycommon.text.ShebangUtils
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
@@ -29,18 +28,62 @@ class LibraryParser {
      * Parses library references from Jenkinsfile source code.
      */
     @Suppress("TooGenericExceptionCaught")
-    fun parseLibraries(source: String): List<LibraryReference> = try {
-        val ast = parseToAst(source)
-        extractLibraries(ast)
-    } catch (e: Exception) {
-        logger.warn("Failed to parse libraries from Jenkinsfile", e)
-        emptyList()
+    fun parseLibraries(source: String): List<LibraryReference> {
+        var currentSource = source
+        var attempts = 0
+        val maxAttempts = 5
+
+        while (attempts < maxAttempts) {
+            try {
+                // Try to parse the current source
+                val ast = parseToAst(currentSource)
+                return extractLibraries(ast)
+            } catch (e: org.codehaus.groovy.control.MultipleCompilationErrorsException) {
+                // Determine if we can recover by stripping the error lines
+                attempts++
+                val newSource = tryRecoverFromError(currentSource, e)
+                if (newSource == null || newSource == currentSource) {
+                    logger.warn("Unrecoverable parsing error in Jenkinsfile: ${e.message}")
+                    break
+                }
+                currentSource = newSource
+                logger.info("Retrying parsing after stripping invalid lines (Attempt $attempts)")
+            } catch (e: Exception) {
+                logger.warn("Failed to parse libraries from Jenkinsfile", e)
+                break
+            }
+        }
+        return emptyList()
+    }
+
+    private fun tryRecoverFromError(
+        source: String,
+        e: org.codehaus.groovy.control.MultipleCompilationErrorsException,
+    ): String? {
+        val lines = source.lines().toMutableList()
+        val errorCollector = e.errorCollector
+        var changed = false
+
+        errorCollector.errors?.forEach { message ->
+            if (message is org.codehaus.groovy.control.messages.SyntaxErrorMessage) {
+                val cause = message.cause
+                val line = cause.line
+                if (line > 0 && line <= lines.size) {
+                    // Blank out the offending line to preserve line numbers for other nodes
+                    lines[line - 1] = ""
+                    changed = true
+                }
+            }
+        }
+
+        return if (changed) lines.joinToString("\n") else null
     }
 
     private fun parseToAst(source: String): ModuleNode {
         val config = org.codehaus.groovy.control.CompilerConfiguration()
         val unit = CompilationUnit(config)
-        val sourceUnit = SourceUnit("Jenkinsfile", source, config, null, unit.errorCollector)
+        val preprocessed = ShebangUtils.replaceShebangWithEmptyLine(source)
+        val sourceUnit = SourceUnit("Jenkinsfile", preprocessed, config, null, unit.errorCollector)
         unit.addSource(sourceUnit)
         unit.compile(Phases.CONVERSION)
         return sourceUnit.ast
@@ -50,17 +93,23 @@ class LibraryParser {
     private fun extractLibraries(ast: ModuleNode): List<LibraryReference> {
         val libraries = mutableListOf<LibraryReference>()
 
-        // Extract from @Library annotations on classes (including script class)
+        // 1. Extract from @Library annotations on classes (including script class)
+        // IMPORTANT: Jenkins only allows @Library before the pipeline definition.
+        // If we find them on the script class, valid ones are usually 'top-level'.
+
         ast.classes?.forEach { classNode ->
             libraries.addAll(extractClassAnnotations(classNode))
             libraries.addAll(extractFieldAnnotations(classNode))
+
+            // Method annotations (like on run()) are usually NOT valid @Library locations for defining shared libs
+            // however, local variable declarations in run() (top level script) are valid locations.
             libraries.addAll(extractMethodDeclarationAnnotations(classNode))
         }
 
-        // Extract from @Library annotations on import statements
+        // 2. Extract from @Library annotations on import statements (VALID)
         libraries.addAll(extractImportAnnotations(ast))
 
-        // Extract from library() method calls in script
+        // 3. Extract from library() method calls in script (VALID anywhere in script)
         libraries.addAll(extractLibraryMethodCalls(ast))
 
         return libraries
@@ -167,8 +216,7 @@ class LibraryParser {
         val libraries = mutableListOf<LibraryReference>()
 
         // Check for value member (single string or list)
-        val valueMember = annotation.getMember("value")
-        when (valueMember) {
+        when (val valueMember = annotation.getMember("value")) {
             is ConstantExpression -> {
                 parseLibraryString(valueMember.text)?.let { libraries.add(it) }
             }
