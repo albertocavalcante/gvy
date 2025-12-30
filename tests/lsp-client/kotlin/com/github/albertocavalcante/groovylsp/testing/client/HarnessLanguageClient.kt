@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.testing.client
 
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
-import com.github.albertocavalcante.groovylsp.services.ServerStatus
+import com.github.albertocavalcante.groovylsp.services.Health
 import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
@@ -124,27 +124,41 @@ class HarnessLanguageClient : GroovyLanguageClient {
      * "Error" status, the future is completed exceptionally so tests fail fast.
      */
     override fun groovyStatus(status: StatusNotification) {
-        logger.info("Received groovy/status: {} - {}", status.status, status.message)
+        logger.info(
+            "Received groovy/status: health={}, quiescent={}, message={}",
+            status.health,
+            status.quiescent,
+            status.message,
+        )
         recordNotification("groovy/status", status)
 
-        when (status.status) {
-            ServerStatus.Ready -> {
+        when {
+            status.health == Health.Ok && status.quiescent -> {
                 readyFuture.complete(null)
                 logger.info("Server ready - E2E tests can proceed")
             }
 
-            ServerStatus.Error -> {
+            status.health == Health.Error -> {
                 val errorMessage = status.message ?: "Server initialization failed"
                 readyFuture.completeExceptionally(RuntimeException(errorMessage))
                 logger.error("Server error - E2E tests will fail: {}", errorMessage)
             }
 
-            ServerStatus.Starting -> {
-                logger.info("Server starting - waiting for Ready status")
+            !status.quiescent -> {
+                logger.info(
+                    "Server busy (health={}, message={}) - waiting for quiescent",
+                    status.health,
+                    status.message,
+                )
             }
 
-            ServerStatus.Indexing -> {
-                logger.info("Server indexing - waiting for Ready status")
+            else -> {
+                logger.info(
+                    "Server status: health={}, quiescent={}, message={}",
+                    status.health,
+                    status.quiescent,
+                    status.message,
+                )
             }
         }
     }
