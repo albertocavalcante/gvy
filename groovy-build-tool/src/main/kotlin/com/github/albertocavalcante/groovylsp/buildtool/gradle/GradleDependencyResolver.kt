@@ -2,6 +2,8 @@ package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import com.github.albertocavalcante.groovylsp.buildtool.DependencyResolver
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import org.gradle.tooling.ProjectConnection
+import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
@@ -168,6 +170,9 @@ class GradleDependencyResolver(
     private fun resolveWithGradleUserHome(projectDir: Path, gradleUserHomeDir: File?): WorkspaceResolution {
         val connection = connectionFactory.getConnection(projectDir, gradleUserHomeDir)
 
+        // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
+        checkJdkGradleCompatibility(connection)
+
         val modelBuilder = connection.model(IdeaProject::class.java)
             .withArguments(
                 "-Dorg.gradle.daemon=true",
@@ -196,12 +201,39 @@ class GradleDependencyResolver(
         val causeChain = error.causeChain().toList()
         val messages = causeChain.mapNotNull { it.message }
 
+        // Note: "Unsupported class file major version" indicates JDK/Gradle mismatch,
+        // NOT an init script issue. Isolated user home cannot fix this - the pre-flight
+        // check should catch this case before model fetch is attempted.
         return messages.any {
             it.contains("init.d") ||
                 it.contains("init script") ||
-                it.contains("cp_init") ||
-                it.contains("Unsupported class file major version")
+                it.contains("cp_init")
         }
+    }
+
+    /**
+     * Pre-flight check for JDK/Gradle compatibility.
+     *
+     * Uses BuildEnvironment model which is safe to fetch - it does NOT trigger
+     * build script compilation, so it works even when there's a JDK/Gradle mismatch.
+     *
+     * If incompatible, throws a descriptive exception instead of proceeding to
+     * fail later with a confusing "Unsupported class file major version" error.
+     */
+    private fun checkJdkGradleCompatibility(connection: ProjectConnection) {
+        val gradleVersion = runCatching {
+            connection.getModel(BuildEnvironment::class.java).gradle.gradleVersion
+        }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
+
+        val jdkMajor = GradleJdkCompatibility.getCurrentJdkMajorVersion()
+
+        if (!GradleJdkCompatibility.isSupported(gradleVersion, jdkMajor)) {
+            val suggestion = GradleJdkCompatibility.suggestFix(gradleVersion, jdkMajor)
+            logger.error(suggestion)
+            throw GradleJdkIncompatibleException(suggestion)
+        }
+
+        logger.debug("JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor")
     }
 
     /**
