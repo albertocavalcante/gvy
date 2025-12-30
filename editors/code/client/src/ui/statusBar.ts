@@ -153,7 +153,7 @@ export class StatusBarManager implements vscode.Disposable {
     /**
      * Sets the output channel for "Open Logs" command
      */
-    setOutputChannel(channel: vscode.OutputChannel): void {
+    setOutputChannel(channel: vscode.OutputChannel | undefined): void {
         this.outputChannel = channel;
     }
 
