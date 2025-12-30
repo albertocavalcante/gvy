@@ -7,12 +7,69 @@ export type ServerState =
     | 'resolving-deps'
     | 'indexing'
     | 'ready'
-    | 'degraded';
+    | 'degraded'
+    | 'error'; // Distinct from 'degraded' - indicates fatal error requiring user action
 
 /**
  * Server health status
  */
 export type ServerHealth = 'ok' | 'warning' | 'error';
+
+/**
+ * Error type discriminators matching server-side sealed interface.
+ */
+export type ErrorType =
+    | 'GRADLE_JDK_INCOMPATIBLE'
+    | 'NO_BUILD_TOOL'
+    | 'DEPENDENCY_RESOLUTION_FAILED'
+    | 'JAVA_NOT_FOUND'
+    | string; // Allow custom error codes via GenericError
+
+/**
+ * Base interface for all error details.
+ * Matches server-side sealed interface ErrorDetails.
+ */
+export interface ErrorDetails {
+    type: ErrorType;
+    suggestions: string[];
+}
+
+/**
+ * Gradle/JDK version incompatibility error.
+ */
+export interface GradleJdkIncompatibleError extends ErrorDetails {
+    type: 'GRADLE_JDK_INCOMPATIBLE';
+    gradleVersion: string;
+    jdkVersion: number;
+    minGradleVersion: string;
+    maxJdkVersion: string | null;
+}
+
+/**
+ * No build tool detected error.
+ */
+export interface NoBuildToolError extends ErrorDetails {
+    type: 'NO_BUILD_TOOL';
+    searchedPaths: string[];
+}
+
+/**
+ * Dependency resolution failure error.
+ */
+export interface DependencyResolutionError extends ErrorDetails {
+    type: 'DEPENDENCY_RESOLUTION_FAILED';
+    buildTool: string;
+    cause: string | null;
+}
+
+/**
+ * Java runtime not found error.
+ */
+export interface JavaNotFoundError extends ErrorDetails {
+    type: 'JAVA_NOT_FOUND';
+    configuredPath: string | null;
+    searchedLocations: string[];
+}
 
 /**
  * Groovy server status notification parameters.
@@ -23,18 +80,25 @@ export interface GroovyStatusParams {
     message?: string;
     filesIndexed?: number;
     filesTotal?: number;
+    errorCode?: string;
+    errorDetails?: ErrorDetails;
 }
 
 /**
  * Determines the server state based on status parameters.
+ *
+ * State mapping:
+ * - 'error': Health is 'error' OR errorCode is present (fatal, requires user action)
+ * - 'degraded': Health is 'warning' (partial functionality, can continue)
+ * - Other states based on quiescent and message content
  */
 export function determineStateFromStatus(params: GroovyStatusParams): ServerState {
-    // Error health always means degraded
-    if (params.health === 'error') {
-        return 'degraded';
+    // Error with errorCode indicates a fatal error requiring user action (e.g., JDK incompatible)
+    if (params.health === 'error' || params.errorCode) {
+        return 'error';
     }
 
-    // Warning health means degraded
+    // Warning health means degraded (partial functionality, e.g., some deps missing)
     if (params.health === 'warning') {
         return 'degraded';
     }

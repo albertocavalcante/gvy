@@ -7,6 +7,32 @@ import kotlin.io.path.exists
 /**
  * Manages build tool detection and selection for workspaces.
  *
+ * ## Design Decision: Auto-Detection Strategy
+ *
+ * This class deliberately uses **auto-detection** of build files (build.gradle, pom.xml, etc.)
+ * rather than requiring explicit "Import Project" actions. This decision was made after researching
+ * approaches used by other language servers:
+ *
+ * | Tool         | Approach                           |
+ * |--------------|------------------------------------|
+ * | rust-analyzer| Auto-detect Cargo.toml             |
+ * | vscode-java  | Lightweight → Standard mode import |
+ * | Metals       | BSP with explicit build connect    |
+ * | IntelliJ     | Explicit "Import Project" wizard   |
+ *
+ * **Rationale for auto-detect:**
+ * - Most Groovy/Jenkins users expect IDE-like "just works" behavior
+ * - CLI commands like `gls check` require auto-resolution for non-interactive use
+ * - Jenkins Pipeline workspaces (no build.gradle) still work for syntax-only mode
+ * - Lower friction for the common case
+ *
+ * **Trade-offs:**
+ * - No explicit control over when resolution happens
+ * - Silent failures can be confusing (mitigated by enhanced error notifications)
+ * - Can be slow on first open with large projects
+ *
+ * **Future consideration:** Add `groovy.build.autoResolve` setting toggle if users request it.
+ *
  * @param buildTools List of available build tools, in priority order
  * @param gradleBuildStrategy Strategy for Gradle project dependency resolution
  */

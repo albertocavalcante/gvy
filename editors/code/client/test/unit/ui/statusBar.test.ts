@@ -616,14 +616,14 @@ describe('StatusBar', () => {
             assert.include(statusBarItemStub.text, '$(pass-filled)');
         });
 
-        it('should transition to degraded when health is error', () => {
+        it('should transition to error when health is error', () => {
             statusHandler({
                 health: 'error',
                 quiescent: true,
                 message: 'Build configuration error'
             });
 
-            assert.include(statusBarItemStub.text, '$(warning)');
+            assert.include(statusBarItemStub.text, '$(error)');
         });
 
         it('should transition to degraded when health is warning', () => {

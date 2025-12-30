@@ -38,6 +38,7 @@ const STATUS_ICONS: Record<ServerState, string> = {
     indexing: '$(loading~spin)',
     ready: '$(pass-filled)',
     degraded: '$(warning)',
+    error: '$(error)',
 };
 
 /**
@@ -478,6 +479,8 @@ export class StatusBarManager implements vscode.Disposable {
                 return 'Ready';
             case 'degraded':
                 return 'Degraded';
+            case 'error':
+                return 'Error';
         }
     }
 
@@ -486,6 +489,8 @@ export class StatusBarManager implements vscode.Disposable {
      */
     private computeBackgroundColor(): vscode.ThemeColor | undefined {
         switch (this.currentState) {
+            case 'error':
+                return new vscode.ThemeColor('statusBarItem.errorBackground');
             case 'degraded':
                 return new vscode.ThemeColor('statusBarItem.warningBackground');
             case 'stopped':
@@ -500,6 +505,8 @@ export class StatusBarManager implements vscode.Disposable {
      */
     private computeForegroundColor(): vscode.ThemeColor | undefined {
         switch (this.currentState) {
+            case 'error':
+                return new vscode.ThemeColor('statusBarItem.errorForeground');
             case 'degraded':
                 return new vscode.ThemeColor('statusBarItem.warningForeground');
             case 'stopped':
