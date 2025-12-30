@@ -655,8 +655,12 @@ class GroovyTextDocumentService(
         logger.debug("Folding range requested for ${params.textDocument.uri}")
         val uri = java.net.URI.create(params.textDocument.uri)
 
-        // Ensure file is compiled
-        compilationService.ensureCompiled(uri)
+        // Ensure file is compiled before providing folding ranges
+        val compilationResult = ensureCompiledOrCompileNow(uri)
+        if (compilationResult == null) {
+            logger.warn("Document $uri not compiled, cannot provide folding ranges")
+            return@future emptyList()
+        }
 
         foldingRangeProvider.provideFoldingRanges(uri)
     }
