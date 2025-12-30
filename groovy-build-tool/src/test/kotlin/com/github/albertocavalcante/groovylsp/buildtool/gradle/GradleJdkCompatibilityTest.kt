@@ -25,6 +25,12 @@ class GradleJdkCompatibilityTest {
     }
 
     @Test
+    fun `isSupported returns false for pre-release Gradle version with JDK 21`() {
+        // Gradle 8.5-rc-1 is older than 8.5 GA, so strictly it might not be supported if 8.5 is required
+        assertFalse(GradleJdkCompatibility.isSupported("8.5-rc-1", 21))
+    }
+
+    @Test
     fun `isSupported returns false for Gradle 7_5 with JDK 20`() {
         assertFalse(GradleJdkCompatibility.isSupported("7.5", 20))
     }
@@ -70,6 +76,8 @@ class GradleJdkCompatibilityTest {
         assertTrue(suggestion.contains("8.5"))
         assertTrue(suggestion.contains("Upgrade"))
         assertTrue(suggestion.contains("wrapper"))
+        // Validates the dynamic max JDK suggestion (Gradle 8.0.2 supports up to JDK 19)
+        assertTrue(suggestion.contains("19 for Gradle 8.0.2"))
     }
 
     @Test

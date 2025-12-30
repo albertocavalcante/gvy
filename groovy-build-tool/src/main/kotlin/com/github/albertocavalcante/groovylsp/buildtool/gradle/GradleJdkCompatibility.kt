@@ -46,7 +46,7 @@ object GradleJdkCompatibility {
     fun isSupported(gradleVersion: String, jdkMajorVersion: Int): Boolean {
         val minGradle = MINIMUM_GRADLE_FOR_JDK[jdkMajorVersion] ?: return true
         return runCatching {
-            GradleVersion.version(gradleVersion).baseVersion >= minGradle.baseVersion
+            GradleVersion.version(gradleVersion) >= minGradle
         }.getOrElse { false }
     }
 
@@ -74,13 +74,32 @@ object GradleJdkCompatibility {
         val minGradle = getMinimumGradleVersion(jdkMajorVersion)
             ?: return "Gradle $gradleVersion may not be compatible with JDK $jdkMajorVersion."
 
+        val maxJdk = findMaxSupportedJdk(gradleVersion) ?: "17 or lower"
+
         return buildString {
             append("Gradle $gradleVersion is not compatible with JDK $jdkMajorVersion. ")
             append("JDK $jdkMajorVersion requires Gradle $minGradle or higher.\n")
             append("Suggestions:\n")
             append("  1. Upgrade your project's Gradle wrapper: ./gradlew wrapper --gradle-version=$minGradle\n")
-            append("  2. Run the LSP with a compatible JDK (17 or lower for Gradle $gradleVersion)\n")
+            append("  2. Run the LSP with a compatible JDK ($maxJdk for Gradle $gradleVersion)\n")
             append("  3. Configure 'groovy.gradle.java.home' to point to a compatible JDK")
+        }
+    }
+
+    private fun findMaxSupportedJdk(gradleVersion: String): String? {
+        val currentGradle = runCatching { GradleVersion.version(gradleVersion) }.getOrNull() ?: return null
+
+        // Find the first JDK version that requires a Gradle version higher than what we have
+        val firstUnsupportedJdk = MINIMUM_GRADLE_FOR_JDK.entries
+            .sortedBy { it.key }
+            .firstOrNull { it.value > currentGradle }
+            ?.key
+
+        return when {
+            // If we found an unsupported JDK, the one before it is the max supported
+            firstUnsupportedJdk != null -> (firstUnsupportedJdk - 1).toString()
+            // If no JDK is too new, then we support the newest one we know about
+            else -> MINIMUM_GRADLE_FOR_JDK.keys.maxOrNull()?.toString()
         }
     }
 }
