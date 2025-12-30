@@ -7,7 +7,7 @@ import {
     State
 } from 'vscode-languageclient/node';
 import { validateJava, showJavaError, getJavaExecutable } from '../java/validator';
-import { setClient } from '../ui/statusBar';
+import { setClient, getStatusBarManager } from '../ui/statusBar';
 import { getConfiguration } from '../configuration/settings';
 import { ServerResolver } from '../services/ServerResolver';
 
@@ -174,10 +174,7 @@ function buildInitializationOptions(): LspInitializationOptions {
     return buildServerSettingsMap();
 }
 
-/**
- * Creates client options for the Language Client
- */
-function createClientOptions(): LanguageClientOptions {
+function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClientOptions {
     const clientOptions: LanguageClientOptions = {
         // Register the server for Groovy and Jenkinsfile documents
         documentSelector: [
@@ -191,7 +188,8 @@ function createClientOptions(): LanguageClientOptions {
             fileEvents: workspace.createFileSystemWatcher('**/*.{groovy,gvy,gy,gsh,gradle,Jenkinsfile}')
         },
         initializationOptions: buildInitializationOptions(),
-        outputChannelName: 'Groovy Language Server',
+        outputChannel: outputChannel,
+        outputChannelName: outputChannel ? undefined : 'Groovy Language Server',
         traceOutputChannel: workspace.getConfiguration('groovy').get('trace.server') !== 'off'
             ? window.createOutputChannel('Groovy Language Server Trace')
             : undefined,
@@ -215,14 +213,14 @@ function createClientOptions(): LanguageClientOptions {
 /**
  * Starts the Language Client
  */
-export async function startClient(): Promise<void> {
+export async function startClient(outputChannel?: vscode.OutputChannel): Promise<void> {
     if (client && client.state === State.Running) {
         return; // Already running
     }
 
     try {
         const serverOptions = await createServerOptions();
-        const clientOptions = createClientOptions();
+        const clientOptions = createClientOptions(outputChannel);
 
         client = new LanguageClient(
             'groovyLanguageServer',
@@ -233,6 +231,10 @@ export async function startClient(): Promise<void> {
 
         // Update status bar with new client
         setClient(client);
+
+        if (outputChannel) {
+            getStatusBarManager()?.setOutputChannel(outputChannel);
+        }
 
         await client.start();
         console.log('Groovy Language Server started successfully');

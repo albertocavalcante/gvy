@@ -58,7 +58,7 @@ export async function activate(context: vscode.ExtensionContext) {
         replService.initialize(context);
 
         // Start the Language Server
-        await startClient();
+        await startClient(serverOutputChannel);
 
         // AI Tools Integration
         const lspToolService = new LSPToolService(vscode, getClient);

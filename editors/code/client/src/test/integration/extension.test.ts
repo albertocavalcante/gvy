@@ -70,4 +70,15 @@ suite('Extension Test Suite', () => {
             'statusBar.clickAction should have valid enum value'
         );
     });
+
+    test('Should use correct output channel', async () => {
+        const client = require('../../server/client').getClient();
+        assert.ok(client, 'Client should be successfully initialized');
+
+        // Verify client output channel matches what we expect
+        // Note: We can't easily access the extension's created channel instance here
+        // without exporting it, but we can verify the client has one.
+        assert.ok(client.outputChannel, 'Client should have an output channel');
+        assert.strictEqual(client.outputChannel.name, 'Groovy Language Server', 'Output channel name should match');
+    });
 });
