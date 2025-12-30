@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ServerState } from './statusBar';
+import { ServerState } from './statusUtils';
 import { JavaResolution } from '../java/finder';
 
 /**
@@ -134,6 +134,13 @@ export class LanguageStatusManager implements vscode.Disposable {
                     text: '$(warning) Degraded',
                     detail: message || 'Server running with limited functionality',
                     severity: vscode.LanguageStatusSeverity.Warning,
+                };
+            default:
+                // Should not happen if ServerState is exhaustive
+                return {
+                    text: '$(question) Unknown',
+                    detail: `Unknown state: ${state}`,
+                    severity: vscode.LanguageStatusSeverity.Error
                 };
         }
     }

@@ -1,8 +1,11 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { getClient } from '../../server/client';
 
 suite('Extension Test Suite', () => {
     console.log('Start all tests.');
+    // ... (rest of the file is unchanged, will just replace the top imports and the specific test case)
+
 
     test('Extension should be present', () => {
         const extension = vscode.extensions.getExtension('albertocavalcante.gvy');
@@ -69,5 +72,19 @@ suite('Extension Test Suite', () => {
             ['menu', 'logs', 'restart'].includes(clickValue || 'menu'),
             'statusBar.clickAction should have valid enum value'
         );
+    });
+
+    test('Should use correct output channel', async () => {
+        const client = getClient();
+        assert.ok(client, 'Client should be successfully initialized');
+        if (!client) {
+            throw new Error('Client is undefined');
+        }
+
+        // Verify client output channel matches what we expect
+        // Note: We can't easily access the extension's created channel instance here
+        // without exporting it, but we can verify the client has one.
+        assert.ok(client.outputChannel, 'Client should have an output channel');
+        assert.strictEqual(client.outputChannel.name, 'Groovy Language Server', 'Output channel name should match');
     });
 });

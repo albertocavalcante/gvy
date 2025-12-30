@@ -4,7 +4,8 @@ import * as vscode from 'vscode';
 
 suite('Spock Test Scaffolding Integration', () => {
 
-    suiteSetup(async () => {
+    suiteSetup(async function () {
+        this.timeout(60000); // Increase timeout for Windows CI
         const extension = vscode.extensions.getExtension('albertocavalcante.gvy');
         if (!extension?.isActive) {
             await extension?.activate();
