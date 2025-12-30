@@ -28,10 +28,14 @@ steps:
   - waitNotification:
       method: groovy/status
       checks:
-        - jsonPath: $.status
+        - jsonPath: $.health
           expect:
             type: EQUALS
-            value: Ready
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
       timeoutMs: 30000
 
   # Request definition on 'targetMethod' call at line 9 (0-indexed)

@@ -8,9 +8,14 @@ steps:
   - waitNotification:
       method: groovy/status
       checks:
-        - jsonPath: $.status
+        - jsonPath: $.health
           expect:
-            value: Ready
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
       timeoutMs: 60000
   - openDocument:
       path: test.groovy
