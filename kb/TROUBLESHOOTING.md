@@ -5,6 +5,8 @@ This guide contains common issues, solutions, and debugging techniques for build
 ## Table of Contents
 
 - [Build Failures](#build-failures)
+- [CI & GitHub Actions](#ci--github-actions)
+- [Integration Issues](#integration-issues)
 - [Debugging Techniques](#debugging-techniques)
 - [AST & Compilation Issues](#ast--compilation-issues)
 - [Test Debugging](#test-debugging)
@@ -73,6 +75,140 @@ eval "$(direnv export bash)"
 # or
 source ~/.sdkman/bin/sdkman-init.sh
 ```
+
+---
+
+## CI & GitHub Actions
+
+### CI Build Skipped Despite Code Changes
+
+**Symptoms:**
+- PR shows "Build and Test" job as skipped
+- Changed code in nested modules (e.g., `groovy-diagnostics/codenarc/src/`)
+- Path filter shows "Matching files: none"
+
+**Cause:**
+GitHub Actions `dorny/paths-filter` uses glob patterns that only match specified depth levels. The pattern `groovy-*/src/**` matches single-level modules like `groovy-lsp/src/` but NOT nested modules like `groovy-diagnostics/codenarc/src/**`.
+
+**Debug:**
+Check the `check-paths` job output in GitHub Actions:
+```bash
+gh run view <run-id> --log | grep "paths-filter"
+# Look for: "Matching files: none" when you expected matches
+```
+
+Or use the PR checks command:
+```bash
+gh pr checks <pr-number> | grep "check-paths"
+```
+
+**Solution:**
+Update `.github/workflows/ci.yml` to include nested module patterns:
+
+```yaml
+filters: |
+  run_main_ci:
+    # Single-level modules
+    - 'groovy-*/src/**'
+    - 'groovy-*/*.gradle.kts'
+    # Nested modules (e.g., groovy-diagnostics/codenarc/)
+    - 'groovy-diagnostics/*/src/**'
+    - 'groovy-diagnostics/*/*.gradle.kts'
+    - 'jupyter/*/src/**'
+    - 'jupyter/*/*.gradle.kts'
+    - 'tools/*/src/**'
+    - 'tools/*/*.gradle.kts'
+```
+
+**Key insight:** Each level of nesting requires an explicit glob pattern. Patterns like `**/src/**` are too broad and may match unintended files.
+
+### CodeQL Autobuild Failures
+
+**Symptoms:**
+- CodeQL workflow fails with "We were unable to automatically build your code"
+- Error shows Maven Central rate limiting (HTTP 429: Too Many Requests)
+- Unrelated to your PR changes
+
+**Cause:**
+Transient infrastructure issues with dependency repositories. CodeQL's autobuild downloads all dependencies without caching, which can hit rate limits.
+
+**Solution:**
+These are usually temporary. Wait and re-run the workflow:
+```bash
+gh run rerun <run-id>
+```
+
+If persistent, check GitHub's status page: https://www.githubstatus.com/
+
+---
+
+## Integration Issues
+
+### Test Compilation Errors After Rebasing/Merging
+
+**Symptoms:**
+- Build fails with "Unresolved reference" in test code
+- Error points to a property/method that used to exist
+- Main branch builds successfully
+
+**Example:**
+```
+e: file://.../HarnessLanguageClient.kt:127:63 Unresolved reference 'status'.
+```
+
+**Cause:**
+An API was changed in main (e.g., during a feature PR) but test client code wasn't updated. When you rebase your branch on the new main, the old test code no longer compiles.
+
+**Debug:**
+1. **Identify the changed API:**
+   ```bash
+   # Find the type/class name from the error
+   git log --all --grep="StatusNotification" --oneline | head -5
+
+   # Or search recent PRs
+   gh pr list --state merged --limit 10 | grep -i "status\|notification"
+   ```
+
+2. **Check what changed:**
+   ```bash
+   # View the API definition
+   git show origin/main:path/to/StatusNotification.kt
+
+   # Or use grep to find it
+   grep -r "data class StatusNotification" --include="*.kt"
+   ```
+
+3. **Compare old vs new:**
+   ```bash
+   # Show the diff for that file across recent commits
+   git log -p origin/main -- groovy-lsp/src/main/kotlin/path/to/File.kt | head -100
+   ```
+
+**Solution Pattern:**
+Update test code to use the new API:
+
+```kotlin
+// OLD API (before server-status-notifications PR)
+override fun groovyStatus(status: StatusNotification) {
+    when (status.status) {  // ❌ 'status' property doesn't exist anymore
+        ServerStatus.Ready -> { ... }
+        ServerStatus.Error -> { ... }
+    }
+}
+
+// NEW API (after server-status-notifications PR)
+override fun groovyStatus(status: StatusNotification) {
+    when {  // ✅ Use 'health' and 'quiescent' instead
+        status.health == Health.Ok && status.quiescent -> { ... }
+        status.health == Health.Error -> { ... }
+    }
+}
+```
+
+**Prevention:**
+- Run full build after rebasing: `./gradlew build`
+- Check CI logs for compilation errors before pushing
+- Keep feature branches short-lived to minimize drift from main
 
 ---
 
@@ -345,6 +481,8 @@ git status  # In your current worktree
 | Problem | First Step |
 |---------|------------|
 | Build fails | `make format && make build` |
+| CI skipped despite code changes | Check path filters in `.github/workflows/ci.yml` for nested modules |
+| Test compilation error after rebase | `git log --grep="<TypeName>"` to find API changes |
 | Test fails in CI only | `./gradlew clean test --tests "*.MyTest"` |
 | Wrong definition resolved | Check `accessedVariable` with `groovy -e` |
 | accessedVariable is null | Check compilation phase (needs SEMANTIC_ANALYSIS) |
