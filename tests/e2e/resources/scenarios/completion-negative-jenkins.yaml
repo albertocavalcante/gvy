@@ -12,10 +12,14 @@ steps:
   - waitNotification:
       method: groovy/status
       checks:
-        - jsonPath: $.status
+        - jsonPath: $.health
           expect:
             type: EQUALS
-            value: Ready
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
       timeoutMs: 180000
 
   # Test 1: Regular .groovy file should NOT have Jenkins 'echo' step
