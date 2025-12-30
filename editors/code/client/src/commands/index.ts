@@ -96,7 +96,41 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
 
     // Register report issue command
     const reportIssueCommand = commands.registerCommand('groovy.reportIssue', async () => {
-        const url = 'https://github.com/albertocavalcante/gvy/issues/new';
+        const { buildIssueBody } = await import('../utils/reportIssue');
+        const vscode = await import('vscode');
+
+        // Gather system information
+        const extensionVersion = context.extension?.packageJSON?.version || 'unknown';
+
+        // Get server version from LSP
+        let serverVersion = 'unknown';
+        try {
+            const client = getClient();
+            if (client) {
+                const version = await client.sendRequest(ExecuteCommandRequest.type, {
+                    command: 'groovy.version',
+                    arguments: []
+                });
+                serverVersion = String(version) || 'unknown';
+            }
+        } catch {
+            // Fall back to unknown
+        }
+
+        // Build system info
+        const info = {
+            extensionVersion,
+            serverVersion,
+            vscodeVersion: vscode.version,
+            osInfo: `${process.platform} ${process.arch}`,
+        };
+
+        // Build issue body
+        const issueBody = buildIssueBody(info);
+        const encodedBody = encodeURIComponent(issueBody);
+
+        // Open GitHub issue with pre-filled body
+        const url = `https://github.com/albertocavalcante/gvy/issues/new?body=${encodedBody}`;
         await commands.executeCommand('vscode.open', Uri.parse(url));
     });
     disposables.push(reportIssueCommand);
