@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -301,17 +302,17 @@ class RulesetResolverTest {
 
         // ❌ Should NOT include generic rulesets (these cause noise)
         // Note: Check for actual ruleset() directives, not comments
-        assertTrue(
-            !config.rulesetContent.contains("ruleset('rulesets/basic.xml')"),
+        assertFalse(
+            config.rulesetContent.contains("ruleset('rulesets/basic.xml')"),
             "Jenkins ruleset should NOT include ruleset('rulesets/basic.xml') directive (causes ~30 style warnings). " +
                 "Only Jenkins CPS rules should be included.",
         )
-        assertTrue(
-            !config.rulesetContent.contains("ruleset('rulesets/imports.xml')"),
+        assertFalse(
+            config.rulesetContent.contains("ruleset('rulesets/imports.xml')"),
             "Jenkins ruleset should NOT include ruleset('rulesets/imports.xml') directive (import organization is not critical for Jenkinsfiles).",
         )
-        assertTrue(
-            !config.rulesetContent.contains("ruleset('rulesets/formatting.xml')"),
+        assertFalse(
+            config.rulesetContent.contains("ruleset('rulesets/formatting.xml')"),
             "Jenkins ruleset should NOT include ruleset('rulesets/formatting.xml') directive " +
                 "(includes Indentation rule that caused 15 warnings). " +
                 "Format-on-save should handle formatting instead.",
