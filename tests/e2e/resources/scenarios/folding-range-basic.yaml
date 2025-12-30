@@ -2,9 +2,6 @@ name: folding-range-basic
 description: >
   Test textDocument/foldingRange.
   Verifies correct folding ranges for classes and methods.
-  
-  TODO(DEFERRED): #415 - Test disabled. Feature not implemented.
-  See: https://github.com/albertocavalcante/groovy-devtools/issues/415
 workspace:
   fixture: empty-workspace
 steps:
