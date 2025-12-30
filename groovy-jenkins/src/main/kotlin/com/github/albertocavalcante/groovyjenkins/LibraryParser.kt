@@ -24,6 +24,10 @@ data class LibraryReference(val name: String, val version: String? = null)
 class LibraryParser {
     private val logger = LoggerFactory.getLogger(LibraryParser::class.java)
 
+    companion object {
+        private const val MAX_PARSING_ATTEMPTS = 5
+    }
+
     /**
      * Parses library references from Jenkinsfile source code.
      */
@@ -31,9 +35,8 @@ class LibraryParser {
     fun parseLibraries(source: String): List<LibraryReference> {
         var currentSource = source
         var attempts = 0
-        val maxAttempts = 5
 
-        while (attempts < maxAttempts) {
+        while (attempts < MAX_PARSING_ATTEMPTS) {
             try {
                 // Try to parse the current source
                 val ast = parseToAst(currentSource)
@@ -64,9 +67,9 @@ class LibraryParser {
         val errorCollector = e.errorCollector
         var changed = false
 
-        errorCollector.errors?.forEach { message ->
-            if (message is org.codehaus.groovy.control.messages.SyntaxErrorMessage) {
-                val cause = message.cause
+        errorCollector.errors?.filterIsInstance<org.codehaus.groovy.control.messages.SyntaxErrorMessage>()
+            ?.forEach { message ->
+                val cause = message.cause // Now safely accessible as SyntaxException
                 val line = cause.line
                 if (line > 0 && line <= lines.size) {
                     // Blank out the offending line to preserve line numbers for other nodes
@@ -74,7 +77,6 @@ class LibraryParser {
                     changed = true
                 }
             }
-        }
 
         return if (changed) lines.joinToString("\n") else null
     }

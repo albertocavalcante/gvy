@@ -7,14 +7,14 @@ import kotlin.test.assertNull
 class ShebangUtilsTest {
 
     @Test
-    fun shouldReplaceShebangWithEmptyLine() {
+    fun `should replace shebang with empty line`() {
         val source = "#!/usr/bin/env groovy\nprintln 'hello'"
         val expected = "\nprintln 'hello'"
         assertEquals(expected, ShebangUtils.replaceShebangWithEmptyLine(source))
     }
 
     @Test
-    fun shouldReplaceShebangWithEmptyLineAndPreserveOtherLines() {
+    fun `should replace shebang with empty line and preserve other lines`() {
         val source = """
             #!/usr/bin/env groovy
             
@@ -26,13 +26,13 @@ class ShebangUtilsTest {
     }
 
     @Test
-    fun shouldDoNothingIfNoShebangIsPresent() {
+    fun `should do nothing if no shebang is present`() {
         val source = "println 'hello'"
         assertEquals(source, ShebangUtils.replaceShebangWithEmptyLine(source))
     }
 
     @Test
-    fun shouldExtractShebangAndContent() {
+    fun `should extract shebang and content`() {
         val source = "#!/usr/bin/env groovy\nprintln 'hello'"
         val result = ShebangUtils.extractShebang(source)
 
@@ -41,7 +41,7 @@ class ShebangUtilsTest {
     }
 
     @Test
-    fun shouldExtractShebangFromShebangOnlyFile() {
+    fun `should extract shebang from shebang-only file`() {
         // Edge case mentioned in review
         val source = "#!/usr/bin/env groovy"
         val result = ShebangUtils.extractShebang(source)
@@ -51,7 +51,7 @@ class ShebangUtilsTest {
     }
 
     @Test
-    fun shouldReturnNullShebangIfNotPresent() {
+    fun `should return null shebang if not present`() {
         val source = "println 'hello'"
         val result = ShebangUtils.extractShebang(source)
 
@@ -60,7 +60,7 @@ class ShebangUtilsTest {
     }
 
     @Test
-    fun shouldNormalizeCrlfInShebang() {
+    fun `should normalize CRLF in shebang`() {
         val source = "#!/usr/bin/env groovy\r\nprintln 'hello'"
         val result = ShebangUtils.extractShebang(source)
 

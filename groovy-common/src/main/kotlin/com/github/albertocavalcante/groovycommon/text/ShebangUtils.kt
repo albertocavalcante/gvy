@@ -48,11 +48,9 @@ object ShebangUtils {
     fun extractShebang(source: String): ExtractionResult {
         val match = SHEBANG_REGEX.find(source) ?: return ExtractionResult(null, source)
 
-        val rawShebang = match.value
         // Normalize to Unix line ending for the shebang part
-        val normalizedShebang = rawShebang.replace("\r\n", "\n").let {
-            if (it.endsWith("\n")) it else "$it\n"
-        }
+        // Review suggestion: Simplify normalization logic
+        val normalizedShebang = match.value.trimEnd('\r', '\n') + "\n"
 
         val remainingContent = source.substring(match.range.last + 1)
         return ExtractionResult(normalizedShebang, remainingContent)
