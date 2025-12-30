@@ -16,11 +16,49 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Collections
+import java.util.Enumeration
 import java.util.jar.JarFile
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
+
+/**
+ * Path to the service provider configuration file for AST transformations.
+ * This file is located in META-INF/services/ and lists all global AST transformation classes.
+ */
+private const val AST_TRANSFORMATION_SERVICE_FILE =
+    "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+
+/**
+ * A GroovyClassLoader that filters out AST transformation service discovery.
+ *
+ * This prevents NoClassDefFoundError when project classpath contains transformation classes
+ * that reference Groovy classes not visible to the isolated classloader. By filtering out
+ * the service file discovery, we prevent Groovy's CompilationUnit from attempting to load
+ * project-specific transformations that would fail due to classloader isolation.
+ *
+ * @see GroovyParserFacade for usage context
+ */
+private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLoader(parent) {
+
+    override fun getResources(name: String): Enumeration<URL> {
+        // Filter out AST transformation service discovery from this classloader
+        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
+            return Collections.emptyEnumeration()
+        }
+        return super.getResources(name)
+    }
+
+    override fun getResource(name: String): URL? {
+        if (name == AST_TRANSFORMATION_SERVICE_FILE) {
+            return null
+        }
+        return super.getResource(name)
+    }
+}
 
 /**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
@@ -28,13 +66,6 @@ import kotlin.io.path.isRegularFile
 class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
 
     companion object {
-        /**
-         * Path to the service provider configuration file for AST transformations.
-         * This file is located in META-INF/services/ and lists all global AST transformation classes.
-         */
-        private const val AST_TRANSFORMATION_SERVICE_FILE =
-            "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
-
         /**
          * Comment character for Java ServiceLoader configuration files.
          *
@@ -47,6 +78,19 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
          * @see <a href="https://docs.oracle.com/javase/8/docs/api/java/util/ServiceLoader.html">ServiceLoader</a>
          */
         private const val SERVICE_FILE_COMMENT_CHAR = '#'
+
+        /**
+         * Shared transform loader that has access to bundled Groovy via the LSP's classloader.
+         * This allows Groovy's built-in transformations to work correctly while project-specific
+         * transformations are disabled.
+         *
+         * This is a singleton to prevent resource leaks - GroovyClassLoader extends URLClassLoader
+         * which holds native resources. Since no project classpath is added, reusing this instance
+         * is safe and efficient.
+         */
+        private val transformLoader: GroovyClassLoader by lazy {
+            GroovyClassLoader(GroovyParserFacade::class.java.classLoader)
+        }
     }
 
     private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
@@ -138,13 +182,17 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
         val config = createCompilerConfiguration(allClasspath)
-        // Use configured parent classloader (default is platform/bootstrap to avoid pollution)
-        val classLoader = GroovyClassLoader(parentClassLoader)
 
+        // Main classloader: uses TransformFilteringClassLoader to prevent discovery of project
+        // AST transformations that would cause NoClassDefFoundError due to classloader isolation.
+        // The filtering classloader returns empty results for META-INF/services/...ASTTransformation.
+        val classLoader = TransformFilteringClassLoader(parentClassLoader)
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
 
-        val compilationUnit = CompilationUnit(config, null, classLoader)
+        // Use 4-arg constructor with separate transform loader for proper classloader isolation.
+        // transformLoader is a singleton (see companion object) to prevent resource leaks.
+        val compilationUnit = CompilationUnit(config, null, classLoader, transformLoader)
 
         val source = StringReaderSource(request.content, config)
         val sourceUnit = SourceUnit(request.sourceUnitName, source, config, classLoader, compilationUnit.errorCollector)
