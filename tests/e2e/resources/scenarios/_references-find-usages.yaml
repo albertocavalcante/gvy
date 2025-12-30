@@ -42,10 +42,14 @@ steps:
   - waitNotification:
       method: groovy/status
       checks:
-        - jsonPath: $.status
+        - jsonPath: $.health
           expect:
             type: EQUALS
-            value: Ready
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
       timeoutMs: 30000
 
   # Test 1: Find references for 'performAction' from definition site
