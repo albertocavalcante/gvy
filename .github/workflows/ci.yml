@@ -116,8 +116,17 @@ jobs:
               # Code that requires CI to run
               - 'src/**'
               - 'gradle/**'
+              # Single-level modules (e.g., groovy-lsp/src/)
               - 'groovy-*/src/**'
               - 'groovy-*/*.gradle.kts'
+              # Nested modules (e.g., groovy-diagnostics/codenarc/src/)
+              - 'groovy-diagnostics/*/src/**'
+              - 'groovy-diagnostics/*/*.gradle.kts'
+              - 'jupyter/*/src/**'
+              - 'jupyter/*/*.gradle.kts'
+              - 'tools/*/src/**'
+              - 'tools/*/*.gradle.kts'
+              # Root-level files
               - 'tests/**'
               - '*.gradle'
               - '*.gradle.kts'
