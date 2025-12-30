@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.5.0](https://github.com/albertocavalcante/gvy/compare/v0.4.8...v0.5.0) (2025-12-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **codenarc:** Jenkins ruleset no longer includes generic CodeNarc rules
+* **ext:** Extension now requires pnpm instead of npm
+* **cli:** None - CLI interface remains compatible
+
+### Features
+
+* add make targets to install extension to VS Code forks ([#486](https://github.com/albertocavalcante/gvy/issues/486)) ([7c3b01a](https://github.com/albertocavalcante/gvy/commit/7c3b01aa09c393b94b8d8e3a05f7afc255febde3))
+* **cli:** Migrate to Clikt with NO_COLOR support ([#470](https://github.com/albertocavalcante/gvy/issues/470)) ([684de2c](https://github.com/albertocavalcante/gvy/commit/684de2cb4b99eb1dab423cdfaec64041c3f4435c))
+* **ext:** auto-build local JAR in monorepo by default ([#484](https://github.com/albertocavalcante/gvy/issues/484)) ([328eac9](https://github.com/albertocavalcante/gvy/commit/328eac929b1c009ea83fd087e23eca7aae09a471))
+* **ext:** improve Java detection UX with jdk-utils and login shell fallback ([#488](https://github.com/albertocavalcante/gvy/issues/488)) ([98c6d65](https://github.com/albertocavalcante/gvy/commit/98c6d65c1f7a547cfaf0bcc38b44c9b1a1ea1215))
+* **ext:** status bar excellence - smart visibility, menus, Language Status ([#490](https://github.com/albertocavalcante/gvy/issues/490)) ([33d2ed0](https://github.com/albertocavalcante/gvy/commit/33d2ed03ec65e7298866c7045dd03e0be10e6891))
+* **gls:** implement textDocument/documentHighlight ([#474](https://github.com/albertocavalcante/gvy/issues/474)) ([5dc0e5e](https://github.com/albertocavalcante/gvy/commit/5dc0e5e4263ab97906f68208dbca593736915c92))
+* **lsp:** Implement Advanced Type-Aware Signature Help ([#468](https://github.com/albertocavalcante/gvy/issues/468)) ([0a9250e](https://github.com/albertocavalcante/gvy/commit/0a9250e26af112e34771578bd308218b0bd36951))
+* **lsp:** implement textDocument/implementation ([#413](https://github.com/albertocavalcante/gvy/issues/413)) ([#475](https://github.com/albertocavalcante/gvy/issues/475)) ([2f3ee71](https://github.com/albertocavalcante/gvy/commit/2f3ee71e3adc6d6e4f0af6e59b5254377c8388c3))
+* **lsp:** implement textDocument/signatureHelp ([#467](https://github.com/albertocavalcante/gvy/issues/467)) ([d4c9869](https://github.com/albertocavalcante/gvy/commit/d4c98691cd9f2a69355144141cf0ec17ab0db839))
+* **lsp:** implement transitive hierarchy support for implementation provider ([#477](https://github.com/albertocavalcante/gvy/issues/477)) ([73fff04](https://github.com/albertocavalcante/gvy/commit/73fff04989820d6e4d3140561f4f33a915bd3474))
+* server-driven status notifications with file counts ([#493](https://github.com/albertocavalcante/gvy/issues/493)) ([55b78f3](https://github.com/albertocavalcante/gvy/commit/55b78f3dead64f26aa306f4373af1449f4893b7a))
+
+
+### Bug Fixes
+
+* add pre-flight JDK/Gradle compatibility check ([#501](https://github.com/albertocavalcante/gvy/issues/501)) ([d82a0b2](https://github.com/albertocavalcante/gvy/commit/d82a0b2a71548b1992362afc4bf24c7c1b453420))
+* **ci:** skip JDK 17 on Windows ARM in release smoke tests ([#462](https://github.com/albertocavalcante/gvy/issues/462)) ([4eb1abd](https://github.com/albertocavalcante/gvy/commit/4eb1abd17c51dca2aaf1b93f2f59a9daf0dc12ca))
+* **codenarc:** reduce Jenkins diagnostic noise by 90% ([#495](https://github.com/albertocavalcante/gvy/issues/495)) ([2c210d3](https://github.com/albertocavalcante/gvy/commit/2c210d31c0b0d09fca0f579af028f9d07b3a4013))
+* Default to latest LSP release, auto-detect monorepo builds ([#476](https://github.com/albertocavalcante/gvy/issues/476)) ([e236ce7](https://github.com/albertocavalcante/gvy/commit/e236ce748bbc4f8453ec5dc65e35de90dc776ec6))
+* **e2e:** update server status check to use health/quiescent fields ([#502](https://github.com/albertocavalcante/gvy/issues/502)) ([83ad203](https://github.com/albertocavalcante/gvy/commit/83ad203651144b262eaf3fa3dd879ccc7f343f0a))
+* **ext:** package gls.jar in VSIX and migrate to pnpm ([#479](https://github.com/albertocavalcante/gvy/issues/479)) ([f5245c0](https://github.com/albertocavalcante/gvy/commit/f5245c02b791afa0c444a0c4348781c78b4ba309))
+* **ext:** use --no-dependencies flag for vsce package with pnpm ([#487](https://github.com/albertocavalcante/gvy/issues/487)) ([2e81713](https://github.com/albertocavalcante/gvy/commit/2e81713118ee16ba3465f11bcb850cba9b844b2e))
+* **lsp:** improve AST node resolution for nested method calls ([#471](https://github.com/albertocavalcante/gvy/issues/471)) ([fd91901](https://github.com/albertocavalcante/gvy/commit/fd91901ce7ce699c9689620ed277775a1ab5c5b5))
+* **make:** track client package.json changes for smart install ([#489](https://github.com/albertocavalcante/gvy/issues/489)) ([44ee1c9](https://github.com/albertocavalcante/gvy/commit/44ee1c9406a4547210a3f2091457a20e44a5260e))
+* **parser:** add TransformFilteringClassLoader to prevent NoClassDefFoundError ([#494](https://github.com/albertocavalcante/gvy/issues/494)) ([78ffc51](https://github.com/albertocavalcante/gvy/commit/78ffc517a284f26a3a7555e7aaa4e5f51323c9a9))
+* **parser:** disable global AST transformations to prevent NoClassDefFoundError ([#491](https://github.com/albertocavalcante/gvy/issues/491)) ([98dd15b](https://github.com/albertocavalcante/gvy/commit/98dd15bf1c4f6a202aee10d03346eb0cfd2db6a2))
+* support closure parameters in document highlight ([#478](https://github.com/albertocavalcante/gvy/issues/478)) ([a58920f](https://github.com/albertocavalcante/gvy/commit/a58920f85321077c0619fe73aaae9c7406381a68))
+* **test:** resolve race condition in SynchronizingTestLanguageClient ([#472](https://github.com/albertocavalcante/gvy/issues/472)) ([fa981e3](https://github.com/albertocavalcante/gvy/commit/fa981e32b121c5519e82a7c3834924649a559fca))
+* use correct spotless task and robust monorepo detection ([5d89dbd](https://github.com/albertocavalcante/gvy/commit/5d89dbd24cddff049807b9337e04266df61af916))
+* use correct spotless task name in make jar ([#485](https://github.com/albertocavalcante/gvy/issues/485)) ([5d89dbd](https://github.com/albertocavalcante/gvy/commit/5d89dbd24cddff049807b9337e04266df61af916))
+
 ## [0.4.8](https://github.com/albertocavalcante/groovy-devtools/compare/v0.4.7...v0.4.8) (2025-12-27)
 
 
