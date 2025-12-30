@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 class LibraryParserTest {
 
     @Test
-    fun `should parse simple @Library annotation`() {
+    fun shouldParseSimpleLibraryAnnotation() {
         val jenkinsfile = """
             @Library('pipeline-library')
             import com.example.Pipeline
@@ -30,7 +30,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should parse @Library with version`() {
+    fun shouldParseLibraryWithVersion() {
         val jenkinsfile = """
             @Library('pipeline-library@1.0.0')
             import com.example.Pipeline
@@ -49,7 +49,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should parse multiple @Library annotations`() {
+    fun shouldParseMultipleLibraryAnnotations() {
         val jenkinsfile = """
             @Library(['lib1@1.0', 'lib2'])
             import com.example.*
@@ -70,7 +70,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should parse @Library with underscore syntax`() {
+    fun shouldParseLibraryWithUnderscoreSyntax() {
         val jenkinsfile = """
             @Library('utils') _
             
@@ -87,7 +87,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should parse library step syntax`() {
+    fun shouldParseLibraryStepSyntax() {
         val jenkinsfile = """
             library 'mylib@master'
             
@@ -105,7 +105,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should handle no libraries`() {
+    fun shouldHandleNoLibraries() {
         val jenkinsfile = """
             node {
                 echo 'hello'
@@ -119,7 +119,7 @@ class LibraryParserTest {
     }
 
     @Test
-    fun `should parse mixed annotation and step syntax`() {
+    fun shouldParseMixedAnnotationAndStepSyntax() {
         val jenkinsfile = """
             @Library('lib1@1.0')
             import com.example.*
@@ -146,7 +146,7 @@ class LibraryParserTest {
 class SharedLibraryResolverTest {
 
     @Test
-    fun `should resolve library to configured jar`() {
+    fun shouldResolveLibraryToConfiguredJar() {
         val config = JenkinsConfiguration(
             sharedLibraries = listOf(
                 SharedLibrary("pipeline-library", "/path/to/lib.jar", "/path/to/lib-sources.jar"),
@@ -163,7 +163,7 @@ class SharedLibraryResolverTest {
     }
 
     @Test
-    fun `should resolve library ignoring version when not configured`() {
+    fun shouldResolveLibraryIgnoringVersionWhenNotConfigured() {
         val config = JenkinsConfiguration(
             sharedLibraries = listOf(
                 SharedLibrary("mylib", "/path/to/mylib.jar"),
@@ -179,7 +179,7 @@ class SharedLibraryResolverTest {
     }
 
     @Test
-    fun `should return null for missing library`() {
+    fun shouldReturnNullForMissingLibrary() {
         val config = JenkinsConfiguration(
             sharedLibraries = listOf(
                 SharedLibrary("lib1", "/path/to/lib1.jar"),
@@ -193,7 +193,7 @@ class SharedLibraryResolverTest {
     }
 
     @Test
-    fun `should resolve multiple libraries`() {
+    fun shouldResolveMultipleLibraries() {
         val config = JenkinsConfiguration(
             sharedLibraries = listOf(
                 SharedLibrary("lib1", "/path/to/lib1.jar"),
@@ -216,7 +216,7 @@ class SharedLibraryResolverTest {
     }
 
     @Test
-    fun `should handle partially missing libraries`() {
+    fun shouldHandlePartiallyMissingLibraries() {
         val config = JenkinsConfiguration(
             sharedLibraries = listOf(
                 SharedLibrary("lib1", "/path/to/lib1.jar"),
@@ -236,5 +236,133 @@ class SharedLibraryResolverTest {
         assertEquals("lib1", result.resolved[0].name)
         assertEquals(1, result.missing.size)
         assertEquals("missing", result.missing[0].name)
+    }
+}
+
+class LibraryParserEdgeCasesTest {
+    @Test
+    fun shouldParseLibraryWithShebangPrefix() {
+        val jenkinsfile = """
+            #!/usr/bin/env groovy
+            @Library('utils') _
+            
+            pipeline {
+                agent any
+            }
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        assertEquals(1, libraries.size)
+        assertEquals("utils", libraries[0].name)
+    }
+
+    @Test
+    fun shouldParseLibraryWithSingleLineCommentPrefix() {
+        val jenkinsfile = """
+            // This is a comment
+            // Another comment
+            @Library('utils') _
+            
+            pipeline {
+                agent any
+            }
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        assertEquals(1, libraries.size)
+        assertEquals("utils", libraries[0].name)
+    }
+
+    @Test
+    fun shouldParseLibraryWithMultilineCommentPrefix() {
+        val jenkinsfile = """
+            /*
+             * Multi-line comment
+             * Copyright 2024
+             */
+            @Library('utils') _
+            
+            pipeline {
+                agent any
+            }
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        assertEquals(1, libraries.size)
+        assertEquals("utils", libraries[0].name)
+    }
+
+    @Test
+    fun shouldParseLibraryAfterPipelineBlock() {
+        // This is valid syntax in Groovy script (local var in run method), so parser should find it.
+        val jenkinsfile = """
+            pipeline {
+                agent any
+            }
+            @Library('utils') _
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        // Updated expectation: The parser correctly finds this as a variable declaration.
+        assertEquals(1, libraries.size)
+        assertEquals("utils", libraries[0].name)
+    }
+
+    @Test
+    fun shouldParseComplexRealWorldJenkinsfile() {
+        // Based on npm-groovy-lint example
+        val jenkinsfile = """
+            #!groovy
+            @Library('Utils_DXCO4SF@master') _ // Shared Library managed at https://example.com
+            
+            pipeline {
+                agent { 
+                    dockerfile {
+                         args '-u 0:0' 
+                    } 
+                }
+                stages {
+                    stage('Test') {
+                        steps { echo 'test' }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        assertEquals(1, libraries.size)
+        assertEquals("Utils_DXCO4SF", libraries[0].name)
+        assertEquals("master", libraries[0].version)
+    }
+
+    @Test
+    fun shouldParseValidLibraryEvenIfAnotherIsInvalid() {
+        // Valid library at top, invalid syntax at bottom
+        val jenkinsfile = """
+            @Library('valid-lib') _
+            
+            pipeline {
+                agent any
+            }
+            
+            @Library('invalid-syntax') // Missing variable declaration
+        """.trimIndent()
+
+        val parser = LibraryParser()
+        val libraries = parser.parseLibraries(jenkinsfile)
+
+        // We hope to recover the valid one despite the syntax error later in the file
+        assertEquals(1, libraries.size)
+        assertEquals("valid-lib", libraries[0].name)
     }
 }
