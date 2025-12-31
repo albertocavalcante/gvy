@@ -34,6 +34,8 @@ class NativeHoverProvider(
         sourceNavigator,
     )
 
+    // TODO(#514): Convert to suspend function and remove runBlocking.
+    //   See: https://github.com/albertocavalcante/gvy/issues/514
     override fun getHover(params: HoverParams): CompletableFuture<Hover> = runBlocking {
         try {
             val hover = delegate.provideHover(params.textDocument.uri, params.position)
