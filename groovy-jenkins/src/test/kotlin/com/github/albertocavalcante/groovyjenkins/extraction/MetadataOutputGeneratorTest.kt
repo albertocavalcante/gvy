@@ -74,6 +74,32 @@ class MetadataOutputGeneratorTest {
         }
 
         @Test
+        fun `constructor params should override setter params with same name`() {
+            // Case: A parameter is in both @DataBoundConstructor (required) and @DataBoundSetter (optional).
+            // The required status from constructor should take precedence.
+            val steps = listOf(
+                ScannedStep(
+                    className = "Mixed",
+                    simpleName = "MixedStep",
+                    functionName = "mixed",
+                    takesBlock = false,
+                    // 'script' is mandatory in constructor
+                    constructorParams = listOf(ExtractedParam("script", "String", true)),
+                    // 'script' also appears as a setter (optional)
+                    setterParams = listOf(ExtractedParam("script", "String", false)),
+                ),
+            )
+
+            val metadata = MetadataOutputGenerator.generate(steps)
+            val params = metadata.steps["mixed"]?.parameters
+
+            // BUG REPRODUCTION: Currently this assertion might fail if logic is flawed
+            assertThat(params?.get("script")?.required)
+                .describedAs("Constructor param (required) should take precedence over setter param")
+                .isTrue()
+        }
+
+        @Test
         fun `handles duplicate keys by overwriting`() {
             val steps = listOf(
                 ScannedStep("A", "StepA", "conflict", false, emptyList(), emptyList(), "plugin-1"),

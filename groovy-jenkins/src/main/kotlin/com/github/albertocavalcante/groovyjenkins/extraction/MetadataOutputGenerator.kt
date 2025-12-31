@@ -49,11 +49,17 @@ object MetadataOutputGenerator {
                         takesBlock = step.takesBlock,
                         parameters = (step.constructorParams + step.setterParams)
                             .sortedBy { it.name }
-                            .associate { param ->
-                                param.name to ParameterMetadata(
-                                    type = param.type,
-                                    required = param.isRequired,
-                                )
+                            .fold(mutableMapOf<String, ParameterMetadata>()) { acc, param ->
+                                val existing = acc[param.name]
+                                val shouldReplace = existing == null || (!existing.required && param.isRequired)
+
+                                if (shouldReplace) {
+                                    acc[param.name] = ParameterMetadata(
+                                        type = param.type,
+                                        required = param.isRequired,
+                                    )
+                                }
+                                acc
                             },
                     ),
                 )
