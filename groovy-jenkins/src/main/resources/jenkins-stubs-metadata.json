@@ -2,6 +2,9 @@
   "steps": {
     "sh": {
       "plugin": "workflow-durable-task-step",
+      "positionalParams": [
+        "script"
+      ],
       "parameters": {
         "script": {
           "type": "String",
@@ -81,6 +84,9 @@
     },
     "echo": {
       "plugin": "workflow-basic-steps",
+      "positionalParams": [
+        "message"
+      ],
       "parameters": {
         "message": {
           "type": "String",
@@ -92,6 +98,9 @@
     },
     "error": {
       "plugin": "workflow-basic-steps",
+      "positionalParams": [
+        "message"
+      ],
       "parameters": {
         "message": {
           "type": "String",
@@ -125,28 +134,47 @@
     },
     "stage": {
       "plugin": "pipeline-stage-step",
+      "positionalParams": [
+        "name"
+      ],
       "parameters": {
         "name": {
           "type": "String",
           "required": true,
           "documentation": "Name of the stage for visualization in the pipeline view"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Stage body"
         }
       },
       "documentation": "Define a stage in the pipeline. Stages provide logical grouping and can be visualized in the Blue Ocean interface and the classic pipeline stage view."
     },
     "node": {
       "plugin": "workflow-durable-task-step",
+      "positionalParams": [
+        "label"
+      ],
       "parameters": {
         "label": {
           "type": "String",
           "required": false,
           "documentation": "Label expression to select the node (agent) to run on"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Node body"
         }
       },
       "documentation": "Allocate a node (agent/executor) to run the enclosed steps. The node provides a workspace on the agent machine."
     },
     "lock": {
       "plugin": "lockable-resources",
+      "positionalParams": [
+        "resource"
+      ],
       "parameters": {
         "resource": {
           "type": "String",
@@ -169,6 +197,11 @@
           "required": false,
           "default": "false",
           "documentation": "If true, newer builds get priority"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to execute under lock"
         }
       },
       "documentation": "Acquire a lock on a shared resource for exclusive access. Prevents concurrent builds from using the same resource."
@@ -208,6 +241,9 @@
     },
     "git": {
       "plugin": "git",
+      "positionalParams": [
+        "url"
+      ],
       "parameters": {
         "url": {
           "type": "String",
@@ -385,11 +421,19 @@
     },
     "retry": {
       "plugin": "workflow-basic-steps",
+      "positionalParams": [
+        "count"
+      ],
       "parameters": {
         "count": {
           "type": "int",
           "required": true,
           "documentation": "Maximum number of retry attempts"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to retry"
         }
       },
       "documentation": "Retry the enclosed steps if they fail. Useful for flaky operations."
@@ -442,33 +486,57 @@
     },
     "withEnv": {
       "plugin": "workflow-basic-steps",
+      "positionalParams": [
+        "overrides"
+      ],
       "parameters": {
         "overrides": {
           "type": "List<String>",
           "required": true,
           "documentation": "List of environment variables in KEY=VALUE format"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body with environment variables"
         }
       },
       "documentation": "Set environment variables for the enclosed steps. Variables are restored after the block."
     },
     "withCredentials": {
       "plugin": "credentials-binding",
+      "positionalParams": [
+        "bindings"
+      ],
       "parameters": {
         "bindings": {
           "type": "List<Binding>",
           "required": true,
           "documentation": "List of credential bindings"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body with credentials"
         }
       },
       "documentation": "Bind credentials to environment variables for the enclosed steps. Credentials are masked in logs."
     },
     "dir": {
       "plugin": "workflow-basic-steps",
+      "positionalParams": [
+        "path"
+      ],
       "parameters": {
         "path": {
           "type": "String",
           "required": true,
           "documentation": "Directory path (relative to workspace or absolute)"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to execute in directory"
         }
       },
       "documentation": "Change the current directory for the enclosed steps."
@@ -629,28 +697,50 @@
     },
     "timestamps": {
       "plugin": "timestamper",
-      "parameters": {},
+      "parameters": {
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to timestamp"
+        }
+      },
       "documentation": "Add timestamps to console output for the enclosed steps."
     },
     "ansiColor": {
       "plugin": "ansicolor",
+      "positionalParams": [
+        "colorMapName"
+      ],
       "parameters": {
         "colorMapName": {
           "type": "String",
           "required": false,
           "default": "xterm",
           "documentation": "Color map name: xterm, vga, css, gnome-terminal"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body with ANSI color"
         }
       },
       "documentation": "Enable ANSI color output in the console for the enclosed steps."
     },
     "sshagent": {
       "plugin": "ssh-agent",
+      "positionalParams": [
+        "credentials"
+      ],
       "parameters": {
         "credentials": {
           "type": "List<String>",
           "required": true,
           "documentation": "List of SSH credential IDs"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body with SSH agent"
         }
       },
       "documentation": "Provide SSH credentials for the enclosed steps via ssh-agent."

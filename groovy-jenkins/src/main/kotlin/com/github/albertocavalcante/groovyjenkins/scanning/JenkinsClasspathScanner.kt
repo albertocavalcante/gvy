@@ -103,13 +103,15 @@ class JenkinsClasspathScanner {
 
                 // Extract parameters from the Step class
                 val parameters = mutableMapOf<String, StepParameter>()
+                var positionalParams: List<String> = emptyList()
                 if (stepClassInfo != null) {
-                    extractParameters(stepClassInfo, parameters)
+                    positionalParams = extractParameters(stepClassInfo, parameters)
                 }
 
                 steps[stepName] = JenkinsStepMetadata(
                     name = stepName,
                     plugin = pluginName,
+                    positionalParams = positionalParams,
                     parameters = parameters,
                     documentation = doc,
                 )
@@ -150,7 +152,9 @@ class JenkinsClasspathScanner {
         }
     }
 
-    private fun extractParameters(stepClass: ClassInfo, parameters: MutableMap<String, StepParameter>) {
+    private fun extractParameters(stepClass: ClassInfo, parameters: MutableMap<String, StepParameter>): List<String> {
+        val positionalParams = mutableListOf<String>()
+
         // 1. Find @DataBoundConstructor
         // There should be exactly one, but we search all just in case
         stepClass.constructorInfo.forEach { method ->
@@ -165,6 +169,7 @@ class JenkinsClasspathScanner {
                         required = true,
                         documentation = null,
                     )
+                    positionalParams.add(name)
                 }
             }
         }
@@ -200,6 +205,7 @@ class JenkinsClasspathScanner {
                 )
             }
         }
+        return positionalParams
     }
 
     private fun getStepName(descriptorInfo: ClassInfo, stepClassInfo: ClassInfo?): String? {
