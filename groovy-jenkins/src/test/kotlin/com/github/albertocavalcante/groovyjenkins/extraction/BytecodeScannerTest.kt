@@ -43,7 +43,7 @@ class BytecodeScannerTest {
     inner class `Annotation Extraction` {
 
         @Test
-        fun `extracts DataBoundConstructor parameters`() {
+        fun `returns empty list for non-existent class`() {
             val scanner = BytecodeScanner()
 
             // Test with a known class pattern

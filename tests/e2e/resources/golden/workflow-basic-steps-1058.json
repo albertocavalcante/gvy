@@ -1,12 +1,11 @@
 {
     "version": "1.0",
-    "generatedAt": null,
     "steps": {
         "artifactArchiver": {
             "className": "org.jenkinsci.plugins.workflow.steps.ArtifactArchiverStep",
             "simpleName": "ArtifactArchiverStep",
             "functionName": "artifactArchiver",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "excludes": {
@@ -23,7 +22,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.ArtifactUnarchiverStep",
             "simpleName": "ArtifactUnarchiverStep",
             "functionName": "artifactUnarchiver",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {}
         },
@@ -31,7 +30,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.CatchErrorStep",
             "simpleName": "CatchErrorStep",
             "functionName": "catchError",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "buildResult": {
@@ -56,7 +55,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.CoreStep",
             "simpleName": "CoreStep",
             "functionName": "core",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "delegate": {
@@ -69,7 +68,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.CoreWrapperStep",
             "simpleName": "CoreWrapperStep",
             "functionName": "coreWrapper",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "delegate": {
@@ -82,7 +81,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.DeleteDirStep",
             "simpleName": "DeleteDirStep",
             "functionName": "deleteDir",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {}
         },
@@ -90,7 +89,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.EchoStep",
             "simpleName": "EchoStep",
             "functionName": "echo",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "message": {
@@ -103,7 +102,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.EnvStep",
             "simpleName": "EnvStep",
             "functionName": "env",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "overrides": {
@@ -116,7 +115,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.ErrorStep",
             "simpleName": "ErrorStep",
             "functionName": "error",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "message": {
@@ -129,7 +128,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.FileExistsStep",
             "simpleName": "FileExistsStep",
             "functionName": "fileExists",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "file": {
@@ -142,7 +141,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.GetContextStep",
             "simpleName": "GetContextStep",
             "functionName": "getContext",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "type": {
@@ -155,7 +154,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.IsUnixStep",
             "simpleName": "IsUnixStep",
             "functionName": "isUnix",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {}
         },
@@ -163,7 +162,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.MailStep",
             "simpleName": "MailStep",
             "functionName": "mail",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "body": {
@@ -188,7 +187,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.PwdStep",
             "simpleName": "PwdStep",
             "functionName": "pwd",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "tmp": {
@@ -201,7 +200,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.ReadFileStep",
             "simpleName": "ReadFileStep",
             "functionName": "readFile",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "encoding": {
@@ -218,7 +217,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.RetryStep",
             "simpleName": "RetryStep",
             "functionName": "retry",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "conditions": {
@@ -235,7 +234,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.SleepStep",
             "simpleName": "SleepStep",
             "functionName": "sleep",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "time": {
@@ -252,7 +251,7 @@
             "className": "org.jenkinsci.plugins.workflow.support.steps.stash.StashStep",
             "simpleName": "StashStep",
             "functionName": "stash",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "allowEmpty": {
@@ -281,7 +280,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.TimeoutStep",
             "simpleName": "TimeoutStep",
             "functionName": "timeout",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "activity": {
@@ -302,7 +301,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.ToolStep",
             "simpleName": "ToolStep",
             "functionName": "tool",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "name": {
@@ -319,7 +318,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.UnstableStep",
             "simpleName": "UnstableStep",
             "functionName": "unstable",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "message": {
@@ -332,7 +331,7 @@
             "className": "org.jenkinsci.plugins.workflow.support.steps.stash.UnstashStep",
             "simpleName": "UnstashStep",
             "functionName": "unstash",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "name": {
@@ -345,7 +344,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.WaitForConditionStep",
             "simpleName": "WaitForConditionStep",
             "functionName": "waitForCondition",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "initialRecurrencePeriod": {
@@ -362,7 +361,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.WarnErrorStep",
             "simpleName": "WarnErrorStep",
             "functionName": "warnError",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "catchInterruptions": {
@@ -379,7 +378,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.WithContextStep",
             "simpleName": "WithContextStep",
             "functionName": "withContext",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": true,
             "parameters": {
                 "context": {
@@ -392,7 +391,7 @@
             "className": "org.jenkinsci.plugins.workflow.steps.WriteFileStep",
             "simpleName": "WriteFileStep",
             "functionName": "writeFile",
-            "plugin": null,
+            "plugin": "workflow-basic-steps",
             "takesBlock": false,
             "parameters": {
                 "encoding": {

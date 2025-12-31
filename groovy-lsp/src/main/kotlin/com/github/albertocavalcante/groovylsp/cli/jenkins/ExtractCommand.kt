@@ -29,7 +29,7 @@ import kotlin.io.path.exists
  *
  * Usage:
  *   gls jenkins extract --plugins-txt plugins.txt --output-dir ./metadata
- *   gls jenkins extract -p plugins.txt -o ./metadata --force
+ *   gls jenkins extract -p plugins.txt -o ./metadata --cache-dir ./cache
  */
 class ExtractCommand : CliktCommand(name = "extract") {
 
@@ -65,6 +65,7 @@ class ExtractCommand : CliktCommand(name = "extract") {
         }
         if (!cacheDir.exists()) {
             cacheDir.createDirectories()
+            terminal.println("${terminal.theme.info("→")} Created cache directory: $cacheDir")
         }
 
         // Download plugins

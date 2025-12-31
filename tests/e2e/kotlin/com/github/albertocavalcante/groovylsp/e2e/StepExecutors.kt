@@ -647,6 +647,8 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                 val expectedJson = mapper.readTree(expectedContent)
 
                 if (actualJson != expectedJson) {
+                    // TODO(#520): Enable ANSI colors and improve assertion diffs in CI logs
+                    //   See: https://github.com/albertocavalcante/gvy/issues/520
                     // If different, show diff
                     throw AssertionError(
                         "JSON content mismatch for $expectedRelPath!\nExpected:\n$expectedContent\nActual:\n$actualContent",

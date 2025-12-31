@@ -21,7 +21,7 @@ object MetadataOutputGenerator {
 
     private val json = Json {
         prettyPrint = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     /**

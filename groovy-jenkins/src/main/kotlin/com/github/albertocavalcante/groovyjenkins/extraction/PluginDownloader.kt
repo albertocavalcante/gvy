@@ -56,21 +56,23 @@ class PluginDownloader(
             try {
                 val response = tryDownload(url)
 
-                if (response.statusCode() == 200) {
-                    val tempFile = Files.createTempFile(cacheDir, "$pluginId-", ".hpi.tmp")
-                    try {
-                        response.body().use { input ->
+                // Ensure we close the body stream to release the connection
+                response.body().use { input ->
+                    if (response.statusCode() == 200) {
+                        val tempFile = Files.createTempFile(cacheDir, "$pluginId-", ".hpi.tmp")
+                        try {
                             Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING)
+                            Files.move(tempFile, cachedPath, StandardCopyOption.ATOMIC_MOVE)
+                            logger.info("Downloaded plugin to: {}", cachedPath)
+                            return cachedPath
+                        } catch (e: Exception) {
+                            Files.deleteIfExists(tempFile)
+                            throw e
                         }
-                        Files.move(tempFile, cachedPath, StandardCopyOption.ATOMIC_MOVE)
-                        logger.info("Downloaded plugin to: {}", cachedPath)
-                        return cachedPath
-                    } catch (e: Exception) {
-                        Files.deleteIfExists(tempFile)
-                        throw e
+                    } else {
+                        logger.debug("URL returned HTTP {}: {}", response.statusCode(), url)
                     }
                 }
-                logger.debug("URL returned HTTP {}: {}", response.statusCode(), url)
             } catch (e: Exception) {
                 logger.debug("Failed to download from {}: {}", url, e.message)
                 lastException = e
