@@ -12,9 +12,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Manages Jenkins workspace context separately from regular Groovy sources.
  * Provides Jenkins-specific classpath and prevents symbol leakage.
  */
-class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, private val workspaceRoot: Path) {
+class JenkinsWorkspaceManager(
+    private val configuration: JenkinsConfiguration,
+    private val workspaceRoot: Path,
+    private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+) {
     private val logger = LoggerFactory.getLogger(JenkinsWorkspaceManager::class.java)
-    private val jenkinsContext = JenkinsContext(configuration, workspaceRoot)
+    private val jenkinsContext = JenkinsContext(configuration, workspaceRoot, pluginManager)
     private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
     private val librarySourceLoader = LibrarySourceLoader()
 
@@ -132,7 +136,7 @@ class JenkinsWorkspaceManager(private val configuration: JenkinsConfiguration, p
      */
     fun updateConfiguration(newConfig: JenkinsConfiguration): JenkinsWorkspaceManager {
         logger.info("Updating Jenkins configuration")
-        return JenkinsWorkspaceManager(newConfig, workspaceRoot)
+        return JenkinsWorkspaceManager(newConfig, workspaceRoot, pluginManager)
     }
 
     /**

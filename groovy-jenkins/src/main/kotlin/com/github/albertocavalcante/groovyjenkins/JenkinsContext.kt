@@ -18,6 +18,7 @@ import com.github.albertocavalcante.groovyjenkins.metadata.VersionedMetadataLoad
 import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.groovyjenkins.plugins.PluginDiscoveryService
 import com.github.albertocavalcante.groovyjenkins.scanning.JenkinsClasspathScanner
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,7 +28,11 @@ import java.nio.file.Paths
  * Manages the Jenkins pipeline context, including classpath and GDSL metadata.
  * Keeps Jenkins-specific compilation separate from general Groovy sources.
  */
-class JenkinsContext(private val configuration: JenkinsConfiguration, private val workspaceRoot: Path) {
+class JenkinsContext(
+    private val configuration: JenkinsConfiguration,
+    private val workspaceRoot: Path,
+    private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+) {
     private val logger = LoggerFactory.getLogger(JenkinsContext::class.java)
     private val libraryResolver = SharedLibraryResolver(configuration)
     private val gdslLoader = GdslLoader()
@@ -108,6 +113,18 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
         if (Files.exists(srcDir) && Files.isDirectory(srcDir)) {
             classpath.add(srcDir)
             logger.debug("Added Jenkins Shared Library 'src' directory to classpath: $srcDir")
+        }
+
+        // Include downloaded/registered plugin JARs in classpath
+        // Done before scanning so they are included in the scan
+        runBlocking {
+            val pluginJars = pluginManager.getRegisteredPluginJars()
+            pluginJars.forEach { jar ->
+                if (Files.exists(jar) && !classpath.contains(jar)) {
+                    classpath.add(jar)
+                    logger.debug("Added registered plugin JAR to classpath: $jar")
+                }
+            }
         }
 
         // Scan classpath for dynamic Jenkins definitions

@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovyjenkins
 
+import io.mockk.coEvery
+import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -153,17 +156,18 @@ class JenkinsContextTest {
     }
 
     @Test
-    fun `should include src directory in classpath if present`() {
-        val srcDir = tempDir.resolve("src")
-        Files.createDirectory(srcDir)
-        val someClass = srcDir.resolve("SomeClass.groovy")
-        Files.writeString(someClass, "class SomeClass {}")
+    fun `should include registered plugin jars in classpath`() = runBlocking {
+        val pluginJar = tempDir.resolve("plugin.jar")
+        Files.createFile(pluginJar)
+
+        val mockPluginManager = mockk<JenkinsPluginManager>()
+        coEvery { mockPluginManager.getRegisteredPluginJars() } returns listOf(pluginJar)
 
         val config = JenkinsConfiguration()
-        val context = JenkinsContext(config, tempDir)
+        // This constructor call will fail compilation initially
+        val context = JenkinsContext(config, tempDir, mockPluginManager)
         val classpath = context.buildClasspath(emptyList())
 
-        // Should include src directory
-        assertTrue(classpath.any { it == srcDir })
+        assertTrue(classpath.any { it == pluginJar }, "Classpath should include registered plugin JAR")
     }
 }

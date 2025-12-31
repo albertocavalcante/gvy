@@ -28,8 +28,8 @@ import java.nio.file.Path
  * Implements a functional pipeline strategy where sources are folded:
  * 1. **Bundled**: Base fallback (static stubs)
  * 2. **Stable**: Hardcoded core definitions
- * 3. **User Config**: Plugins specified in plugins.txt
- * 4. **Downloaded**: Downloaded JARs
+ * 3. **Static Metadata**: Loaded from JSON file (Configurable)
+ * 4. **User Config & Downloaded**: Plugins specified in plugins.txt or downloaded
  * 5. **Classpath**: Project dependencies (Highest priority)
  */
 @Suppress("UnusedPrivateProperty") // TODO: updateCenterClient and cacheDir reserved for future use
@@ -60,6 +60,45 @@ class JenkinsPluginManager(
     private val downloadedPluginCache = mutableMapOf<String, Path>()
     private val downloadedPluginMutex = Mutex()
 
+    // Cache for registered static metadata
+    private var staticMetadataCache: BundledJenkinsMetadata? = null
+    private val staticMetadataMutex = Mutex()
+
+    /**
+     * Manually register a plugin JAR (e.g. from startup downloader).
+     */
+    suspend fun registerPluginJar(pluginId: String, jarPath: Path) {
+        downloadedPluginMutex.withLock {
+            downloadedPluginCache[pluginId] = jarPath
+        }
+        logger.debug("Registered plugin JAR for {}: {}", pluginId, jarPath)
+    }
+
+    /**
+     * Get all registered/downloaded plugin JARs.
+     */
+    suspend fun getRegisteredPluginJars(): List<Path> = downloadedPluginMutex.withLock {
+        downloadedPluginCache.values.toList()
+    }
+
+    /**
+     * Register static metadata (e.g. from JSON file).
+     */
+    suspend fun registerStaticMetadata(metadata: BundledJenkinsMetadata) {
+        staticMetadataMutex.withLock {
+            // Merge with existing if any, or just set it
+            if (staticMetadataCache == null) {
+                staticMetadataCache = metadata
+            } else {
+                // Simplistic merge: overwrite (since we expect one main file)
+                // Or we could implement deep merging logic here if needed.
+                // For now, let's treat it as "last writer wins" or just replacement.
+                staticMetadataCache = metadata
+            }
+        }
+        logger.debug("Registered static Jenkins metadata with {} steps", metadata.steps.size)
+    }
+
     /**
      * Resolve metadata for a Jenkins step using functional pipeline.
      */
@@ -78,7 +117,10 @@ class JenkinsPluginManager(
         // 2. Stable Definitions
         StableStepDefinitions.all()[stepName]?.let { candidates.add(it) }
 
-        // 3. User Config & Downloaded (Medium)
+        // 3. Static Metadata (Medium-Low)
+        getStaticMetadata()?.getStep(stepName)?.let { candidates.add(it) }
+
+        // 4. User Config & Downloaded (Medium)
         // Check user config first
         if (workspaceRoot != null) {
             findStepInUserConfig(stepName, workspaceRoot)?.let { candidates.add(it) }
@@ -86,7 +128,7 @@ class JenkinsPluginManager(
         // Then downloaded plugins (fallback heuristic)
         findStepInDownloadedPlugins(stepName)?.let { candidates.add(it) }
 
-        // 4. Classpath (Highest)
+        // 5. Classpath (Highest)
         findStepInClasspath(stepName, classpathJars)?.let { candidates.add(it) }
 
         if (candidates.isEmpty()) return null
@@ -171,16 +213,13 @@ class JenkinsPluginManager(
         val names = mutableSetOf<String>()
         names.addAll(getBundledMetadata().steps.keys)
         names.addAll(StableStepDefinitions.all().keys)
+        getStaticMetadata()?.let { names.addAll(it.steps.keys) }
 
         classpathJars.forEach { jar ->
             names.addAll(getMetadataFromJar(jar).keys)
         }
         return names
     }
-
-    /**
-     * Extract metadata from a JAR, with caching.
-     */
 
     /**
      * EXTRACT metadata from a JAR (or retrieve from cache), returning a Name->Step Map.
@@ -240,6 +279,13 @@ class JenkinsPluginManager(
     }
 
     /**
+     * Get static metadata, safely.
+     */
+    private suspend fun getStaticMetadata(): BundledJenkinsMetadata? = staticMetadataMutex.withLock {
+        staticMetadataCache
+    }
+
+    /**
      * Force refresh of cached metadata.
      */
     suspend fun invalidateCache() {
@@ -248,6 +294,9 @@ class JenkinsPluginManager(
         }
         bundledMetadataMutex.withLock {
             bundledMetadataCache = null
+        }
+        staticMetadataMutex.withLock {
+            staticMetadataCache = null
         }
         logger.info("Invalidated Jenkins plugin manager cache")
     }

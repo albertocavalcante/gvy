@@ -18,6 +18,31 @@ class JenkinsPluginManagerTest {
     lateinit var tempDir: Path
 
     @Test
+    fun `registerPluginJar adds jar to cache and resolves steps`() = runBlocking {
+        val mockExtractor = io.mockk.mockk<JenkinsPluginMetadataExtractor>()
+        val manager = JenkinsPluginManager(metadataExtractor = mockExtractor)
+        val jarPath = tempDir.resolve("test-plugin.jar")
+        java.nio.file.Files.createFile(jarPath)
+
+        val stepMetadata = com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata(
+            name = "testStep",
+            plugin = "test-plugin",
+            parameters = emptyMap(),
+            documentation = "doc",
+        )
+        // Mock extraction
+        io.mockk.every { mockExtractor.extractFromJar(any(), any()) } returns listOf(stepMetadata)
+
+        // Act: Register the JAR (this method does not exist yet)
+        manager.registerPluginJar("test-plugin", jarPath)
+
+        // Assert: Step is resolved
+        val resolved = manager.resolveStepMetadata("testStep")
+        assertNotNull(resolved, "Should resolve step from registered JAR")
+        assertEquals("testStep", resolved.name)
+    }
+
+    @Test
     fun `resolveStepMetadata returns bundled step for known step`() = runBlocking {
         val manager = JenkinsPluginManager()
 

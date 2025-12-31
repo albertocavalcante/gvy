@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
@@ -193,7 +194,28 @@ class ProjectStartupManager(
 
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
-        compilationService.workspaceManager.initializeJenkinsWorkspace(config)
+
+        // Setup Jenkins integration
+        val jenkinsPluginManager = JenkinsPluginManager()
+        val jenkinsMetadataService = JenkinsMetadataService(jenkinsPluginManager, config.jenkinsConfig)
+
+        // Initialize Jenkins workspace with the plugin manager
+        compilationService.workspaceManager.initializeJenkinsWorkspace(config, jenkinsPluginManager)
+
+        // Asynchronously download and register plugins
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                logger.info("Starting Jenkins plugin metadata initialization")
+                jenkinsMetadataService.initialize()
+                logger.info("Jenkins plugin metadata initialization completed")
+                // Note: We might want to trigger a classpath refresh here if critical plugins were added,
+                // but JenkinsContext currently scans lazily or on demand. The jars are added to
+                // potential classpath candidates, so next time buildClasspath is called (e.g. file open),
+                // they will be picked up.
+            } catch (e: Exception) {
+                logger.error("Failed to initialize Jenkins plugin metadata", e)
+            }
+        }
     }
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {

@@ -14,6 +14,8 @@ data class JenkinsConfiguration(
     val gdslPaths: List<String> = emptyList(),
     val gdslExecutionEnabled: Boolean = false,
     val pluginConfig: PluginConfiguration = PluginConfiguration(),
+    val pluginsFile: String? = null,
+    val jenkinsMetadataFile: String? = null,
 ) {
     companion object {
         private val logger = LoggerFactory.getLogger(JenkinsConfiguration::class.java)
@@ -29,6 +31,8 @@ data class JenkinsConfiguration(
                 gdslPaths = parseGdslPaths(map),
                 gdslExecutionEnabled = parseGdslExecutionEnabled(map),
                 pluginConfig = PluginConfiguration.fromMap(map),
+                pluginsFile = map["jenkins.plugins.file"] as? String,
+                jenkinsMetadataFile = map["jenkins.metadata.file"] as? String,
             )
         } catch (e: Exception) {
             logger.warn("Error parsing Jenkins configuration, using defaults", e)
