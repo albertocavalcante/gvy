@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.mordant.rendering.AnsiLevel
 import com.github.ajalt.mordant.terminal.Terminal
+import com.github.albertocavalcante.groovylsp.cli.jenkins.JenkinsCommand
 
 /**
  * Root command for the Groovy Language Server CLI.
@@ -43,6 +44,7 @@ class GlsCommand : CliktCommand(name = "gls") {
             VersionCommand(),
             StdioCommand(),
             SocketCommand(),
+            JenkinsCommand(),
         )
     }
 
