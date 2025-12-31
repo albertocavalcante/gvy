@@ -302,6 +302,42 @@ class GroovyCompilationServiceTest {
         assertEquals(content, result.sourceText, "Source text should be preserved in cached result")
     }
 
+    @Test
+    fun `test compile waits for initialization barrier`() = runBlocking {
+        val groovyContent = "class TestBarrier {}"
+        val uri = URI.create("file:///test/TestBarrier.groovy")
+
+        var barrierCalled = false
+        compilationService.initializationBarrier = {
+            kotlinx.coroutines.delay(200)
+            barrierCalled = true
+            true
+        }
+
+        val start = System.currentTimeMillis()
+        val result = compilationService.compile(uri, groovyContent)
+        val duration = System.currentTimeMillis() - start
+
+        assertTrue(barrierCalled, "Initialization barrier should have been checked")
+        assertTrue(duration >= 200, "Compilation should have waited for barrier (took $duration ms)")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `test compile proceeds after barrier timeout or failure`() = runBlocking {
+        val groovyContent = "class TestBarrierTimeout {}"
+        val uri = URI.create("file:///test/TestBarrierTimeout.groovy")
+
+        compilationService.initializationBarrier = {
+            false // Simulate timeout/failure
+        }
+
+        val result = compilationService.compile(uri, groovyContent)
+
+        // Should proceed anyway (graceful degradation)
+        assertTrue(result.isSuccess)
+    }
+
     private fun workerDescriptor(id: String): WorkerDescriptor = WorkerDescriptor(
         id = id,
         supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("4.0.0")),

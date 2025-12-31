@@ -434,6 +434,26 @@ class ProjectStartupManager(
         }
     }
 
+    /**
+     * Suspendable version of waitForDependencies.
+     * Waits for dependencies to be ready or timeout.
+     *
+     * @return true if dependencies are ready, false if timeout or failed
+     */
+    suspend fun awaitDependencies(timeoutMs: Long = 10000): Boolean {
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            val manager = dependencyManager
+            if (manager != null) {
+                if (manager.isDependenciesReady()) return true
+                if (manager.getState() == DependencyManager.State.FAILED) return false
+            }
+            // If manager is null (not started yet) or not ready, wait
+            kotlinx.coroutines.delay(POLLING_INTERVAL_MS)
+        }
+        return false
+    }
+
     fun shutdown() {
         dependencyManager?.cancel()
     }
