@@ -33,6 +33,20 @@ import kotlin.io.path.exists
  */
 class ExtractCommand : CliktCommand(name = "extract") {
 
+    private val terminal by requireObject<Terminal>()
+
+    private val pluginsTxt by option("--plugins-txt", "-p", help = "Path to plugins.txt")
+        .path(mustExist = true, canBeDir = false, mustBeReadable = true)
+        .required()
+
+    private val outputDir by option("--output-dir", "-o", help = "Output directory for JSON")
+        .path(canBeFile = false)
+        .default(Path.of("metadata"))
+
+    private val cacheDir by option("--cache-dir", "-c", help = "Cache directory for downloaded plugins")
+        .path(canBeFile = false)
+        .default(Path.of("cache"))
+
     override fun run() {
         terminal.println("${terminal.theme.info("→")} Reading plugins.txt: $pluginsTxt")
 
