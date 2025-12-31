@@ -15,6 +15,7 @@ data class ServerConfiguration(
     val maxNumberOfProblems: Int = 100,
     val javaHome: String? = null,
     val groovyLanguageVersion: String? = null,
+    val logLevel: LogLevel = LogLevel.INFO,
     val traceServer: TraceLevel = TraceLevel.OFF,
     val replEnabled: Boolean = true,
     val maxReplSessions: Int = 10,
@@ -67,6 +68,28 @@ data class ServerConfiguration(
         VERBOSE,
     }
 
+    /**
+     * Log level for server output.
+     */
+    enum class LogLevel {
+        ERROR,
+        WARN,
+        INFO,
+        DEBUG,
+        TRACE,
+        ;
+
+        companion object {
+            fun fromString(value: String?): LogLevel = when (value?.lowercase()) {
+                "error" -> ERROR
+                "warn" -> WARN
+                "debug" -> DEBUG
+                "trace" -> TRACE
+                else -> INFO
+            }
+        }
+    }
+
     companion object {
         private val logger = LoggerFactory.getLogger(ServerConfiguration::class.java)
 
@@ -88,6 +111,7 @@ data class ServerConfiguration(
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,
                     javaHome = map["groovy.java.home"] as? String,
                     groovyLanguageVersion = map["groovy.language.version"] as? String,
+                    logLevel = parseLogLevel(map),
                     traceServer = parseTraceLevel(map),
                     replEnabled = (map["groovy.repl.enabled"] as? Boolean) ?: true,
                     maxReplSessions = (map["groovy.repl.maxSessions"] as? Number)?.toInt() ?: 10,
@@ -124,6 +148,21 @@ data class ServerConfiguration(
                     CompilationMode.WORKSPACE
                 }
             }
+        }
+
+        private fun parseLogLevel(map: Map<String, Any>): LogLevel {
+            val rawValue = map["groovy.server.logLevel"]
+            val logLevelString = rawValue as? String
+            // Log at INFO level so this is ALWAYS visible before level is changed
+            logger.info(
+                "Parsing logLevel from initOptions: raw='{}', type={}, parsed={}",
+                rawValue,
+                rawValue?.javaClass?.simpleName ?: "null",
+                logLevelString,
+            )
+            val parsed = LogLevel.fromString(logLevelString)
+            logger.info("LogLevel parsed as: {}", parsed.name)
+            return parsed
         }
 
         private fun parseWorkerDescriptors(map: Map<String, Any>): List<WorkerDescriptorConfig> {
