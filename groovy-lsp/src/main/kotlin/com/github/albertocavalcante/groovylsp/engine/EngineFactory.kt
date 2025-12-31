@@ -42,9 +42,7 @@ object EngineFactory {
             sourceNavigator = sourceNavigator,
         )
 
-        EngineType.Core -> throw UnsupportedOperationException(
-            "Core engine is not yet implemented. Use 'native' engine or wait for future releases.",
-        )
+        EngineType.Core -> com.github.albertocavalcante.groovylsp.engine.impl.core.CoreLanguageEngine()
 
         EngineType.OpenRewrite -> throw UnsupportedOperationException(
             "OpenRewrite engine is not yet implemented. Use 'native' engine or wait for future releases.",
