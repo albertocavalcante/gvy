@@ -77,7 +77,6 @@ class GroovyCompilationService(
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
-    // Language Engine created via factory based on configuration
     private var activeEngineInstance: LanguageEngine? = null
     private val activeEngineLock = Any()
 
@@ -343,10 +342,11 @@ class GroovyCompilationService(
 
         // Bridge: Delegate to NativeEngine to wrap the result
         // In future phases, we might need a cache keyed by Engine ID or unified result
-        if (activeEngine is NativeLanguageEngine) {
+        val engine = activeEngine
+        if (engine is NativeLanguageEngine) {
             val content = documentProvider?.get(uri)
                 ?: throw IllegalStateException("Document content required for session creation")
-            return (activeEngine as NativeLanguageEngine).createSession(
+            return engine.createSession(
                 parseResult,
                 uri.toString(),
                 content,

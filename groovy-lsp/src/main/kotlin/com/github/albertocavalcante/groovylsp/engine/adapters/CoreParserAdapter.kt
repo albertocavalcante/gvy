@@ -192,7 +192,7 @@ private fun TypeDeclaration.toUnifiedSymbol(): UnifiedSymbol {
             constructor.range?.toLspRange()?.let { range ->
                 children.add(
                     UnifiedSymbol(
-                        name = constructor.name,
+                        name = name, // Use class name for constructor display
                         kind = UnifiedNodeKind.CONSTRUCTOR,
                         range = range,
                         selectionRange = range,

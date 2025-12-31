@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.engine.api.DefinitionKind
 import com.github.albertocavalcante.groovylsp.engine.api.DefinitionService
 import com.github.albertocavalcante.groovylsp.engine.api.UnifiedDefinition
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DefinitionParams
@@ -28,7 +29,7 @@ class UnifiedDefinitionProviderTest {
         val range = Range(Position(0, 0), Position(0, 5))
         val unifiedNode = mockk<UnifiedNode>()
 
-        coEvery { parseUnit.nodeAt(position) } returns unifiedNode
+        every { parseUnit.nodeAt(position) } returns unifiedNode
         coEvery { definitionService.findDefinition(unifiedNode, parseUnit, position) } returns listOf(
             UnifiedDefinition(
                 uri = "file:///def.groovy",

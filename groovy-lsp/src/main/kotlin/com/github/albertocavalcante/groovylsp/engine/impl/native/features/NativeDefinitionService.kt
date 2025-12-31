@@ -30,6 +30,7 @@ class NativeDefinitionService(
         val uri = try {
             URI.create(uriStr)
         } catch (e: Exception) {
+            logger.debug("Failed to parse URI: {}", uriStr, e)
             return emptyList()
         }
 
@@ -70,3 +71,5 @@ class NativeDefinitionService(
             }
         }
 }
+
+private val logger = org.slf4j.LoggerFactory.getLogger(NativeDefinitionService::class.java)

@@ -46,7 +46,7 @@ class UnifiedDocumentSymbolProvider(private val parseUnit: ParseUnit) : Document
         UnifiedNodeKind.VARIABLE -> SymbolKind.Variable
         UnifiedNodeKind.PARAMETER -> SymbolKind.Variable
         UnifiedNodeKind.CLOSURE -> SymbolKind.Function
-        UnifiedNodeKind.IMPORT -> SymbolKind.Module // Or Null
+        UnifiedNodeKind.IMPORT -> SymbolKind.Module
         UnifiedNodeKind.PACKAGE -> SymbolKind.Package
         UnifiedNodeKind.SCRIPT -> SymbolKind.File
         UnifiedNodeKind.OTHER -> SymbolKind.Variable // Fallback

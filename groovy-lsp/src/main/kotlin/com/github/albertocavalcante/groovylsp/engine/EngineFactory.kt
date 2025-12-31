@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
 import com.github.albertocavalcante.groovylsp.engine.config.EngineType
+import com.github.albertocavalcante.groovylsp.engine.impl.core.CoreLanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -26,7 +27,7 @@ object EngineFactory {
      * @param documentProvider Provider for document content access
      * @param sourceNavigator Optional navigator for source code navigation
      * @return A configured [LanguageEngine] instance
-     * @throws UnsupportedOperationException if the requested engine type is not yet implemented
+     * @throws UnsupportedOperationException if the OpenRewrite engine is requested (not yet implemented)
      */
     fun create(
         config: EngineConfiguration,
@@ -42,7 +43,7 @@ object EngineFactory {
             sourceNavigator = sourceNavigator,
         )
 
-        EngineType.Core -> com.github.albertocavalcante.groovylsp.engine.impl.core.CoreLanguageEngine()
+        EngineType.Core -> CoreLanguageEngine()
 
         EngineType.OpenRewrite -> throw UnsupportedOperationException(
             "OpenRewrite engine is not yet implemented. Use 'native' engine or wait for future releases.",
