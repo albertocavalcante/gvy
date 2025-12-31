@@ -108,6 +108,9 @@ class GroovyLanguageServer(
         TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
         TestFrameworkRegistry.registerIfAbsent(JUnit5TestDetector())
         TestFrameworkRegistry.registerIfAbsent(JUnit4TestDetector())
+
+        // Wire up initialization barrier to prevent race conditions during startup
+        compilationService.initializationBarrier = { startupManager.awaitDependencies() }
     }
 
     override fun connect(client: LanguageClient) {

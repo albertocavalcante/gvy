@@ -81,6 +81,9 @@ class GroovyCompilationService(
         ).also { logger.info("Active engine: ${engineConfig.type.id}") }
     }
 
+    // Callback to wait for initialization (e.g. dependency resolution)
+    var initializationBarrier: (suspend () -> Boolean)? = null
+
     // Track ongoing compilation per URI for proper async coordination
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 
@@ -139,6 +142,13 @@ class GroovyCompilationService(
         content: String,
         compilePhase: Int = Phases.CANONICALIZATION,
     ): CompilationResult {
+        // Wait for initialization (e.g. dependencies) before starting expensive/fragile compilation
+        initializationBarrier?.let { barrier ->
+            if (!barrier()) {
+                logger.warn("Initialization barrier timed out/failed, proceeding with compilation anyway for $uri")
+            }
+        }
+
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath (may be Jenkins-specific or standard)
@@ -185,6 +195,12 @@ class GroovyCompilationService(
         content: String,
         compilePhase: Int = Phases.CANONICALIZATION,
     ): com.github.albertocavalcante.groovyparser.api.ParseResult {
+        // Wait for initialization (e.g. dependencies)
+        initializationBarrier?.let { barrier ->
+            if (!barrier()) {
+                logger.warn("Initialization barrier timed out/failed during transient compilation for $uri")
+            }
+        }
         logger.debug("Transient compilation for: $uri (phase=$compilePhase)")
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
