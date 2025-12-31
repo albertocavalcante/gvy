@@ -25,6 +25,13 @@ class EngineConfigurationTest {
     }
 
     @Test
+    fun `EngineType fromString parses openrewrite case-insensitively`() {
+        assertEquals(EngineType.OpenRewrite, EngineType.fromString("openrewrite"))
+        assertEquals(EngineType.OpenRewrite, EngineType.fromString("OPENREWRITE"))
+        assertEquals(EngineType.OpenRewrite, EngineType.fromString("OpenRewrite"))
+    }
+
+    @Test
     fun `EngineType fromString defaults to Native for unknown values`() {
         assertEquals(EngineType.Native, EngineType.fromString("unknown"))
         assertEquals(EngineType.Native, EngineType.fromString(""))
@@ -39,15 +46,17 @@ class EngineConfigurationTest {
     @Test
     fun `EngineType entries contains all types`() {
         val entries = EngineType.entries
-        assertEquals(2, entries.size)
+        assertEquals(3, entries.size)
         assertTrue(entries.contains(EngineType.Native))
         assertTrue(entries.contains(EngineType.Core))
+        assertTrue(entries.contains(EngineType.OpenRewrite))
     }
 
     @Test
     fun `EngineType id returns correct identifier`() {
         assertEquals("native", EngineType.Native.id)
         assertEquals("core", EngineType.Core.id)
+        assertEquals("openrewrite", EngineType.OpenRewrite.id)
     }
 
     @Test
@@ -57,9 +66,11 @@ class EngineConfigurationTest {
         fun describe(type: EngineType): String = when (type) {
             EngineType.Native -> "native engine using Groovy compiler AST"
             EngineType.Core -> "core engine using groovyparser-core AST"
+            EngineType.OpenRewrite -> "openrewrite engine using LST"
         }
         assertEquals("native engine using Groovy compiler AST", describe(EngineType.Native))
         assertEquals("core engine using groovyparser-core AST", describe(EngineType.Core))
+        assertEquals("openrewrite engine using LST", describe(EngineType.OpenRewrite))
     }
 
     @Test
