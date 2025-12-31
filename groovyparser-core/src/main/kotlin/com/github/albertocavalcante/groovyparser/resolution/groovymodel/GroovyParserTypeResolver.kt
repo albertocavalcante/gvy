@@ -60,13 +60,21 @@ object GroovyParserTypeResolver {
             }
         }
 
-        // Fallback to Object for unresolved types (Groovy is dynamic)
+        // [HEURISTIC NOTE]
+        // Fallback to Object for unresolved types.
+        // Groovy is a dynamic language, so unknown types are often effectively `Object` / `def`.
+        // This allows the IDE to provide basic completion on "Object" rather than showing nothing.
+        //
+        // Trade-offs:
+        // - PRO: Robustness. Partial code can still be navigated.
+        // - CON: False negatives. A typo "Stirng" becomes "Object", suppressing potential errors.
         val objectRef = typeSolver.tryToSolveType("java.lang.Object")
         return if (objectRef.isSolved) {
             ResolvedReferenceType(objectRef.getDeclaration())
         } else {
-            // Last resort: return primitive Object equivalent
-            ResolvedPrimitiveType.INT // This should not happen in practice
+            // Last resort: return primitive integer if Object isn't found (e.g. no JDK configured).
+            // This is a "Sentinel" fallback to prevent crashes.
+            ResolvedPrimitiveType.INT
         }
     }
 

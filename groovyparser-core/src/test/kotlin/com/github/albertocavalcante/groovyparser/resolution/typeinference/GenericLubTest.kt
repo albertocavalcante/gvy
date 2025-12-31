@@ -70,4 +70,29 @@ class GenericLubTest {
         assertEquals(1, typeArgs.size)
         assertEquals("java.lang.Number", typeArgs[0].asReferenceType().declaration.qualifiedName)
     }
+
+    @Test
+    fun `lub of Properties and Map String-Object should resolve to Map Object-Object`() {
+        // Properties extends Hashtable<Object,Object> which implements Map<Object,Object>
+        val propertiesDecl = typeSolver.tryToSolveType("java.util.Properties")
+        assertTrue(propertiesDecl.isSolved)
+        val propertiesType = ResolvedReferenceType(propertiesDecl.getDeclaration())
+
+        val mapRef = typeSolver.tryToSolveType("java.util.Map").getDeclaration()
+        val stringType = ResolvedReferenceType(typeSolver.tryToSolveType("java.lang.String").getDeclaration())
+        val objectType = ResolvedReferenceType(typeSolver.tryToSolveType("java.lang.Object").getDeclaration())
+
+        // Map<String, Object>
+        val mapStringObject = ResolvedReferenceType(mapRef, listOf(stringType, objectType))
+
+        val result = LeastUpperBoundLogic.lub(listOf(propertiesType, mapStringObject), typeSolver)
+
+        assertTrue(result.isReferenceType())
+        assertEquals("java.util.Map", result.asReferenceType().declaration.qualifiedName)
+
+        val typeArgs = result.asReferenceType().typeArguments
+        assertEquals(2, typeArgs.size, "Expected 2 type arguments for Map from Properties")
+        assertEquals("java.lang.Object", typeArgs[0].asReferenceType().declaration.qualifiedName)
+        assertEquals("java.lang.Object", typeArgs[1].asReferenceType().declaration.qualifiedName)
+    }
 }

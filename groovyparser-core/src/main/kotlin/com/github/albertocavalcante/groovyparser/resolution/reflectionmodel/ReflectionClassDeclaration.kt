@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedMethodDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeParameterDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
 import java.lang.reflect.Modifier
 
 /**
@@ -21,15 +22,15 @@ class ReflectionClassDeclaration(private val clazz: Class<*>, private val typeSo
 
     override val superClass: ResolvedReferenceType?
         get() {
-            val superClazz = clazz.superclass ?: return null
-            if (superClazz == Object::class.java && clazz == Object::class.java) {
+            val superType = clazz.genericSuperclass ?: return null
+            if (superType == Object::class.java) {
                 return null
             }
-            return createReferenceType(superClazz)
+            return convertType(superType) as? ResolvedReferenceType
         }
 
     override val interfaces: List<ResolvedReferenceType>
-        get() = clazz.interfaces.map { createReferenceType(it) }
+        get() = clazz.genericInterfaces.mapNotNull { convertType(it) as? ResolvedReferenceType }
 
     override fun isAbstract(): Boolean = Modifier.isAbstract(clazz.modifiers)
 
@@ -58,7 +59,45 @@ class ReflectionClassDeclaration(private val clazz: Class<*>, private val typeSo
         ReflectionTypeParameterDeclaration(it, this, typeSolver)
     }
 
-    private fun createReferenceType(clazz: Class<*>): ResolvedReferenceType {
+    private fun convertType(type: java.lang.reflect.Type): ResolvedType? {
+        if (type is Class<*>) {
+            return createReferenceType(type)
+        }
+        if (type is java.lang.reflect.ParameterizedType) {
+            val rawType = type.rawType as? Class<*> ?: return null
+            val rawRef = createReferenceType(rawType)
+
+            val typeArgs = type.actualTypeArguments.mapNotNull { arg ->
+                convertType(arg)
+            }
+
+            // If we successfully resolved args, return parameterized type
+            if (rawRef is ResolvedReferenceType && typeArgs.size == rawRef.declaration.getTypeParameters().size) {
+                return ResolvedReferenceType(rawRef.declaration, typeArgs)
+            } else if (rawRef is ResolvedReferenceType) {
+                // Fallback if args size mismatch (shouldn't happen for valid reflection)
+                // or if we just want best effort
+                return ResolvedReferenceType(rawRef.declaration, typeArgs)
+            }
+            return rawRef
+        }
+        // [HEURISTIC NOTE]
+        // Handle Wildcards, TypeVariables, etc.
+        // For `LUB` of concrete types (e.g. Properties), we usually see concrete args.
+        // For `? extends T`, we ideally need WildcardType support.
+        //
+        // Current Strategy: Fallback to 'java.lang.Object'.
+        // Trade-off: Safe, but loses precision. `List<? extends String>` becomes `List<Object>`.
+        // This is acceptable for current LUB goals but should be improved for full Generics support.
+        return resolveType("java.lang.Object")
+    }
+
+    private fun resolveType(name: String): ResolvedType? {
+        val ref = typeSolver.tryToSolveType(name)
+        return if (ref.isSolved) ResolvedReferenceType(ref.getDeclaration()) else null
+    }
+
+    private fun createReferenceType(clazz: Class<*>): ResolvedType {
         val ref = typeSolver.tryToSolveType(clazz.canonicalName ?: clazz.name)
         return if (ref.isSolved) {
             ResolvedReferenceType(ref.getDeclaration())
