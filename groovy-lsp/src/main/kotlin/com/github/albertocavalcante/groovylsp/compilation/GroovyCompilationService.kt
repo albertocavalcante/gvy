@@ -311,11 +311,9 @@ class GroovyCompilationService(
      * Delegates to the active language engine to wrap the parse result.
      * NOTE: This assumes the file is already compiled/parsed (returns null if not in cache).
      */
-    // TODO(#515): Use simple name for LanguageSession return type.
-    //   See: https://github.com/albertocavalcante/gvy/issues/515
     // TODO(#513): Eliminate type check - add createSession(ParseResult) to LanguageEngine interface.
     //   See: https://github.com/albertocavalcante/gvy/issues/513
-    fun getSession(uri: URI): com.github.albertocavalcante.groovylsp.engine.api.LanguageSession? {
+    fun getSession(uri: URI): LanguageSession? {
         val parseResult = getParseResult(uri) ?: return null
 
         // Bridge: Delegate to NativeEngine to wrap the result

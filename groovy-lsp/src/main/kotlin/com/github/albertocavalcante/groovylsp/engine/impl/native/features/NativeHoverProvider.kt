@@ -5,14 +5,13 @@ import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.api.ParseResult
-import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
-import java.util.concurrent.CompletableFuture
+import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider as DelegateHoverProvider
 
 /**
  * Native hover provider that delegates to the existing HoverProvider implementation.
@@ -28,22 +27,17 @@ class NativeHoverProvider(
     private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
 
     // Delegate to existing HoverProvider which has all the domain logic
-    private val delegate = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(
+    private val delegate = DelegateHoverProvider(
         compilationService,
         documentProvider,
         sourceNavigator,
     )
 
-    // TODO(#514): Convert to suspend function and remove runBlocking.
-    //   See: https://github.com/albertocavalcante/gvy/issues/514
-    override fun getHover(params: HoverParams): CompletableFuture<Hover> = runBlocking {
-        try {
-            val hover = delegate.provideHover(params.textDocument.uri, params.position)
-            CompletableFuture.completedFuture(hover ?: emptyHover())
-        } catch (e: Exception) {
-            logger.error("Error providing hover", e)
-            CompletableFuture.completedFuture(emptyHover())
-        }
+    override suspend fun getHover(params: HoverParams): Hover = try {
+        delegate.provideHover(params.textDocument.uri, params.position) ?: emptyHover()
+    } catch (e: Exception) {
+        logger.error("Error providing hover", e)
+        emptyHover()
     }
 
     private fun emptyHover() = Hover().apply {

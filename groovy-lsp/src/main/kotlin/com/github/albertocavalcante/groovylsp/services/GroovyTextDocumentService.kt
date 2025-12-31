@@ -388,7 +388,7 @@ class GroovyTextDocumentService(
 
         val session = compilationService.getSession(uri)
         if (session != null) {
-            session.features.hoverProvider.getHover(params).await()
+            session.features.hoverProvider.getHover(params)
         } else {
             Hover().apply {
                 contents = Either.forRight(
