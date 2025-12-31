@@ -130,22 +130,30 @@ internal fun ClassNode.toUnifiedSymbol(): UnifiedSymbol {
         }
     }
 
-    // Add methods
+    // Add methods (ConstructorNode is NOT included in methods, only in declaredConstructors)
     for (method in methods) {
         if (!method.isSynthetic) {
             method.toRange()?.let { range ->
                 children.add(
                     UnifiedSymbol(
-                        name = if (method is ConstructorNode) {
-                            method.declaringClass.nameWithoutPackage
-                        } else {
-                            method.name
-                        },
-                        kind = if (method is ConstructorNode) {
-                            UnifiedNodeKind.CONSTRUCTOR
-                        } else {
-                            UnifiedNodeKind.METHOD
-                        },
+                        name = method.name,
+                        kind = UnifiedNodeKind.METHOD,
+                        range = range,
+                        selectionRange = range,
+                    ),
+                )
+            }
+        }
+    }
+
+    // Add constructors (separate from methods in ClassNode)
+    for (constructor in declaredConstructors) {
+        if (!constructor.isSynthetic) {
+            constructor.toRange()?.let { range ->
+                children.add(
+                    UnifiedSymbol(
+                        name = nameWithoutPackage, // Use class name, not <init>
+                        kind = UnifiedNodeKind.CONSTRUCTOR,
                         range = range,
                         selectionRange = range,
                     ),
