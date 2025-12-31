@@ -7,18 +7,22 @@ import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.body.TypeDeclaration
+import com.github.albertocavalcante.groovyparser.ast.expr.ArgumentListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BitwiseNegationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.BooleanExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClassExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClosureListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.Expression
+import com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.FieldExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
@@ -27,6 +31,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.NamedArgumentListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
@@ -34,7 +39,9 @@ import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.StaticMethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.TupleExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
@@ -78,7 +85,9 @@ object NodeCloner {
         is WhileStatement -> cloneWhileStatement(node) as T
         is ReturnStatement -> cloneReturnStatement(node) as T
         is TryCatchStatement -> cloneTryCatchStatement(node) as T
+        is CatchClause -> cloneCatchClause(node) as T
         is SwitchStatement -> cloneSwitchStatement(node) as T
+        is CaseStatement -> cloneCaseStatement(node) as T
         is ThrowStatement -> cloneThrowStatement(node) as T
         is AssertStatement -> cloneAssertStatement(node) as T
         is BreakStatement -> cloneBreakStatement(node) as T
@@ -112,6 +121,14 @@ object NodeCloner {
         is PrefixExpr -> clonePrefixExpr(node) as T
         is NotExpr -> cloneNotExpr(node) as T
         is BitwiseNegationExpr -> cloneBitwiseNegationExpr(node) as T
+        is FieldExpr -> cloneFieldExpr(node) as T
+        is StaticMethodCallExpr -> cloneStaticMethodCallExpr(node) as T
+        is TupleExpr -> cloneTupleExpr(node) as T
+        is BooleanExpr -> cloneBooleanExpr(node) as T
+        is ClosureListExpr -> cloneClosureListExpr(node) as T
+        is EmptyExpr -> cloneEmptyExpr(node) as T
+        is NamedArgumentListExpr -> cloneNamedArgumentListExpr(node) as T
+        is ArgumentListExpr -> cloneArgumentListExpr(node) as T
         is AnnotationExpr -> cloneAnnotationExpr(node) as T
         is ImportDeclaration -> cloneImportDeclaration(node) as T
         is PackageDeclaration -> clonePackageDeclaration(node) as T
@@ -243,29 +260,37 @@ object NodeCloner {
 
     private fun cloneTryCatchStatement(node: TryCatchStatement): TryCatchStatement {
         val cloned = TryCatchStatement(clone(node.tryBlock))
-        node.catchClauses.forEach { cloned.addCatchClause(cloneCatchClause(it)) }
+        node.catchClauses.forEach { cloned.catchClauses.add(cloneCatchClause(it)) }
         node.finallyBlock?.let { cloned.finallyBlock = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
     }
 
-    private fun cloneCatchClause(node: CatchClause): CatchClause = CatchClause(
-        parameter = clone(node.parameter),
-        body = clone(node.body),
-    )
+    private fun cloneCatchClause(node: CatchClause): CatchClause {
+        val cloned = CatchClause(
+            parameter = clone(node.parameter),
+            body = clone(node.body),
+        )
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
 
     private fun cloneSwitchStatement(node: SwitchStatement): SwitchStatement {
         val cloned = SwitchStatement(clone(node.expression))
-        node.cases.forEach { cloned.addCase(cloneCaseStatement(it)) }
+        node.cases.forEach { cloned.cases.add(cloneCaseStatement(it)) }
         node.defaultCase?.let { cloned.defaultCase = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
     }
 
-    private fun cloneCaseStatement(node: CaseStatement): CaseStatement = CaseStatement(
-        expression = clone(node.expression),
-        body = clone(node.body),
-    )
+    private fun cloneCaseStatement(node: CaseStatement): CaseStatement {
+        val cloned = CaseStatement(
+            expression = clone(node.expression),
+            body = clone(node.body),
+        )
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
 
     private fun cloneThrowStatement(node: ThrowStatement): ThrowStatement {
         val cloned = ThrowStatement(clone(node.expression))
@@ -397,7 +422,6 @@ object NodeCloner {
         val cloned = UnaryExpr(
             operator = node.operator,
             expression = clone(node.expression),
-            isPrefix = node.isPrefix,
         )
         cloned.range = cloneRange(node.range)
         return cloned
@@ -470,7 +494,7 @@ object NodeCloner {
 
     private fun cloneLambdaExpr(node: LambdaExpr): LambdaExpr {
         val cloned = LambdaExpr()
-        node.parameters.forEach { cloned.addParameter(clone(it)) }
+        node.parameters.forEach { cloned.parameters.add(clone(it)) }
         node.body?.let { cloned.body = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
@@ -535,7 +559,6 @@ object NodeCloner {
     // Other nodes
     private fun cloneAnnotationExpr(node: AnnotationExpr): AnnotationExpr {
         val cloned = AnnotationExpr(node.name)
-        node.value?.let { cloned.value = clone(it) }
         node.members.forEach { (key, value) ->
             cloned.members[key] = clone(value)
         }
@@ -566,6 +589,57 @@ object NodeCloner {
 
     private fun cloneJavadocComment(node: JavadocComment): JavadocComment =
         JavadocComment(node.content, cloneRange(node.range))
+
+    // MoreExpressions
+    private fun cloneFieldExpr(node: FieldExpr): FieldExpr {
+        val cloned = FieldExpr(clone(node.scope), node.fieldName)
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    private fun cloneStaticMethodCallExpr(node: StaticMethodCallExpr): StaticMethodCallExpr {
+        val cloned = StaticMethodCallExpr(node.ownerType, node.methodName)
+        node.arguments.forEach { cloned.addArgument(clone(it)) }
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    private fun cloneTupleExpr(node: TupleExpr): TupleExpr {
+        val cloned = TupleExpr()
+        node.elements.forEach { cloned.addElement(clone(it)) }
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    private fun cloneBooleanExpr(node: BooleanExpr): BooleanExpr {
+        val cloned = BooleanExpr(clone(node.expression))
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    private fun cloneClosureListExpr(node: ClosureListExpr): ClosureListExpr {
+        val cloned = ClosureListExpr()
+        node.expressions.forEach { cloned.addExpression(clone(it)) }
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    @Suppress("UnusedParameter")
+    private fun cloneEmptyExpr(node: EmptyExpr): EmptyExpr = EmptyExpr
+
+    private fun cloneNamedArgumentListExpr(node: NamedArgumentListExpr): NamedArgumentListExpr {
+        val cloned = NamedArgumentListExpr()
+        node.arguments.forEach { cloned.addArgument(clone(it)) }
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
+
+    private fun cloneArgumentListExpr(node: ArgumentListExpr): ArgumentListExpr {
+        val cloned = ArgumentListExpr()
+        node.arguments.forEach { cloned.addArgument(clone(it)) }
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
 }
 
 /**
