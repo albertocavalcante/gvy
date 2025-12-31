@@ -55,11 +55,17 @@ interface FeatureSet {
  * Abstract Provider Interface for Hover.
  * Decouples the LSP service from the underlying AST.
  */
+// TODO(#514): Convert to suspend function instead of CompletableFuture.
+//   See: https://github.com/albertocavalcante/gvy/issues/514
+// TODO(#515): Import org.eclipse.lsp4j.Hover and use simple name.
+//   See: https://github.com/albertocavalcante/gvy/issues/515
 interface HoverProvider {
     fun getHover(params: HoverParams): CompletableFuture<org.eclipse.lsp4j.Hover>
 }
 
 // TODO: Move/Refactor ParseResult usage. For now, we might need a simplified metadata interface
+// TODO(#515): Import org.eclipse.lsp4j.Diagnostic and use simple name.
+//   See: https://github.com/albertocavalcante/gvy/issues/515
 interface ParseResultMetadata {
     val isSuccess: Boolean
     val diagnostics: List<org.eclipse.lsp4j.Diagnostic>

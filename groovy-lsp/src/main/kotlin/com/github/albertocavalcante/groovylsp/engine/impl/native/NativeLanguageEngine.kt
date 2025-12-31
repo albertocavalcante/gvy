@@ -14,6 +14,8 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 
+// TODO(#515): Use simple names for DocumentProvider and SourceNavigator.
+//   See: https://github.com/albertocavalcante/gvy/issues/515
 class NativeLanguageEngine(
     private val parserFacade: GroovyParserFacade,
     private val compilationService: GroovyCompilationService,

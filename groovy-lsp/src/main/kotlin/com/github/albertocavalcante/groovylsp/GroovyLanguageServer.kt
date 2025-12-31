@@ -65,9 +65,13 @@ class GroovyLanguageServer(
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
 
     // Shared Services
+    // TODO(#515): Use simple names instead of fully qualified names.
+    //   See: https://github.com/albertocavalcante/gvy/issues/515
     private val documentProvider = com.github.albertocavalcante.groovylsp.services.DocumentProvider()
     private val sourceNavigator = com.github.albertocavalcante.groovylsp.sources.SourceNavigationService()
 
+    // TODO(#512): Parser engine config is not wired - always uses default EngineType.Native.
+    //   See: https://github.com/albertocavalcante/gvy/issues/512
     private val compilationService = GroovyCompilationService(
         parentClassLoader = parentClassLoader,
         documentProvider = documentProvider,
