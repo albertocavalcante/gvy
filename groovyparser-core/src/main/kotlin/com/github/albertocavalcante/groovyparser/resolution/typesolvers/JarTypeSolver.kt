@@ -6,8 +6,8 @@ import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReferenc
 import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.ReflectionClassDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.ReflectionEnumDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.ReflectionInterfaceDeclaration
+import org.slf4j.LoggerFactory
 import java.io.Closeable
-import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -70,13 +70,16 @@ class JarTypeSolver(private val jarPath: Path) :
          * Creates a solver from all JARs in a directory.
          */
         fun fromDirectory(directory: Path): CombinedTypeSolver {
+            val logger = LoggerFactory.getLogger(JarTypeSolver::class.java)
             val combined = CombinedTypeSolver()
             directory.toFile().listFiles { file -> file.extension == "jar" }
                 ?.forEach { jarFile ->
                     try {
                         combined.add(JarTypeSolver(jarFile.toPath()))
-                    } catch (e: Exception) {
-                        // Skip invalid JARs
+                    } catch (e: IllegalArgumentException) {
+                        logger.debug("Skipping invalid JAR {}: {}", jarFile, e.message)
+                    } catch (e: java.io.IOException) {
+                        logger.debug("Skipping unreadable JAR {}: {}", jarFile, e.message)
                     }
                 }
             return combined

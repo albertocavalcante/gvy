@@ -22,7 +22,7 @@ A standalone Groovy parsing library with a JavaParser-inspired API, designed for
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/albertocavalcante/groovy-lsp")
+        url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
         credentials {
             username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
             password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
@@ -40,7 +40,7 @@ dependencies {
 ```groovy
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/albertocavalcante/groovy-lsp")
+        url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
         credentials {
             username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
             password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
@@ -68,7 +68,7 @@ val unit = StaticGroovyParser.parse("class Foo {}")
 println(unit.types[0].name) // "Foo"
 
 // Or parse from a file
-val unit = StaticGroovyParser.parse(File("MyClass.groovy"))
+val unitFromFile = StaticGroovyParser.parse(File("MyClass.groovy"))
 
 // Parse with configuration
 val config = ParserConfiguration()
@@ -176,6 +176,7 @@ class MethodCollector : VoidVisitorAdapter<MutableList<String>>() {
 
 val methods = mutableListOf<String>()
 val collector = MethodCollector()
+val compilationUnit = StaticGroovyParser.parse("class Foo { void bar() {} }")
 collector.visit(compilationUnit, methods)
 println("Found methods: $methods")
 ```
@@ -233,7 +234,7 @@ val unit = StaticGroovyParser.parse("""
 
 val violations = analyzer.getCpsViolations(unit)
 violations.forEach { violation ->
-    println("CPS violation at line ${violation.line}: ${violation.message}")
+    println("CPS violation at line ${violation.position?.line}: ${violation.message}")
 }
 ```
 

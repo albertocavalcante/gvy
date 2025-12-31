@@ -44,6 +44,8 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
     private val converter = GroovyAstConverter()
 
     companion object {
+        /** Default tolerance level for lenient parsing mode */
+        private const val DEFAULT_LENIENT_TOLERANCE = 10
         private val sharedConverter = GroovyAstConverter()
 
         /**
@@ -160,7 +162,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         targetDirectory = null
         sourceEncoding = configuration.characterEncoding.name()
         // Configure tolerance level for parsing
-        tolerance = if (configuration.lenientMode) 10 else 0
+        tolerance = if (configuration.lenientMode) DEFAULT_LENIENT_TOLERANCE else 0
     }
 
     private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList<Problem>) {

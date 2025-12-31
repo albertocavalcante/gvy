@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.resolution.typesolvers
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
+import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -14,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * @param solvers The initial child solvers to add
  */
 class CombinedTypeSolver(vararg solvers: TypeSolver) : TypeSolver {
+
+    private val logger = LoggerFactory.getLogger(CombinedTypeSolver::class.java)
 
     override var parent: TypeSolver? = null
 
@@ -50,8 +53,12 @@ class CombinedTypeSolver(vararg solvers: TypeSolver) : TypeSolver {
                     cache[name] = ref
                     return ref
                 }
-            } catch (e: Exception) {
-                // Continue to next solver on error
+            } catch (e: UnsupportedOperationException) {
+                logger.debug("Solver {} does not support type {}: {}", solver, name, e.message)
+            } catch (e: IllegalArgumentException) {
+                logger.debug("Invalid argument for type {} in solver {}: {}", name, solver, e.message)
+            } catch (e: RuntimeException) {
+                logger.warn("Unexpected error resolving type {} in solver {}: {}", name, solver, e.message)
             }
         }
 

@@ -146,10 +146,12 @@ class SourceRoot(val root: Path) {
         if (!Files.exists(directory)) return emptyList()
         if (!Files.isDirectory(directory)) return emptyList()
 
-        return Files.walk(directory)
-            .filter { it.isRegularFile() }
-            .filter { extensions.contains(it.extension) }
-            .toList()
+        return Files.walk(directory).use { stream ->
+            stream
+                .filter { it.isRegularFile() }
+                .filter { extensions.contains(it.extension) }
+                .toList()
+        }
     }
 
     companion object {

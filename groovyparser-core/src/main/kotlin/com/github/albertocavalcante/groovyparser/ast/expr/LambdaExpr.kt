@@ -16,6 +16,10 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.Statement
 class LambdaExpr : Expression() {
     val parameters: MutableList<Parameter> = mutableListOf()
     var body: Statement? = null
+        set(value) {
+            field = value
+            value?.let { setAsParentNodeOf(it) }
+        }
 
     fun addParameter(param: Parameter) {
         setAsParentNodeOf(param)

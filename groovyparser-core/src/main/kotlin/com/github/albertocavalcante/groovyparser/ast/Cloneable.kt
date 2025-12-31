@@ -243,7 +243,7 @@ object NodeCloner {
 
     private fun cloneTryCatchStatement(node: TryCatchStatement): TryCatchStatement {
         val cloned = TryCatchStatement(clone(node.tryBlock))
-        node.catchClauses.forEach { cloned.catchClauses.add(cloneCatchClause(it)) }
+        node.catchClauses.forEach { cloned.addCatchClause(cloneCatchClause(it)) }
         node.finallyBlock?.let { cloned.finallyBlock = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
@@ -256,7 +256,7 @@ object NodeCloner {
 
     private fun cloneSwitchStatement(node: SwitchStatement): SwitchStatement {
         val cloned = SwitchStatement(clone(node.expression))
-        node.cases.forEach { cloned.cases.add(cloneCaseStatement(it)) }
+        node.cases.forEach { cloned.addCase(cloneCaseStatement(it)) }
         node.defaultCase?.let { cloned.defaultCase = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
@@ -397,6 +397,7 @@ object NodeCloner {
         val cloned = UnaryExpr(
             operator = node.operator,
             expression = clone(node.expression),
+            isPrefix = node.isPrefix,
         )
         cloned.range = cloneRange(node.range)
         return cloned
@@ -469,7 +470,7 @@ object NodeCloner {
 
     private fun cloneLambdaExpr(node: LambdaExpr): LambdaExpr {
         val cloned = LambdaExpr()
-        node.parameters.forEach { cloned.parameters.add(clone(it)) }
+        node.parameters.forEach { cloned.addParameter(clone(it)) }
         node.body?.let { cloned.body = clone(it) }
         cloned.range = cloneRange(node.range)
         return cloned
@@ -534,6 +535,7 @@ object NodeCloner {
     // Other nodes
     private fun cloneAnnotationExpr(node: AnnotationExpr): AnnotationExpr {
         val cloned = AnnotationExpr(node.name)
+        node.value?.let { cloned.value = clone(it) }
         node.members.forEach { (key, value) ->
             cloned.members[key] = clone(value)
         }
