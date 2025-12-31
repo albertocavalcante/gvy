@@ -108,6 +108,7 @@ git worktree prune
 ### GitHub CLI
 - **Use `gh` for GitHub content** — Never WebFetch for GitHub URLs
 - **Use temp files for PR bodies** — Write PR descriptions to a temporary `.md` file and pass it with `gh pr create/edit --body-file`; delete the temp file afterward.
+- **Use temp files for multiline commits** — Write commit message to `/tmp/commit-msg.txt` and use `git commit -F /tmp/commit-msg.txt`. Alternatively, use multiple `-m` flags: `git commit -m "title" -m "body line 1" -m "body line 2"`.
 
 ## Planning Standards
 
