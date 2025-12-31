@@ -494,3 +494,180 @@ class WaitStepExecutor : StepExecutor<ScenarioStep.Wait> {
         logger.info("Waited for {} ms", step.duration)
     }
 }
+
+class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
+    override fun execute(step: ScenarioStep.DownloadPlugin, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val pluginId = step.id
+        val version = step.version
+
+        // Define cache dir relative to project or in standard location
+        // For E2E tests, we use a shared cache to speed up tests
+        val cacheDir = java.nio.file.Path.of(System.getProperty("user.home"), ".gls", "jenkins-cache")
+
+        val downloader = com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader(cacheDir)
+
+        try {
+            logger.info("Downloading plugin {}:{}", pluginId, version)
+            val path = downloader.download(pluginId, version)
+
+            step.saveAs?.let { variableName ->
+                context.setVariable(variableName, wrapJavaObject(path.toString()))
+            }
+            context.lastResult = buildJsonObject {
+                put("plugin", pluginId)
+                put("version", version)
+                put("path", path.toString())
+            }
+        } catch (e: Exception) {
+            throw AssertionError("Failed to download plugin $pluginId:$version", e)
+        }
+    }
+}
+
+class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
+    override fun execute(step: ScenarioStep.CliCommand, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val interpolatedCommand = context.interpolateString(step.command)
+        val interpolatedArgs = step.args.map { context.interpolateString(it) }
+
+        val fullCommand = if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
+            // We use the property "groovy.lsp.binary" which should be set by the test runner
+            // Fallback to local build path for local dev
+            val binaryPath = System.getProperty("groovy.lsp.binary")
+                ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
+
+            val cmd = mutableListOf(binaryPath)
+            if (interpolatedCommand.contains(" ")) {
+                val parts = interpolatedCommand.split(" ")
+                if (parts.first() == "gls") {
+                    cmd.addAll(parts.drop(1))
+                } else {
+                    cmd.addAll(parts)
+                }
+            } else if (interpolatedCommand != "gls") {
+                cmd.add(interpolatedCommand)
+            }
+            cmd.addAll(interpolatedArgs)
+            cmd
+        } else {
+            interpolatedCommand.split(" ") + interpolatedArgs
+        }
+
+        logger.info("Executing CLI command: {}", fullCommand.joinToString(" "))
+
+        val builder = ProcessBuilder(fullCommand)
+        builder.directory(context.workspace.rootDir.toFile())
+
+        // Capture output
+        val outputFile = java.io.File.createTempFile("cli-stdout", ".log")
+        val errorFile = java.io.File.createTempFile("cli-stderr", ".log")
+        builder.redirectOutput(outputFile)
+        builder.redirectError(errorFile)
+
+        val process = builder.start()
+
+        val completed = process.waitFor(step.timeoutSeconds, TimeUnit.SECONDS)
+        if (!completed) {
+            process.destroyForcibly()
+            throw TimeoutException("CLI command timed out after ${step.timeoutSeconds}s: $fullCommand")
+        }
+
+        val exitCode = process.exitValue()
+        val stdout = outputFile.readText()
+        val stderr = errorFile.readText()
+
+        logger.info("CLI exit code: {}", exitCode)
+        if (stderr.isNotEmpty()) {
+            logger.warn("CLI stderr: {}", stderr)
+        }
+
+        if (exitCode != step.expectExitCode) {
+            throw AssertionError(
+                "CLI command failed with exit code $exitCode (expected ${step.expectExitCode})\nStdout: $stdout\nStderr: $stderr",
+            )
+        }
+
+        context.lastResult = buildJsonObject {
+            put("exitCode", exitCode)
+            put("stdout", stdout)
+            put("stderr", stderr)
+        }
+
+        step.saveAs?.let { name ->
+            context.saveResult(name, context.lastResult!!)
+        }
+
+        step.checks.forEach { check ->
+            context.evaluateCheck(context.lastResult!!, check)
+        }
+    }
+}
+
+class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
+    override fun execute(step: ScenarioStep.GoldenAssert, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val actualPathString = context.interpolateString(step.actual)
+        val expectedRelPath = context.interpolateString(step.expected)
+
+        val actualFile = java.nio.file.Path.of(actualPathString)
+        // Resolve golden file relative to the project root or resources dir
+        val expectedFile = java.nio.file.Path.of("e2e/resources/golden", expectedRelPath).toAbsolutePath()
+
+        // Ensure actual file exists
+        if (!java.nio.file.Files.exists(actualFile)) {
+            throw AssertionError("Actual file not found for golden assert: $actualFile")
+        }
+
+        // Logic to update golden files
+        val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
+
+        if (updateSnapshot) {
+            logger.warn("Updating golden file: {}", expectedFile)
+            java.nio.file.Files.createDirectories(expectedFile.parent)
+            java.nio.file.Files.copy(actualFile, expectedFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            return
+        }
+
+        if (!java.nio.file.Files.exists(expectedFile)) {
+            throw AssertionError(
+                "Golden file not found: $expectedFile. Run with -Dgroovy.lsp.e2e.updateGolden=true to create it.",
+            )
+        }
+
+        val actualContent = java.nio.file.Files.readString(actualFile)
+        val expectedContent = java.nio.file.Files.readString(expectedFile)
+
+        when (step.mode) {
+            GoldenMode.JSON -> {
+                // Compare as JSON trees to ignore formatting differences
+                val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+                val actualJson = mapper.readTree(actualContent)
+                val expectedJson = mapper.readTree(expectedContent)
+
+                if (actualJson != expectedJson) {
+                    // If different, show diff
+                    throw AssertionError(
+                        "JSON content mismatch for $expectedRelPath!\nExpected:\n$expectedContent\nActual:\n$actualContent",
+                    )
+                }
+            }
+
+            GoldenMode.TEXT -> {
+                // Compare normalized text (trim lines)
+                if (actualContent.trim() != expectedContent.trim()) {
+                    throw AssertionError(
+                        "Text content mismatch for $expectedRelPath!\nExpected:\n$expectedContent\nActual:\n$actualContent",
+                    )
+                }
+            }
+
+            GoldenMode.BINARY -> {
+                // Direct byte comparison
+                val actualBytes = java.nio.file.Files.readAllBytes(actualFile)
+                val expectedBytes = java.nio.file.Files.readAllBytes(expectedFile)
+                if (!java.util.Arrays.equals(actualBytes, expectedBytes)) {
+                    throw AssertionError("Binary content mismatch for $expectedRelPath!")
+                }
+            }
+        }
+        logger.info("Golden verification passed for {}", expectedFile.fileName)
+    }
+}

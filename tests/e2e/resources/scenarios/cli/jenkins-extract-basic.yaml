@@ -12,6 +12,9 @@ description: >
   (workflow-basic-steps) and extracts Step metadata including function names,
   parameters, and block arguments.
 
+workspace:
+  fixture: jenkins-extract-test
+
 steps:
   # Step 1: Download the plugin
   - downloadPlugin:
@@ -25,7 +28,7 @@ steps:
       command: jenkins extract
       args:
         - "--plugins-txt"
-        - "{{fixture}}/plugins.txt"
+        - "{{temp}}/plugins.txt"
         - "--output-dir"
         - "{{temp}}/output"
       saveAs: extractResult
@@ -36,32 +39,17 @@ steps:
   - assert:
       source: extractResult
       checks:
-        # Should have extracted steps
-        - jsonPath: $.steps
+        # Check output contains success message
+        - jsonPath: $.stdout
           expect:
-            type: NOT_EMPTY
+            type: CONTAINS
+            value: "Extracted 26 steps"
 
-        # Echo step should be present
-        - jsonPath: $.steps.echo
+        # Check output contains plugin name
+        - jsonPath: $.stdout
           expect:
-            type: EXISTS
-
-        # Echo step should have correct function name
-        - jsonPath: $.steps.echo.functionName
-          expect:
-            type: EQUALS
-            value: "echo"
-
-        # Echo step should have message parameter
-        - jsonPath: $.steps.echo.parameters.message
-          expect:
-            type: EXISTS
-
-        # Retry step should take block
-        - jsonPath: $.steps.retry.takesBlock
-          expect:
-            type: EQUALS
-            value: true
+            type: CONTAINS
+            value: "workflow-basic-steps"
 
   # Step 4: Golden file comparison for full output
   - goldenAssert:
