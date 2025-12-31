@@ -9,17 +9,22 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.ArgumentListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BitwiseNegationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.BooleanExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.CastExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClassExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClosureListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.FieldExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
@@ -28,6 +33,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.NamedArgumentListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
@@ -35,7 +41,9 @@ import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.StaticMethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.TupleExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
@@ -378,6 +386,48 @@ open class VoidVisitorAdapter<A> : VoidVisitor<A> {
             is DeclarationExpr -> visit(expr, arg)
             is ClassExpr -> visit(expr, arg)
             is ArrayExpr -> visit(expr, arg)
+            // MoreExpressions
+            is FieldExpr -> visit(expr, arg)
+            is StaticMethodCallExpr -> visit(expr, arg)
+            is TupleExpr -> visit(expr, arg)
+            is BooleanExpr -> visit(expr, arg)
+            is ClosureListExpr -> visit(expr, arg)
+            is EmptyExpr -> visit(expr, arg)
+            is NamedArgumentListExpr -> visit(expr, arg)
+            is ArgumentListExpr -> visit(expr, arg)
         }
+    }
+
+    // MoreExpressions visitor methods
+    open fun visit(expr: FieldExpr, arg: A) {
+        visitExpression(expr.scope, arg)
+    }
+
+    open fun visit(expr: StaticMethodCallExpr, arg: A) {
+        expr.arguments.forEach { visitExpression(it, arg) }
+    }
+
+    open fun visit(expr: TupleExpr, arg: A) {
+        expr.elements.forEach { visitExpression(it, arg) }
+    }
+
+    open fun visit(expr: BooleanExpr, arg: A) {
+        visitExpression(expr.expression, arg)
+    }
+
+    open fun visit(expr: ClosureListExpr, arg: A) {
+        expr.expressions.forEach { visitExpression(it, arg) }
+    }
+
+    open fun visit(expr: EmptyExpr, arg: A) {
+        // No-op: EmptyExpr has no child nodes
+    }
+
+    open fun visit(expr: NamedArgumentListExpr, arg: A) {
+        expr.arguments.forEach { visitExpression(it, arg) }
+    }
+
+    open fun visit(expr: ArgumentListExpr, arg: A) {
+        expr.arguments.forEach { visitExpression(it, arg) }
     }
 }
