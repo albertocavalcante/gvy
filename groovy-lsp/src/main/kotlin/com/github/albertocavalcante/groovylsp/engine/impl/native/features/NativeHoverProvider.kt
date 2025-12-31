@@ -16,9 +16,12 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider as D
 /**
  * Native hover provider that delegates to the existing HoverProvider implementation.
  * This ensures all existing hover logic (including Jenkins-specific handling) continues to work.
+ *
+ * @param parseResult The parse result for this session (reserved for future direct AST usage)
  */
 class NativeHoverProvider(
-    @Suppress("UNUSED_PARAMETER") private val parseResult: ParseResult,
+    @Suppress("UNUSED_PARAMETER") // TODO: Use parseResult directly instead of delegating
+    private val parseResult: ParseResult,
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     private val sourceNavigator: SourceNavigator? = null,

@@ -38,7 +38,7 @@ class NativeLanguageEngine(
 
 class NativeLanguageSession(
     // We hold the full result here, opaque to the outside
-    val parseResult: ParseResult,
+    internal val parseResult: ParseResult,
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     private val sourceNavigator: SourceNavigator?,

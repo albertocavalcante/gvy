@@ -42,6 +42,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val RETRY_DELAY_MS = 50L
 
+/**
+ * Service for compiling and managing Groovy source code.
+ *
+ * @param documentProvider Required for engine-based features (hover, completion, etc.).
+ *                         If null, calling [getSession] will throw [IllegalStateException].
+ * @param sourceNavigator Optional source navigation service for cross-file features.
+ * @param engineConfig Configuration for the language engine (parser type, features).
+ */
 class GroovyCompilationService(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
