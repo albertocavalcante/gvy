@@ -114,7 +114,7 @@ data class ServerConfiguration(
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,
                     javaHome = map["groovy.java.home"] as? String,
                     groovyLanguageVersion = map["groovy.language.version"] as? String,
-                    logLevel = LogLevel.fromString(map["groovy.server.logLevel"] as? String),
+                    logLevel = parseLogLevel(map),
                     traceServer = parseTraceLevel(map),
                     replEnabled = (map["groovy.repl.enabled"] as? Boolean) ?: true,
                     maxReplSessions = (map["groovy.repl.maxSessions"] as? Number)?.toInt() ?: 10,
@@ -151,6 +151,21 @@ data class ServerConfiguration(
                     CompilationMode.WORKSPACE
                 }
             }
+        }
+
+        private fun parseLogLevel(map: Map<String, Any>): LogLevel {
+            val rawValue = map["groovy.server.logLevel"]
+            val logLevelString = rawValue as? String
+            // Log at INFO level so this is ALWAYS visible before level is changed
+            logger.info(
+                "Parsing logLevel from initOptions: raw='{}', type={}, parsed={}",
+                rawValue,
+                rawValue?.javaClass?.simpleName ?: "null",
+                logLevelString,
+            )
+            val parsed = LogLevel.fromString(logLevelString)
+            logger.info("LogLevel parsed as: {}", parsed.name)
+            return parsed
         }
 
         private fun parseWorkerDescriptors(map: Map<String, Any>): List<WorkerDescriptorConfig> {
