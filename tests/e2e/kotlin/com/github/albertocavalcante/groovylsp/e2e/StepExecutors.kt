@@ -504,6 +504,12 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
         // For E2E tests, we use a shared cache to speed up tests
         val cacheDir = java.nio.file.Path.of(System.getProperty("user.home"), ".gls", "jenkins-cache")
 
+        if (step.source != PluginSource.JENKINS_RELEASES) {
+            throw UnsupportedOperationException(
+                "Plugin source '${step.source}' is not yet supported. Only JENKINS_RELEASES is implemented.",
+            )
+        }
+
         val downloader = com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader(cacheDir)
 
         try {
@@ -647,11 +653,13 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                 val expectedJson = mapper.readTree(expectedContent)
 
                 if (actualJson != expectedJson) {
+                    val baseMsg = "JSON content mismatch for $expectedRelPath!"
+                    val userMsg = step.message?.let { "$it\n" } ?: ""
                     // TODO(#520): Enable ANSI colors and improve assertion diffs in CI logs
                     //   See: https://github.com/albertocavalcante/gvy/issues/520
                     // If different, show diff
                     throw AssertionError(
-                        "JSON content mismatch for $expectedRelPath!\nExpected:\n$expectedContent\nActual:\n$actualContent",
+                        "${userMsg}${baseMsg}\nExpected:\n$expectedContent\nActual:\n$actualContent",
                     )
                 }
             }
