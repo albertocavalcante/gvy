@@ -1,0 +1,143 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:Cloneable.kt$NodeCloner$@Suppress("UNCHECKED_CAST") fun &lt;T : Node> clone(node: T): T</ID>
+    <ID>CyclomaticComplexMethod:DefaultCpsAnalyzer.kt$DefaultCpsAnalyzer$private fun analyzeNode(node: Node, violations: MutableList&lt;CpsViolation>, inClosure: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:GroovyAstConverter.kt$GroovyAstConverter$private fun convertExpression(expr: GroovyExpression): Expression</ID>
+    <ID>CyclomaticComplexMethod:GroovyAstConverter.kt$GroovyAstConverter$private fun convertStatement(stmt: GroovyStatement): Statement?</ID>
+    <ID>CyclomaticComplexMethod:GroovyParser.kt$GroovyParser$private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList&lt;Problem>)</ID>
+    <ID>CyclomaticComplexMethod:GroovyPrettyPrinter.kt$GroovyPrettyPrinter$private fun printExpression(expr: Expression)</ID>
+    <ID>CyclomaticComplexMethod:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$private fun checkNumericLub(types: List&lt;ResolvedType>, typeSolver: TypeSolver): ResolvedType?</ID>
+    <ID>CyclomaticComplexMethod:ResolvedPrimitiveType.kt$ResolvedPrimitiveType$private fun isNumericAssignable(other: ResolvedPrimitiveType): Boolean</ID>
+    <ID>CyclomaticComplexMethod:SourcePositionCommentParser.kt$SourcePositionCommentParser$private fun parseBlockComment(startIndex: Int): ParseResult</ID>
+    <ID>CyclomaticComplexMethod:SourcePositionCommentParser.kt$SourcePositionCommentParser$private fun parseComments(fromIndex: Int, toIndex: Int): List&lt;Comment></ID>
+    <ID>CyclomaticComplexMethod:SourcePositionCommentParser.kt$SourcePositionCommentParser$private fun skipStringLiteral(startIndex: Int): Int</ID>
+    <ID>CyclomaticComplexMethod:StringEscapeUtils.kt$StringEscapeUtils$fun unescapeGroovy(input: String): String</ID>
+    <ID>CyclomaticComplexMethod:TypeExtractor.kt$TypeExtractor$fun extractType(expression: Expression): ResolvedType</ID>
+    <ID>CyclomaticComplexMethod:TypeExtractor.kt$TypeExtractor$private fun extractBinary(node: BinaryExpr): ResolvedType</ID>
+    <ID>CyclomaticComplexMethod:VoidVisitorAdapter.kt$VoidVisitorAdapter$protected fun visitExpression(expr: com.github.albertocavalcante.groovyparser.ast.expr.Expression, arg: A)</ID>
+    <ID>CyclomaticComplexMethod:XmlPrinter.kt$XmlPrinter$private fun printNode(node: Node)</ID>
+    <ID>CyclomaticComplexMethod:YamlPrinter.kt$YamlPrinter$private fun printNode(node: Node)</ID>
+    <ID>LargeClass:GroovyAstConverter.kt$GroovyAstConverter</ID>
+    <ID>LongMethod:GroovyParser.kt$GroovyParser$fun parse(code: String): ParseResult&lt;CompilationUnit></ID>
+    <ID>LongMethod:StringEscapeUtils.kt$StringEscapeUtils$fun unescapeGroovy(input: String): String</ID>
+    <ID>LoopWithTooManyJumpStatements:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$for</ID>
+    <ID>MagicNumber:GroovyParser.kt$GroovyParser$10</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$10</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$100</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$3</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$4</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$5</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$50</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$6</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$7</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$8</ID>
+    <ID>MagicNumber:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$9</ID>
+    <ID>MagicNumber:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.DOUBLE$7</ID>
+    <ID>MagicNumber:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.FLOAT$6</ID>
+    <ID>MagicNumber:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.INT$4</ID>
+    <ID>MagicNumber:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.LONG$5</ID>
+    <ID>MagicNumber:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.SHORT$3</ID>
+    <ID>MagicNumber:SourcePositionCommentParser.kt$SourcePositionCommentParser$3</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$127</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$16</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$32</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$4</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$5</ID>
+    <ID>MagicNumber:StringEscapeUtils.kt$StringEscapeUtils$6</ID>
+    <ID>MatchingDeclarationName:Cloneable.kt$NodeCloner</ID>
+    <ID>MaxLineLength:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$*</ID>
+    <ID>MaxLineLength:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$// - Incorrect Mapping: If the subtype's arguments don't align 1:1 with the target (e.g. reordered parameters),</ID>
+    <ID>MaxLineLength:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$// - Robustness: Preserves some inference capability even when TypeSolver fails to resolve intermediate ancestors.</ID>
+    <ID>MaxLineLength:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$// this will produce wrong types. However, returning *something* is often better than 'Object' in an IDE context.</ID>
+    <ID>NestedBlockDepth:ClassContext.kt$ClassContext$override fun solveMethod( name: String, argumentTypes: List&lt;ResolvedType>, ): SymbolReference&lt;ResolvedMethodDeclaration></ID>
+    <ID>NestedBlockDepth:GroovyParser.kt$GroovyParser$fun parse(code: String): ParseResult&lt;CompilationUnit></ID>
+    <ID>NestedBlockDepth:GroovyParser.kt$GroovyParser$private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList&lt;Problem>)</ID>
+    <ID>NestedBlockDepth:GroovydocDescription.kt$GroovydocDescription.Companion$fun parseText(text: String): GroovydocDescription</ID>
+    <ID>NoUnusedImports:Cache.kt$com.github.albertocavalcante.groovyparser.resolution.cache.Cache.kt</ID>
+    <ID>NoUnusedImports:ClassContext.kt$com.github.albertocavalcante.groovyparser.resolution.contexts.ClassContext.kt</ID>
+    <ID>NoUnusedImports:Cloneable.kt$com.github.albertocavalcante.groovyparser.ast.Cloneable.kt</ID>
+    <ID>NoUnusedImports:FileBasedParsingTest.kt$com.github.albertocavalcante.groovyparser.FileBasedParsingTest.kt</ID>
+    <ID>NoUnusedImports:GroovyAstConverter.kt$com.github.albertocavalcante.groovyparser.internal.GroovyAstConverter.kt</ID>
+    <ID>NoUnusedImports:GroovyParserTest.kt$com.github.albertocavalcante.groovyparser.GroovyParserTest.kt</ID>
+    <ID>NoUnusedImports:GroovySpecificExpressionTest.kt$com.github.albertocavalcante.groovyparser.ast.expr.GroovySpecificExpressionTest.kt</ID>
+    <ID>NoUnusedImports:JarTypeSolver.kt$com.github.albertocavalcante.groovyparser.resolution.typesolvers.JarTypeSolver.kt</ID>
+    <ID>NoUnusedImports:NodeClonerTest.kt$com.github.albertocavalcante.groovyparser.ast.NodeClonerTest.kt</ID>
+    <ID>NoUnusedImports:NodeUtilsTest.kt$com.github.albertocavalcante.groovyparser.utils.NodeUtilsTest.kt</ID>
+    <ID>NoUnusedImports:StaticGroovyResolver.kt$com.github.albertocavalcante.groovyparser.resolution.StaticGroovyResolver.kt</ID>
+    <ID>NoUnusedImports:TypeExtractor.kt$com.github.albertocavalcante.groovyparser.resolution.typeinference.TypeExtractor.kt</ID>
+    <ID>ReturnCount:CompilationUnitContext.kt$CompilationUnitContext$override fun solveType(name: String): SymbolReference&lt;ResolvedTypeDeclaration></ID>
+    <ID>ReturnCount:GroovyParserClassDeclaration.kt$GroovyParserClassDeclaration$private fun resolveTypeName(typeName: String): ResolvedReferenceType?</ID>
+    <ID>ReturnCount:GroovyParserTypeResolver.kt$GroovyParserTypeResolver$fun resolveType(typeName: String, typeSolver: TypeSolver): ResolvedType</ID>
+    <ID>ReturnCount:GroovyParserTypeSolver.kt$GroovyParserTypeSolver$override fun tryToSolveType(name: String): SymbolReference&lt;ResolvedTypeDeclaration></ID>
+    <ID>ReturnCount:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$fun lub(types: List&lt;ResolvedType>, typeSolver: TypeSolver): ResolvedType</ID>
+    <ID>ReturnCount:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$private fun checkNumericLub(types: List&lt;ResolvedType>, typeSolver: TypeSolver): ResolvedType?</ID>
+    <ID>ReturnCount:PositionUtils.kt$PositionUtils$fun encompassingRange(nodes: Collection&lt;Node>): Range?</ID>
+    <ID>ReturnCount:SourcePositionCommentParser.kt$SourcePositionCommentParser$private fun skipStringLiteral(startIndex: Int): Int</ID>
+    <ID>SwallowedException:CombinedTypeSolver.kt$CombinedTypeSolver$e: Exception</ID>
+    <ID>SwallowedException:JarTypeSolver.kt$JarTypeSolver$e: ClassNotFoundException</ID>
+    <ID>SwallowedException:JarTypeSolver.kt$JarTypeSolver$e: LinkageError</ID>
+    <ID>SwallowedException:JarTypeSolver.kt$JarTypeSolver$e: NoClassDefFoundError</ID>
+    <ID>SwallowedException:JarTypeSolver.kt$JarTypeSolver.Companion$e: Exception</ID>
+    <ID>SwallowedException:ReflectionTypeSolver.kt$ReflectionTypeSolver$e: ClassNotFoundException</ID>
+    <ID>SwallowedException:ReflectionTypeSolver.kt$ReflectionTypeSolver$e: NoClassDefFoundError</ID>
+    <ID>TooGenericExceptionCaught:CombinedTypeSolver.kt$CombinedTypeSolver$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GroovyParser.kt$GroovyParser$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:JarTypeSolver.kt$JarTypeSolver.Companion$e: Exception</ID>
+    <ID>TooManyFunctions:Cloneable.kt$NodeCloner</ID>
+    <ID>TooManyFunctions:GroovyAstConverter.kt$GroovyAstConverter</ID>
+    <ID>TooManyFunctions:GroovyPrettyPrinter.kt$GroovyPrettyPrinter</ID>
+    <ID>TooManyFunctions:LeastUpperBoundLogic.kt$LeastUpperBoundLogic</ID>
+    <ID>TooManyFunctions:NodeUtils.kt$NodeUtils</ID>
+    <ID>TooManyFunctions:ResolvedPrimitiveType.kt$ResolvedPrimitiveType : ResolvedType</ID>
+    <ID>TooManyFunctions:ResolvedType.kt$ResolvedType</ID>
+    <ID>TooManyFunctions:TypeExtractor.kt$TypeExtractor</ID>
+    <ID>TooManyFunctions:XmlPrinter.kt$XmlPrinter</ID>
+    <ID>TooManyFunctions:YamlPrinter.kt$YamlPrinter</ID>
+    <ID>UnusedImports:Cache.kt$import java.lang.ref.WeakReference</ID>
+    <ID>UnusedImports:Cache.kt$import java.util.concurrent.ConcurrentHashMap</ID>
+    <ID>UnusedImports:ClassContext.kt$import com.github.albertocavalcante.groovyparser.resolution.groovymodel.GroovyParserTypeResolver</ID>
+    <ID>UnusedImports:Cloneable.kt$import com.github.albertocavalcante.groovyparser.ast.expr.Expression</ID>
+    <ID>UnusedImports:FileBasedParsingTest.kt$import java.io.File</ID>
+    <ID>UnusedImports:GroovyAstConverter.kt$import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr</ID>
+    <ID>UnusedImports:GroovyAstConverter.kt$import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr</ID>
+    <ID>UnusedImports:GroovyAstConverter.kt$import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr</ID>
+    <ID>UnusedImports:GroovyAstConverter.kt$import org.codehaus.groovy.ast.expr.MapEntryExpression</ID>
+    <ID>UnusedImports:GroovyAstConverter.kt$import org.codehaus.groovy.ast.stmt.CaseStatement as GroovyCaseStatement</ID>
+    <ID>UnusedImports:GroovyParserTest.kt$import com.github.albertocavalcante.groovyparser.ast.CompilationUnit</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr</ID>
+    <ID>UnusedImports:GroovySpecificExpressionTest.kt$import kotlin.test.assertNotNull</ID>
+    <ID>UnusedImports:JarTypeSolver.kt$import java.net.URL</ID>
+    <ID>UnusedImports:NodeClonerTest.kt$import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration</ID>
+    <ID>UnusedImports:NodeUtilsTest.kt$import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration</ID>
+    <ID>UnusedImports:NodeUtilsTest.kt$import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr</ID>
+    <ID>UnusedImports:StaticGroovyResolver.kt$import com.github.albertocavalcante.groovyparser.ast.expr.Expression</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.CompilationUnit</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.body.Parameter</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.ast.visitor.GroovyVisitor</ID>
+    <ID>UnusedImports:TypeExtractor.kt$import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedVoidType</ID>
+    <ID>UnusedPrivateProperty:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$private const val JAVA_LANG_NUMBER = "java.lang.Number"</ID>
+    <ID>UnusedPrivateProperty:ReflectionEnumConstantDeclaration.kt$ReflectionEnumConstantDeclaration$private val typeSolver: TypeSolver</ID>
+    <ID>UnusedPrivateProperty:ResolvedPrimitiveType.kt$ResolvedPrimitiveType$private val numericPrecedence: Int</ID>
+    <ID>UseCheckOrError:ResolvedTypeDeclaration.kt$ResolvedTypeDeclaration$throw IllegalStateException("$qualifiedName is not a class")</ID>
+    <ID>UseCheckOrError:ResolvedTypeDeclaration.kt$ResolvedTypeDeclaration$throw IllegalStateException("$qualifiedName is not an enum")</ID>
+    <ID>UseCheckOrError:ResolvedTypeDeclaration.kt$ResolvedTypeDeclaration$throw IllegalStateException("$qualifiedName is not an interface")</ID>
+    <ID>UseCheckOrError:SymbolReference.kt$SymbolReference$throw IllegalStateException("Symbol is not solved")</ID>
+    <ID>UseRequire:LeastUpperBoundLogic.kt$LeastUpperBoundLogic$throw IllegalArgumentException("Cannot compute LUB involving boolean")</ID>
+    <ID>UseRequire:ResolvedPrimitiveType.kt$ResolvedPrimitiveType.Companion$throw IllegalArgumentException("Cannot promote boolean types")</ID>
+  </CurrentIssues>
+</SmellBaseline>
