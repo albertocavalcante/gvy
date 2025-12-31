@@ -9,7 +9,11 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.ajalt.mordant.terminal.Terminal
+import com.github.albertocavalcante.groovyjenkins.extraction.BytecodeScanner
+import com.github.albertocavalcante.groovyjenkins.extraction.MetadataOutputGenerator
+import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
+import com.github.albertocavalcante.groovyjenkins.extraction.ScannedStep
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -59,19 +63,56 @@ class ExtractCommand : CliktCommand(name = "extract") {
             return
         }
 
-        // Ensure output directory exists
+        // Ensure directories exist
         if (!outputDir.exists()) {
             outputDir.createDirectories()
             terminal.println("${terminal.theme.info("→")} Created output directory: $outputDir")
         }
-
-        // TODO: Implement plugin downloading and bytecode scanning
-        // For now, just list the plugins we would process
-        plugins.forEach { plugin ->
-            terminal.println("  ${terminal.theme.muted("•")} ${plugin.id}:${plugin.version}")
+        if (!cacheDir.exists()) {
+            cacheDir.createDirectories()
         }
 
-        terminal.println("${terminal.theme.success("✓")} Parsed ${plugins.size} plugins")
-        terminal.println("${terminal.theme.warning("⚠")} Full extraction not yet implemented")
+        // Download plugins
+        terminal.println("${terminal.theme.info("→")} Downloading plugins...")
+        val downloader = PluginDownloader(cacheDir)
+        val pluginPaths = mutableMapOf<String, Path>()
+
+        plugins.forEach { plugin ->
+            try {
+                terminal.println("  ${terminal.theme.muted("•")} ${plugin.id}:${plugin.version}")
+                val path = downloader.download(plugin.id, plugin.version)
+                pluginPaths[plugin.id] = path
+            } catch (e: Exception) {
+                terminal.println("  ${terminal.theme.danger("✗")} Failed to download ${plugin.id}: ${e.message}")
+            }
+        }
+
+        if (pluginPaths.isEmpty()) {
+            terminal.println("${terminal.theme.danger("✗")} No plugins downloaded successfully")
+            return
+        }
+
+        // Scan bytecode
+        terminal.println("${terminal.theme.info("→")} Scanning ${pluginPaths.size} plugins for Step classes...")
+        val scanner = BytecodeScanner()
+        val allSteps = mutableListOf<ScannedStep>()
+
+        pluginPaths.forEach { (pluginId, jarPath) ->
+            try {
+                val steps = scanner.scanJar(jarPath)
+                terminal.println("  ${terminal.theme.success("✓")} $pluginId: ${steps.size} steps")
+                allSteps.addAll(steps)
+            } catch (e: Exception) {
+                terminal.println("  ${terminal.theme.danger("✗")} Failed to scan $pluginId: ${e.message}")
+            }
+        }
+
+        // Generate output
+        terminal.println("${terminal.theme.info("→")} Generating metadata JSON...")
+        val metadata = MetadataOutputGenerator.generate(allSteps)
+        val outputPath = outputDir.resolve("jenkins-metadata.json")
+        MetadataOutputGenerator.writeToFile(metadata, outputPath)
+
+        terminal.println("${terminal.theme.success("✓")} Extracted ${allSteps.size} steps to $outputPath")
     }
 }
