@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.config
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.groovylsp.buildtool.GradleBuildStrategy
+import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.slf4j.LoggerFactory
 
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory
  */
 data class ServerConfiguration(
     val compilationMode: CompilationMode = CompilationMode.WORKSPACE,
+    val parserEngine: EngineType = EngineType.Native,
     val incrementalThreshold: Int = 50,
     val maxWorkspaceFiles: Int = 500,
     val maxNumberOfProblems: Int = 100,
@@ -83,6 +85,7 @@ data class ServerConfiguration(
             return try {
                 ServerConfiguration(
                     compilationMode = parseCompilationMode(map),
+                    parserEngine = EngineType.fromString(map["groovy.parser.engine"] as? String),
                     incrementalThreshold = (map["groovy.compilation.incrementalThreshold"] as? Number)?.toInt() ?: 50,
                     maxWorkspaceFiles = (map["groovy.compilation.maxWorkspaceFiles"] as? Number)?.toInt() ?: 500,
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,
