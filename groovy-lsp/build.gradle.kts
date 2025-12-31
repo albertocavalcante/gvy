@@ -64,7 +64,7 @@ dependencies {
 
     // Logging
     implementation(libs.slf4j.api)
-    runtimeOnly(libs.logback.classic)
+    implementation(libs.logback.classic)
 
     // CLI
     implementation(libs.clikt)
