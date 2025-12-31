@@ -16,7 +16,8 @@ export async function toggleDebugLogs(): Promise<void> {
     const config = vscode.workspace.getConfiguration('groovy');
     const current = config.get<LogLevel>('server.logLevel', 'info');
 
-    const newLevel: LogLevel = current === 'debug' ? 'info' : 'debug';
+    // Toggle between info and debug, treating trace as debug-enabled
+    const newLevel: LogLevel = (current === 'debug' || current === 'trace') ? 'info' : 'debug';
 
     await config.update('server.logLevel', newLevel, vscode.ConfigurationTarget.Workspace);
 
@@ -43,13 +44,13 @@ export async function selectLogLevel(): Promise<void> {
         level: LogLevel;
     }
 
-    const levels: LogLevelItem[] = [
-        { level: 'error' as LogLevel, label: 'error', description: 'Only errors' },
-        { level: 'warn' as LogLevel, label: 'warn', description: 'Warnings and errors' },
-        { level: 'info' as LogLevel, label: 'info', description: 'Normal operation (default)' },
-        { level: 'debug' as LogLevel, label: 'debug', description: 'Detailed debugging (recommended for issues)' },
-        { level: 'trace' as LogLevel, label: 'trace', description: 'Most verbose' },
-    ].map(item => ({
+    const levels: LogLevelItem[] = ([
+        { level: 'error', label: 'error', description: 'Only errors' },
+        { level: 'warn', label: 'warn', description: 'Warnings and errors' },
+        { level: 'info', label: 'info', description: 'Normal operation (default)' },
+        { level: 'debug', label: 'debug', description: 'Detailed debugging (recommended for issues)' },
+        { level: 'trace', label: 'trace', description: 'Most verbose' },
+    ] as const).map(item => ({
         ...item,
         picked: item.level === current,
         detail: item.level === current ? '$(check) Current' : undefined,

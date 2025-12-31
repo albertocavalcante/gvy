@@ -33,11 +33,9 @@ object LogLevelConfigurator {
         rootLogger.level = logbackLevel
 
         // Update Groovy LSP specific loggers
-        val groovyLspLogger = loggerFactory.getLogger("com.github.albertocavalcante.groovylsp")
-        groovyLspLogger.level = logbackLevel
-
-        val namedLogger = loggerFactory.getLogger("GroovyLSP")
-        namedLogger.level = logbackLevel
+        listOf("com.github.albertocavalcante.groovylsp", "GroovyLSP").forEach { loggerName ->
+            loggerFactory.getLogger(loggerName).level = logbackLevel
+        }
 
         logger.info("Log level set to: {}", logLevel.name)
     }

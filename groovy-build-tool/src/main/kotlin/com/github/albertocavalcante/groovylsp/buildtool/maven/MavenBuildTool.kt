@@ -97,11 +97,24 @@ class MavenBuildTool : BuildTool {
 
         val repositories = if (model != null) dependencyResolver.getRemoteRepositories(model) else emptyList()
 
-        // Fallback to LTS version if not found in project (programmatic injection)
+        // Try to determine jenkins-core version from POM
+        val jenkinsVersionFromPom = model?.let { m ->
+            // Check dependencyManagement section first
+            val fromDepMgmt = m.dependencyManagement?.dependencies?.find {
+                it.groupId == "org.jenkins-ci.main" && it.artifactId == "jenkins-core"
+            }?.version
+            // Fall back to jenkins.version property
+            fromDepMgmt ?: m.properties?.getProperty("jenkins.version")
+        }
+
+        val jenkinsVersion = jenkinsVersionFromPom ?: "2.440.1" // Fallback to LTS baseline
+        logger.info("Attempting to inject jenkins-core version: {}", jenkinsVersion)
+
+        // Resolve the artifact using the determined version
         val jenkinsCore = dependencyResolver.resolveArtifact(
             groupId = "org.jenkins-ci.main",
             artifactId = "jenkins-core",
-            version = "2.440.1", // LTS baseline
+            version = jenkinsVersion,
             repositories = repositories,
         )
 
