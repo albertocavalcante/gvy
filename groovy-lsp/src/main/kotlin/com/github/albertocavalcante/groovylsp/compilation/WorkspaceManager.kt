@@ -148,10 +148,18 @@ class WorkspaceManager {
     /**
      * Initializes Jenkins workspace manager with configuration.
      */
-    fun initializeJenkinsWorkspace(config: ServerConfiguration) {
+
+    /**
+     * Initializes Jenkins workspace manager with configuration.
+     */
+    fun initializeJenkinsWorkspace(
+        config: ServerConfiguration,
+        pluginManager: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager? = null,
+    ) {
         val root = workspaceRoot
         if (root != null) {
-            jenkinsWorkspaceManager = JenkinsWorkspaceManager(config.jenkinsConfig, root)
+            val pm = pluginManager ?: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager()
+            jenkinsWorkspaceManager = JenkinsWorkspaceManager(config.jenkinsConfig, root, pm)
             logger.info("Initialized Jenkins workspace manager")
 
             // Load GDSL metadata
@@ -191,6 +199,7 @@ class WorkspaceManager {
     fun updateJenkinsConfiguration(config: ServerConfiguration) {
         val root = workspaceRoot
         if (root != null) {
+            // If manager exists, update it (preserves pluginManager inside)
             jenkinsWorkspaceManager = jenkinsWorkspaceManager?.updateConfiguration(config.jenkinsConfig)
                 ?: JenkinsWorkspaceManager(config.jenkinsConfig, root)
             logger.info("Updated Jenkins workspace configuration")
