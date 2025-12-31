@@ -24,7 +24,7 @@ class GroovyParserClassDeclaration(
     override val qualifiedName: String
         get() {
             val pkg = compilationUnit.packageDeclaration
-            return if (pkg != null && pkg.isPresent) {
+            return if (pkg.isPresent) {
                 "${pkg.get().name}.${classDecl.name}"
             } else {
                 classDecl.name
@@ -94,7 +94,7 @@ class GroovyParserClassDeclaration(
 
         // Try same package
         val pkg = compilationUnit.packageDeclaration
-        if (pkg != null && pkg.isPresent) {
+        if (pkg.isPresent) {
             val samePackageRef = typeSolver.tryToSolveType("${pkg.get().name}.$typeName")
             if (samePackageRef.isSolved) return ResolvedReferenceType(samePackageRef.getDeclaration())
         }

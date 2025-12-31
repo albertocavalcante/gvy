@@ -47,8 +47,9 @@ class CompilationUnitContext(private val compilationUnit: CompilationUnit, overr
         }
 
         // 3. Check same package
+        // 3. Check same package
         val pkg = compilationUnit.packageDeclaration
-        if (pkg != null && pkg.isPresent) {
+        if (pkg.isPresent) {
             val samePackageRef = typeSolver.tryToSolveType("${pkg.get().name}.$name")
             if (samePackageRef.isSolved) return samePackageRef
         }
