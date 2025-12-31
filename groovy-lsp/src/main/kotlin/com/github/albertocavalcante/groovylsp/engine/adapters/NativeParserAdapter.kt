@@ -32,7 +32,7 @@ class NativeParserAdapter(private val result: ParseResult, override val sourceUr
     override fun nodeAt(position: Position): UnifiedNode? {
         val ast = result.ast ?: return null
         // Native AST uses 1-based lines, LSP uses 0-based
-        val node = ast.findNodeAt(position.line, position.character)
+        val node = ast.findNodeAt(position.line + 1, position.character + 1)
         return node?.toUnifiedNode()
     }
 
@@ -62,12 +62,12 @@ internal fun ASTNode.toUnifiedNode(): UnifiedNode = UnifiedNode(
 
 private fun ASTNode.extractName(): String? = when (this) {
     is ClassNode -> nameWithoutPackage
+    is ConstructorNode -> declaringClass.nameWithoutPackage
     is MethodNode -> name
     is FieldNode -> name
     is PropertyNode -> name
     is Parameter -> name
     is VariableExpression -> name
-    is ConstructorNode -> "<init>"
     else -> null
 }
 
@@ -79,8 +79,8 @@ private fun ASTNode.extractKind(): UnifiedNodeKind = when (this) {
         else -> UnifiedNodeKind.CLASS
     }
 
-    is MethodNode -> UnifiedNodeKind.METHOD
     is ConstructorNode -> UnifiedNodeKind.CONSTRUCTOR
+    is MethodNode -> UnifiedNodeKind.METHOD
     is FieldNode -> UnifiedNodeKind.FIELD
     is PropertyNode -> UnifiedNodeKind.PROPERTY
     is Parameter -> UnifiedNodeKind.PARAMETER
@@ -136,7 +136,11 @@ internal fun ClassNode.toUnifiedSymbol(): UnifiedSymbol {
             method.toRange()?.let { range ->
                 children.add(
                     UnifiedSymbol(
-                        name = method.name,
+                        name = if (method is ConstructorNode) {
+                            method.declaringClass.nameWithoutPackage
+                        } else {
+                            method.name
+                        },
                         kind = if (method is ConstructorNode) {
                             UnifiedNodeKind.CONSTRUCTOR
                         } else {
