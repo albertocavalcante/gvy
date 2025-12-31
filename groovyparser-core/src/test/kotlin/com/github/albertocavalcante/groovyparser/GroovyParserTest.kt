@@ -143,14 +143,15 @@ class GroovyParserTest {
     }
 
     @Test
-    fun `convertFromNative is thread-safe with concurrent access`() {
-        // Issue 3: Verify that convertFromNative doesn't have race conditions
+    fun `parse is thread-safe with concurrent access`() {
+        // Issue 3: Verify that parse() doesn't have race conditions
         // when called concurrently from multiple threads
         val threadCount = 10
         val iterations = 5
 
-        // Use a simple parser to get native AST
-        val parser = GroovyParser()
+        // Use a shared parser instance to test thread-safety
+        val config = ParserConfiguration().setAttributeComments(true)
+        val parser = GroovyParser(config)
 
         val results = java.util.concurrent.ConcurrentHashMap<String, CompilationUnit>()
         val exceptions = java.util.concurrent.ConcurrentHashMap<String, Exception>()
@@ -159,25 +160,43 @@ class GroovyParserTest {
             (0 until iterations).map { iteration ->
                 Thread {
                     try {
-                        // Each thread parses different code
+                        // Each thread parses different code with unique comments
                         val className = "TestClass${threadId}_$iteration"
                         val methodName = "method${threadId}_$iteration"
+                        val classComment = "Comment for $className"
+                        val methodComment = "Method $methodName"
                         val code = """
-                            /** Comment for $className */
+                            /** $classComment */
                             class $className {
-                                /** Method $methodName */
+                                /** $methodComment */
                                 def $methodName() {
                                     return ${threadId * 1000 + iteration}
                                 }
                             }
                         """.trimIndent()
 
-                        // Parse to get native AST
+                        // Parse code - this should be thread-safe
                         val result = parser.parse(code)
                         assertThat(result.isSuccessful).isTrue()
 
-                        // This is the potentially problematic call - it should be thread-safe now
                         val unit = result.result.get()
+
+                        // Verify correct parsing (not corrupted by concurrent access)
+                        assertThat(unit.types).hasSize(1)
+                        assertThat(unit.types[0].name).isEqualTo(className)
+
+                        // Verify comments are correctly parsed (this detects mutable state corruption)
+                        // Comments should be present when attributeComments is enabled
+                        val classNode = unit.types[0]
+                        if (classNode.comment != null) {
+                            val parsedClassComment = classNode.comment!!.content.trim()
+                            if (!parsedClassComment.contains(classComment)) {
+                                throw AssertionError(
+                                    "Comment mismatch for $className: " +
+                                        "expected '$classComment' in '$parsedClassComment'",
+                                )
+                            }
+                        }
 
                         results["$threadId-$iteration"] = unit
                     } catch (e: Exception) {
@@ -197,10 +216,22 @@ class GroovyParserTest {
         // Verify all conversions completed
         assertThat(results).hasSize(threadCount * iterations)
 
-        // Spot-check a few results
+        // Spot-check a few results to ensure correctness
         results["0-0"]?.let { unit ->
             assertThat(unit.types).hasSize(1)
             assertThat(unit.types[0].name).isEqualTo("TestClass0_0")
+            // Verify comment if present
+            unit.types[0].comment?.content?.let { content ->
+                assertThat(content).contains("Comment for TestClass0_0")
+            }
+        }
+        results["5-3"]?.let { unit ->
+            assertThat(unit.types).hasSize(1)
+            assertThat(unit.types[0].name).isEqualTo("TestClass5_3")
+            // Verify comment if present
+            unit.types[0].comment?.content?.let { content ->
+                assertThat(content).contains("Comment for TestClass5_3")
+            }
         }
     }
 }

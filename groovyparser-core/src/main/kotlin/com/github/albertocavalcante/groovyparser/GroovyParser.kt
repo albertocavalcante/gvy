@@ -41,7 +41,6 @@ import org.codehaus.groovy.control.CompilationUnit as GroovyCompilationUnit
  */
 class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration()) {
     private val logger = LoggerFactory.getLogger(GroovyParser::class.java)
-    private val converter = GroovyAstConverter()
 
     companion object {
         /** Default tolerance level for lenient parsing mode */
@@ -120,8 +119,9 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
                     moduleNode != null -> {
                         try {
                             // Pass source for comment extraction if enabled
+                            // Create new converter instance per call to ensure thread-safety
                             val sourceForComments = if (configuration.attributeComments) code else null
-                            val unit = converter.convert(moduleNode, sourceForComments)
+                            val unit = GroovyAstConverter().convert(moduleNode, sourceForComments)
                             ParseResult(unit, problems)
                         } catch (e: Exception) {
                             // Conversion error - still return partial info in lenient mode
