@@ -141,4 +141,66 @@ class GroovyParserTest {
         // If we got here without exceptions or hanging, the resource management is working
         // (A resource leak would eventually cause failures or extreme slowdown)
     }
+
+    @Test
+    fun `convertFromNative is thread-safe with concurrent access`() {
+        // Issue 3: Verify that convertFromNative doesn't have race conditions
+        // when called concurrently from multiple threads
+        val threadCount = 10
+        val iterations = 5
+
+        // Use a simple parser to get native AST
+        val parser = GroovyParser()
+
+        val results = java.util.concurrent.ConcurrentHashMap<String, CompilationUnit>()
+        val exceptions = java.util.concurrent.ConcurrentHashMap<String, Exception>()
+
+        val threads = (0 until threadCount).flatMap { threadId ->
+            (0 until iterations).map { iteration ->
+                Thread {
+                    try {
+                        // Each thread parses different code
+                        val className = "TestClass${threadId}_$iteration"
+                        val methodName = "method${threadId}_$iteration"
+                        val code = """
+                            /** Comment for $className */
+                            class $className {
+                                /** Method $methodName */
+                                def $methodName() {
+                                    return ${threadId * 1000 + iteration}
+                                }
+                            }
+                        """.trimIndent()
+
+                        // Parse to get native AST
+                        val result = parser.parse(code)
+                        assertThat(result.isSuccessful).isTrue()
+
+                        // This is the potentially problematic call - it should be thread-safe now
+                        val unit = result.result.get()
+
+                        results["$threadId-$iteration"] = unit
+                    } catch (e: Exception) {
+                        exceptions["$threadId-$iteration"] = e
+                    }
+                }
+            }
+        }
+
+        // Start all threads at once to maximize concurrency
+        threads.forEach { it.start() }
+        threads.forEach { it.join(10000) } // Wait max 10 seconds
+
+        // Verify no exceptions occurred
+        assertThat(exceptions).describedAs("No exceptions should occur during concurrent parsing").isEmpty()
+
+        // Verify all conversions completed
+        assertThat(results).hasSize(threadCount * iterations)
+
+        // Spot-check a few results
+        results["0-0"]?.let { unit ->
+            assertThat(unit.types).hasSize(1)
+            assertThat(unit.types[0].name).isEqualTo("TestClass0_0")
+        }
+    }
 }

@@ -46,13 +46,14 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
     companion object {
         /** Default tolerance level for lenient parsing mode */
         private const val DEFAULT_LENIENT_TOLERANCE = 10
-        private val sharedConverter = GroovyAstConverter()
 
         /**
          * Converts a native Groovy ModuleNode to our custom CompilationUnit.
          *
          * This is useful when you already have a ModuleNode from another parser
          * (like GroovyParserFacade) and want to use the JavaParser-like AST.
+         *
+         * Each call creates a new converter instance to ensure thread-safety.
          *
          * @param moduleNode the native Groovy ModuleNode
          * @param source optional source code for comment extraction
@@ -61,7 +62,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         fun convertFromNative(
             moduleNode: org.codehaus.groovy.ast.ModuleNode,
             source: String? = null,
-        ): CompilationUnit = sharedConverter.convert(moduleNode, source)
+        ): CompilationUnit = GroovyAstConverter().convert(moduleNode, source)
     }
 
     /**

@@ -624,8 +624,11 @@ object NodeCloner {
         return cloned
     }
 
-    @Suppress("UnusedParameter")
-    private fun cloneEmptyExpr(node: EmptyExpr): EmptyExpr = EmptyExpr
+    private fun cloneEmptyExpr(node: EmptyExpr): EmptyExpr {
+        val cloned = EmptyExpr()
+        cloned.range = cloneRange(node.range)
+        return cloned
+    }
 
     private fun cloneNamedArgumentListExpr(node: NamedArgumentListExpr): NamedArgumentListExpr {
         val cloned = NamedArgumentListExpr()

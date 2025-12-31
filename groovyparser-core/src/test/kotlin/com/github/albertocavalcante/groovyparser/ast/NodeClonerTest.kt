@@ -376,4 +376,35 @@ class NodeClonerTest {
         assertEquals(caseStatement.range, cloned.range)
         assertNotSame(caseStatement.range, cloned.range, "Range should be a deep copy")
     }
+
+    @Test
+    fun `EmptyExpr instances are independent and not singleton`() {
+        // Issue 4: EmptyExpr should be a class, not an object singleton
+        // Multiple instances should be independent and not share mutable state
+        val empty1 = com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr()
+        val empty2 = com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr()
+
+        // Should be different instances (not singleton)
+        assertNotSame(empty1, empty2, "EmptyExpr instances should be independent, not singleton")
+
+        // Set different properties on each
+        empty1.range = Range(Position(1, 1), Position(1, 5))
+        empty2.range = Range(Position(2, 1), Position(2, 10))
+
+        // Verify they remain independent (no shared state)
+        assertNotNull(empty1.range)
+        assertNotNull(empty2.range)
+        assertTrue(empty1.range != empty2.range, "EmptyExpr instances should not share range state")
+
+        // Clone should create a new instance with range preserved
+        val cloned = empty1.clone()
+        assertNotSame(empty1, cloned, "Cloned EmptyExpr should be a different instance")
+        assertNotNull(cloned.range, "Cloned EmptyExpr should preserve range")
+        assertEquals(empty1.range, cloned.range, "Cloned range should match original")
+        assertNotSame(empty1.range, cloned.range, "Cloned range should be a deep copy")
+
+        // Mutating cloned range shouldn't affect original
+        cloned.range = Range(Position(3, 1), Position(3, 20))
+        assertTrue(empty1.range != cloned.range, "Mutating clone should not affect original")
+    }
 }
