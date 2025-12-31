@@ -20,6 +20,12 @@ data class JenkinsStepMetadata(
     val plugin: String,
 
     /**
+     * Positional parameters for this step (e.g. ["script"] for sh '...')
+     * Derived from @DataBoundConstructor.
+     */
+    val positionalParams: List<String> = emptyList(),
+
+    /**
      * Map of parameter name → parameter metadata
      *
      * IMPORTANT: For Map-based steps (e.g., `git(Map args)`), these are the VALID MAP KEYS,

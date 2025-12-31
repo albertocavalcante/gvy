@@ -116,12 +116,12 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
         // Generate and add partial stubs if full plugin support is missing
         // This ensures types like CpsScript (pipeline) are available even without downloading plugin JARs
         try {
-            val stubsDir = workspaceRoot.resolve(".gemini/jenkins-stubs")
+            val stubsDir = workspaceRoot.resolve(".jenkins-stubs")
             if (shouldGenerateStubs(classpath)) {
                 logger.info("Generating Jenkins plugin stubs in $stubsDir")
                 val stubGenerator = com.github.albertocavalcante.groovyjenkins.stubs.JenkinsStubGenerator()
-                // Load bundled metadata for stub generation using a fresh loader to avoid cache lock issues if any
-                val metadata = com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadataLoader().load()
+                // Load merged metadata (bundled + scanned + user config) for robust stub generation
+                val metadata = this.getAllMetadata()
                 stubGenerator.generateStubs(metadata, stubsDir)
                 classpath.add(stubsDir)
             }
@@ -359,8 +359,9 @@ class JenkinsContext(private val configuration: JenkinsConfiguration, private va
         MergedStepMetadata(
             name = this.name,
             scope = StepScope.GLOBAL,
-            positionalParams = emptyList(),
-            namedParams = run {
+            positionalParams = this.positionalParams,
+            namedParams = run
+            {
                 val dynamicParams = this.parameters.mapValues { (pName, param) ->
                     MergedParameter(
                         name = pName,

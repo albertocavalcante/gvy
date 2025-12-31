@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins.stubs
 
-import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -14,13 +15,13 @@ import kotlin.io.path.writeText
 class JenkinsStubGenerator {
     private val logger = LoggerFactory.getLogger(JenkinsStubGenerator::class.java)
 
-    fun generateStubs(metadata: BundledJenkinsMetadata, outputDir: Path) {
+    fun generateStubs(metadata: MergedJenkinsMetadata, outputDir: Path) {
         logger.info("Generating Jenkins stubs in $outputDir")
         outputDir.createDirectories()
 
         // 1. Generate CpsScript for 'pipeline' support
-        // This is critical for Declarative Pipeline
-        generateCpsScript(outputDir)
+        // This is critical for Declarative Pipeline and Scripted Pipeline
+        generateCpsScript(metadata, outputDir)
 
         // 2. Generate other common types if needed
         // For now, we mainly need the base types that global variables rely on
@@ -29,29 +30,31 @@ class JenkinsStubGenerator {
         generateDocker(outputDir)
     }
 
-    private fun generateCpsScript(outputDir: Path) {
+    private fun generateCpsScript(metadata: MergedJenkinsMetadata, outputDir: Path) {
         val className = "org.jenkinsci.plugins.workflow.cps.CpsScript"
+        val methodStubs = StringBuilder()
+
+        metadata.steps.values.sortedBy { it.name }.forEach { step ->
+            generateStepMethods(step, methodStubs)
+        }
+
         val content = """
             package org.jenkinsci.plugins.workflow.cps
 
             import groovy.lang.Closure
+            import groovy.lang.Script
 
             /**
              * Stub for Jenkins CpsScript.
-             * Defines the 'pipeline' method to support Declarative Pipeline syntax.
+             * Defines steps available in the pipeline.
              */
-            class CpsScript implements Serializable {
-                // Support 'pipeline { ... }' syntax via call operator on the 'pipeline' variable
-                // OR as a direct method if the script extends this class (which it often does in CPS)
-                
-                // Expose methods for standard steps to allow valid resolution within the script body
-                
+            abstract class CpsScript extends Script implements Serializable {
+                // Core pipeline method
                 def pipeline(Closure body) {}
-                
-                def node(String label = null, Closure body) {}
-                
-                def stage(String name, Closure body) {}
-                
+
+                // Generated Step Methods
+                $methodStubs
+
                 // Allow dynamic method invocation for other steps
                 def methodMissing(String name, args) {}
                 
@@ -61,6 +64,38 @@ class JenkinsStubGenerator {
         """.trimIndent()
 
         writeStub(outputDir, className, content)
+    }
+
+    private fun generateStepMethods(step: MergedStepMetadata, builder: StringBuilder) {
+        val name = step.name
+        val hasBody = step.namedParams.containsKey("body")
+        val positionalParams = step.positionalParams
+
+        // 1. Map-based variant: step(name: 'foo', ...)
+        builder.append("\n    def $name(Map args) {}")
+
+        if (hasBody) {
+            // 2. Map + Body variant: step(name: 'foo') { ... }
+            builder.append("\n    def $name(Map args, Closure body) {}")
+
+            // 3. Body-only variant: step { ... } (common for block steps like timeout, parallel, etc)
+            builder.append("\n    def $name(Closure body) {}")
+        }
+
+        // 4. Positional variants: step('foo') or step('foo') { ... }
+        if (positionalParams.isNotEmpty()) {
+            val typedParams = positionalParams.map { paramName ->
+                val type = step.namedParams[paramName]?.type ?: "Object"
+                // Simplify type to Object if complex, or keep simple types
+                if (type.contains(".")) "Object $paramName" else "$type $paramName"
+            }.joinToString(", ")
+
+            builder.append("\n    def $name($typedParams) {}")
+
+            if (hasBody) {
+                builder.append("\n    def $name($typedParams, Closure body) {}")
+            }
+        }
     }
 
     private fun generateEnvAction(outputDir: Path) {

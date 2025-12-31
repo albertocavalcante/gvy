@@ -74,6 +74,7 @@ class BundledJenkinsMetadataLoader {
                 stepName to JenkinsStepMetadata(
                     name = stepName,
                     plugin = step.plugin,
+                    positionalParams = step.positionalParams,
                     parameters = step.parameters.map { (paramName, param) ->
                         paramName to StepParameter(
                             name = paramName,
@@ -150,6 +151,7 @@ class BundledJenkinsMetadataLoader {
     @Serializable
     private data class StepJson(
         val plugin: String,
+        val positionalParams: List<String> = emptyList(),
         val parameters: Map<String, ParameterJson>,
         val documentation: String? = null,
     )
