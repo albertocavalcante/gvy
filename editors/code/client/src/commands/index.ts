@@ -3,6 +3,7 @@ import { restartClient, stopClient, getClient } from '../server/client';
 import { ExecuteCommandRequest } from 'vscode-languageclient';
 import { UpdateService } from '../features/update/UpdateService';
 import { showStatusMenu, getStatusBarManager } from '../ui/statusBar';
+import { toggleDebugLogs, selectLogLevel } from './logLevel';
 
 let updateService: UpdateService | null = null;
 let serverOutputChannel: import('vscode').OutputChannel | null = null;
@@ -135,6 +136,17 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
         await commands.executeCommand('vscode.open', Uri.parse(url));
     });
     disposables.push(reportIssueCommand);
+
+    // Register log level commands
+    const toggleDebugLogsCommand = commands.registerCommand('groovy.toggleDebugLogs', async () => {
+        await toggleDebugLogs();
+    });
+    disposables.push(toggleDebugLogsCommand);
+
+    const setLogLevelCommand = commands.registerCommand('groovy.setLogLevel', async () => {
+        await selectLogLevel();
+    });
+    disposables.push(setLogLevelCommand);
 
     // Add all disposables to context subscriptions
     context.subscriptions.push(...disposables);

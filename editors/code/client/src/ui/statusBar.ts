@@ -601,6 +601,25 @@ export async function showStatusMenu(manager: StatusBarManager): Promise<void> {
     // Separator
     items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
 
+    // Log Level (for debugging)
+    const logLevel = vscode.workspace.getConfiguration('groovy').get<string>('server.logLevel', 'info');
+    const isDebug = logLevel === 'debug' || logLevel === 'trace';
+
+    items.push({
+        label: isDebug ? '$(bug) Disable Debug Logging' : '$(bug) Enable Debug Logging',
+        description: isDebug ? 'Return to normal logging' : 'Quick toggle for troubleshooting',
+        command: 'groovy.toggleDebugLogs',
+    });
+
+    items.push({
+        label: `$(settings-gear) Log Level: ${logLevel}`,
+        description: 'Change server log verbosity',
+        command: 'groovy.setLogLevel',
+    });
+
+    // Separator
+    items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+
     // Settings & Help
     items.push({
         label: '$(gear) Open Settings',
