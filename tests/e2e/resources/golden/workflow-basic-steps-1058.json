@@ -1,0 +1,412 @@
+{
+    "version": "1.0",
+    "steps": {
+        "artifactArchiver": {
+            "className": "org.jenkinsci.plugins.workflow.steps.ArtifactArchiverStep",
+            "simpleName": "ArtifactArchiverStep",
+            "functionName": "artifactArchiver",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "excludes": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "includes": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "artifactUnarchiver": {
+            "className": "org.jenkinsci.plugins.workflow.steps.ArtifactUnarchiverStep",
+            "simpleName": "ArtifactUnarchiverStep",
+            "functionName": "artifactUnarchiver",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {}
+        },
+        "catchError": {
+            "className": "org.jenkinsci.plugins.workflow.steps.CatchErrorStep",
+            "simpleName": "CatchErrorStep",
+            "functionName": "catchError",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "buildResult": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "catchInterruptions": {
+                    "type": "boolean",
+                    "required": false
+                },
+                "message": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "stageResult": {
+                    "type": "java.lang.String",
+                    "required": false
+                }
+            }
+        },
+        "core": {
+            "className": "org.jenkinsci.plugins.workflow.steps.CoreStep",
+            "simpleName": "CoreStep",
+            "functionName": "core",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "delegate": {
+                    "type": "jenkins.tasks.SimpleBuildStep",
+                    "required": true
+                }
+            }
+        },
+        "coreWrapper": {
+            "className": "org.jenkinsci.plugins.workflow.steps.CoreWrapperStep",
+            "simpleName": "CoreWrapperStep",
+            "functionName": "coreWrapper",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "delegate": {
+                    "type": "jenkins.tasks.SimpleBuildWrapper",
+                    "required": true
+                }
+            }
+        },
+        "deleteDir": {
+            "className": "org.jenkinsci.plugins.workflow.steps.DeleteDirStep",
+            "simpleName": "DeleteDirStep",
+            "functionName": "deleteDir",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {}
+        },
+        "echo": {
+            "className": "org.jenkinsci.plugins.workflow.steps.EchoStep",
+            "simpleName": "EchoStep",
+            "functionName": "echo",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "message": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "env": {
+            "className": "org.jenkinsci.plugins.workflow.steps.EnvStep",
+            "simpleName": "EnvStep",
+            "functionName": "env",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "overrides": {
+                    "type": "java.util.List<java.lang.String>",
+                    "required": true
+                }
+            }
+        },
+        "error": {
+            "className": "org.jenkinsci.plugins.workflow.steps.ErrorStep",
+            "simpleName": "ErrorStep",
+            "functionName": "error",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "message": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "fileExists": {
+            "className": "org.jenkinsci.plugins.workflow.steps.FileExistsStep",
+            "simpleName": "FileExistsStep",
+            "functionName": "fileExists",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "file": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "getContext": {
+            "className": "org.jenkinsci.plugins.workflow.steps.GetContextStep",
+            "simpleName": "GetContextStep",
+            "functionName": "getContext",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "type": {
+                    "type": "java.lang.Class<?>",
+                    "required": true
+                }
+            }
+        },
+        "isUnix": {
+            "className": "org.jenkinsci.plugins.workflow.steps.IsUnixStep",
+            "simpleName": "IsUnixStep",
+            "functionName": "isUnix",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {}
+        },
+        "mail": {
+            "className": "org.jenkinsci.plugins.workflow.steps.MailStep",
+            "simpleName": "MailStep",
+            "functionName": "mail",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "body": {
+                    "type": "java.lang.String",
+                    "required": true
+                },
+                "charset": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "mimeType": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "subject": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "pwd": {
+            "className": "org.jenkinsci.plugins.workflow.steps.PwdStep",
+            "simpleName": "PwdStep",
+            "functionName": "pwd",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "tmp": {
+                    "type": "boolean",
+                    "required": false
+                }
+            }
+        },
+        "readFile": {
+            "className": "org.jenkinsci.plugins.workflow.steps.ReadFileStep",
+            "simpleName": "ReadFileStep",
+            "functionName": "readFile",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "encoding": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "file": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "retry": {
+            "className": "org.jenkinsci.plugins.workflow.steps.RetryStep",
+            "simpleName": "RetryStep",
+            "functionName": "retry",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "conditions": {
+                    "type": "java.util.List<org.jenkinsci.plugins.workflow.flow.ErrorCondition>",
+                    "required": false
+                },
+                "count": {
+                    "type": "int",
+                    "required": true
+                }
+            }
+        },
+        "sleep": {
+            "className": "org.jenkinsci.plugins.workflow.steps.SleepStep",
+            "simpleName": "SleepStep",
+            "functionName": "sleep",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "time": {
+                    "type": "int",
+                    "required": true
+                },
+                "unit": {
+                    "type": "java.util.concurrent.TimeUnit",
+                    "required": false
+                }
+            }
+        },
+        "stash": {
+            "className": "org.jenkinsci.plugins.workflow.support.steps.stash.StashStep",
+            "simpleName": "StashStep",
+            "functionName": "stash",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "allowEmpty": {
+                    "type": "boolean",
+                    "required": false
+                },
+                "excludes": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "includes": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "name": {
+                    "type": "java.lang.String",
+                    "required": true
+                },
+                "useDefaultExcludes": {
+                    "type": "boolean",
+                    "required": false
+                }
+            }
+        },
+        "timeout": {
+            "className": "org.jenkinsci.plugins.workflow.steps.TimeoutStep",
+            "simpleName": "TimeoutStep",
+            "functionName": "timeout",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "activity": {
+                    "type": "boolean",
+                    "required": false
+                },
+                "time": {
+                    "type": "int",
+                    "required": true
+                },
+                "unit": {
+                    "type": "java.util.concurrent.TimeUnit",
+                    "required": false
+                }
+            }
+        },
+        "tool": {
+            "className": "org.jenkinsci.plugins.workflow.steps.ToolStep",
+            "simpleName": "ToolStep",
+            "functionName": "tool",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "name": {
+                    "type": "java.lang.String",
+                    "required": true
+                },
+                "type": {
+                    "type": "java.lang.String",
+                    "required": false
+                }
+            }
+        },
+        "unstable": {
+            "className": "org.jenkinsci.plugins.workflow.steps.UnstableStep",
+            "simpleName": "UnstableStep",
+            "functionName": "unstable",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "message": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "unstash": {
+            "className": "org.jenkinsci.plugins.workflow.support.steps.stash.UnstashStep",
+            "simpleName": "UnstashStep",
+            "functionName": "unstash",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "name": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "waitForCondition": {
+            "className": "org.jenkinsci.plugins.workflow.steps.WaitForConditionStep",
+            "simpleName": "WaitForConditionStep",
+            "functionName": "waitForCondition",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "initialRecurrencePeriod": {
+                    "type": "long",
+                    "required": false
+                },
+                "quiet": {
+                    "type": "boolean",
+                    "required": false
+                }
+            }
+        },
+        "warnError": {
+            "className": "org.jenkinsci.plugins.workflow.steps.WarnErrorStep",
+            "simpleName": "WarnErrorStep",
+            "functionName": "warnError",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "catchInterruptions": {
+                    "type": "boolean",
+                    "required": false
+                },
+                "message": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        },
+        "withContext": {
+            "className": "org.jenkinsci.plugins.workflow.steps.WithContextStep",
+            "simpleName": "WithContextStep",
+            "functionName": "withContext",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": true,
+            "parameters": {
+                "context": {
+                    "type": "java.lang.Object",
+                    "required": true
+                }
+            }
+        },
+        "writeFile": {
+            "className": "org.jenkinsci.plugins.workflow.steps.WriteFileStep",
+            "simpleName": "WriteFileStep",
+            "functionName": "writeFile",
+            "plugin": "workflow-basic-steps",
+            "takesBlock": false,
+            "parameters": {
+                "encoding": {
+                    "type": "java.lang.String",
+                    "required": false
+                },
+                "file": {
+                    "type": "java.lang.String",
+                    "required": true
+                },
+                "text": {
+                    "type": "java.lang.String",
+                    "required": true
+                }
+            }
+        }
+    }
+}

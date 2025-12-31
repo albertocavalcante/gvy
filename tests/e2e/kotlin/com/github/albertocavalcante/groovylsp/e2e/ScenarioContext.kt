@@ -43,6 +43,7 @@ data class ScenarioContext(
         variables["workspace"] = workspaceObject
         workspaceObject["uri"]?.let { variables["workspace.uri"] = it }
         variables["workspace.path"] = workspaceObject["path"] ?: JsonNull
+        variables["temp"] = variables["workspace.path"] ?: JsonNull
     }
 
     fun resolveUri(uri: String?, path: String?): String = when {
