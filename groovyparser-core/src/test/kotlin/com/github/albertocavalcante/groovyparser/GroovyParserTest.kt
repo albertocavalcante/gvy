@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

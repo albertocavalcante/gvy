@@ -7,7 +7,6 @@ import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.Refl
 import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.ReflectionEnumDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.reflectionmodel.ReflectionInterfaceDeclaration
 import java.io.Closeable
-import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap

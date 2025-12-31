@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.utils.NodeUtils
 import kotlin.test.Test

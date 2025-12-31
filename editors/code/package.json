@@ -260,6 +260,25 @@
           "type": "string",
           "description": "Absolute path to a custom Groovy Language Server JAR. If not set, the embedded server is used."
         },
+        "groovy.server.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info",
+          "enumDescriptions": [
+            "Only errors",
+            "Warnings and errors",
+            "Normal operation logs (default)",
+            "Detailed debugging information (recommended for issue investigation)",
+            "Most verbose, including all internal operations"
+          ],
+          "markdownDescription": "Server log level. Set to `debug` when investigating issues like hover not working. View logs via **Groovy: Open Server Logs** command."
+        },
         "groovy.format.enable": {
           "type": "boolean",
           "default": true,

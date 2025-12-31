@@ -403,13 +403,24 @@ class GroovyTextDocumentService(
 
     private suspend fun ensureAstPrepared(documentUri: URI) {
         val hasAst = compilationService.getAst(documentUri) != null
-        if (hasAst) return
+        if (hasAst) {
+            logger.debug("ensureAstPrepared({}): AST already cached", documentUri)
+            return
+        }
 
-        val content = documentProvider.get(documentUri) ?: return
+        val content = documentProvider.get(documentUri)
+        if (content == null) {
+            logger.warn("ensureAstPrepared({}): no content in documentProvider", documentUri)
+            return
+        }
+
+        logger.debug("ensureAstPrepared({}): compiling {} chars", documentUri, content.length)
         runCatching {
             compilationService.compile(documentUri, content)
         }.onFailure { error ->
-            logger.debug("GroovyTextDocumentService: failed to compile $documentUri before hover", error)
+            logger.debug("ensureAstPrepared: failed to compile $documentUri", error)
+        }.onSuccess {
+            logger.debug("ensureAstPrepared({}): compilation completed", documentUri)
         }
     }
 
