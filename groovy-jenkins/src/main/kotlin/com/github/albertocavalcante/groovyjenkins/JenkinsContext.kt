@@ -115,17 +115,8 @@ class JenkinsContext(
             logger.debug("Added Jenkins Shared Library 'src' directory to classpath: $srcDir")
         }
 
-        // Scan classpath for dynamic Jenkins definitions
-        scanClasspath(classpath)
-
-        // Include downloaded plugin JARs in classpath (for completion/analysis),
-        // but scan them separately if needed.
-        // Actually, if we add them to classpath here, they get scanned?
-        // Wait, scanClasspath is already called above.
-        // We should add them BEFORE scanning if we want them to be scanned.
-        // But buildClasspath returns the LIST.
-
-        // Let's grab registered jars
+        // Include downloaded/registered plugin JARs in classpath
+        // Done before scanning so they are included in the scan
         runBlocking {
             val pluginJars = pluginManager.getRegisteredPluginJars()
             pluginJars.forEach { jar ->
@@ -136,7 +127,7 @@ class JenkinsContext(
             }
         }
 
-        // Re-scan with new additions
+        // Scan classpath for dynamic Jenkins definitions
         scanClasspath(classpath)
 
         // Generate and add partial stubs if full plugin support is missing

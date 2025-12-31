@@ -28,8 +28,8 @@ import java.nio.file.Path
  * Implements a functional pipeline strategy where sources are folded:
  * 1. **Bundled**: Base fallback (static stubs)
  * 2. **Stable**: Hardcoded core definitions
- * 3. **User Config**: Plugins specified in plugins.txt
- * 4. **Downloaded**: Downloaded JARs
+ * 3. **Static Metadata**: Loaded from JSON file (Configurable)
+ * 4. **User Config & Downloaded**: Plugins specified in plugins.txt or downloaded
  * 5. **Classpath**: Project dependencies (Highest priority)
  */
 @Suppress("UnusedPrivateProperty") // TODO: updateCenterClient and cacheDir reserved for future use
@@ -73,10 +73,6 @@ class JenkinsPluginManager(
         }
         logger.debug("Registered plugin JAR for {}: {}", pluginId, jarPath)
     }
-
-    /**
-     * Get all registered/downloaded plugin JARs.
-     */
 
     /**
      * Get all registered/downloaded plugin JARs.
@@ -224,10 +220,6 @@ class JenkinsPluginManager(
         }
         return names
     }
-
-    /**
-     * Extract metadata from a JAR, with caching.
-     */
 
     /**
      * EXTRACT metadata from a JAR (or retrieve from cache), returning a Name->Step Map.

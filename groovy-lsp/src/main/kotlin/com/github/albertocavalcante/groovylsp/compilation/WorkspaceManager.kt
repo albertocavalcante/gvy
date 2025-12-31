@@ -148,10 +148,6 @@ class WorkspaceManager {
     /**
      * Initializes Jenkins workspace manager with configuration.
      */
-
-    /**
-     * Initializes Jenkins workspace manager with configuration.
-     */
     fun initializeJenkinsWorkspace(
         config: ServerConfiguration,
         pluginManager: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager? = null,
