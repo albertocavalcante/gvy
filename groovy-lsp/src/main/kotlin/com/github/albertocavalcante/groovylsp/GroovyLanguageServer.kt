@@ -63,13 +63,24 @@ class GroovyLanguageServer(
     private var groovyClient: GroovyLanguageClient? = null
 
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
-    private val compilationService = GroovyCompilationService(parentClassLoader)
+
+    // Shared Services
+    private val documentProvider = com.github.albertocavalcante.groovylsp.services.DocumentProvider()
+    private val sourceNavigator = com.github.albertocavalcante.groovylsp.sources.SourceNavigationService()
+
+    private val compilationService = GroovyCompilationService(
+        parentClassLoader = parentClassLoader,
+        documentProvider = documentProvider,
+        sourceNavigator = sourceNavigator,
+    )
 
     // Services
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
         client = { baseClient },
+        documentProvider = documentProvider,
+        sourceNavigator = sourceNavigator,
     )
     private val workspaceService = GroovyWorkspaceService(compilationService, coroutineScope, textDocumentService)
 
