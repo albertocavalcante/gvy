@@ -5,7 +5,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.io.StringReader
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path

@@ -18,7 +18,6 @@ import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstructorCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ElvisExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.ast.expr.GStringExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.LambdaExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr

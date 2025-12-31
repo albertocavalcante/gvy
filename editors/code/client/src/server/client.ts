@@ -127,6 +127,7 @@ export function buildServerSettingsMap(): Record<string, unknown> {
 
     const settings: Record<string, unknown> = {
         'groovy.server.maxNumberOfProblems': config.get<number>('server.maxNumberOfProblems', 100),
+        'groovy.server.logLevel': config.get<string>('server.logLevel', 'info'),
         'groovy.trace.server': config.get<'off' | 'messages' | 'verbose'>('trace.server', 'off'),
 
         'groovy.compilation.mode': config.get<'workspace' | 'single-file'>('compilation.mode', 'workspace'),

@@ -312,16 +312,28 @@ class GroovyCompilationService(
      * NOTE: This assumes the file is already compiled/parsed (returns null if not in cache).
      */
     fun getSession(uri: URI): com.github.albertocavalcante.groovylsp.engine.api.LanguageSession? {
-        val parseResult = getParseResult(uri) ?: return null
+        val parseResult = getParseResult(uri)
+        if (parseResult == null) {
+            logger.debug("getSession({}): parseResult is null, file not in cache", uri)
+            return null
+        }
+
+        logger.debug("getSession({}): parseResult found, checking activeEngine", uri)
 
         // Bridge: Delegate to NativeEngine to wrap the result
         // In future phases, we might need a cache keyed by Engine ID or unified result
         if (activeEngine is NativeLanguageEngine) {
+            logger.debug("getSession({}): activeEngine is NativeLanguageEngine, creating session", uri)
             return (activeEngine as NativeLanguageEngine).createSession(
                 parseResult,
             )
         }
 
+        logger.debug(
+            "getSession({}): activeEngine is NOT NativeLanguageEngine ({})",
+            uri,
+            activeEngine::class.simpleName,
+        )
         // Fallback for other engines (or if cache format mismatch)
         return null
     }
