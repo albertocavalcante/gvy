@@ -3,8 +3,12 @@ package com.github.albertocavalcante.groovyparser.ast
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.Position
 import com.github.albertocavalcante.groovyparser.Range
+import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
+import com.github.albertocavalcante.groovyparser.ast.BlockComment
+import com.github.albertocavalcante.groovyparser.ast.LineComment
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
+import com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.utils.NodeUtils
 import kotlin.test.Test
@@ -375,5 +379,78 @@ class NodeClonerTest {
         assertNotNull(cloned.range, "Cloned CaseStatement should preserve range information")
         assertEquals(caseStatement.range, cloned.range)
         assertNotSame(caseStatement.range, cloned.range, "Range should be a deep copy")
+    }
+
+    @Test
+    fun `EmptyExpr instances are independent and not singleton`() {
+        // Issue 4: EmptyExpr should be a class, not an object singleton
+        // Multiple instances should be independent and not share mutable state
+        val empty1 = EmptyExpr()
+        val empty2 = EmptyExpr()
+
+        // Should be different instances (not singleton)
+        assertNotSame(empty1, empty2, "EmptyExpr instances should be independent, not singleton")
+
+        // Test range independence
+        empty1.range = Range(Position(1, 1), Position(1, 5))
+        empty2.range = Range(Position(2, 1), Position(2, 10))
+        assertNotNull(empty1.range)
+        assertNotNull(empty2.range)
+        assertTrue(empty1.range != empty2.range, "EmptyExpr instances should not share range state")
+
+        // Test comment independence
+        val comment1 = LineComment("Comment 1")
+        val comment2 = LineComment("Comment 2")
+        empty1.setComment(comment1)
+        empty2.setComment(comment2)
+        assertNotSame(empty1.comment, empty2.comment, "EmptyExpr instances should not share comment")
+        assertEquals("Comment 1", empty1.comment?.content)
+        assertEquals("Comment 2", empty2.comment?.content)
+
+        // Test annotation independence
+        val annotation1 = AnnotationExpr("Test1")
+        val annotation2 = AnnotationExpr("Test2")
+        empty1.addAnnotation(annotation1)
+        empty2.addAnnotation(annotation2)
+        assertEquals(1, empty1.annotations.size, "empty1 should have 1 annotation")
+        assertEquals(1, empty2.annotations.size, "empty2 should have 1 annotation")
+        assertEquals("Test1", empty1.annotations[0].name)
+        assertEquals("Test2", empty2.annotations[0].name)
+
+        // Test orphan comments independence
+        val orphan1 = BlockComment("Orphan 1")
+        val orphan2 = BlockComment("Orphan 2")
+        empty1.addOrphanComment(orphan1)
+        empty2.addOrphanComment(orphan2)
+        assertEquals(1, empty1.orphanComments.size)
+        assertEquals(1, empty2.orphanComments.size)
+        assertNotSame(empty1.orphanComments[0], empty2.orphanComments[0])
+
+        // Clone should create a new instance with ALL properties preserved
+        val cloned = empty1.clone()
+        assertNotSame(empty1, cloned, "Cloned EmptyExpr should be a different instance")
+
+        // Verify range cloned
+        assertNotNull(cloned.range, "Cloned EmptyExpr should preserve range")
+        assertEquals(empty1.range, cloned.range, "Cloned range should match original")
+        assertNotSame(empty1.range, cloned.range, "Cloned range should be a deep copy")
+
+        // Verify comment cloned
+        assertNotNull(cloned.comment, "Cloned EmptyExpr should preserve comment")
+        assertEquals(empty1.comment?.content, cloned.comment?.content)
+        assertNotSame(empty1.comment, cloned.comment, "Cloned comment should be a deep copy")
+
+        // Verify annotations cloned
+        assertEquals(empty1.annotations.size, cloned.annotations.size)
+        assertNotSame(empty1.annotations[0], cloned.annotations[0], "Cloned annotation should be a deep copy")
+        assertEquals(empty1.annotations[0].name, cloned.annotations[0].name)
+
+        // Verify orphan comments cloned
+        assertEquals(empty1.orphanComments.size, cloned.orphanComments.size)
+        assertNotSame(empty1.orphanComments[0], cloned.orphanComments[0], "Cloned orphan comment should be a deep copy")
+
+        // Mutating cloned range shouldn't affect original
+        cloned.range = Range(Position(3, 1), Position(3, 20))
+        assertTrue(empty1.range != cloned.range, "Mutating clone should not affect original")
     }
 }

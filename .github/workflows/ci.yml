@@ -119,6 +119,9 @@ jobs:
               # Single-level modules (e.g., groovy-lsp/src/)
               - 'groovy-*/src/**'
               - 'groovy-*/*.gradle.kts'
+              # groovyparser-core module (doesn't follow groovy-* naming)
+              - 'groovyparser-core/src/**'
+              - 'groovyparser-core/*.gradle.kts'
               # Nested modules (e.g., groovy-diagnostics/codenarc/src/)
               - 'groovy-diagnostics/*/src/**'
               - 'groovy-diagnostics/*/*.gradle.kts'
