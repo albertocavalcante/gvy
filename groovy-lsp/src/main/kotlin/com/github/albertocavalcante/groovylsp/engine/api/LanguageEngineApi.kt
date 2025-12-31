@@ -1,8 +1,9 @@
 package com.github.albertocavalcante.groovylsp.engine.api
 
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
-import java.util.concurrent.CompletableFuture
 
 /**
  * The Factory Interface for the Language Engine Abstract Factory pattern.
@@ -32,10 +33,7 @@ interface LanguageSession {
      * Metadata about the parse result (diagnostics, success flag, etc).
      * This is separate from the AST itself to allow agnostic consumers to report errors.
      */
-    val result: ParseResultMetadata // Need to define this or reuse existing ParseResult wrapper?
-
-    // RETHINK: Reusing existing ParseResult might be safer for now as it holds generic lists of diagnostics
-    // val parseResult: ParseResult
+    val result: ParseResultMetadata
 
     /**
      * The set of features available for this session.
@@ -54,19 +52,17 @@ interface FeatureSet {
 /**
  * Abstract Provider Interface for Hover.
  * Decouples the LSP service from the underlying AST.
+ * Uses suspend function to avoid blocking dispatcher threads.
  */
-// TODO(#514): Convert to suspend function instead of CompletableFuture.
-//   See: https://github.com/albertocavalcante/gvy/issues/514
-// TODO(#515): Import org.eclipse.lsp4j.Hover and use simple name.
-//   See: https://github.com/albertocavalcante/gvy/issues/515
 interface HoverProvider {
-    fun getHover(params: HoverParams): CompletableFuture<org.eclipse.lsp4j.Hover>
+    suspend fun getHover(params: HoverParams): Hover
 }
 
-// TODO: Move/Refactor ParseResult usage. For now, we might need a simplified metadata interface
-// TODO(#515): Import org.eclipse.lsp4j.Diagnostic and use simple name.
-//   See: https://github.com/albertocavalcante/gvy/issues/515
+/**
+ * Metadata about a parse result (diagnostics, success flag).
+ * Abstraction layer to decouple LSP service from parser-specific types.
+ */
 interface ParseResultMetadata {
     val isSuccess: Boolean
-    val diagnostics: List<org.eclipse.lsp4j.Diagnostic>
+    val diagnostics: List<Diagnostic>
 }

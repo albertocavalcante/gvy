@@ -13,14 +13,13 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
+import org.eclipse.lsp4j.Diagnostic
 
-// TODO(#515): Use simple names for DocumentProvider and SourceNavigator.
-//   See: https://github.com/albertocavalcante/gvy/issues/515
 class NativeLanguageEngine(
     private val parserFacade: GroovyParserFacade,
     private val compilationService: GroovyCompilationService,
-    private val documentProvider: com.github.albertocavalcante.groovylsp.services.DocumentProvider,
-    private val sourceNavigator: com.github.albertocavalcante.groovylsp.sources.SourceNavigator? = null,
+    private val documentProvider: DocumentProvider,
+    private val sourceNavigator: SourceNavigator? = null,
 ) : LanguageEngine {
     override val id: String = "native"
 
@@ -29,6 +28,10 @@ class NativeLanguageEngine(
         return createSession(parseResult)
     }
 
+    /**
+     * Creates a session from an existing parse result.
+     * Used by GroovyCompilationService to wrap cached results without re-parsing.
+     */
     fun createSession(parseResult: ParseResult): LanguageSession =
         NativeLanguageSession(parseResult, compilationService, documentProvider, sourceNavigator)
 }
@@ -37,13 +40,13 @@ class NativeLanguageSession(
     // We hold the full result here, opaque to the outside
     val parseResult: ParseResult,
     private val compilationService: GroovyCompilationService,
-    private val documentProvider: com.github.albertocavalcante.groovylsp.services.DocumentProvider,
-    private val sourceNavigator: com.github.albertocavalcante.groovylsp.sources.SourceNavigator?,
+    private val documentProvider: DocumentProvider,
+    private val sourceNavigator: SourceNavigator?,
 ) : LanguageSession {
 
     override val result: ParseResultMetadata = object : ParseResultMetadata {
         override val isSuccess: Boolean = parseResult.isSuccessful
-        override val diagnostics: List<org.eclipse.lsp4j.Diagnostic> = parseResult.diagnostics.map {
+        override val diagnostics: List<Diagnostic> = parseResult.diagnostics.map {
             it.toLspDiagnostic()
         }
     }
