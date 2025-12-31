@@ -48,4 +48,34 @@ class UnifiedDefinitionProviderTest {
         assertEquals(1, links.size)
         assertEquals("file:///def.groovy", links[0].targetUri)
     }
+
+    @Test
+    fun `getDefinition returns empty when node at position is null`() {
+        val position = Position(1, 1)
+        every { parseUnit.nodeAt(position) } returns null
+        coEvery { definitionService.findDefinition(null, parseUnit, position) } returns emptyList()
+
+        val result = runBlocking {
+            provider.getDefinition(DefinitionParams(TextDocumentIdentifier("file:///test.groovy"), position))
+        }
+
+        assertTrue(result.isLeft)
+        assertTrue(result.left.isEmpty())
+    }
+
+    @Test
+    fun `getDefinition returns empty when no definitions found`() {
+        val position = Position(1, 1)
+        val unifiedNode = mockk<UnifiedNode>()
+
+        every { parseUnit.nodeAt(position) } returns unifiedNode
+        coEvery { definitionService.findDefinition(unifiedNode, parseUnit, position) } returns emptyList()
+
+        val result = runBlocking {
+            provider.getDefinition(DefinitionParams(TextDocumentIdentifier("file:///test.groovy"), position))
+        }
+
+        assertTrue(result.isLeft)
+        assertTrue(result.left.isEmpty())
+    }
 }
