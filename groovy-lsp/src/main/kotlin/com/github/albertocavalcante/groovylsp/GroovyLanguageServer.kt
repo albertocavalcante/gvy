@@ -70,8 +70,6 @@ class GroovyLanguageServer(
     private val documentProvider = DocumentProvider()
     private val sourceNavigator = SourceNavigationService()
 
-    // TODO(#512): Parser engine config is not wired - always uses default EngineType.Native.
-    //   See: https://github.com/albertocavalcante/gvy/issues/512
     private val compilationService = GroovyCompilationService(
         parentClassLoader = parentClassLoader,
         documentProvider = documentProvider,

@@ -108,7 +108,7 @@ data class ServerConfiguration(
             return try {
                 ServerConfiguration(
                     compilationMode = parseCompilationMode(map),
-                    parserEngine = EngineType.fromString(map["groovy.parser.engine"] as? String),
+                    parserEngine = EngineType.fromString(map["groovy.languageServer.engine"] as? String),
                     incrementalThreshold = (map["groovy.compilation.incrementalThreshold"] as? Number)?.toInt() ?: 50,
                     maxWorkspaceFiles = (map["groovy.compilation.maxWorkspaceFiles"] as? Number)?.toInt() ?: 500,
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,

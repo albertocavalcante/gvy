@@ -1,9 +1,16 @@
 package com.github.albertocavalcante.groovylsp.engine.api
 
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionList
+import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.LocationLink
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 /**
  * The Factory Interface for the Language Engine Abstract Factory pattern.
@@ -46,7 +53,25 @@ interface LanguageSession {
  */
 interface FeatureSet {
     val hoverProvider: HoverProvider
-    // Add other providers as we migrate them (Completion, Definition, etc.)
+
+    /**
+     * Provider for Document Symbols (Outline).
+     * Nullable to allow incremental migration.
+     */
+    val documentSymbolProvider: DocumentSymbolProvider?
+        get() = null
+
+    /**
+     * Provider for Go-to-Definition.
+     */
+    val definitionProvider: DefinitionProvider?
+        get() = null
+
+    /**
+     * Provider for Code Completion.
+     */
+    val completionProvider: CompletionProvider?
+        get() = null
 }
 
 /**
@@ -56,6 +81,27 @@ interface FeatureSet {
  */
 interface HoverProvider {
     suspend fun getHover(params: HoverParams): Hover
+}
+
+/**
+ * Abstract Provider Interface for Document Symbols.
+ */
+interface DocumentSymbolProvider {
+    fun getDocumentSymbols(): List<org.eclipse.lsp4j.DocumentSymbol>
+}
+
+/**
+ * Abstract Provider Interface for Definition.
+ */
+interface DefinitionProvider {
+    suspend fun getDefinition(params: DefinitionParams): Either<List<Location>, List<LocationLink>>
+}
+
+/**
+ * Abstract Provider Interface for Completion.
+ */
+interface CompletionProvider {
+    suspend fun getCompletion(params: CompletionParams): Either<List<CompletionItem>, CompletionList>
 }
 
 /**
