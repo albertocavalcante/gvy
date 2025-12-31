@@ -310,6 +310,8 @@ private fun resolveExtractedAt(extractedAt: String?): String {
     // requiring extra inputs.
     // TODO: Revisit whether we want to default to "now" for human auditing, or always require callers
     // to provide `extractedAt` (e.g. from a deterministic pipeline input).
+    // TODO(#516): Replace GDSL-based extraction with static analysis of plugin JARs to get richer metadata
+    // (e.g. strict types, proper closure support, mandatory vs optional params).
     return Instant.EPOCH.toString()
 }
 
