@@ -338,14 +338,13 @@ class GroovyCompilationService(
     // TODO(#513): Eliminate type check - add createSession(ParseResult) to LanguageEngine interface.
     //   See: https://github.com/albertocavalcante/gvy/issues/513
     fun getSession(uri: URI): LanguageSession? {
-        val parseResult = getParseResult(uri) ?: return null
+        val cached = cache.getWithContent(uri) ?: return null
+        val (content, parseResult) = cached
 
         // Bridge: Delegate to NativeEngine to wrap the result
         // In future phases, we might need a cache keyed by Engine ID or unified result
         val engine = activeEngine
         if (engine is NativeLanguageEngine) {
-            val content = documentProvider?.get(uri)
-                ?: throw IllegalStateException("Document content required for session creation")
             return engine.createSession(
                 parseResult,
                 uri.toString(),
