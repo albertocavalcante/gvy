@@ -14,12 +14,14 @@ import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsPar
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
+import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import com.github.albertocavalcante.groovylsp.services.Health
 import com.github.albertocavalcante.groovylsp.services.ProjectStartupManager
 import com.github.albertocavalcante.groovylsp.services.StatusNotification
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import kotlinx.coroutines.CancellationException
@@ -63,13 +65,26 @@ class GroovyLanguageServer(
     private var groovyClient: GroovyLanguageClient? = null
 
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
-    private val compilationService = GroovyCompilationService(parentClassLoader)
+
+    // Shared Services
+    private val documentProvider = DocumentProvider()
+    private val sourceNavigator = SourceNavigationService()
+
+    // TODO(#512): Parser engine config is not wired - always uses default EngineType.Native.
+    //   See: https://github.com/albertocavalcante/gvy/issues/512
+    private val compilationService = GroovyCompilationService(
+        parentClassLoader = parentClassLoader,
+        documentProvider = documentProvider,
+        sourceNavigator = sourceNavigator,
+    )
 
     // Services
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
         client = { baseClient },
+        documentProvider = documentProvider,
+        sourceNavigator = sourceNavigator,
     )
     private val workspaceService = GroovyWorkspaceService(compilationService, coroutineScope, textDocumentService)
 
