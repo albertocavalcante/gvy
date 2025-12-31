@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.util.concurrent.CountDownLatch
 
 class GroovyParserTest {
 
@@ -146,19 +147,27 @@ class GroovyParserTest {
     fun `parse is thread-safe with concurrent access`() {
         // Issue 3: Verify that parse() doesn't have race conditions
         // when called concurrently from multiple threads
-        val threadCount = 10
-        val iterations = 5
+        val threadCount = 20 // Increased from 10 for better race condition detection
+        val iterations = 50 // Increased from 5 for more thorough testing
 
         // Use a shared parser instance to test thread-safety
         val config = ParserConfiguration().setAttributeComments(true)
         val parser = GroovyParser(config)
 
-        val results = java.util.concurrent.ConcurrentHashMap<String, CompilationUnit>()
-        val exceptions = java.util.concurrent.ConcurrentHashMap<String, Exception>()
+        val totalOperations = threadCount * iterations
+        val startLatch = CountDownLatch(totalOperations)
+        val results = mutableListOf<Pair<String, CompilationUnit>>()
+        val exceptions = mutableListOf<Pair<String, Exception>>()
+        val resultsLock = Object()
+        val exceptionsLock = Object()
 
         val threads = (0 until threadCount).flatMap { threadId ->
             (0 until iterations).map { iteration ->
                 Thread {
+                    // Wait for all threads to be ready before starting
+                    startLatch.countDown()
+                    startLatch.await()
+
                     try {
                         // Each thread parses different code with unique comments
                         val className = "TestClass${threadId}_$iteration"
@@ -185,52 +194,77 @@ class GroovyParserTest {
                         assertThat(unit.types).hasSize(1)
                         assertThat(unit.types[0].name).isEqualTo(className)
 
-                        // Verify comments are correctly parsed (this detects mutable state corruption)
-                        // Comments should be present when attributeComments is enabled
+                        // Verify comments are correctly parsed when present (this detects mutable state corruption)
+                        // Note: Comment parsing is not 100% reliable, so we check only when present
                         val classNode = unit.types[0]
-                        if (classNode.comment != null) {
-                            val parsedClassComment = classNode.comment!!.content.trim()
-                            if (!parsedClassComment.contains(classComment)) {
-                                throw AssertionError(
-                                    "Comment mismatch for $className: " +
-                                        "expected '$classComment' in '$parsedClassComment'",
+                        classNode.comment?.let { comment ->
+                            val parsedClassComment = comment.content.trim()
+                            assertThat(parsedClassComment)
+                                .describedAs(
+                                    "Comment content should match expected for $className (detects state corruption)",
                                 )
-                            }
+                                .contains(classComment)
                         }
 
-                        results["$threadId-$iteration"] = unit
+                        synchronized(resultsLock) {
+                            results.add("$threadId-$iteration" to unit)
+                        }
                     } catch (e: Exception) {
-                        exceptions["$threadId-$iteration"] = e
+                        synchronized(exceptionsLock) {
+                            exceptions.add("$threadId-$iteration" to e)
+                        }
                     }
                 }
             }
         }
 
-        // Start all threads at once to maximize concurrency
+        // Start all threads and wait with shared deadline
         threads.forEach { it.start() }
-        threads.forEach { it.join(10000) } // Wait max 10 seconds
+        val deadline = System.currentTimeMillis() + 30000 // 30 seconds total timeout
+        threads.forEach { thread ->
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining > 0) {
+                thread.join(remaining)
+            }
+            assertThat(thread.isAlive)
+                .describedAs("Thread should complete within timeout")
+                .isFalse()
+        }
 
         // Verify no exceptions occurred
-        assertThat(exceptions).describedAs("No exceptions should occur during concurrent parsing").isEmpty()
+        if (exceptions.isNotEmpty()) {
+            val firstException = exceptions.first()
+            throw AssertionError(
+                "Exception occurred during concurrent parsing in ${firstException.first}: ${firstException.second.message}",
+                firstException.second,
+            )
+        }
 
         // Verify all conversions completed
-        assertThat(results).hasSize(threadCount * iterations)
+        assertThat(results).hasSize(totalOperations)
 
         // Spot-check a few results to ensure correctness
-        results["0-0"]?.let { unit ->
+        val resultsMap = results.toMap()
+        resultsMap["0-0"]?.let { unit ->
             assertThat(unit.types).hasSize(1)
             assertThat(unit.types[0].name).isEqualTo("TestClass0_0")
-            // Verify comment if present
-            unit.types[0].comment?.content?.let { content ->
-                assertThat(content).contains("Comment for TestClass0_0")
+            // Verify comment if present (comment parsing not 100% reliable)
+            unit.types[0].comment?.let { comment ->
+                assertThat(comment.content).contains("Comment for TestClass0_0")
             }
         }
-        results["5-3"]?.let { unit ->
+        resultsMap["10-25"]?.let { unit ->
             assertThat(unit.types).hasSize(1)
-            assertThat(unit.types[0].name).isEqualTo("TestClass5_3")
-            // Verify comment if present
-            unit.types[0].comment?.content?.let { content ->
-                assertThat(content).contains("Comment for TestClass5_3")
+            assertThat(unit.types[0].name).isEqualTo("TestClass10_25")
+            unit.types[0].comment?.let { comment ->
+                assertThat(comment.content).contains("Comment for TestClass10_25")
+            }
+        }
+        resultsMap["19-49"]?.let { unit ->
+            assertThat(unit.types).hasSize(1)
+            assertThat(unit.types[0].name).isEqualTo("TestClass19_49")
+            unit.types[0].comment?.let { comment ->
+                assertThat(comment.content).contains("Comment for TestClass19_49")
             }
         }
     }

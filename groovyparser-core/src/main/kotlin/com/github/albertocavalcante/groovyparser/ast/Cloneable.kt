@@ -627,6 +627,9 @@ object NodeCloner {
     private fun cloneEmptyExpr(node: EmptyExpr): EmptyExpr {
         val cloned = EmptyExpr()
         cloned.range = cloneRange(node.range)
+        node.annotations.forEach { cloned.addAnnotation(clone(it)) }
+        node.comment?.let { cloned.setComment(clone(it) as Comment) }
+        node.orphanComments.forEach { cloned.addOrphanComment(clone(it) as Comment) }
         return cloned
     }
 
