@@ -1,0 +1,97 @@
+plugins {
+    kotlin("jvm")
+    `maven-publish`
+    `java-library`
+}
+
+group = "com.github.albertocavalcante"
+version = rootProject.version
+
+dependencies {
+    // Groovy compiler (for native AST conversion)
+    api(libs.groovy.core)
+
+    // Logging
+    implementation(libs.slf4j.api)
+
+    // Detekt formatting
+    detektPlugins(libs.detekt.formatting)
+
+    // Testing
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+// Code coverage - start with 50%, increase as coverage improves
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(50)
+            }
+        }
+    }
+}
+
+// Source and Javadoc JARs for publishing
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+// Publishing configuration for GitHub Packages
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            artifactId = "groovyparser-core"
+            from(components["java"])
+
+            pom {
+                name.set("GroovyParser Core")
+                description.set(
+                    "A standalone Groovy parsing library with JavaParser-inspired API. " +
+                        "Provides a type-safe AST representation of Groovy code with visitor pattern, " +
+                        "position tracking, and Jenkins CPS analysis support.",
+                )
+                url.set("https://github.com/albertocavalcante/gvy")
+
+                licenses {
+                    license {
+                        name.set("Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+
+                developers {
+                    developer {
+                        id.set("albertocavalcante")
+                        name.set("Alberto Cavalcante")
+                    }
+                }
+
+                scm {
+                    connection.set("scm:git:git://github.com/albertocavalcante/gvy.git")
+                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/gvy.git")
+                    url.set("https://github.com/albertocavalcante/gvy")
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
+                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String?
+            }
+        }
+    }
+}
