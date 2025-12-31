@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
+import com.github.albertocavalcante.groovyjenkins.metadata.JsonMetadataLoader
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
@@ -28,6 +29,9 @@ class JenkinsMetadataService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     suspend fun initialize() {
+        // Initialize static metadata regardless of plugins configuration
+        initializeStaticMetadata()
+
         val pluginsFileStr = configuration.pluginsFile
         if (pluginsFileStr.isNullOrBlank()) {
             logger.debug("No plugins file configured")
@@ -59,8 +63,6 @@ class JenkinsMetadataService(
         } catch (e: Exception) {
             logger.error("Failed to parse plugins file: {}", pluginsFile, e)
         }
-
-        initializeStaticMetadata()
     }
 
     private suspend fun initializeStaticMetadata() {
@@ -75,8 +77,7 @@ class JenkinsMetadataService(
 
         try {
             logger.info("Loading static Jenkins metadata from: {}", metadataFile)
-            // Lazy load JsonMetadataLoader to avoid unnecessary class loading if not used
-            val metadata = com.github.albertocavalcante.groovyjenkins.metadata.JsonMetadataLoader().load(metadataFile)
+            val metadata = JsonMetadataLoader().load(metadataFile)
             pluginManager.registerStaticMetadata(metadata)
             logger.info("Successfully registered static Jenkins metadata")
         } catch (e: Exception) {
