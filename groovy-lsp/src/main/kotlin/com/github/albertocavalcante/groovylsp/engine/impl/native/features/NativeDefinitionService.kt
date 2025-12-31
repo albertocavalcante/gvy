@@ -42,34 +42,41 @@ class NativeDefinitionService(
         val groovyPos = position.toGroovyPosition()
         val result = resolver.findDefinitionAt(uri, groovyPos) ?: return emptyList()
 
-        return listOf(result.toUnifiedDefinition(visitor))
+        return result.toUnifiedDefinition(visitor)
     }
 
-    private fun DefinitionResolver.DefinitionResult.toUnifiedDefinition(visitor: GroovyAstModel): UnifiedDefinition =
-        when (this) {
-            is DefinitionResolver.DefinitionResult.Source -> {
-                val targetUri = this.node.toLspLocation(visitor)?.uri ?: this.uri.toString()
-                val targetRange = this.node.toLspRange() ?: Range(Position(0, 0), Position(0, 0))
+    private fun DefinitionResolver.DefinitionResult.toUnifiedDefinition(
+        visitor: GroovyAstModel,
+    ): List<UnifiedDefinition> = when (this) {
+        is DefinitionResolver.DefinitionResult.Source -> {
+            val targetUri = this.node.toLspLocation(visitor)?.uri ?: this.uri.toString()
+            val targetRange = this.node.toLspRange() ?: return emptyList()
 
+            listOf(
                 UnifiedDefinition(
                     uri = targetUri,
                     range = targetRange,
                     selectionRange = targetRange,
                     kind = DefinitionKind.SOURCE,
                     originSelectionRange = null,
-                )
-            }
+                ),
+            )
+        }
 
-            is DefinitionResolver.DefinitionResult.Binary -> {
+        is DefinitionResolver.DefinitionResult.Binary -> {
+            val targetRange = this.range ?: return emptyList()
+
+            listOf(
                 UnifiedDefinition(
                     uri = this.uri.toString(),
-                    range = this.range ?: Range(Position(0, 0), Position(0, 0)),
-                    selectionRange = this.range ?: Range(Position(0, 0), Position(0, 0)),
+                    range = targetRange,
+                    selectionRange = targetRange,
                     kind = DefinitionKind.BINARY,
                     originSelectionRange = null,
-                )
-            }
+                ),
+            )
         }
+    }
 }
 
 private val logger = org.slf4j.LoggerFactory.getLogger(NativeDefinitionService::class.java)
