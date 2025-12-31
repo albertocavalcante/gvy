@@ -2,6 +2,12 @@ package com.github.albertocavalcante.groovyparser.ast.expr
 
 import com.github.albertocavalcante.groovyparser.StaticGroovyParser
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
+import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
+import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
 import kotlin.test.Test
@@ -24,11 +30,11 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        val body = method.body
-        assertNotNull(body)
+        val body = method.body as BlockStatement
+        val returnStmt = body.statements[0] as ReturnStatement
 
-        // Elvis is converted to TernaryExpr by Groovy, or handled as ElvisExpr
-        // The exact representation depends on how Groovy's parser handles it
+        // Elvis is converted to ElvisExpr
+        assertIs<ElvisExpr>(returnStmt.expression)
     }
 
     @Test
@@ -45,7 +51,12 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+        val exprStmt = body.statements[1] as ExpressionStatement // index 1 is println call
+        val call = exprStmt.expression as MethodCallExpr
+        val arg = call.arguments[0]
+
+        assertIs<SpreadExpr>(arg)
     }
 
     @Test
@@ -61,7 +72,15 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+        val declStmt =
+            body.statements[0] as ExpressionStatement // generic declaration is expr stmt
+        // Declaration handling might vary, checking expression
+        val declExpr = declStmt.expression as DeclarationExpr
+        // DeclarationExpr holds the right side directly
+        val init = declExpr.rightExpression
+
+        assertIs<MethodPointerExpr>(init)
     }
 
     @Test
@@ -81,7 +100,19 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+
+        // i++ -> Postfix
+        val s2 = body.statements[1] as ExpressionStatement
+        assertIs<UnaryExpr>(s2.expression)
+        assertEquals("++", s2.expression.operator)
+        assertEquals(false, s2.expression.isPrefix)
+
+        // ++i -> Prefix
+        val s3 = body.statements[2] as ExpressionStatement
+        assertIs<UnaryExpr>(s3.expression)
+        assertEquals("++", s3.expression.operator)
+        assertEquals(true, s3.expression.isPrefix)
     }
 
     @Test
@@ -97,7 +128,9 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+        val ret = body.statements[0] as ReturnStatement
+        assertIs<BitwiseNegationExpr>(ret.expression)
     }
 
     @Test
@@ -113,11 +146,13 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        val body = method.body
-        assertNotNull(body)
+        val body = method.body as BlockStatement
+        val ret = body.statements[0] as ReturnStatement
 
-        // The return statement contains a UnaryExpr with "!" operator
-        // (since NotExpression is converted to UnaryExpr in the converter)
+        // Converted to UnaryExpr with !
+        // Converted to UnaryExpr with !
+        assertIs<UnaryExpr>(ret.expression)
+        assertEquals("!", ret.expression.operator)
     }
 
     @Test
@@ -133,7 +168,15 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+        val ret = body.statements[0] as ReturnStatement
+        // String as a value might be parsed as VariableExpr (if not resolved) or ClassExpr (if resolved/known)
+        val expr = ret.expression
+        if (expr is VariableExpr) {
+            assertEquals("String", expr.name)
+        } else {
+            assertIs<ClassExpr>(expr)
+        }
     }
 
     @Test
@@ -149,7 +192,9 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+        val ret = body.statements[0] as ReturnStatement
+        assertIs<ArrayExpr>(ret.expression)
     }
 
     @Test
@@ -166,7 +211,26 @@ class GroovySpecificExpressionTest {
         """
 
         val unit = StaticGroovyParser.parse(code)
-        assertEquals(2, unit.types.size)
+        val clazz = unit.types[1] as ClassDeclaration // Foo
+        val method = clazz.methods[0]
+        val body = method.body as BlockStatement
+        val stmt = body.statements[0] as ExpressionStatement
+        val decl = stmt.expression
+
+        // p.@name is AttributeExpr
+        // DeclarationExpr -> rightExpression is the AttributeExpr
+        val expr = decl
+        val assign = if (expr is DeclarationExpr) {
+            expr.rightExpression
+        } else {
+            (expr as BinaryExpr).right
+        }
+
+        if (assign !is AttributeExpr) {
+            println("Actual type of assign: ${assign::class.java.name}")
+            println("Actual type of decl: ${decl::class.java.name}")
+        }
+        assertIs<AttributeExpr>(assign)
     }
 
     @Test
@@ -183,6 +247,9 @@ class GroovySpecificExpressionTest {
         val unit = StaticGroovyParser.parse(code)
         val clazz = unit.types[0] as ClassDeclaration
         val method = clazz.methods[0]
-        assertNotNull(method.body)
+        val body = method.body as BlockStatement
+
+        assertIs<DeclarationExpr>((body.statements[0] as ExpressionStatement).expression)
+        assertIs<DeclarationExpr>((body.statements[1] as ExpressionStatement).expression)
     }
 }

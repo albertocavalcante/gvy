@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.Range
 import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration
+import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
@@ -44,6 +45,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.BreakStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause
 import com.github.albertocavalcante.groovyparser.ast.stmt.ContinueStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
@@ -55,6 +57,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.SwitchStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -171,10 +174,7 @@ internal class GroovyAstConverter {
     /**
      * Attaches a leading comment to a node based on source position.
      */
-    private fun attachLeadingComment(
-        node: com.github.albertocavalcante.groovyparser.ast.Node,
-        nativeNode: org.codehaus.groovy.ast.ASTNode,
-    ) {
+    private fun attachLeadingComment(node: Node, nativeNode: ASTNode) {
         if (commentParser == null || nativeNode.lineNumber <= 0) return
 
         val comments = commentParser?.extractCommentsBetween(
@@ -459,7 +459,7 @@ internal class GroovyAstConverter {
         stmt.caseStatements?.forEach { caseStmt ->
             val caseExpr = convertExpression(caseStmt.expression)
             val caseBody = convertStatement(caseStmt.code) ?: BlockStatement()
-            val case = com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement(caseExpr, caseBody)
+            val case = CaseStatement(caseExpr, caseBody)
             setRange(case, caseStmt)
             switch.addCase(case)
         }
@@ -514,7 +514,11 @@ internal class GroovyAstConverter {
         is MethodCallExpression -> convertMethodCallExpression(expr)
         is ConstantExpression -> convertConstantExpression(expr)
         is VariableExpression -> convertVariableExpression(expr)
+        // Declaration extends BinaryExpression, so check it first
+        is DeclarationExpression -> convertDeclarationExpression(expr)
         is BinaryExpression -> convertBinaryExpression(expr)
+        // Attribute extends Property, so check it first
+        is AttributeExpression -> convertAttributeExpression(expr)
         is PropertyExpression -> convertPropertyExpression(expr)
         is ClosureExpression -> convertClosureExpression(expr)
         is GStringExpression -> convertGStringExpression(expr)
@@ -544,9 +548,10 @@ internal class GroovyAstConverter {
         is MethodReferenceExpression -> convertMethodReferenceExpression(expr)
         // Lambda and Declaration
         is LambdaExpression -> convertLambdaExpression(expr)
-        is DeclarationExpression -> convertDeclarationExpression(expr)
-        // Attribute access
-        is AttributeExpression -> convertAttributeExpression(expr)
+        // DeclarationExpression moved up
+        // is DeclarationExpression -> convertDeclarationExpression(expr)
+        // Attribute access moved up
+        // is AttributeExpression -> convertAttributeExpression(expr)
         else -> {
             // Fallback: create a constant with the text representation
             val constant = ConstantExpr(expr.text)

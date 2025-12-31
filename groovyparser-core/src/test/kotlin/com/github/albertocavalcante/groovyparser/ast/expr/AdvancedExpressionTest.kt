@@ -159,8 +159,8 @@ class AdvancedExpressionTest {
 
         assertThat(block.statements).hasSize(2)
         val stmt1 = block.statements[0] as ExpressionStatement
-        val binary1 = stmt1.expression as BinaryExpr
-        val constructorCall = binary1.right as ConstructorCallExpr
+        val decl1 = stmt1.expression as DeclarationExpr
+        val constructorCall = decl1.rightExpression as ConstructorCallExpr
         assertThat(constructorCall.typeName).contains("ArrayList")
     }
 }
