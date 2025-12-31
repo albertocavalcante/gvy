@@ -1,14 +1,20 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
+import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
+import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
+import com.github.albertocavalcante.groovylsp.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
+import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
@@ -37,6 +43,8 @@ private const val RETRY_DELAY_MS = 50L
 class GroovyCompilationService(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val documentProvider: DocumentProvider? = null,
+    private val sourceNavigator: SourceNavigator? = null,
 ) {
     companion object {
         /**
@@ -57,6 +65,17 @@ class GroovyCompilationService(
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
+
+    // Language Engine Configuration
+    // TODO: Load from configuration in Phase 3
+    private val activeEngine: LanguageEngine by lazy {
+        NativeLanguageEngine(
+            parser,
+            this,
+            documentProvider!!, // Assume provided if using engine features
+            sourceNavigator,
+        )
+    }
 
     // Track ongoing compilation per URI for proper async coordination
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
@@ -281,6 +300,26 @@ class GroovyCompilationService(
         val storage = SymbolIndex().buildFromVisitor(visitor)
         symbolStorageCache.put(uri, storage)
         return storage
+    }
+
+    /**
+     * Gets the language session for the given URI.
+     * Delegates to the active language engine to wrap the parse result.
+     * NOTE: This assumes the file is already compiled/parsed (returns null if not in cache).
+     */
+    fun getSession(uri: URI): com.github.albertocavalcante.groovylsp.engine.api.LanguageSession? {
+        val parseResult = getParseResult(uri) ?: return null
+
+        // Bridge: Delegate to NativeEngine to wrap the result
+        // In future phases, we might need a cache keyed by Engine ID or unified result
+        if (activeEngine is NativeLanguageEngine) {
+            return (activeEngine as NativeLanguageEngine).createSession(
+                parseResult,
+            )
+        }
+
+        // Fallback for other engines (or if cache format mismatch)
+        return null
     }
 
     fun getAllSymbolStorages(): Map<URI, SymbolIndex> {
