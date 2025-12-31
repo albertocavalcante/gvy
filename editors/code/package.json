@@ -57,6 +57,14 @@
         "title": "Groovy: Report Issue"
       },
       {
+        "command": "groovy.toggleDebugLogs",
+        "title": "Groovy: Toggle Debug Logging"
+      },
+      {
+        "command": "groovy.setLogLevel",
+        "title": "Groovy: Set Log Level"
+      },
+      {
         "command": "groovy.gradle.build",
         "title": "Gradle: Build"
       },
