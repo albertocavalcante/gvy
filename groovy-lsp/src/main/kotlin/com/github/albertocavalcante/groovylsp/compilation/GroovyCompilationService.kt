@@ -1,8 +1,10 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
+import com.github.albertocavalcante.groovylsp.engine.EngineFactory
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
+import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
 import com.github.albertocavalcante.groovylsp.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
@@ -45,6 +47,7 @@ class GroovyCompilationService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val documentProvider: DocumentProvider? = null,
     private val sourceNavigator: SourceNavigator? = null,
+    private val engineConfig: EngineConfiguration = EngineConfiguration(),
 ) {
     companion object {
         /**
@@ -66,15 +69,16 @@ class GroovyCompilationService(
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
-    // Language Engine Configuration
-    // TODO: Load from configuration in Phase 3
+    // Language Engine created via factory based on configuration
     private val activeEngine: LanguageEngine by lazy {
-        NativeLanguageEngine(
-            parser,
-            this,
-            documentProvider!!, // Assume provided if using engine features
-            sourceNavigator,
-        )
+        EngineFactory.create(
+            config = engineConfig,
+            parser = parser,
+            compilationService = this,
+            documentProvider = documentProvider
+                ?: throw IllegalStateException("DocumentProvider required for engine features"),
+            sourceNavigator = sourceNavigator,
+        ).also { logger.info("Active engine: ${engineConfig.type.id}") }
     }
 
     // Track ongoing compilation per URI for proper async coordination
