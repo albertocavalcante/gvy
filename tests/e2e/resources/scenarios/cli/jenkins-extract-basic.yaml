@@ -1,0 +1,59 @@
+# Jenkins Static Extractor - Basic Extraction Test
+#
+# This scenario verifies that the BytecodeScanner correctly extracts
+# Step metadata from a real Jenkins plugin JAR downloaded from the
+# Jenkins releases repository.
+#
+# Run: ./gradlew :tests:e2eTest -Dgroovy.lsp.e2e.filter=cli/jenkins-extract-basic
+
+name: jenkins-extract-basic
+description: >
+  Verifies that the static extractor correctly scans a real Jenkins plugin
+  (workflow-basic-steps) and extracts Step metadata including function names,
+  parameters, and block arguments.
+
+workspace:
+  fixture: jenkins-extract-test
+
+steps:
+  # Step 1: Download the plugin
+  - downloadPlugin:
+      id: workflow-basic-steps
+      version: "1058.vcb_fc1e3a_21a_9"
+      source: JENKINS_RELEASES
+      saveAs: pluginPath
+
+  # Step 2: Run the CLI extract command
+  - cli:
+      command: jenkins extract
+      args:
+        - "--plugins-txt"
+        - "{{temp}}/plugins.txt"
+        - "--output-dir"
+        - "{{temp}}/output"
+      saveAs: extractResult
+      expectExitCode: 0
+      timeoutSeconds: 120
+
+  # Step 3: Verify the output metadata JSON structure
+  - assert:
+      source: extractResult
+      checks:
+        # Check output contains success message
+        - jsonPath: $.stdout
+          expect:
+            type: CONTAINS
+            value: "Extracted 26 steps"
+
+        # Check output contains plugin name
+        - jsonPath: $.stdout
+          expect:
+            type: CONTAINS
+            value: "workflow-basic-steps"
+
+  # Step 4: Golden file comparison for full output
+  - goldenAssert:
+      actual: "{{temp}}/output/jenkins-metadata.json"
+      expected: "workflow-basic-steps-1058.json"
+      mode: JSON
+      message: "Extracted metadata should match golden file"

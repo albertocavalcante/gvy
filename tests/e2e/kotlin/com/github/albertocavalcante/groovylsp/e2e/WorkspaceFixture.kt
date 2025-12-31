@@ -16,7 +16,29 @@ object WorkspaceFixture {
         val tempDir = Files.createTempDirectory("groovy-lsp-e2e-")
 
         if (fixtureName != null) {
-            val fixturesDir = scenarioSource.parent.parent.resolve("workspaces")
+            var root = scenarioSource.parent
+            var fixturesDir: Path? = null
+
+            // Search up the tree for 'workspaces' or 'fixtures'
+            while (root != null) {
+                val workspaces = root.resolve("workspaces")
+                if (workspaces.exists() && workspaces.resolve(fixtureName).exists()) {
+                    fixturesDir = workspaces
+                    break
+                }
+
+                val fixtures = root.resolve("fixtures")
+                if (fixtures.exists() && fixtures.resolve(fixtureName).exists()) {
+                    fixturesDir = fixtures
+                    break
+                }
+                root = root.parent
+            }
+
+            requireNotNull(fixturesDir) {
+                "Could not find 'workspaces' or 'fixtures' directory in hierarchy of $scenarioSource"
+            }
+
             val fixturePath = fixturesDir.resolve(fixtureName)
             require(fixturePath.exists() && fixturePath.isDirectory()) {
                 "Fixture '$fixtureName' referenced by $scenarioSource not found at $fixturePath"

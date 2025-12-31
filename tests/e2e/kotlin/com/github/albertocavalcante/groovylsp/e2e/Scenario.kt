@@ -157,6 +157,10 @@ data class WorkspaceConfig(val fixture: String? = null)
     Type(value = ScenarioStep.Formatting::class, name = "formatting"),
     Type(value = ScenarioStep.Rename::class, name = "rename"),
     Type(value = ScenarioStep.Wait::class, name = "wait"),
+    // CLI testing steps
+    Type(value = ScenarioStep.DownloadPlugin::class, name = "downloadPlugin"),
+    Type(value = ScenarioStep.CliCommand::class, name = "cli"),
+    Type(value = ScenarioStep.GoldenAssert::class, name = "goldenAssert"),
 )
 sealed interface ScenarioStep {
     data class Initialize(val rootUri: String? = null, val initializationOptions: JsonElement? = null) : ScenarioStep
@@ -239,6 +243,44 @@ sealed interface ScenarioStep {
         val newName: String = "",
         val checks: List<JsonCheck> = emptyList(),
     ) : ScenarioStep
+
+    // =========================================================================
+    // CLI Testing Steps
+    // =========================================================================
+
+    /**
+     * Downloads a Jenkins plugin from the Jenkins releases repository.
+     * Plugins are cached in tests/e2e/resources/plugins/ for reproducibility.
+     */
+    data class DownloadPlugin(
+        val id: String,
+        val version: String,
+        val source: PluginSource = PluginSource.JENKINS_RELEASES,
+        val saveAs: String? = null, // Variable name to store downloaded path
+    ) : ScenarioStep
+
+    /**
+     * Executes a GLS CLI command and captures the result.
+     */
+    data class CliCommand(
+        val command: String, // e.g., "jenkins extract"
+        val args: List<String> = emptyList(),
+        val saveAs: String? = null, // Variable name to store result
+        val checks: List<JsonCheck> = emptyList(), // Assertions on output
+        val timeoutSeconds: Long = 60,
+        val expectExitCode: Int = 0,
+    ) : ScenarioStep
+
+    /**
+     * Compares an output file against a golden (expected) file.
+     * If updateGolden system property is set, updates the golden file instead.
+     */
+    data class GoldenAssert(
+        val actual: String, // Path to actual output file (supports {{variables}})
+        val expected: String, // Path to golden file (relative to resources/golden/)
+        val mode: GoldenMode = GoldenMode.JSON,
+        val message: String? = null,
+    ) : ScenarioStep
 }
 
 // =============================================================================
@@ -286,4 +328,20 @@ enum class ExpectationType {
     LTE, // Less than or equal
     ANY_CONTAINS, // For arrays: any element contains the substring
     NONE_CONTAINS, // For arrays: no element contains the substring
+}
+
+// =============================================================================
+// CLI Testing Supporting Types
+// =============================================================================
+
+enum class PluginSource {
+    JENKINS_RELEASES, // https://repo.jenkins-ci.org/releases/
+    MAVEN_CENTRAL, // For plugins published to Maven Central
+    LOCAL, // Local file path
+}
+
+enum class GoldenMode {
+    JSON, // Structural JSON comparison (ignores formatting)
+    TEXT, // Exact text comparison
+    BINARY, // Binary comparison
 }

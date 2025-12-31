@@ -22,7 +22,7 @@ class ScenarioLoader(private val parser: ScenarioParser = JacksonScenarioParser(
             "Scenario directory does not exist: $directory"
         }
 
-        Files.walk(directory, 1)
+        Files.walk(directory, Integer.MAX_VALUE)
             .use { stream ->
                 return stream
                     .filter { path -> path.isRegularFile() && path.extension in setOf("yml", "yaml") }

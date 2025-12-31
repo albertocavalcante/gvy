@@ -1,0 +1,4 @@
+# Jenkins plugins for testing static extraction
+# This file is used by CLI E2E tests
+
+workflow-basic-steps:1058.vcb_fc1e3a_21a_9

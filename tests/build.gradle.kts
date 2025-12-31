@@ -51,6 +51,7 @@ testing {
             dependencies {
                 implementation(project(":groovy-lsp"))
                 implementation(project(":groovy-formatter"))
+                implementation(project(":groovy-jenkins"))
 
                 implementation(libs.lsp4j)
                 implementation(platform(libs.jackson.bom))
@@ -107,15 +108,23 @@ testing {
                                 @get:Input
                                 val scenarios = scenarioDirPath
 
+                                @get:Input
+                                val installDistBin =
+                                    groovyLspProject.layout.buildDirectory
+                                        .dir("install/groovy-lsp/bin/groovy-lsp")
+                                        .map { it.asFile.absolutePath }
+
                                 override fun asArguments() =
                                     listOf(
                                         "-Dgroovy.lsp.e2e.execJar=${jarFileProvider.get().absolutePath}",
                                         "-Dgroovy.lsp.e2e.scenarioDir=$scenarios",
+                                        "-Dgroovy.lsp.binary=${installDistBin.get()}",
                                     )
                             },
                         )
 
                         dependsOn(groovyLspProject.tasks.named("shadowJar"))
+                        dependsOn(groovyLspProject.tasks.named("installDist"))
 
                         // E2E tests are heavy, give them more memory
                         maxHeapSize = "2G"
@@ -130,6 +139,13 @@ testing {
                         // Fail tests that take too long (5 minutes default)
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")
                         systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
+                        systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
+                        systemProperty(
+                            "groovy.lsp.e2e.goldenDir",
+                            layout.projectDirectory
+                                .dir("e2e/resources/golden")
+                                .asFile.absolutePath,
+                        )
 
                         testLogging {
                             showStandardStreams = true
