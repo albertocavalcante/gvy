@@ -148,4 +148,9 @@ class JenkinsWorkspaceManager(
      * Get combined metadata (bundled + dynamic) from context.
      */
     fun getAllMetadata() = jenkinsContext.getAllMetadata()
+
+    /**
+     * Exposes the underlying plugin manager.
+     */
+    fun getPluginManager() = pluginManager
 }

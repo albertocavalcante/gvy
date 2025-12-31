@@ -190,14 +190,20 @@ class WorkspaceManager {
     fun isGdslFile(uri: URI): Boolean = jenkinsWorkspaceManager?.isGdslFile(uri) ?: false
 
     /**
-     * Updates Jenkins configuration and rebuilds Jenkins context.
+     * Updates Jenkins configuration if active.
      */
     fun updateJenkinsConfiguration(config: ServerConfiguration) {
         val root = workspaceRoot
         if (root != null) {
             // If manager exists, update it (preserves pluginManager inside)
-            jenkinsWorkspaceManager = jenkinsWorkspaceManager?.updateConfiguration(config.jenkinsConfig)
-                ?: JenkinsWorkspaceManager(config.jenkinsConfig, root)
+            // If not, try to reuse existing plugin manager if we tracked it, or create new
+            val currentManager = jenkinsWorkspaceManager
+            // Use the getter we simplified earlier to access the manager
+            val pManager =
+                currentManager?.getPluginManager() ?: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager()
+
+            jenkinsWorkspaceManager = currentManager?.updateConfiguration(config.jenkinsConfig)
+                ?: JenkinsWorkspaceManager(config.jenkinsConfig, root, pManager)
             logger.info("Updated Jenkins workspace configuration")
         }
     }

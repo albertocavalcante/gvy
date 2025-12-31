@@ -130,27 +130,6 @@ class JenkinsContext(
         // Scan classpath for dynamic Jenkins definitions
         scanClasspath(classpath)
 
-        // Include downloaded plugin JARs in classpath (for completion/analysis),
-        // but scan them separately if needed.
-        // Actually, if we add them to classpath here, they get scanned?
-        // Wait, scanClasspath is already called above.
-        // We should add them BEFORE scanning if we want them to be scanned.
-        // But buildClasspath returns the LIST.
-
-        // Let's grab registered jars
-        runBlocking {
-            val pluginJars = pluginManager.getRegisteredPluginJars()
-            pluginJars.forEach { jar ->
-                if (Files.exists(jar) && !classpath.contains(jar)) {
-                    classpath.add(jar)
-                    logger.debug("Added registered plugin JAR to classpath: $jar")
-                }
-            }
-        }
-
-        // Re-scan with new additions
-        scanClasspath(classpath)
-
         // Generate and add partial stubs if full plugin support is missing
         // This ensures types like CpsScript (pipeline) are available even without downloading plugin JARs
         try {
