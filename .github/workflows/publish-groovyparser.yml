@@ -1,0 +1,128 @@
+name: Publish GroovyParser Core
+
+on:
+  push:
+    tags:
+      - 'groovyparser-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.1.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (build but do not publish)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Extract version from tag (groovyparser-v1.0.0 -> 1.0.0)
+            VERSION="${GITHUB_REF_NAME#groovyparser-v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: ${VERSION}"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+        with:
+          cache-read-only: false
+
+      - name: Build and test
+        run: |
+          ./gradlew :groovyparser-core:build :groovyparser-core:test \
+            --parallel --build-cache --stacktrace
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: groovyparser-core-artifacts
+          path: |
+            groovyparser-core/build/libs/*.jar
+          retention-days: 7
+
+  publish:
+    name: Publish to GitHub Packages
+    needs: build
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+
+      - name: Publish to GitHub Packages
+        run: |
+          ./gradlew :groovyparser-core:publish \
+            -Pversion=${{ needs.build.outputs.version }} \
+            --stacktrace
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish summary
+        run: |
+          {
+            echo "## 📦 GroovyParser Core Published"
+            echo ""
+            echo "**Version:** ${{ needs.build.outputs.version }}"
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo '```kotlin'
+            echo 'repositories {'
+            echo '    maven {'
+            echo '        url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")'
+            echo '    }'
+            echo '}'
+            echo ''
+            echo 'dependencies {'
+            echo "    implementation(\"com.github.albertocavalcante:groovyparser-core:${{ needs.build.outputs.version }}\")"
+            echo '}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
