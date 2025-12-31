@@ -45,5 +45,9 @@ object EngineFactory {
         EngineType.Core -> throw UnsupportedOperationException(
             "Core engine is not yet implemented. Use 'native' engine or wait for future releases.",
         )
+
+        EngineType.OpenRewrite -> throw UnsupportedOperationException(
+            "OpenRewrite engine is not yet implemented. Use 'native' engine or wait for future releases.",
+        )
     }
 }

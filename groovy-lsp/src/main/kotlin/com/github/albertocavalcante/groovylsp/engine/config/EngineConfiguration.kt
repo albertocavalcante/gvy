@@ -26,6 +26,14 @@ sealed interface EngineType {
         override val id: String = "core"
     }
 
+    /**
+     * OpenRewrite engine using OpenRewrite's LST (Lossless Semantic Trees).
+     * Future implementation for refactoring-focused analysis.
+     */
+    data object OpenRewrite : EngineType {
+        override val id: String = "openrewrite"
+    }
+
     companion object {
         /**
          * Parse engine type from string, defaulting to [Native].
@@ -35,11 +43,12 @@ sealed interface EngineType {
          */
         fun fromString(value: String?): EngineType = when (value?.lowercase()) {
             "core" -> Core
+            "openrewrite" -> OpenRewrite
             else -> Native // Default to Native for null, "native", or unknown values
         }
 
         /** All available engine types. */
-        val entries: List<EngineType> = listOf(Native, Core)
+        val entries: List<EngineType> = listOf(Native, Core, OpenRewrite)
     }
 }
 
