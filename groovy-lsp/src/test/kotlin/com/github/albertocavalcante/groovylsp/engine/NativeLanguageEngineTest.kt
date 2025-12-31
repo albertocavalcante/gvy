@@ -38,6 +38,7 @@ class NativeLanguageEngineTest {
         val code = "class Foo { String name }"
         val uri = URI.create("file:///test/Foo.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -59,6 +60,7 @@ class NativeLanguageEngineTest {
         val code = "class Foo { String name }"
         val uri = URI.create("file:///test/Foo.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -79,6 +81,7 @@ class NativeLanguageEngineTest {
         """.trimIndent()
         val uri = URI.create("file:///test/WarningFoo.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -99,6 +102,7 @@ class NativeLanguageEngineTest {
         """.trimIndent()
         val uri = URI.create("file:///test/Valid.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -111,6 +115,7 @@ class NativeLanguageEngineTest {
         val code = "class Sample { String field }"
         val uri = URI.create("file:///test/Sample.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -123,6 +128,7 @@ class NativeLanguageEngineTest {
         val code = "class MetadataTest { int value = 42 }"
         val uri = URI.create("file:///test/Metadata.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -140,6 +146,7 @@ class NativeLanguageEngineTest {
         val code = "class Persistent { String data }"
         val uri = URI.create("file:///test/Persistent.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
 
         val session1 = compilationService.getSession(uri)
@@ -177,6 +184,7 @@ class NativeLanguageEngineTest {
         """.trimIndent()
         val uri = URI.create("file:///test/Complex.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -194,6 +202,7 @@ class NativeLanguageEngineTest {
         """.trimIndent()
         val uri = URI.create("file:///test/script.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -225,6 +234,7 @@ class NativeLanguageEngineTest {
         """.trimIndent()
         val uri = URI.create("file:///test/ImportTest.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 
@@ -237,6 +247,7 @@ class NativeLanguageEngineTest {
         val code = "class DiagnosticsTest { String field }"
         val uri = URI.create("file:///test/DiagnosticsTest.groovy")
 
+        documentProvider.put(uri, code)
         compilationService.compile(uri, code)
         val session = compilationService.getSession(uri)
 

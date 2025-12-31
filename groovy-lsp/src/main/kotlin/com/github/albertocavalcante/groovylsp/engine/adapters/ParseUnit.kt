@@ -15,14 +15,13 @@ import org.eclipse.lsp4j.Range
  * Instead, adapters wrap parser output and translate to these types.
  */
 interface ParseUnit {
+    val uri: String
+
     /** True if parsing completed without errors */
     val isSuccessful: Boolean
 
     /** LSP diagnostics translated from parser errors/warnings */
     val diagnostics: List<Diagnostic>
-
-    /** Source URI for this parse unit */
-    val sourceUri: String
 
     /**
      * Find the node at the given position (for hover, go-to-definition, etc.)

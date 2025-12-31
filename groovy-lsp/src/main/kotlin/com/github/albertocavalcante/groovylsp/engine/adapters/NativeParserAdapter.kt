@@ -23,7 +23,7 @@ import org.eclipse.lsp4j.Range
  * types that LSP features consume. The native AST remains accessible via [originalNode]
  * for features that need engine-specific access.
  */
-class NativeParserAdapter(private val result: ParseResult, override val sourceUri: String) : ParseUnit {
+class NativeParserAdapter(private val result: ParseResult, override val uri: String) : ParseUnit {
 
     override val isSuccessful: Boolean = result.isSuccessful
 
