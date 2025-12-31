@@ -64,7 +64,10 @@ class SourceRoot(val root: Path) {
      * @return Parse result for the file
      */
     fun tryToParse(relativePath: Path): ParseResult<CompilationUnit> {
-        val absolutePath = if (relativePath.isAbsolute) relativePath else root.resolve(relativePath)
+        // Normalize path to handle symlinks and relative components (., ..)
+        val absolutePath = (if (relativePath.isAbsolute) relativePath else root.resolve(relativePath))
+            .toAbsolutePath()
+            .normalize()
 
         // Check cache
         parsedFiles[absolutePath]?.let { return it }
@@ -135,7 +138,10 @@ class SourceRoot(val root: Path) {
      * Checks if a file has been parsed.
      */
     fun isParsed(relativePath: Path): Boolean {
-        val absolutePath = if (relativePath.isAbsolute) relativePath else root.resolve(relativePath)
+        // Use same normalization as tryToParse for consistency
+        val absolutePath = (if (relativePath.isAbsolute) relativePath else root.resolve(relativePath))
+            .toAbsolutePath()
+            .normalize()
         return parsedFiles.containsKey(absolutePath)
     }
 

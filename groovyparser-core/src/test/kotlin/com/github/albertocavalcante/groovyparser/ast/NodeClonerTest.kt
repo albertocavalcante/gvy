@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
+import com.github.albertocavalcante.groovyparser.Position
+import com.github.albertocavalcante.groovyparser.Range
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
@@ -310,5 +312,68 @@ class NodeClonerTest {
 
         assertNotSame(original, cloned)
         assertEquals(original.types.size, cloned.types.size)
+    }
+
+    @Test
+    fun `cloning CatchClause directly preserves all properties including range`() {
+        val code = """
+            try {
+                risky()
+            } catch (Exception e) {
+                handle(e)
+            }
+        """.trimIndent()
+
+        val parser = GroovyParser()
+        val result = parser.parse(code)
+        assertTrue(result.isSuccessful)
+
+        // Extract the TryCatchStatement from parsed code
+        val cu = result.result.get()
+        val classBody = cu.types[0].members
+        // Code is at top level as script, find the try-catch
+
+        // For testing, create a CatchClause manually with range
+        val catchClause = com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause(
+            parameter = com.github.albertocavalcante.groovyparser.ast.body.Parameter(
+                name = "e",
+                type = "Exception",
+            ),
+            body = com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement(),
+        )
+        catchClause.range = Range(Position(3, 0), Position(5, 1))
+
+        val cloned = catchClause.clone()
+
+        assertNotSame(catchClause, cloned)
+        assertNotSame(catchClause.parameter, cloned.parameter)
+        assertNotSame(catchClause.body, cloned.body)
+        assertEquals(catchClause.parameter.name, cloned.parameter.name)
+
+        // Verify range is copied
+        assertNotNull(cloned.range, "Cloned CatchClause should preserve range information")
+        assertEquals(catchClause.range, cloned.range)
+        assertNotSame(catchClause.range, cloned.range, "Range should be a deep copy")
+    }
+
+    @Test
+    fun `cloning CaseStatement directly preserves all properties including range`() {
+        // For testing, create a CaseStatement manually with range
+        val caseStatement = com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement(
+            expression = com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr(1),
+            body = com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement(),
+        )
+        caseStatement.range = Range(Position(2, 4), Position(3, 12))
+
+        val cloned = caseStatement.clone()
+
+        assertNotSame(caseStatement, cloned)
+        assertNotSame(caseStatement.expression, cloned.expression)
+        assertNotSame(caseStatement.body, cloned.body)
+
+        // Verify range is copied
+        assertNotNull(cloned.range, "Cloned CaseStatement should preserve range information")
+        assertEquals(caseStatement.range, cloned.range)
+        assertNotSame(caseStatement.range, cloned.range, "Range should be a deep copy")
     }
 }

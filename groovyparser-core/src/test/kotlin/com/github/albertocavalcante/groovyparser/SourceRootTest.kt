@@ -238,6 +238,32 @@ class SourceRootTest {
     }
 
     @Test
+    fun `no path duplication when using absolute paths from findGroovyFiles`() {
+        val sourceRoot = SourceRoot(tempDir)
+
+        // Parse all files using tryToParse()
+        val results = sourceRoot.tryToParse()
+
+        // Verify cache size matches number of files found
+        assertEquals(5, results.size) // 4 .groovy + 1 .gradle
+        assertEquals(5, sourceRoot.getCacheSize())
+
+        // Try parsing the same file with a relative path
+        val relativePath = Path.of("com/example/Foo.groovy")
+        val result = sourceRoot.tryToParse(relativePath)
+
+        // Cache size should still be 5 (no duplicate)
+        assertEquals(
+            5,
+            sourceRoot.getCacheSize(),
+            "Cache should not have duplicates for the same file accessed via different path formats",
+        )
+
+        // Verify it returned the cached result
+        assertTrue(result.isSuccessful)
+    }
+
+    @Test
     fun `handles non-existent directory gracefully`() {
         val sourceRoot = SourceRoot(Path.of("/non/existent/path"))
 
