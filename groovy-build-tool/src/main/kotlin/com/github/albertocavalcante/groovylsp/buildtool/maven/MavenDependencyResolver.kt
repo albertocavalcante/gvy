@@ -91,6 +91,62 @@ class MavenDependencyResolver : DependencyResolver {
         }
     }
 
+    /**
+     * Resolves a specific artifact by coordinates.
+     *
+     * @param groupId The group ID (e.g. "org.jenkins-ci.main")
+     * @param artifactId The artifact ID (e.g. "jenkins-core")
+     * @param version The version (e.g. "2.440.1")
+     * @param repositories Optional list of repositories to search (defaults to Maven Central)
+     * @return Path to the resolved JAR, or null if not found
+     */
+    fun resolveArtifact(
+        groupId: String,
+        artifactId: String,
+        version: String,
+        repositories: List<RemoteRepository> = emptyList(),
+    ): Path? {
+        logger.info("Resolving artifact: $groupId:$artifactId:$version")
+
+        @Suppress("TooGenericExceptionCaught")
+        return try {
+            val repositorySystem = AetherSessionFactory.repositorySystem
+            val session = newRepositorySystemSession()
+
+            val artifact = DefaultArtifact(groupId, artifactId, "jar", version)
+            val dependency = Dependency(artifact, "compile")
+
+            val collectRequest = CollectRequest()
+            collectRequest.root = dependency
+
+            // Add default repositories (Central)
+            collectRequest.repositories = if (repositories.isNotEmpty()) {
+                repositories
+            } else {
+                listOf(
+                    RemoteRepository.Builder("central", "default", "https://repo.maven.apache.org/maven2/").build(),
+                )
+            }
+
+            val dependencyRequest = DependencyRequest(collectRequest, null)
+            val result = repositorySystem.resolveDependencies(session, dependencyRequest)
+
+            val resolvedArtifact = result.artifactResults
+                .firstOrNull { it.isResolved && it.artifact.groupId == groupId && it.artifact.artifactId == artifactId }
+                ?.artifact?.file?.toPath()
+
+            if (resolvedArtifact != null) {
+                logger.info("Resolved $groupId:$artifactId:$version to $resolvedArtifact")
+            } else {
+                logger.warn("Could not resolve $groupId:$artifactId:$version")
+            }
+            resolvedArtifact
+        } catch (e: Exception) {
+            logger.error("Failed to resolve artifact $groupId:$artifactId:$version", e)
+            null
+        }
+    }
+
     private fun newRepositorySystemSession(): RepositorySystemSession {
         val localRepoPath = resolveLocalRepository() ?: AetherSessionFactory.resolveLocalRepository()
         return AetherSessionFactory.createSession(localRepoPath)
@@ -117,7 +173,8 @@ class MavenDependencyResolver : DependencyResolver {
         null
     }
 
-    private fun getRemoteRepositories(model: Model): List<RemoteRepository> {
+    // Made public to share repository configuration with artifact resolution
+    fun getRemoteRepositories(model: Model): List<RemoteRepository> {
         val repos = mutableListOf<RemoteRepository>()
 
         // Always add Maven Central
