@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
@@ -130,6 +131,10 @@ class ProjectStartupManager(
         onStatusUpdate: StatusUpdateCallback = { _, _, _, _, _ -> },
     ) {
         val config = ServerConfiguration.fromMap(initOptionsMap)
+
+        // Apply log level from client settings
+        LogLevelConfigurator.apply(config.logLevel)
+
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
             updateGroovyVersion(config, emptyList())
