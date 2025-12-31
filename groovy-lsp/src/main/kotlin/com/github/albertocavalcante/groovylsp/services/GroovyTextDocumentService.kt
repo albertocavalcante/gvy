@@ -34,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
@@ -55,6 +56,8 @@ import org.eclipse.lsp4j.DocumentHighlight
 import org.eclipse.lsp4j.DocumentHighlightParams
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.DocumentSymbolParams
+import org.eclipse.lsp4j.FoldingRange
+import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.ImplementationParams
@@ -67,6 +70,8 @@ import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameParams
 import org.eclipse.lsp4j.SemanticTokens
 import org.eclipse.lsp4j.SemanticTokensParams
+import org.eclipse.lsp4j.SignatureHelp
+import org.eclipse.lsp4j.SignatureHelpParams
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
@@ -87,6 +92,7 @@ class GroovyTextDocumentService(
     private val client: () -> LanguageClient?,
     private val documentProvider: DocumentProvider = DocumentProvider(),
     private val formatter: Formatter = OpenRewriteFormatterAdapter(),
+    private val sourceNavigator: SourceNavigator = SourceNavigationService(),
 ) : TextDocumentService {
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
@@ -158,9 +164,7 @@ class GroovyTextDocumentService(
 
     // Source navigation service for go-to-definition on JARs
     // Typed as SourceNavigator interface for testability
-    private val sourceNavigator: SourceNavigator by lazy {
-        SourceNavigationService()
-    }
+    // Configured via constructor now
 
     private val testCodeLensProvider by lazy {
         TestCodeLensProvider(compilationService)
@@ -174,9 +178,7 @@ class GroovyTextDocumentService(
         FoldingRangeProvider(compilationService)
     }
 
-    override fun signatureHelp(
-        params: org.eclipse.lsp4j.SignatureHelpParams,
-    ): CompletableFuture<org.eclipse.lsp4j.SignatureHelp> = coroutineScope.future {
+    override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
         logger.debug(
             "Signature help requested for ${params.textDocument.uri} at " +
                 "${params.position.line}:${params.position.character}",
@@ -378,22 +380,36 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}",
         )
 
-        // Use the new HoverProvider for actual symbol information
-        val hoverProvider = com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider(
-            compilationService,
-            documentProvider,
-            sourceNavigator,
-        )
-        val hover = hoverProvider.provideHover(params.textDocument.uri, params.position)
+        val uri = java.net.URI.create(params.textDocument.uri)
 
-        // Return the hover if found, otherwise return an empty hover
-        hover ?: Hover().apply {
-            contents = Either.forRight(
-                MarkupContent().apply {
-                    kind = MarkupKind.MARKDOWN
-                    value = "_No information available_"
-                },
-            )
+        // Ensure AST is prepared (compiles if needed)
+        // This is still needed because getSession expects cached result
+        ensureAstPrepared(uri)
+
+        val session = compilationService.getSession(uri)
+        if (session != null) {
+            session.features.hoverProvider.getHover(params)
+        } else {
+            Hover().apply {
+                contents = Either.forRight(
+                    MarkupContent().apply {
+                        kind = MarkupKind.MARKDOWN
+                        value = "_No information available (Not Compiled)_"
+                    },
+                )
+            }
+        }
+    }
+
+    private suspend fun ensureAstPrepared(documentUri: URI) {
+        val hasAst = compilationService.getAst(documentUri) != null
+        if (hasAst) return
+
+        val content = documentProvider.get(documentUri) ?: return
+        runCatching {
+            compilationService.compile(documentUri, content)
+        }.onFailure { error ->
+            logger.debug("GroovyTextDocumentService: failed to compile $documentUri before hover", error)
         }
     }
 
@@ -405,7 +421,7 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
 
             // CRITICAL: Ensure compilation completes before proceeding
             val compilationResult = ensureCompiledOrCompileNow(uri)
@@ -649,21 +665,20 @@ class GroovyTextDocumentService(
         testCodeLensProvider.provideCodeLenses(uri)
     }
 
-    override fun foldingRange(
-        params: org.eclipse.lsp4j.FoldingRangeRequestParams,
-    ): CompletableFuture<List<org.eclipse.lsp4j.FoldingRange>> = coroutineScope.future {
-        logger.debug("Folding range requested for ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+    override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
+        coroutineScope.future {
+            logger.debug("Folding range requested for ${params.textDocument.uri}")
+            val uri = java.net.URI.create(params.textDocument.uri)
 
-        // Ensure file is compiled before providing folding ranges
-        val compilationResult = ensureCompiledOrCompileNow(uri)
-        if (compilationResult == null) {
-            logger.warn("Document $uri not compiled, cannot provide folding ranges")
-            return@future emptyList()
+            // Ensure file is compiled before providing folding ranges
+            val compilationResult = ensureCompiledOrCompileNow(uri)
+            if (compilationResult == null) {
+                logger.warn("Document $uri not compiled, cannot provide folding ranges")
+                return@future emptyList()
+            }
+
+            foldingRangeProvider.provideFoldingRanges(uri)
         }
-
-        foldingRangeProvider.provideFoldingRanges(uri)
-    }
 
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
         coroutineScope.future {
