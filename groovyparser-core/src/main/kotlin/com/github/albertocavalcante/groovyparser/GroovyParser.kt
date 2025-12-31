@@ -80,67 +80,71 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
 
         try {
             val config = createCompilerConfiguration()
-            val classLoader = GroovyClassLoader(Thread.currentThread().contextClassLoader)
-            val compilationUnit = GroovyCompilationUnit(config, null, classLoader)
 
-            val source = StringReaderSource(code, config)
-            val sourceUnit = SourceUnit(
-                "Script.groovy",
-                source,
-                config,
-                classLoader,
-                compilationUnit.errorCollector,
-            )
-            compilationUnit.addSource(sourceUnit)
+            // Use .use to ensure GroovyClassLoader is properly closed (prevents resource leak)
+            return GroovyClassLoader(Thread.currentThread().contextClassLoader).use { classLoader ->
+                val compilationUnit = GroovyCompilationUnit(config, null, classLoader)
 
-            var hadCompilationError = false
-            try {
-                compilationUnit.compile(Phases.CONVERSION)
-            } catch (e: CompilationFailedException) {
-                logger.debug("Compilation failed: ${e.message}")
-                hadCompilationError = true
-                // In lenient mode, continue to extract whatever AST we can get
-                if (!configuration.lenientMode) {
-                    collectProblems(compilationUnit.errorCollector, problems)
-                    return ParseResult(null, problems)
-                }
-            }
+                val source = StringReaderSource(code, config)
+                val sourceUnit = SourceUnit(
+                    "Script.groovy",
+                    source,
+                    config,
+                    classLoader,
+                    compilationUnit.errorCollector,
+                )
+                compilationUnit.addSource(sourceUnit)
 
-            // Collect problems from error collector
-            collectProblems(compilationUnit.errorCollector, problems)
-
-            // Extract AST
-            val ast = compilationUnit.ast
-            val moduleNode = ast?.modules?.firstOrNull()
-
-            return when {
-                moduleNode != null -> {
-                    try {
-                        // Pass source for comment extraction if enabled
-                        val sourceForComments = if (configuration.attributeComments) code else null
-                        val unit = converter.convert(moduleNode, sourceForComments)
-                        ParseResult(unit, problems)
-                    } catch (e: Exception) {
-                        // Conversion error - still return partial info in lenient mode
-                        logger.warn("AST conversion error: ${e.message}", e)
-                        problems.add(Problem.error("AST conversion error: ${e.message}"))
-                        if (configuration.lenientMode) {
-                            ParseResult(CompilationUnit(), problems)
-                        } else {
-                            ParseResult(null, problems)
-                        }
+                var hadCompilationError = false
+                try {
+                    compilationUnit.compile(Phases.CONVERSION)
+                } catch (e: CompilationFailedException) {
+                    logger.debug("Compilation failed: ${e.message}")
+                    hadCompilationError = true
+                    // In lenient mode, continue to extract whatever AST we can get
+                    if (!configuration.lenientMode) {
+                        collectProblems(compilationUnit.errorCollector, problems)
+                        return@use ParseResult(null, problems)
                     }
                 }
-                problems.isEmpty() -> {
-                    // Empty source or script with no classes
-                    ParseResult(CompilationUnit(), problems)
-                }
-                configuration.lenientMode && !hadCompilationError -> {
-                    // Return empty compilation unit with problems in lenient mode
-                    ParseResult(CompilationUnit(), problems)
-                }
-                else -> {
-                    ParseResult(null, problems)
+
+                // Collect problems from error collector
+                collectProblems(compilationUnit.errorCollector, problems)
+
+                // Extract AST
+                val ast = compilationUnit.ast
+                val moduleNode = ast?.modules?.firstOrNull()
+
+                when {
+                    moduleNode != null -> {
+                        try {
+                            // Pass source for comment extraction if enabled
+                            val sourceForComments = if (configuration.attributeComments) code else null
+                            val unit = converter.convert(moduleNode, sourceForComments)
+                            ParseResult(unit, problems)
+                        } catch (e: Exception) {
+                            // Conversion error - still return partial info in lenient mode
+                            logger.warn("AST conversion error: ${e.message}", e)
+                            problems.add(Problem.error("AST conversion error: ${e.message}"))
+                            if (configuration.lenientMode) {
+                                ParseResult(CompilationUnit(), problems)
+                            } else {
+                                ParseResult(null, problems)
+                            }
+                        }
+                    }
+                    problems.isEmpty() -> {
+                        // Empty source or script with no classes
+                        ParseResult(CompilationUnit(), problems)
+                    }
+                    configuration.lenientMode -> {
+                        // Return empty compilation unit with problems in lenient mode
+                        // (removed && !hadCompilationError to fix lenient mode behavior)
+                        ParseResult(CompilationUnit(), problems)
+                    }
+                    else -> {
+                        ParseResult(null, problems)
+                    }
                 }
             }
         } catch (e: Exception) {

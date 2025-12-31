@@ -118,7 +118,9 @@ class ErrorRecoveryTest {
 
     @Test
     fun `getOrThrow throws on failure`() {
-        val parser = GroovyParser()
+        // Use strict mode so that parsing failures return null result
+        val config = ParserConfiguration().setLenientMode(false)
+        val parser = GroovyParser(config)
         val result = parser.parse("class Foo {")
 
         try {

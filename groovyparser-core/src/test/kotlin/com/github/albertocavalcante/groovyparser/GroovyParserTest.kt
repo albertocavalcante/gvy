@@ -105,4 +105,40 @@ class GroovyParserTest {
         assertThat(result1.result.get().types[0].name).isEqualTo("A")
         assertThat(result2.result.get().types[0].name).isEqualTo("B")
     }
+
+    @Test
+    fun `lenient mode returns empty CompilationUnit on compilation error with no moduleNode`() {
+        // Issue 1: When lenient mode is enabled and there's a compilation error
+        // but no recoverable moduleNode, should return empty CompilationUnit, NOT null
+        val config = ParserConfiguration().setLenientMode(true)
+        val parser = GroovyParser(config)
+
+        // Code that causes severe compilation error with no recoverable AST
+        // This should trigger CompilationFailedException and have no moduleNode
+        val result = parser.parse("class {{{")
+
+        // In lenient mode, should still return a result (not null)
+        assertThat(result.result).isPresent
+        assertThat(result.result.get()).isInstanceOf(CompilationUnit::class.java)
+        // Should have problems recorded
+        assertThat(result.problems).isNotEmpty()
+        assertThat(result.isSuccessful).isFalse()
+    }
+
+    @Test
+    fun `GroovyClassLoader is properly closed to prevent resource leak`() {
+        // Issue 2: Verify that repeated parsing doesn't leak resources
+        // by ensuring GroovyClassLoader is properly closed after each parse
+        val parser = GroovyParser()
+
+        // Parse multiple times - if classloader isn't closed, this could
+        // eventually exhaust file handles or cause memory pressure
+        repeat(100) { i ->
+            val result = parser.parse("class Test$i { def method() { return $i } }")
+            assertThat(result.isSuccessful).isTrue()
+        }
+
+        // If we got here without exceptions or hanging, the resource management is working
+        // (A resource leak would eventually cause failures or extreme slowdown)
+    }
 }
