@@ -30,6 +30,7 @@ data class ScannedStep(
     val takesBlock: Boolean = false,
     val constructorParams: List<ExtractedParam> = emptyList(),
     val setterParams: List<ExtractedParam> = emptyList(),
+    val pluginId: String? = null,
 )
 
 /**
@@ -64,21 +65,8 @@ class BytecodeScanner {
             logger.debug("No packages specified, returning empty list")
             return emptyList()
         }
-
-        return try {
-            ClassGraph()
-                .enableAllInfo()
-                .acceptPackages(*packages.toTypedArray())
-                .scan()
-                .use { scanResult ->
-                    scanResult.getSubclasses(superclassName)
-                        .filter { !it.isAbstract }
-                        .map { classInfo -> toScannedStep(classInfo) }
-                        .sortedBy { it.className } // Deterministic ordering
-                }
-        } catch (e: Exception) {
-            logger.warn("Failed to scan classpath for $superclassName: ${e.message}")
-            emptyList()
+        return scan {
+            acceptPackages(*packages.toTypedArray())
         }
     }
 
@@ -88,10 +76,14 @@ class BytecodeScanner {
      * @param jarPath Path to the JAR file to scan
      * @return List of ScannedStep objects found in the JAR
      */
-    fun scanJar(jarPath: java.nio.file.Path): List<ScannedStep> = try {
+    fun scanJar(jarPath: java.nio.file.Path): List<ScannedStep> = scan {
+        overrideClasspath(jarPath.toString())
+    }
+
+    private fun scan(configure: ClassGraph.() -> Unit): List<ScannedStep> = try {
         ClassGraph()
             .enableAllInfo()
-            .overrideClasspath(jarPath.toString())
+            .apply(configure)
             .scan()
             .use { scanResult ->
                 scanResult.getSubclasses(STEP_CLASS)
@@ -100,7 +92,7 @@ class BytecodeScanner {
                     .sortedBy { it.className }
             }
     } catch (e: Exception) {
-        logger.warn("Failed to scan JAR $jarPath: ${e.message}")
+        logger.warn("Failed to scan for steps: ${e.message}")
         emptyList()
     }
 
@@ -208,7 +200,9 @@ class BytecodeScanner {
 
     private fun extractTakesBlock(classInfo: ClassInfo): Boolean {
         // Look for inner DescriptorImpl class and check takesImplicitBlockArgument
-        // This is tricky without executing code, so we use heuristics
+        // This is tricky without executing code, so we use heuristics.
+        // Limitation: May report true if the override returns false; static analysis
+        // cannot determine the actual return value without code execution.
         val descriptorClass = classInfo.innerClasses
             .firstOrNull { it.simpleName == "DescriptorImpl" }
             ?: return false

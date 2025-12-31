@@ -606,10 +606,14 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
     override fun execute(step: ScenarioStep.GoldenAssert, context: ScenarioContext, nextStep: ScenarioStep?) {
         val actualPathString = context.interpolateString(step.actual)
         val expectedRelPath = context.interpolateString(step.expected)
-
         val actualFile = java.nio.file.Path.of(actualPathString)
-        // Resolve golden file relative to the project root or resources dir
-        val expectedFile = java.nio.file.Path.of("e2e/resources/golden", expectedRelPath).toAbsolutePath()
+
+        // Resolve golden file relative to the configured directory or default
+        val goldenDir = System.getProperty("groovy.lsp.e2e.goldenDir")
+            ?.let { java.nio.file.Path.of(it) }
+            ?: java.nio.file.Path.of("e2e/resources/golden").toAbsolutePath()
+
+        val expectedFile = goldenDir.resolve(expectedRelPath)
 
         // Ensure actual file exists
         if (!java.nio.file.Files.exists(actualFile)) {

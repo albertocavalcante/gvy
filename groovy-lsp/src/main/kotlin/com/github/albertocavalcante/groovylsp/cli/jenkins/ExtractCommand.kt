@@ -33,25 +33,6 @@ import kotlin.io.path.exists
  */
 class ExtractCommand : CliktCommand(name = "extract") {
 
-    private val pluginsTxt by option("--plugins-txt", "-p")
-        .path(mustExist = true)
-        .required()
-
-    private val outputDir by option("--output-dir", "-o")
-        .path()
-        .default(Path.of("jenkins-metadata"))
-
-    private val cacheDir by option("--cache-dir")
-        .path()
-        .default(Path.of(System.getProperty("user.home"), ".gls", "jenkins-cache"))
-
-    private val force by option("--force", "-f")
-        .flag()
-
-    private val terminal by requireObject<Terminal>()
-
-    override fun help(context: Context) = "Extract Jenkins step metadata from plugin bytecode"
-
     override fun run() {
         terminal.println("${terminal.theme.info("→")} Reading plugins.txt: $pluginsTxt")
 
@@ -100,8 +81,10 @@ class ExtractCommand : CliktCommand(name = "extract") {
         pluginPaths.forEach { (pluginId, jarPath) ->
             try {
                 val steps = scanner.scanJar(jarPath)
+                // Associate steps with their source plugin
+                val stepsWithPlugin = steps.map { it.copy(pluginId = pluginId) }
                 terminal.println("  ${terminal.theme.success("✓")} $pluginId: ${steps.size} steps")
-                allSteps.addAll(steps)
+                allSteps.addAll(stepsWithPlugin)
             } catch (e: Exception) {
                 terminal.println("  ${terminal.theme.danger("✗")} Failed to scan $pluginId: ${e.message}")
             }

@@ -26,10 +26,11 @@ class MetadataOutputGeneratorTest {
                         ExtractedParam("message", "java.lang.String", true),
                     ),
                     setterParams = emptyList(),
+                    pluginId = "workflow-basic-steps",
                 ),
             )
 
-            val metadata = MetadataOutputGenerator.generate(steps, "workflow-basic-steps")
+            val metadata = MetadataOutputGenerator.generate(steps)
 
             assertThat(metadata.version).isEqualTo("1.0")
             assertThat(metadata.steps).containsKey("echo")
@@ -70,6 +71,24 @@ class MetadataOutputGeneratorTest {
             assertThat(params).containsKeys("count", "conditions")
             assertThat(params?.get("count")?.required).isTrue()
             assertThat(params?.get("conditions")?.required).isFalse()
+        }
+
+        @Test
+        fun `handles duplicate keys by overwriting`() {
+            val steps = listOf(
+                ScannedStep("A", "StepA", "conflict", false, emptyList(), emptyList(), "plugin-1"),
+                ScannedStep("B", "StepB", "conflict", false, emptyList(), emptyList(), "plugin-2"),
+            )
+
+            // The list is sorted by function name (both "conflict") and then processed.
+            // In the map builder, the later one in the list overwrites the former.
+            // Since our sort is stable for equal function names (but steps might be sorted by classname inside scanner),
+            // we should rely on the map behavior.
+            val metadata = MetadataOutputGenerator.generate(steps)
+
+            assertThat(metadata.steps).hasSize(1)
+            assertThat(metadata.steps["conflict"]?.className).isIn("A", "B")
+            // We mainly want to ensure no exception is thrown and valid metadata is produced
         }
     }
 

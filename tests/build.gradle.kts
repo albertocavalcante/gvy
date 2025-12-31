@@ -140,6 +140,12 @@ testing {
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")
                         systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
+                        systemProperty(
+                            "groovy.lsp.e2e.goldenDir",
+                            layout.projectDirectory
+                                .dir("e2e/resources/golden")
+                                .asFile.absolutePath,
+                        )
 
                         testLogging {
                             showStandardStreams = true

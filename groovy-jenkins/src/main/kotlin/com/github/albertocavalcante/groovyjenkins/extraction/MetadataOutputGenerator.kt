@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjenkins.extraction
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -16,6 +17,8 @@ import kotlin.io.path.writeText
  */
 object MetadataOutputGenerator {
 
+    private val logger = LoggerFactory.getLogger(MetadataOutputGenerator::class.java)
+
     private val json = Json {
         prettyPrint = true
         encodeDefaults = true
@@ -24,27 +27,38 @@ object MetadataOutputGenerator {
     /**
      * Converts extracted steps to a serializable metadata structure.
      */
-    fun generate(steps: List<ScannedStep>, pluginId: String? = null): ExtractedMetadata {
-        val stepMap = steps
-            .sortedBy { it.functionName ?: it.simpleName }
-            .associate { step ->
+    fun generate(steps: List<ScannedStep>): ExtractedMetadata {
+        val sortedSteps = steps.sortedBy { it.functionName ?: it.simpleName }
+        val stepMap = buildMap {
+            sortedSteps.forEach { step ->
                 val key = step.functionName ?: step.simpleName.replaceFirstChar { it.lowercase() }
-                key to StepMetadata(
-                    className = step.className,
-                    simpleName = step.simpleName,
-                    functionName = step.functionName,
-                    plugin = pluginId,
-                    takesBlock = step.takesBlock,
-                    parameters = (step.constructorParams + step.setterParams)
-                        .sortedBy { it.name }
-                        .associate { param ->
-                            param.name to ParameterMetadata(
-                                type = param.type,
-                                required = param.isRequired,
-                            )
-                        },
+                if (containsKey(key)) {
+                    logger.warn(
+                        "Duplicate key '{}' for class {}. Previous entry will be overwritten.",
+                        key,
+                        step.className,
+                    )
+                }
+                put(
+                    key,
+                    StepMetadata(
+                        className = step.className,
+                        simpleName = step.simpleName,
+                        functionName = step.functionName,
+                        plugin = step.pluginId,
+                        takesBlock = step.takesBlock,
+                        parameters = (step.constructorParams + step.setterParams)
+                            .sortedBy { it.name }
+                            .associate { param ->
+                                param.name to ParameterMetadata(
+                                    type = param.type,
+                                    required = param.isRequired,
+                                )
+                            },
+                    ),
                 )
             }
+        }
 
         return ExtractedMetadata(
             version = "1.0",
@@ -57,6 +71,7 @@ object MetadataOutputGenerator {
      * Writes metadata to a JSON file.
      */
     fun writeToFile(metadata: ExtractedMetadata, outputPath: Path) {
+        outputPath.parent?.let { java.nio.file.Files.createDirectories(it) }
         val jsonString = json.encodeToString(metadata)
         outputPath.writeText(jsonString)
     }
