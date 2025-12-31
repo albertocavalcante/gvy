@@ -57,8 +57,74 @@ class MavenBuildTool : BuildTool {
             workspaceRoot.resolve("src/test/groovy"),
         ).filter { it.exists() }
 
-        logger.info("Resolved ${dependencies.size} Maven dependencies")
-        return WorkspaceResolution(dependencies, sourceDirs)
+        // SPECIAL HANDLING: Jenkins Core Injection
+        // If this is a Jenkins project (has Jenkinsfile) and jenkins-core is missing
+        // (due to 'provided' scope), explicitly resolve and inject it.
+        val finalDependencies = if (workspaceRoot.resolve("Jenkinsfile").exists()) {
+            ensureJenkinsCore(dependencies, pomPath)
+        } else {
+            dependencies
+        }
+
+        logger.info("Resolved ${finalDependencies.size} Maven dependencies")
+        return WorkspaceResolution(finalDependencies, sourceDirs)
+    }
+
+    private fun ensureJenkinsCore(dependencies: List<Path>, pomPath: Path): List<Path> {
+        val hasJenkinsCore = dependencies.any {
+            val name = it.fileName.toString()
+            name.startsWith("jenkins-core-") && name.endsWith(".jar")
+        }
+
+        if (hasJenkinsCore) {
+            logger.debug("jenkins-core already present in dependencies")
+            return dependencies
+        }
+
+        logger.info("Jenkinsfile detected but jenkins-core missing (likely 'provided' scope). Attempting injection.")
+
+        // Use repos from POM for resolution
+        val model = try {
+            val factory = org.apache.maven.model.building.DefaultModelBuilderFactory()
+            val request = org.apache.maven.model.building.DefaultModelBuildingRequest().apply {
+                pomFile = pomPath.toFile()
+                validationLevel = org.apache.maven.model.building.ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL
+            }
+            factory.newInstance().build(request).effectiveModel
+        } catch (e: Exception) {
+            null
+        }
+
+        val repositories = if (model != null) dependencyResolver.getRemoteRepositories(model) else emptyList()
+
+        // Try to determine jenkins-core version from POM
+        val jenkinsVersionFromPom = model?.let { m ->
+            // Check dependencyManagement section first
+            val fromDepMgmt = m.dependencyManagement?.dependencies?.find {
+                it.groupId == "org.jenkins-ci.main" && it.artifactId == "jenkins-core"
+            }?.version
+            // Fall back to jenkins.version property
+            fromDepMgmt ?: m.properties?.getProperty("jenkins.version")
+        }
+
+        val jenkinsVersion = jenkinsVersionFromPom ?: "2.440.1" // Fallback to LTS baseline
+        logger.info("Attempting to inject jenkins-core version: {}", jenkinsVersion)
+
+        // Resolve the artifact using the determined version
+        val jenkinsCore = dependencyResolver.resolveArtifact(
+            groupId = "org.jenkins-ci.main",
+            artifactId = "jenkins-core",
+            version = jenkinsVersion,
+            repositories = repositories,
+        )
+
+        return if (jenkinsCore != null) {
+            logger.info("Injected jenkins-core support: $jenkinsCore")
+            dependencies + jenkinsCore
+        } else {
+            logger.warn("Failed to inject jenkins-core; some Jenkins symbols may be unresolved")
+            dependencies
+        }
     }
 
     @Suppress("TooGenericExceptionCaught") // Catch-all for embedded resolution fallback
