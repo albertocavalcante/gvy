@@ -110,8 +110,11 @@ class ClosureListExpr : Expression() {
  *
  * Used as a placeholder when an expression is syntactically required
  * but nothing is present.
+ *
+ * Note: This is a class (not object) to avoid shared mutable state across
+ * different AST instances. Each EmptyExpr instance is independent.
  */
-object EmptyExpr : Expression() {
+class EmptyExpr : Expression() {
     override fun getChildNodes(): List<Node> = emptyList()
     override fun toString(): String = "EmptyExpr"
 }

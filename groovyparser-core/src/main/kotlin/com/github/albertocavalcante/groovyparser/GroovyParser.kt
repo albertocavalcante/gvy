@@ -41,18 +41,18 @@ import org.codehaus.groovy.control.CompilationUnit as GroovyCompilationUnit
  */
 class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration()) {
     private val logger = LoggerFactory.getLogger(GroovyParser::class.java)
-    private val converter = GroovyAstConverter()
 
     companion object {
         /** Default tolerance level for lenient parsing mode */
         private const val DEFAULT_LENIENT_TOLERANCE = 10
-        private val sharedConverter = GroovyAstConverter()
 
         /**
          * Converts a native Groovy ModuleNode to our custom CompilationUnit.
          *
          * This is useful when you already have a ModuleNode from another parser
          * (like GroovyParserFacade) and want to use the JavaParser-like AST.
+         *
+         * Each call creates a new converter instance to ensure thread-safety.
          *
          * @param moduleNode the native Groovy ModuleNode
          * @param source optional source code for comment extraction
@@ -61,7 +61,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         fun convertFromNative(
             moduleNode: org.codehaus.groovy.ast.ModuleNode,
             source: String? = null,
-        ): CompilationUnit = sharedConverter.convert(moduleNode, source)
+        ): CompilationUnit = GroovyAstConverter().convert(moduleNode, source)
     }
 
     /**
@@ -119,8 +119,9 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
                     moduleNode != null -> {
                         try {
                             // Pass source for comment extraction if enabled
+                            // Create new converter instance per call to ensure thread-safety
                             val sourceForComments = if (configuration.attributeComments) code else null
-                            val unit = converter.convert(moduleNode, sourceForComments)
+                            val unit = GroovyAstConverter().convert(moduleNode, sourceForComments)
                             ParseResult(unit, problems)
                         } catch (e: Exception) {
                             // Conversion error - still return partial info in lenient mode
