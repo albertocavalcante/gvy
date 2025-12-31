@@ -23,7 +23,7 @@ import com.github.albertocavalcante.groovyparser.Range as CoreRange
  * This adapter translates the JavaParser-style AST ([CompilationUnit]) into the
  * parser-agnostic types that LSP features consume.
  */
-class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, override val sourceUri: String) : ParseUnit {
+class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, override val uri: String) : ParseUnit {
 
     override val isSuccessful: Boolean = result.isSuccessful
 

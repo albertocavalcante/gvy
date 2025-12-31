@@ -55,7 +55,7 @@ class GroovyCompilationService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val documentProvider: DocumentProvider? = null,
     private val sourceNavigator: SourceNavigator? = null,
-    private val engineConfig: EngineConfiguration = EngineConfiguration(),
+    private var engineConfig: EngineConfiguration = EngineConfiguration(),
 ) {
     companion object {
         /**
@@ -78,16 +78,33 @@ class GroovyCompilationService(
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
     // Language Engine created via factory based on configuration
-    private val activeEngine: LanguageEngine by lazy {
-        EngineFactory.create(
-            config = engineConfig,
-            parser = parser,
-            compilationService = this,
-            documentProvider = documentProvider
-                ?: throw IllegalStateException("DocumentProvider required for engine features"),
-            sourceNavigator = sourceNavigator,
-        ).also { logger.info("Active engine: ${engineConfig.type.id}") }
+    private var activeEngineInstance: LanguageEngine? = null
+    private val activeEngineLock = Any()
+
+    // Language Engine created via factory based on configuration
+    private val activeEngine: LanguageEngine
+        get() = synchronized(activeEngineLock) {
+            activeEngineInstance ?: createEngine().also { activeEngineInstance = it }
+        }
+
+    fun updateEngineConfiguration(newConfig: EngineConfiguration) {
+        synchronized(activeEngineLock) {
+            if (engineConfig != newConfig) {
+                logger.info("Updating engine configuration from ${engineConfig.type.id} to ${newConfig.type.id}")
+                engineConfig = newConfig
+                activeEngineInstance = null // Invalidate to force re-creation
+            }
+        }
     }
+
+    private fun createEngine(): LanguageEngine = EngineFactory.create(
+        config = engineConfig,
+        parser = parser,
+        compilationService = this,
+        documentProvider = documentProvider
+            ?: throw IllegalStateException("DocumentProvider required for engine features"),
+        sourceNavigator = sourceNavigator,
+    ).also { logger.info("Active engine initialized: ${engineConfig.type.id}") }
 
     // Track ongoing compilation per URI for proper async coordination
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
@@ -327,8 +344,12 @@ class GroovyCompilationService(
         // Bridge: Delegate to NativeEngine to wrap the result
         // In future phases, we might need a cache keyed by Engine ID or unified result
         if (activeEngine is NativeLanguageEngine) {
+            val content = documentProvider?.get(uri)
+                ?: throw IllegalStateException("Document content required for session creation")
             return (activeEngine as NativeLanguageEngine).createSession(
                 parseResult,
+                uri.toString(),
+                content,
             )
         }
 

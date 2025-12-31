@@ -136,6 +136,11 @@ class ProjectStartupManager(
         // Apply log level from client settings
         LogLevelConfigurator.apply(config.logLevel)
 
+        // Apply engine configuration
+        val engineConfig =
+            com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration(type = config.parserEngine)
+        compilationService.updateEngineConfiguration(engineConfig)
+
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
             updateGroovyVersion(config, emptyList())
