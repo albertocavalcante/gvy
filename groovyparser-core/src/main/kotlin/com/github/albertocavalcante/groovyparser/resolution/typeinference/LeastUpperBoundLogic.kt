@@ -205,45 +205,73 @@ object LeastUpperBoundLogic {
         // Case 2: Direct implementation with matching generic count (Heuristic)
         // e.g. ArrayList<T> implements List<T>
         // We check if type is subtype of target
-        if (isSubtypeOf(type, targetName)) {
-            // [HEURISTIC NOTE]
-            // We use a simplified heuristic here: if a type is a subtype of the target (e.g. ArrayList is a List),
-            // and it provides type arguments, we blindly assume those arguments map 1:1 to the target's parameters.
-            //
-            // Logic:
-            //   - ArrayList<String> (1 arg) -> List<String> (1 arg) : WORKS
-            //   - HashMap<K, V> (2 args) -> Map<K, V> (2 args) : WORKS
-            //
-            // Trade-offs:
-            //   - PRO: Extremely fast. Avoids complex generic type substitution and variable resolution.
-            //   - PRO: Covers >90% of common collections usage in Groovy scripts.
-            //
-            // Limitations / Risks:
-            //   - FAILS: Reordered parameters (class MyMap<V, K> implements Map<K, V>) -> args will be swapped.
-            //   - FAILS: Partial binding (class StringList implements List<String>) -> no type args on subtype, but target has them.
-            //   - FAILS: Extra parameters (class MyContainer<T, X> implements List<T>) -> count mismatch or wrong mapping.
-            //
-            // Deterministic Solution:
-            //   To fix this properly, we need full Type Parameter Substitution:
-            //   1. Resolve the Declaration of the subtype.
-            //   2. Walk the hierarchy to the target interface.
-            //   3. Capture the 'TypeParam = TypeValue' mapping at each step.
-            //   4. Apply the mapping to the target's type parameters.
-            //
-            // Why it's here:
-            //   The current TypeSolver infrastructure doesn't fully support generic substitution views yet.
-            //   This heuristic enables useful inference for standard collections immediately.
-            if (type.typeArguments.isNotEmpty()) {
-                return type.typeArguments
-            }
+        if (type.declaration.qualifiedName == targetName) {
+            return type.typeArguments
         }
 
+        // BFS traversal to find the target ancestor
+        val queue = ArrayDeque<ResolvedReferenceType>()
+        queue.addAll(type.declaration.getAncestors())
+
+        val visited = mutableSetOf<String>()
+        visited.add(type.declaration.qualifiedName)
+
+        while (queue.isNotEmpty()) {
+            val ancestor = queue.removeFirst()
+            val qName = ancestor.declaration.qualifiedName
+            if (!visited.add(qName)) continue
+
+            if (qName == targetName) {
+                // Found target!
+                return ancestor.typeArguments
+            }
+
+            // Add ancestors of this ancestor
+            queue.addAll(ancestor.declaration.getAncestors())
+        }
+
+        // Fallback [HEURISTIC NOTE]
+        // If we can't find the target in ancestors (e.g. broken hierarchy or incomplete TypeSolver),
+        // we utilize a "Last Resort" heuristic:
+        //
+        // Logic:
+        //   If the type strictly *is* a subtype of the target (verified via deep check),
+        //   AND it has type arguments, we assume those arguments map to the target's parameters.
+        //
+        // Justification for Fallback:
+        //   - Robustness: Preserves some inference capability even when TypeSolver fails to resolve intermediate ancestors.
+        //   - Legacy Support: Handles older code or partial ASTs where full ancestor chains aren't resolvable.
+        //
+        // Risk:
+        //   - Incorrect Mapping: If the subtype's arguments don't align 1:1 with the target (e.g. reordered parameters),
+        //     this will produce wrong types. However, returning *something* is often better than 'Object' in an IDE context.
+        if (isSubtypeOf(type, targetName) && type.typeArguments.isNotEmpty()) {
+            return type.typeArguments
+        }
+
+        // If we still haven't found it, or the heuristic didn't apply, return null.
         return null
     }
 
     private fun isSubtypeOf(type: ResolvedReferenceType, targetName: String): Boolean {
         if (type.declaration.qualifiedName == targetName) return true
-        return type.declaration.getAncestors().any { it.declaration.qualifiedName == targetName }
+        // Use BFS for subtype check too, or reuse the logic above?
+        // Simple recursive check:
+        // Note: this implementation of isSubtypeOf was shallow before!
+        // Now we fix it to be deep.
+        val queue = ArrayDeque<ResolvedReferenceType>()
+        queue.addAll(type.declaration.getAncestors())
+        val visited = mutableSetOf<String>()
+        visited.add(type.declaration.qualifiedName)
+
+        while (queue.isNotEmpty()) {
+            val ancestor = queue.removeFirst()
+            val qName = ancestor.declaration.qualifiedName
+            if (qName == targetName) return true
+            if (!visited.add(qName)) continue
+            queue.addAll(ancestor.declaration.getAncestors())
+        }
+        return false
     }
 
     /**
@@ -335,7 +363,23 @@ object LeastUpperBoundLogic {
 
     /**
      * Finds the common ancestor of reference types.
-     * Uses improved heuristics to select the best common ancestor.
+     *
+     * [HEURISTIC NOTE]
+     * Java/Groovy support multiple inheritance of interfaces, meaning there is often no single "Least Upper Bound".
+     * A set of types {ArrayList, LinkedList} has common ancestors {List, Collection, Iterable, Serializable, Cloneable, Object}.
+     *
+     * We must select ONE to represent the type in the IDE.
+     *
+     * Heuristic Strategy:
+     * 1. Compute intersection of all ancestor sets.
+     * 2. Filter out 'Object'.
+     * 3. Select the "Best" based on `INTERFACE_PRIORITY`:
+     *    - Prefer semantically rich types (List, Map) over structural ones (Serializable, Cloneable).
+     *    - Priority map values: List=1, Collection=2, Iterable=3, Serializable=20.
+     *
+     * Trade-offs:
+     * - We might hide capabilities (e.g. failing to show 'Cloneable' methods if 'List' is picked).
+     * - This matches developer intuition (List + List = List, not Serializable).
      */
     private fun findCommonAncestor(types: List<ResolvedReferenceType>, typeSolver: TypeSolver): ResolvedType {
         if (types.isEmpty()) return getObjectType(typeSolver)

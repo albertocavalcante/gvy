@@ -509,6 +509,22 @@ internal class GroovyAstConverter {
 
     // ========== Expression Conversion ==========
 
+    /**
+     * Converts Groovy AST expressions to our internal AST.
+     *
+     * [HEURISTIC NOTE] - CRITICAL ORDERING
+     * Groovy's AST hierarchy has some quirks where specialized nodes extend generic ones:
+     * 1. `DeclarationExpression` extends `BinaryExpression`.
+     * 2. `AttributeExpression` extends `PropertyExpression`.
+     * 3. `ElvisOperatorExpression` extends `TernaryExpression`.
+     *
+     * We MUST check for the specialized subtype FIRST.
+     * If we check `is BinaryExpression` before `is DeclarationExpression`, we will incorrectly
+     * parse declarations (def x = 1) as binary assignments (x = 1), losing type information.
+     *
+     * This heuristic reliance on strict `when` clause ordering is brittle but necessary
+     * due to the upstream Groovy AST design.
+     */
     private fun convertExpression(expr: GroovyExpression): Expression = when (expr) {
         // Common expressions
         is MethodCallExpression -> convertMethodCallExpression(expr)
