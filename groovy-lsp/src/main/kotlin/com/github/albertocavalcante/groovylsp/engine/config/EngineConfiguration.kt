@@ -59,10 +59,7 @@ sealed interface EngineType {
  * @property type The parser engine type to use
  * @property features Feature flags for engine-specific behavior
  */
-data class EngineConfiguration(
-    val type: EngineType = EngineType.Native,
-    val features: EngineFeatures = EngineFeatures(),
-)
+data class EngineConfiguration(val type: EngineType = EngineType.Core, val features: EngineFeatures = EngineFeatures())
 
 /**
  * Feature flags for engine-specific behavior.
