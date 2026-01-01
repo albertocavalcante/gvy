@@ -6,19 +6,19 @@ import os
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: inventory_threads.py <json_file>")
+        print("Usage: inventory_threads.py <json_file>", file=sys.stderr)
         sys.exit(1)
 
     json_file = sys.argv[1]
     if not os.path.exists(json_file):
-        print(f"Error: File {json_file} does not exist.")
+        print(f"Error: File {json_file} does not exist.", file=sys.stderr)
         sys.exit(1)
 
     try:
         with open(json_file, "r") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        print(f"Error: Failed to parse JSON: {e}")
+        print(f"Error: Failed to parse JSON: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Safe navigation to nodes
@@ -32,7 +32,7 @@ def main():
             .get("nodes", [])
         )
     except AttributeError:
-        print("Error: unexpected JSON structure.")
+        print("Error: unexpected JSON structure.", file=sys.stderr)
         sys.exit(1)
 
     if not nodes:

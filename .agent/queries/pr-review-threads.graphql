@@ -15,6 +15,10 @@ query PullRequestReviewThreads($owner: String!, $name: String!, $number: Int!) {
           originalLine
           diffSide
           comments(first: 50) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               databaseId
               id

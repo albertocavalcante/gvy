@@ -30,9 +30,10 @@ class UnifiedHoverProviderExtendedTest {
 
         val result = provider.getHover(params)
 
-        // Provider returns empty hover when no node found
+        // Provider returns empty MarkupContent when no node found
         assertNotNull(result)
-        assertTrue(result.contents.left.isEmpty())
+        assertTrue(result.contents.isRight)
+        assertTrue(result.contents.right.value.isEmpty())
     }
 
     @Test

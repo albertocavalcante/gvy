@@ -15,9 +15,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Tests for [GroovyCompilationService.getSession] with different engine types.
+ * Tests for [CoreLanguageEngine] session creation and hover functionality.
  *
- * These tests verify that getSession() works correctly with both Native and Core engines.
+ * These tests verify that CoreLanguageEngine.createSession() works correctly.
  */
 class GroovyCompilationServiceSessionTest {
 
