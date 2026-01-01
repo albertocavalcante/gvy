@@ -6,6 +6,10 @@ import com.github.albertocavalcante.groovylsp.engine.api.DefinitionKind
 import com.github.albertocavalcante.groovylsp.engine.api.DefinitionService
 import com.github.albertocavalcante.groovylsp.engine.api.UnifiedDefinition
 import com.github.albertocavalcante.groovyparser.ast.Node
+import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import org.eclipse.lsp4j.Position
@@ -18,6 +22,9 @@ import org.slf4j.LoggerFactory
  * Uses [GroovySymbolResolver] to resolve symbols and find their declarations.
  */
 class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionService {
+
+    // Reuse resolver instance for efficiency (created once per service instance)
+    private val resolver by lazy { GroovySymbolResolver(typeSolver) }
 
     override suspend fun findDefinition(
         node: UnifiedNode?,
@@ -47,7 +54,7 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         // If the node IS a declaration (method, class, field), return it directly
         // No need to "resolve" - the declaration is the definition
         if (isDeclarationNode(coreNode)) {
-            val targetRange = node.range ?: extractRangeFromNode(coreNode)
+            val targetRange = node.range ?: extractRangeFromNode(coreNode) ?: return emptyList()
             return listOf(
                 UnifiedDefinition(
                     uri = context.uri,
@@ -61,7 +68,6 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
 
         // For references (variable usages, method calls), use resolver
         return try {
-            val resolver = GroovySymbolResolver(typeSolver)
             val symbolRef = resolver.solveSymbol(name, coreNode)
 
             if (!symbolRef.isSolved) {
@@ -72,9 +78,9 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
             // TODO(#529): Use declaration's range instead of reference's range.
             //   Current limitation: ResolvedValueDeclaration doesn't expose the
             //   declaration's AST node range. Would need to extend the resolution
-            //   API in groovyparser-core to expose this. For now, falls back to
-            //   the reference location which is still useful for "peek definition".
-            val targetRange = node.range ?: Range(Position(0, 0), Position(0, 0))
+            //   API in groovyparser-core to expose this. For now, returns empty
+            //   to indicate we can't navigate to declaration location.
+            val targetRange = node.range ?: return emptyList()
             listOf(
                 UnifiedDefinition(
                     uri = context.uri,
@@ -91,15 +97,12 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
     }
 
     private fun isDeclarationNode(node: Node): Boolean = when (node) {
-        is com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration -> true
-        is com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration -> true
-        is com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration -> true
-        is com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration -> true
+        is ClassDeclaration, is MethodDeclaration, is FieldDeclaration, is ConstructorDeclaration -> true
         else -> false
     }
 
-    private fun extractRangeFromNode(node: Node): Range {
-        val range = node.range ?: return Range(Position(0, 0), Position(0, 0))
+    private fun extractRangeFromNode(node: Node): Range? {
+        val range = node.range ?: return null
         // Convert 1-based to 0-based positions
         return Range(
             Position(range.begin.line - 1, range.begin.column - 1),
