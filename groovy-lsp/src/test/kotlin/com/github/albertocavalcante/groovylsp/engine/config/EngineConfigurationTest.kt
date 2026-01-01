@@ -76,7 +76,7 @@ class EngineConfigurationTest {
     @Test
     fun `EngineConfiguration has sensible defaults`() {
         val config = EngineConfiguration()
-        assertEquals(EngineType.Native, config.type)
+        assertEquals(EngineType.Core, config.type)
         assertTrue(config.features.typeInference)
         assertFalse(config.features.flowAnalysis)
     }
