@@ -18,10 +18,13 @@ Use this workflow when you encounter work that should NOT be addressed in the cu
 
 ## Step 1: Create Issue
 
+> [!IMPORTANT]
+> **Always use a temp file for the issue body.** Inline `--body` gets truncated with complex content.
+
 ```bash
-gh issue create -R albertocavalcante/groovy-lsp \
-  --title "[area] Brief description" \
-  --body "## Problem
+# 1. Write body to temp file
+cat > /tmp/issue-body.md << 'EOF'
+## Problem
 [Describe the limitation or improvement needed]
 
 ## Context
@@ -32,8 +35,16 @@ gh issue create -R albertocavalcante/groovy-lsp \
 
 ## References
 - PR #NNN (if applicable)
-" \
+EOF
+
+# 2. Create issue with --body-file
+gh issue create -R albertocavalcante/groovy-lsp \
+  --title "[area] Brief description" \
+  --body-file /tmp/issue-body.md \
   --label "enhancement" --label "P3-nice" --label "size/M"
+
+# 3. Clean up
+rm /tmp/issue-body.md
 ```
 
 ### Label Formula

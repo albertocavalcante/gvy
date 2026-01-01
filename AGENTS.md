@@ -70,8 +70,9 @@ git fetch origin main
 # Step 2: Create worktree with new branch from origin/main
 git worktree add -b fix/my-feature ../groovy-lsp-my-feature origin/main
 
-# Step 3: Work ONLY in the new worktree directory
+# Step 3: Enable direnv in the new worktree
 cd ../groovy-lsp-my-feature
+direnv allow
 
 # Step 4: Push and create PR
 git push -u origin fix/my-feature
