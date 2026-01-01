@@ -36,7 +36,7 @@ We use a saved GraphQL query to fetch the exact state of all review threads.
     Generate a precise list of actionable threads.
     ```bash
     # List Unresolved & Not Outdated threads
-    jq -r '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false and .isOutdated==false) | "[\(.id)] \(.path):\(.line) - \(.comments.nodes[0].author.login): \(.comments.nodes[0].body | split("\n")[0])..."' /tmp/pr-536-threads.json
+    python3 .agent/scripts/inventory_threads.py /tmp/pr-536-threads.json
     ```
 
 ## Phase 2: Evaluation & Execution
