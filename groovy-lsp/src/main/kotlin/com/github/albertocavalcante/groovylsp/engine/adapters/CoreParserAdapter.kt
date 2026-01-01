@@ -47,11 +47,18 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
     /**
      * Find the most specific node at the given position.
      * Uses a simple recursive descent through the AST.
+     *
+     * Note: Some synthetic nodes (e.g., script's run() method, CompilationUnit) may not have
+     * ranges, so we continue searching their children if the node has no range or doesn't
+     * contain the position.
      */
     private fun findNodeAt(node: Node, line: Int, col: Int): Node? {
-        // Check if this node contains the position
-        val range = node.range ?: return null
-        if (!rangeContains(range, line, col)) return null
+        val range = node.range
+
+        // If this node has a range and doesn't contain the position, skip it and its children
+        if (range != null && !rangeContains(range, line, col)) {
+            return null
+        }
 
         // Try to find a more specific child node
         for (child in node.getChildNodes()) {
@@ -59,8 +66,9 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
             if (found != null) return found
         }
 
-        // This node contains the position but no child does
-        return node
+        // If we have a range, this node contains the position
+        // Return it unless we found a child (handled above)
+        return if (range != null) node else null
     }
 
     private fun rangeContains(range: CoreRange, line: Int, col: Int): Boolean {
@@ -88,7 +96,7 @@ private fun Problem.toLspDiagnostic(): Diagnostic {
         when {
             problemRange != null -> Range(
                 Position(problemRange.begin.line - 1, problemRange.begin.column - 1),
-                Position(problemRange.end.line - 1, problemRange.end.column - 1),
+                Position(problemRange.end.line - 1, problemRange.end.column),
             )
 
             problemPosition != null -> {
@@ -149,7 +157,7 @@ private fun Node.extractType(): String? = when (this) {
 
 private fun CoreRange.toLspRange(): Range = Range(
     Position(begin.line - 1, begin.column - 1),
-    Position(end.line - 1, end.column - 1),
+    Position(end.line - 1, end.column),
 )
 
 /**

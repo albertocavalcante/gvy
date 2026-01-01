@@ -1,103 +1,120 @@
 ---
-description: Deterministic protocol for addressing PR review comments with traceable fixes and thread resolution.
+description: Deterministic protocol for fetching, addressing, and resolving PR review comments with absolute precision using GraphQL.
 ---
 
 # /pr-address-reviews
 
-This workflow defines the required process for addressing PR review comments. Every resolved thread must include a reply that references the commit that fixed it, and the thread must be explicitly resolved.
+A strict, deterministic workflow for handling PR review feedback. This protocol leverages saved GraphQL queries to ensure accurate state tracking (resolved vs. unresolved) and precise verification.
 
-## Phase 1: Gather Review Threads
+## Ironclad Rules
 
-1. Identify the PR number and branch.
-   ```bash
-   gh pr view <PR_NUMBER> --repo <OWNER>/<REPO>
-   ```
+1.  **NEVER IGNORE ANY COMMENT**: Every single thread must be accounted for.
+2.  **GRAPHQL IS TRUTH**: Use the saved GraphQL query for the authoritative state of threads (Resolved/Outdated).
+3.  **USE TEMP FILES**: Always dump API output to temporary JSON files.
+4.  **REPLY & RESOLVE**: Every addressed thread must have a reply and be explicitly resolved via mutation.
+5.  **NO BROWSER**: Use `gh` CLI exclusively.
 
-2. List unresolved review threads with IDs and comment IDs (GraphQL). Capture `pullRequest.id` for Phase 3.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   query {
-     repository(owner:"<OWNER>", name:"<REPO>") {
-       pullRequest(number:<PR_NUMBER>) {
-         id
-         reviewThreads(first:50) {
-           nodes {
-             id
-             isResolved
-             comments(first:10) {
-               nodes { id databaseId author{login} body path line originalLine }
-             }
-           }
-         }
-       }
-     }
-   }
-   EOF
-   ```
-   NOTE: If the PR has more than 50 threads or 10 comments per thread, increase `first:` or paginate.
+## Phase 1: Precise Fetching (The "Skill")
 
-## Phase 2: Address Comments (TDD Required)
+We use a saved GraphQL query to fetch the exact state of all review threads.
 
-1. Create or switch to the PR worktree.
-2. Write or update tests first.
-3. Implement the fix.
-4. Commit the change with a clear message.
-5. Capture the commit SHA.
-   ```bash
-   git rev-parse --short HEAD
-   ```
+1.  **Define Scope**:
+    Identify the PR number (e.g., `536`).
 
-## Phase 3: Reply + Resolve Threads
+2.  **Fetch Threads**:
+    Use the saved query `.agent/queries/pr-review-threads.graphql`.
 
-For each review thread you fixed:
+    ```bash
+    # Fetch threads for PR 536
+    gh api graphql -F owner=':owner' -F name=':repo' -F number=536 -f query="$(cat .agent/queries/pr-review-threads.graphql)" --paginate > /tmp/pr-536-threads.json
+    
+    # Verify the capture
+    jq '.data.repository.pullRequest.reviewThreads.nodes | length' /tmp/pr-536-threads.json
+    ```
 
-1. Reply to the specific comment with the commit that fixes it.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   mutation {
-     addPullRequestReviewComment(input:{
-       pullRequestId:"<PR_NODE_ID>",
-       inReplyTo:"<COMMENT_NODE_ID>",
-       body:"Fixed in <COMMIT_SHA>."
-     }) { comment { id } }
-   }
-   EOF
-   ```
+3.  **Inventory**:
+    Generate a precise list of actionable threads.
+    ```bash
+    # List Unresolved & Not Outdated threads
+    python3 .agent/scripts/inventory_threads.py /tmp/pr-536-threads.json
+    ```
 
-2. Resolve the thread.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   mutation {
-     resolveReviewThread(input:{threadId:"<THREAD_NODE_ID>"}) {
-       thread { isResolved }
-     }
-   }
-   EOF
-   ```
+## Phase 2: Evaluation & Execution
 
-## Phase 4: Verify
+For EACH thread in the Inventory:
 
-1. Push the branch.
-   ```bash
-   git push
-   ```
+1.  **Evaluate**:
+    - Is it valid?
+    - **Action**: Fix, Reject, or Defer.
 
-2. Re-check unresolved threads.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   query {
-     repository(owner:"<OWNER>", name:"<REPO>") {
-       pullRequest(number:<PR_NUMBER>) {
-         reviewThreads(first:50) { nodes { id isResolved } }
-       }
-     }
-   }
-   EOF
-   ```
+2.  **Edit & Verify**:
+    - Apply changes.
+    - Run tests locally to ensure no regressions (Crucial!).
+    - `git commit -m "fix: ..."`
 
-## Expected Behavior
+## Phase 3: Deterministic Resolution
 
-- Every addressed review comment has a reply referencing the exact commit SHA.
-- Every addressed thread is explicitly resolved.
-- Tests are added or updated before code changes (TDD).
-- No thread is resolved without a commit reference.
+1.  **Reply (REST API)**:
+    Reply to the *latest comment* in the thread or the *root comment*.
+    ```bash
+    gh api -X POST repos/:owner/:repo/pulls/comments/<COMMENT_DATABASE_ID>/replies -f body="Fixed in <SHA>."
+    ```
+
+2.  **Resolve Thread (GraphQL)**:
+    Mark the thread as resolved using its Node ID.
+    ```bash
+    gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input:{threadId:$id}) { thread { isResolved } } }' -F id="<THREAD_NODE_ID>"
+    ```
+
+## Phase 4: Final Verification
+
+The goal is to mathematically prove that all feedback has been handled.
+
+### Verification Equation
+
+The **Total Thread Count** ($T_{total}$) must equal the sum of all categorized outcomes ($T_{outcome}$).
+
+$$ T_{total} = T_{replies} + T_{deferred} + T_{previous} + T_{outdated} + T_{auto} + T_{unresolved} $$
+
+Where:
+- **$T_{replies}$ (Replies Sent)**: You verified the fix, pushed, and replied "Fixed".
+- **$T_{deferred}$ (Deferred/Rejected)**: You replied "Deferred to #Issue" or "Wontfix".
+- **$T_{previous}$ (Already Resolved)**: Thread was resolved by a reviewer or previous session.
+- **$T_{outdated}$ (Outdated/Excluded)**: Thread points to code that was overwritten/deleted (`isOutdated: true`).
+- **$T_{auto}$ (Auto-generated/Duplicate)**: Bot noise or duplicate threads.
+- **$T_{unresolved}$ (Remaining)**: Threads still requiring action.
+
+### The Final Check
+
+At the end of the session, $T_{unresolved}$ MUST be **0**.
+
+1.  **Re-Fetch Data**:
+    Run the Phase 1 Fetch command again to get the latest state.
+
+2.  **Verify Unresolved Count**:
+    Execute this filter. It explicitly targets threads that are **Unresolved** AND **Not Outdated**.
+
+    ```bash
+    jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .isOutdated == false)] | length' /tmp/pr-536-threads.json
+    ```
+
+    **Result MUST be 0.**
+
+3.  **Audit "Resolved-but-Unanswered"**:
+    Ensure you didn't resolve a thread without replying.
+    ```bash
+    # Find threads resolved by YOU but with no reply from YOU in the last step
+    # (Manual check of the JSON or simple grep of the log)
+    ```
+
+## Comparison: GraphQL vs. REST
+
+| Feature | REST API (`/comments`) | GraphQL API (`reviewThreads`) |
+| :--- | :--- | :--- |
+| **Unit** | Individual Comment | Review Thread (Group of comments) |
+| **State** | No inherent state (just text) | **Explicit `isResolved` state** |
+| **Context** | File path/line | **`isOutdated` status** |
+| **Resolution** | Cannot resolve via API easily | Native `resolveReviewThread` mutation |
+| **Verdict** | Good for "Grep", bad for Workflow | **The Source of Truth** |
+
+This workflow shifts from the naive REST approach (listing all text) to the robust GraphQL approach (managing Thread State), ensuring accurate "Definition of Done".

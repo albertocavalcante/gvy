@@ -13,9 +13,9 @@ import com.github.albertocavalcante.groovylsp.engine.api.ParseResultMetadata
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedCompletionProvider
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedDefinitionProvider
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedDocumentSymbolProvider
-import com.github.albertocavalcante.groovylsp.engine.features.UnifiedHoverProvider
 import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreCompletionService
 import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreDefinitionService
+import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreHoverProvider
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
@@ -43,6 +43,9 @@ class CoreLanguageEngine : LanguageEngine {
         val parseUnit = CoreParserAdapter(result, request.uri.toString())
         return CoreLanguageSession(parseUnit, request.content, typeSolver)
     }
+
+    override fun createSession(uri: java.net.URI, content: String): LanguageSession =
+        createSession(ParseRequest(uri, content))
 }
 
 /**
@@ -61,7 +64,7 @@ class CoreLanguageSession(
 
     override val features: FeatureSet by lazy {
         object : FeatureSet {
-            override val hoverProvider: HoverProvider = UnifiedHoverProvider(parseUnit)
+            override val hoverProvider: HoverProvider = CoreHoverProvider(parseUnit, typeSolver)
             override val documentSymbolProvider: DocumentSymbolProvider = UnifiedDocumentSymbolProvider(parseUnit)
             override val definitionProvider: DefinitionProvider =
                 UnifiedDefinitionProvider(parseUnit, CoreDefinitionService(typeSolver))

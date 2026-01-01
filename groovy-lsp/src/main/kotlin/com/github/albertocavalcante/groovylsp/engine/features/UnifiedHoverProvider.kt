@@ -16,7 +16,8 @@ import org.eclipse.lsp4j.MarkupKind
 class UnifiedHoverProvider(private val parseUnit: ParseUnit) : HoverProvider {
 
     override suspend fun getHover(params: HoverParams): Hover {
-        val node = parseUnit.nodeAt(params.position) ?: return Hover(emptyList(), null)
+        val node = parseUnit.nodeAt(params.position)
+            ?: return Hover(MarkupContent(MarkupKind.MARKDOWN, ""), null)
 
         val content = buildString {
             // Add signature/type in a Groovy code block

@@ -155,3 +155,27 @@ When using `replace_file_content` and encountering "target content not found":
 1. STOP. Do not blindly retry.
 2. Call `view_file` to see the actual current state.
 3. Adjust `TargetContent` to match exactly (whitespace, newlines).
+
+## Agent Helpers
+
+The `.agent/` directory contains tools to simplify deterministic agent workflows.
+
+### Structure
+
+- **`workflows/`**: Process documentation and step-by-step guides (e.g., `/pr-address-reviews`).
+- **`queries/`**: Saved GraphQL queries for reproducible data fetching.
+- **`scripts/`**: Python scripts for logic that is too complex or fragile for shell one-liners.
+
+### Python Helpers
+
+Scripts in `.agent/scripts/` provide robust alternatives to complex shell pipes.
+
+- **Formatting**: All Python scripts must be formatted with `ruff`.
+  ```bash
+  ruff format .agent/scripts/my_script.py
+  ruff check --fix .agent/scripts/my_script.py
+  ```
+- **Usage**: Call them from workflows or directly.
+  ```bash
+  python3 .agent/scripts/inventory_threads.py /tmp/data.json
+  ```
