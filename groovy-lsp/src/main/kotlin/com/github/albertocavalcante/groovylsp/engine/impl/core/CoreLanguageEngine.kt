@@ -2,17 +2,25 @@ package com.github.albertocavalcante.groovylsp.engine.impl.core
 
 import com.github.albertocavalcante.groovylsp.engine.adapters.CoreParserAdapter
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
+import com.github.albertocavalcante.groovylsp.engine.api.CompletionProvider
+import com.github.albertocavalcante.groovylsp.engine.api.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.engine.api.DocumentSymbolProvider
 import com.github.albertocavalcante.groovylsp.engine.api.FeatureSet
 import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
 import com.github.albertocavalcante.groovylsp.engine.api.ParseResultMetadata
+import com.github.albertocavalcante.groovylsp.engine.features.UnifiedCompletionProvider
+import com.github.albertocavalcante.groovylsp.engine.features.UnifiedDefinitionProvider
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedDocumentSymbolProvider
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedHoverProvider
+import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreCompletionService
+import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreDefinitionService
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import org.eclipse.lsp4j.Diagnostic
 
 /**
@@ -21,39 +29,41 @@ import org.eclipse.lsp4j.Diagnostic
 class CoreLanguageEngine : LanguageEngine {
     override val id: String = "core"
 
-    // Create a parser configuration (could be customized via settings later)
     private val parserConfiguration = ParserConfiguration()
     private val parser = GroovyParser(parserConfiguration)
 
+    // Type solver for symbol resolution
+    private val typeSolver = CombinedTypeSolver(ReflectionTypeSolver())
+
     override fun createSession(request: ParseRequest): LanguageSession {
-        // Parse the code using the core parser
         val result = parser.parse(request.content)
-
-        // Wrap the result in an adapter
         val parseUnit = CoreParserAdapter(result, request.uri.toString())
-
-        // Return a session linked to this parse unit
-        return CoreLanguageSession(parseUnit)
+        return CoreLanguageSession(parseUnit, request.content, typeSolver)
     }
 }
 
 /**
  * Language Session for the Core Engine.
- *
- * Uses the Unified ParseUnit abstraction to provide LSP features.
  */
-class CoreLanguageSession(private val parseUnit: ParseUnit) : LanguageSession {
+class CoreLanguageSession(
+    private val parseUnit: ParseUnit,
+    private val content: String,
+    private val typeSolver: CombinedTypeSolver,
+) : LanguageSession {
 
     override val result: ParseResultMetadata = object : ParseResultMetadata {
         override val isSuccess: Boolean = parseUnit.isSuccessful
         override val diagnostics: List<Diagnostic> = parseUnit.diagnostics
     }
 
-    // Lazy initialization of features to avoid unnecessary object creation
     override val features: FeatureSet by lazy {
         object : FeatureSet {
             override val hoverProvider: HoverProvider = UnifiedHoverProvider(parseUnit)
             override val documentSymbolProvider: DocumentSymbolProvider = UnifiedDocumentSymbolProvider(parseUnit)
+            override val definitionProvider: DefinitionProvider =
+                UnifiedDefinitionProvider(parseUnit, CoreDefinitionService(typeSolver))
+            override val completionProvider: CompletionProvider =
+                UnifiedCompletionProvider(parseUnit, CoreCompletionService(), content)
         }
     }
 }
