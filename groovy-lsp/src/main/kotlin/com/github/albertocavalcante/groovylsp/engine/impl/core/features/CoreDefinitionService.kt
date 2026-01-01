@@ -69,6 +69,11 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
                 return emptyList()
             }
 
+            // TODO(#529): Use declaration's range instead of reference's range.
+            //   Current limitation: ResolvedValueDeclaration doesn't expose the
+            //   declaration's AST node range. Would need to extend the resolution
+            //   API in groovyparser-core to expose this. For now, falls back to
+            //   the reference location which is still useful for "peek definition".
             val targetRange = node.range ?: Range(Position(0, 0), Position(0, 0))
             listOf(
                 UnifiedDefinition(

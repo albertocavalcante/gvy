@@ -55,10 +55,11 @@ class CoreCompletionService : CompletionService {
         private val GROOVY_KEYWORDS = listOf(
             "def", "var", "void", "class", "interface", "trait", "enum",
             "if", "else", "for", "while", "do", "switch", "case", "default",
-            "break", "continue", "return", "try", "catch", "finally", "throw",
-            "new", "this", "super", "null", "true", "false",
+            "break", "continue", "return", "try", "catch", "finally", "throw", "throws",
+            "new", "this", "super", "null", "true", "false", "assert",
             "public", "private", "protected", "static", "final", "abstract",
             "import", "package", "as", "in", "instanceof",
+            "synchronized", "volatile", "transient", "extends", "implements",
         )
 
         private val BASIC_TYPES = listOf(
