@@ -28,6 +28,7 @@ class JenkinsBundledCompletionTest {
         // Initialize the server with a workspace folder so Jenkins file detection works
         val initParams = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/jenkins-test", "jenkins-test"))
+            initializationOptions = mapOf("groovy.languageServer.engine" to "native")
         }
         serverHandle!!.server.initialize(initParams).get()
         serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
