@@ -59,7 +59,7 @@ def main():
 
             # Get first comment safely
             comments = node.get("comments", {}).get("nodes", [])
-            first_comment = comments[0] if comments else {}
+            first_comment = comments[0] if comments and comments[0] else {}
 
             # Safe author handling
             author_node = first_comment.get("author")
