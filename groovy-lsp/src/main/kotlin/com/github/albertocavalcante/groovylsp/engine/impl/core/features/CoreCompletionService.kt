@@ -23,25 +23,21 @@ class CoreCompletionService : CompletionService {
     ): Either<List<CompletionItem>, CompletionList> {
         val items = mutableListOf<CompletionItem>()
 
-        // Add Groovy keywords
-        items.addAll(
-            GROOVY_KEYWORDS.map { keyword ->
-                CompletionItem(keyword).apply {
-                    kind = CompletionItemKind.Keyword
-                    detail = "Keyword"
-                }
-            },
-        )
+        // Add Groovy keywords (using mapTo for efficiency)
+        GROOVY_KEYWORDS.mapTo(items) { keyword ->
+            CompletionItem(keyword).apply {
+                kind = CompletionItemKind.Keyword
+                detail = "Keyword"
+            }
+        }
 
         // Add basic types
-        items.addAll(
-            BASIC_TYPES.map { type ->
-                CompletionItem(type).apply {
-                    kind = CompletionItemKind.Class
-                    detail = "Type"
-                }
-            },
-        )
+        BASIC_TYPES.mapTo(items) { type ->
+            CompletionItem(type).apply {
+                kind = CompletionItemKind.Class
+                detail = "Type"
+            }
+        }
 
         // TODO(#530): Add contextual completions using GroovySymbolResolver
         //   - Get symbols in scope from context?.allSymbols()
