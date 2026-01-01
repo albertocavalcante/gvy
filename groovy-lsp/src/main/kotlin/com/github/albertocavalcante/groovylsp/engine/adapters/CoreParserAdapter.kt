@@ -88,7 +88,7 @@ private fun Problem.toLspDiagnostic(): Diagnostic {
         when {
             problemRange != null -> Range(
                 Position(problemRange.begin.line - 1, problemRange.begin.column - 1),
-                Position(problemRange.end.line - 1, problemRange.end.column - 1),
+                Position(problemRange.end.line - 1, problemRange.end.column),
             )
 
             problemPosition != null -> {
@@ -149,7 +149,7 @@ private fun Node.extractType(): String? = when (this) {
 
 private fun CoreRange.toLspRange(): Range = Range(
     Position(begin.line - 1, begin.column - 1),
-    Position(end.line - 1, end.column - 1),
+    Position(end.line - 1, end.column),
 )
 
 /**
