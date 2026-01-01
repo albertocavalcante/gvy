@@ -36,7 +36,7 @@ sealed interface EngineType {
 
     companion object {
         /**
-         * Parse engine type from string, defaulting to [Native].
+         * Parse engine type from string, defaulting to [Core].
          *
          * @param value Engine type string (case-insensitive), e.g. "native", "core"
          * @return Corresponding [EngineType], or [Native] for unknown/null values
@@ -44,7 +44,7 @@ sealed interface EngineType {
         fun fromString(value: String?): EngineType = when (value?.lowercase()) {
             "core" -> Core
             "openrewrite" -> OpenRewrite
-            else -> Native // Default to Native for null, "native", or unknown values
+            else -> Core // Default to Core for null, "native", or unknown values
         }
 
         /** All available engine types. */

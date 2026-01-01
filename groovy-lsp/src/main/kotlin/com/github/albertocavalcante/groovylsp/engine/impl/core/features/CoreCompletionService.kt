@@ -51,7 +51,7 @@ class CoreCompletionService : CompletionService {
             )
         }
 
-        return Either.forLeft(items)
+        return Either.forLeft(items.distinctBy { it.label })
     }
 
     private fun mapSymbolKind(kind: UnifiedNodeKind): CompletionItemKind = when (kind) {
