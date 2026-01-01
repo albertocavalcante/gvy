@@ -60,7 +60,10 @@ class CoreCompletionService : CompletionService {
 
         private val BASIC_TYPES = listOf(
             "String", "int", "Integer", "long", "Long", "double", "Double",
-            "boolean", "Boolean", "List", "Map", "Set", "Object",
+            "boolean", "Boolean", "float", "Float", "byte", "Byte",
+            "short", "Short", "char", "Character",
+            "List", "Map", "Set", "Object",
+            "BigDecimal", "BigInteger",
         )
     }
 }
