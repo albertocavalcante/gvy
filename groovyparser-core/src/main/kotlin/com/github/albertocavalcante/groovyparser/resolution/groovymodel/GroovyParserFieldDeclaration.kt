@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.resolution.groovymodel
 
+import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedFieldDeclaration
@@ -19,6 +20,9 @@ class GroovyParserFieldDeclaration(
 
     override val type: ResolvedType
         get() = GroovyParserTypeResolver.resolveType(fieldDecl.type, typeSolver)
+
+    override val declarationNode: Node
+        get() = fieldDecl
 
     override fun isStatic(): Boolean = fieldDecl.isStatic
 
