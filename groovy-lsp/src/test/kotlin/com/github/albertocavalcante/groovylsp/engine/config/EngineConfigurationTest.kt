@@ -32,15 +32,15 @@ class EngineConfigurationTest {
     }
 
     @Test
-    fun `EngineType fromString defaults to Native for unknown values`() {
-        assertEquals(EngineType.Native, EngineType.fromString("unknown"))
-        assertEquals(EngineType.Native, EngineType.fromString(""))
-        assertEquals(EngineType.Native, EngineType.fromString("invalid"))
+    fun `EngineType fromString defaults to Core for unknown values`() {
+        assertEquals(EngineType.Core, EngineType.fromString("unknown"))
+        assertEquals(EngineType.Core, EngineType.fromString(""))
+        assertEquals(EngineType.Core, EngineType.fromString("invalid"))
     }
 
     @Test
-    fun `EngineType fromString defaults to Native for null`() {
-        assertEquals(EngineType.Native, EngineType.fromString(null))
+    fun `EngineType fromString defaults to Core for null`() {
+        assertEquals(EngineType.Core, EngineType.fromString(null))
     }
 
     @Test
