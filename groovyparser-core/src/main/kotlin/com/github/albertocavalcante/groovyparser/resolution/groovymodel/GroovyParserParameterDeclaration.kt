@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.resolution.groovymodel
 
+import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedParameterDeclaration
@@ -15,6 +16,9 @@ class GroovyParserParameterDeclaration(private val param: Parameter, private val
 
     override val type: ResolvedType
         get() = GroovyParserTypeResolver.resolveType(param.type, typeSolver)
+
+    override val declarationNode: Node
+        get() = param
 
     override fun isVariadic(): Boolean = false // Not supported in AST yet
 
