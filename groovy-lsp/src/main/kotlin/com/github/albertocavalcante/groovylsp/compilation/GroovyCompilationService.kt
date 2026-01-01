@@ -335,25 +335,12 @@ class GroovyCompilationService(
      * Delegates to the active language engine to wrap the parse result.
      * NOTE: This assumes the file is already compiled/parsed (returns null if not in cache).
      */
-    // TODO(#513): Eliminate type check - add createSession(ParseResult) to LanguageEngine interface.
-    //   See: https://github.com/albertocavalcante/gvy/issues/513
     fun getSession(uri: URI): LanguageSession? {
         val cached = cache.getWithContent(uri) ?: return null
-        val (content, parseResult) = cached
+        val (content, _) = cached
 
-        // Bridge: Delegate to NativeEngine to wrap the result
-        // In future phases, we might need a cache keyed by Engine ID or unified result
-        val engine = activeEngine
-        if (engine is NativeLanguageEngine) {
-            return engine.createSession(
-                parseResult,
-                uri.toString(),
-                content,
-            )
-        }
-
-        // Fallback for other engines (or if cache format mismatch)
-        return null
+        // Use unified interface for polymorphic session creation
+        return activeEngine.createSession(uri, content)
     }
 
     fun getAllSymbolStorages(): Map<URI, SymbolIndex> {

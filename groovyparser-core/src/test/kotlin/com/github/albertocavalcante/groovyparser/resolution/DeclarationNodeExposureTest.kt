@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.resolution
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
@@ -54,7 +55,7 @@ class DeclarationNodeExposureTest {
         // The node should be the Parameter node
         val declNode = declaration.declarationNode
         assertTrue(declNode is Parameter, "Declaration node should be a Parameter")
-        assertEquals("name", (declNode as Parameter).name)
+        assertEquals("name", declNode.name)
     }
 
     @Test
@@ -90,7 +91,8 @@ class DeclarationNodeExposureTest {
 
         // Verify the node has the correct source position
         val declNode = declaration.declarationNode
-        assertNotNull(declNode?.range, "Declaration node should have a range")
+        assertTrue(declNode is FieldDeclaration, "Declaration node should be a FieldDeclaration")
+        assertNotNull(declNode.range, "Declaration node should have a range")
     }
 
     /**

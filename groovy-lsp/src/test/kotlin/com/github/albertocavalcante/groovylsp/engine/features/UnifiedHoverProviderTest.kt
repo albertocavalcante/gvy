@@ -32,9 +32,9 @@ class UnifiedHoverProviderTest {
             provider.getHover(HoverParams(textDocument, position))
         }
 
-        // When returning Hover(emptyList(), null), it is a Left value
-        assert(result.contents.isLeft)
-        assertEquals(emptyList(), result.contents.left)
+        // When no node found, returns Hover with empty MarkupContent (Right value)
+        assert(result.contents.isRight)
+        assertEquals("", result.contents.right.value)
     }
 
     @Test

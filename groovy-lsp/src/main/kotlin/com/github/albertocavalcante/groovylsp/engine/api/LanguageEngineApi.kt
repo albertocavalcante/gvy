@@ -26,6 +26,13 @@ interface LanguageEngine {
      * Creates a new session by parsing the code with the engine's specific parser.
      */
     fun createSession(request: ParseRequest): LanguageSession
+
+    /**
+     * Creates a new session from URI and content.
+     * This is the unified interface for session creation, allowing polymorphic dispatch
+     * without knowing the specific engine type.
+     */
+    fun createSession(uri: java.net.URI, content: String): LanguageSession
 }
 
 /**

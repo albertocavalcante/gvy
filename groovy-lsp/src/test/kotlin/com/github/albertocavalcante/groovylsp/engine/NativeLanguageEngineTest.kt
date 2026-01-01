@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.engine
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
+import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
@@ -30,7 +32,11 @@ class NativeLanguageEngineTest {
     @BeforeEach
     fun setup() {
         documentProvider = DocumentProvider()
-        compilationService = GroovyCompilationService(documentProvider = documentProvider)
+        val config = EngineConfiguration(type = EngineType.Native)
+        compilationService = GroovyCompilationService(
+            documentProvider = documentProvider,
+            engineConfig = config,
+        )
     }
 
     @Test

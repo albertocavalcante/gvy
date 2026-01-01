@@ -69,7 +69,7 @@ class CoreParserAdapterTest {
         assertEquals(4, diagnostic.range.start.line)
         assertEquals(9, diagnostic.range.start.character)
         assertEquals(4, diagnostic.range.end.line)
-        assertEquals(19, diagnostic.range.end.character)
+        assertEquals(20, diagnostic.range.end.character)
     }
 
     @Test

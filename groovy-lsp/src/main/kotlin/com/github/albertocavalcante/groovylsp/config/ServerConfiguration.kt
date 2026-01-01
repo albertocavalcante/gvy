@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
  */
 data class ServerConfiguration(
     val compilationMode: CompilationMode = CompilationMode.WORKSPACE,
-    val parserEngine: EngineType = EngineType.Native,
+    val parserEngine: EngineType = EngineType.Core,
     val incrementalThreshold: Int = 50,
     val maxWorkspaceFiles: Int = 500,
     val maxNumberOfProblems: Int = 100,

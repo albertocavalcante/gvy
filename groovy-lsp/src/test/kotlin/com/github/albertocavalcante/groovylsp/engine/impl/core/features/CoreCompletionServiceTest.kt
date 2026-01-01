@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovylsp.engine.adapters.UnifiedSymbol
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.Position
@@ -14,6 +15,7 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -105,9 +107,8 @@ class CoreCompletionServiceTest {
         assertTrue(labels.contains("myMethod"))
 
         // Verify kinds mapping
-        // Need to import CompletionItemKind
-        assertTrue(kinds["myVariable"] == org.eclipse.lsp4j.CompletionItemKind.Variable)
-        assertTrue(kinds["myMethod"] == org.eclipse.lsp4j.CompletionItemKind.Method)
+        assertEquals(CompletionItemKind.Variable, kinds["myVariable"])
+        assertEquals(CompletionItemKind.Method, kinds["myMethod"])
     }
 
     // Helper to create a ParseUnit from code

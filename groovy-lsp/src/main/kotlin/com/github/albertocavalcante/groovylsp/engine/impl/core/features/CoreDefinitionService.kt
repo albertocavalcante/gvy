@@ -114,7 +114,7 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         // Convert 1-based to 0-based positions
         return Range(
             Position(range.begin.line - 1, range.begin.column - 1),
-            Position(range.end.line - 1, range.end.column - 1),
+            Position(range.end.line - 1, range.end.column),
         )
     }
 
