@@ -1,103 +1,96 @@
 ---
-description: Deterministic protocol for addressing PR review comments with traceable fixes and thread resolution.
+description: Deterministic protocol for fetching, addressing, and resolving PR review comments with absolute precision.
 ---
 
 # /pr-address-reviews
 
-This workflow defines the required process for addressing PR review comments. Every resolved thread must include a reply that references the commit that fixed it, and the thread must be explicitly resolved.
+A strict, deterministic workflow for handling PR review feedback. This protocol ensures zero comments are missed, hallucinated, or left unresolved.
 
-## Phase 1: Gather Review Threads
+## Ironclad Rules
 
-1. Identify the PR number and branch.
-   ```bash
-   gh pr view <PR_NUMBER> --repo <OWNER>/<REPO>
-   ```
+1.  **NEVER IGNORE ANY COMMENT**: Every single comment (inline or general) must be accounted for.
+2.  **COUNT FIRST**: Establish the total count of comments before starting. Verification must match this count.
+3.  **USE TEMP FILES**: Always dump API output to temporary JSON files to avoid shell truncation and parsing errors.
+4.  **REPLY & RESOLVE**: Every addressed thread must have a reply and be explicitly resolved.
+5.  **NO BROWSER**: Use `gh` CLI exclusively.
 
-2. List unresolved review threads with IDs and comment IDs (GraphQL). Capture `pullRequest.id` for Phase 3.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   query {
-     repository(owner:"<OWNER>", name:"<REPO>") {
-       pullRequest(number:<PR_NUMBER>) {
-         id
-         reviewThreads(first:50) {
-           nodes {
-             id
-             isResolved
-             comments(first:10) {
-               nodes { id databaseId author{login} body path line originalLine }
-             }
-           }
-         }
-       }
-     }
-   }
-   EOF
-   ```
-   NOTE: If the PR has more than 50 threads or 10 comments per thread, increase `first:` or paginate.
+## Phase 1: Precise Fetching
 
-## Phase 2: Address Comments (TDD Required)
+1.  **Define Scope**:
+    Identify the PR number(s). If addressing feedback from multiple PRs (e.g., stacked PRs), define the "Source PRs" (where comments live) and "Target PR" (where fixes go).
 
-1. Create or switch to the PR worktree.
-2. Write or update tests first.
-3. Implement the fix.
-4. Commit the change with a clear message.
-5. Capture the commit SHA.
-   ```bash
-   git rev-parse --short HEAD
-   ```
+2.  **Fetch & Persist (Avoid Truncation)**:
+    Dump *all* comments to a structured JSON file. **Do not rely on terminal output for large comment sets.**
 
-## Phase 3: Reply + Resolve Threads
+    ```bash
+    # For a specific PR (e.g., 534)
+    gh api repos/:owner/:repo/pulls/534/comments --paginate --jq '.' > /tmp/pr-534-comments.json
+    
+    # Verify the count immediately
+    jq length /tmp/pr-534-comments.json
+    ```
 
-For each review thread you fixed:
+3.  **Inventory**:
+    Read the JSON file to list all actionable items.
+    ```bash
+    jq -r '.[] | "[\(.id)] \(.path):\(.line) - \(.user.login): \(.body | split("\n")[0])..."' /tmp/pr-534-comments.json
+    ```
 
-1. Reply to the specific comment with the commit that fixes it.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   mutation {
-     addPullRequestReviewComment(input:{
-       pullRequestId:"<PR_NODE_ID>",
-       inReplyTo:"<COMMENT_NODE_ID>",
-       body:"Fixed in <COMMIT_SHA>."
-     }) { comment { id } }
-   }
-   EOF
-   ```
+## Phase 2: Evaluation & Execution
 
-2. Resolve the thread.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   mutation {
-     resolveReviewThread(input:{threadId:"<THREAD_NODE_ID>"}) {
-       thread { isResolved }
-     }
-   }
-   EOF
-   ```
+For EACH comment ID in the JSON:
 
-## Phase 4: Verify
+1.  **Evaluate**:
+    - Is the feedback valid?
+    - Does it apply to the current code?
+    - **Action**: Fix, Reject, or Defer.
 
-1. Push the branch.
-   ```bash
-   git push
-   ```
+2.  **Edit**:
+    - Apply changes.
+    - Run `make fmt` or `spotlessApply`.
+    - Run tests.
 
-2. Re-check unresolved threads.
-   ```bash
-   gh api graphql -f query=- <<'EOF'
-   query {
-     repository(owner:"<OWNER>", name:"<REPO>") {
-       pullRequest(number:<PR_NUMBER>) {
-         reviewThreads(first:50) { nodes { id isResolved } }
-       }
-     }
-   }
-   EOF
-   ```
+3.  **Commit**:
+    - `git commit -m "fix(scope): address review feedback #ID"`
 
-## Expected Behavior
+## Phase 3: Deterministic Resolution
 
-- Every addressed review comment has a reply referencing the exact commit SHA.
-- Every addressed thread is explicitly resolved.
-- Tests are added or updated before code changes (TDD).
-- No thread is resolved without a commit reference.
+1.  **Reply (REST API)**:
+    Use the `gh api` to post replies. This is robust and supports replying to comments from *any* PR if you have access.
+
+    ```bash
+    # Template: Reply to a specific comment ID
+    gh api -X POST repos/:owner/:repo/pulls/comments/<COMMENT_ID>/replies \
+      -f body="@<USER> Fixed in <HEAD_SHA>. <DETAILS>"
+    ```
+
+2.  **Resolve Thread (GraphQL)**:
+    After replying, mark the thread as resolved. This requires the **Node ID** (not integer ID). You may need to fetch the GraphQL Node ID if you only have the integer ID, or just iterate fully unresolved threads.
+
+    ```bash
+    # Fetch unresolved threads with Node IDs
+    gh api graphql -f query='query { repository(owner:":owner", name:":repo") { pullRequest(number:<PR_NUM>) { reviewThreads(first:50) { nodes { id isResolved } } } } }' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false) | .id' > /tmp/unresolved_threads.txt
+    
+    # Resolve them (Loop)
+    while read thread_id; do
+      gh api graphql -f query="mutation { resolveReviewThread(input:{threadId:\"$thread_id\"}) { thread { isResolved } } }"
+    done < /tmp/unresolved_threads.txt
+    ```
+
+## Phase 4: Final Verification
+
+**Equation Must Balance**:
+`Initial Count` == `Replies Sent` + `Deferred/Rejected Items`
+
+1.  **Check Unresolved Count**:
+    Run the GraphQL query again. It must return **0** unresolved threads for the target reviewer(s).
+
+2.  **Status Reporting**:
+    Generate a markdown table summarizing the actions taken.
+
+    ```markdown
+    | Comment ID | File | Status | Action |
+    | :--- | :--- | :--- | :--- |
+    | 12345 | src/Foo.kt | ✅ Fixed | Removed redundant cast |
+    | 12346 | src/Bar.kt | ⏳ Deferred | Requires major refactor (Issue #99) |
+    ```
