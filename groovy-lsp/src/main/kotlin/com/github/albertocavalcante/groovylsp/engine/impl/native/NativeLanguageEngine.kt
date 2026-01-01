@@ -54,6 +54,11 @@ class NativeLanguageEngine(
             content,
         )
     }
+
+    override fun createSession(uri: java.net.URI, content: String): LanguageSession {
+        val parseResult = parserFacade.parse(ParseRequest(uri, content))
+        return createSession(parseResult, uri.toString(), content)
+    }
 }
 
 class NativeLanguageSession(
