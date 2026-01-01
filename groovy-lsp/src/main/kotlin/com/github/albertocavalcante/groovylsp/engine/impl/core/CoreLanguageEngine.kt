@@ -32,7 +32,10 @@ class CoreLanguageEngine : LanguageEngine {
     private val parserConfiguration = ParserConfiguration()
     private val parser = GroovyParser(parserConfiguration)
 
-    // Type solver for symbol resolution
+    // Type solver for symbol resolution.
+    // Note: CombinedTypeSolver/ReflectionTypeSolver are immutable after construction,
+    // so sharing across sessions is safe. If solvers are modified at runtime in the
+    // future, consider creating per-session instances.
     private val typeSolver = CombinedTypeSolver(ReflectionTypeSolver())
 
     override fun createSession(request: ParseRequest): LanguageSession {

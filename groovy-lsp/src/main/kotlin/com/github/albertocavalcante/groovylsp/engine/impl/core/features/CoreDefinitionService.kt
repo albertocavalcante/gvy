@@ -78,18 +78,10 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
             // TODO(#529): Use declaration's range instead of reference's range.
             //   Current limitation: ResolvedValueDeclaration doesn't expose the
             //   declaration's AST node range. Would need to extend the resolution
-            //   API in groovyparser-core to expose this. For now, returns empty
-            //   to indicate we can't navigate to declaration location.
-            val targetRange = node.range ?: return emptyList()
-            listOf(
-                UnifiedDefinition(
-                    uri = context.uri,
-                    range = targetRange,
-                    selectionRange = targetRange,
-                    kind = DefinitionKind.SOURCE,
-                    originSelectionRange = node.range,
-                ),
-            )
+            //   API in groovyparser-core to expose this. For now, return empty
+            //   to indicate we can't navigate to the declaration location.
+            logger.debug("findDefinition: resolved symbol '{}' but cannot determine declaration location", name)
+            emptyList()
         } catch (e: Exception) {
             logger.debug("findDefinition: error resolving symbol '{}': {}", name, e.message)
             emptyList()
