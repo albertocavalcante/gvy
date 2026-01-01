@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.engine.impl.core.features
 
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
+import com.github.albertocavalcante.groovylsp.engine.adapters.UnifiedNodeKind
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionService
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -39,12 +40,35 @@ class CoreCompletionService : CompletionService {
             }
         }
 
-        // TODO(#530): Add contextual completions using GroovySymbolResolver
-        //   - Get symbols in scope from context?.allSymbols()
-        //   - Use TypeSolver to resolve types for method completion
-        //   - Integrate with legacy CompletionProvider for full functionality
+        // Add contextual completions from ParseUnit
+        context?.allSymbols()?.forEach { symbol ->
+            val kind = mapSymbolKind(symbol.kind)
+            items.add(
+                CompletionItem(symbol.name).apply {
+                    this.kind = kind
+                    this.detail = symbol.kind.name.lowercase().replaceFirstChar { it.uppercase() }
+                },
+            )
+        }
 
         return Either.forLeft(items)
+    }
+
+    private fun mapSymbolKind(kind: UnifiedNodeKind): CompletionItemKind = when (kind) {
+        UnifiedNodeKind.CLASS -> CompletionItemKind.Class
+        UnifiedNodeKind.INTERFACE -> CompletionItemKind.Interface
+        UnifiedNodeKind.TRAIT -> CompletionItemKind.Interface
+        UnifiedNodeKind.ENUM -> CompletionItemKind.Enum
+        UnifiedNodeKind.METHOD -> CompletionItemKind.Method
+        UnifiedNodeKind.CONSTRUCTOR -> CompletionItemKind.Constructor
+        UnifiedNodeKind.FIELD -> CompletionItemKind.Field
+        UnifiedNodeKind.PROPERTY -> CompletionItemKind.Property
+        UnifiedNodeKind.VARIABLE -> CompletionItemKind.Variable
+        UnifiedNodeKind.PARAMETER -> CompletionItemKind.Variable
+        UnifiedNodeKind.CLOSURE -> CompletionItemKind.Function
+        UnifiedNodeKind.IMPORT -> CompletionItemKind.Module
+        UnifiedNodeKind.PACKAGE -> CompletionItemKind.Module
+        else -> CompletionItemKind.Text
     }
 
     companion object {
