@@ -10,6 +10,10 @@ dependencies {
     implementation(libs.wire.runtime)
     implementation(project(":indexer:core"))
     wireCompiler(libs.wire.compiler)
+
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlin.test)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 // Manual Wire generation task
@@ -41,4 +45,8 @@ sourceSets.main {
 // Ensure compilation depends on generation
 tasks.compileKotlin {
     dependsOn(generateProtos)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
