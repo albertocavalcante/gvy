@@ -144,13 +144,9 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
         val interpolatedOptions = step.initializationOptions?.let { context.interpolateNode(it) }
         val params = InitializeParams().apply {
             processId = ProcessHandle.current().pid().toInt()
-            @Suppress("DEPRECATION")
-            rootUri = step.rootUri ?: context.workspace.rootUri
-            @Suppress("DEPRECATION")
-            workspaceFolders = if (rootUri != null) {
-                listOf(WorkspaceFolder(rootUri, context.workspace.rootDir.name))
-            } else {
-                emptyList()
+            val finalRootUri = step.rootUri ?: context.workspace.rootUri
+            if (finalRootUri != null) {
+                workspaceFolders = listOf(WorkspaceFolder(finalRootUri, context.workspace.rootDir.name))
             }
             initializationOptions = interpolatedOptions?.let {
                 // Convert to Java Map/Object for LSP4J

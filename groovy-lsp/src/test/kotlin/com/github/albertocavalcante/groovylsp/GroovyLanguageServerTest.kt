@@ -108,7 +108,7 @@ class GroovyLanguageServerTest {
 
         // Initialize server first
         val initParams = InitializeParams().apply {
-            rootUri = "file:///test/project"
+            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "project"))
             capabilities = ClientCapabilities()
         }
         server.initialize(initParams).get()
