@@ -6,10 +6,11 @@ import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
-import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
@@ -18,8 +19,6 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -49,7 +48,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         var callNode: MethodCallExpression? = null
         if (node is MethodCallExpression) {
             callNode = node
-        } else if (node.javaClass.simpleName == "ConstantExpression" || node is VariableExpression) {
+        } else if (node is ConstantExpression || node is VariableExpression) {
             val parent = visitor.getParent(node)
             if (parent is MethodCallExpression) {
                 callNode = parent
@@ -82,9 +81,10 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
         val item = CallHierarchyItem()
         item.uri = uri.toString()
-        // Default range
-        item.range = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
-        item.selectionRange = org.eclipse.lsp4j.Range(Position(0, 0), Position(0, 0))
+        // Set proper range from AST node
+        val nodeRange = node.toLspRange()
+        item.range = nodeRange
+        item.selectionRange = nodeRange
 
         when (node) {
             is MethodNode -> {
@@ -103,44 +103,42 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return item
     }
 
-    fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
+    suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
         val uri = params.item.uri
         val position = params.item.selectionRange.start
 
         val referenceProvider = ReferenceProvider(compilationService)
 
-        return runBlocking {
-            val references = referenceProvider.provideReferences(
-                uri,
-                position,
-                includeDeclaration = false,
-            )
+        val references = referenceProvider.provideReferences(
+            uri,
+            position,
+            includeDeclaration = false,
+        )
 
-            val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
+        val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
 
-            references.collect { location ->
-                val refUri = URI.create(location.uri)
-                val refVisitor = compilationService.getAstModel(refUri) ?: return@collect
-                val refRange = location.range
-                val refPosition = refRange.start.toGroovyPosition()
-                val refNode = refVisitor.getNodeAt(refUri, refPosition) ?: return@collect
+        references.collect { location ->
+            val refUri = URI.create(location.uri)
+            val refVisitor = compilationService.getAstModel(refUri) ?: return@collect
+            val refRange = location.range
+            val refPosition = refRange.start.toGroovyPosition()
+            val refNode = refVisitor.getNodeAt(refUri, refPosition) ?: return@collect
 
-                val enclosingNode = getEnclosingMethodOrClass(refNode, refVisitor)
+            val enclosingNode = getEnclosingMethodOrClass(refNode, refVisitor)
 
-                if (enclosingNode != null) {
-                    val key = "${location.uri}:${enclosingNode.lineNumber}:${enclosingNode.columnNumber}"
+            if (enclosingNode != null) {
+                val key = "${location.uri}:${enclosingNode.lineNumber}:${enclosingNode.columnNumber}"
 
-                    val existing = calls[key]
-                    if (existing != null) {
-                        existing.fromRanges.add(location.range)
-                    } else {
-                        val fromItem = createCallHierarchyItem(enclosingNode, refUri)
-                        calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
-                    }
+                val existing = calls[key]
+                if (existing != null) {
+                    existing.fromRanges.add(location.range)
+                } else {
+                    val fromItem = createCallHierarchyItem(enclosingNode, refUri)
+                    calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
                 }
             }
-            calls.values.toList()
         }
+        return calls.values.toList()
     }
 
     private fun getEnclosingMethodOrClass(node: ASTNode, visitor: GroovyAstModel): ASTNode? {
@@ -168,55 +166,27 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         // Resolve to definition (should be MethodNode or ClassNode)
         val definition = node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
 
-        val calls = mutableListOf<CallHierarchyOutgoingCall>()
-
         if (definition is MethodNode) {
-            definition.code?.let { block ->
-                val allNodes = visitor.getAllNodes()
-                // Naive approach: Find all MethodCallExpressions whose source location is INSIDE the definition range
-                // Better approach: Traverse the block directly. But getAllNodes is flat.
-                // We'll iterate getAllNodes and check for containment.
-                val defLine = definition.lineNumber
-                val defEndLine = definition.lastLineNumber
+            val calls = mutableListOf<CallHierarchyOutgoingCall>()
 
-                allNodes.forEach { candidate ->
-                    if (candidate is MethodCallExpression && isInside(candidate, definition)) {
-                        // Resolve what this call points to
-                        val callee = candidate.resolveToDefinition(visitor, symbolTable, strict = false)
-                        if (callee != null) {
-                            // Find where callee is defined to get its URI and range
-                            // This is tricky because resolveToDefinition returns ASTNode, but we need URI
-                            // If callee is in same file, use uri.
-                            // If in other file, we need to know that.
-                            // GroovySymbolResolver might attach source info?
-                            // Or we check if it has valid line/col.
-                            // For simplicity, we assume same file or use available info.
-                            // REALITY CHECK: resolving cross-file definitions needs SourceNavigationService
-                            // or we just providing basic info. Call Hierarchy requires item.uri.
-                            // If we can't find URI, we skip.
-
-                            // NOTE: For now, supporting same-file or where node has location.
-                            // In advanced LSP, we use a global index.
-
-                            val calleeItem =
-                                createCallHierarchyItem(callee, uri) // Assumes same file for now! FIX LATER
-
-                            // Refine URI if we can determine it from the node (e.g. if it's from another ClassNode in another file)
-                            // But ASTNode usually doesn't store URI.
-
-                            val range = candidate.toLspRange()
-                            calls.add(CallHierarchyOutgoingCall(calleeItem, listOf(range)))
-                        }
+            // Use visitor pattern for efficient traversal of only this method's code
+            val callVisitor = object : CodeVisitorSupport() {
+                override fun visitMethodCallExpression(call: MethodCallExpression) {
+                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
+                    if (callee != null) {
+                        // TODO(#564): Cross-file resolution needs SourceNavigationService.
+                        // Currently assumes same file for callee URI.
+                        val calleeItem = createCallHierarchyItem(callee, uri)
+                        val range = call.toLspRange()
+                        calls.add(CallHierarchyOutgoingCall(calleeItem, listOf(range)))
                     }
+                    super.visitMethodCallExpression(call)
                 }
             }
+            definition.code?.visit(callVisitor)
+            return calls
         }
 
-        return calls
-    }
-
-    private fun isInside(inner: ASTNode, outer: ASTNode): Boolean {
-        // Simple line check
-        return inner.lineNumber >= outer.lineNumber && inner.lastLineNumber <= outer.lastLineNumber
+        return emptyList()
     }
 }
