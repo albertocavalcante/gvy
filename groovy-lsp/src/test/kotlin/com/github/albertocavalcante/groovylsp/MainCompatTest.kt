@@ -6,8 +6,6 @@ import com.github.ajalt.clikt.core.parse
 import com.github.albertocavalcante.groovylsp.cli.GlsCommand
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import java.net.ServerSocket
 
 class MainCompatTest {
