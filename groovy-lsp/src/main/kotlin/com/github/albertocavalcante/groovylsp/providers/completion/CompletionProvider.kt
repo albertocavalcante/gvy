@@ -549,7 +549,13 @@ object CompletionProvider {
         val safeChar = ctx.character.coerceIn(0, lineText.length)
         val beforeCursor = lineText.substring(0, safeChar)
         val trimmed = beforeCursor.trimStart()
-        if (!trimmed.startsWith("import")) return null
+        val importKeyword = "import"
+        if (!trimmed.startsWith(importKeyword)) return null
+        if (trimmed.length > importKeyword.length &&
+            Character.isJavaIdentifierPart(trimmed[importKeyword.length])
+        ) {
+            return null
+        }
 
         val offset = offsetAt(ctx.content, lines, ctx.line, ctx.character)
         if (ctx.tokenIndex?.isInCommentOrString(offset) == true) return null

@@ -6,6 +6,7 @@ import java.net.URLClassLoader
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentSkipListSet
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -203,13 +204,13 @@ class ClasspathService(
     }
 
     internal class QualifiedNameIndex {
-        private val index = ConcurrentHashMap.newKeySet<String>()
+        private val index = ConcurrentSkipListSet<String>()
 
         fun add(fullName: String) {
             index.add(fullName)
         }
 
-        fun snapshot(): List<String> = index.toList().sorted()
+        fun snapshot(): List<String> = index.toList()
 
         fun clear() {
             index.clear()
