@@ -99,8 +99,8 @@ dependencies {
     // Local Modules
     implementation(project(":groovy-common"))
     implementation(project(":groovy-formatter"))
-    implementation(project(":groovy-parser"))
-    implementation(project(":groovyparser-core"))
+    implementation(project(":parser:native"))
+    implementation(project(":parser:core"))
     implementation(project(":groovy-diagnostics:api"))
     implementation(project(":groovy-diagnostics:codenarc"))
     implementation(project(":groovy-jenkins"))

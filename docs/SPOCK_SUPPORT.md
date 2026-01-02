@@ -15,7 +15,7 @@ Spock is a Groovy testing framework built around:
 - **Mocking DSL** (e.g. `Mock()`, `Stub()`, interactions like `1 * service.call(_) >> value`).
 - Annotations and metadata like `@Unroll`, `@Shared`, `@Stepwise`, `@Subject`, `@Timeout`, …
 
-For an LSP, “first-class” means the server should help you *author* these constructs:
+For an LSP, “first-class” means the server should help you _author_ these constructs:
 
 - Completions/snippets for block labels and common Spock idioms.
 - Correct symbol visibility across blocks, especially `where:` → feature method body.
@@ -297,8 +297,8 @@ The two biggest risks are:
 2. **AST transforms vs source mapping**: Spock relies on AST transformations; transformed nodes can be synthetic or have
    confusing source positions. Avoid building core editor UX on transformed node positions unless validated.
 
-If we introduce any heuristic parsing (especially for `where:`), make the trade-off explicit in code and build a path
-to a deterministic approach over time.
+If we introduce any heuristic parsing (especially for `where:`), make the trade-off explicit in code and build a path to
+a deterministic approach over time.
 
 ## “Done” definition (first-class MVP)
 

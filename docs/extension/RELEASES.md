@@ -1,15 +1,16 @@
 # Release Strategy
 
-This document explains how releases work in this project using [release-please](https://github.com/googleapis/release-please).
+This document explains how releases work in this project using
+[release-please](https://github.com/googleapis/release-please).
 
 ## Overview
 
 We use a **branch-based release strategy** with two release tracks:
 
-| Branch | Release Type | Versions | Purpose |
-|--------|-------------|----------|---------|
-| `main` | Stable | `0.1.0`, `0.1.1`, `0.2.0` | Production releases |
-| `alpha` | Prerelease | `0.1.0-alpha.1`, `0.1.0-alpha.2` | Testing & early access |
+| Branch  | Release Type | Versions                         | Purpose                |
+| ------- | ------------ | -------------------------------- | ---------------------- |
+| `main`  | Stable       | `0.1.0`, `0.1.1`, `0.2.0`        | Production releases    |
+| `alpha` | Prerelease   | `0.1.0-alpha.1`, `0.1.0-alpha.2` | Testing & early access |
 
 ## How It Works
 
@@ -34,6 +35,7 @@ git push
 ```
 
 **Version bumps:**
+
 - `fix:` → patch (0.1.0 → 0.1.1)
 - `feat:` → minor (0.1.0 → 0.2.0)
 - `BREAKING CHANGE:` → major (0.1.0 → 1.0.0)
@@ -53,6 +55,7 @@ git push
 ```
 
 **Version bumps:**
+
 - `fix:` → 0.1.0-alpha.1 → 0.1.0-alpha.2
 - `feat:` → 0.1.0-alpha.1 → 0.2.0-alpha.1
 - `BREAKING CHANGE:` → 0.1.0-alpha.1 → 1.0.0-alpha.1
@@ -84,11 +87,13 @@ Release-As: 2.0.0"
 ```
 
 **Use cases:**
+
 - Force a specific version
 - Skip versions
 - Create one-off prereleases
 
 **Examples:**
+
 ```bash
 # Force stable version
 Release-As: 1.0.0
@@ -106,6 +111,7 @@ Release-As: 1.0.0-rc.1
 ## Configuration Files
 
 ### Main Branch (Stable)
+
 - **Config:** `release-please-config.json`
 - **Manifest:** `.release-please-manifest.json`
 - **Workflow:** `.github/workflows/release-please.yml`
@@ -122,6 +128,7 @@ Release-As: 1.0.0-rc.1
 ```
 
 ### Alpha Branch (Prerelease)
+
 - **Config:** `.github/release-please-config-alpha.json`
 - **Manifest:** `.github/.release-please-manifest-alpha.json`
 - **Workflow:** `.github/workflows/release-alpha.yml`
@@ -142,14 +149,15 @@ Release-As: 1.0.0-rc.1
 
 Release-please analyzes commit messages to determine version bumps:
 
-| Type | Example | Bump |
-|------|---------|------|
-| `fix:` | `fix: resolve null pointer` | Patch |
-| `feat:` | `feat: add dark mode` | Minor |
-| `BREAKING CHANGE:` | `feat!: remove deprecated API` | Major |
-| `chore:`, `docs:`, etc. | `docs: update README` | None |
+| Type                    | Example                        | Bump  |
+| ----------------------- | ------------------------------ | ----- |
+| `fix:`                  | `fix: resolve null pointer`    | Patch |
+| `feat:`                 | `feat: add dark mode`          | Minor |
+| `BREAKING CHANGE:`      | `feat!: remove deprecated API` | Major |
+| `chore:`, `docs:`, etc. | `docs: update README`          | None  |
 
 **Format:**
+
 ```
 <type>[optional scope]: <description>
 
@@ -159,6 +167,7 @@ Release-please analyzes commit messages to determine version bumps:
 ```
 
 **Examples:**
+
 ```bash
 # Patch bump (0.1.0 → 0.1.1)
 git commit -m "fix: resolve memory leak in status bar"
@@ -182,6 +191,7 @@ git commit -m "docs: update installation guide"
 **Trigger:** Push to `main`
 
 **Steps:**
+
 1. Analyzes commits since last release
 2. Determines version bump
 3. Updates `CHANGELOG.md`
@@ -193,8 +203,8 @@ git commit -m "docs: update installation guide"
 
 **Trigger:** Push to `alpha`
 
-**Steps:**
-Same as main, but:
+**Steps:** Same as main, but:
+
 - Uses alpha config
 - Generates alpha versions
 - Marks releases as "prerelease" on GitHub
@@ -214,6 +224,7 @@ git push -u origin alpha
 ### How do I skip a version?
 
 Use `Release-As:` footer:
+
 ```bash
 git commit -m "feat: major update
 
@@ -223,6 +234,7 @@ Release-As: 2.0.0"
 ### Can I have beta or rc releases?
 
 Yes! Use `Release-As:`:
+
 ```bash
 # Beta
 git commit -m "feat: beta feature
@@ -240,6 +252,7 @@ Or create a `beta` branch with its own workflow.
 ### What if I want to change the prerelease type?
 
 Edit `.github/release-please-config-alpha.json`:
+
 ```json
 {
   "prerelease-type": "beta"  // or "rc", "alpha", etc.

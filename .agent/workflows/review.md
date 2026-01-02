@@ -18,8 +18,7 @@ A STRICT, DETERMINISTIC workflow for addressing PR review feedback. This is "God
 4. **TEMP FILES MANDATORY** — Dump ALL API output to `/tmp/pr-<N>-*.json`
 5. **REPLY THEN RESOLVE** — Every addressed thread gets a reply AND explicit resolution
 6. **NO BROWSER** — `gh` CLI exclusively
-7. **VERIFY BEFORE COMMIT** — Run tests for EVERY code change
-   </ironclad_rules>
+7. **VERIFY BEFORE COMMIT** — Run tests for EVERY code change </ironclad_rules>
 
 ---
 
@@ -50,16 +49,14 @@ gh pr diff <PR_NUMBER> --name-only
 gh pr view <PR_NUMBER> --json files --jq '.files[] | "\(.path) +\(.additions) -\(.deletions)"'
 ```
 
-<decision_tree id="diff-analysis">
-BEFORE proceeding, answer these questions by reading the diff:
+<decision_tree id="diff-analysis"> BEFORE proceeding, answer these questions by reading the diff:
 
 1. What is the PRIMARY change? (feature/fix/refactor/test)
 2. Which files are CORE to the change vs supporting?
 3. Are there any RISKY changes? (public API, config, build)
 4. What tests cover this change?
 
-Document answers mentally before Phase 1.
-</decision_tree>
+Document answers mentally before Phase 1. </decision_tree>
 
 ---
 

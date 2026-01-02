@@ -19,12 +19,13 @@ This guide contains common issues, solutions, and debugging techniques for build
 ### Gradle Configuration Cache Issues
 
 **Symptoms:**
+
 - Build fails with `Spotless error! All target files must be within the project dir.`
 - Error message shows path mismatch (e.g., `/workspaces/...` vs `/Users/...`).
 - Occurs after switching environments (e.g., from Codespaces/Docker to local machine).
 
-**Cause:**
-Gradle's configuration cache may retain environment-specific paths (like the project root directory) from a previous build in a different environment. When you run the build in a new environment, these cached paths are invalid.
+**Cause:** Gradle's configuration cache may retain environment-specific paths (like the project root directory) from a
+previous build in a different environment. When you run the build in a new environment, these cached paths are invalid.
 
 **Solution:**
 
@@ -52,10 +53,11 @@ Gradle's configuration cache may retain environment-specific paths (like the pro
 ### Lint/Formatting Issues
 
 **Symptoms:**
+
 - Build fails with `Spotless error!` or `Detekt error`.
 
-**Solution:**
-Run the auto-formatter to fix most issues automatically:
+**Solution:** Run the auto-formatter to fix most issues automatically:
+
 ```bash
 make format
 ```
@@ -63,13 +65,13 @@ make format
 ### Java Runtime Not Found
 
 **Symptoms:**
+
 - `The operation couldn't be completed. Unable to locate a Java Runtime.`
 
-**Cause:**
-Shell environment doesn't have Java configured. Common when using direnv or sdkman.
+**Cause:** Shell environment doesn't have Java configured. Common when using direnv or sdkman.
 
-**Solution:**
-Source your environment before running commands:
+**Solution:** Source your environment before running commands:
+
 ```bash
 eval "$(direnv export bash)"
 # or
@@ -83,27 +85,29 @@ source ~/.sdkman/bin/sdkman-init.sh
 ### CI Build Skipped Despite Code Changes
 
 **Symptoms:**
+
 - PR shows "Build and Test" job as skipped
 - Changed code in nested modules (e.g., `groovy-diagnostics/codenarc/src/`)
 - Path filter shows "Matching files: none"
 
-**Cause:**
-GitHub Actions `dorny/paths-filter` uses glob patterns that only match specified depth levels. The pattern `groovy-*/src/**` matches single-level modules like `groovy-lsp/src/` but NOT nested modules like `groovy-diagnostics/codenarc/src/**`.
+**Cause:** GitHub Actions `dorny/paths-filter` uses glob patterns that only match specified depth levels. The pattern
+`groovy-*/src/**` matches single-level modules like `groovy-lsp/src/` but NOT nested modules like
+`groovy-diagnostics/codenarc/src/**`.
 
-**Debug:**
-Check the `check-paths` job output in GitHub Actions:
+**Debug:** Check the `check-paths` job output in GitHub Actions:
+
 ```bash
 gh run view <run-id> --log | grep "paths-filter"
 # Look for: "Matching files: none" when you expected matches
 ```
 
 Or use the PR checks command:
+
 ```bash
 gh pr checks <pr-number> | grep "check-paths"
 ```
 
-**Solution:**
-Update `.github/workflows/ci.yml` to include nested module patterns:
+**Solution:** Update `.github/workflows/ci.yml` to include nested module patterns:
 
 ```yaml
 filters: |
@@ -120,20 +124,22 @@ filters: |
     - 'tools/*/*.gradle.kts'
 ```
 
-**Key insight:** Each level of nesting requires an explicit glob pattern. Patterns like `**/src/**` are too broad and may match unintended files.
+**Key insight:** Each level of nesting requires an explicit glob pattern. Patterns like `**/src/**` are too broad and
+may match unintended files.
 
 ### CodeQL Autobuild Failures
 
 **Symptoms:**
+
 - CodeQL workflow fails with "We were unable to automatically build your code"
 - Error shows Maven Central rate limiting (HTTP 429: Too Many Requests)
 - Unrelated to your PR changes
 
-**Cause:**
-Transient infrastructure issues with dependency repositories. CodeQL's autobuild downloads all dependencies without caching, which can hit rate limits.
+**Cause:** Transient infrastructure issues with dependency repositories. CodeQL's autobuild downloads all dependencies
+without caching, which can hit rate limits.
 
-**Solution:**
-These are usually temporary. Wait and re-run the workflow:
+**Solution:** These are usually temporary. Wait and re-run the workflow:
+
 ```bash
 gh run rerun <run-id>
 ```
@@ -147,19 +153,22 @@ If persistent, check GitHub's status page: https://www.githubstatus.com/
 ### Test Compilation Errors After Rebasing/Merging
 
 **Symptoms:**
+
 - Build fails with "Unresolved reference" in test code
 - Error points to a property/method that used to exist
 - Main branch builds successfully
 
 **Example:**
+
 ```
 e: file://.../HarnessLanguageClient.kt:127:63 Unresolved reference 'status'.
 ```
 
-**Cause:**
-An API was changed in main (e.g., during a feature PR) but test client code wasn't updated. When you rebase your branch on the new main, the old test code no longer compiles.
+**Cause:** An API was changed in main (e.g., during a feature PR) but test client code wasn't updated. When you rebase
+your branch on the new main, the old test code no longer compiles.
 
 **Debug:**
+
 1. **Identify the changed API:**
    ```bash
    # Find the type/class name from the error
@@ -184,8 +193,7 @@ An API was changed in main (e.g., during a feature PR) but test client code wasn
    git log -p origin/main -- groovy-lsp/src/main/kotlin/path/to/File.kt | head -100
    ```
 
-**Solution Pattern:**
-Update test code to use the new API:
+**Solution Pattern:** Update test code to use the new API:
 
 ```kotlin
 // OLD API (before server-status-notifications PR)
@@ -206,6 +214,7 @@ override fun groovyStatus(status: StatusNotification) {
 ```
 
 **Prevention:**
+
 - Run full build after rebasing: `./gradlew build`
 - Check CI logs for compilation errors before pushing
 - Keep feature branches short-lived to minimize drift from main
@@ -216,9 +225,11 @@ override fun groovyStatus(status: StatusNotification) {
 
 ### Groovy AST Experimentation
 
-When investigating Groovy AST behavior, **run quick `groovy` scripts** to verify assumptions. This is faster than writing tests and helps understand compiler internals.
+When investigating Groovy AST behavior, **run quick `groovy` scripts** to verify assumptions. This is faster than
+writing tests and helps understand compiler internals.
 
 **Basic AST Inspection:**
+
 ```bash
 groovy -e '
 import org.codehaus.groovy.ast.*
@@ -244,6 +255,7 @@ println "Same object? ${m1.parameters[0].is(m2.parameters[0])}"
 ```
 
 **Check accessedVariable Resolution:**
+
 ```bash
 groovy -e '
 import org.codehaus.groovy.ast.*
@@ -278,6 +290,7 @@ method.code.visit(new org.codehaus.groovy.ast.CodeVisitorSupport() {
 ```
 
 **Useful for understanding:**
+
 - What fields AST nodes actually have
 - Whether identity (`===`) vs equals (`==`) matters
 - How Groovy's compiler populates positions, types, etc.
@@ -287,19 +300,20 @@ method.code.visit(new org.codehaus.groovy.ast.CodeVisitorSupport() {
 
 Groovy compiles in phases. Understanding them is critical for debugging:
 
-| Phase | Value | Description |
-|-------|-------|-------------|
-| INITIALIZATION | 1 | Setup |
-| PARSING | 2 | Source to syntax tree |
-| CONVERSION | 3 | Syntax tree to AST |
-| **SEMANTIC_ANALYSIS** | 4 | Variable scope, type resolution, **sets accessedVariable** |
-| CANONICALIZATION | 5 | Normalize AST |
-| INSTRUCTION_SELECTION | 6 | Prepare for bytecode |
-| CLASS_GENERATION | 7 | Generate bytecode |
-| OUTPUT | 8 | Write class files |
-| FINALIZATION | 9 | Cleanup |
+| Phase                 | Value | Description                                                |
+| --------------------- | ----- | ---------------------------------------------------------- |
+| INITIALIZATION        | 1     | Setup                                                      |
+| PARSING               | 2     | Source to syntax tree                                      |
+| CONVERSION            | 3     | Syntax tree to AST                                         |
+| **SEMANTIC_ANALYSIS** | 4     | Variable scope, type resolution, **sets accessedVariable** |
+| CANONICALIZATION      | 5     | Normalize AST                                              |
+| INSTRUCTION_SELECTION | 6     | Prepare for bytecode                                       |
+| CLASS_GENERATION      | 7     | Generate bytecode                                          |
+| OUTPUT                | 8     | Write class files                                          |
+| FINALIZATION          | 9     | Cleanup                                                    |
 
-**Key insight:** If you compile only to CONVERSION (phase 3), `accessedVariable` will be null because SEMANTIC_ANALYSIS (phase 4) hasn't run.
+**Key insight:** If you compile only to CONVERSION (phase 3), `accessedVariable` will be null because SEMANTIC_ANALYSIS
+(phase 4) hasn't run.
 
 ---
 
@@ -308,14 +322,15 @@ Groovy compiles in phases. Understanding them is critical for debugging:
 ### accessedVariable is null
 
 **Symptoms:**
+
 - `VariableExpression.accessedVariable` returns null
 - Symbol resolution falls back to symbol table
 - Wrong definition returned for same-named variables
 
-**Cause:**
-Compilation stopped before SEMANTIC_ANALYSIS phase (phase 4).
+**Cause:** Compilation stopped before SEMANTIC_ANALYSIS phase (phase 4).
 
 **Debug:**
+
 ```kotlin
 // Add to your code temporarily
 if (node is VariableExpression) {
@@ -325,20 +340,22 @@ if (node is VariableExpression) {
 ```
 
 **Common triggers:**
+
 - `shouldRetryAtConversion` in `GroovyParserFacade` triggering for scripts
 - Explicit compilation at `Phases.CONVERSION`
 
 ### Script vs Class Detection
 
 **Symptoms:**
+
 - Classes incorrectly detected as scripts
 - Semantic analysis lost after retry
 
-**Cause:**
-`shouldRetryAtConversion` triggers when a class extends `groovy.lang.Script`, but this also matches intentional scripts.
+**Cause:** `shouldRetryAtConversion` triggers when a class extends `groovy.lang.Script`, but this also matches
+intentional scripts.
 
-**Solution:**
-Check for `class` keyword in source:
+**Solution:** Check for `class` keyword in source:
+
 ```kotlin
 val hasClassKeyword = content.contains(Regex("""\bclass\s+\w+"""))
 ```
@@ -346,10 +363,12 @@ val hasClassKeyword = content.contains(Regex("""\bclass\s+\w+"""))
 ### Parameter Identity Issues
 
 **Symptoms:**
+
 - Same-named parameters in different methods match incorrectly
 - 3 highlights when expecting 2
 
 **Debug with identity hash codes:**
+
 ```kotlin
 System.err.println(
     "node=${node::class.simpleName} at ${node.lineNumber}:${node.columnNumber}, " +
@@ -358,7 +377,8 @@ System.err.println(
 )
 ```
 
-**Key insight:** Groovy reuses the same Parameter object for declaration and all references (via `accessedVariable`). Use identity comparison (`===`), not equals (`==`).
+**Key insight:** Groovy reuses the same Parameter object for declaration and all references (via `accessedVariable`).
+Use identity comparison (`===`), not equals (`==`).
 
 ---
 
@@ -375,6 +395,7 @@ System.err.println("DEBUG: value=$value")
 ```
 
 #### Option 2: Check test reports
+
 ```bash
 # Run test
 ./gradlew :groovy-lsp:test --tests "*.MyTest.my test name"
@@ -402,10 +423,12 @@ open groovy-lsp/build/reports/tests/test/index.html
 ### Test Cache Issues
 
 **Symptoms:**
+
 - Test passes locally but fails in CI
 - Test fails locally but passes after clean
 
 **Solution:**
+
 ```bash
 ./gradlew :groovy-lsp:clean :groovy-lsp:test --tests "*.MyTest"
 ```
@@ -428,11 +451,13 @@ storage.variableDeclarations[uri]?.get("param")
 ### Line Number Indexing
 
 **Issue:** Different systems use different indexing:
+
 - Groovy AST: 1-indexed
 - LSP Protocol: 0-indexed
 - Test assertions: Check which one you're using!
 
 **Debug:**
+
 ```kotlin
 println("Groovy line: ${node.lineNumber}, LSP line: ${node.lineNumber - 1}")
 ```
@@ -448,11 +473,13 @@ println("Groovy line: ${node.lineNumber}, LSP line: ${node.lineNumber - 1}")
 ### Closure vs Method Parameters
 
 **Issue:** Closures have their own parameter scope. A parameter name inside a closure may refer to:
+
 - The closure's parameter
 - An outer method's parameter
 - A captured variable
 
 **Debug:**
+
 ```bash
 groovy -e '
 def method(x) {
@@ -469,6 +496,7 @@ def method(x) {
 **Issue:** Changes in main worktree affect all worktrees.
 
 **Check:**
+
 ```bash
 git worktree list
 git status  # In your current worktree
@@ -478,13 +506,13 @@ git status  # In your current worktree
 
 ## Quick Reference
 
-| Problem | First Step |
-|---------|------------|
-| Build fails | `make format && make build` |
-| CI skipped despite code changes | Check path filters in `.github/workflows/ci.yml` for nested modules |
-| Test compilation error after rebase | `git log --grep="<TypeName>"` to find API changes |
-| Test fails in CI only | `./gradlew clean test --tests "*.MyTest"` |
-| Wrong definition resolved | Check `accessedVariable` with `groovy -e` |
-| accessedVariable is null | Check compilation phase (needs SEMANTIC_ANALYSIS) |
-| Same-named param collision | Use identity comparison (`===`) |
-| Debug output not visible | Use `System.err.println`, check test XML |
+| Problem                             | First Step                                                          |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| Build fails                         | `make format && make build`                                         |
+| CI skipped despite code changes     | Check path filters in `.github/workflows/ci.yml` for nested modules |
+| Test compilation error after rebase | `git log --grep="<TypeName>"` to find API changes                   |
+| Test fails in CI only               | `./gradlew clean test --tests "*.MyTest"`                           |
+| Wrong definition resolved           | Check `accessedVariable` with `groovy -e`                           |
+| accessedVariable is null            | Check compilation phase (needs SEMANTIC_ANALYSIS)                   |
+| Same-named param collision          | Use identity comparison (`===`)                                     |
+| Debug output not visible            | Use `System.err.println`, check test XML                            |

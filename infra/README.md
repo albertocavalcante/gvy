@@ -1,6 +1,7 @@
 # Infrastructure (Self-Hosted Runners)
 
-This directory contains the Terraform/OpenTofu configuration to provision ephemeral GitHub Actions runners on Magalu Cloud.
+This directory contains the Terraform/OpenTofu configuration to provision ephemeral GitHub Actions runners on Magalu
+Cloud.
 
 ## Architecture
 
@@ -29,6 +30,7 @@ This directory contains the Terraform/OpenTofu configuration to provision epheme
 ## Workflow Usage
 
 ### 1. Provision a Runner
+
 ```bash
 # Via GitHub UI: Actions → "Infra: Provision Magalu Runner" → Run workflow
 # Or via CLI:
@@ -36,6 +38,7 @@ gh workflow run runner-provision.yml
 ```
 
 ### 2. Run CI on Magalu
+
 ```bash
 # Via GitHub UI: Actions → CI → Run workflow → runner_label: magalu
 # Or via CLI:
@@ -43,6 +46,7 @@ gh workflow run ci.yml -f runner_label=magalu
 ```
 
 ### 3. Destroy Runner (when done)
+
 ```bash
 # Via GitHub UI: Actions → "Infra: Destroy Magalu Runner" → Run workflow
 # Or wait for nightly cleanup at 3 AM UTC
@@ -53,17 +57,18 @@ gh workflow run runner-destroy.yml
 
 To run the Magalu Runner workflows, the following repository secrets must be set in GitHub:
 
-| Secret | Description |
-| :--- | :--- |
-| `TF_API_TOKEN` | Terraform Cloud User API Token (for state management) |
-| `GH_PAT_RUNNER` | GitHub Personal Access Token for runner registration |
-| `MGC_API_KEY` | Magalu Cloud API Key (for provisioning VMs) |
+| Secret          | Description                                           |
+| :-------------- | :---------------------------------------------------- |
+| `TF_API_TOKEN`  | Terraform Cloud User API Token (for state management) |
+| `GH_PAT_RUNNER` | GitHub Personal Access Token for runner registration  |
+| `MGC_API_KEY`   | Magalu Cloud API Key (for provisioning VMs)           |
 
 ### Creating the GitHub PAT (`GH_PAT_RUNNER`)
 
 GitHub does not support creating PATs via CLI for security reasons. Create one manually:
 
-1. Go to [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
+1. Go to
+   [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
 2. Click **"Generate new token (classic)"**
 3. Set a descriptive name (e.g., `groovy-lsp-runner`)
 4. Select scopes:
@@ -107,15 +112,16 @@ gh secret set MGC_API_KEY
 > [!TIP]
 > Manage API keys: `mgc auth api-key list` | `mgc auth api-key revoke --id=<UUID>`
 
-
 ## GitHub Environments
 
-The workflows use [GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) for approval gates:
+The workflows use
+[GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+for approval gates:
 
-| Environment | Purpose | Approval Required |
-| :--- | :--- | :--- |
-| `production` | Manual approval for infrastructure changes | ✅ Yes |
-| `cleanup` | Auto-approval for scheduled nightly cleanup | ❌ No |
+| Environment  | Purpose                                     | Approval Required |
+| :----------- | :------------------------------------------ | :---------------- |
+| `production` | Manual approval for infrastructure changes  | ✅ Yes            |
+| `cleanup`    | Auto-approval for scheduled nightly cleanup | ❌ No             |
 
 ### Setup via `gh` CLI
 
@@ -161,9 +167,11 @@ When a job specifies `environment: production`, GitHub Actions:
 ```
 
 In `runner-destroy.yml`, the environment is dynamic:
+
 ```yaml
 environment: ${{ github.event_name == 'schedule' && 'cleanup' || 'production' }}
 ```
+
 - **Scheduled runs** → `cleanup` (no approval)
 - **Manual runs** → `production` (requires approval)
 
@@ -182,25 +190,27 @@ environment: ${{ github.event_name == 'schedule' && 'cleanup' || 'production' }}
 
 Reference pricing for **Balanced Value (High Memory)** VMs with **10GB disk**:
 
-| Type | vCPU | RAM | R$/hour | R$/month | Notes |
-| :--- | :---: | :---: | ---: | ---: | :--- |
-| `BV1-4-10` | 1 | 4GB | 0.1000 | 72.99 | Minimum viable |
-| `BV2-8-10` | 2 | 8GB | 0.1644 | 119.99 | Light workloads |
-| **`BV4-16-10`** | 4 | 16GB | 0.3151 | 229.99 | **Default** (recommended for Gradle) |
-| `BV8-32-10` | 8 | 32GB | 0.6575 | 479.99 | Heavy parallel builds |
+| Type            | vCPU | RAM  | R$/hour | R$/month | Notes                                |
+| :-------------- | :--: | :--: | ------: | -------: | :----------------------------------- |
+| `BV1-4-10`      |  1   | 4GB  |  0.1000 |    72.99 | Minimum viable                       |
+| `BV2-8-10`      |  2   | 8GB  |  0.1644 |   119.99 | Light workloads                      |
+| **`BV4-16-10`** |  4   | 16GB |  0.3151 |   229.99 | **Default** (recommended for Gradle) |
+| `BV8-32-10`     |  8   | 32GB |  0.6575 |   479.99 | Heavy parallel builds                |
 
 > [!NOTE]
-> All Balanced Value VMs have **10GB disk** regardless of tier. This is sufficient for ephemeral CI runners since Gradle cache is externalized.
+> All Balanced Value VMs have **10GB disk** regardless of tier. This is sufficient for ephemeral CI runners since Gradle
+> cache is externalized.
 
 ### Cost Estimation
 
-| Usage Pattern | Hours/Month | Estimated Cost |
-| :--- | :---: | ---: |
-| On-demand (8h/day, weekdays) | ~176h | ~R$55 |
-| Always-on (development) | ~720h | ~R$227 |
-| Burst (CI-triggered) | ~40h | ~R$13 |
+| Usage Pattern                | Hours/Month | Estimated Cost |
+| :--------------------------- | :---------: | -------------: |
+| On-demand (8h/day, weekdays) |    ~176h    |          ~R$55 |
+| Always-on (development)      |    ~720h    |         ~R$227 |
+| Burst (CI-triggered)         |    ~40h     |          ~R$13 |
 
 To change machine type, use the `machine_type` input when provisioning:
+
 ```bash
 gh workflow run runner-provision.yml -f machine_type=BV8-32-10
 ```
@@ -208,6 +218,7 @@ gh workflow run runner-provision.yml -f machine_type=BV8-32-10
 ## Terraform State
 
 State is managed remotely via Terraform Cloud:
+
 - Organization: `alberto`
 - Workspace: `groovy-lsp-runner`
 
@@ -233,6 +244,7 @@ State is managed remotely via Terraform Cloud:
 After running `terraform apply`, retrieve sensitive outputs:
 
 #### Get SSH Private Key
+
 ```bash
 # Export SSH key to file (for connecting to runner)
 terraform output -raw generated_ssh_private_key > runner-key.pem
@@ -242,6 +254,7 @@ chmod 600 runner-key.pem
 ```
 
 #### Get Runner IP Addresses
+
 ```bash
 # JSON format (required for list/tuple outputs)
 terraform output -json runner_ipv4s
@@ -253,6 +266,7 @@ terraform output -json runner_ipv4s | jq -r '.[0]'
 ```
 
 #### Get Runner Configuration Summary
+
 ```bash
 # View all runner configuration
 terraform output runner_config
@@ -269,6 +283,7 @@ terraform output runner_config
 ```
 
 ### Connect to Runner via SSH
+
 ```bash
 # 1. Export SSH key (if not already done)
 terraform output -raw generated_ssh_private_key > runner-key.pem
@@ -284,7 +299,9 @@ ssh -i runner-key.pem ubuntu@$RUNNER_IP
 ### Common Errors
 
 #### ❌ `Error: Output "runner_ipv4" not found`
+
 **Cause**: Output name mismatch. The correct output is `runner_ipv4s` (plural).
+
 ```bash
 # Wrong
 terraform output -raw runner_ipv4
@@ -294,7 +311,9 @@ terraform output -json runner_ipv4s
 ```
 
 #### ❌ `Error: Unsupported value for raw output`
+
 **Cause**: The `-raw` flag only works for strings, not lists/tuples.
+
 ```bash
 # Wrong (runner_ipv4s is a list)
 terraform output -raw runner_ipv4s
@@ -336,4 +355,3 @@ ssh -i runner-key.pem ubuntu@$(terraform output -json runner_ipv4s | jq -r '.[0]
 # 8. Cleanup when done
 terraform destroy
 ```
-

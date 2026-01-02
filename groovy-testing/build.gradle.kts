@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     // Groovy AST for ClassNode/ModuleNode
-    implementation(project(":groovy-parser"))
+    implementation(project(":parser:native"))
     // Spock-specific detection and extraction
     implementation(project(":groovy-spock"))
     implementation(libs.slf4j.api)

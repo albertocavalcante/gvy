@@ -1,6 +1,7 @@
 # GroovyParser Core
 
-A standalone Groovy parsing library with a JavaParser-inspired API, designed for building IDE tooling, static analyzers, and code transformation tools.
+A standalone Groovy parsing library with a JavaParser-inspired API, designed for building IDE tooling, static analyzers,
+and code transformation tools.
 
 ## Features
 
@@ -434,21 +435,21 @@ val strictParser = GroovyParser(strictConfig)
 
 ### Main Classes
 
-| Class | Description |
-|-------|-------------|
-| `StaticGroovyParser` | Static utility for quick parsing |
-| `GroovyParser` | Configurable parser instance |
-| `ParserConfiguration` | Parser settings (language level, etc.) |
-| `ParseResult<T>` | Result wrapper with success/failure info |
-| `CompilationUnit` | Root AST node for a parsed file |
+| Class                 | Description                              |
+| --------------------- | ---------------------------------------- |
+| `StaticGroovyParser`  | Static utility for quick parsing         |
+| `GroovyParser`        | Configurable parser instance             |
+| `ParserConfiguration` | Parser settings (language level, etc.)   |
+| `ParseResult<T>`      | Result wrapper with success/failure info |
+| `CompilationUnit`     | Root AST node for a parsed file          |
 
 ### Visitor Classes
 
-| Class | Description |
-|-------|-------------|
-| `VoidVisitor<A>` | Visitor interface for side effects |
-| `GroovyVisitor<R>` | Visitor interface with return value |
-| `VoidVisitorAdapter<A>` | Default traversal implementation |
+| Class                   | Description                         |
+| ----------------------- | ----------------------------------- |
+| `VoidVisitor<A>`        | Visitor interface for side effects  |
+| `GroovyVisitor<R>`      | Visitor interface with return value |
+| `VoidVisitorAdapter<A>` | Default traversal implementation    |
 
 ## Requirements
 
