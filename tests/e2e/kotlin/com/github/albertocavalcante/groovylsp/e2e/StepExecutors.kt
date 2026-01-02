@@ -514,7 +514,9 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
 
         try {
             logger.info("Downloading plugin {}:{}", pluginId, version)
-            val path = downloader.download(pluginId, version)
+            val path = kotlinx.coroutines.runBlocking {
+                downloader.download(pluginId, version)
+            }
 
             step.saveAs?.let { variableName ->
                 context.setVariable(variableName, wrapJavaObject(path.toString()))
