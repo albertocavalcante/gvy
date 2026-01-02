@@ -34,7 +34,7 @@ class IndexCommand : CliktCommand(name = "index") {
         .default(java.nio.file.Path.of("."))
 
     override fun run() {
-        val rootPath = projectRoot.toAbsolutePath().toString()
+        val rootPath = projectRoot.toAbsolutePath().normalize().toString()
         echo("Indexing $rootPath to $output in $format format...")
 
         val writers = when (format) {
