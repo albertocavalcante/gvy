@@ -21,6 +21,8 @@ class PrintlnDebugRule : AbstractDiagnosticRule() {
 
     override val description = "Detect println statements that should use proper logging"
 
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
     override val defaultSeverity = DiagnosticSeverity.Information
 
     override val enabledByDefault = true

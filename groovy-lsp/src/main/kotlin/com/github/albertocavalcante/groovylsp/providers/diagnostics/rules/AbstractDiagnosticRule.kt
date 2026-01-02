@@ -41,6 +41,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
 
     /**
      * Create a diagnostic at the specified position.
+     * Automatically adds analysis type prefix to the code for clarity.
      */
     protected fun diagnostic(
         line: Int,
@@ -48,7 +49,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
         endChar: Int,
         message: String,
         severity: DiagnosticSeverity = defaultSeverity,
-        code: String? = id,
+        code: String? = formatDiagnosticCode(id),
     ): Diagnostic = Diagnostic(
         Range(Position(line, startChar), Position(line, endChar)),
         message,
@@ -59,6 +60,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
 
     /**
      * Create a diagnostic spanning multiple lines.
+     * Automatically adds analysis type prefix to the code for clarity.
      */
     protected fun diagnostic(
         startLine: Int,
@@ -67,7 +69,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
         endChar: Int,
         message: String,
         severity: DiagnosticSeverity = defaultSeverity,
-        code: String? = id,
+        code: String? = formatDiagnosticCode(id),
     ): Diagnostic = Diagnostic(
         Range(Position(startLine, startChar), Position(endLine, endChar)),
         message,
@@ -75,4 +77,17 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
         "groovy-lsp",
         code,
     )
+
+    /**
+     * Format diagnostic code with analysis type prefix.
+     * Examples: "H:println-debug", "A:unused-import", "S:type-mismatch"
+     */
+    private fun formatDiagnosticCode(ruleId: String): String {
+        val prefix = when (analysisType) {
+            DiagnosticAnalysisType.AST -> "A"
+            DiagnosticAnalysisType.HEURISTIC -> "H"
+            DiagnosticAnalysisType.SEMANTIC -> "S"
+        }
+        return "$prefix:$ruleId"
+    }
 }

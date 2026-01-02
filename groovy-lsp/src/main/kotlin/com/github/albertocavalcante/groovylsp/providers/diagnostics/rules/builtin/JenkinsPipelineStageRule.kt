@@ -21,6 +21,8 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
     override val description = "Detect incomplete or malformed Jenkins pipeline stage declarations"
 
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
     override val defaultSeverity = DiagnosticSeverity.Warning
 
     override val enabledByDefault = true

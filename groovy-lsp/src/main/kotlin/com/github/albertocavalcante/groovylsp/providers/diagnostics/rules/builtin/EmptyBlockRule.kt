@@ -23,6 +23,8 @@ class EmptyBlockRule : AbstractDiagnosticRule() {
 
     override val description = "Detect empty code blocks that may indicate incomplete implementation"
 
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
     override val defaultSeverity = DiagnosticSeverity.Hint
 
     override val enabledByDefault = true

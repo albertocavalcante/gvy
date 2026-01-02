@@ -145,6 +145,7 @@ class RuleRegistryTest {
     ): DiagnosticRule = object : AbstractDiagnosticRule() {
         override val id = id
         override val description = desc
+        override val analysisType = DiagnosticAnalysisType.HEURISTIC
         override val defaultSeverity = DiagnosticSeverity.Warning
         override val enabledByDefault = enabledByDefault
 

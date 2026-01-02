@@ -5,6 +5,37 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import java.net.URI
 
 /**
+ * Type of analysis performed by a diagnostic rule.
+ *
+ * This helps users understand the confidence level of diagnostics:
+ * - AST-based rules are more precise and have fewer false positives
+ * - Heuristic rules use pattern matching and may have false positives
+ * - Semantic rules require type information and symbol resolution
+ */
+enum class DiagnosticAnalysisType {
+    /**
+     * Rule analyzes the Abstract Syntax Tree (AST).
+     * Most precise, fewest false positives.
+     * Example: Detecting actual unused variables by traversing AST nodes.
+     */
+    AST,
+
+    /**
+     * Rule uses heuristics like regex patterns or text analysis.
+     * May have false positives but faster and simpler.
+     * Example: Detecting println statements via regex.
+     */
+    HEURISTIC,
+
+    /**
+     * Rule performs semantic analysis using type information.
+     * Most comprehensive but requires full compilation.
+     * Example: Type checking, null-safety analysis with flow analysis.
+     */
+    SEMANTIC,
+}
+
+/**
  * Base interface for custom diagnostic rules.
  *
  * Rules analyze source code and emit diagnostics for violations.
@@ -29,6 +60,13 @@ interface DiagnosticRule {
      * Example: "Detect potential null pointer exceptions"
      */
     val description: String
+
+    /**
+     * Type of analysis this rule performs.
+     * Helps users understand confidence level and potential for false positives.
+     */
+    val analysisType: DiagnosticAnalysisType
+        get() = DiagnosticAnalysisType.HEURISTIC
 
     /**
      * Default severity for violations of this rule.

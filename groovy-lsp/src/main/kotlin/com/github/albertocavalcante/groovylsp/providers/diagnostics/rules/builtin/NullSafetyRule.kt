@@ -24,6 +24,8 @@ class NullSafetyRule : AbstractDiagnosticRule() {
 
     override val defaultSeverity = DiagnosticSeverity.Hint
 
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
     override val enabledByDefault = false // Disabled by default as it can be noisy
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
@@ -31,8 +33,9 @@ class NullSafetyRule : AbstractDiagnosticRule() {
         val lines = content.lines()
 
         // Pattern: method calls or field access that might be on null values
-        // Look for cases where variables are accessed without null-safe operators
-        val unsafeAccessPattern = Regex("""(\w+)\.(get|find|findAll|collect)\(.*?\)\.\w+""")
+        // Look for cases where collection methods are chained without null-safe operators
+        // Matches: list.find { }.value  OR  list.findAll { }.name  OR  x.collect { }.size
+        val unsafeAccessPattern = Regex("""(\w+)\.(get|find|findAll|collect|first|last)\s*[{(].*?[})]\.(\w+)""")
 
         lines.forEachIndexed { lineIndex, line ->
             // Skip if already using null-safe operator

@@ -21,6 +21,8 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
 
     override val description = "Detect incomplete Spock test methods missing key blocks"
 
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
     override val defaultSeverity = DiagnosticSeverity.Information
 
     override val enabledByDefault = true
