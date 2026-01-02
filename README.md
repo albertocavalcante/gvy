@@ -100,15 +100,16 @@ the GitHub issue instead of printing it locally. The default model is `gpt-5-cod
 
 ### VS Code Extension
 
-The VS Code extension is located in `editors/code/`. See `editors/code/README.md` for extension-specific documentation.
+The VS Code extension is located in `editors/code/`. See [editors/code/README.md](editors/code/README.md) for
+extension-specific documentation.
 
 A standalone mirror is maintained at [vscode-groovy](https://github.com/albertocavalcante/vscode-groovy) (synced via
 Copybara).
 
 ## Contributing
 
-See `CONTRIBUTING.md` for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-Apache License 2.0 - See `LICENSE` for details.
+Apache License 2.0 - See [LICENSE](LICENSE) for details.
