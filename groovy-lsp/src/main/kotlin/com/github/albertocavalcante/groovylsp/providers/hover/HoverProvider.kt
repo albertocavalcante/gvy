@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -317,27 +318,28 @@ class HoverProvider(
         val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 
         // Build rich hover content for Jenkins step
-        val markdownContent = buildString {
-            append("## Jenkins Step: `$stepName`\n\n")
+        val markdownContent = markdown {
+            h2("Jenkins Step: `$stepName`")
+
             stepMetadata.documentation?.let { doc ->
-                append(doc)
-                append("\n\n")
+                text(doc)
             }
+
             stepMetadata.plugin?.let { plugin ->
-                append("**Plugin:** $plugin\n\n")
+                text("**Plugin:** $plugin")
             }
 
             // Use namedParams instead of parameters for MergedStepMetadata
             if (stepMetadata.namedParams.isNotEmpty()) {
-                append("### Parameters\n\n")
-                stepMetadata.namedParams.forEach { (name, param) ->
-                    val required = if (param.required) " *(required)*" else ""
-                    val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
-                    append("- **`$name`**: `${param.type}`$required$defaultVal\n")
-                    param.description?.let { doc ->
-                        append("  - $doc\n")
-                    }
-                }
+                h3("Parameters")
+                list(
+                    stepMetadata.namedParams.map { (name, param) ->
+                        val required = if (param.required) " *(required)*" else ""
+                        val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
+                        val base = "**`$name`**: `${param.type}`$required$defaultVal"
+                        param.description?.let { desc -> "$base\n  - $desc" } ?: base
+                    },
+                )
             }
         }
 
@@ -367,17 +369,16 @@ class HoverProvider(
         val globalVar = globalVariables.find { it.name == varName } ?: return null
 
         // Build hover content
-        val markdownContent = buildString {
-            append("## Jenkins Shared Library: `$varName`\n\n")
+        val markdownContent = markdown {
+            h2("Jenkins Shared Library: `$varName`")
 
             if (globalVar.documentation.isNotEmpty()) {
-                append(globalVar.documentation)
-                append("\n\n")
+                text(globalVar.documentation)
             } else {
-                append("_No documentation available. Add a `vars/$varName.txt` file to provide documentation._\n\n")
+                text(italic("No documentation available. Add a `vars/$varName.txt` file to provide documentation."))
             }
 
-            append("**Source:** `${globalVar.path.fileName}`\n")
+            text("**Source:** `${globalVar.path.fileName}`")
         }
 
         val markupContent = MarkupContent().apply {

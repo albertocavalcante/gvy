@@ -1,6 +1,7 @@
 import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.language.base.plugins.LifecycleBasePlugin
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.artifacts.VersionCatalogsExtension
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -43,6 +44,11 @@ subprojects {
         mavenCentral()
         mavenLocal()
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
+    }
+
+    val libs = rootProject.extensions.getByType<VersionCatalogsExtension>().named("libs")
+    dependencies {
+        detektPlugins(libs.findLibrary("detekt-formatting").get())
     }
 
     // Configure Java Toolchain for all subprojects to ensure hermetic builds

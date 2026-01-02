@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsContext
 import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
@@ -60,23 +61,22 @@ class JenkinsDocProvider(
         }
 
         return if (metadata != null) {
-            val content = buildString {
-                appendLine("### `$stepName`")
-                appendLine()
+            val content = markdown {
+                h3("`$stepName`")
 
                 metadata.documentation?.let {
-                    appendLine(it)
-                    appendLine()
+                    text(it)
                 }
 
-                appendLine("**Plugin:** ${metadata.plugin}")
-                appendLine()
+                text("**Plugin:** ${metadata.plugin}")
 
                 if (metadata.parameters.isNotEmpty()) {
-                    appendLine("**Parameters:**")
-                    metadata.parameters.forEach { (paramName, param) ->
-                        appendLine("- `$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}")
-                    }
+                    text("**Parameters:**")
+                    list(
+                        metadata.parameters.map { (paramName, param) ->
+                            "`$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}"
+                        },
+                    )
                 }
             }
 
@@ -103,13 +103,11 @@ class JenkinsDocProvider(
 
         return if (stepName in knownSteps) {
             GroovyDocumentation.markdown(
-                content = """
-                    ### `$stepName`
-                    
-                    Jenkins Pipeline step.
-                    
-                    [View documentation](https://www.jenkins.io/doc/pipeline/steps/)
-                """.trimIndent(),
+                content = markdown {
+                    h3("`$stepName`")
+                    text("Jenkins Pipeline step.")
+                    link("View documentation", "https://www.jenkins.io/doc/pipeline/steps/")
+                },
                 source = "Jenkins Pipeline",
             )
         } else {
