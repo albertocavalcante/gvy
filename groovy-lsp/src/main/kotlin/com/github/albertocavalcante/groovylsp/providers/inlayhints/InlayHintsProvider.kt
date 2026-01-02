@@ -512,7 +512,7 @@ class InlayHintsProvider(
         return clazz.constructors
             .filter { it.parameterCount == argCount }
             .map { constructor ->
-                val types = constructor.parameterTypes.map { it.simpleName }
+                val types = constructor.parameterTypes.map { it.name }
                 val names = constructor.parameters.map { it.name }
                 toSignature(types, names)
             }
@@ -613,8 +613,12 @@ class InlayHintsProvider(
     private fun resolveClass(typeName: String): Class<*>? {
         val normalized = normalizeTypeName(typeName)
         val aliased = primitiveTypeAliases[normalized] ?: normalized
-        val lookupName = if (aliased.contains('.')) aliased else null
-        return lookupName?.let { compilationService.classpathService.loadClass(it) }
+        val lookupName = when {
+            aliased.contains('.') -> aliased
+            javaLangTypeAliases.containsKey(aliased) -> javaLangTypeAliases.getValue(aliased)
+            else -> return null
+        }
+        return compilationService.classpathService.loadClass(lookupName)
     }
 
     private fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')
@@ -667,6 +671,20 @@ class InlayHintsProvider(
             "long" to "Long",
             "float" to "Float",
             "double" to "Double",
+        )
+        private val javaLangTypeAliases = mapOf(
+            "Object" to "java.lang.Object",
+            "String" to "java.lang.String",
+            "Number" to "java.lang.Number",
+            "Boolean" to "java.lang.Boolean",
+            "Byte" to "java.lang.Byte",
+            "Short" to "java.lang.Short",
+            "Character" to "java.lang.Character",
+            "Integer" to "java.lang.Integer",
+            "Long" to "java.lang.Long",
+            "Float" to "java.lang.Float",
+            "Double" to "java.lang.Double",
+            "Void" to "java.lang.Void",
         )
     }
 }

@@ -434,6 +434,53 @@ class InlayHintsProviderTest {
         }
 
         @Test
+        fun `should allow primitive arguments for supertype parameters`() {
+            val code = """
+                class Foo {
+                    void work(Number value) {}
+                    void run() {
+                        work(1)
+                    }
+                }
+            """.trimIndent()
+
+            setupCompilationWithCode(code)
+            provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+            val hints = provider.provideInlayHints(params)
+
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertEquals(1, paramHints.size, "Should have 1 parameter hint for Number parameter")
+            assertEquals("value:", paramHints[0].label.left as String)
+        }
+
+        @Test
+        fun `should resolve classpath constructors with qualified parameter types`() {
+            val code = """
+                new java.util.ArrayList(new java.util.ArrayList())
+            """.trimIndent()
+            val parser = GroovyParserFacade()
+            val callResult = parser.parse(ParseRequest(testUri, code))
+            val classpathService = mockk<ClasspathService>()
+
+            every { compilationService.getAstModel(testUri) } returns callResult.astModel
+            every { compilationService.getAllSymbolStorages() } returns emptyMap()
+            every { compilationService.classpathService } returns classpathService
+            every { classpathService.loadClass("java.util.ArrayList") } returns java.util.ArrayList::class.java
+            every { classpathService.loadClass("java.util.Collection") } returns java.util.Collection::class.java
+            every { classpathService.loadClass("java.lang.Integer") } returns java.lang.Integer::class.java
+
+            provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+            val hints = provider.provideInlayHints(params)
+
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertEquals(1, paramHints.size, "Should have 1 constructor hint from classpath")
+        }
+
+        @Test
         fun `should select overload by argument types when multiple matches exist`() {
             val fooUri = URI.create("file:///test/Foo.groovy")
             val fooCode = """
