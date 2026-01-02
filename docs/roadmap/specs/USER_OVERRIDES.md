@@ -1,15 +1,17 @@
 # User Override System
 
-> **Status:** 📋 Draft  
-> **Target Version:** 0.5.0  
-> **Related:** [Jenkins IntelliSense](../../JENKINS_INTELLISENSE_ARCHITECTURE.md), [GDSL Execution](GDSL_EXECUTION_ENGINE.md)  
+> **Status:** 📋 Draft\
+> **Target Version:** 0.5.0\
+> **Related:** [Jenkins IntelliSense](../../JENKINS_INTELLISENSE_ARCHITECTURE.md),
+> [GDSL Execution](GDSL_EXECUTION_ENGINE.md)\
 > **Roadmap:** [← Back to Roadmap](../README.md)
 
 ---
 
 ## Overview
 
-The User Override System allows users to provide custom Jenkins metadata for their specific environment. This is essential for:
+The User Override System allows users to provide custom Jenkins metadata for their specific environment. This is
+essential for:
 
 - Internal/private Jenkins plugins not in public metadata
 - Custom shared library steps
@@ -503,5 +505,4 @@ fun reportConfigDiagnostics(result: ConfigLoadResult): List<Diagnostic> {
 
 ---
 
-*Last updated: December 21, 2025*
-
+_Last updated: December 21, 2025_

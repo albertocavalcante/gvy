@@ -28,6 +28,7 @@ def "maximum of #a and #b is #c"() {
 ```
 
 Each iteration appears as a child test in the Test Explorer:
+
 - `maximum of 1 and 3 is 3` ✅
 - `maximum of 7 and 4 is 7` ✅
 
@@ -39,7 +40,9 @@ Each iteration appears as a child test in the Test Explorer:
 ## Troubleshooting
 
 ### Tests not appearing
+
 Ensure the Groovy Language Server is running and has indexed your test files.
 
 ### Gradle wrapper not found
+
 The extension looks for `gradlew` (or `gradlew.bat` on Windows) in your workspace root.

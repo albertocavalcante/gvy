@@ -1,6 +1,7 @@
 # Jenkins IntelliSense Architecture
 
-> Comprehensive versioned metadata architecture for Jenkins IntelliSense, combining GDSL extraction from a containerized Jenkins instance with static analysis.
+> Comprehensive versioned metadata architecture for Jenkins IntelliSense, combining GDSL extraction from a containerized
+> Jenkins instance with static analysis.
 
 ## Table of Contents
 
@@ -18,7 +19,8 @@
 
 ## Overview
 
-The Jenkins IntelliSense system provides comprehensive auto-completion, hover documentation, and parameter hints for Jenkinsfiles. It uses a multi-layer metadata architecture that combines:
+The Jenkins IntelliSense system provides comprehensive auto-completion, hover documentation, and parameter hints for
+Jenkinsfiles. It uses a multi-layer metadata architecture that combines:
 
 1. **Stable Step Definitions** - Hardcoded core steps that rarely change (sh, echo, bat)
 2. **GDSL-Extracted Metadata** - Authoritative step definitions from Jenkins runtime
@@ -28,7 +30,8 @@ The Jenkins IntelliSense system provides comprehensive auto-completion, hover do
 
 ### Key Discovery: Jenkins GDSL Endpoint
 
-Jenkins exposes a `/pipeline-syntax/gdsl` endpoint that generates a complete GDSL file dynamically based on installed plugins. This is the **authoritative source** because:
+Jenkins exposes a `/pipeline-syntax/gdsl` endpoint that generates a complete GDSL file dynamically based on installed
+plugins. This is the **authoritative source** because:
 
 - Uses `getFunctionName()` to correctly map class names to step names (e.g., `ShellStep` → `sh`)
 - Uses `DescribableModel` for exact parameter extraction
@@ -236,12 +239,12 @@ groovy-jenkins/src/main/resources/metadata/
 
 Steps are classified by how frequently they change:
 
-| Level | Description | Refresh Frequency | Examples |
-|-------|-------------|-------------------|----------|
-| **Stable** | Core steps, unchanged for years | Never (hardcoded) | sh, bat, echo, node, stage |
-| **Semi-Stable** | Rarely changes | Yearly | timeout, retry, parallel |
-| **Active** | Occasionally updated | Per LTS release | withCredentials, junit |
-| **Volatile** | Frequently changing | Monthly | Third-party plugins |
+| Level           | Description                     | Refresh Frequency | Examples                   |
+| --------------- | ------------------------------- | ----------------- | -------------------------- |
+| **Stable**      | Core steps, unchanged for years | Never (hardcoded) | sh, bat, echo, node, stage |
+| **Semi-Stable** | Rarely changes                  | Yearly            | timeout, retry, parallel   |
+| **Active**      | Occasionally updated            | Per LTS release   | withCredentials, junit     |
+| **Volatile**    | Frequently changing             | Monthly           | Third-party plugins        |
 
 ### Resolution Order
 
@@ -299,14 +302,14 @@ The LSP detects the current context to provide relevant completions:
 
 ### Context Types
 
-| Context | Pattern | Completions Provided |
-|---------|---------|---------------------|
-| `env.` | `env.\w*$` | Environment variables (BUILD_NUMBER, JOB_NAME, etc.) |
-| `post {}` | Inside post block | Post conditions (always, success, failure, etc.) |
-| `options {}` | Inside options block | Declarative options (timeout, timestamps, etc.) |
-| `agent {}` | Inside agent block | Agent types (any, none, docker, kubernetes, etc.) |
-| `properties([])` | Inside properties call | Job properties (disableConcurrentBuilds, etc.) |
-| Step parameters | Inside step call | Step-specific parameters |
+| Context          | Pattern                | Completions Provided                                 |
+| ---------------- | ---------------------- | ---------------------------------------------------- |
+| `env.`           | `env.\w*$`             | Environment variables (BUILD_NUMBER, JOB_NAME, etc.) |
+| `post {}`        | Inside post block      | Post conditions (always, success, failure, etc.)     |
+| `options {}`     | Inside options block   | Declarative options (timeout, timestamps, etc.)      |
+| `agent {}`       | Inside agent block     | Agent types (any, none, docker, kubernetes, etc.)    |
+| `properties([])` | Inside properties call | Job properties (disableConcurrentBuilds, etc.)       |
+| Step parameters  | Inside step call       | Step-specific parameters                             |
 
 ### Example
 
@@ -448,4 +451,3 @@ Metadata is automatically updated quarterly via CI. For manual updates:
 - [JENKINS_SMART_COMPLETION_PROPOSAL.md](../JENKINS_SMART_COMPLETION_PROPOSAL.md) - Original proposal
 - [groovy-jenkins README](../groovy-jenkins/README.md) - Module documentation
 - [Jenkins Pipeline Syntax](https://www.jenkins.io/doc/book/pipeline/syntax/) - Official docs
-

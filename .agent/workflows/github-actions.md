@@ -8,8 +8,8 @@ description: GitHub Actions configuration, SHA pinning, and workflow debugging
 
 ## SHA Pinning (REQUIRED)
 
-ALWAYS pin GitHub Actions to full SHA commit hash, NOT version tags.
-Add an inline comment with the full semver version for readability.
+ALWAYS pin GitHub Actions to full SHA commit hash, NOT version tags. Add an inline comment with the full semver version
+for readability.
 
 ✅ Good:
 
@@ -25,7 +25,8 @@ uses: actions/checkout@v4
 uses: actions/setup-java@v4
 ```
 
-**Rationale**: SHA pinning prevents supply chain attacks where a tag could be moved to point to malicious code. The inline version comment maintains readability.
+**Rationale**: SHA pinning prevents supply chain attacks where a tag could be moved to point to malicious code. The
+inline version comment maintains readability.
 
 ## Find SHA for a Version
 

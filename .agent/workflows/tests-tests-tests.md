@@ -4,7 +4,8 @@ description: Deterministic protocol for developing, verifying, and managing End-
 
 # /tests-tests-tests
 
-This workflow defines the mandatory procedure for developing End-to-End (E2E) tests. It prioritizes determinism, assertion strictness, and explicit failure management.
+This workflow defines the mandatory procedure for developing End-to-End (E2E) tests. It prioritizes determinism,
+assertion strictness, and explicit failure management.
 
 ## Reference Documentation
 
@@ -15,15 +16,14 @@ Before proceeding, read the following files to understand the test runner struct
 
 ## Phase 1: Setup
 
-1. **Worktree Isolation**
-   Execute the following command to create a clean environment for your test development:
+1. **Worktree Isolation** Execute the following command to create a clean environment for your test development:
    ```bash
    git worktree add -b feat/e2e-[feature_name] ../groovy-lsp-e2e-[feature_name] origin/main
    cd ../groovy-lsp-e2e-[feature_name]
    ```
 
-2. **Scenario Creation**
-   Create a new YAML file in `tests/e2e/resources/scenarios/`. Use a kebab-case naming convention describing the feature and scope (e.g., `completion-basic.yaml`).
+2. **Scenario Creation** Create a new YAML file in `tests/e2e/resources/scenarios/`. Use a kebab-case naming convention
+   describing the feature and scope (e.g., `completion-basic.yaml`).
 
 ## Phase 2: Implementation Standards
 
@@ -45,7 +45,8 @@ Verify nested properties to ensure structure correctness.
 
 ### 3. Harness Expansion
 
-If the current test framework (Kotlin) lacks the necessary step types or assertion operators (`ExpectationType`) to express a strict test:
+If the current test framework (Kotlin) lacks the necessary step types or assertion operators (`ExpectationType`) to
+express a strict test:
 
 1. **Do Not Compromise**: Do not write a weaker test.
 2. **Extend**: Modify `tests/e2e/kotlin/com/github/albertocavalcante/groovylsp/e2e` to add the missing capability.

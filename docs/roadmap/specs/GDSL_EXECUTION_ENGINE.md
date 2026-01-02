@@ -1,17 +1,19 @@
 # GDSL Execution Engine
 
-> **Status:** 📋 Draft  
-> **Target Version:** 0.5.0  
-> **Related:** [Jenkins IntelliSense](../../JENKINS_INTELLISENSE_ARCHITECTURE.md), [User Overrides](USER_OVERRIDES.md)  
+> **Status:** 📋 Draft\
+> **Target Version:** 0.5.0\
+> **Related:** [Jenkins IntelliSense](../../JENKINS_INTELLISENSE_ARCHITECTURE.md), [User Overrides](USER_OVERRIDES.md)\
 > **Roadmap:** [← Back to Roadmap](../README.md)
 
 ---
 
 ## Overview
 
-The GDSL (Groovy DSL) Execution Engine provides dynamic completion and type inference by executing GDSL scripts. This is the same mechanism used by IntelliJ IDEA for custom DSL support.
+The GDSL (Groovy DSL) Execution Engine provides dynamic completion and type inference by executing GDSL scripts. This is
+the same mechanism used by IntelliJ IDEA for custom DSL support.
 
-Unlike text-based regex parsing, execution-based parsing correctly handles all GDSL constructs by leveraging Groovy's dynamic nature.
+Unlike text-based regex parsing, execution-based parsing correctly handles all GDSL constructs by leveraging Groovy's
+dynamic nature.
 
 ---
 
@@ -27,6 +29,7 @@ private val METHOD_PATTERN = Regex("""method\s*\(\s*name:\s*'([^']+)'[^)]*\)""")
 ```
 
 **Problems:**
+
 - Fragile: Breaks on edge cases (escaped quotes, multi-line, nested structures)
 - Incomplete: Can't handle complex GDSL patterns
 - Duplicated: IntelliJ's approach is well-tested but we reinvent the wheel
@@ -222,7 +225,7 @@ abstract class GdslScript : Script() {
 
 ### GdslContributor
 
-```kotlin
+````kotlin
 // groovy-gdsl/src/main/kotlin/GdslContributor.kt
 
 class GdslContributor(private val context: GdslContext) {
@@ -322,7 +325,7 @@ class GdslContributor(private val context: GdslContext) {
         return list.filterIsInstance<NamedParameterDescriptor>()
     }
 }
-```
+````
 
 ### GdslExecutor
 
@@ -427,25 +430,30 @@ class JenkinsGdslParser(
 ## Implementation Plan
 
 ### Phase 1: Core Descriptors (1-2 days)
+
 - [ ] Create `MethodDescriptor`, `PropertyDescriptor`, `ClosureDescriptor` in `groovy-gdsl`
 - [ ] Add comprehensive tests for descriptor serialization
 
 ### Phase 2: GdslContributor Enhancement (2-3 days)
+
 - [ ] Implement `method()`, `property()`, `parameter()` capturing
 - [ ] Handle `closureInMethod()` for closure delegate support
 - [ ] Add `enclosingCall()` support for context detection
 
 ### Phase 3: GdslExecutor (1-2 days)
+
 - [ ] Implement `executeAndCapture()` method
 - [ ] Add error handling and logging
 - [ ] Test with real Jenkins GDSL output
 
 ### Phase 4: Jenkins Integration (2-3 days)
+
 - [ ] Create `JenkinsGdslParser` that uses `GdslExecutor`
 - [ ] Migrate from regex-based parsing
 - [ ] Update `UserMetadataLoader` to use new parser
 
 ### Phase 5: Context Support (2-3 days)
+
 - [ ] Implement context filters (script scope, closure scope)
 - [ ] Support `enclosingCall()` for node context detection
 - [ ] Filter contributions by current context
@@ -523,5 +531,4 @@ class JenkinsGdslIntegrationTest {
 
 ---
 
-*Last updated: December 21, 2025*
-
+_Last updated: December 21, 2025_

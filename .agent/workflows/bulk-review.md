@@ -6,7 +6,8 @@ description: Bulk reconciliation workflow for addressing review feedback across 
 
 // turbo-all
 
-This workflow defines the process for bulk reconciliation across multiple PRs. It iterates over open PRs and applies the strict `/review` protocol to each.
+This workflow defines the process for bulk reconciliation across multiple PRs. It iterates over open PRs and applies the
+strict `/review` protocol to each.
 
 ## Phase 1: Inventory Open PRs
 
@@ -15,8 +16,7 @@ This workflow defines the process for bulk reconciliation across multiple PRs. I
    gh pr list --repo <OWNER>/<REPO> --state open --json number,headRefName,url,updatedAt,title
    ```
 
-2. **Map to Worktrees**:
-   Ensure you have a worktree for each PR you intend to address.
+2. **Map to Worktrees**: Ensure you have a worktree for each PR you intend to address.
    ```bash
    git worktree list
    git worktree add -b <branch> ../<repo>-<branch> origin/<branch>
@@ -26,8 +26,7 @@ This workflow defines the process for bulk reconciliation across multiple PRs. I
 
 For EACH open PR:
 
-1. **Execute Single Review Workflow**:
-   Follow the steps in `.agent/workflows/review.md` (invoke `/review` workflow).
+1. **Execute Single Review Workflow**: Follow the steps in `.agent/workflows/review.md` (invoke `/review` workflow).
 
    - **Fetch Threads** (GraphQL Source of Truth)
    - **Inventory** (Unresolved & Not Outdated)
@@ -35,13 +34,11 @@ For EACH open PR:
    - **Reply & Resolve** (Deterministic GraphQL Mutations)
    - **Verify Zero Unresolved**
 
-2. **Verify CI**:
-   Ensure `gh pr checks` are passing.
+2. **Verify CI**: Ensure `gh pr checks` are passing.
 
 ## Phase 3: Reconciliation Pass
 
-1. **Re-check all PRs**:
-   Are they all in **READY** state (No unresolved threads, CI passing)?
+1. **Re-check all PRs**: Are they all in **READY** state (No unresolved threads, CI passing)?
 
 ## Expected Behavior
 

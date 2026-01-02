@@ -4,7 +4,8 @@ description: Deterministic protocol for fetching GitHub issue details, analyzing
 
 # /solve
 
-A strict, phased workflow for solving GitHub issues. This protocol ensures thorough understanding before implementation and optimizes for agent efficiency based on issue complexity.
+A strict, phased workflow for solving GitHub issues. This protocol ensures thorough understanding before implementation
+and optimizes for agent efficiency based on issue complexity.
 
 ## Ironclad Rules
 
@@ -194,8 +195,8 @@ For large issues, create atomic phases that can be executed independently:
 ```
 
 > [!IMPORTANT]
-> Each phase in a multi-phase plan MUST be independently verifiable and committable.
-> This allows for incremental PR reviews and reduces blast radius.
+> Each phase in a multi-phase plan MUST be independently verifiable and committable. This allows for incremental PR
+> reviews and reduces blast radius.
 
 ---
 

@@ -1,13 +1,15 @@
 # Groovy LSP Architecture
 
-> **Last Updated:** December 21, 2025  
+> **Last Updated:** December 21, 2025\
 > **Target LSP Version:** 3.17
 
 ---
 
 ## Overview
 
-Groovy LSP is a modular Language Server Protocol implementation for Apache Groovy. It provides IDE features like completion, navigation, and diagnostics for Groovy projects, with specialized support for frameworks like Jenkins Pipelines and Spock.
+Groovy LSP is a modular Language Server Protocol implementation for Apache Groovy. It provides IDE features like
+completion, navigation, and diagnostics for Groovy projects, with specialized support for frameworks like Jenkins
+Pipelines and Spock.
 
 ---
 
@@ -16,7 +18,9 @@ Groovy LSP is a modular Language Server Protocol implementation for Apache Groov
 ```
 groovy-lsp/
 ├── groovy-lsp/           # Main LSP server and providers
-├── groovy-parser/        # AST parsing and visitors
+├── parser/               # Groovy parsing libraries
+│   ├── native/           # Groovy native AST coupling
+│   └── core/             # JavaParser-inspired API
 ├── groovy-common/        # Shared utilities
 ├── groovy-formatter/     # Code formatting (OpenRewrite)
 ├── groovy-diagnostics/   # Linting and error detection
@@ -32,37 +36,37 @@ groovy-lsp/
 ### Dependency Graph
 
 ```
-                    ┌─────────────────┐
-                    │   groovy-lsp    │
-                    │  (LSP Server)   │
-                    └────────┬────────┘
-                             │
-           ┌─────────────────┼─────────────────┐
-           │                 │                 │
-           ▼                 ▼                 ▼
-    ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-    │groovy-jenkins│  │ groovy-spock │  │groovy-build- │
-    │              │  │              │  │    tool      │
-    └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-           │                 │                 │
-           └────────┬────────┴─────────────────┘
-                    │
-                    ▼
-           ┌────────────────┐
-           │ groovy-parser  │
-           │ groovy-common  │
-           └────────┬───────┘
-                    │
-                    ▼
-           ┌────────────────┐
-           │  groovy-gdsl   │
-           └────────────────┘
-                    │
-                    ▼
-           ┌────────────────┐
-           │ groovy-        │
-           │ diagnostics    │
-           └────────────────┘
+                ┌─────────────────┐
+                │   groovy-lsp    │
+                │  (LSP Server)   │
+                └────────┬────────┘
+                         │
+       ┌─────────────────┼─────────────────┐
+       │                 │                 │
+       ▼                 ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│groovy-jenkins│  │ groovy-spock │  │groovy-build- │
+│              │  │              │  │    tool      │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       └────────┬────────┴─────────────────┘
+                │
+                ▼
+       ┌────────────────┐
+       │ parser/native  │
+       │ groovy-common  │
+       └────────┬───────┘
+                │
+                ▼
+       ┌────────────────┐
+       │  groovy-gdsl   │
+       └────────────────┘
+                │
+                ▼
+       ┌────────────────┐
+       │ groovy-        │
+       │ diagnostics    │
+       └────────────────┘
 ```
 
 ---
@@ -75,27 +79,27 @@ The main LSP server implementation using LSP4J.
 
 **Key Components:**
 
-| Component | Purpose |
-|-----------|---------|
-| `GroovyLanguageServer` | LSP server entry point |
-| `GroovyTextDocumentService` | Handles document operations |
-| `GroovyWorkspaceService` | Handles workspace operations |
-| `DocumentManager` | Manages open documents |
-| `WorkspaceIndex` | Indexes workspace symbols |
+| Component                   | Purpose                      |
+| --------------------------- | ---------------------------- |
+| `GroovyLanguageServer`      | LSP server entry point       |
+| `GroovyTextDocumentService` | Handles document operations  |
+| `GroovyWorkspaceService`    | Handles workspace operations |
+| `DocumentManager`           | Manages open documents       |
+| `WorkspaceIndex`            | Indexes workspace symbols    |
 
 **Providers:**
 
-| Provider | LSP Method | Status |
-|----------|------------|--------|
-| `CompletionProvider` | `textDocument/completion` | ✅ |
-| `HoverProvider` | `textDocument/hover` | ✅ |
-| `DefinitionProvider` | `textDocument/definition` | ✅ |
-| `TypeDefinitionProvider` | `textDocument/typeDefinition` | ✅ |
-| `ReferenceProvider` | `textDocument/references` | ✅ |
-| `SignatureHelpProvider` | `textDocument/signatureHelp` | ✅ |
-| `CodeActionProvider` | `textDocument/codeAction` | ⏳ |
-| `RenameProvider` | `textDocument/rename` | ⏳ |
-| `SemanticTokenProvider` | `textDocument/semanticTokens` | ⏳ |
+| Provider                 | LSP Method                    | Status |
+| ------------------------ | ----------------------------- | ------ |
+| `CompletionProvider`     | `textDocument/completion`     | ✅     |
+| `HoverProvider`          | `textDocument/hover`          | ✅     |
+| `DefinitionProvider`     | `textDocument/definition`     | ✅     |
+| `TypeDefinitionProvider` | `textDocument/typeDefinition` | ✅     |
+| `ReferenceProvider`      | `textDocument/references`     | ✅     |
+| `SignatureHelpProvider`  | `textDocument/signatureHelp`  | ✅     |
+| `CodeActionProvider`     | `textDocument/codeAction`     | ⏳     |
+| `RenameProvider`         | `textDocument/rename`         | ⏳     |
+| `SemanticTokenProvider`  | `textDocument/semanticTokens` | ⏳     |
 
 **Directory Structure:**
 
@@ -122,31 +126,37 @@ groovy-lsp/src/main/kotlin/
 
 ---
 
-### groovy-parser
+### parser/native
 
-AST parsing with error recovery and visitor utilities.
+AST parsing tightly coupled to Groovy's native types (`ClassNode`, `MethodNode`, etc.).
 
 **Key Components:**
 
-| Component | Purpose |
-|-----------|---------|
-| `GroovyParser` | Parses Groovy source to AST |
-| `ErrorRecoveryParser` | Handles partial/broken code |
-| `AstUtils` | AST traversal utilities |
-| `PositionNodeVisitor` | Position-aware AST visitor |
+| Component             | Purpose                         |
+| --------------------- | ------------------------------- |
+| `GroovyParser`        | Parses Groovy source to AST     |
+| `ErrorRecoveryParser` | Handles partial/broken code     |
+| `AstUtils`            | AST traversal utilities         |
+| `PositionNodeVisitor` | Position-aware AST visitor      |
 | `RecursiveAstVisitor` | AST traversal + parent tracking |
 
-**Visitor Pattern:**
+---
 
-```kotlin
-interface NodeVisitor {
-    fun visitClass(node: ClassNode): Boolean
-    fun visitMethod(node: MethodNode): Boolean
-    fun visitField(node: FieldNode): Boolean
-    fun visitStatement(stmt: Statement): Boolean
-    fun visitExpression(expr: Expression): Boolean
-}
-```
+### parser/core
+
+Standalone parsing library with JavaParser-inspired API.
+
+**Key Components:**
+
+| Component              | Purpose                      |
+| ---------------------- | ---------------------------- |
+| `StaticGroovyParser`   | Static parsing utility       |
+| `GroovyParser`         | Configurable parser instance |
+| `VoidVisitorAdapter`   | Type-safe visitor pattern    |
+| `GroovySymbolResolver` | Symbol resolution            |
+| `TypeSolver`           | Type resolution strategies   |
+
+See [parser/README.md](../parser/README.md) for details.
 
 ---
 
@@ -199,14 +209,14 @@ Jenkins Pipeline support with step completion and diagnostics.
 
 **Key Components:**
 
-| Component | Purpose |
-|-----------|---------|
-| `JenkinsFileDetector` | Detects Jenkinsfiles |
-| `JenkinsContext` | Pipeline context management |
-| `JenkinsStepCompletionProvider` | Step/global var completion |
-| `StableStepDefinitions` | Hardcoded core steps |
-| `GdslParser` | Parse Jenkins GDSL output |
-| `VarsGlobalVariableProvider` | Shared library vars |
+| Component                       | Purpose                     |
+| ------------------------------- | --------------------------- |
+| `JenkinsFileDetector`           | Detects Jenkinsfiles        |
+| `JenkinsContext`                | Pipeline context management |
+| `JenkinsStepCompletionProvider` | Step/global var completion  |
+| `StableStepDefinitions`         | Hardcoded core steps        |
+| `GdslParser`                    | Parse Jenkins GDSL output   |
+| `VarsGlobalVariableProvider`    | Shared library vars         |
 
 **Metadata Hierarchy:**
 
@@ -219,7 +229,7 @@ Priority (high to low):
 5. Bundled Metadata (fallback)
 ```
 
-[→ Jenkins IntelliSense Architecture](JENKINS_INTELLISENSE_ARCHITECTURE.md)  
+[→ Jenkins IntelliSense Architecture](JENKINS_INTELLISENSE_ARCHITECTURE.md)\
 [→ Roadmap](roadmap/README.md)
 
 ---
@@ -230,11 +240,11 @@ Spock testing framework support.
 
 **Key Components:**
 
-| Component | Purpose |
-|-----------|---------|
-| `SpockSpecDetector` | Detects Spock specifications |
-| `SpockBlockIndex` | Indexes given/when/then blocks |
-| `SpockCompletionProvider` | Spock-aware completions |
+| Component                 | Purpose                        |
+| ------------------------- | ------------------------------ |
+| `SpockSpecDetector`       | Detects Spock specifications   |
+| `SpockBlockIndex`         | Indexes given/when/then blocks |
+| `SpockCompletionProvider` | Spock-aware completions        |
 
 [→ Spock Support Documentation](SPOCK_SUPPORT.md)
 
@@ -246,12 +256,12 @@ GDSL script execution for dynamic DSL support.
 
 **Key Components:**
 
-| Component | Purpose |
-|-----------|---------|
-| `GdslScript` | Base class for GDSL scripts |
-| `GdslExecutor` | Executes GDSL via GroovyShell |
-| `GdslContributor` | Captures DSL contributions |
-| `GdslLoader` | Loads bundled GDSL files |
+| Component         | Purpose                       |
+| ----------------- | ----------------------------- |
+| `GdslScript`      | Base class for GDSL scripts   |
+| `GdslExecutor`    | Executes GDSL via GroovyShell |
+| `GdslContributor` | Captures DSL contributions    |
+| `GdslLoader`      | Loads bundled GDSL files      |
 
 [→ GDSL Execution Engine Spec](roadmap/specs/GDSL_EXECUTION_ENGINE.md)
 
@@ -263,10 +273,10 @@ Build server integration for project configuration.
 
 **Supported Protocols:**
 
-| Protocol | Status | Use Case |
-|----------|--------|----------|
-| BSP (Build Server Protocol) | ✅ | Bazel, sbt, Mill |
-| Gradle Build Server | ⏳ | Gradle projects |
+| Protocol                    | Status | Use Case         |
+| --------------------------- | ------ | ---------------- |
+| BSP (Build Server Protocol) | ✅     | Bazel, sbt, Mill |
+| Gradle Build Server         | ⏳     | Gradle projects  |
 
 [→ BSP Integration](BSP_CLIENT_IMPLEMENTATION.md)
 
@@ -407,12 +417,12 @@ class MyDiagnosticProvider : DiagnosticProvider {
 
 ### Caching Strategy
 
-| Cache | Scope | Invalidation |
-|-------|-------|--------------|
-| AST Cache | Per-document | On document change |
-| Symbol Index | Workspace | On file change |
-| Classpath Types | Session | On config change |
-| GDSL Results | Session | On GDSL file change |
+| Cache           | Scope        | Invalidation        |
+| --------------- | ------------ | ------------------- |
+| AST Cache       | Per-document | On document change  |
+| Symbol Index    | Workspace    | On file change      |
+| Classpath Types | Session      | On config change    |
+| GDSL Results    | Session      | On GDSL file change |
 
 ### Lazy Loading
 
@@ -432,12 +442,12 @@ class MyDiagnosticProvider : DiagnosticProvider {
 
 ### Test Categories
 
-| Category | Location | Purpose |
-|----------|----------|---------|
-| Unit Tests | `*/src/test/` | Component isolation |
-| Integration | `tests/e2e/` | LSP protocol compliance |
-| E2E | `tests/e2e/` | Real editor scenarios |
-| Property | `*/src/test/` | Edge case coverage |
+| Category    | Location      | Purpose                 |
+| ----------- | ------------- | ----------------------- |
+| Unit Tests  | `*/src/test/` | Component isolation     |
+| Integration | `tests/e2e/`  | LSP protocol compliance |
+| E2E         | `tests/e2e/`  | Real editor scenarios   |
+| Property    | `*/src/test/` | Edge case coverage      |
 
 ### Test Utilities
 
@@ -470,4 +480,4 @@ class TestLspClient {
 
 ---
 
-*Last updated: December 21, 2025*
+_Last updated: December 21, 2025_

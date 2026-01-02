@@ -22,7 +22,7 @@ Spock is implemented as a Groovy compiler plugin.
 
 Key takeaway:
 
-- Spock blocks are primarily a *source-structure feature* represented by Groovy statement labels, and Spock can rewrite
+- Spock blocks are primarily a _source-structure feature_ represented by Groovy statement labels, and Spock can rewrite
   the AST later in compilation.
 
 ## Problem statement
@@ -47,10 +47,10 @@ rewritten the feature method bodies.
 That implies:
 
 - **Spec detection** should prefer semantic AST (because Spock itself uses semantic class hierarchy checks).
-- **Block modeling** should prefer *pre-transform* structure (because blocks are best represented before Spock rewrites
+- **Block modeling** should prefer _pre-transform_ structure (because blocks are best represented before Spock rewrites
   the method).
 
-The “right” solution is therefore *hybrid*:
+The “right” solution is therefore _hybrid_:
 
 1. Use AST/classpath to decide if a document is a Spock spec.
 2. Use a pre-transform AST or a token stream to compute block and cursor context.
@@ -66,7 +66,7 @@ The “right” solution is therefore *hybrid*:
 4. **Graceful under edits**
    - Work with incomplete code and syntax errors where possible.
 5. **Minimal coupling**
-   - `groovy-spock` owns Spock-specific logic, but consumes generic parser/token services from `groovy-parser`.
+   - `groovy-spock` owns Spock-specific logic, but consumes generic parser/token services from `parser/native`.
 
 ## Proposed data model: document-level Spock context
 
@@ -134,8 +134,7 @@ Tier 2: import-aware, no class loading
   - If superclass is fully qualified `spock.lang.Specification`, it is a spec.
   - If superclass is `Specification` and imports include:
     - `import spock.lang.Specification`, or
-    - `import spock.lang.*`,
-    then it is a spec.
+    - `import spock.lang.*`, then it is a spec.
 
 Tier 3: filename heuristic (cheap fallback)
 
@@ -237,7 +236,7 @@ In LSP terms:
 
 1. `ParseRequest.compilePhase` (default stays current behavior)
 2. `GroovyParserFacade.parse(... compilePhase = Phases.CONVERSION)`
-3. `groovy-parser` token utilities (`GroovyTokenIndex`)
+3. `parser/native` token utilities (`GroovyTokenIndex`)
 4. `groovy-spock` AST-first detection (`SpockDetector` that consumes AST/ParseResult)
 5. `groovy-spock` block modeling (`SpockBlockIndexer`)
 6. `groovy-lsp` framework context cache (document-level)
@@ -246,7 +245,7 @@ In LSP terms:
 
 This section is intentionally specific so each PR is easy to review and revert if needed.
 
-### PR 1 — Add compilation phase support to `groovy-parser` (foundation)
+### PR 1 — Add compilation phase support to `parser/native` (foundation)
 
 Goal: allow parsing at `CONVERSION` without changing existing behavior.
 
@@ -296,7 +295,7 @@ Acceptance:
 
 Goal: remove heuristic comment/string suppression from completions.
 
-- Add `GroovyTokenIndex` implementation in `groovy-parser`.
+- Add `GroovyTokenIndex` implementation in `parser/native`.
 - Replace existing best-effort suppression checks in completions with token index queries.
 - Tests for multiple comment/string forms (at least block comment, triple-quoted strings).
 

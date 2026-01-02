@@ -15,9 +15,8 @@ rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
 include("markdown")
-// TODO(#524): Restructure parser modules under parser/ folder.
-//   See: https://github.com/albertocavalcante/gvy/issues/524
-include("groovy-parser")
+include("parser:native")
+include("parser:core")
 include("groovy-common")
 include("groovy-lsp")
 include("tests")
@@ -34,6 +33,3 @@ include("jupyter:kernels:groovy")
 include("jupyter:kernels:jenkins")
 include("groovy-repl")
 include("tools:jenkins-extractor")
-
-// Standalone GroovyParser library (JavaParser-inspired API)
-include("groovyparser-core")

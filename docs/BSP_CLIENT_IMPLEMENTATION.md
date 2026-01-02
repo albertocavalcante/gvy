@@ -1,7 +1,8 @@
 # BSP Client Implementation - Design Document
 
-> Session Date: December 21, 2025  
-> PR: [#253 - feat: add BSP client support for Bazel, sbt, and Mill](https://github.com/albertocavalcante/groovy-lsp/pull/253)
+> Session Date: December 21, 2025\
+> PR:
+> [#253 - feat: add BSP client support for Bazel, sbt, and Mill](https://github.com/albertocavalcante/groovy-lsp/pull/253)
 
 ## Table of Contents
 
@@ -19,7 +20,9 @@
 
 ## Executive Summary
 
-This document captures the research, analysis, and implementation work for adding Build Server Protocol (BSP) client support to the Groovy Language Server. The goal is to enable dependency resolution for build tools beyond the existing Gradle and Maven support.
+This document captures the research, analysis, and implementation work for adding Build Server Protocol (BSP) client
+support to the Groovy Language Server. The goal is to enable dependency resolution for build tools beyond the existing
+Gradle and Maven support.
 
 ### Key Outcomes
 
@@ -35,23 +38,25 @@ This document captures the research, analysis, and implementation work for addin
 ### Current State
 
 The Groovy LSP had direct integrations for:
+
 - **Gradle** via Tooling API
 - **Maven** via Maven Embedder
 
 ### Gap
 
 No support for other popular JVM build tools:
+
 - **Bazel** (increasingly popular for large monorepos)
 - **sbt** (dominant in Scala ecosystem, but used for mixed Groovy/Scala projects)
 - **Mill** (modern, fast Scala/Java build tool)
 
 ### Options Considered
 
-| Option | Pros | Cons |
-|--------|------|------|
-| Direct API for each tool | Full control, optimal performance | High maintenance, N implementations |
-| BSP client (chosen) | Single protocol, reuse existing servers | Depends on external BSP servers |
-| Custom build server | Full control | Massive effort, reinventing wheel |
+| Option                   | Pros                                    | Cons                                |
+| ------------------------ | --------------------------------------- | ----------------------------------- |
+| Direct API for each tool | Full control, optimal performance       | High maintenance, N implementations |
+| BSP client (chosen)      | Single protocol, reuse existing servers | Depends on external BSP servers     |
+| Custom build server      | Full control                            | Massive effort, reinventing wheel   |
 
 ---
 
@@ -59,7 +64,8 @@ No support for other popular JVM build tools:
 
 ### Build Server Protocol (BSP)
 
-BSP is a protocol for communication between IDEs and build tools, similar to how LSP standardizes editor-language server communication.
+BSP is a protocol for communication between IDEs and build tools, similar to how LSP standardizes editor-language server
+communication.
 
 ```
 ┌─────────────┐     BSP (JSON-RPC)     ┌─────────────┐
@@ -73,6 +79,7 @@ BSP is a protocol for communication between IDEs and build tools, similar to how
 #### Microsoft's Approach ([Build Server for Gradle](https://devblogs.microsoft.com/java/new-build-server-for-gradle/))
 
 Microsoft created `build-server-for-gradle` - a dedicated BSP server that wraps Gradle's Tooling API. Key insights:
+
 - BSP solves output directory consistency issues
 - BSP enables better code generation support (annotation processing)
 - Architecture: `IDE → BSP Client → BSP Server → Gradle Tooling API`
@@ -80,26 +87,30 @@ Microsoft created `build-server-for-gradle` - a dedicated BSP server that wraps 
 #### RedHat's VSCode Java ([Gradle Support Wiki](https://github.com/redhat-developer/vscode-java/wiki/gradle-support))
 
 Uses Eclipse Buildship (direct Gradle Tooling API), not BSP. Known limitations:
+
 - No Android support
 - Limited build file validation
 - Java-only compilation (no cross-language)
 
 #### IntelliJ IDEA LSP Support
 
-As of [IntelliJ IDEA 2025.2](https://blog.jetbrains.com/platform/2025/09/the-lsp-api-is-now-available-to-all-intellij-idea-users-and-plugin-developers/), LSP API is available to all plugin developers:
+As of
+[IntelliJ IDEA 2025.2](https://blog.jetbrains.com/platform/2025/09/the-lsp-api-is-now-available-to-all-intellij-idea-users-and-plugin-developers/),
+LSP API is available to all plugin developers:
+
 - `ProjectWideLspServerDescriptor` for defining LSP servers
 - `LspServerSupportProvider` for initiating LSP servers
 - Simplifies distribution: single LSP server can serve VSCode, IntelliJ, and other editors
 
 ### BSP Ecosystem
 
-| Build Tool | BSP Server | Maturity |
-|------------|------------|----------|
-| Bazel | [bazel-bsp](https://github.com/JetBrains/bazel-bsp) (JetBrains) | Production |
-| sbt | Built-in (sbt 1.4+) | Production |
-| Mill | Built-in | Production |
-| Gradle | [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) (Microsoft) | Preview |
-| Maven | None mature | N/A |
+| Build Tool | BSP Server                                                                                  | Maturity   |
+| ---------- | ------------------------------------------------------------------------------------------- | ---------- |
+| Bazel      | [bazel-bsp](https://github.com/JetBrains/bazel-bsp) (JetBrains)                             | Production |
+| sbt        | Built-in (sbt 1.4+)                                                                         | Production |
+| Mill       | Built-in                                                                                    | Production |
+| Gradle     | [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) (Microsoft) | Preview    |
+| Maven      | None mature                                                                                 | N/A        |
 
 ---
 
@@ -108,23 +119,23 @@ As of [IntelliJ IDEA 2025.2](https://blog.jetbrains.com/platform/2025/09/the-lsp
 ### Chosen Approach: Hybrid Strategy
 
 ```
-                    ┌─────────────────────────────────────┐
-                    │        BuildToolManager             │
-                    │   (Detection Order)                 │
-                    └─────────────────────────────────────┘
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              ▼                     ▼                     ▼
-     ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-     │  BspBuildTool   │   │ GradleBuildTool │   │ MavenBuildTool  │
-     │  (NEW)          │   │ (Existing)      │   │ (Existing)      │
-     └─────────────────┘   └─────────────────┘   └─────────────────┘
-              │                     │                     │
-              ▼                     ▼                     ▼
-     ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
-     │   BSP Server    │   │  Gradle         │   │  Maven          │
-     │ (bazel-bsp,sbt) │   │  Tooling API    │   │  Embedder       │
-     └─────────────────┘   └─────────────────┘   └─────────────────┘
+               ┌─────────────────────────────────────┐
+               │        BuildToolManager             │
+               │   (Detection Order)                 │
+               └─────────────────────────────────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         ▼                     ▼                     ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│  BspBuildTool   │   │ GradleBuildTool │   │ MavenBuildTool  │
+│  (NEW)          │   │ (Existing)      │   │ (Existing)      │
+└─────────────────┘   └─────────────────┘   └─────────────────┘
+         │                     │                     │
+         ▼                     ▼                     ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│   BSP Server    │   │  Gradle         │   │  Maven          │
+│ (bazel-bsp,sbt) │   │  Tooling API    │   │  Embedder       │
+└─────────────────┘   └─────────────────┘   └─────────────────┘
 ```
 
 ### Detection Priority
@@ -141,13 +152,13 @@ buildToolManager = BuildToolManager(
 
 ### Rationale
 
-| Build Tool | Strategy | Rationale |
-|------------|----------|-----------|
-| **Gradle** | Direct Tooling API | Already implemented, mature, fast |
-| **Maven** | Direct Embedder | Already implemented, no BSP server exists |
-| **Bazel** | BSP Client | No direct API, bazel-bsp is mature |
-| **sbt** | BSP Client | Built-in BSP in sbt 1.4+, standard approach |
-| **Mill** | BSP Client | Built-in BSP, no direct API |
+| Build Tool | Strategy           | Rationale                                   |
+| ---------- | ------------------ | ------------------------------------------- |
+| **Gradle** | Direct Tooling API | Already implemented, mature, fast           |
+| **Maven**  | Direct Embedder    | Already implemented, no BSP server exists   |
+| **Bazel**  | BSP Client         | No direct API, bazel-bsp is mature          |
+| **sbt**    | BSP Client         | Built-in BSP in sbt 1.4+, standard approach |
+| **Mill**   | BSP Client         | Built-in BSP, no direct API                 |
 
 ---
 
@@ -222,6 +233,7 @@ class BspClient(
 ```
 
 Key features:
+
 - Spawns BSP server process from `argv`
 - Captures stderr and logs via SLF4J
 - Uses bsp4j for protocol handling
@@ -254,6 +266,7 @@ class BspBuildTool : BuildTool {
 ### Unit Tests (18 total)
 
 #### BspConnectionDetailsTest (11 tests)
+
 - `parseJson parses valid bazel-bsp connection file`
 - `parseJson parses valid sbt connection file`
 - `parseJson parses valid mill connection file`
@@ -267,6 +280,7 @@ class BspBuildTool : BuildTool {
 - `parse returns null for non-existent file`
 
 #### BspBuildToolTest (7 tests)
+
 - `name returns BSP`
 - `canHandle returns false when no bsp directory exists`
 - `canHandle returns false when bsp directory is empty`
@@ -299,18 +313,18 @@ kover {
 
 ### Round 1 - Initial Implementation
 
-| Priority | Issue | Resolution |
-|----------|-------|------------|
-| 🔴 Critical | Regex JSON parsing is fragile | Replaced with `kotlinx.serialization` |
-| 🟠 High | `process!!` null-safety risk | Use local variable `newProcess` |
-| 🟡 Medium | Magic strings "artifacts", "uri" | Extracted to companion object constants |
+| Priority    | Issue                            | Resolution                              |
+| ----------- | -------------------------------- | --------------------------------------- |
+| 🔴 Critical | Regex JSON parsing is fragile    | Replaced with `kotlinx.serialization`   |
+| 🟠 High     | `process!!` null-safety risk     | Use local variable `newProcess`         |
+| 🟡 Medium   | Magic strings "artifacts", "uri" | Extracted to companion object constants |
 
 ### Round 2 - Additional Feedback
 
-| Priority | Issue | Resolution |
-|----------|-------|------------|
-| 🟡 Medium | Should check `dataKind` before parsing | Added `MAVEN_DATA_KIND` check |
-| 🟡 Medium | stderr should be logged via SLF4J | Async stderr logging instead of INHERIT |
+| Priority  | Issue                                  | Resolution                              |
+| --------- | -------------------------------------- | --------------------------------------- |
+| 🟡 Medium | Should check `dataKind` before parsing | Added `MAVEN_DATA_KIND` check           |
+| 🟡 Medium | stderr should be logged via SLF4J      | Async stderr logging instead of INHERIT |
 
 ### Final Code Quality
 
@@ -346,15 +360,17 @@ CompletableFuture.runAsync {
 
 ### 1. Gradle Build Server Integration
 
-> **Analysis Date**: December 21, 2025  
-> **Status**: Investigated - Architecture incompatibility discovered  
-> **References**: [Microsoft Build Server for Gradle](https://devblogs.microsoft.com/java/new-build-server-for-gradle/), [vscode-gradle](https://github.com/microsoft/vscode-gradle)
+> **Analysis Date**: December 21, 2025\
+> **Status**: Investigated - Architecture incompatibility discovered\
+> **References**: [Microsoft Build Server for Gradle](https://devblogs.microsoft.com/java/new-build-server-for-gradle/),
+> [vscode-gradle](https://github.com/microsoft/vscode-gradle)
 
 #### ⚠️ Critical Finding: No `.bsp/` Folder Created
 
 **The build-server-for-gradle does NOT use standard BSP discovery!**
 
-Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` files), Microsoft's Gradle Build Server uses a **custom architecture** with named pipes:
+Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` files), Microsoft's Gradle Build Server uses a **custom
+architecture** with named pipes:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -379,21 +395,23 @@ Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` files), Microsoft'
 ```
 
 **Key code references from vscode-gradle:**
+
 - `BspProxy.ts` - Node.js bridge creating named pipes
 - `GradleBuildServerProjectImporter.java` - JDT.LS plugin connecting via pipes
 - `BuildServerConnector.ts` - Named pipe server setup
 
 #### Integration Options
 
-| Option | Description | Effort | Recommendation |
-|--------|-------------|--------|----------------|
-| **A: Extension-Mediated** | Our VSCode extension starts build server, passes pipe to groovy-lsp | Medium | ✅ Best short-term |
-| **B: Direct Named Pipe** | groovy-lsp spawns build-server-for-gradle JAR and manages pipes | High | Consider long-term |
-| **C: Wait for Standard BSP** | Request Microsoft add `.bsp/gradle.json` generation | N/A | Track [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) |
+| Option                       | Description                                                         | Effort | Recommendation                                                                        |
+| ---------------------------- | ------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| **A: Extension-Mediated**    | Our VSCode extension starts build server, passes pipe to groovy-lsp | Medium | ✅ Best short-term                                                                    |
+| **B: Direct Named Pipe**     | groovy-lsp spawns build-server-for-gradle JAR and manages pipes     | High   | Consider long-term                                                                    |
+| **C: Wait for Standard BSP** | Request Microsoft add `.bsp/gradle.json` generation                 | N/A    | Track [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) |
 
 #### Current Status: Feature Flag Implemented (Phase 1)
 
 The `GradleBuildStrategy` feature flag is useful for:
+
 - ✅ Bazel projects (via bazel-bsp)
 - ✅ sbt projects (built-in BSP)
 - ✅ Mill projects (built-in BSP)
@@ -408,6 +426,7 @@ enum class GradleBuildStrategy {
 ```
 
 Configuration:
+
 ```json
 {
   "groovy.gradle.buildStrategy": "auto"  // auto | bsp | native
@@ -418,14 +437,15 @@ Configuration:
 
 **Learning from vscode-gradle's `GradleProjectModelBuilder`:**
 
-| Feature | vscode-gradle | groovy-lsp | Priority |
-|---------|--------------|------------|----------|
-| Dependency tree (hierarchical) | ✅ `GradleDependencyNode` | ❌ Flat `List<Path>` | Medium |
-| Plugin closure extraction | ✅ For DSL completion | ❌ Not implemented | Low |
-| Task debugging metadata | ✅ JavaExec/Test detection | ❌ Not needed | N/A |
-| Source/Javadoc JARs | ✅ Via artifact resolution | ✅ Via BSP | Done |
+| Feature                        | vscode-gradle              | groovy-lsp           | Priority |
+| ------------------------------ | -------------------------- | -------------------- | -------- |
+| Dependency tree (hierarchical) | ✅ `GradleDependencyNode`  | ❌ Flat `List<Path>` | Medium   |
+| Plugin closure extraction      | ✅ For DSL completion      | ❌ Not implemented   | Low      |
+| Task debugging metadata        | ✅ JavaExec/Test detection | ❌ Not needed        | N/A      |
+| Source/Javadoc JARs            | ✅ Via artifact resolution | ✅ Via BSP           | Done     |
 
 **Potential enhancement** - Add hierarchical dependency model:
+
 ```kotlin
 sealed class DependencyNode {
     data class Project(val name: String, val children: List<DependencyNode>)
@@ -438,11 +458,11 @@ sealed class DependencyNode {
 
 For sharing types between the Kotlin LSP server and TypeScript VSCode extension:
 
-| Approach | Use Case | Recommendation |
-|----------|----------|----------------|
-| **JSON Schema** | Configuration files | ✅ Use for `settings.json` schema |
-| **Protobuf** | Custom LSP extensions | Consider for complex data models |
-| **Kotlin/JS** | Core type sharing | Overkill for thin VSCode client |
+| Approach        | Use Case              | Recommendation                    |
+| --------------- | --------------------- | --------------------------------- |
+| **JSON Schema** | Configuration files   | ✅ Use for `settings.json` schema |
+| **Protobuf**    | Custom LSP extensions | Consider for complex data models  |
+| **Kotlin/JS**   | Core type sharing     | Overkill for thin VSCode client   |
 
 ### 4. IntelliJ Plugin
 
@@ -465,6 +485,7 @@ With IntelliJ's new LSP API (2025.2+), distribution strategy:
 ### 5. Integration Tests
 
 For full BSP client testing, consider:
+
 - Docker-based integration tests with real BSP servers
 - CI matrix testing against bazel-bsp, sbt, Mill
 - Manual testing guide for developers
@@ -472,6 +493,7 @@ For full BSP client testing, consider:
 ### 6. BSP Server Selection
 
 Currently uses first valid connection. Future enhancement:
+
 - User-configurable BSP server preference
 - Multi-language workspace support (pick best server per language)
 
@@ -480,15 +502,18 @@ Currently uses first valid connection. Future enhancement:
 ## References
 
 ### Specifications
+
 - [Build Server Protocol](https://build-server-protocol.github.io/)
 - [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 
 ### Tools & Libraries
+
 - [bsp4j](https://github.com/build-server-protocol/bsp4j) - Java BSP implementation
 - [bazel-bsp](https://github.com/JetBrains/bazel-bsp) - JetBrains' BSP server for Bazel
 - [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) - Microsoft's BSP server
 
 ### Articles
+
 - [Microsoft: New Build Server for Gradle](https://devblogs.microsoft.com/java/new-build-server-for-gradle/)
 - [JetBrains: LSP API for IntelliJ](https://blog.jetbrains.com/platform/2025/09/the-lsp-api-is-now-available-to-all-intellij-idea-users-and-plugin-developers/)
 - [RedHat: VSCode Java Gradle Support](https://github.com/redhat-developer/vscode-java/wiki/gradle-support)
@@ -514,4 +539,3 @@ fix: address additional PR review feedback
 ├── Check module.dataKind for 'maven' before parsing
 └── Capture BSP server stderr and log via SLF4J
 ```
-
