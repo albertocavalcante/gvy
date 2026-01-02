@@ -213,6 +213,19 @@ class NameConversionsTest {
     }
 
     @Test
+    fun `formatTypeName handles nested multiple generic types`() {
+        // This is expected to fail currently due to simple split(',')
+        val input = "java.util.Map<java.lang.String, java.util.Map<java.lang.String, java.lang.Integer>>"
+        assertEquals("Map<String, Map<String, Integer>>", input.formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles bounded wildcards`() {
+        assertEquals("List<? extends Number>", "java.util.List<? extends java.lang.Number>".formatTypeName())
+        assertEquals("? super String", "? super java.lang.String".formatTypeName())
+    }
+
+    @Test
     fun `formatTypeName handles primitive types`() {
         assertEquals("int", "int".formatTypeName())
         assertEquals("boolean", "boolean".formatTypeName())

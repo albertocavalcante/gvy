@@ -6,7 +6,6 @@ import io.mockk.every
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -24,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.lang.reflect.Modifier
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -190,17 +190,36 @@ class InlayHintsProviderTest {
 
         @Test
         fun `should show parameter hint for method call with positional arguments`() {
-            // Given: process("input.txt", true) with method process(String path, boolean verbose)
-            val code = """
-                class Test {
-                    void process(String path, boolean verbose) {}
-                    void run() {
-                        process("input.txt", true)
-                    }
-                }
-            """.trimIndent()
+            // Given: processPositional("input.txt", true) with method processPositional(String path, boolean verbose)
+            val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+            classNode.addMethod(
+                "processPositional",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(Parameter(ClassHelper.STRING_TYPE, "path"), Parameter(ClassHelper.boolean_TYPE, "verbose")),
+                emptyArray(),
+                null,
+            )
 
-            setupCompilationWithCode(code)
+            val callExpr = MethodCallExpression(
+                VariableExpression("this"),
+                "processPositional",
+                ArgumentListExpression(
+                    ConstantExpression("input.txt").apply {
+                        lineNumber = 5
+                        columnNumber = 10
+                    },
+                    ConstantExpression(true).apply {
+                        lineNumber = 5
+                        columnNumber = 25
+                    },
+                ),
+            ).apply {
+                lineNumber = 5
+                columnNumber = 5
+            }
+
+            setupCompilationWithNodes(listOf(callExpr), listOf(classNode))
             provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
 
             val params = createParams(0, 0, 10, 100)
@@ -210,8 +229,9 @@ class InlayHintsProviderTest {
 
             // Then - expect parameter hints
             val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
-            // May be empty if method resolution doesn't work in test setup
-            // This test documents the expected behavior
+            assertEquals(2, paramHints.size, "Should have 2 parameter hints")
+            assertEquals("path:", paramHints[0].label.left as String)
+            assertEquals("verbose:", paramHints[1].label.left as String)
         }
 
         @Test
@@ -239,19 +259,33 @@ class InlayHintsProviderTest {
         }
 
         @Test
-        fun `should not show parameter hint when argument name matches parameter name`() {
-            // Given: process(path) where variable is named 'path' and param is 'path'
-            val code = """
-                class Test {
-                    void process(String path) {}
-                    void run() {
-                        def path = "input.txt"
-                        process(path)
-                    }
-                }
-            """.trimIndent()
+        fun `should not show parameter hint when names match`() {
+            // Given: processMatch(path) where method is processMatch(String path)
+            val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+            classNode.addMethod(
+                "processMatch",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(Parameter(ClassHelper.STRING_TYPE, "path")),
+                emptyArray(),
+                null,
+            )
 
-            setupCompilationWithCode(code)
+            val callExpr = MethodCallExpression(
+                VariableExpression("this"),
+                "processMatch",
+                ArgumentListExpression(
+                    VariableExpression("path").apply {
+                        lineNumber = 5
+                        columnNumber = 10
+                    },
+                ),
+            ).apply {
+                lineNumber = 5
+                columnNumber = 5
+            }
+
+            setupCompilationWithNodes(listOf(callExpr), listOf(classNode))
             provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
 
             val params = createParams(0, 0, 10, 100)
@@ -261,10 +295,7 @@ class InlayHintsProviderTest {
 
             // Then - no hint when names match (redundant)
             val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
-            val pathHints = paramHints.filter {
-                (it.label.left as? String)?.contains("path") == true
-            }
-            // Documenting expected behavior - may be empty if method resolution works
+            assertTrue(paramHints.isEmpty(), "Should not show parameter hint when names match")
         }
 
         @Test
@@ -392,11 +423,14 @@ class InlayHintsProviderTest {
         every { astModel.getAllClassNodes() } returns emptyList()
     }
 
-    private fun setupCompilationWithNodes(nodes: List<org.codehaus.groovy.ast.ASTNode>) {
+    private fun setupCompilationWithNodes(
+        nodes: List<org.codehaus.groovy.ast.ASTNode>,
+        classNodes: List<ClassNode> = emptyList(),
+    ) {
         val astModel = mockk<com.github.albertocavalcante.groovyparser.ast.GroovyAstModel>(relaxed = true)
 
         every { compilationService.getAstModel(testUri) } returns astModel
         every { astModel.getAllNodes() } returns nodes
-        every { astModel.getAllClassNodes() } returns emptyList()
+        every { astModel.getAllClassNodes() } returns classNodes
     }
 }

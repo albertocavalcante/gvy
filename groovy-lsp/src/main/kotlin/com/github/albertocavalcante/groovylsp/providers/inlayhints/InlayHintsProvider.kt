@@ -22,29 +22,23 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
- * Provider for LSP Inlay Hints.
+ * Provides LSP Inlay Hints for Groovy source files.
+ * Supports type hints for `def` variables and parameter hints for method/constructor calls.
  *
- * Inlay hints are inline annotations that display:
- * - **Type hints**: Inferred types for `def` variable declarations
- * - **Parameter hints**: Parameter names at method/constructor call sites
- *
- * Implementation inspired by:
- * - kotlin-language-server: Clean enum-based kind mapping, AST traversal
- * - eclipse.jdt.ls: Visitor pattern, range filtering, smart suppression rules
- *
- * @see <a href="https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint">LSP Inlay Hints Specification</a>
+ * @param compilationService The service providing AST models for source files.
+ * @param config The configuration settings for inlay hints.
  */
 class InlayHintsProvider(
     private val compilationService: GroovyCompilationService,
-    private val configuration: InlayHintsConfiguration = InlayHintsConfiguration(),
+    private val config: InlayHintsConfiguration = InlayHintsConfiguration(),
 ) {
     private val logger = LoggerFactory.getLogger(InlayHintsProvider::class.java)
 
     /**
-     * Provide inlay hints for the requested range.
+     * Provides a list of inlay hints for the given document and range.
      *
-     * @param params The request parameters containing document URI and range
-     * @return List of inlay hints within the requested range
+     * @param params The inlay hint parameters containing the document URI and range.
+     * @return A list of [InlayHint] objects for the specified range.
      */
     fun provideInlayHints(params: InlayHintParams): List<InlayHint> {
         val uri = URI.create(params.textDocument.uri)
@@ -68,19 +62,19 @@ class InlayHintsProvider(
 
             when (node) {
                 is DeclarationExpression -> {
-                    if (configuration.typeHints) {
+                    if (config.typeHints) {
                         collectTypeHint(node)?.let { hints.add(it) }
                     }
                 }
 
                 is MethodCallExpression -> {
-                    if (configuration.parameterHints) {
+                    if (config.parameterHints) {
                         collectParameterHints(node, uri, hints)
                     }
                 }
 
                 is ConstructorCallExpression -> {
-                    if (configuration.parameterHints) {
+                    if (config.parameterHints) {
                         collectConstructorParameterHints(node, uri, hints)
                     }
                 }
@@ -252,18 +246,21 @@ class InlayHintsProvider(
         val methodName = call.methodAsString ?: return emptyList()
 
         // Search for matching method declaration
-        astModel.getAllClassNodes().forEach { classNode ->
-            classNode.methods
-                .filter { it.name == methodName }
-                .forEach { method ->
-                    val argCount = (call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0
-                    if (method.parameters.size == argCount) {
-                        return method.parameters.map { it.name }
-                    }
-                }
-        }
-
-        return emptyList()
+        val classNodes = astModel.getAllClassNodes()
+        println("DEBUG: Searching for $methodName in ${classNodes.size} classes")
+        return classNodes
+            .asSequence()
+            .flatMap {
+                println("DEBUG: Class ${it.name} has ${it.methods.size} methods")
+                it.methods.asSequence()
+            }
+            .filter {
+                println("DEBUG: Checking method ${it.name} with ${it.parameters.size} params")
+                it.name == methodName
+            }
+            .filter { it.parameters.size == ((call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0) }
+            .map { method -> method.parameters.map { it.name } }
+            .firstOrNull() ?: emptyList()
     }
 
     /**
@@ -277,17 +274,12 @@ class InlayHintsProvider(
         val typeName = call.type.nameWithoutPackage
 
         // Search for matching constructor
-        astModel.getAllClassNodes()
+        return astModel.getAllClassNodes()
+            .asSequence()
             .filter { it.nameWithoutPackage == typeName }
-            .forEach { classNode ->
-                classNode.declaredConstructors.forEach { constructor ->
-                    val argCount = (call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0
-                    if (constructor.parameters.size == argCount) {
-                        return constructor.parameters.map { it.name }
-                    }
-                }
-            }
-
-        return emptyList()
+            .flatMap { it.declaredConstructors }
+            .filter { it.parameters.size == ((call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0) }
+            .map { constructor -> constructor.parameters.map { it.name } }
+            .firstOrNull() ?: emptyList()
     }
 }
