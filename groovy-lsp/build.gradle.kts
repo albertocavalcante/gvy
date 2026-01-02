@@ -300,6 +300,9 @@ tasks.shadowJar {
             exclude(dependency("com.github.ajalt.clikt:.*"))
             exclude(dependency("com.github.ajalt.mordant:.*"))
             exclude(dependency("net.java.dev.jna:.*"))
+            // Ktor and kotlinx-serialization use ServiceLoader for runtime providers
+            exclude(dependency("io.ktor:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*"))
         }
     }
 }
