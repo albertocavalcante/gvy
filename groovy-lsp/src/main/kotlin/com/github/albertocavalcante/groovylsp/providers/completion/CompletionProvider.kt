@@ -575,6 +575,8 @@ object CompletionProvider {
         }
 
         val isTypingStatic = !afterImport.any { it.isWhitespace() } && staticKeyword.startsWith(afterImport)
+        // TODO(#576): Consider suggesting both "static" and matching class prefixes when overlapping.
+        //   See: https://github.com/albertocavalcante/gvy/issues/576
         val prefix = if (isTypingStatic) "" else afterImport
         return ImportCompletionContext(prefix = prefix, isStatic = false, canSuggestStatic = true)
     }
