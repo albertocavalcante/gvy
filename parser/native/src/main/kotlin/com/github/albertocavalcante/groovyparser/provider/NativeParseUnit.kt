@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolInfo
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import com.github.albertocavalcante.groovyparser.api.model.TypeInfo
+import java.net.URI
 import java.nio.file.Path
 import com.github.albertocavalcante.groovyparser.api.ParseResult as NativeParseResult
 
@@ -25,7 +26,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
             position.line - 1,
             position.column - 1,
         )
-        val uri = path?.toUri() ?: return null
+        val uri = path?.toUri() ?: URI.create("file:///unnamed.groovy")
         val node = result.astModel.getNodeAt(uri, nativePos) ?: return null
 
         return NodeInfo(
@@ -58,7 +59,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
                 SymbolInfo(
                     name = classNode.nameWithoutPackage,
                     kind = SymbolKind.CLASS,
-                    range = extractRange(classNode),
+                    range = extractNodeRange(classNode),
                     containerName = ast.packageName,
                 ),
             )
@@ -69,7 +70,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
                     SymbolInfo(
                         name = method.name,
                         kind = SymbolKind.METHOD,
-                        range = extractRange(method),
+                        range = extractNodeRange(method),
                         containerName = classNode.nameWithoutPackage,
                         detail = method.typeDescriptor,
                     ),
@@ -82,7 +83,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
                     SymbolInfo(
                         name = field.name,
                         kind = SymbolKind.FIELD,
-                        range = extractRange(field),
+                        range = extractNodeRange(field),
                         containerName = classNode.nameWithoutPackage,
                     ),
                 )
@@ -134,6 +135,4 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         start = Position(node.lineNumber.coerceAtLeast(1), node.columnNumber.coerceAtLeast(1)),
         end = Position(node.lastLineNumber.coerceAtLeast(1), node.lastColumnNumber.coerceAtLeast(1)),
     )
-
-    private fun extractRange(node: org.codehaus.groovy.ast.ASTNode): Range = extractNodeRange(node)
 }
