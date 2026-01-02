@@ -75,7 +75,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
                         name = classNode.nameWithoutPackage,
                         kind = if (classNode.isInterface) SymbolKind.INTERFACE else SymbolKind.CLASS,
                         range = extractNodeRange(classNode),
-                        containerName = ast.packageName,
+                        containerName = ast.packageName?.removeSuffix("."),
                     ),
                 )
                 classNode.methods.mapTo(this) { method ->
@@ -137,8 +137,11 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         else -> null
     }
 
-    private fun extractNodeRange(node: ASTNode): Range = Range(
-        start = Position(node.lineNumber.coerceAtLeast(1), node.columnNumber.coerceAtLeast(1)),
-        end = Position(node.lastLineNumber.coerceAtLeast(1), node.lastColumnNumber.coerceAtLeast(1)),
-    )
+    private fun extractNodeRange(node: ASTNode): Range {
+        if (node.lineNumber == -1) return Range.EMPTY
+        return Range(
+            start = Position(node.lineNumber.coerceAtLeast(1), node.columnNumber.coerceAtLeast(1)),
+            end = Position(node.lastLineNumber.coerceAtLeast(1), node.lastColumnNumber.coerceAtLeast(1)),
+        )
+    }
 }

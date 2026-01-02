@@ -96,11 +96,11 @@ class NativeParserProviderTest {
         val source = "class Foo {}"
         val unit = provider.parse(source)
 
-        // Invalid 1-based positions
+        // Invalid positions for a 1-based (line, column) coordinate system
         val invalidPositions = listOf(
-            Position(0, 0),
-            Position(-1, 5),
-            Position(1, 0),
+            Position(0, 0), // both line and column are 0
+            Position(-1, 5), // negative line
+            Position(1, 0), // column is 0 (columns are 1-based)
         )
 
         invalidPositions.forEach { pos ->
