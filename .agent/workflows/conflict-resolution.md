@@ -57,6 +57,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
 ## Abort If Stuck
 
 If conflicts are too complex or something went wrong:
+
 ```bash
 git rebase --abort  # Returns to pre-rebase state
 git merge --abort   # Returns to pre-merge state
@@ -65,7 +66,9 @@ git merge --abort   # Returns to pre-merge state
 ## Common Conflict Scenarios
 
 ### After Squash Merge of Base PR
+
 When your stacked PR's base was squash-merged:
+
 ```bash
 git fetch origin main
 git rebase origin/main
@@ -74,10 +77,13 @@ git push --force-with-lease
 ```
 
 ### Conflicting Imports
+
 Often happens with Kotlin imports. Keep the union of necessary imports.
 
 ### Format Differences
+
 If conflicts are purely formatting, run the formatter after resolving:
+
 ```bash
 ./gradlew lintFix
 ```

@@ -10,11 +10,11 @@ These rules are NON-NEGOTIABLE. Violations require immediate correction.
 
 ## Safety Rules
 
-| Rule | Command | Rationale |
-|------|---------|-----------|
-| Never commit on main | `git branch --show-current` before commit | Protects main branch |
-| Stage files explicitly | `git add file1.kt file2.kt` | Prevents accidental commits |
-| Verify before push | `git status` + `git diff --cached` | Catches mistakes early |
+| Rule                   | Command                                   | Rationale                   |
+| ---------------------- | ----------------------------------------- | --------------------------- |
+| Never commit on main   | `git branch --show-current` before commit | Protects main branch        |
+| Stage files explicitly | `git add file1.kt file2.kt`               | Prevents accidental commits |
+| Verify before push     | `git status` + `git diff --cached`        | Catches mistakes early      |
 
 <forbidden>
 - `git add .` or `git add -A` — NEVER use wildcard staging
@@ -27,6 +27,7 @@ These rules are NON-NEGOTIABLE. Violations require immediate correction.
 ## Branching Strategy
 
 ### For New Work
+
 ```bash
 # 1. Ensure main is current
 git checkout main
@@ -38,19 +39,20 @@ git checkout -b <type>/<short-description>
 ```
 
 ### Branch Naming Convention
+
 ```
 <type>/<short-kebab-description>
 ```
 
-| Type | Use Case |
-|------|----------|
-| `feat/` | New features |
-| `fix/` | Bug fixes |
-| `refactor/` | Code restructuring |
-| `test/` | Test additions/fixes |
-| `docs/` | Documentation |
-| `ci/` | CI/CD changes |
-| `chore/` | Maintenance tasks |
+| Type        | Use Case             |
+| ----------- | -------------------- |
+| `feat/`     | New features         |
+| `fix/`      | Bug fixes            |
+| `refactor/` | Code restructuring   |
+| `test/`     | Test additions/fixes |
+| `docs/`     | Documentation        |
+| `ci/`       | CI/CD changes        |
+| `chore/`    | Maintenance tasks    |
 
 ---
 
@@ -67,6 +69,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 ```
 
 ### Examples
+
 ```bash
 # Simple
 git commit -m "feat: add method signature completion"
@@ -87,16 +90,17 @@ rm /tmp/commit-msg.txt
 ```
 
 ### Type Reference
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
+
+| Type       | Description                             |
+| ---------- | --------------------------------------- |
+| `feat`     | New feature                             |
+| `fix`      | Bug fix                                 |
 | `refactor` | Code change that neither fixes nor adds |
-| `test` | Adding/updating tests |
-| `docs` | Documentation only |
-| `ci` | CI configuration |
-| `chore` | Maintenance, dependencies |
-| `perf` | Performance improvement |
+| `test`     | Adding/updating tests                   |
+| `docs`     | Documentation only                      |
+| `ci`       | CI configuration                        |
+| `chore`    | Maintenance, dependencies               |
+| `perf`     | Performance improvement                 |
 
 ---
 
@@ -105,11 +109,13 @@ rm /tmp/commit-msg.txt
 This repository uses **squash merge**. All PR commits become ONE commit on main.
 
 ### Implications
+
 1. Original commit SHAs don't exist on main after merge
 2. Branch can be safely deleted after merge
 3. PR title becomes the commit message — make it good
 
 ### Post-Merge Cleanup
+
 ```bash
 git checkout main
 git pull origin main
@@ -137,6 +143,7 @@ gh pr create --title "feat: dependent feature" --body "Stacked on #<PR1_NUMBER>"
 ```
 
 ### After PR1 Merges
+
 ```bash
 git checkout feat/dependent-feature
 git fetch origin main

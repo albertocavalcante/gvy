@@ -10,8 +10,8 @@ ALWAYS use `gh` CLI for GitHub content. NEVER use curl/wget/fetch for GitHub URL
 
 ## Repository Info
 
-| Variable | Value |
-|----------|-------|
+| Variable     | Value                          |
+| ------------ | ------------------------------ |
 | `OWNER/REPO` | `albertocavalcante/groovy-lsp` |
 
 ---
@@ -19,6 +19,7 @@ ALWAYS use `gh` CLI for GitHub content. NEVER use curl/wget/fetch for GitHub URL
 ## Common Operations
 
 ### PR Management
+
 ```bash
 # View PR
 gh pr view <NUMBER>
@@ -46,6 +47,7 @@ gh pr checks <NUMBER> --watch
 ```
 
 ### Issue Management
+
 ```bash
 # View issue
 gh issue view <NUMBER>
@@ -64,6 +66,7 @@ rm /tmp/issue-body.md
 ```
 
 ### Repository Content
+
 ```bash
 # File content (base64 decode)
 gh api repos/OWNER/REPO/contents/path/to/file.md --jq '.content' | base64 -d
@@ -80,6 +83,7 @@ gh search repos "keyword language:kotlin" --limit 5
 ## GraphQL API
 
 ### Using Saved Queries
+
 ```bash
 # Queries are stored in .agent/queries/
 gh api graphql -F owner=':owner' -F name=':repo' -F number=<N> \
@@ -87,7 +91,9 @@ gh api graphql -F owner=':owner' -F name=':repo' -F number=<N> \
 ```
 
 ### Magic Variables
+
 The `gh` CLI auto-resolves these from git remote:
+
 - `:owner` → repository owner
 - `:repo` → repository name
 
@@ -113,6 +119,7 @@ gh run rerun <RUN_ID> --failed
 ## Output Best Practices
 
 ### Structured Output to Files
+
 ```bash
 # Always use temp files for complex data
 gh pr view 123 --json comments > /tmp/pr-123-comments.json
@@ -121,6 +128,7 @@ rm /tmp/pr-123-comments.json
 ```
 
 ### JSON Processing
+
 ```bash
 # Extract specific fields
 gh pr view 123 --json title,state --jq '{title, state}'

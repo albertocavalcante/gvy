@@ -2,51 +2,60 @@
 
 **Groovy Language Server** — Kotlin/JVM LSP implementation.
 
-## Build Commands
+## Commands
+
 ```bash
-make build    # Full build + tests
-make test     # Tests only
-make lint     # Check quality
-make format   # Auto-fix lint
+make build   # Build + tests
+make test    # Tests only
+make lint    # Check quality
+make format  # Fix lint
 ```
 
-## Non-Negotiable Rules
+## Rules (ALWAYS APPLY)
 
-1. **Git**: Verify branch before commit. Stage files explicitly (`git add file.kt`, never `git add .`)
-2. **TDD**: Write failing test → implement → refactor. Always.
-3. **Lint**: Run `./gradlew lintFix` before commit
-4. **GitHub**: Use `gh` CLI for all GitHub operations
+1. **Git**: `git branch --show-current` before commit. `git add <file>` explicitly, NEVER `git add .`
+2. **TDD**: Failing test FIRST → implement → refactor
+3. **Lint**: `./gradlew lintFix` before commit
+4. **GitHub**: Use `gh` CLI, never curl/fetch for GitHub URLs
 
-## Commit Format
+## Commits
+
 ```
 <type>(<scope>): <description>
 ```
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `ci`, `chore`
 
-## When to Read Additional Docs
+Types: `feat` `fix` `refactor` `test` `docs` `ci` `chore`
 
-| Task | Read First |
-|------|------------|
-| Git workflow, branching | `.agent/rules/git-workflow.md` |
-| TDD details, test naming | `.agent/rules/code-quality.md` |
-| PR review feedback | `.agent/workflows/review.md` |
-| Implementing GitHub issues | `.agent/workflows/solve.md` |
-| Deferring work | `.agent/workflows/defer.md` |
-| GitHub API/CLI patterns | `.agent/workflows/github-cli.md` |
-| CI/CD, Actions | `.agent/workflows/github-actions.md` |
-| Merge conflicts | `.agent/workflows/conflict-resolution.md` |
-| Debugging | `kb/TROUBLESHOOTING.md` |
+## READ BEFORE ACTING
 
-## Deferred Work Pattern
+<instruction>
+When starting a task, IDENTIFY the task type below and READ the linked document BEFORE writing code or executing commands.
+</instruction>
+
+| IF task involves...             | THEN read                                 |
+| ------------------------------- | ----------------------------------------- |
+| Creating branch, committing, PR | `.agent/rules/git-workflow.md`            |
+| Writing tests, TDD, naming      | `.agent/rules/code-quality.md`            |
+| Addressing PR review comments   | `.agent/workflows/review.md`              |
+| Implementing a GitHub issue     | `.agent/workflows/solve.md`               |
+| Creating issue for future work  | `.agent/workflows/defer.md`               |
+| GitHub API, GraphQL, `gh` CLI   | `.agent/workflows/github-cli.md`          |
+| GitHub Actions, CI failures     | `.agent/workflows/github-actions.md`      |
+| Merge/rebase conflicts          | `.agent/workflows/conflict-resolution.md` |
+| Test failures, debugging        | `kb/TROUBLESHOOTING.md`                   |
+
+## Deferred Work
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/albertocavalcante/groovy-lsp/issues/123
 ```
 
-## Structure
-```
-.agent/rules/      # Permanent rules
-.agent/workflows/  # Step-by-step procedures
-.agent/queries/    # GraphQL for GitHub API
-.agent/scripts/    # Python helpers (format with ruff)
-```
+## Helper Files
+
+| Path                | Contains                              |
+| ------------------- | ------------------------------------- |
+| `.agent/rules/`     | Permanent rules                       |
+| `.agent/workflows/` | Step-by-step procedures               |
+| `.agent/queries/`   | GraphQL queries                       |
+| `.agent/scripts/`   | Python helpers (use `ruff` to format) |

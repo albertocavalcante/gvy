@@ -29,6 +29,7 @@ These standards apply to ALL code changes. No exceptions without explicit justif
 ```
 
 ### Execution
+
 ```bash
 # Step 1-2: Write test, verify failure
 ./gradlew test --tests "*MyTest*my test name*"  # MUST FAIL
@@ -42,13 +43,13 @@ These standards apply to ALL code changes. No exceptions without explicit justif
 
 ### When TDD is Required
 
-| Scenario | TDD Required? |
-|----------|---------------|
-| Bug fix | ✅ YES — test reproduces bug first |
-| New feature | ✅ YES — test defines behavior first |
-| Refactoring | ✅ YES — tests prove behavior unchanged |
-| Config/wiring only | ⚠️ OPTIONAL — no logic to test |
-| Exploratory spike | ⚠️ OPTIONAL — will be rewritten |
+| Scenario           | TDD Required?                           |
+| ------------------ | --------------------------------------- |
+| Bug fix            | ✅ YES — test reproduces bug first      |
+| New feature        | ✅ YES — test defines behavior first    |
+| Refactoring        | ✅ YES — tests prove behavior unchanged |
+| Config/wiring only | ⚠️ OPTIONAL — no logic to test           |
+| Exploratory spike  | ⚠️ OPTIONAL — will be rewritten          |
 
 When skipping TDD, write tests immediately after implementation.
 
@@ -76,6 +77,7 @@ Use backtick syntax with descriptive sentences:
 ## Lint Handling
 
 ### Pre-Commit Checklist
+
 ```bash
 ./gradlew lintFix   # Auto-fix what's possible
 ./gradlew lint      # Verify no remaining issues
@@ -83,13 +85,14 @@ Use backtick syntax with descriptive sentences:
 
 ### Handling Lint Issues
 
-| Action | When to Use |
-|--------|-------------|
-| **FIX** | Default — address the issue properly |
+| Action       | When to Use                             |
+| ------------ | --------------------------------------- |
+| **FIX**      | Default — address the issue properly    |
 | **SUPPRESS** | Legitimate exception with justification |
-| **ASK** | Unclear whether to fix or suppress |
+| **ASK**      | Unclear whether to fix or suppress      |
 
 ### Suppression Format
+
 ```kotlin
 @Suppress("MagicNumber")  // Configuration constant, not arbitrary
 private const val DEFAULT_TIMEOUT_MS = 5000
@@ -106,14 +109,15 @@ class CompletionProvider { ... }
 
 When introducing heuristics or non-obvious code, annotate with tags:
 
-| Tag | Use Case | Example |
-|-----|----------|---------|
-| `NOTE:` | Explain trade-off | `// NOTE: Using regex for speed, AST would be more accurate` |
-| `TODO:` | Future improvement | `// TODO: Replace with proper parser when available` |
-| `FIXME:` | Known issue | `// FIXME: Flaky on Windows due to path separators` |
-| `HACK:` | Last resort | `// HACK: Workaround for upstream bug #123, remove when fixed` |
+| Tag      | Use Case           | Example                                                        |
+| -------- | ------------------ | -------------------------------------------------------------- |
+| `NOTE:`  | Explain trade-off  | `// NOTE: Using regex for speed, AST would be more accurate`   |
+| `TODO:`  | Future improvement | `// TODO: Replace with proper parser when available`           |
+| `FIXME:` | Known issue        | `// FIXME: Flaky on Windows due to path separators`            |
+| `HACK:`  | Last resort        | `// HACK: Workaround for upstream bug #123, remove when fixed` |
 
 ### TODO Format with Issue Link
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/owner/repo/issues/123
@@ -124,12 +128,14 @@ When introducing heuristics or non-obvious code, annotate with tags:
 ## Test Debugging
 
 ### Viewing Test Output
+
 ```bash
 # println output requires --info flag
 ./gradlew test --tests "*MyTest*" --console=plain --info
 ```
 
 ### Debugging Flaky Tests
+
 1. Add `// FIXME: Flaky test - [reason]` comment
 2. Investigate root cause (timing, state, randomness)
 3. Fix or mark with `@RepeatedTest` / `@Disabled` with issue link
@@ -161,14 +167,14 @@ Never expose absolute paths in:
 
 Prefer idiomatic Kotlin patterns:
 
-| Pattern | Prefer | Avoid |
-|---------|--------|-------|
-| Null safety | `?.`, `?:`, `let` | `!!` (minimize) |
-| Collections | `map`, `filter`, `fold` | Manual loops |
-| Data holders | `data class` | Plain class with equals/hashCode |
-| Type hierarchies | `sealed class/interface` | Open class with instanceof |
-| Utilities | Extension functions | Static utility classes |
-| Initialization | `lazy`, `apply`, `also` | Manual init blocks |
+| Pattern          | Prefer                   | Avoid                            |
+| ---------------- | ------------------------ | -------------------------------- |
+| Null safety      | `?.`, `?:`, `let`        | `!!` (minimize)                  |
+| Collections      | `map`, `filter`, `fold`  | Manual loops                     |
+| Data holders     | `data class`             | Plain class with equals/hashCode |
+| Type hierarchies | `sealed class/interface` | Open class with instanceof       |
+| Utilities        | Extension functions      | Static utility classes           |
+| Initialization   | `lazy`, `apply`, `also`  | Manual init blocks               |
 
 ---
 

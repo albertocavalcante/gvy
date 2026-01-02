@@ -3,6 +3,7 @@ description: Strict, deterministic workflow for addressing PR review feedback an
 ---
 
 # /review
+
 // turbo-all
 
 <purpose>
@@ -10,6 +11,7 @@ A STRICT, DETERMINISTIC workflow for addressing PR review feedback. This is "God
 </purpose>
 
 <ironclad_rules>
+
 1. **NEVER IGNORE ANY COMMENT** — Every thread MUST be accounted for
 2. **GRAPHQL IS TRUTH** — Use saved queries for authoritative thread state
 3. **DIFF FIRST** — ALWAYS read `gh pr diff` before ANY action
@@ -17,7 +19,7 @@ A STRICT, DETERMINISTIC workflow for addressing PR review feedback. This is "God
 5. **REPLY THEN RESOLVE** — Every addressed thread gets a reply AND explicit resolution
 6. **NO BROWSER** — `gh` CLI exclusively
 7. **VERIFY BEFORE COMMIT** — Run tests for EVERY code change
-</ironclad_rules>
+   </ironclad_rules>
 
 ---
 
@@ -29,12 +31,14 @@ Skipping this step leads to incorrect fixes and wasted cycles.
 </critical>
 
 ### 0.1 Get PR Metadata
+
 ```bash
 gh pr view <PR_NUMBER> --json title,body,headRefName,baseRefName,state,author \
   --jq '{title, body: (.body[:500] + "..."), branch: .headRefName, base: .baseRefName, state, author: .author.login}'
 ```
 
 ### 0.2 Read the Diff (SOURCE OF TRUTH FOR CHANGES)
+
 ```bash
 # Full diff to file for reference
 gh pr diff <PR_NUMBER> > /tmp/pr-<PR_NUMBER>-diff.patch
@@ -62,12 +66,14 @@ Document answers mentally before Phase 1.
 ## Phase 1: Fetch Status & Threads
 
 ### 1.1 CI Status Check
+
 ```bash
 gh pr view <PR_NUMBER> --json state,statusCheckRollup \
   --jq '{state: .state, checks: [.statusCheckRollup[]? | {name: .name, status: .status, conclusion: .conclusion}]}'
 ```
 
 ### 1.2 Fetch Review Threads (GraphQL Source of Truth)
+
 ```bash
 # NOTE: ':owner' and ':repo' are gh CLI magic variables that auto-resolve from git remote
 gh api graphql -F owner=':owner' -F name=':repo' -F number=<PR_NUMBER> \
@@ -80,6 +86,7 @@ jq '{pr_id: .data.repository.pullRequest.id, total_threads: .data.repository.pul
 ```
 
 ### 1.3 Inventory Actionable Threads
+
 ```bash
 python3 .agent/scripts/inventory_threads.py /tmp/pr-<PR_NUMBER>-threads.json
 ```
@@ -101,6 +108,7 @@ NO EXCEPTIONS. NO SKIPPING.
 </critical>
 
 <decision_tree id="thread-classification">
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    THREAD CLASSIFICATION                     │
@@ -120,6 +128,7 @@ NO EXCEPTIONS. NO SKIPPING.
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
 </decision_tree>
 
 ### Classification Actions
@@ -245,6 +254,7 @@ You need THREE IDs from Phase 1 data:
 </critical>
 
 ### 3.1 Extract IDs
+
 ```bash
 # Get PR Node ID
 jq -r '.data.repository.pullRequest.id' /tmp/pr-<PR_NUMBER>-threads.json
@@ -254,6 +264,7 @@ jq -r '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==
 ```
 
 ### 3.2 Reply to Thread
+
 ```bash
 gh api graphql \
   -F pullRequestId="<PR_NODE_ID>" \
@@ -263,6 +274,7 @@ gh api graphql \
 ```
 
 ### 3.3 Resolve Thread
+
 ```bash
 gh api graphql \
   -F threadId="<THREAD_NODE_ID>" \
@@ -270,20 +282,22 @@ gh api graphql \
 ```
 
 <reply_templates>
-| Scenario | Reply Template |
-|----------|----------------|
-| Fixed | "Fixed in `abc123`." |
-| Fixed with detail | "Fixed in `abc123`. [brief explanation of change]" |
-| Deferred | "Created #NNN to track this. [reason for deferral]" |
-| Rejected | "[Technical reasoning]. [Evidence/citation]. Happy to discuss." |
+
+| Scenario             | Reply Template                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| Fixed                | "Fixed in `abc123`."                                                                   |
+| Fixed with detail    | "Fixed in `abc123`. [brief explanation of change]"                                     |
+| Deferred             | "Created #NNN to track this. [reason for deferral]"                                    |
+| Rejected             | "[Technical reasoning]. [Evidence/citation]. Happy to discuss."                        |
 | Clarification needed | "Could you clarify [specific question]? I want to make sure I address this correctly." |
-</reply_templates>
+| </reply_templates>   |                                                                                        |
 
 ---
 
 ## Phase 4: Push & Verify CI
 
 ### 4.1 Pre-Push Checklist
+
 ```bash
 # Verify branch
 git branch --show-current
@@ -299,11 +313,13 @@ git status
 ```
 
 ### 4.2 Push
+
 ```bash
 git push origin <BRANCH_NAME>
 ```
 
 ### 4.3 Watch CI
+
 ```bash
 gh pr checks <PR_NUMBER> --watch
 ```
@@ -316,8 +332,10 @@ gh pr checks <PR_NUMBER> --watch
 gh run view <RUN_ID> --log 2>/dev/null | grep -E "(filter|run_main_ci)" | head -20
 
 # Verify changed files match CI triggers
+
 gh pr view <PR_NUMBER> --json files --jq '.files[].path'
-```
+
+````
 </diagnosis>
 <resolution>
 If paths don't match CI triggers, either:
@@ -329,7 +347,8 @@ If paths don't match CI triggers, either:
 <diagnosis>
 ```bash
 gh run view <RUN_ID> --log-failed
-```
+````
+
 </diagnosis>
 <resolution>
 1. Reproduce locally: `./gradlew test --tests "FailingTest"`
@@ -347,6 +366,7 @@ This phase is NON-NEGOTIABLE. You MUST verify zero unresolved threads.
 </critical>
 
 ### 5.1 Re-Fetch Threads
+
 ```bash
 gh api graphql -F owner=':owner' -F name=':repo' -F number=<PR_NUMBER> \
   -f query="$(cat .agent/queries/pr-review-threads.graphql)" \
@@ -354,6 +374,7 @@ gh api graphql -F owner=':owner' -F name=':repo' -F number=<PR_NUMBER> \
 ```
 
 ### 5.2 Count Unresolved
+
 ```bash
 jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .isOutdated == false)] | length' /tmp/pr-<PR_NUMBER>-threads-final.json
 ```
@@ -362,16 +383,18 @@ jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == 
 **RESULT MUST BE 0**
 
 If not zero:
+
 1. List remaining threads
 2. Return to Phase 2
 3. DO NOT proceed until zero
-</assertion>
+   </assertion>
 
 ---
 
 ## Phase 6: Cleanup & Summary
 
 ### 6.1 Remove Temp Files
+
 ```bash
 rm -f /tmp/pr-<PR_NUMBER>-*.json /tmp/pr-<PR_NUMBER>-*.patch
 ```
@@ -381,14 +404,15 @@ rm -f /tmp/pr-<PR_NUMBER>-*.json /tmp/pr-<PR_NUMBER>-*.patch
 ```markdown
 ## PR #<NUMBER> Review Summary
 
-| Metric | Value |
-|--------|-------|
-| Threads Addressed | X |
-| Commits Added | Y |
-| CI Status | ✅ Pass / ❌ Fail |
-| Unresolved | 0 |
+| Metric            | Value             |
+| ----------------- | ----------------- |
+| Threads Addressed | X                 |
+| Commits Added     | Y                 |
+| CI Status         | ✅ Pass / ❌ Fail |
+| Unresolved        | 0                 |
 
 ### Actions Taken
+
 - Fixed: [list of fixes]
 - Deferred: [list with issue links]
 - Rejected: [list with reasoning]
@@ -442,10 +466,10 @@ rm -f /tmp/pr-<PR_NUMBER>-*.json /tmp/pr-<PR_NUMBER>-*.patch
 
 ## Cross-References
 
-| Situation | Workflow |
-|-----------|----------|
-| Merge conflicts | `.agent/workflows/conflict-resolution.md` |
-| Defer to issue | `.agent/workflows/defer.md` |
-| GitHub CLI patterns | `.agent/workflows/github-cli.md` |
-| Code quality rules | `.agent/rules/code-quality.md` |
-| Git safety | `.agent/rules/git-workflow.md` |
+| Situation           | Workflow                                  |
+| ------------------- | ----------------------------------------- |
+| Merge conflicts     | `.agent/workflows/conflict-resolution.md` |
+| Defer to issue      | `.agent/workflows/defer.md`               |
+| GitHub CLI patterns | `.agent/workflows/github-cli.md`          |
+| Code quality rules  | `.agent/rules/code-quality.md`            |
+| Git safety          | `.agent/rules/git-workflow.md`            |
