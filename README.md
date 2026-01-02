@@ -1,48 +1,28 @@
-# Groovy Language Server
+# Groovy Devtools
 
-A Language Server Protocol (LSP) implementation for Apache Groovy.
+Groovy Devtools (gvy) is a monorepo of Apache Groovy tooling. The Groovy Language Server (LSP) is the primary component
+and is still a work in progress, but it already provides core editor features plus framework-aware support for Jenkins
+pipelines and Spock tests.
 
 ## Status
 
-⚠️ **Work in Progress** - This is an early development version with basic LSP functionality.
+- Core LSP: completion, hover, navigation, formatting, diagnostics, code actions, rename, folding, semantic tokens
+- Jenkins: metadata-driven completion and diagnostics; deeper context awareness in progress
+- Spock: spec detection and block awareness; richer DSL support in progress
+- Editors: VS Code/Cursor/VSCodium extension in `editors/code/`
 
-## LSP Feature Support
+See `docs/roadmap.md` for the user-facing roadmap.
 
-We target **LSP Specification 3.17** and use `lsp4j` 0.24.0.
+## Documentation
 
-| LSP Method                        | Feature           | Status | Notes                                  |
-| :-------------------------------- | :---------------- | :----: | :------------------------------------- |
-| **Lifecycle**                     |                   |        |                                        |
-| `initialize`                      | Initialize        |   ✅   |                                        |
-| `shutdown`                        | Shutdown          |   ✅   |                                        |
-| `exit`                            | Exit              |   ✅   |                                        |
-| **Text Synchronization**          |                   |        |                                        |
-| `textDocument/didOpen`            | Open              |   ✅   | Triggers compilation & diagnostics     |
-| `textDocument/didChange`          | Change            |   ✅   | Full sync; triggers re-compilation     |
-| `textDocument/didSave`            | Save              |   ✅   |                                        |
-| `textDocument/didClose`           | Close             |   ✅   | Clears diagnostics                     |
-| **Language Features**             |                   |        |                                        |
-| `textDocument/completion`         | Completion        |   ✅   | Keywords + AST-based variables/methods |
-| `textDocument/hover`              | Hover             |   ✅   | Type info & documentation              |
-| `textDocument/signatureHelp`      | Signature Help    |   ✅   | Method parameter hints                 |
-| `textDocument/formatting`         | Formatting        |   ✅   | Via OpenRewrite                        |
-| `textDocument/publishDiagnostics` | Diagnostics       |   ✅   | Groovy compiler errors                 |
-| `textDocument/codeAction`         | Code Actions      |   ⏳   | Planned (Quick fixes)                  |
-| `textDocument/rename`             | Rename            |   ⏳   | Planned                                |
-| `textDocument/semanticTokens`     | Semantic Tokens   |   ⏳   | Planned (Syntax highlighting)          |
-| `textDocument/inlayHint`          | Inlay Hints       |   ⏳   | Planned (LSP 3.17)                     |
-| **Navigation**                    |                   |        |                                        |
-| `textDocument/definition`         | Go to Definition  |   ✅   | Symbols & Types                        |
-| `textDocument/typeDefinition`     | Type Definition   |   ✅   |                                        |
-| `textDocument/references`         | Find References   |   ✅   |                                        |
-| `textDocument/documentSymbol`     | Document Symbols  |   ✅   | Outline view                           |
-| `workspace/symbol`                | Workspace Symbols |   ✅   | Global search                          |
-| `textDocument/foldingRange`       | Folding           |   ⏳   | Planned                                |
-| `textDocument/implementation`     | Implementation    |   ⏳   | Planned                                |
+- `docs/README.md`
+- `docs/overview.md`
+- `docs/lsp/usage.md`
+- `docs/lsp/feature-support.md`
 
-## Framework Support
+## LSP Target
 
-- Spock: `docs/SPOCK_SUPPORT.md` (design + landing plan)
+We target LSP 3.17 and use `lsp4j` 0.24.0. The full support matrix lives in `docs/lsp/feature-support.md`.
 
 ## Requirements
 
@@ -55,20 +35,20 @@ We target **LSP Specification 3.17** and use `lsp4j` 0.24.0.
 ./gradlew build
 ```
 
-This creates a fat JAR at `build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar`
+This creates a fat JAR under `build/libs/`.
 
 ## Running
 
 ### Stdio mode (default)
 
 ```bash
-java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar
+java -jar build/libs/groovy-lsp-<version>.jar
 ```
 
 ### Socket mode
 
 ```bash
-java -jar build/libs/groovy-lsp-0.1.0-SNAPSHOT.jar socket 8080
+java -jar build/libs/groovy-lsp-<version>.jar socket 8080
 ```
 
 ## Development
@@ -97,20 +77,26 @@ Requirements: `gh` (authenticated for the repo), `codex` CLI, and `jq` for parsi
 to return a pretty-printed XML block inside triple-backtick xml code fences; use `--comment` to post the output back to
 the GitHub issue instead of printing it locally. The default model is `gpt-5-codex`.
 
-### Project Structure
+### Monorepo layout
 
-This is a monorepo containing:
-
-| Path              | Description                       |
-| ----------------- | --------------------------------- |
-| `groovy-lsp/`     | Core Language Server (Kotlin)     |
-| `parser/native/`  | Groovy native AST parser          |
-| `parser/core/`    | JavaParser-inspired API           |
-| `groovy-jenkins/` | Jenkins Pipeline support          |
-| `groovy-spock/`   | Spock test framework support      |
-| `editors/code/`   | VS Code/Cursor/VSCodium extension |
-| `jupyter/`        | Jupyter Kernel integration        |
-| `tests/`          | End-to-end LSP scenarios          |
+| Path                       | Description                         |
+| -------------------------- | ----------------------------------- |
+| `groovy-lsp/`              | Core language server                |
+| `parser/`                  | Parsing libraries (api/native/core) |
+| `groovy-common/`           | Shared utilities                    |
+| `groovy-diagnostics/`      | Diagnostics (compiler + CodeNarc)   |
+| `groovy-formatter/`        | OpenRewrite-based formatting        |
+| `groovy-jenkins/`          | Jenkins pipeline support            |
+| `groovy-spock/`            | Spock framework support             |
+| `groovy-gdsl/`             | GDSL execution and metadata         |
+| `groovy-testing/`          | Test discovery utilities            |
+| `groovy-junit/`            | JUnit integration                   |
+| `groovy-repl/`             | Groovy REPL                         |
+| `groovy-build-tool/`       | BSP/Gradle integration              |
+| `editors/code/`            | VS Code/Cursor/VSCodium extension   |
+| `jupyter/`                 | Jupyter kernels (Groovy/Jenkins)    |
+| `tools/jenkins-extractor/` | Jenkins metadata extractor          |
+| `tests/`                   | End-to-end LSP scenarios            |
 
 ### VS Code Extension
 

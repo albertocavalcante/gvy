@@ -3,7 +3,7 @@
 This document proposes a careful migration from lightweight regex heuristics to a robust, AST/token-driven Spock
 integration.
 
-It is intended to complement `docs/SPOCK_SUPPORT.md` by focusing specifically on:
+It is intended to complement `SPOCK_SUPPORT.md` by focusing specifically on:
 
 - How to reliably detect “this is a Spock spec” without regex.
 - How to determine “what Spock block is the cursor in” without fragile string heuristics.
