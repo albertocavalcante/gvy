@@ -9,11 +9,13 @@ import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.albertocavalcante.groovycommon.FileExtensions
+import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
-import com.github.albertocavalcante.groovylsp.indexing.SymbolGenerator
-import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
-import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
-import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
+import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.groovylsp.services.IndexExportService
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -34,63 +36,29 @@ class IndexCommand : CliktCommand(name = "index") {
         .default(Path.of("."))
 
     override fun run() {
-        val rootPath = projectRoot.toAbsolutePath().normalize().toString()
+        val rootPath = projectRoot.toAbsolutePath().normalize()
         val actualFormat = format ?: IndexFormat.SCIP
         val outputFile = output ?: File("index.${actualFormat.toString().lowercase()}")
-        echo("Indexing $rootPath to $outputFile in $actualFormat format...")
 
-        val fileOutputStream = FileOutputStream(outputFile)
-        val writers = try {
-            when (actualFormat) {
-                IndexFormat.SCIP -> listOf(ScipWriter(fileOutputStream, rootPath))
-                IndexFormat.LSIF -> listOf(LsifWriter(fileOutputStream, rootPath))
-            }
-        } catch (e: Exception) {
-            try {
-                fileOutputStream.close()
-            } catch (_: Exception) {
-                // Ignore secondary exception while closing after a construction failure
-            }
-            throw e
-        }
+        val params = ExportIndexParams(
+            format = actualFormat,
+            outputPath = outputFile.absolutePath,
+        )
 
-        val manager = when {
-            Files.exists(
-                projectRoot.resolve("build.gradle"),
-            ) || Files.exists(projectRoot.resolve("build.gradle.kts")) -> "gradle"
+        val buildTools = listOf(
+            BspBuildTool(),
+            GradleBuildTool(),
+            MavenBuildTool(),
+        )
+        val buildToolManager = BuildToolManager(buildTools)
+        val service = IndexExportService { buildToolManager }
 
-            Files.exists(projectRoot.resolve("pom.xml")) -> "maven"
-            else -> "manual"
-        }
-        val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
         try {
-            val indexer = UnifiedIndexer(writers, symbolGenerator)
-            // Walk files - use block ensures stream is closed to prevent file handle leaks
-            Files.walk(projectRoot).use { stream ->
-                stream.filter { path ->
-                    val file = path.toFile()
-                    file.extension in FileExtensions.EXTENSIONS ||
-                        file.name in FileExtensions.FILENAMES
-                }
-                    .forEach { path ->
-                        try {
-                            val relativePath = projectRoot.relativize(path).toString()
-                            val content = Files.readString(path)
-                            indexer.indexDocument(relativePath, content)
-                        } catch (e: Exception) {
-                            echo("Failed to index $path: ${e.message}", err = true)
-                        }
-                    }
-            }
-            echo("Successfully generated index at ${outputFile.absolutePath}")
-        } finally {
-            writers.forEach { writer ->
-                try {
-                    writer.close()
-                } catch (e: Exception) {
-                    echo("Error closing writer: ${e.message}", err = true)
-                }
-            }
+            val result = service.exportIndex(params, rootPath)
+            echo(result)
+        } catch (e: Exception) {
+            echo("Failed to generate index: ${e.message}", err = true)
+            throw e
         }
     }
 }
