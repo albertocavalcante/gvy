@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.compilation.toLspDiagnostic
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic

@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class JenkinsPipelineStageRuleTest {
 
@@ -105,9 +106,5 @@ class JenkinsPipelineStageRuleTest {
         every { context.hasErrors() } returns false
         every { context.getAst() } returns null
         return context
-    }
-
-    private fun assertTrue(condition: Boolean) {
-        kotlin.test.assertTrue(condition)
     }
 }
