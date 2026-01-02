@@ -21,6 +21,7 @@ import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticPr
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
+import com.github.albertocavalcante.groovylsp.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
@@ -70,6 +71,8 @@ import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.ImplementationParams
+import org.eclipse.lsp4j.InlayHint
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
@@ -192,6 +195,10 @@ class GroovyTextDocumentService(
 
     private val callHierarchyProvider by lazy {
         CallHierarchyProvider(compilationService)
+    }
+
+    private val inlayHintsProvider by lazy {
+        InlayHintsProvider(compilationService)
     }
 
     override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
@@ -723,6 +730,21 @@ class GroovyTextDocumentService(
 
             foldingRangeProvider.provideFoldingRanges(uri)
         }
+
+    override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
+        logger.debug("Inlay hints requested for ${params.textDocument.uri}")
+        val uri = URI.create(params.textDocument.uri)
+
+        // TODO(#566): Read dynamic configuration from client settings.
+        //  See: https://github.com/albertocavalcante/gvy/issues/566
+        val compilationResult = ensureCompiledOrCompileNow(uri)
+        if (compilationResult == null) {
+            logger.warn("Document $uri not compiled, cannot provide inlay hints")
+            return@future emptyList()
+        }
+
+        inlayHintsProvider.provideInlayHints(params)
+    }
 
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
         coroutineScope.future {

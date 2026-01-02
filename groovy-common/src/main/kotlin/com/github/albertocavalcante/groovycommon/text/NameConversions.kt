@@ -78,3 +78,51 @@ fun extractSymbolName(value: Any?): String? = when (value) {
         str?.takeIf { it.isNotBlank() && !it.contains("@") }
     }
 }
+
+/**
+ * Formats a type name to be more readable in inlay hints by simplifying fully qualified names
+ * and handling generic type parameters recursively.
+ *
+ * @receiver The fully qualified type name string.
+ * @return A simplified type name string suitable for inlay hints.
+ */
+fun String.formatTypeName(): String {
+    if (isEmpty()) return ""
+    if (contains('<')) {
+        val baseName = substringBefore('<').simpleClassName()
+        val typeParamsStr = substringAfter('<').substringBeforeLast('>')
+        val typeParams = splitByTopLevelComma(typeParamsStr).map { it.trim().formatTypeName() }
+        return "$baseName<${typeParams.joinToString(", ")}>"
+    }
+    // Handle bounded wildcards or multi-word types (e.g. "? extends java.lang.Number")
+    if (contains(' ')) {
+        return split(' ').joinToString(" ") { it.formatTypeName() }
+    }
+    return simpleClassName()
+}
+
+/**
+ * Splits a generic type parameter string by top-level commas, respecting nested angle brackets.
+ *
+ * @param s The string containing comma-separated type parameters.
+ * @return A list of individual type parameter strings.
+ */
+private fun splitByTopLevelComma(s: String): List<String> {
+    val result = mutableListOf<String>()
+    var current = StringBuilder()
+    var depth = 0
+    for (char in s) {
+        when (char) {
+            '<' -> depth++
+            '>' -> depth--
+            ',' -> if (depth == 0) {
+                result.add(current.toString())
+                current = StringBuilder()
+                continue
+            }
+        }
+        current.append(char)
+    }
+    result.add(current.toString())
+    return result
+}

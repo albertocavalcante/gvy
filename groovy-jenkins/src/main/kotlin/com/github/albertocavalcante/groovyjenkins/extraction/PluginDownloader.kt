@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins.extraction
 
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -10,7 +9,6 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.jvm.javaio.toInputStream
-import io.ktor.utils.io.readRemaining
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path

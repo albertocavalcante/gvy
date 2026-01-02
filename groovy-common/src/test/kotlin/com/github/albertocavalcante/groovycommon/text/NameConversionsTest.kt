@@ -174,4 +174,94 @@ class NameConversionsTest {
     fun `extractSymbolName handles empty list`() {
         assertNull(extractSymbolName(emptyList<String>()))
     }
+
+    // ==========================================================================
+    // formatTypeName() tests
+    // ==========================================================================
+
+    @Test
+    fun `formatTypeName simplifies fully qualified name`() {
+        assertEquals("String", "java.lang.String".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles simple name without package`() {
+        assertEquals("String", "String".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles empty string`() {
+        assertEquals("", "".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles generic type with single param`() {
+        assertEquals("ArrayList<Integer>", "java.util.ArrayList<java.lang.Integer>".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles generic type with multiple params`() {
+        assertEquals("Map<String, Object>", "java.util.Map<java.lang.String, java.lang.Object>".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles nested generic types`() {
+        assertEquals(
+            "Map<String, List<Integer>>",
+            "java.util.Map<java.lang.String, java.util.List<java.lang.Integer>>".formatTypeName(),
+        )
+    }
+
+    @Test
+    fun `formatTypeName handles nested multiple generic types`() {
+        val input = "java.util.Map<java.lang.String, java.util.Map<java.lang.String, java.lang.Integer>>"
+        assertEquals("Map<String, Map<String, Integer>>", input.formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles nested generics with multiple params`() {
+        val input = "java.util.Map<java.lang.String, " +
+            "java.util.function.Function<java.lang.String, java.util.List<java.lang.String>>>"
+        assertEquals(
+            "Map<String, Function<String, List<String>>>",
+            input.formatTypeName(),
+        )
+    }
+
+    @Test
+    fun `formatTypeName handles bounded wildcards`() {
+        assertEquals("List<? extends Number>", "java.util.List<? extends java.lang.Number>".formatTypeName())
+        assertEquals("? super String", "? super java.lang.String".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles primitive types`() {
+        assertEquals("int", "int".formatTypeName())
+        assertEquals("boolean", "boolean".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles arrays in type parameters`() {
+        // Note: This is a simplified test - Groovy arrays may be represented differently
+        assertEquals("List<String[]>", "java.util.List<java.lang.String[]>".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles deeply nested packages`() {
+        assertEquals(
+            "TypeInferencer",
+            "com.github.albertocavalcante.groovyparser.ast.TypeInferencer".formatTypeName(),
+        )
+    }
+
+    @Test
+    fun `formatTypeName preserves wildcard types`() {
+        // Wildcards may appear in some type representations
+        assertEquals("List<?>", "java.util.List<?>".formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles simple generic without FQN`() {
+        assertEquals("List<String>", "List<String>".formatTypeName())
+    }
 }
