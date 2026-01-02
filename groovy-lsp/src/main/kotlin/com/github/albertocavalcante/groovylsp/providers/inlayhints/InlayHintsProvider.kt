@@ -246,18 +246,10 @@ class InlayHintsProvider(
         val methodName = call.methodAsString ?: return emptyList()
 
         // Search for matching method declaration
-        val classNodes = astModel.getAllClassNodes()
-        println("DEBUG: Searching for $methodName in ${classNodes.size} classes")
-        return classNodes
+        return astModel.getAllClassNodes()
             .asSequence()
-            .flatMap {
-                println("DEBUG: Class ${it.name} has ${it.methods.size} methods")
-                it.methods.asSequence()
-            }
-            .filter {
-                println("DEBUG: Checking method ${it.name} with ${it.parameters.size} params")
-                it.name == methodName
-            }
+            .flatMap { it.methods.asSequence() }
+            .filter { it.name == methodName }
             .filter { it.parameters.size == ((call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0) }
             .map { method -> method.parameters.map { it.name } }
             .firstOrNull() ?: emptyList()
