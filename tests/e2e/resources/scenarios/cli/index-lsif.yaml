@@ -1,0 +1,44 @@
+# LSIF Index Generation Test
+#
+# This scenario verifies that the gls index command correctly generates
+# an LSIF index file for a sample Groovy project.
+#
+# Run: ./gradlew :tests:e2eTest -Dgroovy.lsp.e2e.filter=cli/index-lsif
+
+name: index-lsif
+description: >
+  Verifies that the LSIF indexer correctly generates an LSIF index file
+  for a sample Groovy project containing class and method definitions.
+
+workspace:
+  fixture: index-test
+
+steps:
+  # Step 1: Run the CLI index command for LSIF
+  - cli:
+      command: index
+      args:
+        - "--format"
+        - "LSIF"
+        - "--output"
+        - "{{temp}}/index.lsif"
+        - "."
+      saveAs: indexResult
+      expectExitCode: 0
+      timeoutSeconds: 60
+
+  # Step 2: Verify the command output
+  - assert:
+      source: indexResult
+      checks:
+        - jsonPath: $.stdout
+          expect:
+            type: CONTAINS
+            value: "Successfully generated index"
+
+  # Step 3: Golden file comparison (JSON mode supports {{workspace}} placeholder)
+  - goldenAssert:
+      actual: "{{temp}}/index.lsif"
+      expected: "index-lsif-calculator.lsif"
+      mode: JSON
+      message: "LSIF index should match golden file structure"

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovycommon.FileExtensions
 import com.github.albertocavalcante.groovyjunit.junit.JUnit5TestDetector
 import com.github.albertocavalcante.groovyjunit.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
@@ -10,6 +11,11 @@ import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionP
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
+import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
+import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
+import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
+import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
+import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
@@ -29,6 +35,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.InitializeParams
@@ -43,9 +50,15 @@ import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import org.slf4j.LoggerFactory
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlin.io.path.extension
+import kotlin.io.path.readText
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 
@@ -243,6 +256,49 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> = testRequestDelegate.runTest(params)
+
+    @JsonRequest("groovy/exportIndex")
+    fun exportIndex(params: ExportIndexParams): CompletableFuture<String> = CompletableFuture.supplyAsync({
+        logger.info("Exporting index format=${params.format} to=${params.outputPath}")
+        val rootUri = savedInitParams?.workspaceFolders?.firstOrNull()?.uri
+            ?: savedInitParams?.rootUri
+            ?: throw IllegalStateException("No workspace root found")
+
+        val rootPath = if (rootUri.startsWith("file://")) java.net.URI(rootUri).path else rootUri
+        val projectRoot = File(rootPath)
+
+        val writers = when (params.format) {
+            IndexFormat.SCIP -> listOf(ScipWriter(FileOutputStream(params.outputPath), rootPath))
+            IndexFormat.LSIF -> listOf(LsifWriter(FileOutputStream(params.outputPath), rootPath))
+        }
+
+        try {
+            val indexer = UnifiedIndexer(writers)
+            // Naive traversal: walk all .groovy files in project root
+            Files.walk(projectRoot.toPath())
+                .filter {
+                    it.extension == FileExtensions.GROOVY || it.extension == FileExtensions.GRADLE
+                }
+                .forEach { path ->
+                    try {
+                        val relativePath = projectRoot.toPath().relativize(path).toString()
+                        val content = path.readText()
+                        indexer.indexDocument(relativePath, content)
+                    } catch (e: Exception) {
+                        logger.warn("Failed to index file $path", e)
+                    }
+                }
+            "Successfully exported ${params.format} index to ${params.outputPath}"
+        } finally {
+            writers.forEach {
+                try {
+                    it.close()
+                } catch (e: Exception) {
+                    logger.warn("Error closing writer", e)
+                }
+            }
+        }
+    }, dispatcher.asExecutor())
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)

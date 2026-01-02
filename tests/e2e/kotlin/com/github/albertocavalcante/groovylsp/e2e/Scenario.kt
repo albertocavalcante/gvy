@@ -342,6 +342,7 @@ enum class PluginSource {
 
 enum class GoldenMode {
     JSON, // Structural JSON comparison (ignores formatting)
+    JSON_NORMALIZED, // JSON comparison with path normalization (replaces workspace paths)
     TEXT, // Exact text comparison
     BINARY, // Binary comparison
 }

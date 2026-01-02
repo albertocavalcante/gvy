@@ -8,6 +8,7 @@ shadow = "9.3.0"
 gitHooks = "2.1.6"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
+wire = "5.1.0"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
@@ -66,6 +67,10 @@ ivy = { module = "org.apache.ivy:ivy", version.ref = "ivy" }
 # LSP
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
 lsp4j-jsonrpc = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4j" }
+
+# SCIP / Protobuf
+wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
+wire-compiler = { module = "com.squareup.wire:wire-compiler", version.ref = "wire" }
 
 # Code Quality & Analysis
 codenarc = { module = "org.codenarc:CodeNarc", version.ref = "codenarc" }
@@ -156,3 +161,4 @@ gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref =
 jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
 gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradleVersions" }
+wire = { id = "com.squareup.wire", version.ref = "wire" }
