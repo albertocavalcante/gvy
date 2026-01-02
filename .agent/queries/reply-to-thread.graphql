@@ -1,0 +1,8 @@
+mutation ReplyToThread($pullRequestId: ID!, $inReplyTo: ID!, $body: String!) {
+  addPullRequestReviewComment(input: {pullRequestId: $pullRequestId, inReplyTo: $inReplyTo, body: $body}) {
+    comment {
+      id
+      url
+    }
+  }
+}

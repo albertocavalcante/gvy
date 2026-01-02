@@ -1,108 +1,117 @@
----
-description: Review open PRs, address feedback, and verify CI status
----
+# /review
 // turbo-all
 
-# PR Review Workflow
+A strict, deterministic workflow for addressing PR review feedback and verifying CI health for a SINGLE Pull Request. This "God Mode" workflow combines strict thread resolution with deep CI verification.
 
-Systematic review of open pull requests, addressing reviewer feedback, and verifying CI health.
+## Ironclad Rules
 
-## Phase 1: List and Prioritize PRs
+1.  **NEVER IGNORE ANY COMMENT**: Every single thread must be accounted for.
+2.  **GRAPHQL IS TRUTH**: Use the saved GraphQL query for the authoritative state of threads (Resolved/Outdated).
+3.  **USE TEMP FILES**: Always dump API output to temporary JSON files.
+4.  **REPLY & RESOLVE**: Every addressed thread must have a reply and be explicitly resolved via mutation.
+5.  **NO BROWSER**: Use `gh` CLI exclusively.
 
-### 1.1 Get All Open PRs (Summary View)
-```bash
-gh pr list --json number,title,state,author,reviewDecision,createdAt --jq '.[] | "\(.number): \(.title) [\(.reviewDecision // "PENDING")]"'
-```
+## Phase 1: Deep Status & Fetching
 
-### 1.2 Get Detailed PR Status with CI
-```bash
-gh pr view PR_NUMBER --json state,statusCheckRollup --jq '{state: .state, checks: [.statusCheckRollup[]? | {name: .name, status: .status, conclusion: .conclusion}]}'
-```
+1.  **Get Detailed PR Status with CI**:
+    ```bash
+    gh pr view <PR_NUMBER> --json state,statusCheckRollup --jq '{state: .state, checks: [.statusCheckRollup[]? | {name: .name, status: .status, conclusion: .conclusion}]}'
+    ```
 
----
+2.  **Fetch Threads (Source of Truth)**:
+    Use the saved query `.agent/queries/pr-review-threads.graphql`.
+    ```bash
+    # Fetch threads
+    gh api graphql -F owner=':owner' -F name=':repo' -F number=<PR_NUMBER> -f query="$(cat .agent/queries/pr-review-threads.graphql)" --paginate > /tmp/pr-<PR_NUMBER>-threads.json
+    
+    # Verify the capture (Check for PR ID and Thread count)
+    jq '{pr_id: .data.repository.pullRequest.id, threads: .data.repository.pullRequest.reviewThreads.nodes | length}' /tmp/pr-<PR_NUMBER>-threads.json
+    ```
 
-## Phase 2: Review Comments and Feedback
+3.  **Inventory Actionable Threads**:
+    List threads that are `isResolved: false` and `isOutdated: false`.
+    ```bash
+    python3 .agent/scripts/inventory_threads.py /tmp/pr-<PR_NUMBER>-threads.json
+    ```
+    *(Or manual jq filter if script unavailable)*:
+    ```bash
+    jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false and .isOutdated==false) | {id, path, line, body: .comments.nodes[0].body}' /tmp/pr-<PR_NUMBER>-threads.json
+    ```
 
-### 2.1 Get PR Review Comments (Inline Code Comments)
-```bash
-gh api repos/{owner}/{repo}/pulls/PR_NUMBER/comments --jq '.[] | {author: .user.login, path: .path, line: .line, body: .body}'
-```
+## Phase 2: Evaluation & Execution
 
-### 2.2 Get PR Level Reviews (Approve/Request Changes)
-```bash
-gh pr view PR_NUMBER --json reviews --jq '.reviews[] | {author: .author.login, state: .state, body: .body}'
-```
+For EACH actionable thread:
 
-### 2.3 Get Conversation Comments
-```bash
-gh pr view PR_NUMBER --json comments --jq '.comments[] | {author: .author.login, body: .body}'
-```
+1.  **Evaluate**: Fix, Reject, or Defer.
+2.  **Edit**: Apply changes in the code.
+3.  **Verify**: Run local tests (TDD).
+    ```bash
+    ./gradlew :MODULE:test --tests "com.example.TestClass"
+    ```
+4.  **Commit**: `git commit -m "fix: address feedback ..."`
 
----
+### Conflict Resolution
+If you encounter merge conflicts during checkout or commits (e.g., GraphQL state mismatches vs Git state), STOP and follow the standard protocol:
+-> [Conflict Resolution Workflow](file:///Users/adsc/dev/ws/groovy-devtools/graphql-refinement/.agent/workflows/conflict-resolution.md)
 
-## Phase 3: Address Feedback
 
-### 3.1 Checkout PR Branch
-```bash
-git checkout BRANCH_NAME
-```
+### Quick Reference: Common Actions
+| Reviewer Feedback | Action |
+|------------------|--------|
+| "Remove metadata from comments" | Move tool-specific info to PR description |
+| "Pre-compile regex" | Extract to class/object level constant |
+| "Unused variable" | Remove or replace with `_` |
+| "Cognitive complexity too high" | Extract helper methods |
+| "Add tests" | Follow TDD, add test file first |
 
-### 3.2 Make Required Changes
-After making code changes, verify:
-```bash
-# Compile check
-./gradlew compileKotlin --no-daemon
+## Phase 3: Deterministic Resolution
 
-# Run relevant tests
-./gradlew :MODULE:test --no-daemon
-```
+1.  **Reply (GraphQL Mutation)**:
+    **Crucial**: You need the `pullRequestId` (PR Node ID) from Phase 1 and the `inReplyTo` (Comment Node ID) from the thread.
+    ```bash
+    gh api graphql -F pullRequestId="<PR_NODE_ID>" -F inReplyTo="<COMMENT_NODE_ID>" -F body="Fixed in <SHORTHASH>." -f query="$(cat .agent/queries/reply-to-thread.graphql)"
+    ```
 
-### 3.3 Commit with Reference to Feedback
-```bash
-git commit -m "chore: address reviewer feedback
+2.  **Resolve Thread (GraphQL)**:
+    Mark the thread as resolved using its Node ID.
+    ```bash
+    gh api graphql -F threadId="<THREAD_NODE_ID>" -f query="$(cat .agent/queries/resolve-review-thread.graphql)"
+    ```
 
-- Point 1 from review
-- Point 2 from review"
-```
+## Phase 4: Verify CI Status (Deep Dive)
 
-### 3.4 Push and Verify CI
-```bash
-git push origin BRANCH_NAME
-```
+1.  **Push Changes**:
+    ```bash
+    git push origin <BRANCH_NAME>
+    ```
 
----
+2.  **Watch Checks**:
+    ```bash
+    gh pr checks <PR_NUMBER> --watch
+    ```
 
-## Phase 4: Verify CI Status
+3.  **Investigate Skipped/Failing Jobs**:
+    If `Build and Test` is SKIPPED but shouldn't be:
+    ```bash
+    # Check paths filter output
+    gh run view <RUN_ID> --log 2>/dev/null | grep -E "(filter|run_main_ci)" | head -20
+    
+    # Verify changed files match CI trigger paths
+    gh pr view <PR_NUMBER> --json files --jq '.files[].path'
+    ```
 
-### 4.1 Check CI Run Status
-```bash
-# Get latest run for the branch
-gh run list --branch BRANCH_NAME --limit 1 --json databaseId,status,conclusion
+## Phase 5: Final Verification (The "Zero" Check)
 
-# View detailed job status
-gh run view RUN_ID --json jobs --jq '.jobs[] | {name: .name, status: .status, conclusion: .conclusion, startedAt: .startedAt, completedAt: .completedAt}'
-```
+1.  **Re-Fetch Data**:
+    Run the Phase 1 Fetch command again.
 
-### 4.2 Check Expected Jobs Ran
-Expected jobs for code changes:
-- `check-paths` → SUCCESS
-- `Check Runner Availability` → SUCCESS or SKIPPED (for github-hosted)
-- `Build and Test` → SUCCESS (NOT skipped for code changes!)
-- `Validation Check` → SUCCESS
+2.  **Verify Unresolved Count is 0**:
+    ```bash
+    jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .isOutdated == false)] | length' /tmp/pr-<PR_NUMBER>-threads.json
+    ```
+    **Result MUST be 0.**
 
-### 4.3 Investigate Skipped Build and Test
-If `Build and Test` is SKIPPED but shouldn't be:
-```bash
-# Check paths filter output
-gh run view RUN_ID --log 2>/dev/null | grep -E "(filter|run_main_ci)" | head -20
-
-# Verify changed files match CI trigger paths
-gh pr view PR_NUMBER --json files --jq '.files[].path'
-```
-
----
-
-## Phase 5: Document Learnings
+## Phase 6: Document Learnings
 
 After reviewing PRs, note any patterns or issues to add to `.agent/rules/`:
 
@@ -113,49 +122,14 @@ After reviewing PRs, note any patterns or issues to add to `.agent/rules/`:
 | CI configuration problems | `.github/workflows/ci.yml` + AGENTS.md |
 | Recurring lint issues | `.agent/rules/code-quality.md` |
 
----
+## Phase 7: Summary Report
 
-## Quick Reference: Common Review Actions
-
-| Reviewer Feedback | Action |
-|------------------|--------|
-| "Remove metadata from comments" | Move tool-specific info to PR description |
-| "Pre-compile regex" | Extract to class/object level constant |
-| "Unused variable" | Remove or replace with `_` |
-| "Cognitive complexity too high" | Extract helper methods |
-| "Add tests" | Follow TDD, add test file first |
-
----
-
-## Phase 6: Summary Report
-
-After completing the review, produce a summary table for the user:
-
-### Output Format
+Produce a summary table for the user:
 
 ```markdown
 ## PR Review Summary
 
 | PR | Title | Comments | Changes Made | Pushed | CI Status | Ready |
 |----|-------|----------|--------------|--------|-----------|-------|
-| #293 | Extract string constants | 2 | Remove SonarCloud metadata | ✅ | ✅ Pass | ✅ |
-| #294 | Decompose JenkinsContextDetector | 1 | Pre-compile regex | ✅ | ✅ Pass | ✅ |
-| #295 | Decompose SpockBlockIndex | 0 | - | N/A | ✅ Pass | ✅ |
-
-### Legend
-- **Comments**: Number of review comments addressed
-- **Changes Made**: Brief description of fixes
-- **Pushed**: Whether changes were pushed to remote
-- **CI Status**: Latest CI run result
-- **Ready**: ✅ = Ready for merge, ⏳ = Pending CI, ❌ = Needs work
+| #123 | Title | 0 | - | ✅ | ✅ Pass | ✅ |
 ```
-
-### Checklist Before Reporting
-
-For each PR, confirm:
-- [ ] All inline review comments addressed
-- [ ] Changes committed with descriptive message
-- [ ] Pushed to remote branch
-- [ ] CI run triggered and passed (or pending)
-- [ ] No new lint issues introduced
-
