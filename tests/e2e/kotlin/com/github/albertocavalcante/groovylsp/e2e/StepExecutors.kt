@@ -1,10 +1,16 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.toJavaObject
 import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.wrapJavaObject
 import com.github.albertocavalcante.groovylsp.testing.api.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.groovylsp.testing.api.RunTestParams
+import com.github.albertocavalcante.groovylsp.testing.api.TestCommand
+import com.github.albertocavalcante.groovylsp.testing.api.TestSuite
+import com.jayway.jsonpath.JsonPath
+import com.jayway.jsonpath.PathNotFoundException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -19,12 +25,18 @@ import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.slf4j.LoggerFactory
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.Duration
+import java.util.Arrays
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -61,14 +73,11 @@ sealed class CustomRequest<T> {
     /**
      * Custom request: groovy/discoverTests
      */
-    data object DiscoverTests : CustomRequest<List<com.github.albertocavalcante.groovylsp.testing.api.TestSuite>>() {
+    data object DiscoverTests : CustomRequest<List<TestSuite>>() {
         override val method = "groovy/discoverTests"
 
         @Suppress("UNCHECKED_CAST")
-        override fun invoke(
-            server: GroovyLanguageServerProtocol,
-            params: Any?,
-        ): CompletableFuture<List<com.github.albertocavalcante.groovylsp.testing.api.TestSuite>> {
+        override fun invoke(server: GroovyLanguageServerProtocol, params: Any?): CompletableFuture<List<TestSuite>> {
             val typedParams = params.toDiscoverTestsParams()
             return server.discoverTests(typedParams)
         }
@@ -77,14 +86,11 @@ sealed class CustomRequest<T> {
     /**
      * Custom request: groovy/runTest
      */
-    data object RunTest : CustomRequest<com.github.albertocavalcante.groovylsp.testing.api.TestCommand>() {
+    data object RunTest : CustomRequest<TestCommand>() {
         override val method = "groovy/runTest"
 
         @Suppress("UNCHECKED_CAST")
-        override fun invoke(
-            server: GroovyLanguageServerProtocol,
-            params: Any?,
-        ): CompletableFuture<com.github.albertocavalcante.groovylsp.testing.api.TestCommand> {
+        override fun invoke(server: GroovyLanguageServerProtocol, params: Any?): CompletableFuture<TestCommand> {
             val typedParams = params.toRunTestParams()
             return server.runTest(typedParams)
         }
@@ -239,11 +245,11 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
         val identifier = VersionedTextDocumentIdentifier(uri, step.version)
 
         // If text field is provided and contentChanges is empty, treat as full-document replacement
-        val changes: List<org.eclipse.lsp4j.TextDocumentContentChangeEvent> =
+        val changes: List<TextDocumentContentChangeEvent> =
             if (step.text != null && step.contentChanges.isEmpty()) {
                 val interpolatedText = context.interpolateString(step.text)
                 // Full document replacement - use simpler constructor (no range = replace all)
-                listOf(org.eclipse.lsp4j.TextDocumentContentChangeEvent(interpolatedText))
+                listOf(TextDocumentContentChangeEvent(interpolatedText))
             } else {
                 step.contentChanges.map { change ->
                     val text = context.interpolateString(change.text)
@@ -254,7 +260,7 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
                         )
                     }
                     @Suppress("DEPRECATION")
-                    org.eclipse.lsp4j.TextDocumentContentChangeEvent(lsp4jRange, change.rangeLength ?: 0, text)
+                    TextDocumentContentChangeEvent(lsp4jRange, change.rangeLength ?: 0, text)
                 }
             }
 
@@ -365,12 +371,12 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
 
             // Let's implement extraction using the same pattern as evaluateCheck
             val javaObject = normalized.toJavaObject()
-            val document = com.jayway.jsonpath.JsonPath.using(context.jsonPathConfig).parse(javaObject)
+            val document = JsonPath.using(context.jsonPathConfig).parse(javaObject)
 
             step.extract.forEach { extraction ->
                 val value = try {
                     document.read<Any?>(extraction.jsonPath)
-                } catch (ex: com.jayway.jsonpath.PathNotFoundException) {
+                } catch (ex: PathNotFoundException) {
                     throw AssertionError("Extraction jsonPath '${extraction.jsonPath}' not found in response", ex)
                 }
                 context.setVariable(extraction.variable, wrapJavaObject(value))
@@ -503,7 +509,7 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
 
         // Define cache dir relative to project or in standard location
         // For E2E tests, we use a shared cache to speed up tests
-        val cacheDir = java.nio.file.Path.of(System.getProperty("user.home"), ".gls", "jenkins-cache")
+        val cacheDir = Path.of(System.getProperty("user.home"), ".gls", "jenkins-cache")
 
         if (step.source != PluginSource.JENKINS_RELEASES) {
             throw UnsupportedOperationException(
@@ -511,7 +517,7 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
             )
         }
 
-        val downloader = com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader(cacheDir)
+        val downloader = PluginDownloader(cacheDir)
 
         try {
             logger.info("Downloading plugin {}:{}", pluginId, version)
@@ -567,8 +573,8 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
         builder.directory(context.workspace.rootDir.toFile())
 
         // Capture output
-        val outputFile = java.io.File.createTempFile("cli-stdout", ".log")
-        val errorFile = java.io.File.createTempFile("cli-stderr", ".log")
+        val outputFile = File.createTempFile("cli-stdout", ".log")
+        val errorFile = File.createTempFile("cli-stderr", ".log")
         builder.redirectOutput(outputFile)
         builder.redirectError(errorFile)
 
@@ -615,17 +621,17 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
     override fun execute(step: ScenarioStep.GoldenAssert, context: ScenarioContext, nextStep: ScenarioStep?) {
         val actualPathString = context.interpolateString(step.actual)
         val expectedRelPath = context.interpolateString(step.expected)
-        val actualFile = java.nio.file.Path.of(actualPathString)
+        val actualFile = Path.of(actualPathString)
 
         // Resolve golden file relative to the configured directory or default
         val goldenDir = System.getProperty("groovy.lsp.e2e.goldenDir")
-            ?.let { java.nio.file.Path.of(it) }
-            ?: java.nio.file.Path.of("e2e/resources/golden").toAbsolutePath()
+            ?.let { Path.of(it) }
+            ?: Path.of("e2e/resources/golden").toAbsolutePath()
 
         val expectedFile = goldenDir.resolve(expectedRelPath)
 
         // Ensure actual file exists
-        if (!java.nio.file.Files.exists(actualFile)) {
+        if (!Files.exists(actualFile)) {
             throw AssertionError("Actual file not found for golden assert: $actualFile")
         }
 
@@ -634,24 +640,24 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
 
         if (updateSnapshot) {
             logger.warn("Updating golden file: {}", expectedFile)
-            java.nio.file.Files.createDirectories(expectedFile.parent)
-            java.nio.file.Files.copy(actualFile, expectedFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            Files.createDirectories(expectedFile.parent)
+            Files.copy(actualFile, expectedFile, StandardCopyOption.REPLACE_EXISTING)
             return
         }
 
-        if (!java.nio.file.Files.exists(expectedFile)) {
+        if (!Files.exists(expectedFile)) {
             throw AssertionError(
                 "Golden file not found: $expectedFile. Run with -Dgroovy.lsp.e2e.updateGolden=true to create it.",
             )
         }
 
-        val actualContent = java.nio.file.Files.readString(actualFile)
-        val expectedContent = java.nio.file.Files.readString(expectedFile)
+        val actualContent = Files.readString(actualFile)
+        val expectedContent = Files.readString(expectedFile)
 
         when (step.mode) {
             GoldenMode.JSON -> {
                 // Compare as JSON trees to ignore formatting differences
-                val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+                val mapper = ObjectMapper()
                 val actualJson = mapper.readTree(actualContent)
                 val expectedJson = mapper.readTree(expectedContent)
 
@@ -678,9 +684,9 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
 
             GoldenMode.BINARY -> {
                 // Direct byte comparison
-                val actualBytes = java.nio.file.Files.readAllBytes(actualFile)
-                val expectedBytes = java.nio.file.Files.readAllBytes(expectedFile)
-                if (!java.util.Arrays.equals(actualBytes, expectedBytes)) {
+                val actualBytes = Files.readAllBytes(actualFile)
+                val expectedBytes = Files.readAllBytes(expectedFile)
+                if (!Arrays.equals(actualBytes, expectedBytes)) {
                     throw AssertionError("Binary content mismatch for $expectedRelPath!")
                 }
             }
