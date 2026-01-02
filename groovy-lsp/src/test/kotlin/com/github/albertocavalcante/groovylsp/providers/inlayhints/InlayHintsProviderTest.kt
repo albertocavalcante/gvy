@@ -269,7 +269,7 @@ class InlayHintsProviderTest {
         }
 
         @Test
-        fun `should not show parameter hint when names match`() {
+        fun `should show parameter hint when names match`() {
             // Given: processMatch(path) where method is processMatch(String path)
             val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
             classNode.addMethod(
@@ -303,9 +303,10 @@ class InlayHintsProviderTest {
             // When
             val hints = provider.provideInlayHints(params)
 
-            // Then - no hint when names match (redundant)
+            // Then - show hint even when variable names match (consistency for Groovy scripts)
             val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
-            assertTrue(paramHints.isEmpty(), "Should not show parameter hint when names match")
+            assertEquals(1, paramHints.size, "Should show parameter hint when names match")
+            assertEquals("path:", paramHints.first().label.left as String)
         }
 
         @Test
@@ -334,6 +335,31 @@ class InlayHintsProviderTest {
             // This is a documented behavior expectation
             val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
             assertTrue(paramHints.isEmpty(), "Should not show parameter hints for closure arguments")
+        }
+
+        @Test
+        fun `should show parameter hints for script method calls`() {
+            val code = """
+                def sum(a, b) {
+                    return a + b
+                }
+
+                def main() {
+                    sum(1, 2)
+                }
+            """.trimIndent()
+
+            setupCompilationWithCode(code)
+            provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 20, 100)
+
+            val hints = provider.provideInlayHints(params)
+
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertEquals(2, paramHints.size, "Should have parameter hints for script method call")
+            assertEquals("a:", paramHints[0].label.left as String)
+            assertEquals("b:", paramHints[1].label.left as String)
         }
 
         @Test

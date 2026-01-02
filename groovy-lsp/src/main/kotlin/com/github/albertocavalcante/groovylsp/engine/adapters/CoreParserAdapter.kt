@@ -54,21 +54,22 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
      */
     private fun findNodeAt(node: Node, line: Int, col: Int): Node? {
         val range = node.range
+        val contains = range?.let { rangeContains(it, line, col) } ?: false
+        val containsWithPointRange = range?.let { contains || pointRangeContains(it, line, col) } ?: false
+        val children = node.getChildNodes()
 
-        // If this node has a range and doesn't contain the position, skip it and its children
-        if (range != null && !rangeContains(range, line, col)) {
+        if (range != null && !containsWithPointRange && children.isEmpty()) {
             return null
         }
 
-        // Try to find a more specific child node
-        for (child in node.getChildNodes()) {
+        // Try to find a more specific child node.
+        for (child in children) {
             val found = findNodeAt(child, line, col)
             if (found != null) return found
         }
 
-        // If we have a range, this node contains the position
-        // Return it unless we found a child (handled above)
-        return if (range != null) node else null
+        // Return this node only if its range contains the position (or the point-range fallback).
+        return if (range != null && containsWithPointRange) node else null
     }
 
     private fun rangeContains(range: CoreRange, line: Int, col: Int): Boolean {
@@ -77,6 +78,11 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         if (line == range.end.line && col > range.end.column) return false
         return true
     }
+
+    private fun isPointRange(range: CoreRange): Boolean = range.begin == range.end
+
+    private fun pointRangeContains(range: CoreRange, line: Int, col: Int): Boolean =
+        isPointRange(range) && line == range.begin.line && col >= range.begin.column
 }
 
 /**
