@@ -75,6 +75,7 @@ class GroovyCompilationService(
         sessionFactory = { InProcessWorkerSession(parser) },
     )
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
+    private val workspaceSymbolIndex = ConcurrentHashMap<URI, SymbolIndex>()
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
@@ -188,12 +189,15 @@ class GroovyCompilationService(
         val ast = parseResult.ast
 
         val result = if (ast != null) {
+            val index = SymbolIndex().buildFromVisitor(parseResult.astModel)
             cache.put(uri, content, parseResult)
-            symbolStorageCache.put(uri, SymbolIndex().buildFromVisitor(parseResult.astModel))
+            symbolStorageCache.put(uri, index)
+            workspaceSymbolIndex[uri] = index
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
             symbolStorageCache.remove(uri)
+            workspaceSymbolIndex.remove(uri)
             CompilationResult.failure(diagnostics, content)
         }
 
@@ -338,10 +342,21 @@ class GroovyCompilationService(
     }
 
     fun getAllSymbolStorages(): Map<URI, SymbolIndex> {
-        val allStorages = mutableMapOf<URI, SymbolIndex>()
-        cache.keys().forEach { uri ->
-            getSymbolStorage(uri)?.let { allStorages[uri] = it }
+        val cacheSnapshot = symbolStorageCache.snapshot()
+        val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
+        val allStorages = cacheSnapshot.toMutableMap()
+
+        workspaceSnapshot.forEach { (uri, index) ->
+            val existing = allStorages[uri]
+            if (existing != null && existing !== index) {
+                logger.warn(
+                    "Duplicate SymbolIndex for {} found in cache and workspace index. Using workspace index value.",
+                    uri,
+                )
+            }
+            allStorages[uri] = index
         }
+
         return allStorages
     }
 
@@ -402,6 +417,7 @@ class GroovyCompilationService(
         val astModel = parseResult.astModel
         val index = SymbolIndex().buildFromVisitor(astModel)
         symbolStorageCache.put(uri, index)
+        workspaceSymbolIndex[uri] = index
         logger.debug("Indexed workspace file: $uri")
         index
     } catch (e: Exception) {
@@ -542,6 +558,7 @@ class GroovyCompilationService(
     fun clearCaches() {
         cache.clear()
         symbolStorageCache.clear()
+        workspaceSymbolIndex.clear()
         compilationJobs.clear()
         invalidateClassLoader()
     }
@@ -583,6 +600,7 @@ class GroovyCompilationService(
     fun invalidateCache(uri: URI) {
         cache.invalidate(uri)
         symbolStorageCache.remove(uri)
+        workspaceSymbolIndex.remove(uri)
         compilationJobs.remove(uri)
         logger.debug("Invalidated cache for: $uri")
     }
