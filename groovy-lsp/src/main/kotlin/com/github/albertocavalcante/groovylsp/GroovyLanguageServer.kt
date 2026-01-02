@@ -274,11 +274,9 @@ class GroovyLanguageServer(
 
         try {
             val indexer = UnifiedIndexer(writers)
-            // Naive traversal: walk all .groovy files in project root
+            // Naive traversal: walk all Groovy-like files in project root
             Files.walk(projectRoot.toPath())
-                .filter {
-                    it.extension == FileExtensions.GROOVY || it.extension == FileExtensions.GRADLE
-                }
+                .filter { it.extension in FileExtensions.ALL_GROOVY_LIKE }
                 .forEach { path ->
                     try {
                         val relativePath = projectRoot.toPath().relativize(path).toString()

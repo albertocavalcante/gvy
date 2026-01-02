@@ -61,8 +61,8 @@ class ScipWriter(private val outputStream: OutputStream, private val projectRoot
     override fun visitReference(range: Range, symbol: String, isDefinition: Boolean) {
         val scipRange = listOf(range.startLine - 1, range.startCol - 1, range.endLine - 1, range.endCol - 1)
 
-        // If it's a reference (usage), we don't set Definition role (unless it's both, handled by isDefinition flag)
-        var roles = 0
+        // References should have ReadAccess role at minimum
+        var roles = scip.SymbolRole.ReadAccess.value
         if (isDefinition) {
             roles = roles or scip.SymbolRole.Definition.value
         }
@@ -88,5 +88,6 @@ class ScipWriter(private val outputStream: OutputStream, private val projectRoot
 
         // Wire's encode writes the protobuf binary
         outputStream.write(index.encode())
+        outputStream.close()
     }
 }

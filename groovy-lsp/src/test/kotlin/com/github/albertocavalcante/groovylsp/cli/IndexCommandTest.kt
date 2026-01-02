@@ -64,13 +64,4 @@ class IndexCommandTest {
         val content = Files.readString(outFile)
         assertThat(content).contains("vertex")
     }
-
-    @Test
-    fun `parses arguments correctly`(@TempDir tempDir: Path) {
-        val output = tempDir.resolve("index.scip")
-        val root = tempDir.resolve("src")
-
-        // Hypothetical way to test parsing if we exposed property access or used a test runner
-        // For now, we just verify the class implementation plan matches this structure
-    }
 }

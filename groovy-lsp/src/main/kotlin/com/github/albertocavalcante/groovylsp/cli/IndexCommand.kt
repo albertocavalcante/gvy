@@ -46,7 +46,7 @@ class IndexCommand : CliktCommand(name = "index") {
             val indexer = UnifiedIndexer(writers)
             // Walk files
             Files.walk(projectRoot)
-                .filter { it.toFile().extension in FileExtensions.ALL_GROOVY_LIKE }
+                .filter { it.extension in FileExtensions.ALL_GROOVY_LIKE }
                 .forEach { path ->
                     try {
                         val relativePath = projectRoot.relativize(path).toString()
@@ -58,7 +58,13 @@ class IndexCommand : CliktCommand(name = "index") {
                 }
             echo("Successfully generated index at ${output.absolutePath}")
         } finally {
-            writers.forEach { it.close() }
+            writers.forEach { writer ->
+                try {
+                    writer.close()
+                } catch (e: Exception) {
+                    echo("Error closing writer: ${e.message}", err = true)
+                }
+            }
         }
     }
 }

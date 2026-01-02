@@ -8,8 +8,11 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
+import org.slf4j.LoggerFactory
 
 class UnifiedIndexer(private val writers: List<IndexWriter>) {
+
+    private val logger = LoggerFactory.getLogger(UnifiedIndexer::class.java)
 
     fun indexDocument(path: String, content: String) {
         writers.forEach { it.visitDocumentStart(path, content) }
@@ -27,8 +30,7 @@ class UnifiedIndexer(private val writers: List<IndexWriter>) {
                 visitModule(module)
             }
         } catch (e: Exception) {
-            // Log or ignore parse errors
-            System.err.println("Failed to parse $path: ${e.message}")
+            logger.warn("Failed to parse {}: {}", path, e.message)
         }
 
         writers.forEach { it.visitDocumentEnd() }
