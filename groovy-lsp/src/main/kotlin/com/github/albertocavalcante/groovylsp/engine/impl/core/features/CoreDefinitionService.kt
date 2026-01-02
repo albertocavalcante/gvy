@@ -31,28 +31,15 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         context: ParseUnit,
         position: Position,
     ): List<UnifiedDefinition> {
-        // Guard: node must exist
-        if (node == null) {
-            logger.debug("findDefinition: node is null")
+        if (node == null || node.name == null || node.originalNode !is Node) {
+            logger.debug("findDefinition: invalid node or missing name")
             return emptyList()
         }
 
-        // Guard: node must have a name
         val name = node.name
-        if (name == null) {
-            logger.debug("findDefinition: node has no name")
-            return emptyList()
-        }
-
-        // Guard: originalNode must be a core AST Node
-        val coreNode = node.originalNode as? Node
-        if (coreNode == null) {
-            logger.debug("findDefinition: originalNode is not a core AST Node")
-            return emptyList()
-        }
+        val coreNode = node.originalNode as Node
 
         // If the node IS a declaration (method, class, field), return it directly
-        // No need to "resolve" - the declaration is the definition
         if (isDeclarationNode(coreNode)) {
             val targetRange = node.range ?: extractRangeFromNode(coreNode) ?: return emptyList()
             return listOf(

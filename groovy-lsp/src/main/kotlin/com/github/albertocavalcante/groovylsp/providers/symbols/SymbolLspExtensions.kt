@@ -16,11 +16,15 @@ private val logger = LoggerFactory.getLogger("SymbolLspExtensions")
 /**
  * Converts a [Symbol] into a [SymbolInformation] for use in LSP responses.
  */
+@Suppress("DEPRECATION")
 fun Symbol.toSymbolInformation(): SymbolInformation? {
     val range = toLspRange() ?: return null
-    val info = SymbolInformation(displayName(), toSymbolKind(), Location(uri.toString(), range))
-    info.containerName = containerName()
-    return info
+    return SymbolInformation(
+        displayName(),
+        toSymbolKind(),
+        Location(uri.toString(), range),
+        containerName(),
+    )
 }
 
 /**
@@ -46,7 +50,8 @@ private fun Symbol.displayName(): String = when (this) {
     } else {
         name
     }
-    else -> name
+
+    is Symbol.Class, is Symbol.Field, is Symbol.Property, is Symbol.Variable, is Symbol.Import -> name
 }
 
 private fun Symbol.toSymbolKind(): SymbolKind = when (this) {
@@ -64,7 +69,7 @@ private fun Symbol.containerName(): String? = when (this) {
     is Symbol.Property -> owner?.nameWithoutPackage ?: owner?.name
     is Symbol.Class -> packageName
     is Symbol.Import -> packageName
-    else -> null
+    is Symbol.Variable -> null
 }
 
 private fun Symbol.detail(): String? = when (this) {

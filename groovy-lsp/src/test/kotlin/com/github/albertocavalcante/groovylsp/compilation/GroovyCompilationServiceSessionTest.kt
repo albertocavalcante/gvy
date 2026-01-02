@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
-import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
-import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import com.github.albertocavalcante.groovylsp.engine.impl.core.CoreLanguageEngine
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import kotlinx.coroutines.runBlocking

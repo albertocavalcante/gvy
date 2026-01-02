@@ -13,7 +13,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionRes
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
+import org.slf4j.LoggerFactory
 import java.net.URI
 
 class NativeDefinitionService(
@@ -79,4 +79,4 @@ class NativeDefinitionService(
     }
 }
 
-private val logger = org.slf4j.LoggerFactory.getLogger(NativeDefinitionService::class.java)
+private val logger = LoggerFactory.getLogger(NativeDefinitionService::class.java)

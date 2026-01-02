@@ -6,6 +6,7 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import kotlin.test.assertTrue
@@ -26,7 +27,7 @@ class JenkinsParsingTest {
     fun `test pipeline block resolves successfully with stubs`() = runBlocking {
         // Initialize server
         val initParams = InitializeParams().apply {
-            rootUri = "file:///test/project"
+            workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "project"))
             capabilities = ClientCapabilities()
         }
         server.initialize(initParams).get()
