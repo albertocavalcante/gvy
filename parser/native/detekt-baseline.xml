@@ -13,18 +13,12 @@
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$5</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$6</ID>
     
-    <ID>MaxLineLength:SymbolExtractor.kt$SymbolExtractor$// println("DEBUG: Checking class ${classNode.name}, line=${classNode.lineNumber}-${classNode.lastLineNumber}, cursor=$line")</ID>
     
     <ID>NestedBlockDepth:SymbolExtractor.kt$SymbolExtractor$fun extractVariableSymbols(methodNode: Any): List&lt;VariableSymbol></ID>
     <ID>SwallowedException:SymbolExtractor.kt$SymbolExtractor$e: Exception</ID>
     <ID>ThrowsCount:TypeInferencerTest.kt$TypeInferencerTest$private fun inferTypeFromFirstDeclaration(code: String): String</ID>
     <ID>TooGenericExceptionCaught:SymbolExtractor.kt$SymbolExtractor$e: Exception</ID>
     <ID>UnusedParameter:SymbolExtractor.kt$SymbolExtractor$character: Int</ID>
-    <ID>UnusedPrivateProperty:KitchenSinkCoverageTest.kt$KitchenSinkCoverageTest$val caseStmt = assertNotNull( allNodes.filterIsInstance&lt;org.codehaus.groovy.ast.stmt.CaseStatement>().firstOrNull(), "Should find CaseStatement", )</ID>
-    <ID>UnusedPrivateProperty:KitchenSinkCoverageTest.kt$KitchenSinkCoverageTest$val gstring = assertNotNull(allNodes.filterIsInstance&lt;GStringExpression>().firstOrNull(), "Should find GStringExpression")</ID>
-    <ID>UnusedPrivateProperty:KitchenSinkCoverageTest.kt$KitchenSinkCoverageTest$val innerClass = assertNotNull(classNodes.find { it.name == "com.example.KitchenSink\$Inner" }, "Should find Inner class")</ID>
-    <ID>UnusedPrivateProperty:KitchenSinkCoverageTest.kt$KitchenSinkCoverageTest$val switchStmt = assertNotNull( allNodes.filterIsInstance&lt;SwitchStatement>().firstOrNull(), "Should find SwitchStatement (Testing coverage/bug)", )</ID>
-    <ID>UnusedPrivateProperty:KitchenSinkCoverageTest.kt$KitchenSinkCoverageTest$val tryCatch = assertNotNull(allNodes.filterIsInstance&lt;TryCatchStatement>().firstOrNull(), "Should find TryCatchStatement")</ID>
     <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("Failed to parse AST")</ID>
     <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("First statement is not a declaration: $statement")</ID>
     <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("No statements found")</ID>

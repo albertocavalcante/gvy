@@ -212,7 +212,6 @@ object SymbolExtractor {
         // Find the class we're currently in (if any)
         val currentClass = classes.find { classSymbol ->
             val classNode = classSymbol.astNode as org.codehaus.groovy.ast.ClassNode
-            // println("DEBUG: Checking class ${classNode.name}, line=${classNode.lineNumber}-${classNode.lastLineNumber}, cursor=$line")
             line >= classSymbol.line && line <= classNode.lastLineNumber // Relaxed check
         }
 
