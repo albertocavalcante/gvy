@@ -2,18 +2,12 @@ package com.github.albertocavalcante.groovyparser.ast.expr
 
 import com.github.albertocavalcante.groovyparser.StaticGroovyParser
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.DeclarationExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 
 class GroovySpecificExpressionTest {
 

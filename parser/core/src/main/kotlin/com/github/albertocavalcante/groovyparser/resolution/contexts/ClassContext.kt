@@ -7,7 +7,6 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedValueDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.groovymodel.GroovyParserFieldDeclaration
-import com.github.albertocavalcante.groovyparser.resolution.groovymodel.GroovyParserTypeResolver
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
 

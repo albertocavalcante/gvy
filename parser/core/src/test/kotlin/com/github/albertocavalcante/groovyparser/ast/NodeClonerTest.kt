@@ -3,11 +3,7 @@ package com.github.albertocavalcante.groovyparser.ast
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.Position
 import com.github.albertocavalcante.groovyparser.Range
-import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
-import com.github.albertocavalcante.groovyparser.ast.BlockComment
-import com.github.albertocavalcante.groovyparser.ast.LineComment
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.expr.EmptyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.utils.NodeUtils

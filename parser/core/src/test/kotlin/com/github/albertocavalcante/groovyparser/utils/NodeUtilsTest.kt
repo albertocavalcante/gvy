@@ -3,10 +3,8 @@ package com.github.albertocavalcante.groovyparser.utils
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
