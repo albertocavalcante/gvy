@@ -25,9 +25,9 @@ pre-commit:
     workflow-lint:
       glob: '.github/workflows/*.{yml,yaml}'
       run: ghalint -c tools/lint/ghalint.yaml run && actionlint {staged_files}
-    markdown-format:
+    markdown-lint:
       glob: '**/*.md'
-      run: dprint fmt --config dprint.json {staged_files}
+      run: dprint check --config dprint.json {staged_files}
 
 commit-msg:
   commands:
