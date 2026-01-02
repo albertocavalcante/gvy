@@ -404,11 +404,24 @@ class GroovyTextDocumentService(
             )
 
             val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
+            val astModel = if (isJenkinsFile) compilationService.getAstModel(uri) else null
+            val isInOptionsBlock = isJenkinsFile && astModel != null &&
+                CompletionProvider.isInJenkinsOptionsBlock(
+                    astModel,
+                    uri,
+                    params.position.line,
+                    params.position.character,
+                    content,
+                )
             val jenkinsCompletions = if (isJenkinsFile) {
                 val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
                 if (metadata != null) {
-                    JenkinsStepCompletionProvider.getStepCompletions(metadata) +
-                        JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
+                    if (isInOptionsBlock) {
+                        JenkinsStepCompletionProvider.getDeclarativeOptionCompletions(metadata)
+                    } else {
+                        JenkinsStepCompletionProvider.getStepCompletions(metadata) +
+                            JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
+                    }
                 } else {
                     emptyList()
                 }
@@ -416,7 +429,8 @@ class GroovyTextDocumentService(
                 emptyList()
             }
 
-            val allCompletions = GroovyCompletions.basic() + contextualCompletions + jenkinsCompletions
+            val baseCompletions = if (isInOptionsBlock) emptyList() else GroovyCompletions.basic()
+            val allCompletions = baseCompletions + contextualCompletions + jenkinsCompletions
 
             logger.debug("Returning ${allCompletions.size} completions")
             Either.forLeft(allCompletions)
