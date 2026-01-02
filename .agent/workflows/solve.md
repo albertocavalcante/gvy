@@ -216,7 +216,7 @@ For size/L-XL issues:
 
 ### Commit Message Format
 
-```
+```text
 <type>(<scope>): <description>
 
 Phase <N>/<Total>: <Phase Name>
