@@ -36,18 +36,18 @@ tests/e2e/
 
 ## Server Launch Modes
 
-| Mode | Description | Performance | Use Case |
-|------|-------------|-------------|----------|
-| `stdio` | Spawns separate JVM process | Slow (~2-5s startup) | Realistic integration testing |
-| `inProcess` | Runs in same JVM as tests | Fast (no startup overhead) | Development, CI optimization |
+| Mode        | Description                 | Performance                | Use Case                      |
+| ----------- | --------------------------- | -------------------------- | ----------------------------- |
+| `stdio`     | Spawns separate JVM process | Slow (~2-5s startup)       | Realistic integration testing |
+| `inProcess` | Runs in same JVM as tests   | Fast (no startup overhead) | Development, CI optimization  |
 
 ### Future: In-Process by Default
 
-> **Planned Migration**: All scenarios will be migrated to `mode: inProcess` by default
-> to significantly reduce E2E test suite execution time.
-> 
-> The `stdio` mode will remain available for testing actual subprocess communication
-> and for debugging scenarios that behave differently across process boundaries.
+> **Planned Migration**: All scenarios will be migrated to `mode: inProcess` by default to significantly reduce E2E test
+> suite execution time.
+>
+> The `stdio` mode will remain available for testing actual subprocess communication and for debugging scenarios that
+> behave differently across process boundaries.
 
 To opt into in-process mode today, update your scenario:
 
@@ -94,20 +94,20 @@ steps:
 
 ## Available Step Types
 
-| Step | Description |
-|------|-------------|
-| `initialize` | Sends `initialize` request with optional `initializationOptions` |
-| `initialized` | Sends `initialized` notification |
-| `shutdown` | Sends `shutdown` request |
-| `exit` | Sends `exit` notification |
-| `openDocument` | Opens a document via `textDocument/didOpen` |
-| `changeDocument` | Modifies a document via `textDocument/didChange` |
-| `saveDocument` | Saves a document via `textDocument/didSave` |
-| `closeDocument` | Closes a document via `textDocument/didClose` |
-| `request` | Sends any LSP request and captures response |
-| `notification` | Sends any LSP notification |
-| `waitNotification` | Waits for a notification from the server |
-| `assert` | Asserts conditions on saved results |
+| Step               | Description                                                      |
+| ------------------ | ---------------------------------------------------------------- |
+| `initialize`       | Sends `initialize` request with optional `initializationOptions` |
+| `initialized`      | Sends `initialized` notification                                 |
+| `shutdown`         | Sends `shutdown` request                                         |
+| `exit`             | Sends `exit` notification                                        |
+| `openDocument`     | Opens a document via `textDocument/didOpen`                      |
+| `changeDocument`   | Modifies a document via `textDocument/didChange`                 |
+| `saveDocument`     | Saves a document via `textDocument/didSave`                      |
+| `closeDocument`    | Closes a document via `textDocument/didClose`                    |
+| `request`          | Sends any LSP request and captures response                      |
+| `notification`     | Sends any LSP notification                                       |
+| `waitNotification` | Waits for a notification from the server                         |
+| `assert`           | Asserts conditions on saved results                              |
 
 ## Assertion Syntax
 
@@ -136,6 +136,7 @@ Use `{{variable}}` syntax to reference runtime values:
 ```
 
 Built-in variables:
+
 - `{{workspace.uri}}` - Workspace root URI
 - `{{workspace.path}}` - Workspace root path
 

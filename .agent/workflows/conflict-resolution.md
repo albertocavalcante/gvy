@@ -14,8 +14,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    ```
    Shows files with conflicts marked as "both modified"
 
-2. **View Conflict Markers**
-   Open the file and look for:
+2. **View Conflict Markers** Open the file and look for:
    ```
    <<<<<<< HEAD
    Your changes
@@ -34,8 +33,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    git add resolved-file.kt
    ```
 
-5. **Continue the Operation**
-   For rebase:
+5. **Continue the Operation** For rebase:
    ```bash
    git rebase --continue
    ```
@@ -44,8 +42,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    git commit
    ```
 
-6. **Push Changes**
-   If you rebased:
+6. **Push Changes** If you rebased:
    ```bash
    git push --force-with-lease
    ```

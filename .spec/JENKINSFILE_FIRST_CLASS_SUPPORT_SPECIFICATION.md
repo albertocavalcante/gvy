@@ -1,9 +1,7 @@
 # Jenkinsfile First-Class Support - Complete Technical Specification
 
-**Version**: 1.0
-**Date**: 2025-12-03
-**Status**: Approved - Implementation in Progress
-**Author**: Development Team + Architectural Review Board
+**Version**: 1.0 **Date**: 2025-12-03 **Status**: Approved - Implementation in Progress **Author**: Development Team +
+Architectural Review Board
 
 ---
 
@@ -25,7 +23,8 @@
 
 ## Executive Summary
 
-This specification defines a comprehensive strategy to achieve first-class IDE support for Jenkinsfiles in the Groovy LSP. The implementation follows a phased approach over 13-20 weeks, balancing completeness with pragmatic UX delivery.
+This specification defines a comprehensive strategy to achieve first-class IDE support for Jenkinsfiles in the Groovy
+LSP. The implementation follows a phased approach over 13-20 weeks, balancing completeness with pragmatic UX delivery.
 
 ### Key Goals
 
@@ -38,6 +37,7 @@ This specification defines a comprehensive strategy to achieve first-class IDE s
 ### Solution Architecture
 
 **Three-Pillar Approach**:
+
 1. **Bundled Stubs**: Jenkins SDK JAR with top 10-20 plugins (Phase 0)
 2. **Controller Metadata**: JSON dump from user's Jenkins instance (Phase 2.5)
 3. **Git Cache**: Auto-clone shared libraries to local cache (Phase 1.5)
@@ -45,6 +45,7 @@ This specification defines a comprehensive strategy to achieve first-class IDE s
 ### Architectural Revisions
 
 This plan addresses two critical showstoppers identified during architectural review:
+
 1. **The "Where are the JARs?" Problem** - Users don't have plugin JARs locally
 2. **The Remote Shared Library Problem** - `@Library` references aren't cloned locally
 
@@ -55,6 +56,7 @@ This plan addresses two critical showstoppers identified during architectural re
 ### Current State
 
 The Groovy LSP has basic completion support but lacks Jenkins-specific intelligence:
+
 - ❌ No named parameter completion (`library(identifier:|`)
 - ❌ No plugin step completion (`sh`, `docker.image()`, etc.)
 - ❌ No shared library global variable completion (`vars/` directory)
@@ -85,6 +87,7 @@ pipeline_step {
 ```
 
 **Critical patterns to support**:
+
 1. `@Library('name@version') _` - versioned library imports
 2. Deeply nested named parameters
 3. Closure-based DSL blocks with property assignments
@@ -102,10 +105,12 @@ pipeline_step {
 **Current State**: Named parameters are parsed but not extracted for completion.
 
 **Impact**: Cannot complete:
+
 - `library(identifier: "...", retriever: modernSCM(...))`
 - `buildDiscarder(logRotator(numToKeepStr: '15'))`
 
 **Requirements**:
+
 - Extract parameter names from method signatures
 - Support Map-based methods (`def step(Map args)`)
 - Filter already-specified parameters
@@ -118,6 +123,7 @@ pipeline_step {
 **Impact**: Cannot complete custom steps from shared libraries or `vars/` global variables.
 
 **Requirements**:
+
 - Index symbols from library JARs
 - Scan `vars/` directory for global variables
 - Extract `call()` method signatures
@@ -130,6 +136,7 @@ pipeline_step {
 **Impact**: Cannot complete plugin steps like `sh`, `docker.image()`, `kubernetes {}`.
 
 **Requirements**:
+
 - Bundle metadata for top 10-20 plugins
 - Support controller-specific metadata
 - Provide accurate parameter completions
@@ -140,6 +147,7 @@ pipeline_step {
 **Current State**: GDSL loading exists but no completion integration.
 
 **Requirements**:
+
 - Store GDSL metadata in memory
 - Query by context (file type, scope, qualifier)
 - Support `delegatesTo` hints
@@ -150,6 +158,7 @@ pipeline_step {
 **Current State**: Minimal closure delegate type inference.
 
 **Requirements**:
+
 - Detect declarative vs scripted modes
 - Infer delegate types for closures
 - Provide context-aware completions
@@ -160,6 +169,7 @@ pipeline_step {
 **Current State**: No global variable support.
 
 **Requirements**:
+
 - Support `env`, `params`, `currentBuild`
 - Index library `vars/` as globals
 - Support plugin-provided globals (`docker`, `kubernetes`)
@@ -173,6 +183,7 @@ pipeline_step {
 #### Problem Description
 
 Most Jenkins developers:
+
 - Don't have plugin `.hpi` or `.jar` files locally
 - Won't manually download 50+ plugin files
 - Work from a Jenkinsfile in Git, not a Jenkins development environment
@@ -186,12 +197,14 @@ Most Jenkins developers:
 **Concept**: Bundle a `jenkins-lsp-sdk.jar` with stubs for top 20 plugins.
 
 **Implementation**:
+
 - Stubs = interfaces/classes with signatures, empty bodies
 - Include `@StepDescriptor` annotations
 - Preserve parameter names via ASM
 - Bundle `jenkins-stubs-metadata.json` with parameter details
 
 **Plugins to Include**:
+
 - Core: `workflow-api`, `workflow-cps`, `workflow-basic-steps`, `workflow-durable-task-step`
 - SCM: `git`, `scm-api`, `github`, `github-branch-source`
 - Containers: `docker-workflow`, `docker-commons`, `kubernetes`, `kubernetes-credentials`
@@ -199,6 +212,7 @@ Most Jenkins developers:
 - Utilities: `credentials`, `credentials-binding`, `ssh-agent`, `timestamper`
 
 **Metadata JSON Format**:
+
 ```json
 {
   "steps": {
@@ -238,18 +252,21 @@ Most Jenkins developers:
 **Concept**: Users run a Groovy script on their Jenkins controller to generate `jenkins-lsp-metadata.json`.
 
 **Script Capabilities**:
+
 - Introspect `Jenkins.instance.pluginManager.plugins`
 - Extract all steps via `StepDescriptor.all()`
 - Extract global variables via `GlobalVariable.ALL`
 - Generate JSON with 100% accuracy to user's instance
 
 **Benefits**:
+
 - No JAR parsing required
 - Works with custom/proprietary plugins
 - Version-specific metadata
 - One-time setup
 
 **Output Format**:
+
 ```json
 {
   "jenkinsVersion": "2.414.3",
@@ -284,12 +301,14 @@ Most Jenkins developers:
 **Concept**: LSP uses bundled stubs by default, overlays controller metadata if configured.
 
 **Loading Strategy**:
+
 1. Always load bundled stubs (baseline)
 2. Overlay controller metadata (if configured)
 3. Controller metadata takes precedence
 4. Merge gracefully with warnings for conflicts
 
 **User Experience**:
+
 - Works immediately (bundled stubs)
 - Optional enhancement (controller metadata)
 - No JAR management
@@ -299,6 +318,7 @@ Most Jenkins developers:
 #### Problem Description
 
 `@Library('globalLibrary@main')` references:
+
 - Code in Git repository
 - Not locally cloned
 - Cannot index `vars/` directory without local copy
@@ -310,11 +330,13 @@ Most Jenkins developers:
 ##### 1. Library Reference Parser
 
 **Extract from Jenkinsfile**:
+
 - `@Library('name@version')` annotations
 - `library(...)` method calls with `retriever:` parameter
 - Git URL from `modernSCM(remote: "...")`
 
 **Parse Result**:
+
 ```kotlin
 data class LibraryReference(
     val name: String,
@@ -326,6 +348,7 @@ data class LibraryReference(
 ##### 2. Git Clone Cache Manager
 
 **Cache Structure**:
+
 ```
 ~/.groovy-lsp/cache/
   libraries/
@@ -340,12 +363,14 @@ data class LibraryReference(
 ```
 
 **Clone Strategy**:
+
 - Shallow clone: `git clone --depth 1 --branch <version> <url>`
 - Semantic versions → use Git tags
 - SHA versions → checkout specific commit
 - Named branches → clone branch
 
 **Cache Metadata** (`.groovy-lsp-meta.json`):
+
 ```json
 {
   "cloneTimestamp": "2025-12-03T10:30:00Z",
@@ -356,6 +381,7 @@ data class LibraryReference(
 ```
 
 **TTL & Refresh**:
+
 - Default TTL: 24 hours
 - Auto-refresh on stale cache
 - Manual command: `groovy.refreshLibraryCache`
@@ -364,6 +390,7 @@ data class LibraryReference(
 ##### 3. Configuration Mapping
 
 **User Config** (`settings.json`):
+
 ```json
 {
   "groovy.jenkins.libraries": {
@@ -376,6 +403,7 @@ data class LibraryReference(
 ```
 
 **Resolution Priority**:
+
 1. SCM URL from `library(retriever:)` call
 2. User configuration mapping
 3. Fail with warning, prompt configuration
@@ -383,15 +411,18 @@ data class LibraryReference(
 ##### 4. Error Handling
 
 **Network Unavailable**:
+
 - Use stale cache with warning
 - Don't fail LSP initialization
 
 **Clone Failure**:
+
 - Skip library, log error
 - Show notification to user
 - Continue with other libraries
 
 **No SCM Config**:
+
 - Prompt: "Configure SCM URL for library 'X'?"
 - Provide quick fix command
 
@@ -408,6 +439,7 @@ data class LibraryReference(
 #### 0.1 Create Jenkins SDK Stub JAR
 
 **Deliverables**:
+
 - `jenkins-lsp-sdk.jar` with stub classes
 - `jenkins-stubs-metadata.json` with parameter data
 - Gradle task: `generateJenkinsStubs`
@@ -415,6 +447,7 @@ data class LibraryReference(
 **Implementation Details**:
 
 **Stub Generation**:
+
 ```kotlin
 // StubGenerator.kt
 class StubGenerator {
@@ -427,16 +460,19 @@ class StubGenerator {
 ```
 
 **Metadata Extraction**:
+
 - Parse `@StepDescriptor` annotations
 - Extract parameter types from signatures
 - Include JavaDoc/GroovyDoc as documentation
 
 **Files to Create**:
+
 - `groovy-jenkins/build-tools/StubGenerator.kt`
 - `groovy-jenkins/src/main/resources/jenkins-lsp-sdk.jar` (generated)
 - `groovy-jenkins/src/main/resources/jenkins-stubs-metadata.json` (generated)
 
 **Testing**:
+
 - Verify JAR is loadable
 - Validate JSON schema
 - Test metadata loading
@@ -454,6 +490,7 @@ class StubGenerator {
 **Implementation**:
 
 1. **Map Parameter Detector**
+
 ```kotlin
 fun isMapBasedMethod(method: Method): Boolean {
     val firstParam = method.parameters.firstOrNull()
@@ -472,6 +509,7 @@ fun isMapBasedMethod(method: Method): Boolean {
    - Fallback: Empty (no hints)
 
 3. **Map Key Completion Provider**
+
 ```kotlin
 fun provideMapKeyCompletions(
     methodName: String,
@@ -497,11 +535,13 @@ fun provideMapKeyCompletions(
    - Offer both patterns in completion
 
 **Files**:
+
 - `groovy-parser/.../metadata/MapKeyMetadataResolver.kt`
 - `groovy-lsp/.../providers/completion/MapKeyCompletionProvider.kt`
 - `groovy-parser/.../metadata/ParameterMetadataExtractor.kt`
 
 **Tests**:
+
 ```kotlin
 @Test
 fun `should complete map keys for git step`() {
@@ -551,11 +591,13 @@ class AsmParameterExtractor {
 ```
 
 **Fallback Strategy**:
+
 1. ASM (LocalVariableTable) - Primary
 2. Java Parameter API - Secondary
 3. `arg0`, `arg1` - Last resort
 
 **Files**:
+
 - `groovy-parser/.../metadata/AsmParameterExtractor.kt`
 - `groovy-parser/.../metadata/ParameterMetadataExtractor.kt`
 
@@ -600,12 +642,14 @@ override fun initialized(params: InitializedParams) {
 ```
 
 **Progressive Completion Enhancement**:
+
 - T=0ms: Basic keyword completions
 - T=100ms: Jenkins core step completions (bundled stubs)
 - T=1-2s: Shared library completions (user libraries)
 - T=5-10s: Full completions (remote libraries)
 
 **Loading Indicator**:
+
 ```kotlin
 while (indexingInProgress) {
     completions.add(CompletionItem(
@@ -617,6 +661,7 @@ while (indexingInProgress) {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../GroovyLanguageServer.kt`
 - `groovy-lsp/.../indexing/SymbolIndexingService.kt`
 - `groovy-lsp/.../indexing/ProgressReporter.kt`
@@ -651,6 +696,7 @@ data class ContextKey(
 ```
 
 **Files**:
+
 - `groovy-gdsl/.../GdslMetadataStore.kt`
 - `groovy-lsp/.../providers/completion/GdslCompletionProvider.kt`
 - `groovy-gdsl/.../GdslContributor.kt`
@@ -660,6 +706,7 @@ data class ContextKey(
 **Goal**: Validate infrastructure with real patterns.
 
 **Sample Content**:
+
 ```groovy
 #!groovy
 @Library('shared-library@1.0') _
@@ -681,10 +728,12 @@ customPipelineStep {
 ```
 
 **Files**:
+
 - `groovy-jenkins/src/test/resources/sample-jenkinsfile.groovy`
 - `groovy-jenkins/src/test/kotlin/.../SampleJenkinsfileCompletionTest.kt`
 
 **Phase 1 Deliverables**:
+
 - ✅ Map key inference for Jenkins steps
 - ✅ ASM-based parameter extraction
 - ✅ Non-blocking LSP initialization
@@ -725,6 +774,7 @@ class LibraryResolver(private val config: LibraryConfiguration) {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../LibraryParser.kt`
 - `groovy-jenkins/.../LibraryResolver.kt`
 - `groovy-jenkins/.../LibraryConfiguration.kt`
@@ -767,6 +817,7 @@ class GitCloneManager(private val cacheRoot: Path) {
 ```
 
 **Cache Metadata**:
+
 ```kotlin
 data class LibraryCacheMetadata(
     val cloneTimestamp: Instant,
@@ -781,6 +832,7 @@ data class LibraryCacheMetadata(
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../GitCloneManager.kt`
 - `groovy-jenkins/.../LibraryCacheManager.kt`
 - `groovy-jenkins/.../LibraryCacheMetadata.kt`
@@ -819,6 +871,7 @@ class LibraryVarsScanner {
 ```
 
 **Example**:
+
 ```groovy
 // vars/buildJava.groovy
 def call(Map config) {
@@ -829,6 +882,7 @@ def call(Map config) {
 → Creates global: `buildJava(config: [...])`
 
 **Files**:
+
 - `groovy-jenkins/.../LibraryVarsScanner.kt`
 - `groovy-jenkins/.../GlobalVariableIndex.kt`
 - `groovy-lsp/.../providers/completion/CompletionProvider.kt`
@@ -836,19 +890,23 @@ def call(Map config) {
 #### 1.5.4 User Experience
 
 **Commands**:
+
 - `groovy.refreshLibraryCache` - Manual refresh all
 - `groovy.clearLibraryCache` - Clear cache
 - `groovy.configureLibrary` - Add library SCM URL
 
 **Notifications**:
+
 - On first `@Library`: "Configure SCM URL for auto-completion?"
 - On clone failure: "Failed to clone library 'X': <error>"
 - On success: "Indexed library 'X' (5 global variables found)"
 
 **Files**:
+
 - `groovy-lsp/.../commands/LibraryCacheCommands.kt`
 
 **Phase 1.5 Deliverables**:
+
 - ✅ Automatic Git clone
 - ✅ Library cache management
 - ✅ Vars directory scanning
@@ -885,6 +943,7 @@ class LibrarySymbolExtractor {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../LibrarySymbolExtractor.kt`
 - `groovy-jenkins/.../GlobalVariableIndex.kt`
 - `groovy-jenkins/.../JenkinsContext.kt`
@@ -924,6 +983,7 @@ object JenkinsDslProvider {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../JenkinsDslProvider.kt`
 - `groovy-jenkins/src/main/resources/jenkins-dsl-metadata.json`
 
@@ -979,6 +1039,7 @@ object DeclarativePipelineSchema {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../DeclarativePipelineSchema.kt`
 - `groovy-jenkins/.../PipelineModeDetector.kt`
 - `groovy-jenkins/.../DeclarativeCompletionProvider.kt`
@@ -1032,11 +1093,13 @@ class CpsBlacklistProvider : DiagnosticProvider {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../diagnostics/CpsBlacklistProvider.kt`
 - `groovy-jenkins/.../CpsBlacklist.kt`
 - `groovy-lsp/.../services/DiagnosticsService.kt`
 
 **Phase 2 Deliverables**:
+
 - ✅ Library symbol completion
 - ✅ Global variable completion
 - ✅ Built-in step completion
@@ -1098,11 +1161,13 @@ return groovy.json.JsonOutput.toJson(metadata)
 ```
 
 **Distribution**:
+
 - Bundle script in LSP docs
 - VSCode command: `groovy.generateJenkinsMetadataScript`
 - Instructions in README
 
 **Files**:
+
 - `docs/jenkins-metadata-dumper.groovy`
 - `groovy-jenkins/.../ControllerMetadataLoader.kt`
 
@@ -1128,6 +1193,7 @@ class MetadataMerger {
 ```
 
 **Configuration**:
+
 ```json
 {
   "groovy.jenkins.controllerMetadata": "/path/to/jenkins-metadata.json"
@@ -1135,6 +1201,7 @@ class MetadataMerger {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../MetadataMerger.kt`
 - `groovy-jenkins/.../JenkinsContext.kt`
 
@@ -1169,6 +1236,7 @@ class PluginStepExtractor {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../PluginStepExtractor.kt`
 - `groovy-jenkins/.../PluginGlobalVarExtractor.kt`
 - `groovy-jenkins/.../JenkinsDslProvider.kt`
@@ -1205,10 +1273,12 @@ class PluginStepDiagnosticProvider {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../PluginStepDiagnosticProvider.kt`
 - `groovy-lsp/.../services/DiagnosticsService.kt`
 
 **Phase 2.5 Deliverables**:
+
 - ✅ Controller metadata dump script
 - ✅ Metadata loading & merging
 - ✅ Plugin step indexing
@@ -1271,6 +1341,7 @@ class NamedParameterDiagnosticProvider {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../providers/diagnostics/NamedParameterDiagnosticProvider.kt`
 - `groovy-lsp/.../services/DiagnosticsService.kt`
 
@@ -1333,6 +1404,7 @@ class ImportLibraryAction : CodeActionProvider {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../providers/codeaction/ImportLibraryAction.kt`
 - `groovy-lsp/.../providers/codeaction/ImportAction.kt`
 
@@ -1370,6 +1442,7 @@ class GdslContextMatcher {
 ```
 
 **Files**:
+
 - `groovy-gdsl/.../GdslScript.kt`
 - `groovy-gdsl/.../GdslContributor.kt`
 - `groovy-gdsl/.../GdslContextMatcher.kt`
@@ -1408,10 +1481,12 @@ class JenkinsSignatureHelpEnhancer {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../providers/SignatureHelpProvider.kt`
 - `groovy-jenkins/.../JenkinsSignatureHelpEnhancer.kt`
 
 **Phase 3 Deliverables**:
+
 - ✅ Named parameter validation
 - ✅ Smart import suggestions
 - ✅ Full GDSL support
@@ -1424,6 +1499,7 @@ class JenkinsSignatureHelpEnhancer {
 #### 4.1 Performance Optimization
 
 **Targets**:
+
 - Index 10MB JAR: < 2s
 - Completion response: < 100ms (p95)
 - Memory per library: < 50MB
@@ -1432,6 +1508,7 @@ class JenkinsSignatureHelpEnhancer {
 **Optimizations**:
 
 1. **Prefix Tree for Symbol Lookup**
+
 ```kotlin
 class SymbolIndexPrefixTree {
     private val root = TrieNode()
@@ -1455,6 +1532,7 @@ class SymbolIndexPrefixTree {
 ```
 
 2. **Lazy Loading**
+
 ```kotlin
 class LazyLibraryIndex(private val jarPath: Path) {
     private val classes by lazy { indexClasses() }
@@ -1467,6 +1545,7 @@ class LazyLibraryIndex(private val jarPath: Path) {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../indexing/SymbolIndexPrefixTree.kt`
 - `groovy-jenkins/.../LibrarySymbolExtractor.kt`
 - `groovy-lsp/.../providers/completion/CompletionProvider.kt`
@@ -1508,6 +1587,7 @@ class JenkinsDocumentationProvider {
 ```
 
 **Files**:
+
 - `groovy-lsp/.../providers/HoverProvider.kt`
 - `groovy-jenkins/.../JenkinsDocumentationProvider.kt`
 
@@ -1518,6 +1598,7 @@ class JenkinsDocumentationProvider {
 **Test Suites**:
 
 1. **Integration Tests**
+
 ```kotlin
 @Test
 fun `should provide completions for real Jenkinsfile`() {
@@ -1531,6 +1612,7 @@ fun `should provide completions for real Jenkinsfile`() {
 ```
 
 2. **Performance Tests**
+
 ```kotlin
 @Test
 fun `should index 10MB library in under 2s`() {
@@ -1543,6 +1625,7 @@ fun `should index 10MB library in under 2s`() {
 ```
 
 3. **GDSL Integration Tests**
+
 ```kotlin
 @Test
 fun `should load Jenkins GDSL and provide completions`() {
@@ -1556,11 +1639,13 @@ fun `should load Jenkins GDSL and provide completions`() {
 ```
 
 **Files**:
+
 - `groovy-jenkins/.../test/.../JenkinsCompletionIntegrationTest.kt`
 - `groovy-jenkins/.../test/.../JenkinsLibraryIndexingTest.kt`
 - `groovy-gdsl/.../test/.../GdslIntegrationTest.kt`
 
 **Phase 4 Deliverables**:
+
 - ✅ Performance targets met
 - ✅ Enhanced hover docs
 - ✅ Test coverage >80%
@@ -1575,6 +1660,7 @@ fun `should load Jenkins GDSL and provide completions`() {
 **Decision**: ASM bytecode analysis as primary
 
 **Approach**:
+
 1. ASM (LocalVariableTable)
 2. Java Parameter API
 3. Positional hints (arg0, arg1)
@@ -1586,6 +1672,7 @@ fun `should load Jenkins GDSL and provide completions`() {
 **Decision**: In-memory with optional disk cache
 
 **Structure**:
+
 ```kotlin
 data class GdslMetadata(
     val methods: List<GdslMethod>,
@@ -1603,6 +1690,7 @@ data class GdslMetadata(
 ### 4. Completion Priority
 
 **Order**:
+
 1. GDSL-defined symbols
 2. Library global variables
 3. Local symbols
@@ -1616,6 +1704,7 @@ data class GdslMetadata(
 **Decision**: Non-blocking progressive enhancement
 
 **Flow**:
+
 1. LSP initializes immediately
 2. Background indexing with progress
 3. Completions improve over time
@@ -1626,6 +1715,7 @@ data class GdslMetadata(
 **Philosophy**: Graceful degradation
 
 **Strategies**:
+
 - Missing parameter names → positional hints
 - Failed GDSL → skip, log, continue
 - Library error → index others, report
@@ -1636,6 +1726,7 @@ data class GdslMetadata(
 **Decision**: Bundled stubs + controller dump
 
 **Approach**:
+
 1. Bundled stubs (baseline)
 2. Controller metadata (instance-specific)
 3. Merge with precedence
@@ -1647,6 +1738,7 @@ data class GdslMetadata(
 **Decision**: Auto-clone with cache
 
 **Approach**:
+
 - Parse `@Library`
 - Auto-clone to `~/.groovy-lsp/cache/`
 - TTL-based refresh (24h)
@@ -1659,6 +1751,7 @@ data class GdslMetadata(
 **Decision**: Dual-mode completion
 
 **Implementation**:
+
 - Mode detection by structure
 - Declarative: structural schema
 - Scripted: closure delegates
@@ -1679,6 +1772,7 @@ data class GdslMetadata(
 ### Overall Success
 
 **First-class support means**:
+
 - ✅ All patterns from screenshot work
 - ✅ Completion feels like IntelliJ
 - ✅ No blocking/performance issues
@@ -1688,36 +1782,43 @@ data class GdslMetadata(
 ### Phase-Specific Criteria
 
 **Phase 0**:
+
 - ✅ Bundled metadata loads
 - ✅ Tests pass
 - ✅ LSP distributes JAR
 
 **Phase 1**:
+
 - ✅ Map key completions work
 - ✅ Non-blocking init
 - ✅ GDSL integrated
 
 **Phase 1.5**:
+
 - ✅ Libraries auto-clone
 - ✅ Vars/ indexed
 - ✅ Seamless UX
 
 **Phase 2**:
+
 - ✅ All screenshot patterns complete
 - ✅ Declarative/scripted modes
 - ✅ CPS diagnostics
 
 **Phase 2.5**:
+
 - ✅ Controller metadata works
 - ✅ Plugin steps complete
 - ✅ Instance-accurate
 
 **Phase 3**:
+
 - ✅ Validation diagnostics
 - ✅ Smart imports
 - ✅ Signature help
 
 **Phase 4**:
+
 - ✅ Performance targets met
 - ✅ >80% test coverage
 - ✅ Production quality
@@ -1729,6 +1830,7 @@ data class GdslMetadata(
 ### Scope
 
 **Test Plugins** (10 most common):
+
 1. pipeline-model-definition
 2. workflow-cps
 3. docker-workflow
@@ -1743,12 +1845,14 @@ data class GdslMetadata(
 ### Plan
 
 **Beta 1** (Phase 0-1.5):
+
 - Bundle stubs for 10 plugins
 - Test real Jenkinsfiles
 - Validate Map key completions
 - Measure performance
 
 **Beta 2** (Phase 2-2.5):
+
 - Test controller metadata dump
 - Validate accuracy (3-5 Jenkins instances)
 - Test declarative/scripted modes
@@ -1766,6 +1870,7 @@ data class GdslMetadata(
 ### Refinement
 
 Post-beta:
+
 1. Expand to top 20 plugins
 2. Fix edge cases
 3. Improve error messages
@@ -1854,6 +1959,7 @@ Post-beta:
 
 **Document End**
 
-This specification is comprehensive and approved for implementation. All phases, technical decisions, and success criteria have been validated through architectural review.
+This specification is comprehensive and approved for implementation. All phases, technical decisions, and success
+criteria have been validated through architectural review.
 
 **Next Action**: Proceed with Phase 0 implementation following TDD principles.

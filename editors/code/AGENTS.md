@@ -10,7 +10,8 @@ Copilot / AI helpers: follow this when working in this repo.
 
 ## LSP-First Architecture
 
-**Core Principle**: This extension is a **thin wrapper**. All language intelligence lives in the Groovy LSP ([groovy-lsp](https://github.com/GroovyLanguageServer/groovy-lsp)).
+**Core Principle**: This extension is a **thin wrapper**. All language intelligence lives in the Groovy LSP
+([groovy-lsp](https://github.com/GroovyLanguageServer/groovy-lsp)).
 
 ### Feature Requests → LSP First
 
@@ -71,6 +72,7 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 ## Environment toggles
 
 **Version Selection** (new defaults as of v0.4.9):
+
 - **Default**: Fetches latest stable release from GitHub
 - `GLS_TAG=v0.4.8` — Use specific version
 - `GLS_CHANNEL=nightly` — Use latest nightly build
@@ -78,17 +80,20 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 - `GLS_USE_PINNED=true` — Alternative to GLS_CHANNEL=pinned
 
 **Local Development** (auto-detected in monorepo):
+
 - Monorepo: Automatically uses `../groovy-lsp/build/libs/` if available
 - `PREFER_LOCAL=true` — Force local build search
 - Override: `GLS_CHANNEL=release` to force download
 
 **Other Toggles**:
+
 - `FORCE_DOWNLOAD=true` — Redownload the server JAR even if present
 - `GLS_ALLOW_PINNED_FALLBACK=true` — Fall back to pinned on network failure
 - `REQUIRE_SERVER_BUNDLE=true` — Fail build if server bundling fails (publish)
 - `SKIP_PREPARE_SERVER=true` — Skip server prep (used in some CI paths)
 
 **Migration from v0.4.8**:
+
 - Old: `USE_LATEST_GLS=true` to get latest
 - New: Latest is default, use `GLS_USE_PINNED=true` for pinned
 
@@ -96,7 +101,8 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
 - Default branch: `main`. Never commit directly to `main`; use feature branches + PRs.
 - Conventional commits (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
-- **CRITICAL**: NEVER ever run `git add .`. This is 100% forbidden. Always stage specific files by name (e.g., `git add file1.ts file2.ts`) to keep commits atomic and avoid staging unrelated formatting or accidental changes.
+- **CRITICAL**: NEVER ever run `git add .`. This is 100% forbidden. Always stage specific files by name (e.g.,
+  `git add file1.ts file2.ts`) to keep commits atomic and avoid staging unrelated formatting or accidental changes.
 - Before PR: `npm run lint && npm run check-types && npm run compile`.
 
 ## Boundaries (do not)

@@ -1,7 +1,7 @@
 # Gradle Build Server Integration - Deep Analysis
 
-> **Created**: December 21, 2025  
-> **Status**: Research Complete, Pending Implementation Decisions  
+> **Created**: December 21, 2025\
+> **Status**: Research Complete, Pending Implementation Decisions\
 > **Authors**: groovy-lsp team
 
 ## Table of Contents
@@ -22,13 +22,19 @@
 
 ### The Problem
 
-We investigated integrating with Microsoft's [build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) to provide an optional enhanced Gradle experience. The goal was to allow users who have the Gradle Build Server installed to benefit from its features (better annotation processing, consistent output directories) while maintaining our existing native Gradle Tooling API integration.
+We investigated integrating with Microsoft's
+[build-server-for-gradle](https://github.com/microsoft/build-server-for-gradle) to provide an optional enhanced Gradle
+experience. The goal was to allow users who have the Gradle Build Server installed to benefit from its features (better
+annotation processing, consistent output directories) while maintaining our existing native Gradle Tooling API
+integration.
 
 ### Key Finding
 
 **Microsoft's Gradle Build Server does NOT follow standard BSP discovery conventions.**
 
-Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` connection files), build-server-for-gradle uses a proprietary named pipe architecture that requires:
+Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` connection files), build-server-for-gradle uses a
+proprietary named pipe architecture that requires:
+
 1. The vscode-gradle extension to spawn the server
 2. A Node.js proxy (`BspProxy`) to bridge named pipes
 3. The JDT.LS Eclipse plugin to act as the BSP client
@@ -90,6 +96,7 @@ Unlike bazel-bsp, sbt, and Mill (which generate `.bsp/*.json` connection files),
 ### Source Code Evidence
 
 **From `vscode-gradle/extension/src/bs/BspProxy.ts`:**
+
 ```typescript
 export class BspProxy {
     private buildServerConnector: BuildServerConnector;
@@ -103,6 +110,7 @@ export class BspProxy {
 ```
 
 **From `GradleBuildServerProjectImporter.java`:**
+
 ```java
 // Connection via pipes, NOT .bsp/ discovery
 public static final String BUILD_GRADLE_DESCRIPTOR = "build.gradle";
@@ -110,6 +118,7 @@ public static final String BUILD_GRADLE_DESCRIPTOR = "build.gradle";
 ```
 
 **From `build-server-for-gradle/Launcher.java`:**
+
 ```java
 // Server accepts --pipe=<pipeName> argument, NOT standard BSP socket
 String pipePath = params.get("pipe");
@@ -122,14 +131,14 @@ if (StringUtils.isNotBlank(pipePath)) {
 
 ### Comparison with Standard BSP Servers
 
-| Feature | bazel-bsp | sbt | Mill | build-server-for-gradle |
-|---------|-----------|-----|------|-------------------------|
-| Creates `.bsp/*.json` | ✅ | ✅ | ✅ | ❌ |
-| Standard BSP discovery | ✅ | ✅ | ✅ | ❌ |
-| Stdio transport | ✅ | ✅ | ✅ | ⚠️ Fallback only |
-| Named pipe transport | ❌ | ❌ | ❌ | ✅ Primary |
-| Standalone usage | ✅ | ✅ | ✅ | ❌ |
-| Works with any BSP client | ✅ | ✅ | ✅ | ❌ JDT.LS only |
+| Feature                   | bazel-bsp | sbt | Mill | build-server-for-gradle |
+| ------------------------- | --------- | --- | ---- | ----------------------- |
+| Creates `.bsp/*.json`     | ✅        | ✅  | ✅   | ❌                      |
+| Standard BSP discovery    | ✅        | ✅  | ✅   | ❌                      |
+| Stdio transport           | ✅        | ✅  | ✅   | ⚠️ Fallback only         |
+| Named pipe transport      | ❌        | ❌  | ❌   | ✅ Primary              |
+| Standalone usage          | ✅        | ✅  | ✅   | ❌                      |
+| Works with any BSP client | ✅        | ✅  | ✅   | ❌ JDT.LS only          |
 
 ---
 
@@ -165,21 +174,23 @@ if (StringUtils.isNotBlank(pipePath)) {
 **Title**: Support standard BSP connection discovery via .bsp/gradle.json
 
 **Description**:
-```markdown
+
+````markdown
 ## Summary
-Add support for generating a `.bsp/gradle.json` connection file to enable standard 
-BSP client discovery, making the Gradle Build Server usable by any BSP-compatible 
-tool (not just JDT.LS).
+
+Add support for generating a `.bsp/gradle.json` connection file to enable standard BSP client discovery, making the
+Gradle Build Server usable by any BSP-compatible tool (not just JDT.LS).
 
 ## Motivation
-Currently, the Gradle Build Server only works with the JDT.LS importer via named 
-pipes. Other BSP clients (IntelliJ, Metals, custom LSP servers) cannot discover 
-or connect to the server.
 
-The [BSP specification](https://build-server-protocol.github.io/) defines a standard 
-discovery mechanism via `.bsp/*.json` files containing connection details.
+Currently, the Gradle Build Server only works with the JDT.LS importer via named pipes. Other BSP clients (IntelliJ,
+Metals, custom LSP servers) cannot discover or connect to the server.
+
+The [BSP specification](https://build-server-protocol.github.io/) defines a standard discovery mechanism via
+`.bsp/*.json` files containing connection details.
 
 ## Proposed Solution
+
 Add a command/option to generate `.bsp/gradle.json`:
 
 ```json
@@ -191,16 +202,19 @@ Add a command/option to generate `.bsp/gradle.json`:
   "argv": ["java", "-jar", "/path/to/gradle-build-server.jar"]
 }
 ```
+````
 
 ## Alternatives Considered
+
 1. Named pipe-only: Current approach, limits adoption
 2. Socket-based connection: Would also work but requires running server
 
 ## Additional Context
+
 - [BSP Connection Discovery Spec](https://build-server-protocol.github.io/docs/server-discovery)
 - Projects that would benefit: groovy-lsp, kotlin-language-server, etc.
-```
 
+````
 ### FR-2: Support Stdio Transport as Primary Option
 
 **Title**: Make stdio transport a first-class option alongside named pipes
@@ -219,23 +233,25 @@ platform-specific named pipe handling.
 - Document stdio usage explicitly
 - Add --transport=stdio|pipe CLI argument
 - Test and support stdio as production transport
-```
+````
 
 ### FR-3: Publish Standalone Distribution
 
 **Title**: Provide standalone JAR distribution for non-VSCode usage
 
 **Description**:
+
 ```markdown
 ## Summary
-Publish the Gradle Build Server JAR to Maven Central or GitHub Releases 
-with documentation for standalone usage.
+
+Publish the Gradle Build Server JAR to Maven Central or GitHub Releases with documentation for standalone usage.
 
 ## Current State
-The server JAR is bundled inside the vscode-gradle extension and not 
-easily accessible for other tools.
+
+The server JAR is bundled inside the vscode-gradle extension and not easily accessible for other tools.
 
 ## Proposed Solution
+
 - Publish to Maven Central: `com.microsoft.java:gradle-build-server:0.3.0`
 - Or publish to GitHub Releases with clear versioning
 - Document standalone launch command
@@ -370,10 +386,12 @@ fun updateDependencies(params: UpdateDependenciesParams): CompletableFuture<Unit
 groovy-lsp directly spawns and manages the Gradle Build Server.
 
 **Pros:**
+
 - No extension dependency
 - Works in any editor with LSP support
 
 **Cons:**
+
 - Need to bundle or locate server JAR
 - Platform-specific named pipe handling
 - Duplicates vscode-gradle functionality
@@ -397,7 +415,8 @@ Allow users to manually specify the BSP server connection.
 
 ## Native Gradle Improvements
 
-While pursuing BSP integration, we should also improve our native Gradle Tooling API support by learning from vscode-gradle's implementation.
+While pursuing BSP integration, we should also improve our native Gradle Tooling API support by learning from
+vscode-gradle's implementation.
 
 ### From `GradleProjectModelBuilder.java`
 
@@ -455,12 +474,12 @@ if ((task instanceof JavaExec || task instanceof Test)) {
 
 ### Proposed Improvements
 
-| Feature | Current | Proposed | Priority |
-|---------|---------|----------|----------|
-| Dependency resolution | ✅ Flat list | ⬆️ Optional tree | Low |
-| Plugin DSL schema | ❌ None | ✅ For completion | Medium |
-| Source/Javadoc JARs | ⚠️ Via BSP only | ✅ Via Tooling API | High |
-| Build file validation | ❌ None | ✅ Basic checks | Medium |
+| Feature               | Current        | Proposed           | Priority |
+| --------------------- | -------------- | ------------------ | -------- |
+| Dependency resolution | ✅ Flat list   | ⬆️ Optional tree    | Low      |
+| Plugin DSL schema     | ❌ None        | ✅ For completion  | Medium   |
+| Source/Javadoc JARs   | ⚠️ Via BSP only | ✅ Via Tooling API | High     |
+| Build file validation | ❌ None        | ✅ Basic checks    | Medium   |
 
 ---
 
@@ -468,23 +487,23 @@ if ((task instanceof JavaExec || task instanceof Test)) {
 
 ### Integration Approach Selection
 
-| Criteria | Option A (Extension) | Option B (Direct) | Option C (Config) |
-|----------|---------------------|-------------------|-------------------|
-| Implementation effort | Medium | High | Low |
-| User experience | Best | Good | Manual |
-| Maintenance burden | Medium | High | Low |
-| Works standalone | ❌ | ✅ | ⚠️ |
-| Auto-detection | ✅ | ❌ | ❌ |
-| **Recommendation** | ✅ Primary | Consider later | Fallback |
+| Criteria              | Option A (Extension) | Option B (Direct) | Option C (Config) |
+| --------------------- | -------------------- | ----------------- | ----------------- |
+| Implementation effort | Medium               | High              | Low               |
+| User experience       | Best                 | Good              | Manual            |
+| Maintenance burden    | Medium               | High              | Low               |
+| Works standalone      | ❌                   | ✅                | ⚠️                 |
+| Auto-detection        | ✅                   | ❌                | ❌                |
+| **Recommendation**    | ✅ Primary           | Consider later    | Fallback          |
 
 ### Timeline Estimate
 
-| Phase | Task | Effort | Dependencies |
-|-------|------|--------|--------------|
-| 1 | File FR-1 with Microsoft | 1 day | None |
-| 2 | Implement Option C (config fallback) | 3 days | None |
-| 3 | Implement Option A (extension integration) | 1-2 weeks | Phase 2 |
-| 4 | Native Gradle improvements | 2 weeks | None (parallel) |
+| Phase | Task                                       | Effort    | Dependencies    |
+| ----- | ------------------------------------------ | --------- | --------------- |
+| 1     | File FR-1 with Microsoft                   | 1 day     | None            |
+| 2     | Implement Option C (config fallback)       | 3 days    | None            |
+| 3     | Implement Option A (extension integration) | 1-2 weeks | Phase 2         |
+| 4     | Native Gradle improvements                 | 2 weeks   | None (parallel) |
 
 ---
 
@@ -528,13 +547,13 @@ if ((task instanceof JavaExec || task instanceof Test)) {
 
 ### Key Source Files
 
-| File | Purpose |
-|------|---------|
-| `vscode-gradle/extension/src/bs/BspProxy.ts` | Named pipe bridge |
-| `vscode-gradle/extension/src/bs/BuildServerConnector.ts` | Server spawn |
+| File                                                      | Purpose            |
+| --------------------------------------------------------- | ------------------ |
+| `vscode-gradle/extension/src/bs/BspProxy.ts`              | Named pipe bridge  |
+| `vscode-gradle/extension/src/bs/BuildServerConnector.ts`  | Server spawn       |
 | `vscode-gradle/.../GradleBuildServerProjectImporter.java` | JDT.LS integration |
-| `build-server-for-gradle/.../Launcher.java` | Server entry point |
-| `build-server-for-gradle/.../GradleBuildServer.java` | BSP implementation |
+| `build-server-for-gradle/.../Launcher.java`               | Server entry point |
+| `build-server-for-gradle/.../GradleBuildServer.java`      | BSP implementation |
 
 ### BSP Specification
 
@@ -561,25 +580,22 @@ about: Support standard BSP connection discovery
 labels: enhancement
 ---
 
-**Is your feature request related to a problem?**
-The Gradle Build Server currently only works with JDT.LS via named pipes.
-Other BSP-compatible tools cannot discover or connect to the server.
+**Is your feature request related to a problem?** The Gradle Build Server currently only works with JDT.LS via named
+pipes. Other BSP-compatible tools cannot discover or connect to the server.
 
-**Describe the solution you'd like**
-Generate a `.bsp/gradle.json` file when the server starts, following the 
+**Describe the solution you'd like** Generate a `.bsp/gradle.json` file when the server starts, following the
 [BSP connection discovery specification](https://build-server-protocol.github.io/docs/server-discovery).
 
 **Describe alternatives you've considered**
+
 1. Named pipe discovery file (non-standard)
 2. Configuration file with pipe path
 3. Current approach (JDT.LS only)
 
-**Additional context**
-This would enable tools like groovy-lsp, kotlin-language-server, and any 
-BSP-compatible IDE to use the Gradle Build Server.
+**Additional context** This would enable tools like groovy-lsp, kotlin-language-server, and any BSP-compatible IDE to
+use the Gradle Build Server.
 ```
 
 ---
 
-*Last updated: December 21, 2025*
-
+_Last updated: December 21, 2025_

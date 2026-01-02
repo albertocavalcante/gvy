@@ -1,14 +1,17 @@
 # Versioned Jenkins Metadata
 
-> **Status:** 📋 Draft  
-> **Target Version:** 0.5.0  
-> **Related:** [Jenkins IntelliSense](../JENKINS_INTELLISENSE_ARCHITECTURE.md), [GDSL Execution](GDSL_EXECUTION_ENGINE.md)
+> **Status:** 📋 Draft\
+> **Target Version:** 0.5.0\
+> **Related:** [Jenkins IntelliSense](../JENKINS_INTELLISENSE_ARCHITECTURE.md),
+> [GDSL Execution](GDSL_EXECUTION_ENGINE.md)
 
 ---
 
 ## Overview
 
-This specification defines how Groovy LSP provides accurate Jenkins step metadata based on the target Jenkins LTS version. Different Jenkins versions expose different steps and parameters, so version-aware metadata ensures accurate IntelliSense.
+This specification defines how Groovy LSP provides accurate Jenkins step metadata based on the target Jenkins LTS
+version. Different Jenkins versions expose different steps and parameters, so version-aware metadata ensures accurate
+IntelliSense.
 
 ---
 
@@ -17,6 +20,7 @@ This specification defines how Groovy LSP provides accurate Jenkins step metadat
 ### Problem
 
 Jenkins evolves with each LTS release:
+
 - New steps are added (e.g., `publishChecks` in recent versions)
 - Step parameters change (new options, deprecations)
 - Plugin versions affect available functionality
@@ -26,6 +30,7 @@ A single bundled metadata file cannot accurately represent all Jenkins versions.
 ### Solution
 
 Provide versioned metadata that:
+
 1. Maps Jenkins LTS versions to step definitions
 2. Falls back gracefully when exact version unavailable
 3. Allows user override for custom environments
@@ -245,6 +250,7 @@ jobs:
 ### Version Detection (Future)
 
 Potential automatic detection sources:
+
 1. `plugins.txt` header comments
 2. Jenkins REST API (if accessible)
 3. Gradle plugin versions
@@ -341,5 +347,4 @@ fun `version resolution matches expected behavior`() {
 
 ---
 
-*Last updated: December 21, 2025*
-
+_Last updated: December 21, 2025_

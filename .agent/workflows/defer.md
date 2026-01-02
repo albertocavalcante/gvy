@@ -19,8 +19,7 @@ Use this workflow when you encounter work that should NOT be addressed in the cu
 
 ## Step 1: Create Issue
 
-> [!CAUTION]
-> **MANDATORY: Always use a temp file for the issue body.**
+> [!CAUTION] **MANDATORY: Always use a temp file for the issue body.**
 >
 > **NEVER use inline `--body "..."` with complex content** - it WILL break due to:
 >

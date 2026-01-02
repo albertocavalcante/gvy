@@ -7,7 +7,7 @@ dependencies {
     api(project(":groovy-testing"))
 
     // Groovy AST for ClassNode/ModuleNode
-    implementation(project(":groovy-parser"))
+    implementation(project(":parser:native"))
 
     // JUnit 5 API (compileOnly, as we only need it for constants/identifiers)
     // We don't want to force JUnit 5 on the runtime classpath of the user's project

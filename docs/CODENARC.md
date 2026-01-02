@@ -175,9 +175,12 @@ The LSP uses a hierarchical ruleset resolution strategy:
    - `rulesets/jenkins.xml` for Jenkins projects
    - `rulesets/basic.xml` for other projects
 
-**Fallback Behavior**: If custom DSL rulesets are missing from the classpath (e.g., when running as fat JAR without resources), the LSP automatically generates a minimal DSL wrapper that references CodeNarc's bundled XML rulesets. This prevents `IllegalStateException` crashes and ensures diagnostics continue to work.
+**Fallback Behavior**: If custom DSL rulesets are missing from the classpath (e.g., when running as fat JAR without
+resources), the LSP automatically generates a minimal DSL wrapper that references CodeNarc's bundled XML rulesets. This
+prevents `IllegalStateException` crashes and ensures diagnostics continue to work.
 
 **Example Fallback**:
+
 ```groovy
 // Generated when custom ruleset missing
 ruleset {
@@ -232,22 +235,24 @@ When disabled, CodeNarc analysis is skipped entirely (no ruleset loading, no dia
 
 ### Configuration Options
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `groovy.codenarc.enabled` | boolean | `true` | Enable/disable CodeNarc diagnostics |
-| `groovy.codenarc.propertiesFile` | string | `null` | Explicit path to CodeNarc properties file |
-| `groovy.codenarc.autoDetect` | boolean | `true` | Auto-detect CodeNarc config files in workspace |
+| Setting                          | Type    | Default | Description                                    |
+| -------------------------------- | ------- | ------- | ---------------------------------------------- |
+| `groovy.codenarc.enabled`        | boolean | `true`  | Enable/disable CodeNarc diagnostics            |
+| `groovy.codenarc.propertiesFile` | string  | `null`  | Explicit path to CodeNarc properties file      |
+| `groovy.codenarc.autoDetect`     | boolean | `true`  | Auto-detect CodeNarc config files in workspace |
 
 ## Project-Specific Configurations
 
 ### Jenkins Projects
 
 **Automatic Detection**: Jenkins projects are automatically detected by the presence of:
+
 - `Jenkinsfile` in the workspace root
 - `vars/` directory (Jenkins shared library)
 - `resources/` directory (Jenkins shared library resources)
 
-**Bundled Jenkins Rules**: The LSP includes CodeNarc's bundled `rulesets/jenkins.xml` which provides 7 Jenkins-specific CPS (Continuation Passing Style) rules:
+**Bundled Jenkins Rules**: The LSP includes CodeNarc's bundled `rulesets/jenkins.xml` which provides 7 Jenkins-specific
+CPS (Continuation Passing Style) rules:
 
 1. **ClassNotSerializable** - Classes should implement Serializable for CPS transformation
 2. **ClosureInGString** - Closures in GStrings cause CPS runtime errors
@@ -257,12 +262,15 @@ When disabled, CodeNarc analysis is skipped entirely (no ruleset loading, no dia
 6. **ObjectOverrideOnlyNonCpsMethods** - Overridden Object methods must be @NonCPS
 7. **ParameterOrReturnTypeNotSerializable** - Parameters and return types must be Serializable
 
-**Custom Jenkins Ruleset**: The LSP provides a custom Jenkins ruleset at `codenarc/rulesets/frameworks/jenkins.groovy` that:
+**Custom Jenkins Ruleset**: The LSP provides a custom Jenkins ruleset at `codenarc/rulesets/frameworks/jenkins.groovy`
+that:
+
 - Includes all bundled Jenkins CPS rules
 - Adds basic code quality rules (excluding patterns common in Jenkinsfiles)
 - Configures `CpsCallFromNonCpsMethodRule` for common Jenkins patterns
 
-**Fallback Mechanism**: If custom rulesets are missing from the classpath, the LSP automatically falls back to CodeNarc's bundled XML rulesets, preventing crashes.
+**Fallback Mechanism**: If custom rulesets are missing from the classpath, the LSP automatically falls back to
+CodeNarc's bundled XML rulesets, preventing crashes.
 
 **Customizing Jenkins Rules** (for custom rulesets):
 
