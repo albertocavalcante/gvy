@@ -60,7 +60,7 @@ We will use **JMH (Java Microbenchmark Harness)** via the `me.champeau.jmh` Grad
 
 ### Step 4: Finalize (1 Hour)
 
-- Document results in `docs/BENCHMARK_RESULTS.md`.
+- Document results in a KB benchmarks note alongside this plan.
 - Commit benchmarks as permanent codebase infrastructure.
 
 ## Success Criteria

@@ -15,6 +15,7 @@ These rules are NON-NEGOTIABLE. Violations require immediate correction.
 | Never commit on main   | `git branch --show-current` before commit | Protects main branch        |
 | Stage files explicitly | `git add file1.kt file2.kt`               | Prevents accidental commits |
 | Verify before push     | `git status` + `git diff --cached`        | Catches mistakes early      |
+| Use worktrees          | `git worktree add -b <branch> <path>`     | Keep main worktree clean    |
 
 <forbidden>
 - `git add .` or `git add -A` — NEVER use wildcard staging
@@ -33,8 +34,8 @@ These rules are NON-NEGOTIABLE. Violations require immediate correction.
 git checkout main
 git pull origin main
 
-# 2. Create feature branch
-git checkout -b <type>/<short-description>
+# 2. Create a worktree for the feature branch
+git worktree add -b <type>/<short-description> ../gvy-<short-description>
 # Examples: feat/completion-methods, fix/null-pointer, refactor/extract-utils
 ```
 
