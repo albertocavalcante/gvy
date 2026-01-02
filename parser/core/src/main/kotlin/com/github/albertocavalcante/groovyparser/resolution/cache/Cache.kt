@@ -1,10 +1,8 @@
 package com.github.albertocavalcante.groovyparser.resolution.cache
 
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
-import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.WeakHashMap
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
