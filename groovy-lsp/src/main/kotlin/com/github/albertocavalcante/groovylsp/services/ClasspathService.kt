@@ -180,6 +180,7 @@ data class ReflectedMethod(
     val name: String,
     val returnType: String,
     val parameters: List<String>,
+    val parameterNames: List<String> = emptyList(),
     val isStatic: Boolean,
     val isPublic: Boolean,
     val doc: String,
