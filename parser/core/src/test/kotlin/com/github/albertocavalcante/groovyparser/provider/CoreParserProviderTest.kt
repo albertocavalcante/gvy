@@ -60,7 +60,7 @@ class CoreParserProviderTest {
     }
 
     @Test
-    fun `diagnostics have correct positions`() {
+    fun `diagnostics have 1-based positions`() {
         val source = "class X { void m( { }" // Syntax error
         val unit = provider.parse(source)
 
