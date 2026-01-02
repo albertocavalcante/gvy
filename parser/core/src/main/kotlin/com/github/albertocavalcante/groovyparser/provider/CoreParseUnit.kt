@@ -44,13 +44,12 @@ class CoreParseUnit(
     }
 
     override fun symbols(): List<SymbolInfo> {
-        val symbols = mutableListOf<SymbolInfo>()
-        val unit = result.result.orElse(null) ?: return symbols
+        val unit = result.result.orElse(null) ?: return emptyList()
 
-        unit.types.forEach { type ->
+        return unit.types.flatMap { type ->
             when (type) {
-                is ClassDeclaration -> {
-                    symbols.add(
+                is ClassDeclaration -> buildList {
+                    add(
                         SymbolInfo(
                             name = type.name,
                             kind = if (type.isInterface) SymbolKind.INTERFACE else SymbolKind.CLASS,
@@ -58,33 +57,27 @@ class CoreParseUnit(
                             containerName = unit.packageDeclaration.orElse(null)?.name,
                         ),
                     )
-
-                    type.methods.forEach { method ->
-                        symbols.add(
-                            SymbolInfo(
-                                name = method.name,
-                                kind = SymbolKind.METHOD,
-                                range = extractRange(method),
-                                containerName = type.name,
-                            ),
+                    type.methods.mapTo(this) { method ->
+                        SymbolInfo(
+                            name = method.name,
+                            kind = SymbolKind.METHOD,
+                            range = extractRange(method),
+                            containerName = type.name,
                         )
                     }
-
-                    type.fields.forEach { field ->
-                        symbols.add(
-                            SymbolInfo(
-                                name = field.name,
-                                kind = SymbolKind.FIELD,
-                                range = extractRange(field),
-                                containerName = type.name,
-                            ),
+                    type.fields.mapTo(this) { field ->
+                        SymbolInfo(
+                            name = field.name,
+                            kind = SymbolKind.FIELD,
+                            range = extractRange(field),
+                            containerName = type.name,
                         )
                     }
                 }
+
+                else -> emptyList()
             }
         }
-
-        return symbols
     }
 
     override fun typeAt(position: Position): TypeInfo? {
