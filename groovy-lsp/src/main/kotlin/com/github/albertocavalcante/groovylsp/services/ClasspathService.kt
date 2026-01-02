@@ -176,6 +176,11 @@ class ClasspathService(
     }
 }
 
+/**
+ * Reflection snapshot for a classpath method.
+ *
+ * @property parameterNames Available when the class was compiled with `-parameters`; empty otherwise.
+ */
 data class ReflectedMethod(
     val name: String,
     val returnType: String,

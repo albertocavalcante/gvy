@@ -368,6 +368,72 @@ class InlayHintsProviderTest {
         }
 
         @Test
+        fun `should not use unrelated same-file classes for method hints`() {
+            val fooUri = URI.create("file:///test/Target.groovy")
+            val fooCode = """
+                class Target {
+                    void greet(String name) {}
+                }
+            """.trimIndent()
+            val callCode = """
+                class Other {
+                    void greet(int count) {}
+                }
+                new Target().greet("hi")
+            """.trimIndent()
+
+            val parser = GroovyParserFacade()
+            val fooResult = parser.parse(ParseRequest(fooUri, fooCode))
+            val callResult = parser.parse(ParseRequest(testUri, callCode))
+            val workspaceIndex = SymbolIndex().buildFromVisitor(fooResult.astModel)
+
+            every { compilationService.getAstModel(testUri) } returns callResult.astModel
+            every { compilationService.getAllSymbolStorages() } returns mapOf(fooUri to workspaceIndex)
+
+            provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+            val hints = provider.provideInlayHints(params)
+
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertEquals(1, paramHints.size, "Should have 1 parameter hint from workspace symbols")
+            assertEquals("name:", paramHints[0].label.left as String)
+        }
+
+        @Test
+        fun `should not use unrelated same-file classes for constructor hints`() {
+            val fooUri = URI.create("file:///test/Target.groovy")
+            val fooCode = """
+                class Target {
+                    Target(String name) {}
+                }
+            """.trimIndent()
+            val callCode = """
+                class Other {
+                    Other(int count) {}
+                }
+                new Target("hi")
+            """.trimIndent()
+
+            val parser = GroovyParserFacade()
+            val fooResult = parser.parse(ParseRequest(fooUri, fooCode))
+            val callResult = parser.parse(ParseRequest(testUri, callCode))
+            val workspaceIndex = SymbolIndex().buildFromVisitor(fooResult.astModel)
+
+            every { compilationService.getAstModel(testUri) } returns callResult.astModel
+            every { compilationService.getAllSymbolStorages() } returns mapOf(fooUri to workspaceIndex)
+
+            provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+            val hints = provider.provideInlayHints(params)
+
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertEquals(1, paramHints.size, "Should have 1 constructor hint from workspace symbols")
+            assertEquals("name:", paramHints[0].label.left as String)
+        }
+
+        @Test
         fun `should select overload by argument types when multiple matches exist`() {
             val fooUri = URI.create("file:///test/Foo.groovy")
             val fooCode = """

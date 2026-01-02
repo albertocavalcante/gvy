@@ -342,9 +342,21 @@ class GroovyCompilationService(
     }
 
     fun getAllSymbolStorages(): Map<URI, SymbolIndex> {
-        val allStorages = mutableMapOf<URI, SymbolIndex>()
-        symbolStorageCache.snapshot().forEach { (uri, index) -> allStorages[uri] = index }
-        workspaceSymbolIndex.forEach { (uri, index) -> allStorages[uri] = index }
+        val cacheSnapshot = symbolStorageCache.snapshot()
+        val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
+        val allStorages = cacheSnapshot.toMutableMap()
+
+        workspaceSnapshot.forEach { (uri, index) ->
+            val existing = allStorages[uri]
+            if (existing != null && existing !== index) {
+                logger.warn(
+                    "Duplicate SymbolIndex for {} found in cache and workspace index. Using workspace index value.",
+                    uri,
+                )
+            }
+            allStorages[uri] = index
+        }
+
         return allStorages
     }
 

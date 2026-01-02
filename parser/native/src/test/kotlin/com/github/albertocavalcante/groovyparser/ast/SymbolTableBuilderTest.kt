@@ -7,6 +7,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import java.net.URI
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 class SymbolTableBuilderTest {
@@ -39,6 +40,9 @@ class SymbolTableBuilderTest {
         }
 
         assertNotNull(symbolTable.registry.findClassDeclaration(uri, "Exploding"))
+        val stats = symbolTable.registry.getStatistics()
+        assertEquals(1, stats["classes"])
+        assertEquals(0, stats["fields"])
     }
 
     private class ExplodingClassNode(name: String) : ClassNode(name, 0, ClassHelper.OBJECT_TYPE) {
