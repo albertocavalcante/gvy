@@ -11,14 +11,16 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.name
 
 class PluginDownloaderTest {
 
     @Test
-    fun `download fetches plugin from releases`() = runTest {
+    fun `download fetches plugin from releases`(@TempDir cacheDir: Path) = runTest {
         val mockEngine = MockEngine { request ->
             respond(
                 content = ByteReadChannel("mock-content"),
@@ -27,15 +29,12 @@ class PluginDownloaderTest {
             )
         }
         val client = HttpClient(mockEngine)
-        val cacheDir = Files.createTempDirectory("plugins")
+        client.use {
+            val downloader = PluginDownloader(cacheDir, it)
+            val path = downloader.download("workflow-basic-steps", "2.18")
 
-        // This will fail compilation initially as the constructor expects java.net.http.HttpClient
-        val downloader = PluginDownloader(cacheDir, client)
-
-        // This will also fail as download is not suspend yet
-        val path = downloader.download("workflow-basic-steps", "2.18")
-
-        assertTrue(path.exists())
-        assertEquals("workflow-basic-steps-2.18.hpi", path.name)
+            assertTrue(path.exists())
+            assertEquals("workflow-basic-steps-2.18.hpi", path.name)
+        }
     }
 }
