@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -55,8 +56,7 @@ class CheckCommand : CliktCommand(name = "check") {
         val ws = workspace ?: return
 
         val params = InitializeParams().apply {
-            @Suppress("DEPRECATION")
-            rootUri = ws.toURI().toString()
+            workspaceFolders = listOf(WorkspaceFolder(ws.toURI().toString(), ws.name))
             capabilities = ClientCapabilities()
         }
 
