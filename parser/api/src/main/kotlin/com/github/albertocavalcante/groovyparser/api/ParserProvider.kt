@@ -43,6 +43,7 @@ interface ParserProvider {
      *
      * @param path The path to the Groovy file
      * @return A ParseUnit representing the parsed file
+     * @throws java.io.IOException if an I/O error occurs reading from the file
      */
     fun parseFile(path: Path): ParseUnit {
         val source = path.toFile().readText()

@@ -15,7 +15,10 @@ data class Position(
     }
 
     companion object {
+        /** A sentinel value representing an invalid or uninitialized position. */
         val ZERO = Position(0, 0)
+
+        /** The starting position in a file (line 1, column 1). */
         val START = Position(1, 1)
     }
 }

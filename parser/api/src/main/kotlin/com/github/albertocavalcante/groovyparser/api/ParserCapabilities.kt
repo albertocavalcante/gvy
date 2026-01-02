@@ -46,7 +46,6 @@ data class ParserCapabilities(
             supportsCommentPreservation = true,
             supportsSymbolResolution = true,
             supportsRefactoring = true,
-            supportsPositionTracking = true,
         )
     }
 }
