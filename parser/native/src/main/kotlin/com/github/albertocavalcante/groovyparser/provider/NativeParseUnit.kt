@@ -57,7 +57,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
                 add(
                     SymbolInfo(
                         name = classNode.nameWithoutPackage,
-                        kind = SymbolKind.CLASS,
+                        kind = if (classNode.isInterface) SymbolKind.INTERFACE else SymbolKind.CLASS,
                         range = extractNodeRange(classNode),
                         containerName = ast.packageName,
                     ),
