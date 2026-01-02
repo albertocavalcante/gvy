@@ -64,6 +64,9 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
 
     override fun visitDocumentStart(path: String, content: String) {
         val fileUri = java.io.File(projectRoot, path).toURI().toString()
+        // Note: we intentionally do not set a "contents" field here. If desired, the file contents
+        // could be embedded (for example, as Base64-encoded text) in the LSIF index, but this
+        // implementation omits them to keep the index smaller and avoid duplicating source files.
         val docId = emitVertex("document") {
             put("uri", fileUri)
             put("languageId", "groovy")
