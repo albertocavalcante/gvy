@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.engine.adapters
 
+import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParseResult
+import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import com.github.albertocavalcante.groovyparser.Problem
 import com.github.albertocavalcante.groovyparser.ProblemSeverity
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
@@ -9,6 +11,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import com.github.albertocavalcante.groovyparser.Position as CorePosition
@@ -175,5 +178,26 @@ class CoreParserAdapterTest {
         val symbols = adapter.allSymbols()
 
         assertEquals(0, symbols.size)
+    }
+
+    @Test
+    fun `nodeAt finds nodes beyond the first line`() {
+        val code = """
+            def hello = "hello"
+            def sum(a, b) {
+                a + b
+            }
+            def main() {
+                sum(1, 2)
+            }
+        """.trimIndent()
+
+        val parser = GroovyParser(ParserConfiguration())
+        val result = parser.parse(code)
+
+        val adapter = CoreParserAdapter(result, "file:///test.groovy")
+
+        val node = adapter.nodeAt(Position(4, 4)) // On "main"
+        assertNotNull(node, "Expected node at method declaration")
     }
 }

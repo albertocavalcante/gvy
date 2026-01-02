@@ -13,7 +13,6 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
-import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
@@ -171,11 +170,6 @@ class InlayHintsProvider(
 
             val paramName = parameterNames[index]
 
-            // Skip if argument name matches parameter name (no useful info)
-            if (isSameNameAsArgument(arg, paramName)) {
-                return@forEachIndexed
-            }
-
             // Skip if argument is a closure (they provide their own context)
             if (arg is ClosureExpression) {
                 return@forEachIndexed
@@ -223,10 +217,6 @@ class InlayHintsProvider(
 
             val paramName = parameterNames[index]
 
-            if (isSameNameAsArgument(arg, paramName)) {
-                return@forEachIndexed
-            }
-
             if (arg is ClosureExpression) {
                 return@forEachIndexed
             }
@@ -242,24 +232,6 @@ class InlayHintsProvider(
                     paddingRight = true
                 },
             )
-        }
-    }
-
-    /**
-     * Check if the argument expression has the same name as the parameter.
-     *
-     * This follows eclipse.jdt.ls pattern of suppressing hints when they're redundant.
-     */
-    private fun isSameNameAsArgument(arg: Expression, paramName: String): Boolean {
-        return when (arg) {
-            is VariableExpression -> arg.name == paramName
-            is ConstantExpression -> {
-                // For string literals that look like the parameter name
-                val text = arg.value?.toString() ?: return false
-                text == paramName
-            }
-
-            else -> false
         }
     }
 
@@ -462,6 +434,8 @@ class InlayHintsProvider(
         isStaticCall: Boolean,
     ): List<CallableSignature> {
         val normalizedReceiverType = receiverType?.let { normalizeTypeName(it) } ?: return emptyList()
+        // TODO(#581): Resolve synthetic parameter names via JDK source indexing for deterministic hints.
+        //   See: https://github.com/albertocavalcante/gvy/issues/581
         return compilationService.classpathService.getMethods(normalizedReceiverType)
             .filter { it.name == methodName && it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
