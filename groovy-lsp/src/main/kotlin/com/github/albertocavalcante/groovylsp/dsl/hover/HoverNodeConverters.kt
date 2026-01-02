@@ -1,10 +1,12 @@
 package com.github.albertocavalcante.groovylsp.dsl.hover
 
+import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownContent
+import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
-import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -25,6 +27,8 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
+import org.eclipse.lsp4j.MarkupContent
+import org.eclipse.lsp4j.MarkupKind
 
 /**
  * Extension functions for formatting specific AST node types
@@ -34,24 +38,24 @@ import org.eclipse.lsp4j.Hover
  * Format a VariableExpression for hover.
  * Uses TypeInferencer when the declared type is dynamic (def).
  */
-fun VariableExpression.toHoverContent(): HoverContent.Code {
+fun VariableExpression.toMarkdownContent(): MarkdownContent.Code {
     val displayType = if (type.isDynamic()) {
         // For def variables, show "def" as the type
         "def"
     } else {
         type.nameWithoutPackage
     }
-    return HoverContent.Code("$displayType $name")
+    return MarkdownContent.Code("$displayType $name")
 }
 
 /**
  * Format a MethodNode for hover
  */
-fun MethodNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun MethodNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Method",
     content = listOf(
-        HoverContent.Code(signature()),
-        HoverContent.KeyValue(
+        MarkdownContent.Code(signature()),
+        MarkdownContent.KeyValue(
             listOf(
                 "Return Type" to (returnType?.nameWithoutPackage ?: "def"),
                 "Modifiers" to modifiersString(),
@@ -64,25 +68,25 @@ fun MethodNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a ClassNode for hover
  */
-fun ClassNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun ClassNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Class",
     content = buildList {
-        add(HoverContent.Code(classSignature()))
+        add(MarkdownContent.Code(classSignature()))
 
         if (methods.isNotEmpty()) {
             add(
-                HoverContent.Section(
+                MarkdownContent.Section(
                     "Methods",
-                    listOf(HoverContent.List(methods.map { "${it.name}(${it.parametersString()})" })),
+                    listOf(MarkdownContent.List(methods.map { "${it.name}(${it.parametersString()})" })),
                 ),
             )
         }
 
         if (fields.isNotEmpty()) {
             add(
-                HoverContent.Section(
+                MarkdownContent.Section(
                     "Fields",
-                    listOf(HoverContent.List(fields.map { "${it.type.nameWithoutPackage} ${it.name}" })),
+                    listOf(MarkdownContent.List(fields.map { "${it.type.nameWithoutPackage} ${it.name}" })),
                 ),
             )
         }
@@ -92,11 +96,11 @@ fun ClassNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a FieldNode for hover
  */
-fun FieldNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun FieldNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Field",
     content = listOf(
-        HoverContent.Code("${type.nameWithoutPackage} $name"),
-        HoverContent.KeyValue(
+        MarkdownContent.Code("${type.nameWithoutPackage} $name"),
+        MarkdownContent.KeyValue(
             listOf(
                 "Type" to type.nameWithoutPackage,
                 "Modifiers" to modifiersString(),
@@ -110,11 +114,11 @@ fun FieldNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a PropertyNode for hover
  */
-fun PropertyNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun PropertyNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Property",
     content = listOf(
-        HoverContent.Code("${type.nameWithoutPackage} $name"),
-        HoverContent.KeyValue(
+        MarkdownContent.Code("${type.nameWithoutPackage} $name"),
+        MarkdownContent.KeyValue(
             listOf(
                 "Type" to type.nameWithoutPackage,
                 "Modifiers" to modifiersString(),
@@ -129,12 +133,12 @@ fun PropertyNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a Parameter for hover
  */
-fun Parameter.toHoverContent(): HoverContent.Code = HoverContent.Code("${type.nameWithoutPackage} $name")
+fun Parameter.toMarkdownContent(): MarkdownContent.Code = MarkdownContent.Code("${type.nameWithoutPackage} $name")
 
 /**
  * Format a MethodCallExpression for hover
  */
-fun MethodCallExpression.toHoverContent(): HoverContent {
+fun MethodCallExpression.toMarkdownContent(): MarkdownContent {
     val methodName = displayMethodName()
     val receiver = displayReceiver()
     val arguments = displayArguments()
@@ -153,11 +157,11 @@ fun MethodCallExpression.toHoverContent(): HoverContent {
 
     val argumentSummary = arguments.ifBlank { "none" }
 
-    return HoverContent.Section(
+    return MarkdownContent.Section(
         title = "Method Call",
         content = listOf(
-            HoverContent.Code(signature),
-            HoverContent.KeyValue(
+            MarkdownContent.Code(signature),
+            MarkdownContent.KeyValue(
                 listOf(
                     "Method" to methodName,
                     "Receiver" to receiver,
@@ -171,14 +175,15 @@ fun MethodCallExpression.toHoverContent(): HoverContent {
 /**
  * Format a BinaryExpression for hover
  */
-fun BinaryExpression.toHoverContent(): HoverContent = when (operation.text) {
-    "=" -> HoverContent.Section(
+fun BinaryExpression.toMarkdownContent(): MarkdownContent = when (operation.text) {
+    "=" -> MarkdownContent.Section(
         "Assignment",
-        listOf(HoverContent.Code("$leftExpression = $rightExpression")),
+        listOf(MarkdownContent.Code("$leftExpression = $rightExpression")),
     )
-    else -> HoverContent.Section(
+
+    else -> MarkdownContent.Section(
         "Binary Expression",
-        listOf(HoverContent.Code("$leftExpression ${operation.text} $rightExpression")),
+        listOf(MarkdownContent.Code("$leftExpression ${operation.text} $rightExpression")),
     )
 }
 
@@ -186,7 +191,7 @@ fun BinaryExpression.toHoverContent(): HoverContent = when (operation.text) {
  * Format a DeclarationExpression for hover.
  * Uses TypeInferencer to infer the type for def variables.
  */
-fun DeclarationExpression.toHoverContent(): HoverContent {
+fun DeclarationExpression.toMarkdownContent(): MarkdownContent {
     val varExpr = leftExpression as? VariableExpression
     val name = varExpr?.name ?: "unknown"
 
@@ -194,11 +199,11 @@ fun DeclarationExpression.toHoverContent(): HoverContent {
     val inferredType = TypeInferencer.inferType(this)
     val displayType = inferredType.substringAfterLast('.')
 
-    return HoverContent.Section(
+    return MarkdownContent.Section(
         "Variable Declaration",
         listOf(
-            HoverContent.Code("$displayType $name"),
-            HoverContent.KeyValue(
+            MarkdownContent.Code("$displayType $name"),
+            MarkdownContent.KeyValue(
                 listOf(
                     "Inferred Type" to inferredType,
                     "Name" to name,
@@ -212,11 +217,11 @@ fun DeclarationExpression.toHoverContent(): HoverContent {
 /**
  * Format a ClosureExpression for hover
  */
-fun ClosureExpression.toHoverContent(): HoverContent = HoverContent.Section(
+fun ClosureExpression.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Closure",
     content = listOf(
-        HoverContent.Code("{ ${parametersString()} -> ... }"),
-        HoverContent.KeyValue(
+        MarkdownContent.Code("{ ${parametersString()} -> ... }"),
+        MarkdownContent.KeyValue(
             listOf(
                 "Parameters" to parametersString(),
                 "Variables in Scope" to variableScope.declaredVariables.keys.joinToString(", "),
@@ -228,7 +233,7 @@ fun ClosureExpression.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a ConstantExpression for hover
  */
-fun ConstantExpression.toHoverContent(): HoverContent {
+fun ConstantExpression.toMarkdownContent(): MarkdownContent {
     val typeDescription = when (type.name) {
         "java.lang.String" -> "String literal"
         "java.lang.Integer", "int" -> "Integer literal"
@@ -237,11 +242,11 @@ fun ConstantExpression.toHoverContent(): HoverContent {
         else -> "Constant"
     }
 
-    return HoverContent.Section(
+    return MarkdownContent.Section(
         typeDescription,
         listOf(
-            HoverContent.Code(text),
-            HoverContent.KeyValue(
+            MarkdownContent.Code(text),
+            MarkdownContent.KeyValue(
                 listOf(
                     "Type" to type.nameWithoutPackage,
                     "Value" to text,
@@ -254,11 +259,11 @@ fun ConstantExpression.toHoverContent(): HoverContent {
 /**
  * Format a GStringExpression for hover
  */
-fun GStringExpression.toHoverContent(): HoverContent = HoverContent.Section(
+fun GStringExpression.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "GString",
     content = listOf(
-        HoverContent.Code(text),
-        HoverContent.KeyValue(
+        MarkdownContent.Code(text),
+        MarkdownContent.KeyValue(
             listOf(
                 "Type" to "GString",
                 "Template" to text,
@@ -271,11 +276,11 @@ fun GStringExpression.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format an ImportNode for hover
  */
-fun ImportNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun ImportNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Import",
     content = listOf(
-        HoverContent.Code(formatImport()),
-        HoverContent.KeyValue(
+        MarkdownContent.Code(formatImport()),
+        MarkdownContent.KeyValue(
             listOf(
                 "Class" to className,
                 "Alias" to (alias ?: "none"),
@@ -289,21 +294,21 @@ fun ImportNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Format a PackageNode for hover
  */
-fun PackageNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun PackageNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Package",
     content = listOf(
-        HoverContent.Code("package $name"),
+        MarkdownContent.Code("package $name"),
     ),
 )
 
 /**
  * Format an AnnotationNode for hover
  */
-fun AnnotationNode.toHoverContent(): HoverContent = HoverContent.Section(
+fun AnnotationNode.toMarkdownContent(): MarkdownContent = MarkdownContent.Section(
     title = "Annotation",
     content = listOf(
-        HoverContent.Code("@${classNode.nameWithoutPackage}"),
-        HoverContent.KeyValue(
+        MarkdownContent.Code("@${classNode.nameWithoutPackage}"),
+        MarkdownContent.KeyValue(
             listOf(
                 "Type" to classNode.nameWithoutPackage,
                 "Members" to (members?.size?.toString() ?: "0"),
@@ -315,7 +320,7 @@ fun AnnotationNode.toHoverContent(): HoverContent = HoverContent.Section(
 /**
  * Generic formatter that dispatches to specific formatters
  */
-fun ASTNode.toHoverContent(): HoverContent = when {
+fun ASTNode.toMarkdownContent(): MarkdownContent = when {
     // Declarations and definitions
     isDeclarationNode() -> formatDeclarationNode()
     // Expressions
@@ -323,11 +328,11 @@ fun ASTNode.toHoverContent(): HoverContent = when {
     // Annotations and imports
     isMetadataNode() -> formatMetadataNode()
     // Default fallback
-    else -> HoverContent.Section(
+    else -> MarkdownContent.Section(
         "AST Node",
         listOf(
-            HoverContent.Text("${this::class.java.simpleName}"),
-            HoverContent.Code(toString()),
+            MarkdownContent.Text("${this::class.java.simpleName}"),
+            MarkdownContent.Code(toString()),
         ),
     )
 }
@@ -336,39 +341,39 @@ fun ASTNode.toHoverContent(): HoverContent = when {
  * Helper functions for node categorization and formatting
  */
 private fun ASTNode.isDeclarationNode(): Boolean = this is MethodNode || this is ClassNode ||
-    this is FieldNode || this is PropertyNode || this is Parameter
+        this is FieldNode || this is PropertyNode || this is Parameter
 
 private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
-    this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
-    this is ConstantExpression || this is GStringExpression
+        this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
+        this is ConstantExpression || this is GStringExpression
 
 private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
 
-private fun ASTNode.formatDeclarationNode(): HoverContent = when (this) {
-    is MethodNode -> toHoverContent()
-    is ClassNode -> toHoverContent()
-    is FieldNode -> toHoverContent()
-    is PropertyNode -> toHoverContent()
-    is Parameter -> toHoverContent()
-    else -> HoverContent.Text("Unknown declaration")
+private fun ASTNode.formatDeclarationNode(): MarkdownContent = when (this) {
+    is MethodNode -> toMarkdownContent()
+    is ClassNode -> toMarkdownContent()
+    is FieldNode -> toMarkdownContent()
+    is PropertyNode -> toMarkdownContent()
+    is Parameter -> toMarkdownContent()
+    else -> MarkdownContent.Text("Unknown declaration")
 }
 
-private fun ASTNode.formatExpressionNode(): HoverContent = when (this) {
-    is VariableExpression -> toHoverContent()
-    is MethodCallExpression -> toHoverContent()
-    is BinaryExpression -> toHoverContent()
-    is DeclarationExpression -> toHoverContent()
-    is ClosureExpression -> toHoverContent()
-    is ConstantExpression -> toHoverContent()
-    is GStringExpression -> toHoverContent()
-    else -> HoverContent.Text("Unknown expression")
+private fun ASTNode.formatExpressionNode(): MarkdownContent = when (this) {
+    is VariableExpression -> toMarkdownContent()
+    is MethodCallExpression -> toMarkdownContent()
+    is BinaryExpression -> toMarkdownContent()
+    is DeclarationExpression -> toMarkdownContent()
+    is ClosureExpression -> toMarkdownContent()
+    is ConstantExpression -> toMarkdownContent()
+    is GStringExpression -> toMarkdownContent()
+    else -> MarkdownContent.Text("Unknown expression")
 }
 
-private fun ASTNode.formatMetadataNode(): HoverContent = when (this) {
-    is ImportNode -> toHoverContent()
-    is PackageNode -> toHoverContent()
-    is AnnotationNode -> toHoverContent()
-    else -> HoverContent.Text("Unknown metadata")
+private fun ASTNode.formatMetadataNode(): MarkdownContent = when (this) {
+    is ImportNode -> toMarkdownContent()
+    is PackageNode -> toMarkdownContent()
+    is AnnotationNode -> toMarkdownContent()
+    else -> MarkdownContent.Text("Unknown metadata")
 }
 
 /**
@@ -486,26 +491,43 @@ private fun ASTNode.modifiersString(): String = buildString {
 }
 
 /**
+ * Bridge function to build LSP Hover from Markdown DSL
+ */
+private fun buildHover(block: MarkdownBuilder.() -> Unit): Hover {
+    val content = markdown(block)
+    val markupContent = MarkupContent().apply {
+        kind = MarkupKind.MARKDOWN
+        value = content
+    }
+    return Hover().apply {
+        contents = org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(markupContent)
+    }
+}
+
+/**
  * Main entry point for creating hover from any AST node
  */
-fun createHoverFor(node: ASTNode): GroovyParserResult<Hover> = hover {
-    when (val nodeContent = node.toHoverContent()) {
-        is HoverContent.Text -> text(nodeContent.value)
-        is HoverContent.Code -> code(nodeContent.language, nodeContent.value)
-        is HoverContent.Markdown -> markdown(nodeContent.value)
-        is HoverContent.Section -> section(nodeContent.title) {
-            nodeContent.content.forEach { item: HoverContent ->
-                when (item) {
-                    is HoverContent.Text -> text(item.value)
-                    is HoverContent.Code -> code(item.language, item.value)
-                    is HoverContent.Markdown -> markdown(item.value)
-                    is HoverContent.List -> list(item.items)
-                    is HoverContent.KeyValue -> keyValue(item.pairs)
-                    else -> {}
+fun createHoverFor(node: ASTNode): GroovyParserResult<Hover> = toGroovyParserResult {
+    buildHover {
+        when (val nodeContent = node.toMarkdownContent()) {
+            is MarkdownContent.Text -> text(nodeContent.value)
+            is MarkdownContent.Code -> code(nodeContent.language, nodeContent.value)
+            is MarkdownContent.Markdown -> markdown(nodeContent.value)
+            is MarkdownContent.Section -> section(nodeContent.title) {
+                nodeContent.content.forEach { item: MarkdownContent ->
+                    when (item) {
+                        is MarkdownContent.Text -> text(item.value)
+                        is MarkdownContent.Code -> code(item.language, item.value)
+                        is MarkdownContent.Markdown -> markdown(item.value)
+                        is MarkdownContent.List -> list(item.items)
+                        is MarkdownContent.KeyValue -> keyValue(item.pairs)
+                        else -> {}
+                    }
                 }
             }
+
+            is MarkdownContent.List -> list(nodeContent.items)
+            is MarkdownContent.KeyValue -> keyValue(nodeContent.pairs)
         }
-        is HoverContent.List -> list(nodeContent.items)
-        is HoverContent.KeyValue -> keyValue(nodeContent.pairs)
     }
-}.toGroovyParserResult()
+}

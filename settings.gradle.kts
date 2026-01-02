@@ -14,6 +14,7 @@ dependencyResolutionManagement {
 rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
+include("markdown")
 // TODO(#524): Restructure parser modules under parser/ folder.
 //   See: https://github.com/albertocavalcante/gvy/issues/524
 include("groovy-parser")

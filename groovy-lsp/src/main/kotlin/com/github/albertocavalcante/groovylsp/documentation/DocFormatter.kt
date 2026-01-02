@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
+import org.slf4j.LoggerFactory
+
 /**
  * Formats documentation into markdown suitable for hover display.
  */
@@ -18,55 +21,49 @@ object DocFormatter {
             return ""
         }
 
-        val parts = mutableListOf<String>()
-
-        // Add summary and description
-        if (doc.summary.isNotBlank()) {
-            parts.add(doc.summary)
-        }
-
-        if (doc.description.isNotBlank() && doc.description != doc.summary) {
-            parts.add(doc.description)
-        }
-
-        // Add deprecated notice
-        if (doc.deprecated.isNotBlank()) {
-            parts.add("**Deprecated**: ${doc.deprecated}")
-        }
-
-        // Add parameters
-        if (includeParams && doc.params.isNotEmpty()) {
-            val paramDocs = doc.params.entries.joinToString("\n") { (name, desc) ->
-                "- `$name`: $desc"
+        return markdown {
+            // Add summary and description
+            if (doc.summary.isNotBlank()) {
+                text(doc.summary)
             }
-            parts.add("**Parameters:**\n$paramDocs")
-        }
 
-        // Add return documentation
-        if (includeReturn && doc.returnDoc.isNotBlank()) {
-            parts.add("**Returns:** ${doc.returnDoc}")
-        }
-
-        // Add throws/exceptions
-        if (doc.throws.isNotEmpty()) {
-            val throwsDocs = doc.throws.entries.joinToString("\n") { (exception, desc) ->
-                "- `$exception`: $desc"
+            if (doc.description.isNotBlank() && doc.description != doc.summary) {
+                text(doc.description)
             }
-            parts.add("**Throws:**\n$throwsDocs")
-        }
 
-        // Add since
-        if (doc.since.isNotBlank()) {
-            parts.add("**Since:** ${doc.since}")
-        }
+            // Add deprecated notice
+            if (doc.deprecated.isNotBlank()) {
+                text("**Deprecated**: ${doc.deprecated}")
+            }
 
-        // Add see references
-        if (doc.see.isNotEmpty()) {
-            val seeDocs = doc.see.joinToString("\n") { "- $it" }
-            parts.add("**See:**\n$seeDocs")
-        }
+            // Add parameters
+            if (includeParams && doc.params.isNotEmpty()) {
+                text("**Parameters:**")
+                list(doc.params.entries.map { (name, desc) -> "`$name`: $desc" })
+            }
 
-        return parts.joinToString("\n\n")
+            // Add return documentation
+            if (includeReturn && doc.returnDoc.isNotBlank()) {
+                text("**Returns:** ${doc.returnDoc}")
+            }
+
+            // Add throws/exceptions
+            if (doc.throws.isNotEmpty()) {
+                text("**Throws:**")
+                list(doc.throws.entries.map { (exception, desc) -> "`$exception`: $desc" })
+            }
+
+            // Add since
+            if (doc.since.isNotBlank()) {
+                text("**Since:** ${doc.since}")
+            }
+
+            // Add see references
+            if (doc.see.isNotEmpty()) {
+                text("**See:**")
+                list(doc.see)
+            }
+        }
     }
 
     /**
@@ -81,6 +78,7 @@ object DocFormatter {
             // Take first sentence of description
             doc.description.split(Regex("""[.?!]\s+""")).firstOrNull()?.trim() ?: doc.description
         }
+
         else -> ""
     }
 
