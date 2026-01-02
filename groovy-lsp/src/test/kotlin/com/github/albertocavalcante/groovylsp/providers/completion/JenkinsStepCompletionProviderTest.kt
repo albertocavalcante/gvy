@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import com.github.albertocavalcante.groovyjenkins.metadata.MergedDeclarativeOption
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedParameter
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
@@ -64,6 +65,34 @@ class JenkinsStepCompletionProviderTest {
             globalVariables = emptyMap(),
             sections = emptyMap(),
             directives = emptyMap(),
+        )
+    }
+
+    private fun createOptionMetadata(): MergedJenkinsMetadata {
+        val disableConcurrentBuilds = MergedDeclarativeOption(
+            name = "disableConcurrentBuilds",
+            plugin = "workflow-job",
+            parameters = mapOf(
+                "abortPrevious" to MergedParameter(
+                    name = "abortPrevious",
+                    type = "boolean",
+                    defaultValue = "false",
+                    description = "Abort any currently running builds when a new one starts",
+                    required = false,
+                    validValues = null,
+                    examples = emptyList(),
+                ),
+            ),
+            documentation = "Disallow concurrent executions of the Pipeline.",
+        )
+
+        return MergedJenkinsMetadata(
+            jenkinsVersion = "2.426.3",
+            steps = emptyMap(),
+            globalVariables = emptyMap(),
+            sections = emptyMap(),
+            directives = emptyMap(),
+            declarativeOptions = mapOf("disableConcurrentBuilds" to disableConcurrentBuilds),
         )
     }
 
@@ -158,5 +187,44 @@ class JenkinsStepCompletionProviderTest {
         // But other params should still be present
         val returnStdoutCompletion = completions.find { it.label == "returnStdout:" }
         assertNotNull(returnStdoutCompletion, "returnStdout should still be present")
+    }
+
+    @Test
+    fun `declarative option parameters should be suggested when step is missing`() {
+        val metadata = createOptionMetadata()
+        val completions = JenkinsStepCompletionProvider.getParameterCompletions(
+            stepName = "disableConcurrentBuilds",
+            existingKeys = emptySet(),
+            metadata = metadata,
+        )
+
+        val abortPrevious = completions.find { it.label == "abortPrevious:" }
+        assertNotNull(abortPrevious, "Should have abortPrevious parameter for disableConcurrentBuilds")
+        assertEquals("boolean", abortPrevious.detail)
+    }
+
+    @Test
+    fun `declarative option parameters should filter existing keys`() {
+        val metadata = createOptionMetadata()
+        val completions = JenkinsStepCompletionProvider.getParameterCompletions(
+            stepName = "disableConcurrentBuilds",
+            existingKeys = setOf("abortPrevious"),
+            metadata = metadata,
+        )
+
+        val abortPrevious = completions.find { it.label == "abortPrevious:" }
+        assertEquals(null, abortPrevious, "abortPrevious should be filtered out when already present")
+    }
+
+    @Test
+    fun `parameter completions should be empty for unknown step or option`() {
+        val metadata = createOptionMetadata()
+        val completions = JenkinsStepCompletionProvider.getParameterCompletions(
+            stepName = "unknownStep",
+            existingKeys = emptySet(),
+            metadata = metadata,
+        )
+
+        assertTrue(completions.isEmpty(), "Unknown step/option should return no completions")
     }
 }

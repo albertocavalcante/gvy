@@ -25,6 +25,7 @@ data class MergedJenkinsMetadata(
     val globalVariables: Map<String, MergedGlobalVariable>,
     val sections: Map<String, SectionEnrichment>,
     val directives: Map<String, DirectiveEnrichment>,
+    val declarativeOptions: Map<String, MergedDeclarativeOption> = emptyMap(),
 ) {
     /**
      * Retrieve step metadata by name.
@@ -37,6 +38,12 @@ data class MergedJenkinsMetadata(
      * @return The variable metadata, or null if not found
      */
     fun getGlobalVariable(name: String): MergedGlobalVariable? = globalVariables[name]
+
+    /**
+     * Retrieve declarative option metadata by name.
+     * @return The option metadata, or null if not found
+     */
+    fun getDeclarativeOption(name: String): MergedDeclarativeOption? = declarativeOptions[name]
 }
 
 /**
@@ -82,6 +89,16 @@ data class MergedParameter(
     val required: Boolean = false, // Default to false if enrichment doesn't specify
     val validValues: List<String>?,
     val examples: List<String>,
+)
+
+/**
+ * Merged metadata for declarative pipeline options (e.g., disableConcurrentBuilds).
+ */
+data class MergedDeclarativeOption(
+    val name: String,
+    val plugin: String,
+    val parameters: Map<String, MergedParameter>,
+    val documentation: String?,
 )
 
 /**
