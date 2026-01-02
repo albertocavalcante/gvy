@@ -78,3 +78,32 @@ fun extractSymbolName(value: Any?): String? = when (value) {
         str?.takeIf { it.isNotBlank() && !it.contains("@") }
     }
 }
+
+/**
+ * Formats a fully qualified type name to a more readable simple form.
+ *
+ * Handles both simple types and generic types with type parameters.
+ *
+ * Examples:
+ * - `"java.lang.String"` → `"String"`
+ * - `"java.util.ArrayList<java.lang.Integer>"` → `"ArrayList<Integer>"`
+ * - `"java.util.Map<java.lang.String, java.lang.Object>"` → `"Map<String, Object>"`
+ * - `"String"` → `"String"` (already simple)
+ * - `""` → `""`
+ *
+ * @return The simplified type name with package names removed
+ */
+fun String.formatTypeName(): String {
+    if (isEmpty()) return this
+
+    return if (contains('<')) {
+        val baseName = substringBefore('<').simpleClassName()
+        val typeParams = substringAfter('<').substringBeforeLast('>')
+        val formattedParams = typeParams.split(',').joinToString(", ") {
+            it.trim().formatTypeName() // Recursive for nested generics
+        }
+        "$baseName<$formattedParams>"
+    } else {
+        simpleClassName()
+    }
+}

@@ -218,13 +218,14 @@ Before executing any code changes:
 For size/XS-M issues:
 
 1. Create worktree (if not already done)
-2. Implement all changes
-3. Run verification commands
-4. **Git Safety Check**:
+2. **Run `direnv allow`** in the worktree to load environment variables (JAVA_HOME, etc.)
+3. Implement all changes
+4. Run verification commands
+5. **Git Safety Check**:
    - Run `git add <files>`
    - Run `git status` to verify changes
    - ONLY then run `git commit`
-5. Push and create PR
+6. Push and create PR
 
 ### 6.2 Multi-Phase Execution
 
