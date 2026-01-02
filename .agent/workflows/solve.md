@@ -92,11 +92,11 @@ Document your assessment:
 ### 3.1 Locate Affected Code
 
 ```bash
-# Find files mentioned in issue or comments
-grep -r "pattern_from_issue" --include="*.kt" -l
+# Find files mentioned in issue or comments (replace <EXTENSION> as needed, e.g., kt, groovy)
+grep -r "pattern_from_issue" --include="*.<EXTENSION>" -l
 
-# Find related tests
-find . -path "*/test/*" -name "*RelatedFeature*Test.kt"
+# Find related tests (replace <EXTENSION> as needed)
+find . -path "*/test/*" -name "*RelatedFeature*Test.<EXTENSION>"
 ```
 
 ### 3.2 Understand Current Implementation
@@ -186,7 +186,7 @@ For large issues, create atomic phases that can be executed independently:
 
 Before executing any code changes:
 
-1. **Write Plan to Artifact**: Save implementation plan to `/implementation_plan.md`
+1. **Write Plan to Artifact**: Save implementation plan to `.agent/out/implementation_plan.md`
 2. **Request Review**: Use `notify_user` with `PathsToReview` pointing to the plan
 3. **Wait for Approval**: Do NOT proceed until user approves or provides feedback
 4. **Iterate if Needed**: Update plan based on feedback, re-request review
@@ -259,8 +259,9 @@ If the change affects user-facing behavior:
 ### 8.1 Create PR
 
 ```bash
-gh pr create --title "<type>(<scope>): <description>" \
-  --body "Fixes #<ISSUE_NUMBER>
+PR_BODY_FILE=$(mktemp)
+cat > "$PR_BODY_FILE" <<EOF
+Fixes #<ISSUE_NUMBER>
 
 ## Summary
 [Brief description]
@@ -270,8 +271,12 @@ gh pr create --title "<type>(<scope>): <description>" \
 
 ## Testing
 - [How it was tested]
-" \
+EOF
+
+gh pr create --title "<type>(<scope>): <description>" \
+  --body-file "$PR_BODY_FILE" \
   --label "<appropriate-labels>"
+rm "$PR_BODY_FILE"
 ```
 
 ### 8.2 Link to Issue
