@@ -1,12 +1,13 @@
 package com.github.albertocavalcante.groovylsp.dsl.hover
 
-import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownContent
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
+import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownContent
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -29,6 +30,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 /**
  * Extension functions for formatting specific AST node types
@@ -341,11 +343,11 @@ fun ASTNode.toMarkdownContent(): MarkdownContent = when {
  * Helper functions for node categorization and formatting
  */
 private fun ASTNode.isDeclarationNode(): Boolean = this is MethodNode || this is ClassNode ||
-        this is FieldNode || this is PropertyNode || this is Parameter
+    this is FieldNode || this is PropertyNode || this is Parameter
 
 private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
-        this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
-        this is ConstantExpression || this is GStringExpression
+    this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
+    this is ConstantExpression || this is GStringExpression
 
 private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
 
@@ -500,34 +502,30 @@ private fun buildHover(block: MarkdownBuilder.() -> Unit): Hover {
         value = content
     }
     return Hover().apply {
-        contents = org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(markupContent)
+        contents = Either.forRight(markupContent)
     }
 }
 
 /**
  * Main entry point for creating hover from any AST node
  */
-fun createHoverFor(node: ASTNode): GroovyParserResult<Hover> = toGroovyParserResult {
-    buildHover {
-        when (val nodeContent = node.toMarkdownContent()) {
-            is MarkdownContent.Text -> text(nodeContent.value)
-            is MarkdownContent.Code -> code(nodeContent.language, nodeContent.value)
-            is MarkdownContent.Markdown -> markdown(nodeContent.value)
-            is MarkdownContent.Section -> section(nodeContent.title) {
-                nodeContent.content.forEach { item: MarkdownContent ->
-                    when (item) {
-                        is MarkdownContent.Text -> text(item.value)
-                        is MarkdownContent.Code -> code(item.language, item.value)
-                        is MarkdownContent.Markdown -> markdown(item.value)
-                        is MarkdownContent.List -> list(item.items)
-                        is MarkdownContent.KeyValue -> keyValue(item.pairs)
-                        else -> {}
-                    }
-                }
-            }
+fun createHoverFor(node: ASTNode): GroovyParserResult<Hover> = buildHover {
+    renderMarkdownContent(node.toMarkdownContent())
+}.toGroovyParserResult()
 
-            is MarkdownContent.List -> list(nodeContent.items)
-            is MarkdownContent.KeyValue -> keyValue(nodeContent.pairs)
+private fun MarkdownBuilder.renderMarkdownContent(content: MarkdownContent) {
+    when (content) {
+        is MarkdownContent.Text -> text(content.value)
+        is MarkdownContent.Code -> code(content.language, content.value)
+        is MarkdownContent.Markdown -> markdown(content.value)
+        is MarkdownContent.Section -> section(content.title) {
+            content.content.forEach { renderMarkdownContent(it) }
         }
+
+        is MarkdownContent.Header -> header(content.level, content.value)
+        is MarkdownContent.List -> list(content.items)
+        is MarkdownContent.KeyValue -> keyValue(content.pairs)
+        is MarkdownContent.Table -> table(content.headers, content.rows)
+        is MarkdownContent.Link -> link(content.text, content.url)
     }
 }

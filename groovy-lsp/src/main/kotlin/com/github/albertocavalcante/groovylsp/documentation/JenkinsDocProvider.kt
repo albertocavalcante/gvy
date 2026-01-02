@@ -2,12 +2,12 @@ package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsContext
 import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.slf4j.LoggerFactory
-import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import java.net.URI
 
 /**
@@ -38,9 +38,9 @@ class JenkinsDocProvider(
     private fun isLikelyJenkinsFile(uri: URI): Boolean {
         val path = uri.path.lowercase()
         return path.endsWith("jenkinsfile") ||
-                path.endsWith(".jenkinsfile") ||
-                path.contains("/vars/") ||
-                path.endsWith(".groovy")
+            path.endsWith(".jenkinsfile") ||
+            path.contains("/vars/") ||
+            path.endsWith(".groovy")
     }
 
     override fun generateDoc(node: ASTNode, model: GroovyAstModel, documentUri: URI): GroovyDocumentation? {
@@ -72,9 +72,11 @@ class JenkinsDocProvider(
 
                 if (metadata.parameters.isNotEmpty()) {
                     text("**Parameters:**")
-                    list(metadata.parameters.map { (paramName, param) ->
-                        "`$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}"
-                    })
+                    list(
+                        metadata.parameters.map { (paramName, param) ->
+                            "`$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}"
+                        },
+                    )
                 }
             }
 

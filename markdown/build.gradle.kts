@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     // Zero external dependencies for the core markdown module
-    
+
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)

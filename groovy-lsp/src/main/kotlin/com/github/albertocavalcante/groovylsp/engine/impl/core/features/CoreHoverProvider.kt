@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.engine.impl.core.features
 
-import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.JavadocComment
 import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
@@ -70,147 +70,140 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
         return Hover(MarkupContent(MarkupKind.MARKDOWN, content), range)
     }
 
-    private fun createMethodHover(method: MethodDeclaration): String =
-        markdown {
-            code("groovy") {
-                val params = method.parameters.joinToString(", ") { param ->
-                    "${param.type} ${param.name}"
-                }
-                "${method.returnType} ${method.name}($params)"
+    private fun createMethodHover(method: MethodDeclaration): String = markdown {
+        code("groovy") {
+            val params = method.parameters.joinToString(", ") { param ->
+                "${param.type} ${param.name}"
             }
-
-            // Append GroovyDoc if present
-            val doc = (method.comment as? JavadocComment)?.parse()
-            if (doc != null) {
-                val description = doc.description.toText().trim()
-                if (description.isNotEmpty()) {
-                    text(description)
-                }
-
-                // @param tags
-                val paramTags = doc.getParamTags()
-                if (paramTags.isNotEmpty()) {
-                    text("**Parameters:**")
-                    list(paramTags.map { tag -> "`${tag.name}` - ${tag.content.toText()}" })
-                }
-
-                // @return tag
-                doc.getReturnTag()?.let { returnTag ->
-                    text("**Returns:** ${returnTag.content.toText()}")
-                }
-
-                // @throws tags
-                val throwsTags = doc.getThrowsTags()
-                if (throwsTags.isNotEmpty()) {
-                    text("**Throws:**")
-                    list(throwsTags.map { tag -> "`${tag.name}` - ${tag.content.toText()}" })
-                }
-            }
-
-            text("*(Method)*")
+            "${method.returnType} ${method.name}($params)"
         }
 
-    private fun createMethodCallHover(methodCall: MethodCallExpr): String =
-        markdown {
-            val methodName = methodCall.methodName
-
-            // Try to resolve the method for richer info
-            try {
-                val argTypes = methodCall.arguments.mapNotNull { arg ->
-                    try {
-                        resolver.resolveType(arg)
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-
-                val methodRef = resolver.solveMethod(methodName, argTypes, methodCall)
-                if (methodRef.isSolved) {
-                    val resolved = methodRef.getDeclaration()
-                    code("groovy") {
-                        val params = resolved.getParameters().joinToString(", ") { "${it.type.describe()} ${it.name}" }
-                        "${resolved.returnType.describe()} ${resolved.name}($params)"
-                    }
-                    text("*(Method)*")
-                    return@markdown
-                }
-            } catch (e: Exception) {
-                logger.debug("Could not resolve method call {}: {}", methodName, e.message)
+        // Append GroovyDoc if present
+        val doc = (method.comment as? JavadocComment)?.parse()
+        if (doc != null) {
+            val description = doc.description.toText().trim()
+            if (description.isNotEmpty()) {
+                text(description)
             }
 
-            // Fallback: show method name
-            code("groovy", "$methodName(...)")
-            text("*(Method call)*")
+            // @param tags
+            val paramTags = doc.getParamTags()
+            if (paramTags.isNotEmpty()) {
+                text("**Parameters:**")
+                list(paramTags.map { tag -> "`${tag.name}` - ${tag.content.toText()}" })
+            }
+
+            // @return tag
+            doc.getReturnTag()?.let { returnTag ->
+                text("**Returns:** ${returnTag.content.toText()}")
+            }
+
+            // @throws tags
+            val throwsTags = doc.getThrowsTags()
+            if (throwsTags.isNotEmpty()) {
+                text("**Throws:**")
+                list(throwsTags.map { tag -> "`${tag.name}` - ${tag.content.toText()}" })
+            }
         }
 
-    private fun createClassHover(classDecl: ClassDeclaration): String =
-        markdown {
-            val prefix = when {
-                classDecl.isInterface -> "interface"
-                classDecl.isEnum -> "enum"
-                else -> "class"
-            }
-            code("groovy") {
-                buildString {
-                    append(prefix).append(" ").append(classDecl.name)
-                    classDecl.superClass?.let { superType ->
-                        append(" extends ").append(superType)
-                    }
-                    if (classDecl.implementedTypes.isNotEmpty()) {
-                        append(" implements ").append(classDecl.implementedTypes.joinToString(", "))
-                    }
+        text("*(Method)*")
+    }
+
+    private fun createMethodCallHover(methodCall: MethodCallExpr): String = markdown {
+        val methodName = methodCall.methodName
+
+        // Try to resolve the method for richer info
+        try {
+            val argTypes = methodCall.arguments.mapNotNull { arg ->
+                try {
+                    resolver.resolveType(arg)
+                } catch (e: Exception) {
+                    null
                 }
             }
-            text("*(${prefix.replaceFirstChar { it.uppercase() }})*")
-        }
 
-    private fun createFieldHover(field: FieldDeclaration): String =
-        markdown {
-            code("groovy", "${field.type} ${field.name}")
-            text("*(Field)*")
-        }
-
-    private fun createConstructorHover(constructor: ConstructorDeclaration): String =
-        markdown {
-            code("groovy") {
-                val params = constructor.parameters.joinToString(", ") { param ->
-                    "${param.type} ${param.name}"
+            val methodRef = resolver.solveMethod(methodName, argTypes, methodCall)
+            if (methodRef.isSolved) {
+                val resolved = methodRef.getDeclaration()
+                code("groovy") {
+                    val params = resolved.getParameters().joinToString(", ") { "${it.type.describe()} ${it.name}" }
+                    "${resolved.returnType.describe()} ${resolved.name}($params)"
                 }
-                "${constructor.name}($params)"
+                text("*(Method)*")
+                return@markdown
             }
-            text("*(Constructor)*")
+        } catch (e: Exception) {
+            logger.debug("Could not resolve method call {}: {}", methodName, e.message)
         }
 
-    private fun createVariableHover(variable: VariableExpr): String =
-        markdown {
-            val name = variable.name
+        // Fallback: show method name
+        code("groovy", "$methodName(...)")
+        text("*(Method call)*")
+    }
 
-            // Try to resolve the symbol
-            try {
-                val symbolRef = resolver.solveSymbol(name, variable)
-                if (symbolRef.isSolved) {
-                    val resolved = symbolRef.getDeclaration()
-                    code("groovy", "${resolved.type} $name")
-                    val kind = resolved.javaClass.simpleName
-                        .replace("Resolved", "")
-                        .replace("Declaration", "")
-                    text("*($kind)*")
-                    return@markdown
+    private fun createClassHover(classDecl: ClassDeclaration): String = markdown {
+        val prefix = when {
+            classDecl.isInterface -> "interface"
+            classDecl.isEnum -> "enum"
+            else -> "class"
+        }
+        code("groovy") {
+            buildString {
+                append(prefix).append(" ").append(classDecl.name)
+                classDecl.superClass?.let { superType ->
+                    append(" extends ").append(superType)
                 }
-            } catch (e: Exception) {
-                logger.debug("Could not resolve symbol {}: {}", name, e.message)
+                if (classDecl.implementedTypes.isNotEmpty()) {
+                    append(" implements ").append(classDecl.implementedTypes.joinToString(", "))
+                }
             }
+        }
+        text("*(${prefix.replaceFirstChar { it.uppercase() }})*")
+    }
 
-            // Fallback
-            code("groovy", name)
-            text("*(Variable)*")
+    private fun createFieldHover(field: FieldDeclaration): String = markdown {
+        code("groovy", "${field.type} ${field.name}")
+        text("*(Field)*")
+    }
+
+    private fun createConstructorHover(constructor: ConstructorDeclaration): String = markdown {
+        code("groovy") {
+            val params = constructor.parameters.joinToString(", ") { param ->
+                "${param.type} ${param.name}"
+            }
+            "${constructor.name}($params)"
+        }
+        text("*(Constructor)*")
+    }
+
+    private fun createVariableHover(variable: VariableExpr): String = markdown {
+        val name = variable.name
+
+        // Try to resolve the symbol
+        try {
+            val symbolRef = resolver.solveSymbol(name, variable)
+            if (symbolRef.isSolved) {
+                val resolved = symbolRef.getDeclaration()
+                code("groovy", "${resolved.type} $name")
+                val kind = resolved.javaClass.simpleName
+                    .replace("Resolved", "")
+                    .replace("Declaration", "")
+                text("*($kind)*")
+                return@markdown
+            }
+        } catch (e: Exception) {
+            logger.debug("Could not resolve symbol {}: {}", name, e.message)
         }
 
-    private fun createParameterHover(param: Parameter): String =
-        markdown {
-            code("groovy", "${param.type} ${param.name}")
-            text("*(Parameter)*")
-        }
+        // Fallback
+        code("groovy", name)
+        text("*(Variable)*")
+    }
+
+    private fun createParameterHover(param: Parameter): String = markdown {
+        code("groovy", "${param.type} ${param.name}")
+        text("*(Parameter)*")
+    }
 
     private fun createGenericHover(node: Node): String = markdown {
         val nodeName = node::class.simpleName ?: "Node"

@@ -47,8 +47,8 @@ class MarkdownBuilderTest {
                 headers = listOf("Col 1", "Col 2"),
                 rows = listOf(
                     listOf("V1", "V2"),
-                    listOf("V3", "V4")
-                )
+                    listOf("V3", "V4"),
+                ),
             )
         }
         val expected = """

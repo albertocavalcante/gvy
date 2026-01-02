@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -331,12 +332,14 @@ class HoverProvider(
             // Use namedParams instead of parameters for MergedStepMetadata
             if (stepMetadata.namedParams.isNotEmpty()) {
                 h3("Parameters")
-                list(stepMetadata.namedParams.map { (name, param) ->
-                    val required = if (param.required) " *(required)*" else ""
-                    val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
-                    val base = "**`$name`**: `${param.type}`$required$defaultVal"
-                    param.description?.let { desc -> "$base\n  - $desc" } ?: base
-                })
+                list(
+                    stepMetadata.namedParams.map { (name, param) ->
+                        val required = if (param.required) " *(required)*" else ""
+                        val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
+                        val base = "**`$name`**: `${param.type}`$required$defaultVal"
+                        param.description?.let { desc -> "$base\n  - $desc" } ?: base
+                    },
+                )
             }
         }
 

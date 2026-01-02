@@ -20,14 +20,14 @@ data class Documentation(
      * Check if this documentation has any content.
      */
     fun isEmpty(): Boolean = summary.isBlank() &&
-            description.isBlank() &&
-            params.isEmpty() &&
-            returnDoc.isBlank() &&
-            throws.isEmpty() &&
-            since.isBlank() &&
-            author.isBlank() &&
-            deprecated.isBlank() &&
-            see.isEmpty()
+        description.isBlank() &&
+        params.isEmpty() &&
+        returnDoc.isBlank() &&
+        throws.isEmpty() &&
+        since.isBlank() &&
+        author.isBlank() &&
+        deprecated.isBlank() &&
+        see.isEmpty()
 
     /**
      * Check if this documentation has meaningful content.

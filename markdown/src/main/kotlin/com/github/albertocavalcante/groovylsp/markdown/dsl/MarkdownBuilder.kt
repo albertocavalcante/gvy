@@ -71,6 +71,4 @@ class MarkdownBuilder {
 /**
  * DSL function for building markdown content
  */
-fun markdown(block: MarkdownBuilder.() -> Unit): String {
-    return MarkdownBuilder().apply(block).render()
-}
+fun markdown(block: MarkdownBuilder.() -> Unit): String = MarkdownBuilder().apply(block).render()
