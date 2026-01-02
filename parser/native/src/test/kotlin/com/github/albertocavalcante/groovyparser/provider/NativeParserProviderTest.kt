@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.provider
 
+import com.github.albertocavalcante.groovyparser.api.model.Position
 import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import org.junit.jupiter.api.Test
@@ -85,7 +86,25 @@ class NativeParserProviderTest {
         val symbols = unit.symbols()
         assertTrue(
             symbols.any { it.name == "Greeter" && it.kind == SymbolKind.INTERFACE },
-            "Should report Greeter as INTERFACE"
+            "Should report Greeter as INTERFACE",
         )
+    }
+
+    @Test
+    fun `nodeAt handles invalid positions gracefully`() {
+        val source = "class Foo {}"
+        val unit = provider.parse(source)
+
+        // Invalid 1-based positions
+        val invalidPositions = listOf(
+            Position(0, 0),
+            Position(-1, 5),
+            Position(1, 0),
+        )
+
+        invalidPositions.forEach { pos ->
+            val node = unit.nodeAt(pos)
+            assertEquals(null, node, "Should return null for invalid position $pos")
+        }
     }
 }
