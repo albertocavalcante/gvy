@@ -274,18 +274,19 @@ class GroovyLanguageServer(
 
         try {
             val indexer = UnifiedIndexer(writers)
-            // Naive traversal: walk all Groovy-like files in project root
-            Files.walk(projectRoot.toPath())
-                .filter { it.extension in FileExtensions.ALL_GROOVY_LIKE }
-                .forEach { path ->
-                    try {
-                        val relativePath = projectRoot.toPath().relativize(path).toString()
-                        val content = path.readText()
-                        indexer.indexDocument(relativePath, content)
-                    } catch (e: Exception) {
-                        logger.warn("Failed to index file $path", e)
+            // Traverse all Groovy-like files - use block ensures stream is closed
+            Files.walk(projectRoot.toPath()).use { stream ->
+                stream.filter { it.toFile().extension in FileExtensions.ALL_GROOVY_LIKE }
+                    .forEach { path ->
+                        try {
+                            val relativePath = projectRoot.toPath().relativize(path).toString()
+                            val content = path.readText()
+                            indexer.indexDocument(relativePath, content)
+                        } catch (e: Exception) {
+                            logger.warn("Failed to index file $path", e)
+                        }
                     }
-                }
+            }
             "Successfully exported ${params.format} index to ${params.outputPath}"
         } finally {
             writers.forEach {

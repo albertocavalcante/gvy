@@ -44,18 +44,19 @@ class IndexCommand : CliktCommand(name = "index") {
 
         try {
             val indexer = UnifiedIndexer(writers)
-            // Walk files
-            Files.walk(projectRoot)
-                .filter { it.extension in FileExtensions.ALL_GROOVY_LIKE }
-                .forEach { path ->
-                    try {
-                        val relativePath = projectRoot.relativize(path).toString()
-                        val content = Files.readString(path)
-                        indexer.indexDocument(relativePath, content)
-                    } catch (e: Exception) {
-                        echo("Failed to index $path: ${e.message}", err = true)
+            // Walk files - use block ensures stream is closed to prevent file handle leaks
+            Files.walk(projectRoot).use { stream ->
+                stream.filter { it.toFile().extension in FileExtensions.ALL_GROOVY_LIKE }
+                    .forEach { path ->
+                        try {
+                            val relativePath = projectRoot.relativize(path).toString()
+                            val content = Files.readString(path)
+                            indexer.indexDocument(relativePath, content)
+                        } catch (e: Exception) {
+                            echo("Failed to index $path: ${e.message}", err = true)
+                        }
                     }
-                }
+            }
             echo("Successfully generated index at ${output.absolutePath}")
         } finally {
             writers.forEach { writer ->
