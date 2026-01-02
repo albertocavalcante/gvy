@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
-import org.slf4j.LoggerFactory
 
 /**
  * Formats documentation into markdown suitable for hover display.
