@@ -49,6 +49,7 @@ class JenkinsMetadataService(
             plugins.forEach { plugin ->
                 try {
                     logger.debug("Downloading plugin: {}", plugin.id)
+                    // download is now a suspend function, which is fine since initialize is suspend
                     val jarPath = pluginDownloader.download(plugin.id, plugin.version)
                     pluginManager.registerPluginJar(plugin.id, jarPath)
                 } catch (e: Exception) {

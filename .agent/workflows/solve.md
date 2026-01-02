@@ -220,7 +220,10 @@ For size/XS-M issues:
 1. Create worktree (if not already done)
 2. Implement all changes
 3. Run verification commands
-4. Commit with descriptive message
+4. **Git Safety Check**:
+   - Run `git add <files>`
+   - Run `git status` to verify changes
+   - ONLY then run `git commit`
 5. Push and create PR
 
 ### 6.2 Multi-Phase Execution
@@ -229,10 +232,11 @@ For size/L-XL issues:
 
 1. Execute Phase 1 completely
 2. Verify Phase 1 independently
-3. Commit Phase 1 with `Phase 1/N:` prefix
-4. **Consider**: Create interim PR for early review
-5. Proceed to Phase 2
-6. Repeat until all phases complete
+3. **Git Safety Check**: Run `git add` -> `git status` -> `git commit` (Check hook output!)
+4. Commit Phase 1 with `Phase 1/N:` prefix
+5. **Consider**: Create interim PR for early review
+6. Proceed to Phase 2
+7. Repeat until all phases complete
 
 ### Commit Message Format
 
