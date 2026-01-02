@@ -7,7 +7,6 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -24,8 +23,6 @@ class JenkinsDocProvider(
     private val jenkinsPluginManager: JenkinsPluginManager = JenkinsPluginManager(),
     private val jenkinsContext: JenkinsContext? = null,
 ) : PluggableDocProvider {
-
-    private val logger = LoggerFactory.getLogger(JenkinsDocProvider::class.java)
 
     override val name: String = "Jenkins Documentation Provider"
     override val priority: Int = 100 // High priority - check before generic Groovy

@@ -70,9 +70,14 @@ class LspTestFixture {
         assertTrue(hover != null, "Hover should not be null at $line:$char")
 
         val content = if (hover!!.contents.isLeft) {
-            hover.contents.left.first().let {
-                // Handle LSP4J string unions safely
-                if (it is org.eclipse.lsp4j.MarkedString) it.value else (it as String)
+            // Handle LSP4J string unions safely.
+            val marked = hover.contents.left.first()
+            if (marked.isLeft) {
+                marked.left
+            } else {
+                @Suppress("DEPRECATION")
+                val legacy = marked.right
+                legacy.value
             }
         } else {
             hover.contents.right.value

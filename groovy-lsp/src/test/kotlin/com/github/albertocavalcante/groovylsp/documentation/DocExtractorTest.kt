@@ -60,7 +60,7 @@ class DocExtractorTest {
             Parameter(ClassHelper.int_TYPE, "b"),
         )
         val classNode = ClassNode("Script", 0, null)
-        val node = MethodNode("add", 0, ClassHelper.DYNAMIC_TYPE, params, null, BlockStatement())
+        val node = MethodNode("add", 0, ClassHelper.dynamicType(), params, null, BlockStatement())
         node.declaringClass = classNode
         node.lineNumber = lineOf(source, "def add")
 
