@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovyparser.resolution
 
 import com.github.albertocavalcante.groovyparser.ast.Node
-import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedMethodDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedValueDeclaration

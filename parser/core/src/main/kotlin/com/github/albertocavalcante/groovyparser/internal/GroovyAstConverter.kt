@@ -32,9 +32,6 @@ import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodPointerExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodReferenceExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.NotExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.PostfixExpr
-import com.github.albertocavalcante.groovyparser.ast.expr.PrefixExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.SpreadExpr
@@ -78,7 +75,6 @@ import org.codehaus.groovy.ast.expr.ElvisOperatorExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.LambdaExpression
 import org.codehaus.groovy.ast.expr.ListExpression
-import org.codehaus.groovy.ast.expr.MapEntryExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.MethodPointerExpression
@@ -100,7 +96,6 @@ import org.codehaus.groovy.ast.expr.Expression as GroovyExpression
 import org.codehaus.groovy.ast.stmt.AssertStatement as GroovyAssertStatement
 import org.codehaus.groovy.ast.stmt.BlockStatement as GroovyBlockStatement
 import org.codehaus.groovy.ast.stmt.BreakStatement as GroovyBreakStatement
-import org.codehaus.groovy.ast.stmt.CaseStatement as GroovyCaseStatement
 import org.codehaus.groovy.ast.stmt.ContinueStatement as GroovyContinueStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement as GroovyExpressionStatement
 import org.codehaus.groovy.ast.stmt.ForStatement as GroovyForStatement

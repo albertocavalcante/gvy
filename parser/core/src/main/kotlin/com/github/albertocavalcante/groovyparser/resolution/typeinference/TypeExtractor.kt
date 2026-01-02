@@ -1,14 +1,5 @@
 package com.github.albertocavalcante.groovyparser.resolution.typeinference
 
-import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
-import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
-import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration
-import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
@@ -39,9 +30,6 @@ import com.github.albertocavalcante.groovyparser.ast.expr.SpreadMapExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.TernaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
-import com.github.albertocavalcante.groovyparser.ast.stmt.CaseStatement
-import com.github.albertocavalcante.groovyparser.ast.stmt.CatchClause
-import com.github.albertocavalcante.groovyparser.ast.visitor.GroovyVisitor
 import com.github.albertocavalcante.groovyparser.resolution.Context
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.groovymodel.GroovyParserTypeResolver
@@ -50,7 +38,6 @@ import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedNullTy
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedPrimitiveType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
-import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedVoidType
 
 /**
  * Extracts types from AST nodes through type inference.
