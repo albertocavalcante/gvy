@@ -15,6 +15,7 @@ rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
 include("markdown")
+include("parser:api")
 include("parser:native")
 include("parser:core")
 include("groovy-common")
