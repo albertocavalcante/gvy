@@ -11,6 +11,12 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
     implementation(libs.kotlin.coroutines.core)
 
+    // Ktor
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+
     // Arrow for functional programming
     implementation(libs.arrow.core)
 
@@ -35,6 +41,7 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 
     testImplementation(libs.kotlin.coroutines.test)
+    testImplementation(libs.ktor.client.mock)
 
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)

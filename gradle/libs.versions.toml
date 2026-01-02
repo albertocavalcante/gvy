@@ -15,6 +15,7 @@ lsp4j = "0.24.0"
 codenarc = "3.7.0-groovy-4.0"
 gmetrics = "2.1.0"
 gradleTooling = "9.2.1"
+ktor = "3.3.3"
 coroutines = "1.10.2"
 collectionsImmutable = "0.4.0"
 serialization = "1.9.0"
@@ -84,6 +85,13 @@ kotlin-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collect
 kotlin-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+
+# Ktor
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 
 # Functional Programming
 arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }

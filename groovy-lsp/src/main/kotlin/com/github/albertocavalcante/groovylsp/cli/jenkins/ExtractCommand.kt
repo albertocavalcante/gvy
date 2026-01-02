@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyjenkins.extraction.MetadataOutputGener
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
 import com.github.albertocavalcante.groovyjenkins.extraction.ScannedStep
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -73,13 +74,15 @@ class ExtractCommand : CliktCommand(name = "extract") {
         val downloader = PluginDownloader(cacheDir)
         val pluginPaths = mutableMapOf<String, Path>()
 
-        plugins.forEach { plugin ->
-            try {
-                terminal.println("  ${terminal.theme.muted("•")} ${plugin.id}:${plugin.version}")
-                val path = downloader.download(plugin.id, plugin.version)
-                pluginPaths[plugin.id] = path
-            } catch (e: Exception) {
-                terminal.println("  ${terminal.theme.danger("✗")} Failed to download ${plugin.id}: ${e.message}")
+        runBlocking {
+            plugins.forEach { plugin ->
+                try {
+                    terminal.println("  ${terminal.theme.muted("•")} ${plugin.id}:${plugin.version}")
+                    val path = downloader.download(plugin.id, plugin.version)
+                    pluginPaths[plugin.id] = path
+                } catch (e: Exception) {
+                    terminal.println("  ${terminal.theme.danger("✗")} Failed to download ${plugin.id}: ${e.message}")
+                }
             }
         }
 
