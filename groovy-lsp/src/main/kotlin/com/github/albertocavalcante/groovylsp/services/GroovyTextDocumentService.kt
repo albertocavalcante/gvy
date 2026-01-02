@@ -18,6 +18,7 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.ParserDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
@@ -131,6 +132,10 @@ class GroovyTextDocumentService(
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
+            // Add parser diagnostics (syntax errors, compilation errors)
+            // NOTE: Parser diagnostics are always enabled as they provide essential error information
+            add(ParserDiagnosticProvider(compilationService))
+
             // Add CodeNarc if enabled in configuration
             if (serverConfiguration.codeNarcEnabled) {
                 val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
