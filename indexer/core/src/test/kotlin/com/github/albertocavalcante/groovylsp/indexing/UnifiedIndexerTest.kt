@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 class UnifiedIndexerTest {
 
     class MockWriter : IndexWriter {
-        val events = mutableListOf<String>()
+        val events: MutableList<String> = mutableListOf()
 
         override fun visitDocumentStart(path: String, content: String) {
             events.add("START $path")
@@ -29,7 +29,7 @@ class UnifiedIndexerTest {
     }
 
     @Test
-    fun `test indexing simple class`() {
+    fun `should index simple class`() {
         val code = """
             package com.example
             class Foo {
@@ -43,16 +43,19 @@ class UnifiedIndexerTest {
         indexer.indexDocument("src/main/groovy/com/example/Foo.groovy", code)
 
         val joined = writer.events.joinToString("\n")
-        println(joined)
 
         // Assertions
         assertTrue(writer.events.contains("START src/main/groovy/com/example/Foo.groovy"))
         // Check for Class Definition
-        // Symbol format: scip-java maven com.example 0.0.0 Foo#
-        assertTrue(writer.events.any { it.startsWith("DEF scip-java maven com.example 0.0.0 com.example.Foo#") })
+        // Symbol format: scip-groovy maven com.example 0.0.0 Foo#
+        assertTrue(writer.events.any { it.startsWith("DEF scip-groovy maven com.example 0.0.0 com.example.Foo#") })
         // Check for Method Definition
-        // Symbol format: scip-java maven com.example 0.0.0 Foo#bar().
-        assertTrue(writer.events.any { it.startsWith("DEF scip-java maven com.example 0.0.0 com.example.Foo#bar().") })
+        // Symbol format: scip-groovy maven com.example 0.0.0 Foo#bar().
+        assertTrue(
+            writer.events.any {
+                it.startsWith("DEF scip-groovy maven com.example 0.0.0 com.example.Foo#bar().")
+            },
+        )
         assertTrue(writer.events.contains("END"))
     }
 }

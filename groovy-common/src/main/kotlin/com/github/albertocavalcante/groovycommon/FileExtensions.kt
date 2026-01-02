@@ -8,5 +8,7 @@ object FileExtensions {
     const val KOTLIN_SCRIPT = "kts"
     const val JENKINSFILE = "Jenkinsfile"
 
-    val ALL_GROOVY_LIKE = setOf(GROOVY, GRADLE, JENKINSFILE)
+    val EXTENSIONS: Set<String> = setOf(GROOVY, GRADLE)
+    val FILENAMES: Set<String> = setOf(JENKINSFILE)
+    val ALL_GROOVY_LIKE: Set<String> = EXTENSIONS + FILENAMES
 }

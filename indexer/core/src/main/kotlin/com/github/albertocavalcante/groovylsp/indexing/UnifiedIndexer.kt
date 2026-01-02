@@ -10,7 +10,10 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 
-class UnifiedIndexer(private val writers: List<IndexWriter>) {
+class UnifiedIndexer(
+    private val writers: List<IndexWriter>,
+    private val symbolGenerator: SymbolGenerator = SymbolGenerator(),
+) {
 
     private val logger = LoggerFactory.getLogger(UnifiedIndexer::class.java)
 
@@ -20,14 +23,15 @@ class UnifiedIndexer(private val writers: List<IndexWriter>) {
         try {
             val config = CompilerConfiguration()
             // Run in migration mode / lenient if possible, or just standard
-            val classLoader = GroovyClassLoader()
-            val unit = CompilationUnit(config, null, classLoader)
-            unit.addSource(path, content)
-            unit.compile(Phases.CONVERSION)
+            GroovyClassLoader().use { classLoader ->
+                val unit = CompilationUnit(config, null, classLoader)
+                unit.addSource(path, content)
+                unit.compile(Phases.CONVERSION)
 
-            val module = unit.ast.modules.firstOrNull()
-            if (module != null) {
-                visitModule(module)
+                val module = unit.ast.modules.firstOrNull()
+                if (module != null) {
+                    visitModule(module)
+                }
             }
         } catch (e: Exception) {
             logger.warn("Failed to parse {}: {}", path, e.message)
@@ -45,7 +49,7 @@ class UnifiedIndexer(private val writers: List<IndexWriter>) {
     private fun visitClass(classNode: ClassNode) {
         val range =
             Range(classNode.lineNumber, classNode.columnNumber, classNode.lastLineNumber, classNode.lastColumnNumber)
-        val symbol = SymbolGenerator.forClass(classNode)
+        val symbol = symbolGenerator.forClass(classNode)
 
         writers.forEach {
             // Definition of the class
@@ -59,7 +63,7 @@ class UnifiedIndexer(private val writers: List<IndexWriter>) {
 
     private fun visitMethod(owner: ClassNode, method: MethodNode) {
         val range = Range(method.lineNumber, method.columnNumber, method.lastLineNumber, method.lastColumnNumber)
-        val symbol = SymbolGenerator.forMethod(owner, method)
+        val symbol = symbolGenerator.forMethod(owner, method)
 
         writers.forEach {
             it.visitDefinition(range, symbol, false)

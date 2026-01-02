@@ -384,7 +384,7 @@ class ProjectStartupManager(
         }
     }
 
-    private fun getWorkspaceRoot(params: InitializeParams): Path? {
+    fun getWorkspaceRoot(params: InitializeParams): Path? {
         val workspaceFolders = params.workspaceFolders
         if (!workspaceFolders.isNullOrEmpty()) {
             return parseUri(workspaceFolders.first().uri, "workspace folder URI")

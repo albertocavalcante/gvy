@@ -1,45 +1,47 @@
 package com.github.albertocavalcante.groovylsp.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.default
-import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.albertocavalcante.groovycommon.FileExtensions
 import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
+import com.github.albertocavalcante.groovylsp.indexing.SymbolGenerator
 import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
 import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
 import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import java.nio.file.Path
 
 class IndexCommand : CliktCommand(name = "index") {
 
-    override fun help(context: com.github.ajalt.clikt.core.Context) = "Generate SCIP or LSIF index for a project"
+    override fun help(context: Context) = "Generate SCIP or LSIF index for a project"
 
     private val format by option("--format", help = "Output format (SCIP or LSIF)")
         .enum<IndexFormat>()
-        .default(IndexFormat.SCIP)
 
     private val output by option("--output", help = "Output file path")
         .file(mustExist = false)
-        .default(File("index.scip"))
 
     private val projectRoot by argument(help = "Project root directory")
         .path(mustExist = true, canBeFile = false)
-        .default(java.nio.file.Path.of("."))
+        .default(Path.of("."))
 
     override fun run() {
         val rootPath = projectRoot.toAbsolutePath().normalize().toString()
-        echo("Indexing $rootPath to $output in $format format...")
+        val actualFormat = format ?: IndexFormat.SCIP
+        val outputFile = output ?: File("index.${actualFormat.toString().lowercase()}")
+        echo("Indexing $rootPath to $outputFile in $actualFormat format...")
 
-        val fileOutputStream = FileOutputStream(output)
+        val fileOutputStream = FileOutputStream(outputFile)
         val writers = try {
-            when (format) {
+            when (actualFormat) {
                 IndexFormat.SCIP -> listOf(ScipWriter(fileOutputStream, rootPath))
                 IndexFormat.LSIF -> listOf(LsifWriter(fileOutputStream, rootPath))
             }
@@ -52,14 +54,23 @@ class IndexCommand : CliktCommand(name = "index") {
             throw e
         }
 
+        val manager = when {
+            Files.exists(
+                projectRoot.resolve("build.gradle"),
+            ) || Files.exists(projectRoot.resolve("build.gradle.kts")) -> "gradle"
+
+            Files.exists(projectRoot.resolve("pom.xml")) -> "maven"
+            else -> "manual"
+        }
+        val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
         try {
-            val indexer = UnifiedIndexer(writers)
+            val indexer = UnifiedIndexer(writers, symbolGenerator)
             // Walk files - use block ensures stream is closed to prevent file handle leaks
             Files.walk(projectRoot).use { stream ->
                 stream.filter { path ->
                     val file = path.toFile()
-                    file.extension in FileExtensions.ALL_GROOVY_LIKE ||
-                        file.name in FileExtensions.ALL_GROOVY_LIKE
+                    file.extension in FileExtensions.EXTENSIONS ||
+                        file.name in FileExtensions.FILENAMES
                 }
                     .forEach { path ->
                         try {
@@ -71,7 +82,7 @@ class IndexCommand : CliktCommand(name = "index") {
                         }
                     }
             }
-            echo("Successfully generated index at ${output.absolutePath}")
+            echo("Successfully generated index at ${outputFile.absolutePath}")
         } finally {
             writers.forEach { writer ->
                 try {

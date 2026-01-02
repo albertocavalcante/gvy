@@ -47,11 +47,12 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
 
     init {
         // Emit MetaData
+        val rootUri = java.io.File(projectRoot).toURI().toString()
         emitVertex(
             "metaData",
             mapOf(
                 "version" to "0.4.3",
-                "projectRoot" to "file://$projectRoot",
+                "projectRoot" to rootUri,
                 "positionEncoding" to "utf-16",
                 "toolInfo" to mapOf(
                     "name" to "groovy-lsp",
@@ -64,10 +65,11 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
     private var currentDocumentId: Int? = null
 
     override fun visitDocumentStart(path: String, content: String) {
+        val fileUri = java.io.File(projectRoot, path).toURI().toString()
         val docId = emitVertex(
             "document",
             mapOf(
-                "uri" to "file://$projectRoot/$path",
+                "uri" to fileUri,
                 "languageId" to "groovy",
                 // "contents" could be set to Base64-encoded file content if we wanted to embed the source in the LSIF index
             ),

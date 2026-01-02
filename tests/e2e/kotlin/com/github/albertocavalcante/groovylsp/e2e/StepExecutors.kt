@@ -704,9 +704,8 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             GoldenMode.JSON_NORMALIZED -> {
                 // Compare as JSON with path normalization
                 // Replace workspace paths with {{workspace}} placeholder for deterministic comparison
-                val workspacePath = context.workspace.rootDir.toString()
                 val normalizedActual = actualContent.replace(workspacePath, "{{workspace}}")
-                    .replace(Regex("file:///[^\"]+/groovy-lsp-e2e-[0-9]+"), "file://{{workspace}}")
+                    .replace(workspaceUri, "file://{{workspace}}")
 
                 val mapper = ObjectMapper()
                 val actualJson = mapper.readTree(normalizedActual)
@@ -724,7 +723,6 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             GoldenMode.NDJSON -> {
                 // NDJSON (newline-delimited JSON) comparison
                 // Each line is a separate JSON object - used by LSIF format
-                val workspacePath = context.workspace.rootDir.toString()
                 val mapper = ObjectMapper()
 
                 val actualLines = actualContent.lines().filter { it.isNotBlank() }
@@ -741,7 +739,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                     val actualLine = actualLines[i]
                     // Interpolate {{workspace}} placeholder in expected content
                     val expectedLine = expectedLines[i]
-                        .replace("file://$WORKSPACE_PLACEHOLDER", "file://$workspacePath")
+                        .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
                         .replace(WORKSPACE_PLACEHOLDER, workspacePath)
 
                     val actualJson = mapper.readTree(actualLine)

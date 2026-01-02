@@ -6,4 +6,6 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.lsp4j.jsonrpc) // For Gson
     implementation(project(":indexer:core"))
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.junit.jupiter)
 }

@@ -2,22 +2,22 @@ package com.github.albertocavalcante.groovylsp.indexing
 
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.Parameter
 
-object SymbolGenerator {
-    private const val SCHEME = "scip-java" // Reusing java scheme for consistency
-    private const val MANAGER = "maven"
+class SymbolGenerator(
+    private val scheme: String = "scip-groovy",
+    // Default, but should be passed dynamically
+    private val manager: String = "maven",
+) {
+    fun forClass(classNode: ClassNode, version: String = "0.0.0"): String =
+        "$scheme $manager ${classNode.packageName ?: "."} $version ${classNode.name}#"
 
-    fun forClass(classNode: ClassNode): String =
-        "$SCHEME $MANAGER ${classNode.packageName ?: "."} 0.0.0 ${classNode.name}#"
-
-    fun forMethod(classNode: ClassNode, methodNode: MethodNode): String {
+    fun forMethod(classNode: ClassNode, methodNode: MethodNode, version: String = "0.0.0"): String {
         val className = classNode.name
         val methodName = methodNode.name
+        // TODO: This uses simple names if types are not resolved (CONVERSION phase).
+        // For full accuracy, we need SEMANTIC_ANALYSIS to get FQNs.
         val params = methodNode.parameters.joinToString(",") { it.type.name }
-        // Simple signature for now: method(paramType,paramType)
-        // Disambiguation is tricky without full type resolution, this is best effort
-        return "$SCHEME $MANAGER ${classNode.packageName ?: "."} 0.0.0 $className#$methodName($params)."
+        return "$scheme $manager ${classNode.packageName ?: "."} $version $className#$methodName($params)."
     }
 
     fun local(id: Int): String = "local $id"

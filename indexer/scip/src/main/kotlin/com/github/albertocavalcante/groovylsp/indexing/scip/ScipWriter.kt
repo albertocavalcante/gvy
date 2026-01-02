@@ -81,7 +81,7 @@ class ScipWriter(private val outputStream: OutputStream, private val projectRoot
             metadata = Metadata(
                 version = scip.ProtocolVersion.UnspecifiedProtocolVersion,
                 tool_info = ToolInfo(name = "groovy-lsp", version = "0.0.1"),
-                project_root = "file://$projectRoot",
+                project_root = java.io.File(projectRoot).toURI().toString(),
             ),
             documents = documents,
         )

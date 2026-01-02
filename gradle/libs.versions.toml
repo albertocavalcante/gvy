@@ -8,7 +8,7 @@ shadow = "9.3.0"
 gitHooks = "2.1.6"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
-wire = "5.1.0"
+wire = "5.4.0"
 
 groovy = "4.0.29"
 ivy = "2.5.3"

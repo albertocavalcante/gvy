@@ -96,7 +96,7 @@ message Document {
   repeated SymbolInformation symbols = 3;
 
   // (optional) Text contents of the this document. Indexers are not expected to
-  // include the text by default. It's preferrable that clients read the text
+  // include the text by default. It's preferable that clients read the text
   // contents from the file system by resolving the absolute path from joining
   // `Index.metadata.project_root` and `Document.relative_path`. This field was
   // introduced to support `SymbolInformation.signature_documentation`, but it

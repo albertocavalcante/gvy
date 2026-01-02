@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp
 
-import com.github.albertocavalcante.groovycommon.FileExtensions
 import com.github.albertocavalcante.groovyjunit.junit.JUnit5TestDetector
 import com.github.albertocavalcante.groovyjunit.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
@@ -11,10 +10,6 @@ import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionP
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
-import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
-import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
-import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
-import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
@@ -25,6 +20,7 @@ import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import com.github.albertocavalcante.groovylsp.services.Health
+import com.github.albertocavalcante.groovylsp.services.IndexExportService
 import com.github.albertocavalcante.groovylsp.services.ProjectStartupManager
 import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
@@ -112,6 +108,7 @@ class GroovyLanguageServer(
             compilationService,
             buildToolManagerProvider = { startupManager.buildToolManager },
         )
+    private val indexExportService = IndexExportService { startupManager.buildToolManager }
 
     // State
     private var savedInitParams: InitializeParams? = null
@@ -259,48 +256,10 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/exportIndex")
     fun exportIndex(params: ExportIndexParams): CompletableFuture<String> = CompletableFuture.supplyAsync({
-        logger.info("Exporting index format=${params.format} to=${params.outputPath}")
-        val rootUri = savedInitParams?.workspaceFolders?.firstOrNull()?.uri
-            ?: savedInitParams?.rootUri
+        val rootPath = savedInitParams?.let { startupManager.getWorkspaceRoot(it) }
             ?: throw IllegalStateException("No workspace root found")
 
-        val rootPath = java.nio.file.Paths.get(java.net.URI(rootUri))
-        val projectRoot = rootPath.toFile()
-
-        val writers = when (params.format) {
-            IndexFormat.SCIP -> listOf(ScipWriter(FileOutputStream(params.outputPath), rootPath.toString()))
-            IndexFormat.LSIF -> listOf(LsifWriter(FileOutputStream(params.outputPath), rootPath.toString()))
-        }
-
-        try {
-            val indexer = UnifiedIndexer(writers)
-            // Traverse all Groovy-like files - use block ensures stream is closed
-            Files.walk(projectRoot.toPath()).use { stream ->
-                stream.filter { path ->
-                    val file = path.toFile()
-                    file.extension in FileExtensions.ALL_GROOVY_LIKE ||
-                        file.name in FileExtensions.ALL_GROOVY_LIKE
-                }
-                    .forEach { path ->
-                        try {
-                            val relativePath = projectRoot.toPath().relativize(path).toString()
-                            val content = path.readText()
-                            indexer.indexDocument(relativePath, content)
-                        } catch (e: Exception) {
-                            logger.warn("Failed to index file $path", e)
-                        }
-                    }
-            }
-            "Successfully exported ${params.format} index to ${params.outputPath}"
-        } finally {
-            writers.forEach {
-                try {
-                    it.close()
-                } catch (e: Exception) {
-                    logger.warn("Error closing writer", e)
-                }
-            }
-        }
+        indexExportService.exportIndex(params, rootPath)
     }, dispatcher.asExecutor())
 
     // Exposed for testing/CLI
