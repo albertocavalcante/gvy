@@ -1,10 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.folding
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovyparser.ast.safeRange
 import org.codehaus.groovy.ast.ASTNode
-import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.MethodNode
 import org.eclipse.lsp4j.FoldingRange
 import org.eclipse.lsp4j.FoldingRangeKind
 import java.net.URI

@@ -12,7 +12,6 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Test
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -274,9 +273,7 @@ class UnifiedHoverProviderExtendedTest {
 
         // Closure without name might return null or minimal info
         // This tests the graceful handling
-        if (result != null) {
-            assertTrue(result.contents.right.value.contains("Closure") || result.contents.right.value.isNotEmpty())
-        }
+        assertTrue(result.contents.right.value.contains("Closure") || result.contents.right.value.isNotEmpty())
     }
 
     private fun createMockParseUnit(nodeAtPosition: UnifiedNode?): ParseUnit = object : ParseUnit {

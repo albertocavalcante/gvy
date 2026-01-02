@@ -42,33 +42,15 @@ class MainCompatTest {
     @Test
     fun `test socket command fails if port is bound`() {
         // Find a free port and bind it
-        val serverSocket = ServerSocket(0)
-        val port = serverSocket.localPort
+        ServerSocket(0).use { serverSocket ->
+            val port = serverSocket.localPort
 
-        try {
             // Now try to run socket command on same port
             // It should fail with ProgramResult(1) (as per LspCommand.runSocket catch block)
             // or exit.
             assertThrows<ProgramResult> {
                 runWithContext("socket", port.toString())
             }
-        } finally {
-            serverSocket.close()
         }
-    }
-
-    /**
-     * Captures stdout output during the execution of a block.
-     */
-    private fun captureOutput(block: () -> Unit): String {
-        val originalOut = System.out
-        val baos = ByteArrayOutputStream()
-        System.setOut(PrintStream(baos))
-        try {
-            block()
-        } finally {
-            System.setOut(originalOut)
-        }
-        return baos.toString()
     }
 }

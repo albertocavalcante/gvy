@@ -390,6 +390,7 @@ class ProjectStartupManager(
             return parseUri(workspaceFolders.first().uri, "workspace folder URI")
         }
 
+        @Suppress("DEPRECATION")
         val rootUri = params.rootUri
 
         @Suppress("DEPRECATION")
@@ -425,11 +426,7 @@ class ProjectStartupManager(
         val timeoutMs = timeoutSeconds * MILLIS_PER_SECOND
 
         while (System.currentTimeMillis() - start < timeoutMs) {
-            val manager = dependencyManager
-            if (manager == null) {
-                // Stop if no manager, which is an error state.
-                return false
-            }
+            val manager = dependencyManager ?: return false
 
             if (manager.isDependenciesReady()) {
                 return true

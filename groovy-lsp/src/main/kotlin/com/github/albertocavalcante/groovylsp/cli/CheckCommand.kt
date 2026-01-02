@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -55,7 +56,7 @@ class CheckCommand : CliktCommand(name = "check") {
         val ws = workspace ?: return
 
         val params = InitializeParams().apply {
-            rootUri = ws.toURI().toString()
+            workspaceFolders = listOf(WorkspaceFolder(ws.toURI().toString(), ws.name))
             capabilities = ClientCapabilities()
         }
 
@@ -67,7 +68,10 @@ class CheckCommand : CliktCommand(name = "check") {
             terminal.println(green("Dependencies resolved successfully."))
         } else {
             terminal.println(
-                brightYellow("Warning: Dependency resolution failed or timed out. Checking with limited context."),
+                brightYellow(
+                    "Warning: Dependency resolution failed or timed out. " +
+                        "Checking with limited context.",
+                ),
             )
         }
     }
@@ -104,15 +108,15 @@ class CheckCommand : CliktCommand(name = "check") {
                         else -> "UNKNOWN" to null
                     }
 
-                    val severityString = if (terminal.info.ansiLevel == AnsiLevel.NONE) {
+                    val severityString = if (terminal.terminalInfo.ansiLevel == AnsiLevel.NONE) {
                         label
                     } else {
                         style?.invoke(label) ?: label
                     }
 
-                    terminal.println(
-                        "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severityString] ${d.message}",
-                    )
+                    val line = d.range.start.line + 1
+                    val char = d.range.start.character + 1
+                    terminal.println("${file.path}:$line:$char: [$severityString] ${d.message}")
                 }
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {

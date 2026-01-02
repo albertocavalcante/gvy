@@ -7,8 +7,10 @@ import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
+import com.github.albertocavalcante.groovylsp.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
@@ -36,6 +38,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import org.codehaus.groovy.control.CompilationFailedException
+import org.eclipse.lsp4j.CallHierarchyIncomingCall
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
+import org.eclipse.lsp4j.CallHierarchyItem
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall
+import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
+import org.eclipse.lsp4j.CallHierarchyPrepareParams
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.CodeLens
@@ -76,7 +85,10 @@ import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.WorkspaceEdit
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.slf4j.LoggerFactory
@@ -178,6 +190,34 @@ class GroovyTextDocumentService(
         FoldingRangeProvider(compilationService)
     }
 
+    private val callHierarchyProvider by lazy {
+        CallHierarchyProvider(compilationService)
+    }
+
+    override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
+        coroutineScope.future {
+            logger.debug("Prepare call hierarchy requested for ${params.textDocument.uri}")
+            val uri = URI.create(params.textDocument.uri)
+
+            compilationService.ensureCompiled(uri)
+
+            callHierarchyProvider.prepareCallHierarchy(params)
+        }
+
+    override fun callHierarchyIncomingCalls(
+        params: CallHierarchyIncomingCallsParams,
+    ): CompletableFuture<List<CallHierarchyIncomingCall>> = coroutineScope.future {
+        logger.debug("Incoming calls requested for ${params.item.name}")
+        callHierarchyProvider.incomingCalls(params)
+    }
+
+    override fun callHierarchyOutgoingCalls(
+        params: CallHierarchyOutgoingCallsParams,
+    ): CompletableFuture<List<CallHierarchyOutgoingCall>> = coroutineScope.future {
+        logger.debug("Outgoing calls requested for ${params.item.name}")
+        callHierarchyProvider.outgoingCalls(params)
+    }
+
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
         logger.debug(
             "Signature help requested for ${params.textDocument.uri} at " +
@@ -209,15 +249,15 @@ class GroovyTextDocumentService(
         // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
         // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
         // to make these requests deterministic and avoid flaky e2e behavior.
-        // TODO: Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
-        // for open documents.
+        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
+        //   See: https://github.com/albertocavalcante/gvy/issues/564
         val content = documentProvider.get(uri) ?: return null
         return compilationService.compileAsync(coroutineScope, uri, content).await()
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
         logger.info("Document opened: ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         val content = params.textDocument.text
         documentProvider.put(uri, content)
 
@@ -230,11 +270,11 @@ class GroovyTextDocumentService(
         // For full sync, we get the entire document content
         if (params.contentChanges.isNotEmpty()) {
             val newContent = params.contentChanges.first().text
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             documentProvider.put(uri, newContent)
 
             // Invalidate documentation cache for this document
-            com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.invalidateDocument(uri)
+            DocumentationProvider.invalidateDocument(uri)
 
             triggerDiagnostics(uri, newContent)
         }
@@ -242,7 +282,7 @@ class GroovyTextDocumentService(
 
     override fun didClose(params: DidCloseTextDocumentParams) {
         logger.info("Document closed: ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
 
         // Cancel any running diagnostics for this file
@@ -266,42 +306,49 @@ class GroovyTextDocumentService(
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
             try {
-                // Use compileAsync for proper coordination
-                val result = compilationService.compileAsync(this, uri, content).await()
+                runCatching {
+                    // Use compileAsync for proper coordination
+                    val result = compilationService.compileAsync(this, uri, content).await()
 
-                ensureActive() // Ensure job wasn't cancelled before publishing
+                    ensureActive() // Ensure job wasn't cancelled before publishing
 
-                // Publish compilation diagnostics first to keep UX responsive.
-                // NOTE: Tradeoff:
-                // This can result in two diagnostics publications (compile first, then CodeNarc merge),
-                // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
-                publishDiagnostics(uri.toString(), result.diagnostics)
+                    // Publish compilation diagnostics first to keep UX responsive.
+                    // NOTE: Tradeoff (See #564):
+                    // This can result in two diagnostics publications (compile first, then CodeNarc merge),
+                    // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
+                    publishDiagnostics(uri.toString(), result.diagnostics)
 
-                // Skip CodeNarc when disabled or when compilation already has errors.
-                if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
-                    return@launch
+                    // Skip CodeNarc when disabled or when compilation already has errors.
+                    if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
+                        return@runCatching
+                    }
+
+                    val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val allDiagnostics = result.diagnostics + codenarcDiagnostics
+
+                    ensureActive()
+                    if (codenarcDiagnostics.isNotEmpty()) {
+                        publishDiagnostics(uri.toString(), allDiagnostics)
+                    }
+
+                    logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
+                }.onFailure { e ->
+                    when (e) {
+                        is CompilationFailedException -> logger.error(
+                            "Compilation failed for: $uri",
+                            e,
+                        )
+
+                        is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
+                        is java.io.IOException -> logger.error("I/O error for: $uri", e)
+                        is kotlinx.coroutines.CancellationException -> {
+                            logger.debug("Diagnostics job cancelled for: $uri")
+                            throw e
+                        }
+
+                        else -> logger.error("Unexpected error during diagnostics for: $uri", e)
+                    }
                 }
-
-                val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                val allDiagnostics = result.diagnostics + codenarcDiagnostics
-
-                ensureActive()
-                if (codenarcDiagnostics.isNotEmpty()) {
-                    publishDiagnostics(uri.toString(), allDiagnostics)
-                }
-
-                logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
-            } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
-                logger.error("Compilation failed for: $uri", e)
-            } catch (e: IllegalArgumentException) {
-                logger.error("Invalid arguments for: $uri", e)
-            } catch (e: java.io.IOException) {
-                logger.error("I/O error for: $uri", e)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                logger.debug("Diagnostics job cancelled for: $uri")
-                throw e
-            } catch (e: Exception) {
-                logger.error("Unexpected error during diagnostics for: $uri", e)
             } finally {
                 // Remove job from map if it's the current one
                 diagnosticJobs.remove(uri, coroutineContext[Job])
@@ -337,11 +384,8 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            val basicCompletions = GroovyCompletions.basic()
-
             // Try to get contextual completions from AST
-            // Try to get contextual completions from AST
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
 
             val contextualCompletions = CompletionProvider.getContextualCompletions(
@@ -365,7 +409,7 @@ class GroovyTextDocumentService(
                 emptyList()
             }
 
-            val allCompletions = basicCompletions + contextualCompletions + jenkinsCompletions
+            val allCompletions = GroovyCompletions.basic() + contextualCompletions + jenkinsCompletions
 
             logger.debug("Returning ${allCompletions.size} completions")
             Either.forLeft(allCompletions)
@@ -380,7 +424,7 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}",
         )
 
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
 
         // Ensure AST is prepared (compiles if needed)
         // This is still needed because getSession expects cached result
@@ -471,7 +515,7 @@ class GroovyTextDocumentService(
         )
 
         try {
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide references")
@@ -529,7 +573,7 @@ class GroovyTextDocumentService(
         )
 
         try {
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide implementations")
@@ -563,7 +607,7 @@ class GroovyTextDocumentService(
             )
 
             try {
-                val uri = java.net.URI.create(params.textDocument.uri)
+                val uri = URI.create(params.textDocument.uri)
                 val compilationResult = ensureCompiledOrCompileNow(uri)
                 if (compilationResult == null) {
                     logger.warn("Document $uri not compiled, cannot provide highlights")
@@ -590,7 +634,7 @@ class GroovyTextDocumentService(
     override fun documentSymbol(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
 
         storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
@@ -618,23 +662,23 @@ class GroovyTextDocumentService(
                 params.position,
                 params.newName,
             )
-        } catch (e: org.eclipse.lsp4j.jsonrpc.ResponseErrorException) {
+        } catch (e: ResponseErrorException) {
             logger.error("Rename failed: ${e.message}")
             throw e
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid arguments for rename", e)
-            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
+            throw ResponseErrorException(
+                ResponseError(
+                    ResponseErrorCode.InvalidParams,
                     e.message ?: "Invalid arguments for rename",
                     null,
                 ),
             )
         } catch (e: Exception) {
             logger.error("Unexpected error during rename", e)
-            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+            throw ResponseErrorException(
+                ResponseError(
+                    ResponseErrorCode.InternalError,
                     e.message ?: "Unexpected error during rename",
                     null,
                 ),
@@ -657,7 +701,7 @@ class GroovyTextDocumentService(
 
     override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> = coroutineScope.future {
         logger.debug("CodeLens requested for ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
 
         // Ensure file is compiled before providing CodeLenses
         compilationService.ensureCompiled(uri)
@@ -668,7 +712,7 @@ class GroovyTextDocumentService(
     override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
         coroutineScope.future {
             logger.debug("Folding range requested for ${params.textDocument.uri}")
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
 
             // Ensure file is compiled before providing folding ranges
             val compilationResult = ensureCompiledOrCompileNow(uri)
@@ -684,7 +728,7 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
 
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
 
             try {
                 // Ensure document is compiled
