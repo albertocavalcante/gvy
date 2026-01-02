@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GdkExtensionMethod
 import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
@@ -26,6 +27,7 @@ import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 class SignatureHelpProvider(
     private val compilationService: GroovyCompilationService,
@@ -50,58 +52,48 @@ class SignatureHelpProvider(
         val astVisitor: GroovyAstModel,
     )
 
-    @Suppress("ReturnCount")
     private suspend fun resolveSignatureContext(documentUri: URI, position: Position): SignatureContext? {
-        val astVisitor = compilationService.getAstModel(documentUri) ?: run {
+        val astVisitor = compilationService.getAstModel(documentUri) ?: return null.also {
             logger.debug("No AST visitor available for {}", documentUri)
-            return null
         }
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: run {
+        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return null.also {
             logger.debug("No symbol table available for {}", documentUri)
-            return null
         }
 
         val groovyPos = position.toGroovyPosition()
-        val nodeAtPosition = astVisitor.getNodeAt(documentUri, groovyPos) ?: run {
+        val nodeAtPosition = astVisitor.getNodeAt(documentUri, groovyPos) ?: return null.also {
             logger.debug("No AST node found at $position for $documentUri")
-            return null
         }
 
-        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos) ?: run {
+        val methodCall = findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos) ?: return null.also {
             logger.debug("No method call expression near $position for $documentUri")
-            return null
         }
 
-        val methodName = methodCall.extractMethodName() ?: run {
+        val methodName = methodCall.extractMethodName() ?: return null.also {
             logger.debug("Could not resolve method name for call at $position in $documentUri")
-            return null
         }
 
-        val allSignatures = mutableListOf<SignatureInformation>()
+        val allSignatures = buildList {
+            // 1. Local Methods (Source)
+            val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
+            addAll(declarations.map { it.toSignatureInformation() })
 
-        // 1. Local Methods (Source)
-        val declarations = symbolTable.registry.findMethodDeclarations(documentUri, methodName)
-        allSignatures.addAll(declarations.map { it.toSignatureInformation() })
-
-        // 2-4. Resolved Methods (Superclass, GDK, Classpath)
-        val resolvedSignatures = resolveMethodsOnReceiver(methodCall, methodName, symbolTable, astVisitor)
-        allSignatures.addAll(resolvedSignatures)
+            // 2-4. Resolved Methods (Superclass, GDK, Classpath)
+            addAll(resolveMethodsOnReceiver(methodCall, methodName, symbolTable, astVisitor))
+        }
 
         if (allSignatures.isEmpty()) {
             logger.debug("No signatures found for $methodName")
             return null
         }
 
-        // Deduplicate signatures based on label
-        val distinctSignatures = allSignatures.distinctBy { it.label }
-
-        return SignatureContext(methodCall, nodeAtPosition, distinctSignatures, astVisitor)
+        return SignatureContext(methodCall, nodeAtPosition, allSignatures.distinctBy { it.label }, astVisitor)
     }
 
     private fun resolveMethodsOnReceiver(
         methodCall: MethodCallExpression,
         methodName: String,
-        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
     ): List<SignatureInformation> {
         val signatures = mutableListOf<SignatureInformation>()
@@ -143,7 +135,7 @@ class SignatureHelpProvider(
 
     private fun resolveReceiverType(
         methodCall: MethodCallExpression,
-        symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
     ): String {
         if (methodCall.isImplicitThis) {
@@ -308,7 +300,7 @@ class SignatureHelpProvider(
     private fun determineActiveParameter(
         methodCall: MethodCallExpression,
         nodeAtPosition: ASTNode,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        position: GroovyPosition,
         astVisitor: GroovyAstModel,
     ): Int {
         val arguments = methodCall.argumentExpressions()
@@ -323,10 +315,7 @@ class SignatureHelpProvider(
         return estimateParameterIndex(arguments, position)
     }
 
-    private fun estimateParameterIndex(
-        arguments: List<Expression>,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): Int {
+    private fun estimateParameterIndex(arguments: List<Expression>, position: GroovyPosition): Int {
         arguments.forEachIndexed { index, argument ->
             val start = argument.safePosition().getOrNull()?.toParserPosition()
             if (start != null && isBefore(position, start)) {
@@ -336,10 +325,7 @@ class SignatureHelpProvider(
         return arguments.size
     }
 
-    private fun isBefore(
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-        other: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): Boolean {
+    private fun isBefore(position: GroovyPosition, other: GroovyPosition): Boolean {
         if (position.line != other.line) return position.line < other.line
         return position.character < other.character
     }
@@ -348,7 +334,7 @@ class SignatureHelpProvider(
         astVisitor: GroovyAstModel,
         documentUri: URI,
         nodeAtPosition: ASTNode,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        position: GroovyPosition,
     ): MethodCallExpression? {
         var current: ASTNode? = nodeAtPosition
         while (current != null && current !is MethodCallExpression) {

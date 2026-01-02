@@ -7,9 +7,8 @@ import com.github.albertocavalcante.groovylsp.engine.adapters.UnifiedSymbol
 import com.github.albertocavalcante.groovylsp.engine.api.DefinitionKind
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
-import com.github.albertocavalcante.groovyparser.ast.Node
+import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
@@ -165,11 +164,7 @@ class CoreDefinitionServiceTest {
     }
 
     // Helper to create a ParseUnit from code
-    private fun createParseUnit(
-        code: String,
-        uri: String,
-        compilationUnit: com.github.albertocavalcante.groovyparser.ast.CompilationUnit? = null,
-    ): ParseUnit {
+    private fun createParseUnit(code: String, uri: String, compilationUnit: CompilationUnit? = null): ParseUnit {
         val cu = compilationUnit ?: parser.parse(code).result.orElse(null)
         return object : ParseUnit {
             override val uri: String = uri

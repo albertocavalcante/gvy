@@ -28,9 +28,13 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         val uri = URI.create(params.textDocument.uri)
         val position = params.position.toGroovyPosition()
 
-        val visitor = compilationService.getAstModel(uri) ?: return emptyList()
-        val symbolTable = compilationService.getSymbolTable(uri) ?: return emptyList()
-        val node = visitor.getNodeAt(uri, position) ?: return emptyList()
+        val visitor = compilationService.getAstModel(uri)
+        val symbolTable = compilationService.getSymbolTable(uri)
+        val node = visitor?.getNodeAt(uri, position)
+
+        if (visitor == null || symbolTable == null || node == null) {
+            return emptyList()
+        }
 
         // Resolve definitions
         // If it's a call, we want the definition. If it's a def, we want itself.

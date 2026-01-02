@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.slf4j.LoggerFactory
 import java.net.URI
+import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
 /**
  * Provider for finding implementations of interfaces and abstract methods.
@@ -71,10 +72,7 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
     /**
      * Create context from URI and position.
      */
-    private fun createContext(
-        uri: String,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): ImplementationContext? {
+    private fun createContext(uri: String, position: GroovyPosition): ImplementationContext? {
         val documentUri = URI.create(uri)
         val visitor = compilationService.getAstModel(documentUri) ?: return null
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return null

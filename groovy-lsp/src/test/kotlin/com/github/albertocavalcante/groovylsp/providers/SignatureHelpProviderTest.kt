@@ -172,7 +172,7 @@ class SignatureHelpProviderTest {
         // 2 from Script (println(), println(Object)) + others from GDK/DefaultGroovyMethods
         assertTrue(
             result.signatures.size >= 4,
-            "Expected at least 4 signatures for println() GDK method, but found: ${result.signatures.size}. Labels: $labels",
+            "Expected at least 4 signatures for println(), but found: ${result.signatures.size}. Labels: $labels",
         )
         assertTrue(
             labels.any { it == "void println()" },
@@ -250,8 +250,9 @@ class SignatureHelpProviderTest {
         compile(uri, source)
 
         // Debug check
-        val declarations = compilationService.getSymbolTable(uri)?.registry?.findMethodDeclarations(uri, "printResult")
-        assertTrue(declarations != null && declarations.isNotEmpty(), "Symbol table missing printResult")
+        val registry = compilationService.getSymbolTable(uri)?.registry
+        val declarations = registry?.findMethodDeclarations(uri, "printResult")
+        assertTrue(!declarations.isNullOrEmpty(), "Symbol table missing printResult")
 
         // Case 1: Inside inner call `sum(1, 2)`
         val innerPos = positionAfter(source, "sum(1, ")
@@ -303,8 +304,9 @@ class SignatureHelpProviderTest {
         compile(uri, source)
 
         // Debug check
-        val declarations = compilationService.getSymbolTable(uri)?.registry?.findMethodDeclarations(uri, "method")
-        assertTrue(declarations != null && declarations.isNotEmpty(), "Symbol table missing method")
+        val registry = compilationService.getSymbolTable(uri)?.registry
+        val declarations = registry?.findMethodDeclarations(uri, "method")
+        assertTrue(!declarations.isNullOrEmpty(), "Symbol table missing method")
 
         // Position at opening parenthesis: `method(|)`
         val (lineIndex, line) = lineContaining(source, "method()")
