@@ -72,4 +72,20 @@ class CoreParserProviderTest {
             assertTrue(diag.range.start.column >= 1, "Column should be 1-based")
         }
     }
+
+    @Test
+    fun `symbols reports interfaces correctly`() {
+        val source = """
+            interface Greeter {
+                void greet()
+            }
+        """.trimIndent()
+        val unit = provider.parse(source)
+
+        val symbols = unit.symbols()
+        assertTrue(
+            symbols.any { it.name == "Greeter" && it.kind == SymbolKind.INTERFACE },
+            "Should report Greeter as INTERFACE"
+        )
+    }
 }
