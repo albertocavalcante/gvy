@@ -13,10 +13,11 @@ make format  # Fix lint
 
 ## Rules (ALWAYS APPLY)
 
-1. **Git**: `git branch --show-current` before commit. `git add <file>` explicitly, NEVER `git add .`
-2. **TDD**: Failing test FIRST → implement → refactor
-3. **Lint**: `./gradlew lintFix` before commit
-4. **GitHub**: Use `gh` CLI, never curl/fetch for GitHub URLs
+1. **Worktrees**: Use `git worktree add` for new work. Do not edit in the main worktree.
+2. **Git**: `git branch --show-current` before commit. `git add <file>` explicitly, NEVER `git add .`
+3. **TDD**: Failing test FIRST → implement → refactor
+4. **Lint**: `./gradlew lintFix` before commit
+5. **GitHub**: Use `gh` CLI, never curl/fetch for GitHub URLs
 
 ## Commits
 
@@ -30,6 +31,7 @@ Types: `feat` `fix` `refactor` `test` `docs` `ci` `chore`
 
 <instruction>
 When starting a task, IDENTIFY the task type below and READ the linked document BEFORE writing code or executing commands.
+The git workflow rules apply to any branch, commit, or PR work.
 </instruction>
 
 | IF task involves...             | THEN read                                 |
