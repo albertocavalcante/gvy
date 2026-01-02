@@ -50,47 +50,37 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
     }
 
     override fun symbols(): List<SymbolInfo> {
-        val symbols = mutableListOf<SymbolInfo>()
-        val ast = result.ast ?: return symbols
+        val ast = result.ast ?: return emptyList()
 
-        // Extract classes
-        ast.classes.forEach { classNode ->
-            symbols.add(
-                SymbolInfo(
-                    name = classNode.nameWithoutPackage,
-                    kind = SymbolKind.CLASS,
-                    range = extractNodeRange(classNode),
-                    containerName = ast.packageName,
-                ),
-            )
-
-            // Extract methods
-            classNode.methods.forEach { method ->
-                symbols.add(
+        return ast.classes.flatMap { classNode ->
+            buildList {
+                add(
+                    SymbolInfo(
+                        name = classNode.nameWithoutPackage,
+                        kind = SymbolKind.CLASS,
+                        range = extractNodeRange(classNode),
+                        containerName = ast.packageName,
+                    ),
+                )
+                classNode.methods.mapTo(this) { method ->
                     SymbolInfo(
                         name = method.name,
                         kind = SymbolKind.METHOD,
                         range = extractNodeRange(method),
                         containerName = classNode.nameWithoutPackage,
                         detail = method.typeDescriptor,
-                    ),
-                )
-            }
-
-            // Extract fields
-            classNode.fields.forEach { field ->
-                symbols.add(
+                    )
+                }
+                classNode.fields.mapTo(this) { field ->
                     SymbolInfo(
                         name = field.name,
                         kind = SymbolKind.FIELD,
                         range = extractNodeRange(field),
                         containerName = classNode.nameWithoutPackage,
-                    ),
-                )
+                    )
+                }
             }
         }
-
-        return symbols
     }
 
     override fun typeAt(position: Position): TypeInfo? {
