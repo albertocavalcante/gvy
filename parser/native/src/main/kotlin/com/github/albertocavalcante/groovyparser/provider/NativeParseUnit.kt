@@ -11,9 +11,23 @@ import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolInfo
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import com.github.albertocavalcante.groovyparser.api.model.TypeInfo
+import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.ForStatement
+import org.codehaus.groovy.ast.stmt.IfStatement
+import org.codehaus.groovy.ast.stmt.ReturnStatement
+import org.codehaus.groovy.ast.stmt.WhileStatement
 import java.net.URI
 import java.nio.file.Path
 import com.github.albertocavalcante.groovyparser.api.ParseResult as NativeParseResult
+import com.github.albertocavalcante.groovyparser.ast.types.Position as NativePosition
 
 class NativeParseUnit(override val source: String, override val path: Path?, private val result: NativeParseResult) :
     ParseUnit {
@@ -21,8 +35,10 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
     override val isSuccessful: Boolean = result.isSuccessful
 
     override fun nodeAt(position: Position): NodeInfo? {
+        if (position.line <= 0 || position.column <= 0) return null
+
         // Convert 1-based Position to 0-based for native parser
-        val nativePos = com.github.albertocavalcante.groovyparser.ast.types.Position(
+        val nativePos = NativePosition(
             position.line - 1,
             position.column - 1,
         )
@@ -95,33 +111,33 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         ParserSeverity.HINT -> Severity.HINT
     }
 
-    private fun mapNodeKind(node: org.codehaus.groovy.ast.ASTNode): NodeKind = when (node) {
-        is org.codehaus.groovy.ast.ClassNode -> NodeKind.CLASS
-        is org.codehaus.groovy.ast.MethodNode -> NodeKind.METHOD
-        is org.codehaus.groovy.ast.FieldNode -> NodeKind.FIELD
-        is org.codehaus.groovy.ast.PropertyNode -> NodeKind.PROPERTY
-        is org.codehaus.groovy.ast.Parameter -> NodeKind.PARAMETER
-        is org.codehaus.groovy.ast.expr.VariableExpression -> NodeKind.VARIABLE_REFERENCE
-        is org.codehaus.groovy.ast.expr.MethodCallExpression -> NodeKind.METHOD_CALL
-        is org.codehaus.groovy.ast.expr.ClosureExpression -> NodeKind.CLOSURE
-        is org.codehaus.groovy.ast.stmt.IfStatement -> NodeKind.IF
-        is org.codehaus.groovy.ast.stmt.ForStatement -> NodeKind.FOR
-        is org.codehaus.groovy.ast.stmt.WhileStatement -> NodeKind.WHILE
-        is org.codehaus.groovy.ast.stmt.ReturnStatement -> NodeKind.RETURN
+    private fun mapNodeKind(node: ASTNode): NodeKind = when (node) {
+        is ClassNode -> NodeKind.CLASS
+        is MethodNode -> NodeKind.METHOD
+        is FieldNode -> NodeKind.FIELD
+        is PropertyNode -> NodeKind.PROPERTY
+        is Parameter -> NodeKind.PARAMETER
+        is VariableExpression -> NodeKind.VARIABLE_REFERENCE
+        is MethodCallExpression -> NodeKind.METHOD_CALL
+        is ClosureExpression -> NodeKind.CLOSURE
+        is IfStatement -> NodeKind.IF
+        is ForStatement -> NodeKind.FOR
+        is WhileStatement -> NodeKind.WHILE
+        is ReturnStatement -> NodeKind.RETURN
         else -> NodeKind.UNKNOWN
     }
 
-    private fun extractNodeName(node: org.codehaus.groovy.ast.ASTNode): String? = when (node) {
-        is org.codehaus.groovy.ast.ClassNode -> node.nameWithoutPackage
-        is org.codehaus.groovy.ast.MethodNode -> node.name
-        is org.codehaus.groovy.ast.FieldNode -> node.name
-        is org.codehaus.groovy.ast.PropertyNode -> node.name
-        is org.codehaus.groovy.ast.Parameter -> node.name
-        is org.codehaus.groovy.ast.expr.VariableExpression -> node.name
+    private fun extractNodeName(node: ASTNode): String? = when (node) {
+        is ClassNode -> node.nameWithoutPackage
+        is MethodNode -> node.name
+        is FieldNode -> node.name
+        is PropertyNode -> node.name
+        is Parameter -> node.name
+        is VariableExpression -> node.name
         else -> null
     }
 
-    private fun extractNodeRange(node: org.codehaus.groovy.ast.ASTNode): Range = Range(
+    private fun extractNodeRange(node: ASTNode): Range = Range(
         start = Position(node.lineNumber.coerceAtLeast(1), node.columnNumber.coerceAtLeast(1)),
         end = Position(node.lastLineNumber.coerceAtLeast(1), node.lastColumnNumber.coerceAtLeast(1)),
     )
