@@ -1,0 +1,95 @@
+name: Claude Auto-Fix Bug
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to fix'
+        required: true
+        type: number
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  auto-fix:
+    # Only run when issue is labeled with 'auto-fix' or manually triggered
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'auto-fix'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run Claude Auto-Fix
+        id: claude-fix
+        uses: anthropics/claude-code-action@0a2593483e318c6693adcb04af942367df7157f0 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+
+            Fix the bug described in issue #${{ github.event.issue.number || inputs.issue_number }} following TDD workflow:
+
+            **Step 1: Understand the Bug**
+            - Read the issue description thoroughly
+            - Identify affected files and components
+            - Determine root cause
+
+            **Step 2: Write Failing Test (TDD - MANDATORY)**
+            - Create a test that reproduces the bug
+            - Run: make test
+            - Verify test FAILS for the right reason
+            - If test passes immediately, the bug may not exist or test is wrong
+
+            **Step 3: Implement Fix**
+            - Write minimal code to make test pass
+            - Follow AGENTS.md conventions:
+              * Kotlin best practices
+              * Proper error handling
+              * Null safety
+
+            **Step 4: Verify Fix**
+            - Run: make test (all tests must pass)
+            - Run: make lint (must pass)
+            - Verify no regressions
+
+            **Step 5: Create PR**
+            - Create branch following git workflow rules
+            - Use explicit git add (NEVER git add .)
+            - Conventional commit: "fix: <description>"
+            - Create PR with:
+              * Clear title
+              * Link to issue: "Fixes #${{ github.event.issue.number || inputs.issue_number }}"
+              * Summary of changes
+              * Test coverage added
+
+            **CRITICAL RULES (from AGENTS.md):**
+            - TDD: Failing test FIRST, then implementation
+            - Git: Use `git add <file>` explicitly, NEVER `git add .`
+            - Git: Check branch with `git branch --show-current`
+            - Lint: Run `make lint` before commit
+            - Build: Verify with `make build`
+
+          # Security: Enforce AGENTS.md rules
+          # Allow: Read/write code, run tests/build, create PR, comment on issue
+          # Prevent: Dangerous operations (git add ., push --force, rm -rf)
+          claude_args: |
+            --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add :*),Bash(git commit:*),Bash(git push:*),Bash(gh pr :*),Bash(gh issue comment:*)"
+            --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(rm -rf:*)"
+            --max-turns 15
