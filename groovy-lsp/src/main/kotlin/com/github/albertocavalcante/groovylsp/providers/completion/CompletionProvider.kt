@@ -20,6 +20,10 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -48,6 +52,7 @@ object CompletionProvider {
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
     private const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
     private const val MAX_TYPE_COMPLETION_RESULTS = 20
+    private const val MAX_IMPORT_COMPLETION_RESULTS = 50
 
     /**
      * Get basic Groovy language completion items using DSL.
@@ -192,6 +197,13 @@ object CompletionProvider {
         // Extract completion context
         val context = SymbolExtractor.extractCompletionSymbols(ctx.ast, ctx.line, ctx.character)
         val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
+        val importContext = detectImportCompletionContext(ctx)
+
+        if (importContext != null) {
+            return completions {
+                addImportCompletions(importContext, ctx.compilationService)
+            }
+        }
 
         // Try to detect member access (e.g., "myList.")
         val nodeAtCursor = ctx.astModel.getNodeAt(ctx.uri, ctx.line, ctx.character)
@@ -527,6 +539,104 @@ object CompletionProvider {
         }
     }
 
+    private data class ImportCompletionContext(
+        val prefix: String,
+        val isStatic: Boolean,
+        val canSuggestStatic: Boolean,
+        val line: Int,
+        val replaceStartCharacter: Int,
+        val replaceEndCharacter: Int,
+    )
+
+    /**
+     * Detects whether the cursor is in an import statement and extracts prefix/replacement info.
+     */
+    private fun detectImportCompletionContext(ctx: CompletionContext): ImportCompletionContext? {
+        val lines = ctx.content.split('\n')
+        if (ctx.line !in lines.indices) return null
+
+        val lineText = lines[ctx.line]
+        val safeChar = ctx.character.coerceIn(0, lineText.length)
+        val beforeCursor = lineText.substring(0, safeChar)
+        val trimmed = beforeCursor.trimStart()
+        val importKeyword = "import"
+        if (!trimmed.startsWith(importKeyword)) return null
+        if (trimmed.length > importKeyword.length &&
+            Character.isJavaIdentifierPart(trimmed[importKeyword.length])
+        ) {
+            return null
+        }
+
+        val offset = offsetAt(ctx.content, lines, ctx.line, ctx.character)
+        if (ctx.tokenIndex?.isInCommentOrString(offset) == true) return null
+
+        val staticKeyword = "static"
+        val importColumn = lineText.indexOf(importKeyword)
+        if (importColumn == -1 || importColumn + importKeyword.length > safeChar) return null
+
+        val afterImportSlice = lineText.substring(importColumn + importKeyword.length, safeChar)
+        val afterImportTrimStart = afterImportSlice.indexOfFirst { !it.isWhitespace() }
+        if (afterImportTrimStart == -1) {
+            return ImportCompletionContext(
+                prefix = "",
+                isStatic = false,
+                canSuggestStatic = true,
+                line = ctx.line,
+                replaceStartCharacter = safeChar,
+                replaceEndCharacter = safeChar,
+            )
+        }
+
+        val afterImportTrimmed = afterImportSlice.substring(afterImportTrimStart)
+        val afterImportStart = importColumn + importKeyword.length + afterImportTrimStart
+        val hasStaticKeyword = afterImportTrimmed.startsWith(staticKeyword) &&
+            (
+                afterImportTrimmed.length == staticKeyword.length ||
+                    afterImportTrimmed[staticKeyword.length].isWhitespace()
+                )
+        if (hasStaticKeyword) {
+            val afterStaticIndex = afterImportStart + staticKeyword.length
+            val afterStaticSlice = lineText.substring(afterStaticIndex, safeChar)
+            val afterStaticTrimStart = afterStaticSlice.indexOfFirst { !it.isWhitespace() }
+            if (afterStaticTrimStart == -1) {
+                return ImportCompletionContext(
+                    prefix = "",
+                    isStatic = true,
+                    canSuggestStatic = false,
+                    line = ctx.line,
+                    replaceStartCharacter = safeChar,
+                    replaceEndCharacter = safeChar,
+                )
+            }
+
+            val prefix = afterStaticSlice.substring(afterStaticTrimStart)
+            val prefixStart = afterStaticIndex + afterStaticTrimStart
+            return ImportCompletionContext(
+                prefix = prefix,
+                isStatic = true,
+                canSuggestStatic = false,
+                line = ctx.line,
+                replaceStartCharacter = prefixStart,
+                replaceEndCharacter = safeChar,
+            )
+        }
+
+        val isTypingStatic =
+            !afterImportTrimmed.any { it.isWhitespace() } && staticKeyword.startsWith(afterImportTrimmed)
+        // TODO(#576): Consider suggesting both "static" and matching class prefixes when overlapping.
+        //   See: https://github.com/albertocavalcante/gvy/issues/576
+        val prefix = if (isTypingStatic) "" else afterImportTrimmed
+        val replaceStart = if (isTypingStatic) safeChar else afterImportStart
+        return ImportCompletionContext(
+            prefix = prefix,
+            isStatic = false,
+            canSuggestStatic = true,
+            line = ctx.line,
+            replaceStartCharacter = replaceStart,
+            replaceEndCharacter = safeChar,
+        )
+    }
+
     private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
         val inferredVar = context.variables.find { it.name == variableName }
         return inferredVar?.type
@@ -643,6 +753,54 @@ object CompletionProvider {
                 doc = "Keyword/Type: $k",
             )
         }
+    }
+
+    /**
+     * Adds import-specific completions (static keyword and matching class names).
+     */
+    private fun CompletionsBuilder.addImportCompletions(
+        ctx: ImportCompletionContext,
+        compilationService: GroovyCompilationService,
+    ) {
+        if (ctx.canSuggestStatic) {
+            keyword(
+                keyword = "static",
+                doc = "Static import",
+            )
+        }
+
+        val prefix = ctx.prefix.trim()
+        if (prefix.isBlank()) {
+            // TODO(#575): Provide curated suggestions for empty import prefixes.
+            //   See: https://github.com/albertocavalcante/gvy/issues/575
+            return
+        }
+
+        val classpathService = compilationService.classpathService
+        val candidates = if (prefix.contains('.')) {
+            classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        } else {
+            classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+        candidates
+            .map { it.fullName }
+            .distinct()
+            .forEach { fullName ->
+                add(
+                    CompletionItem().apply {
+                        label = fullName
+                        kind = CompletionItemKind.Class
+                        detail = fullName
+                        insertText = fullName
+                        textEdit = Either.forLeft(TextEdit(range, fullName))
+                    },
+                )
+            }
     }
 
     /**
