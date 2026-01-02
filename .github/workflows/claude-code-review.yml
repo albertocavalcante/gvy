@@ -1,0 +1,85 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude-review:
+    # Only run for trusted contributors to prevent abuse from forks
+    # OWNER, MEMBER, CONTRIBUTOR are trusted; FIRST_TIME_CONTRIBUTOR and others require approval
+    if: |
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'CONTRIBUTOR'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@0a2593483e318c6693adcb04af942367df7157f0 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request following the standards in AGENTS.md:
+
+            **Code Quality:**
+            - Kotlin conventions and null safety
+            - Code readability and maintainability
+            - Proper error handling
+
+            **Security:**
+            - No hardcoded credentials or secrets
+            - Safe file operations (no path traversal)
+            - Proper input validation
+
+            **Testing:**
+            - TDD followed (failing tests first)?
+            - 80%+ coverage for public APIs
+            - Edge cases covered
+
+            **Performance:**
+            - No N+1 queries or inefficient algorithms
+            - Appropriate use of Kotlin sequences/collections
+            - LSP protocol efficiency (request/response cycles)
+
+            **Git Workflow:**
+            - Conventional commit format
+            - Explicit file additions (no wildcards)
+            - Lint passes: ./gradlew lintFix
+
+            Use `gh pr comment` to post your review. Be constructive and specific.
+
+          # Security: Read-only code analysis + commenting only
+          # Allows reading code and using gh CLI for viewing/commenting
+          # Prevents edits during automated reviews
+          claude_args: |
+            --allowed-tools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(./gradlew test)"
+            --max-turns 5
+
