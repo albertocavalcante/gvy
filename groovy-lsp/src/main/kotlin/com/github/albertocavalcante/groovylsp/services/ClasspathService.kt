@@ -26,6 +26,7 @@ class ClasspathService(
 
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
     private val classIndex = ClassIndex()
+    private val qualifiedNameIndex = QualifiedNameIndex()
     private val isIndexed = AtomicBoolean(false)
 
     /**
@@ -47,6 +48,7 @@ class ClasspathService(
             // Invalidate index when classpath changes
             isIndexed.set(false)
             classIndex.clear()
+            qualifiedNameIndex.clear()
         } catch (e: Exception) {
             logger.error("Failed to update classpath", e)
             // Restore previous classloader to maintain consistent state
@@ -71,6 +73,7 @@ class ClasspathService(
             try {
                 classpathIndex.index(resolveClasspathEntries()).forEach { entry ->
                     classIndex.add(entry.simpleName, entry.fullName)
+                    qualifiedNameIndex.add(entry.fullName)
                 }
 
                 isIndexed.set(true)
@@ -144,6 +147,30 @@ class ClasspathService(
     }
 
     /**
+     * Finds classes by fully qualified prefix (e.g., "java.util.L").
+     */
+    fun findClassesByQualifiedPrefix(prefix: String, maxResults: Int = 50): List<ClassInfo> {
+        if (prefix.isBlank()) return emptyList()
+
+        if (!isIndexed.get()) {
+            indexAllClasses()
+        }
+
+        val results = mutableListOf<ClassInfo>()
+        qualifiedNameIndex.snapshot()
+            .asSequence()
+            .filter { it.startsWith(prefix, ignoreCase = true) }
+            .take(maxResults)
+            .forEach { fullName ->
+                val simpleName = fullName.substringAfterLast('.')
+                val packageName = fullName.substringBeforeLast('.', "")
+                results.add(ClassInfo(simpleName, fullName, packageName))
+            }
+
+        return results
+    }
+
+    /**
      * Tries to load a class by name and returns its reflected methods.
      */
     fun getMethods(className: String): List<ReflectedMethod> = reflection.getMethods(className)
@@ -169,6 +196,20 @@ class ClasspathService(
         }
 
         fun size(): Int = index.size
+
+        fun clear() {
+            index.clear()
+        }
+    }
+
+    internal class QualifiedNameIndex {
+        private val index = ConcurrentHashMap.newKeySet<String>()
+
+        fun add(fullName: String) {
+            index.add(fullName)
+        }
+
+        fun snapshot(): List<String> = index.toList().sorted()
 
         fun clear() {
             index.clear()

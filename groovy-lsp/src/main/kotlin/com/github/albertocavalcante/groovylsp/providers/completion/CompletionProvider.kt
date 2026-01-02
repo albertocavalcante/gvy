@@ -48,6 +48,7 @@ object CompletionProvider {
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
     private const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
     private const val MAX_TYPE_COMPLETION_RESULTS = 20
+    private const val MAX_IMPORT_COMPLETION_RESULTS = 50
 
     /**
      * Get basic Groovy language completion items using DSL.
@@ -192,6 +193,13 @@ object CompletionProvider {
         // Extract completion context
         val context = SymbolExtractor.extractCompletionSymbols(ctx.ast, ctx.line, ctx.character)
         val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
+        val importContext = detectImportCompletionContext(ctx)
+
+        if (importContext != null) {
+            return completions {
+                addImportCompletions(importContext, ctx.compilationService)
+            }
+        }
 
         // Try to detect member access (e.g., "myList.")
         val nodeAtCursor = ctx.astModel.getNodeAt(ctx.uri, ctx.line, ctx.character)
@@ -527,6 +535,44 @@ object CompletionProvider {
         }
     }
 
+    private data class ImportCompletionContext(
+        val prefix: String,
+        val isStatic: Boolean,
+        val canSuggestStatic: Boolean,
+    )
+
+    private fun detectImportCompletionContext(ctx: CompletionContext): ImportCompletionContext? {
+        val lines = ctx.content.lines()
+        if (ctx.line !in lines.indices) return null
+
+        val lineText = lines[ctx.line]
+        val safeChar = ctx.character.coerceIn(0, lineText.length)
+        val beforeCursor = lineText.substring(0, safeChar)
+        val trimmed = beforeCursor.trimStart()
+        if (!trimmed.startsWith("import")) return null
+
+        val offset = offsetAt(ctx.content, lines, ctx.line, ctx.character)
+        if (ctx.tokenIndex?.isInCommentOrString(offset) == true) return null
+
+        val afterImportRaw = trimmed.removePrefix("import")
+        val afterImport = afterImportRaw.trimStart()
+        if (afterImport.isEmpty()) {
+            return ImportCompletionContext(prefix = "", isStatic = false, canSuggestStatic = true)
+        }
+
+        val staticKeyword = "static"
+        val hasStaticKeyword = afterImport.startsWith(staticKeyword) &&
+            (afterImport.length == staticKeyword.length || afterImport[staticKeyword.length].isWhitespace())
+        if (hasStaticKeyword) {
+            val prefix = afterImport.substring(staticKeyword.length).trimStart()
+            return ImportCompletionContext(prefix = prefix, isStatic = true, canSuggestStatic = false)
+        }
+
+        val isTypingStatic = !afterImport.any { it.isWhitespace() } && staticKeyword.startsWith(afterImport)
+        val prefix = if (isTypingStatic) "" else afterImport
+        return ImportCompletionContext(prefix = prefix, isStatic = false, canSuggestStatic = true)
+    }
+
     private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
         val inferredVar = context.variables.find { it.name == variableName }
         return inferredVar?.type
@@ -643,6 +689,40 @@ object CompletionProvider {
                 doc = "Keyword/Type: $k",
             )
         }
+    }
+
+    private fun CompletionsBuilder.addImportCompletions(
+        ctx: ImportCompletionContext,
+        compilationService: GroovyCompilationService,
+    ) {
+        if (ctx.canSuggestStatic) {
+            keyword(
+                keyword = "static",
+                doc = "Static import",
+            )
+        }
+
+        val prefix = ctx.prefix.trim()
+        if (prefix.isBlank()) return
+
+        val classpathService = compilationService.classpathService
+        val candidates = if (prefix.contains('.')) {
+            classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        } else {
+            classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        }
+
+        candidates
+            .map { it.fullName }
+            .distinct()
+            .forEach { fullName ->
+                completion {
+                    label(fullName)
+                    kind(CompletionItemKind.Class)
+                    detail(fullName)
+                    insertText(fullName)
+                }
+            }
     }
 
     /**
