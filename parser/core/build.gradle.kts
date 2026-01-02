@@ -9,6 +9,7 @@ version = rootProject.version
 
 dependencies {
     // Groovy compiler (for native AST conversion)
+    api(project(":parser:api"))
     api(libs.groovy.core)
 
     // Logging
