@@ -62,7 +62,7 @@ class CustomRulesProvider(
 
     private fun createContext(uri: URI): RuleContext = object : RuleContext {
         // Lazy AST retrieval - only fetch if rules need it
-        private val ast: Any? by lazy {
+        private val astLazy: Any? by lazy {
             try {
                 compilationService.getAst(uri)
             } catch (e: Exception) {
@@ -71,7 +71,7 @@ class CustomRulesProvider(
             }
         }
 
-        override fun getAst(): Any? = ast
+        override fun getAst(): Any? = astLazy
 
         override fun hasErrors(): Boolean = try {
             compilationService.getDiagnostics(uri).any {

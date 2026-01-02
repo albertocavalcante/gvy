@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.Test
 import java.net.URI

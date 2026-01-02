@@ -6,6 +6,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -78,7 +79,7 @@ class CustomRulesProviderTest {
 
     @Test
     fun `should create context with AST access`() = runBlocking {
-        val mockAst = mockk<Any>()
+        val mockAst: ASTNode? = mockk<ASTNode>()
         val compilationService = mockk<GroovyCompilationService>()
         every { compilationService.getAst(any()) } returns mockAst
         every { compilationService.getDiagnostics(any()) } returns emptyList()

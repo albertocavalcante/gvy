@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
+import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -147,6 +148,7 @@ class RuleRegistryTest {
         override val defaultSeverity = DiagnosticSeverity.Warning
         override val enabledByDefault = enabledByDefault
 
-        override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext) = emptyList()
+        override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
+            emptyList()
     }
 }
