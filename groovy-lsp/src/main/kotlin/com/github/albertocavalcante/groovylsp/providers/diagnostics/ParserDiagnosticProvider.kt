@@ -17,9 +17,8 @@ import java.net.URI
  * NOTE: Parser diagnostics are extracted from cached parse results when available,
  * making this provider very fast (no re-parsing needed).
  */
-class ParserDiagnosticProvider(
-    private val compilationService: GroovyCompilationService,
-) : StreamingDiagnosticProvider {
+class ParserDiagnosticProvider(private val compilationService: GroovyCompilationService) :
+    StreamingDiagnosticProvider {
 
     companion object {
         private val logger = LoggerFactory.getLogger(ParserDiagnosticProvider::class.java)

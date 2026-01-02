@@ -56,8 +56,7 @@ class RuleRegistry {
     /**
      * Get rules by IDs.
      */
-    fun getRules(ids: Collection<String>): List<DiagnosticRule> =
-        ids.mapNotNull { id -> getRule(id) }
+    fun getRules(ids: Collection<String>): List<DiagnosticRule> = ids.mapNotNull { id -> getRule(id) }
 
     /**
      * Check if a rule is registered.
@@ -112,5 +111,4 @@ class RuleRegistryBuilder {
 /**
  * Build a rule registry using DSL syntax.
  */
-fun buildRuleRegistry(block: RuleRegistryBuilder.() -> Unit): RuleRegistry =
-    RuleRegistryBuilder().apply(block).build()
+fun buildRuleRegistry(block: RuleRegistryBuilder.() -> Unit): RuleRegistry = RuleRegistryBuilder().apply(block).build()

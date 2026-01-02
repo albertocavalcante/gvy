@@ -59,9 +59,8 @@ class CustomRulesProviderTest {
             override val id = "bad"
             override val description = "Bad rule"
 
-            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): Nothing {
+            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): Nothing =
                 throw RuntimeException("Rule failed")
-            }
         }
 
         val compilationService = mockk<GroovyCompilationService>()
@@ -146,11 +145,7 @@ class CustomRulesProviderTest {
         assertTrue(provider.enabledByDefault)
     }
 
-    private fun createMockRule(
-        id: String,
-        diagnostics: List<Diagnostic>,
-        enabled: Boolean = true,
-    ): DiagnosticRule {
+    private fun createMockRule(id: String, diagnostics: List<Diagnostic>, enabled: Boolean = true): DiagnosticRule {
         val rule = mockk<DiagnosticRule>()
         every { rule.id } returns id
         every { rule.description } returns "Test rule"
