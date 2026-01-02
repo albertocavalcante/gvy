@@ -20,6 +20,10 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -539,10 +543,13 @@ object CompletionProvider {
         val prefix: String,
         val isStatic: Boolean,
         val canSuggestStatic: Boolean,
+        val line: Int,
+        val replaceStartCharacter: Int,
+        val replaceEndCharacter: Int,
     )
 
     private fun detectImportCompletionContext(ctx: CompletionContext): ImportCompletionContext? {
-        val lines = ctx.content.lines()
+        val lines = ctx.content.split('\n')
         if (ctx.line !in lines.indices) return null
 
         val lineText = lines[ctx.line]
@@ -560,25 +567,71 @@ object CompletionProvider {
         val offset = offsetAt(ctx.content, lines, ctx.line, ctx.character)
         if (ctx.tokenIndex?.isInCommentOrString(offset) == true) return null
 
-        val afterImportRaw = trimmed.removePrefix("import")
-        val afterImport = afterImportRaw.trimStart()
-        if (afterImport.isEmpty()) {
-            return ImportCompletionContext(prefix = "", isStatic = false, canSuggestStatic = true)
-        }
-
         val staticKeyword = "static"
-        val hasStaticKeyword = afterImport.startsWith(staticKeyword) &&
-            (afterImport.length == staticKeyword.length || afterImport[staticKeyword.length].isWhitespace())
-        if (hasStaticKeyword) {
-            val prefix = afterImport.substring(staticKeyword.length).trimStart()
-            return ImportCompletionContext(prefix = prefix, isStatic = true, canSuggestStatic = false)
+        val importColumn = lineText.indexOf(importKeyword)
+        if (importColumn == -1 || importColumn + importKeyword.length > safeChar) return null
+
+        val afterImportSlice = lineText.substring(importColumn + importKeyword.length, safeChar)
+        val afterImportTrimStart = afterImportSlice.indexOfFirst { !it.isWhitespace() }
+        if (afterImportTrimStart == -1) {
+            return ImportCompletionContext(
+                prefix = "",
+                isStatic = false,
+                canSuggestStatic = true,
+                line = ctx.line,
+                replaceStartCharacter = safeChar,
+                replaceEndCharacter = safeChar,
+            )
         }
 
-        val isTypingStatic = !afterImport.any { it.isWhitespace() } && staticKeyword.startsWith(afterImport)
+        val afterImportTrimmed = afterImportSlice.substring(afterImportTrimStart)
+        val afterImportStart = importColumn + importKeyword.length + afterImportTrimStart
+        val hasStaticKeyword = afterImportTrimmed.startsWith(staticKeyword) &&
+            (
+                afterImportTrimmed.length == staticKeyword.length ||
+                    afterImportTrimmed[staticKeyword.length].isWhitespace()
+                )
+        if (hasStaticKeyword) {
+            val afterStaticIndex = afterImportStart + staticKeyword.length
+            val afterStaticSlice = lineText.substring(afterStaticIndex, safeChar)
+            val afterStaticTrimStart = afterStaticSlice.indexOfFirst { !it.isWhitespace() }
+            if (afterStaticTrimStart == -1) {
+                return ImportCompletionContext(
+                    prefix = "",
+                    isStatic = true,
+                    canSuggestStatic = false,
+                    line = ctx.line,
+                    replaceStartCharacter = safeChar,
+                    replaceEndCharacter = safeChar,
+                )
+            }
+
+            val prefix = afterStaticSlice.substring(afterStaticTrimStart)
+            val prefixStart = afterStaticIndex + afterStaticTrimStart
+            return ImportCompletionContext(
+                prefix = prefix,
+                isStatic = true,
+                canSuggestStatic = false,
+                line = ctx.line,
+                replaceStartCharacter = prefixStart,
+                replaceEndCharacter = safeChar,
+            )
+        }
+
+        val isTypingStatic =
+            !afterImportTrimmed.any { it.isWhitespace() } && staticKeyword.startsWith(afterImportTrimmed)
         // TODO(#576): Consider suggesting both "static" and matching class prefixes when overlapping.
         //   See: https://github.com/albertocavalcante/gvy/issues/576
-        val prefix = if (isTypingStatic) "" else afterImport
-        return ImportCompletionContext(prefix = prefix, isStatic = false, canSuggestStatic = true)
+        val prefix = if (isTypingStatic) "" else afterImportTrimmed
+        val replaceStart = if (isTypingStatic) safeChar else afterImportStart
+        return ImportCompletionContext(
+            prefix = prefix,
+            isStatic = false,
+            canSuggestStatic = true,
+            line = ctx.line,
+            replaceStartCharacter = replaceStart,
+            replaceEndCharacter = safeChar,
+        )
     }
 
     private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
@@ -720,16 +773,23 @@ object CompletionProvider {
             classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
         }
 
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
         candidates
             .map { it.fullName }
             .distinct()
             .forEach { fullName ->
-                completion {
-                    label(fullName)
-                    kind(CompletionItemKind.Class)
-                    detail(fullName)
-                    insertText(fullName)
-                }
+                add(
+                    CompletionItem().apply {
+                        label = fullName
+                        kind = CompletionItemKind.Class
+                        detail = fullName
+                        insertText = fullName
+                        textEdit = Either.forLeft(TextEdit(range, fullName))
+                    },
+                )
             }
     }
 
