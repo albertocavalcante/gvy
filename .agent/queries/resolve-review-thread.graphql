@@ -1,5 +1,10 @@
+# Marks a PR review thread as resolved.
+# Usage: gh api graphql -F threadId="<THREAD_NODE_ID>" -f query="$(cat .agent/queries/resolve-review-thread.graphql)"
+# Get threadId from: jq '.data.repository.pullRequest.reviewThreads.nodes[].id' /tmp/pr-<N>-threads.json
+
 mutation ResolveReviewThread($threadId: ID!) {
   resolveReviewThread(input: {threadId: $threadId}) {
+    clientMutationId
     thread {
       id
       isResolved

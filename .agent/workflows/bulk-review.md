@@ -1,12 +1,17 @@
-# /bulk-review
+---
+description: Bulk reconciliation workflow for addressing review feedback across multiple PRs
+---
 
-This workflow defines the process for bulk reconciliation across multiple PRs. It iterates over open PRs and applies the strict `review` protocol to each.
+# /bulk-review
+// turbo-all
+
+This workflow defines the process for bulk reconciliation across multiple PRs. It iterates over open PRs and applies the strict `/review` protocol to each.
 
 ## Phase 1: Inventory Open PRs
 
 1.  **List Open PRs**:
     ```bash
-    gh pr list --state open --json number,headRefName,url,updatedAt,title
+    gh pr list --repo <OWNER>/<REPO> --state open --json number,headRefName,url,updatedAt,title
     ```
 
 2.  **Map to Worktrees**:
@@ -21,7 +26,7 @@ This workflow defines the process for bulk reconciliation across multiple PRs. I
 For EACH open PR:
 
 1.  **Execute Single Review Workflow**:
-    Follow the steps in `review.md` explicitly.
+    Follow the steps in `.agent/workflows/review.md` (invoke `/review` workflow).
     
     - **Fetch Threads** (GraphQL Source of Truth)
     - **Inventory** (Unresolved & Not Outdated)
