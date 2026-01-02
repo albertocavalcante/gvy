@@ -37,16 +37,30 @@ class IndexCommand : CliktCommand(name = "index") {
         val rootPath = projectRoot.toAbsolutePath().normalize().toString()
         echo("Indexing $rootPath to $output in $format format...")
 
-        val writers = when (format) {
-            IndexFormat.SCIP -> listOf(ScipWriter(FileOutputStream(output), rootPath))
-            IndexFormat.LSIF -> listOf(LsifWriter(FileOutputStream(output), rootPath))
+        val fileOutputStream = FileOutputStream(output)
+        val writers = try {
+            when (format) {
+                IndexFormat.SCIP -> listOf(ScipWriter(fileOutputStream, rootPath))
+                IndexFormat.LSIF -> listOf(LsifWriter(fileOutputStream, rootPath))
+            }
+        } catch (e: Exception) {
+            try {
+                fileOutputStream.close()
+            } catch (_: Exception) {
+                // Ignore secondary exception while closing after a construction failure
+            }
+            throw e
         }
 
         try {
             val indexer = UnifiedIndexer(writers)
             // Walk files - use block ensures stream is closed to prevent file handle leaks
             Files.walk(projectRoot).use { stream ->
-                stream.filter { it.toFile().extension in FileExtensions.ALL_GROOVY_LIKE }
+                stream.filter { path ->
+                    val file = path.toFile()
+                    file.extension in FileExtensions.ALL_GROOVY_LIKE ||
+                        file.name in FileExtensions.ALL_GROOVY_LIKE
+                }
                     .forEach { path ->
                         try {
                             val relativePath = projectRoot.relativize(path).toString()

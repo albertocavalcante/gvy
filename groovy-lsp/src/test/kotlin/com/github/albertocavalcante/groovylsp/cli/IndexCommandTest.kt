@@ -13,7 +13,6 @@ class IndexCommandTest {
 
     @Test
     fun `command has correct name`() {
-        // This will fail to compile as IndexCommand does not exist yet
         val command = IndexCommand()
         assertThat(command.commandName).isEqualTo("index")
     }

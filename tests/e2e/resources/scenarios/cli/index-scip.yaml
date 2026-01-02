@@ -22,7 +22,6 @@ steps:
         - "SCIP"
         - "--output"
         - "{{temp}}/index.scip"
-        - "."
       saveAs: indexResult
       expectExitCode: 0
       timeoutSeconds: 60

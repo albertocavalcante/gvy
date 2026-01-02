@@ -264,19 +264,23 @@ class GroovyLanguageServer(
             ?: savedInitParams?.rootUri
             ?: throw IllegalStateException("No workspace root found")
 
-        val rootPath = if (rootUri.startsWith("file://")) java.net.URI(rootUri).path else rootUri
-        val projectRoot = File(rootPath)
+        val rootPath = java.nio.file.Paths.get(java.net.URI(rootUri))
+        val projectRoot = rootPath.toFile()
 
         val writers = when (params.format) {
-            IndexFormat.SCIP -> listOf(ScipWriter(FileOutputStream(params.outputPath), rootPath))
-            IndexFormat.LSIF -> listOf(LsifWriter(FileOutputStream(params.outputPath), rootPath))
+            IndexFormat.SCIP -> listOf(ScipWriter(FileOutputStream(params.outputPath), rootPath.toString()))
+            IndexFormat.LSIF -> listOf(LsifWriter(FileOutputStream(params.outputPath), rootPath.toString()))
         }
 
         try {
             val indexer = UnifiedIndexer(writers)
             // Traverse all Groovy-like files - use block ensures stream is closed
             Files.walk(projectRoot.toPath()).use { stream ->
-                stream.filter { it.toFile().extension in FileExtensions.ALL_GROOVY_LIKE }
+                stream.filter { path ->
+                    val file = path.toFile()
+                    file.extension in FileExtensions.ALL_GROOVY_LIKE ||
+                        file.name in FileExtensions.ALL_GROOVY_LIKE
+                }
                     .forEach { path ->
                         try {
                             val relativePath = projectRoot.toPath().relativize(path).toString()

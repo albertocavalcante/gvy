@@ -16,13 +16,12 @@ workspace:
 steps:
   # Step 1: Run the CLI index command for LSIF
   - cli:
-      command: index
+      command: gls index
       args:
         - "--format"
         - "LSIF"
         - "--output"
         - "{{temp}}/index.lsif"
-        - "."
       saveAs: indexResult
       expectExitCode: 0
       timeoutSeconds: 60

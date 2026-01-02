@@ -69,7 +69,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
             mapOf(
                 "uri" to "file://$projectRoot/$path",
                 "languageId" to "groovy",
-                // "contents" to Base64... if we wanted to embed
+                // "contents" could be set to Base64-encoded file content if we wanted to embed the source in the LSIF index
             ),
         )
         fileIds[path] = docId

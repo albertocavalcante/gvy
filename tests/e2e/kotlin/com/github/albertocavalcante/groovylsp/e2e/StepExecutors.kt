@@ -541,11 +541,7 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
         val interpolatedArgs = step.args.map { context.interpolateString(it) }
 
         val fullCommand =
-            if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins") ||
-                interpolatedCommand.startsWith(
-                    "index",
-                )
-            ) {
+            if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
                 // We use the property "groovy.lsp.binary" which should be set by the test runner
                 // Fallback to local build path for local dev
                 val binaryPath = System.getProperty("groovy.lsp.binary")
@@ -745,8 +741,8 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                     val actualLine = actualLines[i]
                     // Interpolate {{workspace}} placeholder in expected content
                     val expectedLine = expectedLines[i]
-                        .replace(WORKSPACE_PLACEHOLDER, workspacePath)
                         .replace("file://$WORKSPACE_PLACEHOLDER", "file://$workspacePath")
+                        .replace(WORKSPACE_PLACEHOLDER, workspacePath)
 
                     val actualJson = mapper.readTree(actualLine)
                     val expectedJson = mapper.readTree(expectedLine)
@@ -755,7 +751,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                         val baseMsg = "NDJSON content mismatch at line ${i + 1} for $expectedRelPath!"
                         val userMsg = step.message?.let { "$it\n" } ?: ""
                         throw AssertionError(
-                            "${userMsg}${baseMsg}\nExpected:\n$expectedLine\nActual:\n$actualLine",
+                            "${userMsg}${baseMsg}\nExpected (interpolated):\n$expectedLine\nActual:\n$actualLine",
                         )
                     }
                 }
