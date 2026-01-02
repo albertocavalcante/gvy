@@ -21,7 +21,7 @@ fun MarkdownContent.render(): String = when (this) {
         rows.forEach { row ->
             append("| ${row.joinToString(" | ")} |\n")
         }
-    }
+    }.trim()
 
     is MarkdownContent.Link -> "[$text]($url)"
 }
