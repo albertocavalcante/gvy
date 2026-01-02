@@ -108,6 +108,7 @@ dependencies {
     implementation(project(":groovy-spock"))
     implementation(project(":groovy-testing"))
     implementation(project(":groovy-junit"))
+    implementation(project(":markdown"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
