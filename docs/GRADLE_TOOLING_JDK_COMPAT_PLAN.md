@@ -29,16 +29,17 @@ Make Gradle dependency resolution resilient when the Gradle wrapper version is i
 ### Phase 0: Confirm environment and capture signals
 1. Add a small utility to capture:
    - Runtime JDK major version (from `System.getProperty("java.version")` or `Runtime.version()`).
-   - The Gradle distribution version being used:
-     - If wrapper exists: parse `gradle/wrapper/gradle-wrapper.properties` for `distributionUrl`.
-     - If no wrapper: derive from the Gradle Tooling API version (current dependency is 9.2.1).
+   - The Gradle distribution version being used, by fetching the `BuildEnvironment` model. This is a lightweight operation that does not compile build scripts and reliably provides the Gradle version.
 2. Ensure any logging avoids absolute home paths (use `$HOME` or `~` in messages).
 3. Add a single debug-level log line that prints: JDK major, Gradle version, and whether wrapper is in use.
 
 ### Phase 1: Compatibility detection and classification
 1. Create a compatibility map for Gradle vs JDK:
-   - Example: Gradle < 8.4 does not support running on JDK 21.
-   - Source this from Gradle release notes (verify exact thresholds).
+   - Examples (based on Gradle's compatibility matrix; keep this in sync with official docs):
+     - Gradle 8.0.2 supports running on JDK 19, but not on JDK 20 or JDK 21.
+     - Gradle 8.3 adds (experimental) support for running on JDK 20, but still does not support JDK 21.
+     - Gradle < 8.5 does not support running on JDK 21.
+   - Source this from Gradle release notes / compatibility matrix (verify exact thresholds and update as Gradle releases evolve).
 2. Add a compatibility check before `modelBuilder.get()` is called:
    - If JDK version is newer than supported for the chosen Gradle version, classify as `INCOMPATIBLE_JDK`.
 3. Update `shouldRetryWithIsolatedGradleUserHome`:
@@ -79,10 +80,10 @@ Make Gradle dependency resolution resilient when the Gradle wrapper version is i
 ### Phase 4: Optional Gradle distribution override (safe opt-in)
 1. Add config option to override Gradle distribution (opt-in only):
    - `groovy.gradle.distributionVersion`
-   - `groovy.gradle.useWrapper` (boolean, default true)
-2. If `useWrapper = false` and `distributionVersion` is set:
+   - `groovy.gradle.wrapper.enabled` (boolean, default true)
+2. If `wrapper.enabled = false` and `distributionVersion` is set:
    - Use `GradleConnector.useGradleVersion(...)`.
-3. If `useWrapper = true` but `JDK_GRADLE_MISMATCH` is detected:
+3. If `wrapper.enabled = true` but `JDK_GRADLE_MISMATCH` is detected:
    - If `distributionVersion` is set and is compatible, retry once using override.
    - Otherwise, fail with actionable guidance.
 4. Tests:
