@@ -78,6 +78,9 @@ object ServerCapabilitiesFactory {
 
             // Call hierarchy support
             callHierarchyProvider = Either.forLeft(true)
+
+            // Inlay hints support
+            inlayHintProvider = Either.forLeft(true)
         }
 
         val serverInfo = ServerInfo().apply {
