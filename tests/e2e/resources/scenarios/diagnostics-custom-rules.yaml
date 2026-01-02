@@ -1,0 +1,110 @@
+name: diagnostics-custom-rules
+description: Validates that custom diagnostic rules (PrintlnDebugRule and EmptyBlockRule) detect issues correctly
+workspace:
+  fixture: diagnostics-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/Problem.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class CustomRuleDiagnostics {
+            // This should trigger PrintlnDebugRule
+            def debugMethod() {
+                println("Debug output")
+            }
+            
+            // This should trigger EmptyBlockRule
+            def emptyMethod() {}
+            
+            // This is a properly implemented method (no diagnostics)
+            def properMethod() {
+                return "proper implementation"
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: customRuleDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/Problem.groovy"
+        - jsonPath: $.diagnostics
+          expect:
+            type: NOT_EMPTY
+  - assert:
+      source: customRuleDiagnostics
+      checks:
+        # Should detect println statement (PrintlnDebugRule)
+        - jsonPath: $.diagnostics[?(@.source == 'groovy-lsp' && @.message =~ /.*logger.*/i)]
+          expect:
+            type: NOT_EMPTY
+        # Should have Information severity for println
+        - jsonPath: $.diagnostics[?(@.message =~ /.*logger.*/i)].severity
+          expect:
+            type: EQUALS
+            value: 'Information'
+        # Should detect empty block (EmptyBlockRule)
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)]
+          expect:
+            type: NOT_EMPTY
+        # Should have Hint severity for empty block
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].severity
+          expect:
+            type: EQUALS
+            value: 'Hint'
+        # Verify line numbers are correct
+        # println is on line 3 (0-indexed)
+        - jsonPath: $.diagnostics[?(@.message =~ /.*logger.*/i)].range.start.line
+          expect:
+            type: EQUALS
+            value: 3
+        # Empty block is on line 8 (0-indexed)
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].range.start.line
+          expect:
+            type: EQUALS
+            value: 8
+  - changeDocument:
+      path: src/Problem.groovy
+      version: 2
+      text: |
+        class CustomRuleDiagnostics {
+            // Fixed: Using proper logger instead of println
+            def debugMethod() {
+                log.info("Debug output")
+            }
+            
+            // Fixed: Added implementation to empty method
+            def properMethod() {
+                return "proper implementation"
+            }
+            
+            // Another proper method
+            def anotherMethod() {
+                return "also proper"
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: fixedDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/Problem.groovy"
+  - assert:
+      source: fixedDiagnostics
+      checks:
+        # After fixing, should have no PrintlnDebugRule diagnostics
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)]
+          expect:
+            type: EMPTY
+        # After fixing, should have no EmptyBlockRule diagnostics
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)]
+          expect:
+            type: EMPTY
+  - shutdown: {}
+  - exit: {}
