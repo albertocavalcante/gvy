@@ -2,8 +2,13 @@ package com.github.albertocavalcante.groovylsp.providers.inlayhints
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.InlayHintsConfiguration
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.Parameter
@@ -172,6 +177,7 @@ class InlayHintsProviderTest {
 
             // Then - should show ArrayList<Integer>, not java.util.ArrayList<java.lang.Integer>
             val typeHints = hints.filter { it.kind == InlayHintKind.Type }
+            assertTrue(typeHints.isNotEmpty(), "Expected at least one type hint")
             typeHints.forEach { hint ->
                 val label = hint.label.left as? String
                 assertNotNull(label)
@@ -300,11 +306,15 @@ class InlayHintsProviderTest {
 
         @Test
         fun `should not show parameter hint for closure arguments`() {
-            // Given: list.each { item -> ... }
+            // Given: process({ ... }) where method accepts a closure
             val code = """
-                def list = [1, 2, 3]
-                list.each { item ->
-                    println item
+                class Test {
+                    void process(Closure action) {}
+                    void run() {
+                        process {
+                            println "hi"
+                        }
+                    }
                 }
             """.trimIndent()
 
@@ -318,6 +328,8 @@ class InlayHintsProviderTest {
 
             // Then - closures should not have parameter hints (they provide their own context)
             // This is a documented behavior expectation
+            val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
+            assertTrue(paramHints.isEmpty(), "Should not show parameter hints for closure arguments")
         }
     }
 
@@ -345,6 +357,7 @@ class InlayHintsProviderTest {
             val hints = provider.provideInlayHints(params)
 
             // Then - should only include hints from lines 1-2
+            assertTrue(hints.isNotEmpty(), "Expected hints within the requested range")
             hints.forEach { hint ->
                 assertTrue(
                     hint.position.line in 1..2,
@@ -392,6 +405,29 @@ class InlayHintsProviderTest {
         }
 
         @Test
+        fun `should ignore type hints when inference fails`() {
+            val code = """
+                def name = "hello"
+            """.trimIndent()
+
+            mockkObject(TypeInferencer)
+            try {
+                every { TypeInferencer.inferType(any()) } throws RuntimeException("boom")
+                setupCompilationWithCode(code)
+                provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(typeHints = true))
+
+                val params = createParams(0, 0, 10, 100)
+
+                val hints = provider.provideInlayHints(params)
+
+                val typeHints = hints.filter { it.kind == InlayHintKind.Type }
+                assertTrue(typeHints.isEmpty(), "Should not emit type hints when inference fails")
+            } finally {
+                unmockkObject(TypeInferencer)
+            }
+        }
+
+        @Test
         fun `should return empty list when AST model is not available`() {
             every { compilationService.getAstModel(any()) } returns null
             provider = InlayHintsProvider(compilationService)
@@ -415,12 +451,10 @@ class InlayHintsProviderTest {
         )
 
     private fun setupCompilationWithCode(code: String) {
-        val astModel = mockk<com.github.albertocavalcante.groovyparser.ast.GroovyAstModel>(relaxed = true)
+        val parser = GroovyParserFacade()
+        val parseResult = parser.parse(ParseRequest(testUri, code))
 
-        // Parse the code to get real AST nodes (simplified mock for now)
-        every { compilationService.getAstModel(testUri) } returns astModel
-        every { astModel.getAllNodes() } returns emptyList()
-        every { astModel.getAllClassNodes() } returns emptyList()
+        every { compilationService.getAstModel(testUri) } returns parseResult.astModel
     }
 
     private fun setupCompilationWithNodes(

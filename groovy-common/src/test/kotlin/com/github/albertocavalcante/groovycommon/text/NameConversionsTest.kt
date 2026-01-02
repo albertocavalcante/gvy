@@ -214,9 +214,18 @@ class NameConversionsTest {
 
     @Test
     fun `formatTypeName handles nested multiple generic types`() {
-        // This is expected to fail currently due to simple split(',')
         val input = "java.util.Map<java.lang.String, java.util.Map<java.lang.String, java.lang.Integer>>"
         assertEquals("Map<String, Map<String, Integer>>", input.formatTypeName())
+    }
+
+    @Test
+    fun `formatTypeName handles nested generics with multiple params`() {
+        val input = "java.util.Map<java.lang.String, " +
+            "java.util.function.Function<java.lang.String, java.util.List<java.lang.String>>>"
+        assertEquals(
+            "Map<String, Function<String, List<String>>>",
+            input.formatTypeName(),
+        )
     }
 
     @Test

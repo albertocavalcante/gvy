@@ -90,6 +90,7 @@ class InlayHintsProvider(
      *
      * Only shows hints for `def` declarations where the type is inferred.
      */
+    @Suppress("TooGenericExceptionCaught") // TypeInferencer may throw on incomplete/invalid AST nodes.
     private fun collectTypeHint(decl: DeclarationExpression): InlayHint? {
         val varExpr = decl.leftExpression as? VariableExpression ?: return null
 
@@ -99,7 +100,12 @@ class InlayHintsProvider(
         }
 
         // Use TypeInferencer to get the inferred type
-        val inferredType = TypeInferencer.inferType(decl)
+        val inferredType = try {
+            TypeInferencer.inferType(decl)
+        } catch (e: Exception) {
+            logger.debug("Failed to infer type for ${varExpr.name}", e)
+            return null
+        }
         if (inferredType == "java.lang.Object") {
             // Don't show hints for Object (no useful information)
             return null
@@ -244,15 +250,16 @@ class InlayHintsProvider(
     private fun resolveMethodParameterNames(call: MethodCallExpression, uri: URI): List<String> {
         val astModel = compilationService.getAstModel(uri) ?: return emptyList()
         val methodName = call.methodAsString ?: return emptyList()
+        val argCount = (call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0
 
         // Search for matching method declaration
         return astModel.getAllClassNodes()
-            .asSequence()
-            .flatMap { it.methods.asSequence() }
-            .filter { it.name == methodName }
-            .filter { it.parameters.size == ((call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0) }
-            .map { method -> method.parameters.map { it.name } }
-            .firstOrNull() ?: emptyList()
+            .firstNotNullOfOrNull { classNode ->
+                classNode.methods
+                    .firstOrNull { it.name == methodName && it.parameters.size == argCount }
+                    ?.parameters
+                    ?.map { it.name }
+            } ?: emptyList()
     }
 
     /**
@@ -264,14 +271,16 @@ class InlayHintsProvider(
     private fun resolveConstructorParameterNames(call: ConstructorCallExpression, uri: URI): List<String> {
         val astModel = compilationService.getAstModel(uri) ?: return emptyList()
         val typeName = call.type.nameWithoutPackage
+        val argCount = (call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0
 
         // Search for matching constructor
         return astModel.getAllClassNodes()
-            .asSequence()
             .filter { it.nameWithoutPackage == typeName }
-            .flatMap { it.declaredConstructors }
-            .filter { it.parameters.size == ((call.arguments as? ArgumentListExpression)?.expressions?.size ?: 0) }
-            .map { constructor -> constructor.parameters.map { it.name } }
-            .firstOrNull() ?: emptyList()
+            .firstNotNullOfOrNull { classNode ->
+                classNode.declaredConstructors
+                    .firstOrNull { it.parameters.size == argCount }
+                    ?.parameters
+                    ?.map { it.name }
+            } ?: emptyList()
     }
 }
