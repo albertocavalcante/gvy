@@ -36,9 +36,9 @@ steps:
             type: CONTAINS
             value: "Successfully generated index"
 
-  # Step 3: Golden file comparison (JSON mode supports {{workspace}} placeholder)
+  # Step 3: Golden file comparison (NDJSON mode for line-by-line JSON comparison)
   - goldenAssert:
       actual: "{{temp}}/index.lsif"
       expected: "index-lsif-calculator.lsif"
-      mode: JSON
+      mode: NDJSON
       message: "LSIF index should match golden file structure"

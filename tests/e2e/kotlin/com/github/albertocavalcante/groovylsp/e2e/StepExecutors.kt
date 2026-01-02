@@ -725,6 +725,42 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                 }
             }
 
+            GoldenMode.NDJSON -> {
+                // NDJSON (newline-delimited JSON) comparison
+                // Each line is a separate JSON object - used by LSIF format
+                val workspacePath = context.workspace.rootDir.toString()
+                val mapper = ObjectMapper()
+
+                val actualLines = actualContent.lines().filter { it.isNotBlank() }
+                val expectedLines = expectedContent.lines().filter { it.isNotBlank() }
+
+                if (actualLines.size != expectedLines.size) {
+                    throw AssertionError(
+                        "NDJSON line count mismatch for $expectedRelPath! " +
+                            "Expected ${expectedLines.size} lines, got ${actualLines.size} lines",
+                    )
+                }
+
+                for (i in actualLines.indices) {
+                    val actualLine = actualLines[i]
+                    // Interpolate {{workspace}} placeholder in expected content
+                    val expectedLine = expectedLines[i]
+                        .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+                        .replace("file://$WORKSPACE_PLACEHOLDER", "file://$workspacePath")
+
+                    val actualJson = mapper.readTree(actualLine)
+                    val expectedJson = mapper.readTree(expectedLine)
+
+                    if (actualJson != expectedJson) {
+                        val baseMsg = "NDJSON content mismatch at line ${i + 1} for $expectedRelPath!"
+                        val userMsg = step.message?.let { "$it\n" } ?: ""
+                        throw AssertionError(
+                            "${userMsg}${baseMsg}\nExpected:\n$expectedLine\nActual:\n$actualLine",
+                        )
+                    }
+                }
+            }
+
             GoldenMode.TEXT -> {
                 // Compare normalized text (trim lines)
                 if (actualContent.trim() != expectedContent.trim()) {
