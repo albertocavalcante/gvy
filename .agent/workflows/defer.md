@@ -5,6 +5,7 @@ description: Defer work to GitHub issue and track with TODO comments
 # /defer - Track Deferred Work
 
 Use this workflow when you encounter work that should NOT be addressed in the current session:
+
 - PR review feedback that's out of scope
 - Discovered improvements or refactoring opportunities
 - Existing TODO comments that should be tracked as issues
@@ -20,8 +21,9 @@ Use this workflow when you encounter work that should NOT be addressed in the cu
 
 > [!CAUTION]
 > **MANDATORY: Always use a temp file for the issue body.**
-> 
+>
 > **NEVER use inline `--body "..."` with complex content** - it WILL break due to:
+>
 > - Shell escaping issues with backticks, quotes, newlines
 > - Truncation of long content
 > - Unpredictable behavior with code blocks
@@ -55,7 +57,9 @@ rm /tmp/issue-body.md
 ```
 
 ### Label Formula
+
 From `.agent/workflows/github-issues.md`:
+
 - **Type**: `enhancement` | `tech-debt` | `bug`
 - **Priority**: `P0-critical` | `P1-must` | `P2-should` | `P3-nice`
 - **Size**: `size/XS` | `size/S` | `size/M` | `size/L` | `size/XL`
@@ -65,12 +69,14 @@ From `.agent/workflows/github-issues.md`:
 Use this format to link code locations to issues:
 
 **Kotlin/Java:**
+
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/albertocavalcante/gvy/issues/123
 ```
 
 **YAML/Markdown:**
+
 ```yaml
 # TODO(#123): Brief description.
 #   See: https://github.com/albertocavalcante/gvy/issues/123

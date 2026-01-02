@@ -1,6 +1,7 @@
 query PullRequestReviewThreads($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      id
       reviewThreads(first: 100) {
         pageInfo {
           hasNextPage

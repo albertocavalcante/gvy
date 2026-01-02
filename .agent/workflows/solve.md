@@ -38,6 +38,7 @@ jq '.comments[] | {author: .author.login, body: .body, createdAt}' /tmp/issue-<I
 ### 1.3 Extract Key Information
 
 Create a mental checklist:
+
 - [ ] **Problem Statement**: What is broken or missing?
 - [ ] **Acceptance Criteria**: What does "done" look like?
 - [ ] **Proposed Approach**: Does the issue suggest a solution?
@@ -50,35 +51,38 @@ Create a mental checklist:
 
 ### Decision Matrix
 
-| Indicator | Single-Agent (size/XS-M) | Multi-Phase (size/L-XL) |
-|-----------|--------------------------|-------------------------|
-| **Files Changed** | ≤5 files | >5 files |
-| **Modules Affected** | 1 module | 2+ modules |
-| **New APIs/Interfaces** | None | Yes |
-| **Cross-Cutting Concerns** | No | Yes (refactoring, migrations) |
-| **Estimated LOC** | <300 lines | >300 lines |
-| **Test Requirements** | Unit tests only | Unit + Integration + E2E |
+| Indicator                  | Single-Agent (size/XS-M) | Multi-Phase (size/L-XL)       |
+| -------------------------- | ------------------------ | ----------------------------- |
+| **Files Changed**          | ≤5 files                 | >5 files                      |
+| **Modules Affected**       | 1 module                 | 2+ modules                    |
+| **New APIs/Interfaces**    | None                     | Yes                           |
+| **Cross-Cutting Concerns** | No                       | Yes (refactoring, migrations) |
+| **Estimated LOC**          | <300 lines               | >300 lines                    |
+| **Test Requirements**      | Unit tests only          | Unit + Integration + E2E      |
 
 ### 2.1 Label-Based Sizing
 
 Extract from issue labels:
+
 ```bash
 jq '.labels[] | select(.name | startswith("size/")) | .name' /tmp/issue-<ISSUE_NUMBER>.json
 ```
 
-| Label | Estimated Effort | Strategy |
-|-------|------------------|----------|
-| `size/XS` | <2 hours | Single-agent, single PR |
-| `size/S` | 2-4 hours | Single-agent, single PR |
-| `size/M` | 1-2 days | Single-agent, may need user review |
-| `size/L` | 1-2 weeks | **Multi-phase**, plan per phase |
-| `size/XL` | 2+ weeks | **Multi-phase**, defer some phases |
+| Label     | Estimated Effort | Strategy                           |
+| --------- | ---------------- | ---------------------------------- |
+| `size/XS` | <2 hours         | Single-agent, single PR            |
+| `size/S`  | 2-4 hours        | Single-agent, single PR            |
+| `size/M`  | 1-2 days         | Single-agent, may need user review |
+| `size/L`  | 1-2 weeks        | **Multi-phase**, plan per phase    |
+| `size/XL` | 2+ weeks         | **Multi-phase**, defer some phases |
 
 ### 2.2 Complexity Output
 
 Document your assessment:
+
 ```markdown
 ## Complexity Assessment
+
 - **Size**: [XS/S/M/L/XL]
 - **Strategy**: [Single-Agent | Multi-Phase]
 - **Phases**: [List if multi-phase]
@@ -109,6 +113,7 @@ find . -path "*/test/*" -name "*RelatedFeature*Test.<EXTENSION>"
 
 ```markdown
 ## Codebase Analysis
+
 - **Files to Modify**: [list with paths]
 - **Files to Create**: [list with paths]
 - **Files to Delete**: [list with paths]
@@ -128,13 +133,16 @@ For small/medium issues, create a focused plan:
 # Implementation Plan for #<ISSUE_NUMBER>
 
 ## Goal
+
 [One-sentence summary]
 
 ## Changes
+
 1. [File1]: [What changes]
 2. [File2]: [What changes]
 
 ## Verification
+
 - [ ] `./gradlew :module:test` passes
 - [ ] New tests for [feature]
 ```
@@ -147,28 +155,37 @@ For large issues, create atomic phases that can be executed independently:
 # Implementation Plan for #<ISSUE_NUMBER>
 
 ## Goal
+
 [One-sentence summary]
 
 ## Phase 1: [Name] (size/S)
+
 ### Changes
+
 - [File changes]
 
 ### Verification
+
 - [How to verify this phase independently]
 
 ### Dependencies
+
 - None | Phase 0
 
 ---
 
 ## Phase 2: [Name] (size/M)
+
 ### Changes
+
 - [File changes]
 
 ### Verification
+
 - [How to verify]
 
 ### Dependencies
+
 - Phase 1
 
 ---
@@ -198,6 +215,7 @@ Before executing any code changes:
 ### 6.1 Single-Agent Execution
 
 For size/XS-M issues:
+
 1. Create worktree (if not already done)
 2. Implement all changes
 3. Run verification commands
@@ -207,6 +225,7 @@ For size/XS-M issues:
 ### 6.2 Multi-Phase Execution
 
 For size/L-XL issues:
+
 1. Execute Phase 1 completely
 2. Verify Phase 1 independently
 3. Commit Phase 1 with `Phase 1/N:` prefix
@@ -234,6 +253,7 @@ Fixes #<ISSUE_NUMBER>
 ### 7.1 Automated Verification
 
 Run all tests specified in the plan:
+
 ```bash
 ./gradlew :affected-module:test
 ./gradlew :tests:e2eTest -Dgroovy.lsp.e2e.filter=<relevant-scenario>
@@ -242,6 +262,7 @@ Run all tests specified in the plan:
 ### 7.2 Manual Verification
 
 If applicable, verify behavior manually:
+
 - Start the language server
 - Test in VS Code with sample files
 - Verify edge cases mentioned in the issue
@@ -249,6 +270,7 @@ If applicable, verify behavior manually:
 ### 7.3 Documentation Update
 
 If the change affects user-facing behavior:
+
 - Update README or relevant docs
 - Add/update API documentation
 
@@ -287,11 +309,11 @@ Ensure the PR body contains `Fixes #<ISSUE_NUMBER>` for auto-closing.
 
 ## Quick Reference: Workflow Selection
 
-| Issue Size | Approach | Key Actions |
-|------------|----------|-------------|
-| **XS-S** | Fast Track | Read → Plan (brief) → Implement → PR |
-| **M** | Standard | Read → Plan → User Review → Implement → PR |
-| **L-XL** | Multi-Phase | Read → Phase Plan → User Review → Implement Phase 1 → Verify → ... → Final PR |
+| Issue Size | Approach    | Key Actions                                                                   |
+| ---------- | ----------- | ----------------------------------------------------------------------------- |
+| **XS-S**   | Fast Track  | Read → Plan (brief) → Implement → PR                                          |
+| **M**      | Standard    | Read → Plan → User Review → Implement → PR                                    |
+| **L-XL**   | Multi-Phase | Read → Phase Plan → User Review → Implement Phase 1 → Verify → ... → Final PR |
 
 ## Anti-Patterns to Avoid
 
