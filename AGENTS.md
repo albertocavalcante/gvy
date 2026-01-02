@@ -1,121 +1,52 @@
 # AGENTS.md
 
-> Cross-platform configuration for AI coding agents.
-> Works with: [Antigravity](https://antigravity.dev), GitHub Copilot, Cursor, Aider, and [more](https://agents.md).
+**Groovy Language Server** — Kotlin/JVM LSP implementation.
 
-## Project
-
-**Groovy Language Server (LSP)** — A Kotlin/JVM implementation.
-
-| Aspect | Value |
-|--------|-------|
-| Language | Kotlin |
-| Build | Gradle (Kotlin DSL) |
-| Tests | JUnit 5 |
-| Java | 17 |
-
----
-
-## Quick Start
-
+## Build Commands
 ```bash
-make help           # See all commands
-make build          # Full build with tests
-make test           # Run tests only
-make lint           # Check code quality
-make format         # Auto-fix lint issues
-make jar            # Fast build (skip tests)
+make build    # Full build + tests
+make test     # Tests only
+make lint     # Check quality
+make format   # Auto-fix lint
 ```
 
-For Gradle-specific tasks: `./gradlew <task>`
+## Non-Negotiable Rules
 
----
+1. **Git**: Verify branch before commit. Stage files explicitly (`git add file.kt`, never `git add .`)
+2. **TDD**: Write failing test → implement → refactor. Always.
+3. **Lint**: Run `./gradlew lintFix` before commit
+4. **GitHub**: Use `gh` CLI for all GitHub operations
 
-## Critical Rules
-
-<critical>
-These rules are NON-NEGOTIABLE. Violations require immediate correction.
-</critical>
-
-### 1. Git Safety
-```bash
-git branch --show-current    # ALWAYS verify before commit
-git add file1.kt file2.kt    # ALWAYS stage explicitly (never `git add .`)
+## Commit Format
 ```
-
-### 2. Test-Driven Development
+<type>(<scope>): <description>
 ```
-RED → GREEN → REFACTOR
-```
-Write failing test FIRST. Implement SECOND. No exceptions for bug fixes or features.
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `ci`, `chore`
 
-### 3. Lint Before Commit
-```bash
-./gradlew lintFix
-```
+## When to Read Additional Docs
 
-### 4. GitHub CLI for GitHub Content
-```bash
-gh pr view 123              # NOT curl/wget for GitHub URLs
-gh issue view 456
-```
+| Task | Read First |
+|------|------------|
+| Git workflow, branching | `.agent/rules/git-workflow.md` |
+| TDD details, test naming | `.agent/rules/code-quality.md` |
+| PR review feedback | `.agent/workflows/review.md` |
+| Implementing GitHub issues | `.agent/workflows/solve.md` |
+| Deferring work | `.agent/workflows/defer.md` |
+| GitHub API/CLI patterns | `.agent/workflows/github-cli.md` |
+| CI/CD, Actions | `.agent/workflows/github-actions.md` |
+| Merge conflicts | `.agent/workflows/conflict-resolution.md` |
+| Debugging | `kb/TROUBLESHOOTING.md` |
 
----
-
-## Detailed Rules & Workflows
-
-| Document | Purpose |
-|----------|---------|
-| `.agent/rules/git-workflow.md` | Branching, commits, squash merge |
-| `.agent/rules/code-quality.md` | TDD, lint, test naming, Kotlin idioms |
-| `.agent/workflows/review.md` | PR review feedback handling |
-| `.agent/workflows/solve.md` | Issue implementation protocol |
-| `.agent/workflows/defer.md` | Deferring work to GitHub issues |
-| `.agent/workflows/github-cli.md` | GitHub API patterns |
-| `.agent/workflows/github-actions.md` | CI/CD, SHA pinning |
-| `.agent/workflows/conflict-resolution.md` | Merge conflict handling |
-| `kb/TROUBLESHOOTING.md` | Debugging techniques |
-
----
-
-## Commit & PR Format
-
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-
-```bash
-git commit -m "feat(completion): add method signatures"
-git commit -m "fix(parser): handle null AST nodes"
-```
-
-PR titles follow the same format. See `.agent/rules/git-workflow.md` for details.
-
----
-
-## Deferred Work
-
-When work is out of scope:
-
+## Deferred Work Pattern
 ```kotlin
 // TODO(#123): Brief description.
 //   See: https://github.com/albertocavalcante/groovy-lsp/issues/123
 ```
 
-See `.agent/workflows/defer.md` for the full protocol.
-
----
-
-## Agent Helpers
-
+## Structure
 ```
-.agent/
-├── rules/          # Permanent rules (git, code quality)
-├── workflows/      # Step-by-step procedures (/review, /solve, etc.)
-├── queries/        # GraphQL queries for GitHub API
-└── scripts/        # Python helpers for complex operations
-```
-
-### Python Scripts
-```bash
-ruff format .agent/scripts/*.py    # Format before commit
-ruff check --fix .agent/scripts/   # Lint
+.agent/rules/      # Permanent rules
+.agent/workflows/  # Step-by-step procedures
+.agent/queries/    # GraphQL for GitHub API
+.agent/scripts/    # Python helpers (format with ruff)
 ```
