@@ -7,11 +7,10 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -152,7 +151,7 @@ class CallHierarchyProviderTest {
             this.name = name
             this.kind = SymbolKind.Method
             this.uri = uri.toString()
-            this.range = org.eclipse.lsp4j.Range(rangeStart, rangeStart)
-            this.selectionRange = org.eclipse.lsp4j.Range(rangeStart, rangeStart)
+            this.range = Range(rangeStart, rangeStart)
+            this.selectionRange = Range(rangeStart, rangeStart)
         }
 }

@@ -167,15 +167,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
             // Assignment to this variable is a write
             if (parent is BinaryExpression) {
-                // Include all assignment operators: standard, arithmetic, bitwise, shift, and power
-                val assignmentOperators = setOf(
-                    "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic
-                    "&=", "|=", "^=", // Bitwise
-                    "<<=", ">>=", ">>>=", // Shift
-                    "**=", // Power
-                )
-                val isAssignment = parent.operation.text in assignmentOperators
-                if (isAssignment && parent.leftExpression == node) {
+                if (parent.operation.text in ASSIGNMENT_OPERATORS && parent.leftExpression == node) {
                     return DocumentHighlightKind.Write
                 }
             }
@@ -195,11 +187,19 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      */
     private fun ASTNode.hasValidPosition(): Boolean = lineNumber > 0 && columnNumber > 0
 
-    /**
-     * Check if this node represents a highlightable symbol.
-     */
-    private fun ASTNode.isHighlightableSymbol(): Boolean {
-        val highlightableTypes = setOf(
+    private fun ASTNode.isHighlightableSymbol(): Boolean = HIGHLIGHTABLE_TYPES.contains(this::class)
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(DocumentHighlightProvider::class.java)
+
+        private val ASSIGNMENT_OPERATORS = setOf(
+            "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic
+            "&=", "|=", "^=", // Bitwise
+            "<<=", ">>=", ">>>=", // Shift
+            "**=", // Power
+        )
+
+        private val HIGHLIGHTABLE_TYPES = setOf(
             VariableExpression::class,
             DeclarationExpression::class,
             Parameter::class,
@@ -215,7 +215,6 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
             PostfixExpression::class,
             PrefixExpression::class,
         )
-        return highlightableTypes.contains(this::class)
     }
 
     /**

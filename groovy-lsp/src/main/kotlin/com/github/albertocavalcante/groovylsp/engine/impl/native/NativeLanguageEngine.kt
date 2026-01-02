@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.engine.impl.native
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.compilation.toLspDiagnostic
 import com.github.albertocavalcante.groovylsp.engine.adapters.NativeParserAdapter
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionProvider
@@ -24,6 +23,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import org.eclipse.lsp4j.Diagnostic
+import java.net.URI
 
 class NativeLanguageEngine(
     private val parserFacade: GroovyParserFacade,
@@ -55,7 +55,7 @@ class NativeLanguageEngine(
         )
     }
 
-    override fun createSession(uri: java.net.URI, content: String): LanguageSession {
+    override fun createSession(uri: URI, content: String): LanguageSession {
         val parseResult = parserFacade.parse(ParseRequest(uri, content))
         return createSession(parseResult, uri.toString(), content)
     }

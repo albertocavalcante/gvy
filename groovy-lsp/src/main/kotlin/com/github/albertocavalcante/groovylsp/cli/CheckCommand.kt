@@ -55,6 +55,7 @@ class CheckCommand : CliktCommand(name = "check") {
         val ws = workspace ?: return
 
         val params = InitializeParams().apply {
+            @Suppress("DEPRECATION")
             rootUri = ws.toURI().toString()
             capabilities = ClientCapabilities()
         }
@@ -67,7 +68,10 @@ class CheckCommand : CliktCommand(name = "check") {
             terminal.println(green("Dependencies resolved successfully."))
         } else {
             terminal.println(
-                brightYellow("Warning: Dependency resolution failed or timed out. Checking with limited context."),
+                brightYellow(
+                    "Warning: Dependency resolution failed or timed out. " +
+                        "Checking with limited context.",
+                ),
             )
         }
     }
@@ -104,15 +108,15 @@ class CheckCommand : CliktCommand(name = "check") {
                         else -> "UNKNOWN" to null
                     }
 
-                    val severityString = if (terminal.info.ansiLevel == AnsiLevel.NONE) {
+                    val severityString = if (terminal.terminalInfo.ansiLevel == AnsiLevel.NONE) {
                         label
                     } else {
                         style?.invoke(label) ?: label
                     }
 
-                    terminal.println(
-                        "${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severityString] ${d.message}",
-                    )
+                    val line = d.range.start.line + 1
+                    val char = d.range.start.character + 1
+                    terminal.println("${file.path}:$line:$char: [$severityString] ${d.message}")
                 }
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {

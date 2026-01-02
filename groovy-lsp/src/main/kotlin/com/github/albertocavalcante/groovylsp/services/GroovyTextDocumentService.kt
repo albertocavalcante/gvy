@@ -384,8 +384,6 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            val basicCompletions = GroovyCompletions.basic()
-
             // Try to get contextual completions from AST
             val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
@@ -411,7 +409,7 @@ class GroovyTextDocumentService(
                 emptyList()
             }
 
-            val allCompletions = basicCompletions + contextualCompletions + jenkinsCompletions
+            val allCompletions = GroovyCompletions.basic() + contextualCompletions + jenkinsCompletions
 
             logger.debug("Returning ${allCompletions.size} completions")
             Either.forLeft(allCompletions)

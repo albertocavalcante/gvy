@@ -5,7 +5,6 @@ import com.github.albertocavalcante.groovylsp.engine.EngineFactory
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
 import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
-import com.github.albertocavalcante.groovylsp.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
@@ -34,7 +33,9 @@ import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.net.URLClassLoader
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -51,7 +52,7 @@ private const val RETRY_DELAY_MS = 50L
  * @param engineConfig Configuration for the language engine (parser type, features).
  */
 class GroovyCompilationService(
-    private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
+    parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val documentProvider: DocumentProvider? = null,
     private val sourceNavigator: SourceNavigator? = null,
@@ -204,11 +205,7 @@ class GroovyCompilationService(
      * Compiles code without updating the cache.
      * Useful for completion where we insert a dummy identifier.
      */
-    suspend fun compileTransient(
-        uri: URI,
-        content: String,
-        compilePhase: Int = Phases.CANONICALIZATION,
-    ): com.github.albertocavalcante.groovyparser.api.ParseResult {
+    suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
         logger.debug("Transient compilation for: $uri (phase=$compilePhase)")
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
@@ -226,7 +223,7 @@ class GroovyCompilationService(
         )
     }
 
-    fun getParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? = cache.get(uri)
+    fun getParseResult(uri: URI): ParseResult? = cache.get(uri)
 
     /**
      * Checks if a parse result contains a suspicious Script node.
@@ -239,10 +236,7 @@ class GroovyCompilationService(
      * This typically happens when a file is compiled before sourceRoots were populated,
      * causing the Groovy compiler to fall back to treating it as a Script.
      */
-    private fun isSuspiciousScript(
-        uri: URI,
-        parseResult: com.github.albertocavalcante.groovyparser.api.ParseResult,
-    ): Boolean {
+    private fun isSuspiciousScript(uri: URI, parseResult: ParseResult): Boolean {
         val filename = runCatching { Path.of(uri).fileName.toString().substringBeforeLast(".") }.getOrNull()
             ?: return false
         val classes = parseResult.ast?.classes ?: return false
@@ -266,7 +260,7 @@ class GroovyCompilationService(
      * Use this method when you need to ensure the AST accurately represents the source code
      * structure (e.g., test discovery, Spock detection).
      */
-    suspend fun getValidParseResult(uri: URI): com.github.albertocavalcante.groovyparser.api.ParseResult? {
+    suspend fun getValidParseResult(uri: URI): ParseResult? {
         val cachedResult = cache.get(uri) ?: return null
 
         // Use helper function to check for suspicious Script node
@@ -379,7 +373,7 @@ class GroovyCompilationService(
 
     private fun parseUriToPath(uri: URI): Path? = try {
         Path.of(uri)
-    } catch (e: java.nio.file.InvalidPathException) {
+    } catch (e: InvalidPathException) {
         logger.debug("Failed to convert URI to path: $uri", e)
         null
     }
@@ -641,7 +635,7 @@ class GroovyCompilationService(
     internal val astCache get() = cache
 
     private val classLoaderLock = Any()
-    private var cachedClassLoader: java.net.URLClassLoader? = null
+    private var cachedClassLoader: URLClassLoader? = null
 
     /**
      * Find a class on the dependency classpath and return its URI.
@@ -660,13 +654,13 @@ class GroovyCompilationService(
         }
     }
 
-    private fun getOrCreateClassLoader(): java.net.URLClassLoader {
+    private fun getOrCreateClassLoader(): URLClassLoader {
         synchronized(classLoaderLock) {
             cachedClassLoader?.let { return it }
 
             val classpath = workspaceManager.getDependencyClasspath()
             val urls = classpath.map { it.toUri().toURL() }.toTypedArray()
-            val loader = java.net.URLClassLoader(urls, null) // Parent null to only search dependencies
+            val loader = URLClassLoader(urls, null) // Parent null to only search dependencies
             cachedClassLoader = loader
             return loader
         }
