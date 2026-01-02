@@ -11,7 +11,9 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
@@ -19,6 +21,7 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -171,24 +174,53 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         val definition = node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
 
         if (definition is MethodNode) {
-            val calls = mutableListOf<CallHierarchyOutgoingCall>()
+            val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
 
             // Use visitor pattern for efficient traversal of only this method's code
             val callVisitor = object : CodeVisitorSupport() {
+                private fun addCall(callee: ASTNode, callRange: Range) {
+                    // Use a stable key for the callee.
+                    // TODO(#564): Include URI once cross-file resolution is supported.
+                    val calleeKey = "${callee.lineNumber}:${callee.columnNumber}"
+
+                    val existing = callsMap[calleeKey]
+                    if (existing != null) {
+                        existing.fromRanges.add(callRange)
+                    } else {
+                        val calleeItem = createCallHierarchyItem(callee, uri)
+                        callsMap[calleeKey] = CallHierarchyOutgoingCall(calleeItem, mutableListOf(callRange))
+                    }
+                }
+
                 override fun visitMethodCallExpression(call: MethodCallExpression) {
                     val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
-                    if (callee != null) {
-                        // TODO(#564): Cross-file resolution needs SourceNavigationService.
-                        // Currently assumes same file for callee URI.
-                        val calleeItem = createCallHierarchyItem(callee, uri)
-                        val range = call.toLspRange()
-                        calls.add(CallHierarchyOutgoingCall(calleeItem, listOf(range)))
+                    val range = call.toLspRange()
+                    if (callee != null && range != null) {
+                        addCall(callee, range)
                     }
                     super.visitMethodCallExpression(call)
                 }
+
+                override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
+                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
+                    val range = call.toLspRange()
+                    if (callee != null && range != null) {
+                        addCall(callee, range)
+                    }
+                    super.visitStaticMethodCallExpression(call)
+                }
+
+                override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
+                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
+                    val range = call.toLspRange()
+                    if (callee != null && range != null) {
+                        addCall(callee, range)
+                    }
+                    super.visitConstructorCallExpression(call)
+                }
             }
             definition.code?.visit(callVisitor)
-            return calls
+            return callsMap.values.toList()
         }
 
         return emptyList()

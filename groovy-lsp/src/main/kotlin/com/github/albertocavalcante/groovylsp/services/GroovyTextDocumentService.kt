@@ -305,54 +305,54 @@ class GroovyTextDocumentService(
 
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
-            runCatching {
-                // Use compileAsync for proper coordination
-                val result = compilationService.compileAsync(this, uri, content).await()
+            try {
+                runCatching {
+                    // Use compileAsync for proper coordination
+                    val result = compilationService.compileAsync(this, uri, content).await()
 
-                ensureActive() // Ensure job wasn't cancelled before publishing
+                    ensureActive() // Ensure job wasn't cancelled before publishing
 
-                // Publish compilation diagnostics first to keep UX responsive.
-                // NOTE: Tradeoff (See #564):
-                // This can result in two diagnostics publications (compile first, then CodeNarc merge),
-                // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
-                publishDiagnostics(uri.toString(), result.diagnostics)
+                    // Publish compilation diagnostics first to keep UX responsive.
+                    // NOTE: Tradeoff (See #564):
+                    // This can result in two diagnostics publications (compile first, then CodeNarc merge),
+                    // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
+                    publishDiagnostics(uri.toString(), result.diagnostics)
 
-                // Skip CodeNarc when disabled or when compilation already has errors.
-                if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
-                    return@runCatching
-                }
-
-                val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                val allDiagnostics = result.diagnostics + codenarcDiagnostics
-
-                ensureActive()
-                if (codenarcDiagnostics.isNotEmpty()) {
-                    publishDiagnostics(uri.toString(), allDiagnostics)
-                }
-
-                logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
-            }.onFailure { e ->
-                when (e) {
-                    is CompilationFailedException -> logger.error(
-                        "Compilation failed for: $uri",
-                        e,
-                    )
-
-                    is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
-                    is java.io.IOException -> logger.error("I/O error for: $uri", e)
-                    is kotlinx.coroutines.CancellationException -> {
-                        logger.debug("Diagnostics job cancelled for: $uri")
-                        // Cleanup before rethrowing to ensure map is consistent
-                        diagnosticJobs.remove(uri, coroutineContext[Job])
-                        throw e
+                    // Skip CodeNarc when disabled or when compilation already has errors.
+                    if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
+                        return@runCatching
                     }
 
-                    else -> logger.error("Unexpected error during diagnostics for: $uri", e)
-                }
-            }
+                    val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val allDiagnostics = result.diagnostics + codenarcDiagnostics
 
-            // Remove job from map if it's the current one
-            diagnosticJobs.remove(uri, coroutineContext[Job])
+                    ensureActive()
+                    if (codenarcDiagnostics.isNotEmpty()) {
+                        publishDiagnostics(uri.toString(), allDiagnostics)
+                    }
+
+                    logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
+                }.onFailure { e ->
+                    when (e) {
+                        is CompilationFailedException -> logger.error(
+                            "Compilation failed for: $uri",
+                            e,
+                        )
+
+                        is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
+                        is java.io.IOException -> logger.error("I/O error for: $uri", e)
+                        is kotlinx.coroutines.CancellationException -> {
+                            logger.debug("Diagnostics job cancelled for: $uri")
+                            throw e
+                        }
+
+                        else -> logger.error("Unexpected error during diagnostics for: $uri", e)
+                    }
+                }
+            } finally {
+                // Remove job from map if it's the current one
+                diagnosticJobs.remove(uri, coroutineContext[Job])
+            }
         }
 
         diagnosticJobs[uri] = job

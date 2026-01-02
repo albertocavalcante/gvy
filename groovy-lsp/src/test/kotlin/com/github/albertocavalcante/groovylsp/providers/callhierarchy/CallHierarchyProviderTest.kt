@@ -123,6 +123,61 @@ class CallHierarchyProviderTest {
     }
 
     @Test
+    fun `test outgoing calls - static method and constructor`() = runTest {
+        // Arrange
+        val content = """
+            class Other {
+                static void staticTarget() {}
+                Other() {}
+            }
+            def source() {
+                Other.staticTarget()
+                new Other()
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        val sourceItem = createItem("source", uri, Position(4, 4))
+
+        // Act
+        val outgoingCalls = callHierarchyProvider.outgoingCalls(
+            CallHierarchyOutgoingCallsParams(sourceItem),
+        )
+
+        // Assert
+        assertEquals(2, outgoingCalls.size) { "Should find staticTarget and Other constructor" }
+        val names = outgoingCalls.map { it.to.name }.toSet()
+        assertEquals(setOf("staticTarget", "Other"), names)
+    }
+
+    @Test
+    fun `test outgoing calls - multiple calls to same method`() = runTest {
+        // Arrange
+        val content = """
+            def target() {}
+            def source() {
+                target()
+                target()
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        val sourceItem = createItem("source", uri, Position(1, 4))
+
+        // Act
+        val outgoingCalls = callHierarchyProvider.outgoingCalls(
+            CallHierarchyOutgoingCallsParams(sourceItem),
+        )
+
+        // Assert
+        assertEquals(1, outgoingCalls.size) { "Outgoing calls should be grouped by target callee" }
+        assertEquals("target", outgoingCalls[0].to.name)
+        assertEquals(2, outgoingCalls[0].fromRanges.size) { "Should have two fromRanges for the two calls" }
+    }
+
+    @Test
     fun `test outgoing calls - simple direct call`() = runTest {
         // Arrange
         val content = """
