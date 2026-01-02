@@ -204,6 +204,9 @@ class ClasspathService(
     }
 
     internal class QualifiedNameIndex {
+        /**
+         * Thread-safe index of fully qualified class names for prefix lookups.
+         */
         private val index = ConcurrentSkipListSet<String>()
 
         fun add(fullName: String) {

@@ -548,6 +548,9 @@ object CompletionProvider {
         val replaceEndCharacter: Int,
     )
 
+    /**
+     * Detects whether the cursor is in an import statement and extracts prefix/replacement info.
+     */
     private fun detectImportCompletionContext(ctx: CompletionContext): ImportCompletionContext? {
         val lines = ctx.content.split('\n')
         if (ctx.line !in lines.indices) return null
@@ -752,6 +755,9 @@ object CompletionProvider {
         }
     }
 
+    /**
+     * Adds import-specific completions (static keyword and matching class names).
+     */
     private fun CompletionsBuilder.addImportCompletions(
         ctx: ImportCompletionContext,
         compilationService: GroovyCompilationService,
@@ -764,7 +770,11 @@ object CompletionProvider {
         }
 
         val prefix = ctx.prefix.trim()
-        if (prefix.isBlank()) return
+        if (prefix.isBlank()) {
+            // TODO(#575): Provide curated suggestions for empty import prefixes.
+            //   See: https://github.com/albertocavalcante/gvy/issues/575
+            return
+        }
 
         val classpathService = compilationService.classpathService
         val candidates = if (prefix.contains('.')) {

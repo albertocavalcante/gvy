@@ -55,6 +55,7 @@ class ImportCompletionTest {
             "build",
             "buildDockerAndPublishImage",
             "archiveArtifacts",
+            // Ensure internal dummy identifiers do not leak into import completions.
             "BrazilWorldCup2026",
             "class",
             "def",
