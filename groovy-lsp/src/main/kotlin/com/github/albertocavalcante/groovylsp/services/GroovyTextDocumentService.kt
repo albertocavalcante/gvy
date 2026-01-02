@@ -417,7 +417,7 @@ class GroovyTextDocumentService(
                 val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
                 if (metadata != null) {
                     if (isInOptionsBlock) {
-                        JenkinsStepCompletionProvider.getDeclarativeOptionCompletions(metadata)
+                        emptyList()
                     } else {
                         JenkinsStepCompletionProvider.getStepCompletions(metadata) +
                             JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
