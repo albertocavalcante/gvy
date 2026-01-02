@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.e2e.JsonBridge.wrapJavaObject
 import com.github.albertocavalcante.groovylsp.testing.api.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.groovylsp.testing.api.RunTestParams
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
@@ -514,7 +515,7 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
 
         try {
             logger.info("Downloading plugin {}:{}", pluginId, version)
-            val path = kotlinx.coroutines.runBlocking {
+            val path = runBlocking {
                 downloader.download(pluginId, version)
             }
 
