@@ -42,8 +42,6 @@ class UnifiedIndexerTest {
 
         indexer.indexDocument("src/main/groovy/com/example/Foo.groovy", code)
 
-        val joined = writer.events.joinToString("\n")
-
         // Assertions
         assertTrue(writer.events.contains("START src/main/groovy/com/example/Foo.groovy"))
         // Check for Class Definition

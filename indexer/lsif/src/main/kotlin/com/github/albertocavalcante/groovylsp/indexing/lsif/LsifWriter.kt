@@ -13,7 +13,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
     private val idCounter = AtomicInteger(1)
 
     // Maps to track IDs
-    private val fileIds = mutableMapOf<String, Int>()
+    // private val fileIds = mutableMapOf<String, Int>()
 
     private fun nextId(): Int = idCounter.getAndIncrement()
 
@@ -74,7 +74,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
                 // "contents" could be set to Base64-encoded file content if we wanted to embed the source in the LSIF index
             ),
         )
-        fileIds[path] = docId
+        // fileIds[path] = docId
         currentDocumentId = docId
     }
 
@@ -105,7 +105,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
         val monikerId = emitVertex(
             "moniker",
             mapOf(
-                "scheme" to "scip-java", // Using same scheme
+                "scheme" to "scip-groovy", // Using same scheme
                 "identifier" to symbol,
                 "kind" to (if (isLocal) "local" else "export"),
             ),
@@ -150,7 +150,8 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
         val monikerId = emitVertex(
             "moniker",
             mapOf(
-                "scheme" to "scip-java",
+                "scheme" to "scip-groovy",
+
                 "identifier" to symbol,
                 "kind" to "import",
             ),

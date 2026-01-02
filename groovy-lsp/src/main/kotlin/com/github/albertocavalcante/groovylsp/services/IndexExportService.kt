@@ -15,6 +15,7 @@ import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.extension
+import kotlin.io.path.name
 import kotlin.io.path.readText
 
 class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
@@ -32,10 +33,12 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
             val indexer = UnifiedIndexer(writers, symbolGenerator)
 
-            indexFiles(workspaceRoot, indexer)
-
-            // Explicitly close writers to flush footers
-            writers.forEach { it.close() }
+            try {
+                indexFiles(workspaceRoot, indexer)
+            } finally {
+                // Explicitly close writers to flush footers
+                writers.forEach { it.close() }
+            }
         }
 
         return "Successfully exported ${params.format} index to ${params.outputPath}"
@@ -59,9 +62,8 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
     private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
         Files.walk(root).use { stream ->
             stream.filter { path ->
-                val file = path.toFile()
-                file.extension in FileExtensions.EXTENSIONS ||
-                    file.name in FileExtensions.FILENAMES
+                path.extension in FileExtensions.EXTENSIONS ||
+                    path.name in FileExtensions.FILENAMES
             }
                 .forEach { path ->
                     try {
