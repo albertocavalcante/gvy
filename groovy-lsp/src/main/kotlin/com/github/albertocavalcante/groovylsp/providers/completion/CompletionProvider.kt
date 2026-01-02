@@ -206,8 +206,22 @@ object CompletionProvider {
         }
 
         // Try to detect member access (e.g., "myList.")
-        val nodeAtCursor = ctx.astModel.getNodeAt(ctx.uri, ctx.line, ctx.character)
+        val nodeAtCursor = findNodeAtOrBefore(ctx.astModel, ctx.uri, ctx.content, ctx.line, ctx.character)
         val completionContext = detectCompletionContext(nodeAtCursor, ctx.astModel, context)
+        val isInOptionsBlock = isJenkinsFile && isInJenkinsOptionsBlock(nodeAtCursor, ctx.astModel)
+
+        if (isInOptionsBlock) {
+            return completions {
+                val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+                if (metadata != null) {
+                    addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+                    val callName = findEnclosingMethodCall(nodeAtCursor, ctx.astModel)?.methodAsString
+                    if (callName == null || metadata.declarativeOptions[callName] == null) {
+                        addJenkinsDeclarativeOptions(metadata)
+                    }
+                }
+            }
+        }
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
@@ -393,6 +407,11 @@ object CompletionProvider {
         }
     }
 
+    private fun CompletionsBuilder.addJenkinsDeclarativeOptions(metadata: MergedJenkinsMetadata) {
+        val optionCompletions = JenkinsStepCompletionProvider.getDeclarativeOptionCompletions(metadata)
+        optionCompletions.forEach(::add)
+    }
+
     /**
      * Add property completions for Jenkins global variables (env, currentBuild).
      */
@@ -447,6 +466,70 @@ object CompletionProvider {
         }
         return null
     }
+
+    private fun findNodeAtOrBefore(
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        uri: java.net.URI,
+        content: String,
+        line: Int,
+        character: Int,
+    ): org.codehaus.groovy.ast.ASTNode? {
+        val lines = content.split('\n')
+        if (lines.isEmpty()) return null
+
+        val clampedLine = line.coerceIn(0, lines.lastIndex)
+        val clampedChar = character.coerceAtLeast(0)
+        astModel.getNodeAt(uri, clampedLine, clampedChar)?.let { return it }
+
+        var lineIndex = clampedLine
+        var charIndex = clampedChar - 1
+        while (lineIndex >= 0) {
+            val lineText = lines.getOrNull(lineIndex).orEmpty()
+            if (charIndex > lineText.lastIndex) {
+                charIndex = lineText.lastIndex
+            }
+            while (charIndex >= 0 && lineText[charIndex].isWhitespace()) {
+                charIndex--
+            }
+            if (charIndex >= 0) {
+                astModel.getNodeAt(uri, lineIndex, charIndex)?.let { return it }
+            }
+            lineIndex--
+            charIndex = Int.MAX_VALUE
+        }
+        return null
+    }
+
+    private fun isInJenkinsOptionsBlock(
+        node: org.codehaus.groovy.ast.ASTNode?,
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+    ): Boolean {
+        var current: org.codehaus.groovy.ast.ASTNode? = node
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_SEARCH_DEPTH) {
+            if (current is org.codehaus.groovy.ast.expr.MethodCallExpression &&
+                current.methodAsString == "options"
+            ) {
+                return true
+            }
+            current = astModel.getParent(current)
+            depth++
+        }
+        return false
+    }
+
+    internal fun isInJenkinsOptionsBlock(
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        uri: java.net.URI,
+        line: Int,
+        character: Int,
+        content: String,
+    ): Boolean {
+        val node = findNodeAtOrBefore(astModel, uri, content, line, character)
+        return isInJenkinsOptionsBlock(node, astModel)
+    }
+
+    private const val MAX_PARENT_SEARCH_DEPTH = 50
 
     /**
      * Detect completion context (member access or type parameter).
