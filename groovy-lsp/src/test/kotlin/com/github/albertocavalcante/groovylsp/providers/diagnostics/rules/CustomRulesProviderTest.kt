@@ -59,7 +59,7 @@ class CustomRulesProviderTest {
             override val id = "bad"
             override val description = "Bad rule"
 
-            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): Nothing =
+            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
                 throw RuntimeException("Rule failed")
         }
 

@@ -75,7 +75,7 @@ class AbstractDiagnosticRuleTest {
             override val id = "test-rule"
             override val description = "Test rule"
 
-            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): Nothing =
+            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
                 throw RuntimeException("Test exception")
         }
 
