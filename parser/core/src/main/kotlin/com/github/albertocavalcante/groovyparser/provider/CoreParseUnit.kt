@@ -12,6 +12,7 @@ import com.github.albertocavalcante.groovyparser.api.model.SymbolInfo
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import com.github.albertocavalcante.groovyparser.api.model.TypeInfo
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
+import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import java.nio.file.Path
 
@@ -92,7 +93,7 @@ class CoreParseUnit(
         ProblemSeverity.HINT -> Severity.HINT
     }
 
-    private fun extractRange(node: com.github.albertocavalcante.groovyparser.ast.Node): Range {
+    private fun extractRange(node: Node): Range {
         val range = node.range ?: return Range.EMPTY
         return Range(
             start = Position(range.begin.line, range.begin.column),

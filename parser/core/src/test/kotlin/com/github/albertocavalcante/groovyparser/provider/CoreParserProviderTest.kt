@@ -85,7 +85,7 @@ class CoreParserProviderTest {
         val symbols = unit.symbols()
         assertTrue(
             symbols.any { it.name == "Greeter" && it.kind == SymbolKind.INTERFACE },
-            "Should report Greeter as INTERFACE"
+            "Should report Greeter as INTERFACE",
         )
     }
 }
