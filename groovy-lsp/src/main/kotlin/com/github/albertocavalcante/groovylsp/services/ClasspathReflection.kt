@@ -19,6 +19,7 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 name = method.name,
                 returnType = method.returnType.simpleName,
                 parameters = method.parameterTypes.map { it.simpleName },
+                parameterNames = method.parameters.map { it.name },
                 isStatic = Modifier.isStatic(method.modifiers),
                 isPublic = Modifier.isPublic(method.modifiers),
                 doc = "JDK/Classpath method from ${clazz.simpleName}",

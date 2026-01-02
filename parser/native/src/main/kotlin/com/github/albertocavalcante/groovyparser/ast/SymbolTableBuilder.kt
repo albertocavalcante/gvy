@@ -40,13 +40,17 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
                 is MethodNode -> registry.addMethodDeclaration(uri, node)
                 is ClassNode -> {
                     registry.addClassDeclaration(uri, node)
-                    // Also add fields and properties
-                    node.fields?.forEach { field ->
-                        registry.addFieldDeclaration(node, field.name, field)
-                    }
-                    node.properties?.forEach { property ->
-                        registry.addFieldDeclaration(node, property.name, property)
-                    }
+                    // NOTE: Decompiled classpath nodes may throw linkage errors when resolving members.
+                    runCatching { node.fields }
+                        .getOrNull()
+                        ?.forEach { field ->
+                            registry.addFieldDeclaration(node, field.name, field)
+                        }
+                    runCatching { node.properties }
+                        .getOrNull()
+                        ?.forEach { property ->
+                            registry.addFieldDeclaration(node, property.name, property)
+                        }
                 }
 
                 is FieldNode -> {

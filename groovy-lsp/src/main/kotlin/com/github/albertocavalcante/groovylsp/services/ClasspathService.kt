@@ -221,10 +221,16 @@ class ClasspathService(
     }
 }
 
+/**
+ * Reflection snapshot for a classpath method.
+ *
+ * @property parameterNames Available when the class was compiled with `-parameters`; empty otherwise.
+ */
 data class ReflectedMethod(
     val name: String,
     val returnType: String,
     val parameters: List<String>,
+    val parameterNames: List<String> = emptyList(),
     val isStatic: Boolean,
     val isPublic: Boolean,
     val doc: String,
