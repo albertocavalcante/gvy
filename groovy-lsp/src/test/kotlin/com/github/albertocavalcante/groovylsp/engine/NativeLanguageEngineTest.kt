@@ -265,9 +265,7 @@ class NativeLanguageEngineTest {
         for (diagnostic in diagnostics) {
             count++
         }
-        assertEquals(0, count, "Valid code should have zero diagnostics")
-
-        // Should be a proper list
-        assertTrue(diagnostics is List, "Diagnostics should be a List")
+        assertEquals(diagnostics.size, count, "Diagnostics list should be iterable")
+        assertTrue(diagnostics.isEmpty(), "Valid code should have zero diagnostics")
     }
 }

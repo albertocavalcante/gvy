@@ -151,6 +151,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `workspace symbol search returns matches`() = runBlocking {
         val result: Either<List<SymbolInformation>, List<WorkspaceSymbol>> =
             server.workspaceService.symbol(WorkspaceSymbolParams("Greeter")).get()

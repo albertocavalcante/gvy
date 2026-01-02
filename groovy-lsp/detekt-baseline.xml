@@ -31,12 +31,7 @@
     <ID>MagicNumber:JenkinsDocProvider.kt$JenkinsDocProvider$100</ID>
     <ID>MagicNumber:SourceNavigationService.kt$SourceNavigationService$3</ID>
     <ID>MaxLineLength:CompletionProvider.kt$CompletionProvider$// This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.</ID>
-    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.ImportNodeResolutionTest$"jar:file:///home/user/.m2/repository/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar!/com/google/gson/Gson.class"</ID>
-    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$"jar:file:///home/user/.m2/repository/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar!/org/apache/commons/lang3/StringUtils.class"</ID>
-    <ID>MaxLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$"jar:file:///home/user/.m2/repository/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar!/org/slf4j/Logger.class"</ID>
     <ID>MaxLineLength:Main.kt$"${file.path}:${d.range.start.line + 1}:${d.range.start.character + 1}: [$severity] ${d.message}"</ID>
-    <ID>MaximumLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.ImportNodeResolutionTest$ </ID>
-    <ID>MaximumLineLength:DefinitionResolverFallbackTest.kt$DefinitionResolverFallbackTest.SourceNavigationSuccessTest$ </ID>
     <ID>MaximumLineLength:Main.kt$ </ID>
     <ID>NestedBlockDepth:CompletionProvider.kt$CompletionProvider$private fun detectCompletionContext( nodeAtCursor: org.codehaus.groovy.ast.ASTNode?, astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel, context: SymbolCompletionContext, ): ContextType?</ID>
     <ID>NestedBlockDepth:CompletionProvider.kt$CompletionProvider$suspend fun getContextualCompletions( uri: String, line: Int, character: Int, compilationService: GroovyCompilationService, content: String, ): List&lt;CompletionItem></ID>
@@ -87,8 +82,5 @@
     <ID>TooManyFunctions:DefinitionResolver.kt$DefinitionResolver</ID>
     <ID>TooManyFunctions:GroovyCompilationService.kt$GroovyCompilationService</ID>
     <ID>TooManyFunctions:GroovyTextDocumentService.kt$GroovyTextDocumentService : TextDocumentService</ID>
-    <ID>UnusedParameter:MultipleDiagnosticsPropertyTest.kt$MultipleDiagnosticsPropertyTest$onlyRegistered: Boolean</ID>
-    <ID>UnusedPrivateProperty:JenkinsDocProvider.kt$JenkinsDocProvider$private val logger = LoggerFactory.getLogger(JenkinsDocProvider::class.java)</ID>
-    <ID>UnusedPrivateProperty:JenkinsStepCompletionProvider.kt$JenkinsStepCompletionProvider$private val logger = LoggerFactory.getLogger(JenkinsStepCompletionProvider::class.java)</ID>
   </CurrentIssues>
 </SmellBaseline>

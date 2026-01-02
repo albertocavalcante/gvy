@@ -66,7 +66,7 @@ class InlayHintsProviderTest {
             val varExpr = VariableExpression("name").apply {
                 lineNumber = 1
                 columnNumber = 5
-                type = ClassHelper.DYNAMIC_TYPE
+                type = ClassHelper.dynamicType()
             }
             val constExpr = ConstantExpression("hello").apply {
                 type = ClassHelper.STRING_TYPE

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class TypeDefinitionProviderTest {
@@ -66,6 +67,6 @@ class TypeDefinitionProviderTest {
         )
 
         // Then
-        assertTrue(provider is TypeDefinitionProvider)
+        assertEquals(TypeDefinitionProvider::class, provider::class)
     }
 }
