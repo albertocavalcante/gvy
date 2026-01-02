@@ -1,88 +1,186 @@
-# Code Quality Rules
+---
+description: Code quality standards, TDD, testing, and engineering practices
+---
 
-These rules are ALWAYS applied when writing or modifying code.
+# Code Quality
+
+<critical>
+These standards apply to ALL code changes. No exceptions without explicit justification.
+</critical>
+
+---
+
+## Test-Driven Development (TDD)
+
+### The Cycle
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TDD CYCLE                            │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  1. RED    → Write failing test                         │
+│  2. RUN    → Verify it FAILS (for the right reason)     │
+│  3. GREEN  → Write minimal code to pass                 │
+│  4. RUN    → Verify it PASSES                           │
+│  5. REFACTOR → Clean up, keep tests green               │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Execution
+```bash
+# Step 1-2: Write test, verify failure
+./gradlew test --tests "*MyTest*my test name*"  # MUST FAIL
+
+# Step 3-4: Implement, verify pass
+./gradlew test --tests "*MyTest*my test name*"  # MUST PASS
+
+# Step 5: Refactor, verify still passes
+./gradlew test --tests "*MyTest*"
+```
+
+### When TDD is Required
+
+| Scenario | TDD Required? |
+|----------|---------------|
+| Bug fix | ✅ YES — test reproduces bug first |
+| New feature | ✅ YES — test defines behavior first |
+| Refactoring | ✅ YES — tests prove behavior unchanged |
+| Config/wiring only | ⚠️ OPTIONAL — no logic to test |
+| Exploratory spike | ⚠️ OPTIONAL — will be rewritten |
+
+When skipping TDD, write tests immediately after implementation.
+
+---
+
+## Test Naming
+
+Use backtick syntax with descriptive sentences:
+
+```kotlin
+// ✅ GOOD
+@Test fun `completion returns method signatures for class instances`()
+@Test fun `parser handles null AST nodes gracefully`()
+@Property fun `property - random inputs never cause NPE`()
+
+// ❌ BAD
+@Test fun completionReturnsMethodSignatures()
+@Test fun testParserHandlesNull()
+```
+
+**Rationale**: Backtick names are self-documenting and read like specifications.
+
+---
 
 ## Lint Handling
 
-ALWAYS address lint/detekt issues introduced by your changes. Never ignore them.
+### Pre-Commit Checklist
+```bash
+./gradlew lintFix   # Auto-fix what's possible
+./gradlew lint      # Verify no remaining issues
+```
 
-For each lint issue, do ONE of:
-1. **FIX** it properly (e.g., extract magic numbers to constants, add null checks)
-2. **SUPPRESS** with annotation + justification comment when legitimate
-3. **ASK** user if unsure about the right approach
+### Handling Lint Issues
 
-It's acceptable to fix lint issues at the end of a change, but they MUST be addressed before committing.
+| Action | When to Use |
+|--------|-------------|
+| **FIX** | Default — address the issue properly |
+| **SUPPRESS** | Legitimate exception with justification |
+| **ASK** | Unclear whether to fix or suppress |
+
+### Suppression Format
+```kotlin
+@Suppress("MagicNumber")  // Configuration constant, not arbitrary
+private const val DEFAULT_TIMEOUT_MS = 5000
+
+@Suppress("TooManyFunctions")  // Facade pattern requires many delegating methods
+class CompletionProvider { ... }
+```
 
 **Goal**: Zero new lint issues per PR.
 
-## Test Naming Convention
-
-ALWAYS use backtick style with descriptive sentences for test names.
-NEVER use camelCase for test function names.
-
-✅ Good:
-```kotlin
-@Test fun `FixContext stores diagnostic correctly`()
-@Property fun `property - unregistered random rule names return null handler`()
-```
-
-❌ Bad:
-```kotlin
-@Test fun fixContextStoresDiagnosticCorrectly()
-@Property fun nonCodeNarcDiagnosticsReturnEmptyActions()
-```
-
-Rationale: Backtick style with spaces is more readable, self-documenting, and follows BDD principles.
-
-## TDD (Test-Driven Development)
-
-Follow TDD for new features. Recommended 99.999% of the time.
-
-### TDD Cycle
-1. **Red**: Write a failing test first that defines expected behavior
-2. **Green**: Write minimum code to make the test pass
-3. **Refactor**: Clean up while keeping tests green
-
-### Order of Operations
-1. Create test file with test cases (they may fail to compile initially)
-2. Create minimal interface/class to make tests compile
-3. Run tests - verify they fail for the right reason
-4. Implement until tests pass
-5. Refactor if needed
-
-### When to Skip TDD
-TDD can be skipped when overhead is excessive (rare cases):
-- Pure infrastructure/wiring code with no logic
-- Exploratory spikes that will be rewritten
-- Trivial one-liner changes
-
-When skipping, write tests immediately after implementation.
+---
 
 ## Engineering Notes
 
-When introducing ANY heuristic (regex parsing, string matching on error messages, token-length widening, line-based fallbacks, etc.), ALWAYS annotate the code with an explicit tag:
-- `NOTE:` explain the trade-off and why we're doing it now
-- `TODO:` describe the deterministic/robust approach we'd prefer long-term
-- `FIXME:` if the heuristic is known to be flaky/incorrect in some cases
-- `HACK:` only if it's a last-resort workaround (must include exit plan)
+When introducing heuristics or non-obvious code, annotate with tags:
 
-The goal is to make heuristics visible, reviewable, and easy to revisit over time.
+| Tag | Use Case | Example |
+|-----|----------|---------|
+| `NOTE:` | Explain trade-off | `// NOTE: Using regex for speed, AST would be more accurate` |
+| `TODO:` | Future improvement | `// TODO: Replace with proper parser when available` |
+| `FIXME:` | Known issue | `// FIXME: Flaky on Windows due to path separators` |
+| `HACK:` | Last resort | `// HACK: Workaround for upstream bug #123, remove when fixed` |
 
-## Flaky Tests
+### TODO Format with Issue Link
+```kotlin
+// TODO(#123): Brief description.
+//   See: https://github.com/owner/repo/issues/123
+```
 
-When a test fails due to a timeout or non-deterministic behavior, add a FIXME comment.
-Example: `// FIXME: Flaky test due to timeout`
-
-## Privacy
-
-NEVER expose absolute home directory paths in docs, specs, commits, or PRs.
-Use `$HOME` or `~` instead.
+---
 
 ## Test Debugging
 
-For test debugging with println: MUST run with `--info` flag.
+### Viewing Test Output
 ```bash
-./gradlew test --tests "*SomeTest*" --console=plain --info
+# println output requires --info flag
+./gradlew test --tests "*MyTest*" --console=plain --info
 ```
 
-Without `--info` flag, println output will not be visible in test results.
+### Debugging Flaky Tests
+1. Add `// FIXME: Flaky test - [reason]` comment
+2. Investigate root cause (timing, state, randomness)
+3. Fix or mark with `@RepeatedTest` / `@Disabled` with issue link
+
+---
+
+## Privacy
+
+<forbidden>
+Never expose absolute paths in:
+- Code comments
+- Commit messages
+- PR descriptions
+- Documentation
+</forbidden>
+
+```kotlin
+// ❌ BAD
+// See /Users/john/dev/project/file.kt
+
+// ✅ GOOD
+// See src/main/kotlin/file.kt
+// See $HOME/project/file.kt (if external reference needed)
+```
+
+---
+
+## Kotlin Idioms
+
+Prefer idiomatic Kotlin patterns:
+
+| Pattern | Prefer | Avoid |
+|---------|--------|-------|
+| Null safety | `?.`, `?:`, `let` | `!!` (minimize) |
+| Collections | `map`, `filter`, `fold` | Manual loops |
+| Data holders | `data class` | Plain class with equals/hashCode |
+| Type hierarchies | `sealed class/interface` | Open class with instanceof |
+| Utilities | Extension functions | Static utility classes |
+| Initialization | `lazy`, `apply`, `also` | Manual init blocks |
+
+---
+
+## Quick Reference
+
+```bash
+# Full quality check before commit
+./gradlew lintFix test
+
+# Run specific test
+./gradlew test --tests "*ClassName*test name*"
+
+# Debug test output
+./gradlew test --tests "*Test*" --console=plain --info
+```

@@ -1,89 +1,130 @@
 ---
-description: GitHub CLI patterns for API calls, PR reviews, and repo exploration
+description: GitHub CLI patterns for API calls, PR management, and repository exploration
 ---
-// turbo-all
 
 # GitHub CLI Patterns
 
-MUST use GitHub CLI exclusively for reading GitHub content. NEVER use WebFetch for GitHub.
+<critical>
+ALWAYS use `gh` CLI for GitHub content. NEVER use curl/wget/fetch for GitHub URLs.
+</critical>
 
-## Project Variables
-
-When working on this repository, use these values:
+## Repository Info
 
 | Variable | Value |
 |----------|-------|
 | `OWNER/REPO` | `albertocavalcante/groovy-lsp` |
-| `SONAR_PROJECT_KEY` | `albertocavalcante_groovy-lsp` |
 
-## Repository Metadata
+---
+
+## Common Operations
+
+### PR Management
 ```bash
-gh api repos/OWNER/REPO --jq '.description, .topics, .homepage'
-gh api repos/OWNER/REPO/releases/latest --jq '.tag_name, .published_at'
+# View PR
+gh pr view <NUMBER>
+gh pr view <NUMBER> --json title,body,state,reviews
+
+# List PRs
+gh pr list --state open
+gh pr list --author @me
+
+# Create PR (use temp file for body)
+cat > /tmp/pr-body.md << 'EOF'
+## Summary
+Brief description
+
+## Changes
+- Change 1
+- Change 2
+EOF
+gh pr create --title "feat: description" --body-file /tmp/pr-body.md
+rm /tmp/pr-body.md
+
+# Check CI status
+gh pr checks <NUMBER>
+gh pr checks <NUMBER> --watch
 ```
 
-## File Content (base64 decode)
+### Issue Management
 ```bash
+# View issue
+gh issue view <NUMBER>
+gh issue view <NUMBER> --json title,body,labels,comments
+
+# Create issue (use temp file for body)
+cat > /tmp/issue-body.md << 'EOF'
+## Problem
+Description
+
+## Proposed Solution
+Approach
+EOF
+gh issue create --title "[area] description" --body-file /tmp/issue-body.md --label "enhancement"
+rm /tmp/issue-body.md
+```
+
+### Repository Content
+```bash
+# File content (base64 decode)
 gh api repos/OWNER/REPO/contents/path/to/file.md --jq '.content' | base64 -d
-gh api repos/OWNER/REPO/contents/README.md --jq '.content' | base64 -d
+
+# Directory listing
+gh api repos/OWNER/REPO/contents/path --jq '.[].name'
+
+# Search repos
+gh search repos "keyword language:kotlin" --limit 5
 ```
 
-## Search and Exploration
+---
+
+## GraphQL API
+
+### Using Saved Queries
 ```bash
-gh api repos/OWNER/REPO/contents/path --jq '.[] | select(.type=="file") | .name'
-gh search repos "gradle hooks language:kotlin" --limit 5
-gh search repos --language=kotlin --topic=gradle --limit 5
+# Queries are stored in .agent/queries/
+gh api graphql -F owner=':owner' -F name=':repo' -F number=<N> \
+  -f query="$(cat .agent/queries/pr-review-threads.graphql)"
 ```
 
-## Raw Content with --jq for Processing
+### Magic Variables
+The `gh` CLI auto-resolves these from git remote:
+- `:owner` → repository owner
+- `:repo` → repository name
+
+---
+
+## CI/Workflow Operations
+
 ```bash
-gh api repos/OWNER/REPO/contents/build.gradle.kts --jq '.download_url' | xargs curl -s
+# List recent runs
+gh run list --limit 5
+
+# View run details
+gh run view <RUN_ID>
+gh run view <RUN_ID> --log
+gh run view <RUN_ID> --log-failed
+
+# Re-run failed jobs
+gh run rerun <RUN_ID> --failed
 ```
 
-## PR Review Commands
+---
 
-### Get PR Comments
+## Output Best Practices
+
+### Structured Output to Files
 ```bash
-gh pr view PR_NUMBER --comments
-gh pr view PR_NUMBER --json comments --jq '.comments[] | {author: .author.login, body: .body, createdAt: .createdAt}'
+# Always use temp files for complex data
+gh pr view 123 --json comments > /tmp/pr-123-comments.json
+# ... process ...
+rm /tmp/pr-123-comments.json
 ```
 
-### Get Inline Review Comments
+### JSON Processing
 ```bash
-gh api repos/OWNER/REPO/pulls/PR_NUMBER/comments --jq '.[] | {author: .user.login, path: .path, line: .line, body: .body}'
-```
+# Extract specific fields
+gh pr view 123 --json title,state --jq '{title, state}'
 
-### Get Review Summaries
-```bash
-gh pr view PR_NUMBER --json reviews --jq '.reviews[] | {author: .author.login, state: .state, body: .body, submittedAt: .submittedAt}'
-```
-
-### Check PR Status
-```bash
-gh pr checks PR_NUMBER
-```
-
-## SonarCloud API
-Get code quality issues for PR analysis:
-```bash
-curl "https://sonarcloud.io/api/issues/search?componentKeys=SONAR_PROJECT_KEY&pullRequest=PR_NUMBER&types=BUG,CODE_SMELL,VULNERABILITY&statuses=OPEN,CONFIRMED"
-```
-
-## CLI Output Best Practices
-
-When using CLI tools that output complex data, prefer structured output (JSON) and redirect to a file:
-
-1. **Naming**: ALWAYS append a random suffix to avoid collisions (e.g., `gh_comments_82a1b.json`)
-2. **Cleanup**: You MUST remove these files (`rm`) immediately after reading them
-
-✅ Good:
-```bash
-gh pr view 123 --json comments > gh_comments_82a1b.json
-view_file gh_comments_82a1b.json
-rm gh_comments_82a1b.json
-```
-
-❌ Bad:
-```bash
-gh pr view 123 --comments
+# Filter arrays
+gh pr list --json number,title --jq '.[] | select(.title | contains("fix"))'
 ```

@@ -1,99 +1,171 @@
-# Git Workflow Rules
+---
+description: Git workflow, branching, and commit conventions
+---
 
-These rules are ALWAYS applied when working on this repository.
+# Git Workflow
 
-## Critical Safety Rules
+<critical>
+These rules are NON-NEGOTIABLE. Violations require immediate correction.
+</critical>
 
-1. **Never commit on main** - Always create a feature branch first.
-2. **Stage files explicitly** - Use `git add file1.kt file2.kt`, NEVER `git add .` or `git add -A`.
-3. **Verify branch** - Run `git branch --show-current` before any commit.
+## Safety Rules
 
-## No Worktrees Policy
+| Rule | Command | Rationale |
+|------|---------|-----------|
+| Never commit on main | `git branch --show-current` before commit | Protects main branch |
+| Stage files explicitly | `git add file1.kt file2.kt` | Prevents accidental commits |
+| Verify before push | `git status` + `git diff --cached` | Catches mistakes early |
 
-We deliberately DO NOT use git worktrees. The agent operates in a single working directory.
+<forbidden>
+- `git add .` or `git add -A` — NEVER use wildcard staging
+- `git commit` without verifying branch — ALWAYS check first
+- `git push --force` — Use `--force-with-lease` instead
+</forbidden>
 
-This does NOT prevent parallel work on multiple PRs:
-- Switch branches to work on different PRs
-- Use `git stash push -m "context"` for quick context switches
-- Always verify current branch before committing
+---
 
-## Multi-PR Parallelism
+## Branching Strategy
 
-PRs are NOT serial. You can work on multiple PRs simultaneously:
-
-1. Complete a logical unit of work on Branch A
-2. Commit, push, create PR
-3. Switch to `main`, pull latest, create Branch B for next task
-4. If PR A needs review fixes, switch back: `git checkout branch-a`
-
-**Key Rule**: Always branch from `main` for independent work.
-
-## Squash Merge Handling
-
-This repo uses SQUASH MERGE. All commits in a PR are squashed into ONE commit on main.
-
-**Critical Implication**: After a PR is merged, the original commit SHAs no longer exist on main.
-
-**Post-Merge Sync**:
+### For New Work
 ```bash
-git checkout main && git pull
-git branch -d old-branch-name  # Safe delete, squashed commits are on main
+# 1. Ensure main is current
+git checkout main
+git pull origin main
+
+# 2. Create feature branch
+git checkout -b <type>/<short-description>
+# Examples: feat/completion-methods, fix/null-pointer, refactor/extract-utils
 ```
 
-## Stacked PRs (Branch from Branch)
+### Branch Naming Convention
+```
+<type>/<short-kebab-description>
+```
 
-Sometimes you may branch from an existing feature branch (stacked PRs).
-This is acceptable but requires extra care.
+| Type | Use Case |
+|------|----------|
+| `feat/` | New features |
+| `fix/` | Bug fixes |
+| `refactor/` | Code restructuring |
+| `test/` | Test additions/fixes |
+| `docs/` | Documentation |
+| `ci/` | CI/CD changes |
+| `chore/` | Maintenance tasks |
 
-**When to use**: Sequential dependent changes where PR2 depends on PR1's code.
-
-**Workflow**:
-1. Create `branch-a` from main, make changes, push, create PR1
-2. Create `branch-b` from `branch-a` (not main!), make dependent changes, push, create PR2
-3. Mark PR2 as "DO NOT MERGE - Stacked on #PR1" in description
-4. After PR1 is squash-merged:
-   ```bash
-   git checkout branch-b
-   git fetch origin main
-   git rebase origin/main
-   # Resolve any conflicts
-   git push --force-with-lease
-   ```
-5. PR2 is now ready for independent merge
+---
 
 ## Commit Format
 
-Use conventional commits: `type: description`
+Use [Conventional Commits](https://www.conventionalcommits.org/):
 
-Examples:
-- `feat: add Jenkins metadata scaffold`
-- `fix: handle null pointer in completion`
-- `refactor: extract helper methods`
-- `test: add edge case coverage`
-- `docs: update API documentation`
-- `ci: fix workflow permissions`
-- `chore: update dependencies`
+```
+<type>(<scope>): <description>
 
-## PR Title Format
+[optional body]
 
-Pull Request titles MUST also use conventional style: `type: description`
-
-## Ship It Definition
-
-When user says "ship it": execute full workflow and open PR.
-Expected delivery: Pull Request created and ready for review.
-
-## Local Git Ignore
-
-File: `.git/info/exclude` (local ignore, not shared with others)
-
-Add files/folders that should be ignored only on your machine:
-```bash
-echo "filename.ext" >> .git/info/exclude
-echo "folder-name/" >> .git/info/exclude
+[optional footer]
 ```
 
-Use for: local dev files, personal notes, temp directories.
-NOT for: files all developers should ignore (use .gitignore instead).
+### Examples
+```bash
+# Simple
+git commit -m "feat: add method signature completion"
 
-**Default Behavior**: When asked to "ignore a file" or "add to ignore": ALWAYS use `.git/info/exclude`. Only use .gitignore when explicitly told "add to .gitignore".
+# With scope
+git commit -m "fix(parser): handle null AST nodes"
+
+# With body (use temp file)
+cat > /tmp/commit-msg.txt << 'EOF'
+refactor(lsp): extract completion provider
+
+- Move completion logic to dedicated class
+- Add unit tests for edge cases
+- Reduce complexity in main handler
+EOF
+git commit -F /tmp/commit-msg.txt
+rm /tmp/commit-msg.txt
+```
+
+### Type Reference
+| Type | Description |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code change that neither fixes nor adds |
+| `test` | Adding/updating tests |
+| `docs` | Documentation only |
+| `ci` | CI configuration |
+| `chore` | Maintenance, dependencies |
+| `perf` | Performance improvement |
+
+---
+
+## Squash Merge Handling
+
+This repository uses **squash merge**. All PR commits become ONE commit on main.
+
+### Implications
+1. Original commit SHAs don't exist on main after merge
+2. Branch can be safely deleted after merge
+3. PR title becomes the commit message — make it good
+
+### Post-Merge Cleanup
+```bash
+git checkout main
+git pull origin main
+git branch -d <merged-branch>  # Safe delete
+```
+
+---
+
+## Stacked PRs
+
+When PR2 depends on PR1's code (not yet merged):
+
+```bash
+# Create PR1
+git checkout -b feat/base-feature
+# ... work ...
+git push -u origin feat/base-feature
+gh pr create --title "feat: base feature"
+
+# Create PR2 stacked on PR1
+git checkout -b feat/dependent-feature  # branches from feat/base-feature
+# ... work ...
+git push -u origin feat/dependent-feature
+gh pr create --title "feat: dependent feature" --body "Stacked on #<PR1_NUMBER>"
+```
+
+### After PR1 Merges
+```bash
+git checkout feat/dependent-feature
+git fetch origin main
+git rebase origin/main
+# Resolve conflicts if any
+git push --force-with-lease
+```
+
+---
+
+## Multi-PR Work
+
+You can work on multiple PRs simultaneously:
+
+1. Complete work on Branch A → commit, push, create PR
+2. Switch to main → pull → create Branch B
+3. If PR A needs fixes → `git stash push -m "B work"` → checkout A → fix → checkout B → `git stash pop`
+
+**Key**: Always verify current branch before committing.
+
+---
+
+## Local Ignore
+
+For files that should be ignored only on YOUR machine (not shared):
+
+```bash
+echo "my-local-notes.md" >> .git/info/exclude
+echo ".scratch/" >> .git/info/exclude
+```
+
+Use `.git/info/exclude` for personal files. Use `.gitignore` only for files ALL developers should ignore.
