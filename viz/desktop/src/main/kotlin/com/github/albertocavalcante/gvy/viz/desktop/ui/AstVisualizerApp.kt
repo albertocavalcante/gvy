@@ -4,21 +4,31 @@ package com.github.albertocavalcante.gvy.viz.desktop.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.github.albertocavalcante.gvy.viz.desktop.state.AstViewModel
+import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
 import com.github.albertocavalcante.gvy.viz.desktop.state.ParserType
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.AstTreeView
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanel
@@ -103,21 +114,42 @@ fun AstVisualizerApp() {
                 )
             }
 
-            // Status bar
+            // Status bar / Error list
             if (viewModel.parseErrors.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                ) {
+                ErrorPanel(errors = viewModel.parseErrors)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorPanel(errors: List<CodeError>) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        tonalElevation = 2.dp,
+    ) {
+        LazyColumn(contentPadding = PaddingValues(8.dp)) {
+            items(errors) { error ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Error,
+                        contentDescription = "Error",
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = viewModel.parseErrors.joinToString("\n") {
-                            if (it.startLine != -1) "${it.message} at ${it.startLine}:${it.startColumn}" else it.message
+                        text = if (error.startLine != -1) {
+                            "${error.message} [${error.startLine}:${error.startColumn}]"
+                        } else {
+                            error.message
                         },
-                        modifier = Modifier.padding(8.dp),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                Spacer(Modifier.height(4.dp))
             }
         }
     }
@@ -136,11 +168,31 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
             titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
         actions = {
+            // Path input
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 8.dp),
+            ) {
+                OutlinedTextField(
+                    value = viewModel.inputPath,
+                    onValueChange = { viewModel.updateInputPath(it) },
+                    modifier = Modifier.width(300.dp),
+                    placeholder = { Text("File path...") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    trailingIcon = {
+                        IconButton(onClick = { viewModel.loadFromInputPath() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Load from path")
+                        }
+                    },
+                )
+            }
+
             // Load file button
             Button(onClick = onLoadFile) {
                 Icon(Icons.Default.FileOpen, contentDescription = "Load file")
                 Spacer(Modifier.width(4.dp))
-                Text("Load File")
+                Text("Browse")
             }
 
             Spacer(Modifier.width(8.dp))

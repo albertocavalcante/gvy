@@ -111,6 +111,10 @@ class AstViewModel {
     var currentFilePath by mutableStateOf<String?>(null)
         private set
 
+    // Path input text
+    var inputPath by mutableStateOf("")
+        private set
+
     // JSON serializer
     @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val json = Json {
@@ -127,6 +131,7 @@ class AstViewModel {
         try {
             sourceCode = file.readText()
             currentFilePath = file.absolutePath
+            inputPath = file.absolutePath
             parseCode()
         } catch (e: Exception) {
             parseErrors = listOf(CodeError("Failed to load file: ${e.message}"))
@@ -139,6 +144,19 @@ class AstViewModel {
     fun updateSourceCode(code: String) {
         sourceCode = code
         currentFilePath = null
+    }
+
+    fun updateInputPath(path: String) {
+        inputPath = path
+    }
+
+    fun loadFromInputPath() {
+        val file = File(inputPath)
+        if (file.exists() && file.isFile) {
+            loadFile(file)
+        } else {
+            parseErrors = listOf(CodeError("File not found or invalid: $inputPath"))
+        }
     }
 
     /**
