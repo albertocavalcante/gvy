@@ -40,11 +40,12 @@ on:
     branches: [main]
 env:
   # Preferred OS for single-run checks (Verify JAR, Sonar, artifacts).
-  # Override via repo variable CI_PRIMARY_OS (e.g., ubuntu-24.04).
+  # Override via repo variable CI_PRIMARY_OS (e.g., macos-15).
+  # Default: ubuntu-24.04 (faster, cheaper than macOS)
   PRIMARY_OS: >-
     ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && 'local-macos' ||
         (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && 'magalu' ||
-        (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
+        (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
 concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
   # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
@@ -520,7 +521,7 @@ jobs:
       always() &&
       needs.build.result == 'success'
     # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
+    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -598,7 +599,7 @@ jobs:
       needs.build.result == 'success'
     # Run on PRIMARY_OS only - E2E tests are platform-independent LSP protocol tests
     # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
+    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
