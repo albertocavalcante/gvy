@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import java.net.URI
+import java.nio.file.FileSystemNotFoundException
 import java.nio.file.Paths
 
 /**
@@ -41,7 +42,11 @@ class OpenRewriteLanguageEngine : LanguageEngine {
     override fun createSession(request: ParseRequest): LanguageSession {
         val path = try {
             Paths.get(request.uri)
-        } catch (_: java.nio.file.InvalidPathException) {
+        } catch (_: IllegalArgumentException) {
+            null
+        } catch (_: FileSystemNotFoundException) {
+            null
+        } catch (_: SecurityException) {
             null
         }
         val parseUnit = parserProvider.parse(request.content, path)

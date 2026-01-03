@@ -53,22 +53,25 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
         }
 
         val lines = source.lines()
-        val lineCount = lines.size.coerceAtLeast(1)
-        val lastLineLength = lines.lastOrNull()?.length ?: 0
-        val endCol = if (lastLineLength == 0) 1 else lastLineLength
+        val lineCount = lines.size
+
+        val startLine = 1
+        val startColumn = 1
+        val endLine = if (lines.isEmpty()) 1 else lines.size
+        val endColumn = if (lines.isEmpty()) 1 else lines.last().length.coerceAtLeast(1)
 
         return RewriteAstNodeDto(
             id = "node-0",
             type = "CompilationUnit",
             range = RangeDto(
-                startLine = 1,
-                startColumn = 1,
-                endLine = lines.size,
-                endColumn = lines.lastOrNull()?.length ?: 1,
+                startLine = startLine,
+                startColumn = startColumn,
+                endLine = endLine,
+                endColumn = endColumn,
             ),
             children = children,
             properties = mapOf(
-                "lineCount" to lines.size.toString(),
+                "lineCount" to lineCount.toString(),
             ),
         )
     }
