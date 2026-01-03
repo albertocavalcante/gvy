@@ -16,7 +16,7 @@ workspace:
 steps:
   # Step 1: Run the CLI index command for SCIP
   - cli:
-      command: index
+      command: gls index
       args:
         - "--format"
         - "SCIP"

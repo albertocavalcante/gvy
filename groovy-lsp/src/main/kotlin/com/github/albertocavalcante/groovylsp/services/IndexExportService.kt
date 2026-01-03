@@ -10,7 +10,6 @@ import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
 import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path

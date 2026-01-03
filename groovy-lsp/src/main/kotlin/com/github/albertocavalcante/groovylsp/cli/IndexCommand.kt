@@ -8,7 +8,6 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
-import com.github.albertocavalcante.groovycommon.FileExtensions
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
@@ -17,8 +16,6 @@ import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.services.IndexExportService
 import java.io.File
-import java.io.FileOutputStream
-import java.nio.file.Files
 import java.nio.file.Path
 
 class IndexCommand : CliktCommand(name = "index") {

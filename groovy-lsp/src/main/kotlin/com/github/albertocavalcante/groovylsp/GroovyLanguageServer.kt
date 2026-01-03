@@ -46,15 +46,9 @@ import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
 import org.slf4j.LoggerFactory
-import java.io.File
-import java.io.FileOutputStream
-import java.nio.file.Files
-import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import kotlin.io.path.extension
-import kotlin.io.path.readText
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
 

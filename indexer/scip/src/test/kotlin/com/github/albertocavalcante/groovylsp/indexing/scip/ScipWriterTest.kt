@@ -2,10 +2,8 @@ package com.github.albertocavalcante.groovylsp.indexing.scip
 
 import com.github.albertocavalcante.groovylsp.indexing.Range
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import scip.Index
 import java.io.ByteArrayOutputStream
-import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 

@@ -1,8 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cli
 
-import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.main
-import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
