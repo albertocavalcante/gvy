@@ -36,8 +36,10 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
     override val enabledByDefault = true
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
+        val path = uri.path ?: return emptyList()
+        val fileName = path.substringAfterLast('/')
         // Only analyze Jenkinsfile or files in vars/ directory
-        if (!uri.path.contains("Jenkinsfile") && !uri.path.contains("/vars/")) {
+        if (fileName != "Jenkinsfile" && !path.contains("/vars/")) {
             return emptyList()
         }
 
@@ -48,17 +50,21 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
         val stagePattern = Regex("""stage\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\{""")
 
         lines.forEachIndexed { lineIndex, line ->
+            val trimmedLine = line.trimStart()
+            if (
+                trimmedLine.startsWith("//") ||
+                trimmedLine.startsWith("/*") ||
+                trimmedLine.startsWith("*")
+            ) {
+                return@forEachIndexed
+            }
+
             val match = stagePattern.find(line)
             if (match != null) {
                 val stageName = match.groupValues[1]
 
                 // Check if the stage has steps (simple heuristic)
-                // Look ahead a few lines to see if there's a steps block
-                val scanLimit = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
-                val nextStageIndex = (lineIndex + 1 until scanLimit)
-                    .firstOrNull { stagePattern.containsMatchIn(lines[it]) }
-                val endLine = nextStageIndex ?: scanLimit
-                val blockContent = lines.subList(lineIndex, endLine).joinToString("\n")
+                val blockContent = collectStageBlockContent(lines, lineIndex, stagePattern)
 
                 val hasStepsBlock = STEPS_BLOCK_PATTERN.containsMatchIn(blockContent)
                 val hasScriptBlock = SCRIPT_BLOCK_PATTERN.containsMatchIn(blockContent)
@@ -78,5 +84,47 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
         }
 
         return diagnostics
+    }
+
+    private fun collectStageBlockContent(lines: List<String>, startIndex: Int, stagePattern: Regex): String {
+        val blockLines = mutableListOf<String>()
+        var depth = 0
+        var started = false
+        var index = startIndex
+        var shouldStop = false
+
+        while (index < lines.size && !shouldStop) {
+            val line = lines[index]
+            val isNextStage = index != startIndex && started && stagePattern.containsMatchIn(line)
+            if (isNextStage) {
+                shouldStop = true
+            } else {
+                blockLines.add(line)
+                line.forEach { ch ->
+                    when (ch) {
+                        '{' -> {
+                            depth += 1
+                            started = true
+                        }
+                        '}' -> if (started) {
+                            depth -= 1
+                        }
+                    }
+                }
+
+                if (started && depth <= 0) {
+                    shouldStop = true
+                }
+            }
+
+            index += 1
+        }
+
+        if (!started) {
+            val scanLimit = minOf(startIndex + LOOK_AHEAD_LINES, lines.size)
+            return lines.subList(startIndex, scanLimit).joinToString("\n")
+        }
+
+        return blockLines.joinToString("\n")
     }
 }

@@ -96,6 +96,25 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
+    fun `should ignore stage declarations in line comments`() = runBlocking {
+        val code = """
+            pipeline {
+                // stage('Build') {
+                // }
+                stages {
+                    // stage('Test') {
+                    // }
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
+
+        assertEquals(0, diagnostics.size)
+    }
+
+    @Test
     fun `should not analyze non-Jenkins files`() = runBlocking {
         val code = """
             stage('Build') {
@@ -105,6 +124,37 @@ class JenkinsPipelineStageRuleTest {
 
         val context = mockContext()
         val diagnostics = rule.analyze(URI.create("file:///NotAJenkinsfile.groovy"), code, context)
+
+        assertEquals(0, diagnostics.size)
+    }
+
+    @Test
+    fun `should not flag stage with steps beyond initial lookahead`() = runBlocking {
+        val code = """
+            pipeline {
+                stages {
+                    stage('Build') {
+                        // 1
+                        // 2
+                        // 3
+                        // 4
+                        // 5
+                        // 6
+                        // 7
+                        // 8
+                        // 9
+                        // 10
+                        // 11
+                        steps {
+                            echo 'ok'
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
 
         assertEquals(0, diagnostics.size)
     }
