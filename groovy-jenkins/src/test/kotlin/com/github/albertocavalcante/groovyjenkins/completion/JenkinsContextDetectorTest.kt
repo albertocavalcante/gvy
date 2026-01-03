@@ -58,6 +58,7 @@ class JenkinsContextDetectorTest {
         val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 3, column = 8)
 
         assertTrue(context.isPostContext)
+        assertEquals("post", context.currentBlock)
     }
 
     @Test
@@ -82,6 +83,7 @@ class JenkinsContextDetectorTest {
         val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 2, column = 8)
 
         assertTrue(context.isAgentContext)
+        assertEquals("agent", context.currentBlock)
     }
 
     @Test
@@ -109,6 +111,7 @@ class JenkinsContextDetectorTest {
         val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 4, column = 16)
 
         assertTrue(context.isStepsContext)
+        assertEquals("steps", context.currentBlock)
     }
 
     @Test
@@ -200,6 +203,19 @@ class JenkinsContextDetectorTest {
 
         assertTrue(context.isPostContext)
         assertEquals("success", context.postCondition)
+    }
+
+    @Test
+    fun `current block reports success inside post condition`() {
+        val lines = listOf(
+            "pipeline {",
+            "    post {",
+            "        success {",
+            "            ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 4, column = 12)
+
+        assertEquals("success", context.currentBlock)
     }
 
     @Test
