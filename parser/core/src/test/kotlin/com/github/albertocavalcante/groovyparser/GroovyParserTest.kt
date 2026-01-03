@@ -149,23 +149,39 @@ class GroovyParserTest {
     //   See: https://github.com/albertocavalcante/gvy/issues/587
     @Test
     fun `parse is thread-safe with concurrent access`() {
-        // Issue 3: Verify that parse() doesn't have race conditions
-        // when called concurrently from multiple threads
         val threadCount = 20
         val iterations = 50
         val totalOperations = threadCount * iterations
 
-        // Use a shared parser instance to test thread-safety
         val config = ParserConfiguration().setAttributeComments(true)
         val parser = GroovyParser(config)
-
         val executor = Executors.newFixedThreadPool(threadCount)
 
-        // Create callable tasks for concurrent execution
-        val tasks = (0 until threadCount).flatMap { threadId ->
+        val tasks = createConcurrentTasks(threadCount, iterations, parser)
+
+        try {
+            val futures = executor.invokeAll(tasks, 30, TimeUnit.SECONDS)
+
+            assertThat(futures.any { it.isCancelled })
+                .describedAs("Some parsing tasks timed out")
+                .isFalse()
+
+            val results = futures.map { it.get() }
+            assertThat(results).hasSize(totalOperations)
+
+            val resultsMap = results.toMap()
+            verifyTaskResult(resultsMap["0-0"], "TestClass0_0", "Comment for TestClass0_0")
+            verifyTaskResult(resultsMap["10-25"], "TestClass10_25", "Comment for TestClass10_25")
+            verifyTaskResult(resultsMap["19-49"], "TestClass19_49", "Comment for TestClass19_49")
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun createConcurrentTasks(threadCount: Int, iterations: Int, parser: GroovyParser) =
+        (0 until threadCount).flatMap { threadId ->
             (0 until iterations).map { iteration ->
                 Callable {
-                    // Each task parses different code with unique comments
                     val className = "TestClass${threadId}_$iteration"
                     val methodName = "method${threadId}_$iteration"
                     val classComment = "Comment for $className"
@@ -180,22 +196,16 @@ class GroovyParserTest {
                         }
                     """.trimIndent()
 
-                    // Parse code - this should be thread-safe
                     val result = parser.parse(code)
                     assertThat(result.isSuccessful).isTrue()
 
                     val unit = result.result.get()
-
-                    // Verify correct parsing (not corrupted by concurrent access)
                     assertThat(unit.types).hasSize(1)
                     assertThat(unit.types[0].name).isEqualTo(className)
 
-                    // Verify comments when present (detects mutable state corruption)
                     unit.types[0].comment?.let { comment ->
                         assertThat(comment.content.trim())
-                            .describedAs(
-                                "Comment content should match expected for $className (detects state corruption)",
-                            )
+                            .describedAs("Comment mismatch for $className")
                             .contains(classComment)
                     }
 
@@ -204,45 +214,13 @@ class GroovyParserTest {
             }
         }
 
-        try {
-            // Execute all tasks with a 30-second timeout
-            val futures = executor.invokeAll(tasks, 30, TimeUnit.SECONDS)
-
-            // Check if any tasks timed out
-            val timedOut = futures.any { it.isCancelled }
-            assertThat(timedOut)
-                .describedAs("Some parsing tasks timed out")
-                .isFalse()
-
-            // Collect results - .get() will throw if any task failed
-            val results = futures.map { it.get() }
-            assertThat(results).hasSize(totalOperations)
-
-            // Spot-check a few results to ensure correctness
-            val resultsMap = results.toMap()
-            resultsMap["0-0"]?.let { unit ->
-                assertThat(unit.types).hasSize(1)
-                assertThat(unit.types[0].name).isEqualTo("TestClass0_0")
-                unit.types[0].comment?.let { comment ->
-                    assertThat(comment.content).contains("Comment for TestClass0_0")
-                }
+    private fun verifyTaskResult(unit: CompilationUnit?, expectedName: String, expectedComment: String) {
+        unit?.let {
+            assertThat(it.types).hasSize(1)
+            assertThat(it.types[0].name).isEqualTo(expectedName)
+            it.types[0].comment?.let { comment ->
+                assertThat(comment.content).contains(expectedComment)
             }
-            resultsMap["10-25"]?.let { unit ->
-                assertThat(unit.types).hasSize(1)
-                assertThat(unit.types[0].name).isEqualTo("TestClass10_25")
-                unit.types[0].comment?.let { comment ->
-                    assertThat(comment.content).contains("Comment for TestClass10_25")
-                }
-            }
-            resultsMap["19-49"]?.let { unit ->
-                assertThat(unit.types).hasSize(1)
-                assertThat(unit.types[0].name).isEqualTo("TestClass19_49")
-                unit.types[0].comment?.let { comment ->
-                    assertThat(comment.content).contains("Comment for TestClass19_49")
-                }
-            }
-        } finally {
-            executor.shutdownNow()
         }
     }
 }
