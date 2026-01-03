@@ -23,7 +23,7 @@ class ReflectionEnumDeclaration(private val clazz: Class<*>, private val typeSol
     override val qualifiedName: String = clazz.canonicalName ?: clazz.name
 
     override fun getEnumConstants(): List<ResolvedEnumConstantDeclaration> = clazz.enumConstants?.map { constant ->
-        ReflectionEnumConstantDeclaration(constant as Enum<*>, this, typeSolver)
+        ReflectionEnumConstantDeclaration(constant as Enum<*>, this)
     } ?: emptyList()
 
     override fun getAncestors(): List<ResolvedReferenceType> {

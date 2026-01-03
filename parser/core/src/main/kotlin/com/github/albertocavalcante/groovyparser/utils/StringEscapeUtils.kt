@@ -7,6 +7,13 @@ package com.github.albertocavalcante.groovyparser.utils
  */
 object StringEscapeUtils {
 
+    private const val MIN_PRINTABLE_ASCII = 32
+    private const val MAX_PRINTABLE_ASCII = 127
+    private const val HEX_RADIX = 16
+    private const val UNICODE_HEX_LENGTH = 4
+    private const val UNICODE_ESCAPE_LENGTH = 6 // \uXXXX = 6 chars
+    private const val UNICODE_START_INDEX = 2 // Start of hex digits in \uXXXX
+
     /**
      * Escapes a string for use in Groovy source code (single-quoted string).
      */
@@ -21,8 +28,8 @@ object StringEscapeUtils {
                 '\b' -> append("\\b")
                 '\u000C' -> append("\\f") // form feed
                 else -> {
-                    if (char.code < 32 || char.code > 127) {
-                        append("\\u${char.code.toString(16).padStart(4, '0')}")
+                    if (char.code < MIN_PRINTABLE_ASCII || char.code > MAX_PRINTABLE_ASCII) {
+                        append("\\u${char.code.toString(HEX_RADIX).padStart(UNICODE_HEX_LENGTH, '0')}")
                     } else {
                         append(char)
                     }
@@ -47,8 +54,8 @@ object StringEscapeUtils {
                 '\b' -> append("\\b")
                 '\u000C' -> append("\\f")
                 else -> {
-                    if (char.code < 32 || char.code > 127) {
-                        append("\\u${char.code.toString(16).padStart(4, '0')}")
+                    if (char.code < MIN_PRINTABLE_ASCII || char.code > MAX_PRINTABLE_ASCII) {
+                        append("\\u${char.code.toString(HEX_RADIX).padStart(UNICODE_HEX_LENGTH, '0')}")
                     } else {
                         append(char)
                     }
@@ -103,11 +110,11 @@ object StringEscapeUtils {
                     }
                     'u' -> {
                         // Unicode escape: \uXXXX
-                        if (i + 5 < input.length) {
-                            val hex = input.substring(i + 2, i + 6)
+                        if (i + UNICODE_ESCAPE_LENGTH <= input.length) {
+                            val hex = input.substring(i + UNICODE_START_INDEX, i + UNICODE_ESCAPE_LENGTH)
                             try {
-                                append(hex.toInt(16).toChar())
-                                i += 6
+                                append(hex.toInt(HEX_RADIX).toChar())
+                                i += UNICODE_ESCAPE_LENGTH
                             } catch (e: NumberFormatException) {
                                 append(input[i])
                                 i++

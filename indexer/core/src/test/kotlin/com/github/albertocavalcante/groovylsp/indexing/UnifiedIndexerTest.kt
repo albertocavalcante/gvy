@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class UnifiedIndexerTest {

@@ -66,15 +66,15 @@ interface ResolvedTypeDeclaration : ResolvedDeclaration {
     /**
      * Casts this to [ResolvedClassDeclaration].
      */
-    fun asClass(): ResolvedClassDeclaration = throw IllegalStateException("$qualifiedName is not a class")
+    fun asClass(): ResolvedClassDeclaration = error("$qualifiedName is not a class")
 
     /**
      * Casts this to [ResolvedInterfaceDeclaration].
      */
-    fun asInterface(): ResolvedInterfaceDeclaration = throw IllegalStateException("$qualifiedName is not an interface")
+    fun asInterface(): ResolvedInterfaceDeclaration = error("$qualifiedName is not an interface")
 
     /**
      * Casts this to [ResolvedEnumDeclaration].
      */
-    fun asEnum(): ResolvedEnumDeclaration = throw IllegalStateException("$qualifiedName is not an enum")
+    fun asEnum(): ResolvedEnumDeclaration = error("$qualifiedName is not an enum")
 }

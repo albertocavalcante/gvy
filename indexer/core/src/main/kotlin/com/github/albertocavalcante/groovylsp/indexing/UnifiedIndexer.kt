@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.indexing
 
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
