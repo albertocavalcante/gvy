@@ -9,6 +9,7 @@ gitHooks = "2.1.6"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
 wire = "5.4.0"
+compose = "1.7.1"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
@@ -151,7 +152,10 @@ mordant = { module = "com.github.ajalt.mordant:mordant", version.ref = "mordant"
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

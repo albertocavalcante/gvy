@@ -6,6 +6,8 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         mavenLocal()
+        // Google Maven repository for androidx dependencies (required by Compose)
+        google()
         // Gradle repository for Tooling API
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
     }
@@ -37,3 +39,5 @@ include("jupyter:kernels:groovy")
 include("jupyter:kernels:jenkins")
 include("groovy-repl")
 include("tools:jenkins-extractor")
+include("viz:ast-model")
+include("viz:desktop")
