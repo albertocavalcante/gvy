@@ -91,8 +91,7 @@ class BuiltinRulesTest {
 
         allRules.forEach { rule ->
             // Just verify it doesn't throw - severity is an enum
-            val severity = rule.defaultSeverity
-            assertTrue(severity != null, "Rule ${rule.id} should have a severity")
+            rule.defaultSeverity
         }
     }
 }

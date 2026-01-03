@@ -28,6 +28,7 @@ dependencies {
     implementation(libs.maven.compat)
     implementation(libs.maven.resolver.connector.basic)
     implementation(libs.maven.resolver.transport.http)
+    implementation(libs.maven.resolver.supplier)
 
     // Testing
     testImplementation(libs.kotlin.test)
