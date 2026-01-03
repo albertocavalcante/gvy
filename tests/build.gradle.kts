@@ -133,20 +133,21 @@ testing {
                         // Each test spawns a separate LSP server JVM (~512MB-2GB each).
                         // Override via: ./gradlew e2eTest -Pe2eParallelForks=4
                         // NOTE: Uses stdio (not ports), so no port conflicts. Memory is the constraint.
-                        val parallelForks = project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull()
-                            ?: if (System.getenv("GITHUB_ACTIONS") == "true") {
-                                // GitHub Actions runners: macOS has 7GB RAM, Ubuntu has 16GB RAM
-                                // Each fork uses ~1-1.5GB. Conservative: 2 on macOS, 3 on Ubuntu
-                                when (System.getenv("RUNNER_OS")) {
-                                    "macOS" -> 2
-                                    "Linux" -> 3
-                                    "Windows" -> 2  // Windows runners have 7GB
-                                    else -> 1
+                        val parallelForks =
+                            project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull()
+                                ?: if (System.getenv("GITHUB_ACTIONS") == "true") {
+                                    // GitHub Actions runners: macOS has 7GB RAM, Ubuntu has 16GB RAM
+                                    // Each fork uses ~1-1.5GB. Conservative: 2 on macOS, 3 on Ubuntu
+                                    when (System.getenv("RUNNER_OS")) {
+                                        "macOS" -> 2
+                                        "Linux" -> 3
+                                        "Windows" -> 2 // Windows runners have 7GB
+                                        else -> 1
+                                    }
+                                } else {
+                                    // Local development: default to 1 to avoid OOM on smaller machines
+                                    1
                                 }
-                            } else {
-                                // Local development: default to 1 to avoid OOM on smaller machines
-                                1
-                            }
                         maxParallelForks = parallelForks
 
                         // Fail tests that take too long (5 minutes default)

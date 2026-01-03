@@ -250,9 +250,9 @@ class AstViewModel {
                 CodeError(
                     message = diagnostic.message,
                     startLine = diagnostic.range.start.line,
-                    startColumn = diagnostic.range.start.column,
+                    startColumn = diagnostic.range.start.character,
                     endLine = diagnostic.range.end.line,
-                    endColumn = diagnostic.range.end.column,
+                    endColumn = diagnostic.range.end.character,
                 )
             }
         }
