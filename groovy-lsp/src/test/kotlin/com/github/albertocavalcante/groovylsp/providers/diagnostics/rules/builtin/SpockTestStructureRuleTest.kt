@@ -56,6 +56,23 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
+    fun `should flag test with given only`() = runBlocking {
+        val code = """
+            class MySpec extends spock.lang.Specification {
+                def "test with given only"() {
+                    given:
+                    def x = 1
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///MySpec.groovy"), code, context)
+
+        assertEquals(1, diagnostics.size)
+    }
+
+    @Test
     fun `should not flag test with expect block`() = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {

@@ -52,14 +52,13 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
                 val endLine = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
                 val methodContent = lines.subList(lineIndex, endLine).joinToString("\n")
 
-                val hasGiven = methodContent.contains(Regex("""(\n|^)\s*given:"""))
                 val hasWhen = methodContent.contains(Regex("""(\n|^)\s*when:"""))
                 val hasThen = methodContent.contains(Regex("""(\n|^)\s*then:"""))
                 val hasExpect = methodContent.contains(Regex("""(\n|^)\s*expect:"""))
                 val hasWhere = methodContent.contains(Regex("""(\n|^)\s*where:"""))
 
                 // Check for valid patterns
-                val hasGivenWhenThen = hasGiven || (hasWhen && hasThen)
+                val hasGivenWhenThen = hasWhen && hasThen
                 val hasExpectPattern = hasExpect
                 val isDataDriven = hasWhere
 
