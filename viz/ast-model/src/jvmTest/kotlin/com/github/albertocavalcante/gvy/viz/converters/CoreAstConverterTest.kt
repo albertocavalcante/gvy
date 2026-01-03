@@ -2,7 +2,6 @@ package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
-import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
