@@ -51,7 +51,7 @@ class GroovyParserTypeSolver(private val sourceRoot: Path, private val parser: G
 
     private fun resolveFromFile(name: String, path: Path): SymbolReference<ResolvedTypeDeclaration> {
         val cu = parsedUnits.getOrPut(path) {
-            val code = java.nio.file.Files.readString(path)
+            val code = Files.readString(path)
             val result = parser.parse(code)
             result.result.orElse(null) ?: return cacheAndReturn(name, SymbolReference.unsolved())
         }

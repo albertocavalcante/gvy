@@ -13,6 +13,7 @@ import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -22,7 +23,6 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -189,7 +189,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         private val callsMap: MutableMap<String, CallHierarchyOutgoingCall>,
     ) : CodeVisitorSupport() {
 
-        private fun addCall(call: org.codehaus.groovy.ast.expr.Expression) {
+        private fun addCall(call: Expression) {
             val callee = call.resolveToDefinition(astModel, symbolTable, strict = false)
             val range = call.toLspRange()
             if (callee != null && range != null) {

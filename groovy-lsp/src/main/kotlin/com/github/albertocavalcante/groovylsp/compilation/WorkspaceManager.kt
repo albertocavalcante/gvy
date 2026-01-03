@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import com.github.albertocavalcante.groovyjenkins.GlobalVariable
+import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovyjenkins.JenkinsWorkspaceManager
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import org.slf4j.LoggerFactory
@@ -148,13 +150,10 @@ class WorkspaceManager {
     /**
      * Initializes Jenkins workspace manager with configuration.
      */
-    fun initializeJenkinsWorkspace(
-        config: ServerConfiguration,
-        pluginManager: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager? = null,
-    ) {
+    fun initializeJenkinsWorkspace(config: ServerConfiguration, pluginManager: JenkinsPluginManager? = null) {
         val root = workspaceRoot
         if (root != null) {
-            val pm = pluginManager ?: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager()
+            val pm = pluginManager ?: JenkinsPluginManager()
             jenkinsWorkspaceManager = JenkinsWorkspaceManager(config.jenkinsConfig, root, pm)
             logger.info("Initialized Jenkins workspace manager")
 
@@ -215,8 +214,7 @@ class WorkspaceManager {
     /**
      * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
      */
-    fun getJenkinsGlobalVariables(): List<com.github.albertocavalcante.groovyjenkins.GlobalVariable> =
-        jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
+    fun getJenkinsGlobalVariables(): List<GlobalVariable> = jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
 
     /**
      * Gets combined Jenkins metadata (steps, globals) including scanned plugins.

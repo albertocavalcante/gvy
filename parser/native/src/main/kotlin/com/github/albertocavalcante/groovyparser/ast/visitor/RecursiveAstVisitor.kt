@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.FieldNode
@@ -15,11 +16,13 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
@@ -43,6 +46,7 @@ import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.ast.stmt.ForStatement
 import org.codehaus.groovy.ast.stmt.IfStatement
 import org.codehaus.groovy.ast.stmt.ReturnStatement
+import org.codehaus.groovy.ast.stmt.Statement
 import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.ThrowStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
@@ -177,10 +181,10 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         track(parameter) {}
     }
 
-    private fun visitAnnotation(annotation: org.codehaus.groovy.ast.AnnotationNode) {
+    private fun visitAnnotation(annotation: AnnotationNode) {
         track(annotation) {
             annotation.members?.values?.forEach { value ->
-                if (value is org.codehaus.groovy.ast.expr.Expression) {
+                if (value is Expression) {
                     value.visit(codeVisitor)
                 }
             }
@@ -191,7 +195,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         node.annotations?.forEach { visitAnnotation(it) }
     }
 
-    private fun visitStatement(statement: org.codehaus.groovy.ast.stmt.Statement) {
+    private fun visitStatement(statement: Statement) {
         statement.visit(codeVisitor)
     }
 
@@ -299,7 +303,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
             }
         }
 
-        override fun visitBinaryExpression(expression: org.codehaus.groovy.ast.expr.BinaryExpression) {
+        override fun visitBinaryExpression(expression: BinaryExpression) {
             visitWithTracking(expression) { super.visitBinaryExpression(it) }
         }
 
@@ -356,9 +360,9 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         }
 
         override fun visitClosureExpression(expression: ClosureExpression) {
-            visitWithTracking(expression) {
-                expression.parameters?.forEach { visitParameter(it) }
-                super.visitClosureExpression(it)
+            visitWithTracking(expression) { expr ->
+                expr.parameters?.forEach { param -> visitParameter(param) }
+                super.visitClosureExpression(expr)
             }
         }
 

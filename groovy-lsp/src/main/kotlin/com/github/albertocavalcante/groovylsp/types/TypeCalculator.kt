@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.types
 
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.Expression
 
@@ -85,7 +86,7 @@ class DefaultTypeCalculator : TypeCalculator {
         this.name == "?" -> true
         this.name.isBlank() -> true
         // Be less aggressive with Object - only filter if it's obviously a placeholder
-        this.name == "java.lang.Object" && this.isPlaceholderObject() -> true
+        this.name == ClassHelper.OBJECT_TYPE.name && this.isPlaceholderObject() -> true
         else -> false
     }
 
@@ -97,7 +98,10 @@ class DefaultTypeCalculator : TypeCalculator {
         return this.genericsTypes.isNullOrEmpty() &&
             (
                 this.interfaces.isNullOrEmpty() ||
-                    this.interfaces.all { it.name == "java.lang.Object" || it.name == "groovy.lang.GroovyObject" }
+                    this.interfaces.all {
+                        it.name == ClassHelper.OBJECT_TYPE.name ||
+                            it.name == "groovy.lang.GroovyObject"
+                    }
                 ) &&
             this.redirect() == this // Not redirected to another type
     }

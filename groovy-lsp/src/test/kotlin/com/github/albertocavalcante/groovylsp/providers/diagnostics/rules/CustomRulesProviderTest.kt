@@ -126,7 +126,7 @@ class CustomRulesProviderTest {
 
     @Test
     fun `should create context with AST access`() = runBlocking {
-        val mockAst: ASTNode? = mockk<ASTNode>()
+        val mockAst = mockk<ASTNode>()
         val compilationService = mockk<GroovyCompilationService>()
         every { compilationService.getAst(any()) } returns mockAst
         every { compilationService.getDiagnostics(any()) } returns emptyList()
@@ -148,7 +148,7 @@ class CustomRulesProviderTest {
 
         // Verify context was provided and AST is accessible
         assertTrue(contextReceived != null)
-        assertEquals(mockAst, contextReceived?.getAst())
+        assertEquals(mockAst, contextReceived.getAst())
     }
 
     @Test

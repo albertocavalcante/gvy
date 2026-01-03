@@ -10,7 +10,9 @@ import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import java.lang.reflect.Modifier
 import java.net.URI
+import org.codehaus.groovy.ast.Variable as GroovyVariable
 
 /**
  * Type alias for symbol names
@@ -39,7 +41,7 @@ sealed class Symbol {
         override val position: GroovyParserResult<SafePosition> = node.safePosition()
 
         companion object {
-            fun from(variable: org.codehaus.groovy.ast.Variable, uri: URI): Variable = Variable(
+            fun from(variable: GroovyVariable, uri: URI): Variable = Variable(
                 name = variable.name,
                 uri = uri,
                 node = variable as ASTNode,
@@ -268,9 +270,9 @@ enum class Visibility(val keyword: String) {
 
     companion object {
         fun from(modifiers: Int): Visibility = when {
-            java.lang.reflect.Modifier.isPrivate(modifiers) -> PRIVATE
-            java.lang.reflect.Modifier.isProtected(modifiers) -> PROTECTED
-            java.lang.reflect.Modifier.isPublic(modifiers) -> PUBLIC
+            Modifier.isPrivate(modifiers) -> PRIVATE
+            Modifier.isProtected(modifiers) -> PROTECTED
+            Modifier.isPublic(modifiers) -> PUBLIC
             else -> PACKAGE
         }
     }
@@ -346,7 +348,7 @@ private fun Symbol.isAccessibleMember(contextUri: URI, contextClass: ClassNode?)
         is Symbol.Method -> owner
         is Symbol.Field -> owner
         is Symbol.Property -> owner
-        else -> null
+        else -> throw IllegalArgumentException("Symbol $this is not a member and has no owner")
     }
 
     return when (memberVisibility) {

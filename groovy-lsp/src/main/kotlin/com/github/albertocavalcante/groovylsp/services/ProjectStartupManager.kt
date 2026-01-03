@@ -35,6 +35,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.FileSystemNotFoundException
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -446,14 +448,14 @@ class ProjectStartupManager(
     } catch (e: IllegalArgumentException) {
         logger.error("Invalid $description format: $uriString", e)
         null
-    } catch (e: java.nio.file.FileSystemNotFoundException) {
+    } catch (e: FileSystemNotFoundException) {
         logger.error("File system not found for $description: $uriString", e)
         null
     }
 
     private fun parsePath(pathString: String, description: String): Path? = try {
         Paths.get(pathString)
-    } catch (e: java.nio.file.InvalidPathException) {
+    } catch (e: InvalidPathException) {
         logger.error("Invalid $description: $pathString", e)
         null
     }

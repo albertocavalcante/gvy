@@ -9,7 +9,9 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -316,8 +318,7 @@ class InlayHintsProvider(
         vararg providers: () -> List<CallableSignature>,
     ): ResolutionResult {
         providers.forEach { provider ->
-            val result = selectBestCandidate(provider(), argumentTypes)
-            when (result) {
+            when (val result = selectBestCandidate(provider(), argumentTypes)) {
                 is ResolutionResult.Match -> return result
                 ResolutionResult.Ambiguous -> return result
                 ResolutionResult.NotFound -> Unit
@@ -332,9 +333,9 @@ class InlayHintsProvider(
         symbolTable: SymbolTable?,
     ): String? {
         if (call.isImplicitThis) {
-            var current: org.codehaus.groovy.ast.ASTNode? = call
+            var current: ASTNode? = call
             var depth = 0
-            val visited = mutableSetOf<org.codehaus.groovy.ast.ASTNode>()
+            val visited = mutableSetOf<ASTNode>()
             while (current != null && current !is ClassNode && depth < MAX_PARENT_SEARCH_DEPTH) {
                 if (!visited.add(current)) {
                     break
@@ -603,14 +604,12 @@ class InlayHintsProvider(
     private fun isDynamicType(typeName: String): Boolean =
         typeName == "java.lang.Object" || typeName == "Object" || typeName == "def"
 
-    private fun toSignature(parameters: Array<org.codehaus.groovy.ast.Parameter>): CallableSignature =
-        CallableSignature(
-            parameterNames = parameters.map { it.name },
-            parameterTypes = parameters.map { it.type.name },
-        )
+    private fun toSignature(parameters: Array<Parameter>): CallableSignature = CallableSignature(
+        parameterNames = parameters.map { it.name },
+        parameterTypes = parameters.map { it.type.name },
+    )
 
-    private fun toSignature(parameters: List<org.codehaus.groovy.ast.Parameter>): CallableSignature =
-        toSignature(parameters.toTypedArray())
+    private fun toSignature(parameters: List<Parameter>): CallableSignature = toSignature(parameters.toTypedArray())
 
     private fun toSignature(method: ReflectedMethod): CallableSignature =
         toSignature(method.parameters, method.parameterNames)

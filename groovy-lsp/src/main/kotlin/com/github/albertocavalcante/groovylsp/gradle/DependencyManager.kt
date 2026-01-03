@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.gradle
 
+import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
@@ -214,7 +215,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
     }
 
     private fun tryStartBuildFileWatching(
-        buildTool: com.github.albertocavalcante.groovylsp.buildtool.BuildTool,
+        buildTool: BuildTool,
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)?,
         onComplete: (WorkspaceResolution) -> Unit,

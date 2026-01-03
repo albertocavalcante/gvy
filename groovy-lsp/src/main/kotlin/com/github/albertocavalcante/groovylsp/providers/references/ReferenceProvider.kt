@@ -10,6 +10,19 @@ import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.slf4j.LoggerFactory
@@ -115,8 +128,8 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         // we might need to find the actual VariableExpression we're looking for
         val adjustedDefinition = when {
             // If we get a ClassNode but the context suggests we're looking for a variable
-            context.targetNode is org.codehaus.groovy.ast.ClassNode &&
-                definition is org.codehaus.groovy.ast.ClassNode -> {
+            context.targetNode is ClassNode &&
+                definition is ClassNode -> {
                 // Try to find a VariableExpression at the same position that might be the real target
                 val targetLineNumber = context.targetNode.lineNumber
                 val targetColumnNumber = context.targetNode.columnNumber
@@ -125,7 +138,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
                     // Look for VariableExpression nodes at or near this position
                     val allNodes = context.visitor.getAllNodes()
                     val variableAtPosition = allNodes
-                        .filterIsInstance<org.codehaus.groovy.ast.expr.VariableExpression>()
+                        .filterIsInstance<VariableExpression>()
                         .find { varNode ->
                             varNode.lineNumber > 0 && varNode.columnNumber > 0 &&
                                 varNode.lineNumber == targetLineNumber &&
@@ -200,13 +213,16 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         // INSIGHT: By returning accessedVariable as definition for VariableExpression,
         // all references naturally resolve to the same definition, making comparison simple
 
-        val isMatchingDefinition = when {
-            nodeDefinition == null -> false
-            nodeDefinition == params.definition -> true
+        val isMatchingDefinition = when (nodeDefinition) {
+            null -> false
+            params.definition -> true
             // Robust fallback for Parameters
-            nodeDefinition is org.codehaus.groovy.ast.Parameter &&
-                params.definition is org.codehaus.groovy.ast.Parameter -> {
-                areParametersEqual(nodeDefinition, params.definition)
+            is Parameter -> {
+                if (params.definition is Parameter) {
+                    areParametersEqual(nodeDefinition, params.definition)
+                } else {
+                    false
+                }
             }
 
             else -> false
@@ -217,7 +233,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
         // CRITICAL FIX: Don't emit DeclarationExpressions as references - only their inner VariableExpression
         // This prevents double-counting when we have both "def localVar" (DeclarationExpression) and
         // "localVar" (VariableExpression) matching the same definition
-        if (params.node is org.codehaus.groovy.ast.expr.DeclarationExpression) {
+        if (params.node is DeclarationExpression) {
             return // Skip DeclarationExpression - we'll emit its VariableExpression separately
         }
 
@@ -235,15 +251,15 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     /**
      * Check if a node is part of a declaration.
      */
-    private fun ASTNode.isPartOfDeclaration(visitor: GroovyAstModel): Boolean = when {
-        this is org.codehaus.groovy.ast.Parameter -> true
-        this is org.codehaus.groovy.ast.MethodNode -> true
-        this is org.codehaus.groovy.ast.FieldNode -> true
-        this is org.codehaus.groovy.ast.PropertyNode -> true
-        this is org.codehaus.groovy.ast.ClassNode -> true
-        this is org.codehaus.groovy.ast.expr.VariableExpression -> {
+    private fun ASTNode.isPartOfDeclaration(visitor: GroovyAstModel): Boolean = when (this) {
+        is Parameter -> true
+        is MethodNode -> true
+        is FieldNode -> true
+        is PropertyNode -> true
+        is ClassNode -> true
+        is VariableExpression -> {
             val parent = visitor.getParent(this)
-            val isDecl = parent is org.codehaus.groovy.ast.expr.DeclarationExpression &&
+            val isDecl = parent is DeclarationExpression &&
                 parent.leftExpression == this
             if (isDecl) {
                 logger.debug("Found variable ${this.name} as part of declaration")
@@ -266,22 +282,22 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     private fun ASTNode.isReferenceableSymbol(): Boolean {
         val referenceableTypes = setOf(
             // Variable-related nodes
-            org.codehaus.groovy.ast.expr.VariableExpression::class,
-            org.codehaus.groovy.ast.expr.DeclarationExpression::class,
-            org.codehaus.groovy.ast.Parameter::class,
-            org.codehaus.groovy.ast.Variable::class,
+            VariableExpression::class,
+            DeclarationExpression::class,
+            Parameter::class,
+            Variable::class,
             // Method and field nodes
-            org.codehaus.groovy.ast.expr.MethodCallExpression::class,
-            org.codehaus.groovy.ast.MethodNode::class,
-            org.codehaus.groovy.ast.FieldNode::class,
-            org.codehaus.groovy.ast.PropertyNode::class,
-            org.codehaus.groovy.ast.expr.PropertyExpression::class,
+            MethodCallExpression::class,
+            MethodNode::class,
+            FieldNode::class,
+            PropertyNode::class,
+            PropertyExpression::class,
             // Class-related nodes
-            org.codehaus.groovy.ast.ClassNode::class,
-            org.codehaus.groovy.ast.expr.ClassExpression::class,
-            org.codehaus.groovy.ast.expr.ConstructorCallExpression::class,
+            ClassNode::class,
+            ClassExpression::class,
+            ConstructorCallExpression::class,
             // Import nodes
-            org.codehaus.groovy.ast.ImportNode::class,
+            ImportNode::class,
         )
         return referenceableTypes.contains(this::class)
     }
@@ -305,10 +321,7 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
      * Compare two Parameters for equality.
      * Needed because Groovy AST nodes don't implement value equality for Parameter.
      */
-    private fun areParametersEqual(
-        p1: org.codehaus.groovy.ast.Parameter,
-        p2: org.codehaus.groovy.ast.Parameter,
-    ): Boolean {
+    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
         // Simple but effective: name and type name must match
         // We could also check location if available, but generated parameters might not have it
         if (p1.name != p2.name) return false

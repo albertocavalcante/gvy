@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.GroovyParserTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import java.nio.file.Path
 
@@ -85,12 +86,12 @@ object StaticGroovyResolver {
         val currentSolver = defaultSolver
         if (currentSolver is CombinedTypeSolver) {
             currentSolver.add(
-                com.github.albertocavalcante.groovyparser.resolution.typesolvers.GroovyParserTypeSolver(sourceRoot),
+                GroovyParserTypeSolver(sourceRoot),
             )
         } else {
             val newSolver = CombinedTypeSolver(currentSolver)
             newSolver.add(
-                com.github.albertocavalcante.groovyparser.resolution.typesolvers.GroovyParserTypeSolver(sourceRoot),
+                GroovyParserTypeSolver(sourceRoot),
             )
             defaultSolver = newSolver
             resolver = GroovySymbolResolver(newSolver)

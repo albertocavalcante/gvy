@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.engine.api
 
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.adapters.UnifiedNode
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 
 /**
@@ -18,11 +19,7 @@ interface DefinitionService {
      * @param position The original LSP position of the request
      * @return List of definitions
      */
-    suspend fun findDefinition(
-        node: UnifiedNode?,
-        context: ParseUnit,
-        position: org.eclipse.lsp4j.Position,
-    ): List<UnifiedDefinition>
+    suspend fun findDefinition(node: UnifiedNode?, context: ParseUnit, position: Position): List<UnifiedDefinition>
 }
 
 /**

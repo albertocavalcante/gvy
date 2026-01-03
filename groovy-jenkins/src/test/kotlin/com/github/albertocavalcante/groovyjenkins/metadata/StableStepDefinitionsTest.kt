@@ -343,7 +343,7 @@ class StableStepDefinitionsTest {
 
         allSteps.values.forEach { step ->
             assertNotNull(step.documentation, "Step ${step.name} should have documentation")
-            assertTrue(step.documentation!!.isNotBlank(), "Step ${step.name} documentation should not be blank")
+            assertTrue(step.documentation.isNotBlank(), "Step ${step.name} documentation should not be blank")
         }
     }
 
