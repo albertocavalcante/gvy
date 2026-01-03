@@ -20,7 +20,7 @@ class CompilationCacheServiceTest {
 
     @BeforeTest
     fun setup() {
-        cacheService = CompilationCacheService(testDispatcher)
+        cacheService = CompilationCacheService()
     }
 
     @Test

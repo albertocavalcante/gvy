@@ -28,8 +28,6 @@ class GroovyTextDocumentServiceTest {
         val service = GroovyTextDocumentService(
             coroutineScope = scope,
             compilationService = compilationService,
-            parseResultAccessor = parseResultAccessor,
-            symbolIndexer = symbolIndexer,
             client = { null },
         )
 

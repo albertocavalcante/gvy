@@ -69,35 +69,46 @@ class InlayHintsProvider(
 
         // Traverse all nodes and collect hints within the requested range
         astModel.getAllNodes().forEach { node ->
-            // Filter nodes outside the requested range (1-indexed to 0-indexed conversion)
-            val nodeLine = node.lineNumber - 1
-            if (nodeLine < range.start.line || nodeLine > range.end.line) {
-                return@forEach
-            }
-
-            when (node) {
-                is DeclarationExpression -> {
-                    if (config.typeHints) {
-                        collectTypeHint(node)?.let { hints.add(it) }
-                    }
-                }
-
-                is MethodCallExpression -> {
-                    if (config.parameterHints) {
-                        collectParameterHints(node, astModel, symbolTable, workspaceSymbols, hints)
-                    }
-                }
-
-                is ConstructorCallExpression -> {
-                    if (config.parameterHints) {
-                        collectConstructorParameterHints(node, astModel, workspaceSymbols, hints)
-                    }
-                }
-            }
+            processNode(node, range, astModel, symbolTable, workspaceSymbols, hints)
         }
 
         logger.debug("Returning ${hints.size} inlay hints for ${params.textDocument.uri}")
         return hints
+    }
+
+    private fun processNode(
+        node: ASTNode,
+        range: org.eclipse.lsp4j.Range,
+        astModel: GroovyAstModel,
+        symbolTable: SymbolTable?,
+        workspaceSymbols: List<Symbol>,
+        hints: MutableList<InlayHint>,
+    ) {
+        // Filter nodes outside the requested range (1-indexed to 0-indexed conversion)
+        val nodeLine = node.lineNumber - 1
+        if (nodeLine < range.start.line || nodeLine > range.end.line) {
+            return
+        }
+
+        when (node) {
+            is DeclarationExpression -> {
+                if (config.typeHints) {
+                    collectTypeHint(node)?.let { hints.add(it) }
+                }
+            }
+
+            is MethodCallExpression -> {
+                if (config.parameterHints) {
+                    collectParameterHints(node, astModel, symbolTable, workspaceSymbols, hints)
+                }
+            }
+
+            is ConstructorCallExpression -> {
+                if (config.parameterHints) {
+                    collectConstructorParameterHints(node, astModel, workspaceSymbols, hints)
+                }
+            }
+        }
     }
 
     /**
@@ -333,25 +344,40 @@ class InlayHintsProvider(
         symbolTable: SymbolTable?,
     ): String? {
         if (call.isImplicitThis) {
-            var current: ASTNode? = call
-            var depth = 0
-            val visited = mutableSetOf<ASTNode>()
-            while (current != null && current !is ClassNode && depth < MAX_PARENT_SEARCH_DEPTH) {
-                if (!visited.add(current)) {
-                    break
-                }
-                val parent = astModel.getParent(current) ?: break
-                if (parent === current) break
-                current = parent
-                depth++
-            }
-            return (current as? ClassNode)?.name
+            return resolveImplicitThisReceiverType(call, astModel)
         }
 
         val objectExpr = call.objectExpression ?: return null
         val directType = (objectExpr as? ClassExpression)?.type?.name
-        var type = directType ?: inferExpressionTypeSafely(objectExpr, "receiver")
+        val type = directType ?: inferExpressionTypeSafely(objectExpr, "receiver")
 
+        return refineReceiverTypeWithSymbolTable(type, objectExpr, astModel, symbolTable)
+            ?.takeUnless { isDynamicType(it) || it == "java.lang.Class" }
+    }
+
+    private fun resolveImplicitThisReceiverType(call: MethodCallExpression, astModel: GroovyAstModel): String? {
+        var current: ASTNode? = call
+        var depth = 0
+        val visited = mutableSetOf<ASTNode>()
+        while (current != null && current !is ClassNode && depth < MAX_PARENT_SEARCH_DEPTH) {
+            if (!visited.add(current)) {
+                break
+            }
+            val parent = astModel.getParent(current) ?: break
+            if (parent === current) break
+            current = parent
+            depth++
+        }
+        return (current as? ClassNode)?.name
+    }
+
+    private fun refineReceiverTypeWithSymbolTable(
+        inferredType: String?,
+        objectExpr: Expression,
+        astModel: GroovyAstModel,
+        symbolTable: SymbolTable?,
+    ): String? {
+        var type = inferredType
         if ((type == "java.lang.Object" || type == "java.lang.Class") &&
             objectExpr is VariableExpression &&
             symbolTable != null
@@ -366,8 +392,7 @@ class InlayHintsProvider(
                 }
             }
         }
-
-        return type?.takeUnless { isDynamicType(it) || it == "java.lang.Class" }
+        return type
     }
 
     private fun resolveArgumentTypes(arguments: List<Expression>): List<String?> =

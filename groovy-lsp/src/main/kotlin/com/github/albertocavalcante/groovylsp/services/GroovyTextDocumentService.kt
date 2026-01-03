@@ -105,8 +105,6 @@ import kotlin.coroutines.coroutineContext
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
-    private val parseResultAccessor: ParseResultAccessor,
-    private val symbolIndexer: SymbolIndexingService,
     private val serverConfiguration: ServerConfiguration = ServerConfiguration(),
     private val client: () -> LanguageClient?,
     private val documentProvider: DocumentProvider = DocumentProvider(),
