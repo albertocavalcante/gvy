@@ -91,7 +91,7 @@ concurrency:
 
 jobs:
   check-paths:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -250,6 +250,40 @@ jobs:
               ;;
           esac
 
+  lint:
+    name: Lint
+    needs: [check-paths, check-runner]
+    # Run if paths require CI and no provisioning triggered
+    if: |
+      always() && (
+        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+        (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
+      )
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+      - name: Run Lint
+        run: ./gradlew lint --parallel --build-cache --stacktrace
+
   build:
     name: Build and Test
     needs: [check-paths, check-runner]
@@ -373,10 +407,10 @@ jobs:
       # 1. Self-documentation - CI intent is clear without checking gradle.properties
       # 2. Defense in depth - CI works even if gradle.properties changes
 
-      # Phase 1: Compile + Lint in single invocation with parallel execution
-      - name: Compile and Lint
+      # Phase 1: Compile (lint runs in separate parallel job)
+      - name: Compile
         run: |
-          args=(classes testClasses lint --parallel --build-cache --stacktrace)
+          args=(classes testClasses --parallel --build-cache --stacktrace)
           if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
             args+=("${GRADLE_SCAN_FLAG}")
           fi
@@ -395,44 +429,18 @@ jobs:
           fi
           ./gradlew "${args[@]}"
 
-      # Phase 3: Coverage Reports (reads .ic files from Phase 2)
-      # NOTE: Split from test task to avoid Kover hang bug when running in same invocation
-      # with --parallel. See: https://github.com/Kotlin/kotlinx-kover/issues/509
-      - name: Generate Coverage Reports
-        run: |
-          args=(koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
+      # Upload coverage data for parallel coverage job
+      - name: Upload Coverage Data
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: coverage-data-${{ matrix.os }}-java${{ matrix.java }}
+          path: '**/build/kover/*.ic'
+          retention-days: 1
 
-      # Phase 4: E2E Tests (automatically builds shadowJar via task dependency)
-      # Skip on macOS - E2E tests are platform-independent LSP protocol tests
-      - name: Run E2E Tests
-        if: github.event_name == 'pull_request' || matrix.os != 'macos-15'
-        timeout-minutes: 15
-        run: |
-          args=(:tests:e2eTest --parallel --build-cache --stacktrace)
-          if [[ -n "${TEST_LOG_FLAG}" ]]; then
-            args+=("${TEST_LOG_FLAG}")
-          fi
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
-
-      # Phase 5: SonarCloud (needs coverage reports from Phase 3)
-      - name: SonarCloud Analysis
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17 && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          args=(sonar --info)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
+      # Build shadowJar for verification (E2E tests run in parallel job)
+      - name: Build Shadow JAR
+        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
+        run: ./gradlew :groovy-lsp:shadowJar --parallel --build-cache --stacktrace
 
       # Upload test results BEFORE test reporter to ensure artifacts are preserved
       # even if tests fail (test reporter may fail when tests fail with fail-on-error)
@@ -475,7 +483,7 @@ jobs:
           # This ensures test results are always uploaded and visible
           fail-on-error: false
 
-      # Verify JAR (already built by e2eTest via shadowJar dependency)
+      # Verify JAR (built in previous step)
       - name: Resolve shadow JAR
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
         id: resolve-jar
@@ -502,6 +510,157 @@ jobs:
         with:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
           path: ${{ steps.resolve-jar.outputs.jar_path }}
+          retention-days: 7
+
+  # Coverage reports run in parallel with E2E tests (both need build to complete)
+  coverage:
+    name: Coverage Report
+    needs: build
+    if: |
+      always() &&
+      needs.build.result == 'success'
+    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
+    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+      - name: Download Coverage Data
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+          path: .
+
+      - name: Set Gradle flags
+        shell: bash
+        run: |
+          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
+            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
+          else
+            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
+          fi
+
+      # Generate coverage reports (reads .ic files from downloaded artifacts)
+      # NOTE: Split from test task to avoid Kover hang bug when running in same invocation
+      # with --parallel. See: https://github.com/Kotlin/kotlinx-kover/issues/509
+      - name: Generate Coverage Reports
+        run: |
+          args=(koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
+
+      # SonarCloud (needs coverage reports)
+      - name: SonarCloud Analysis
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          args=(sonar --info)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
+
+      - name: Upload Coverage Reports
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: coverage-reports
+          path: '**/build/reports/kover/'
+          retention-days: 7
+
+  # E2E tests run in parallel with coverage (both need build to complete)
+  e2e-test:
+    name: E2E Tests
+    needs: build
+    if: |
+      always() &&
+      needs.build.result == 'success'
+    # Run on PRIMARY_OS only - E2E tests are platform-independent LSP protocol tests
+    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
+    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || (github.event_name == 'pull_request' && 'macos-15' || 'ubuntu-24.04')) }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@4d9f0ba0025fe599b4ebab900eb7f3a1d93ef4c2 # v5.0.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
+      - name: Set Gradle flags
+        shell: bash
+        run: |
+          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
+            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
+          else
+            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
+          fi
+
+          case "${{ github.event.inputs.test_log_level }}" in
+            "info")
+              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
+              ;;
+            "debug")
+              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      # E2E Tests (automatically builds shadowJar via task dependency)
+      # Now runs with intelligent parallel forks (2-3 based on runner OS)
+      - name: Run E2E Tests
+        timeout-minutes: 15
+        run: |
+          args=(:tests:e2eTest --parallel --build-cache --stacktrace)
+          if [[ -n "${TEST_LOG_FLAG}" ]]; then
+            args+=("${TEST_LOG_FLAG}")
+          fi
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
+            args+=("${GRADLE_SCAN_FLAG}")
+          fi
+          ./gradlew "${args[@]}"
+
+      - name: Upload E2E Test Results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: e2e-test-results
+          path: '**/build/test-results/e2eTest/'
           retention-days: 7
 
   # Cross-platform smoke tests - verify JAR works on key platforms
@@ -550,20 +709,26 @@ jobs:
 
   validate:
     name: Validation Check
-    runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
-    needs: [build, check-runner, check-paths]
+    needs: [lint, build, coverage, e2e-test, check-runner, check-paths]
     if: always()
     steps:
       - name: Check build status
         run: |
+          LINT_RESULT="${{ needs.lint.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
+          COVERAGE_RESULT="${{ needs.coverage.result }}"
+          E2E_RESULT="${{ needs.e2e-test.result }}"
           PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
           RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
 
+          echo "Lint result: $LINT_RESULT"
           echo "Build result: $BUILD_RESULT"
+          echo "Coverage result: $COVERAGE_RESULT"
+          echo "E2E result: $E2E_RESULT"
           echo "Provisioning triggered: $PROVISIONING"
           echo "Run main CI: $RUN_MAIN_CI"
 
@@ -583,8 +748,9 @@ jobs:
 
           # For workflow_run events, check-runner is skipped so we can't check provisioning_triggered
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            if [[ "$BUILD_RESULT" != "success" ]]; then
-              echo "❌ Build failed after provisioning"
+            if [[ "$BUILD_RESULT" != "success" ]] || [[ "$LINT_RESULT" != "success" ]] || \
+               [[ "$COVERAGE_RESULT" != "success" ]] || [[ "$E2E_RESULT" != "success" ]]; then
+              echo "❌ One or more jobs failed after provisioning"
               exit 1
             fi
             echo "✅ All checks passed!"
@@ -592,22 +758,45 @@ jobs:
           fi
 
           # Handle cancelled builds (user action or concurrency cancellation)
-          if [[ "$BUILD_RESULT" == "cancelled" ]]; then
-            echo "⚠️ Build was cancelled"
+          if [[ "$BUILD_RESULT" == "cancelled" ]] || [[ "$LINT_RESULT" == "cancelled" ]] || \
+             [[ "$COVERAGE_RESULT" == "cancelled" ]] || [[ "$E2E_RESULT" == "cancelled" ]]; then
+            echo "⚠️ One or more jobs were cancelled"
             echo "   This is expected when a newer commit is pushed to the same PR"
             # Exit 0 for cancelled - it's not a failure, just superseded
             exit 0
           fi
 
-          # Normal case: build must succeed
-          if [[ "$BUILD_RESULT" != "success" ]]; then
+          # Normal case: all jobs must succeed (or be skipped appropriately)
+          FAILED=false
+
+          if [[ "$LINT_RESULT" != "success" ]] && [[ "$LINT_RESULT" != "skipped" ]]; then
+            echo "❌ Lint failed"
+            FAILED=true
+          fi
+
+          if [[ "$BUILD_RESULT" != "success" ]] && [[ "$BUILD_RESULT" != "skipped" ]]; then
             echo "❌ Build failed"
+            FAILED=true
+          fi
+
+          if [[ "$COVERAGE_RESULT" != "success" ]] && [[ "$COVERAGE_RESULT" != "skipped" ]]; then
+            echo "❌ Coverage failed"
+            FAILED=true
+          fi
+
+          if [[ "$E2E_RESULT" != "success" ]] && [[ "$E2E_RESULT" != "skipped" ]]; then
+            echo "❌ E2E tests failed"
+            FAILED=true
+          fi
+
+          if [[ "$FAILED" == "true" ]]; then
             exit 1
           fi
+
           echo "✅ All checks passed!"
   dependency-check:
     name: Check Dependencies
-    runs-on: ${{ github.event.inputs.runner_label == 'self-hosted' && 'self-hosted' || vars.CI_RUNNER_LABEL == 'self-hosted' && 'self-hosted' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
