@@ -53,7 +53,8 @@ releases.
 
 ### Key Resources
 
-Located at: `/Users/adsc/dev/refs/pipeline-model-definition-plugin`
+Located at: local checkout of `pipeline-model-definition-plugin` (for example:
+`/path/to/pipeline-model-definition-plugin`)
 
 | Resource                                                                            | Purpose                                             |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------- |

@@ -257,11 +257,9 @@ object CompletionProvider {
 
                 val categories = blockCategories
                 // Lenient step allowance: allow steps if not in a strict declarative block,
-                // or if the block explicitly allows steps, or if we are in a container block (pipeline/stage)
-                // to support hybrid/scripted usage and maintain test compatibility.
+                // or if the block explicitly allows steps.
                 val allowSteps = !isStrictDeclarative ||
-                    categories?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true ||
-                    currentBlock == "pipeline" || currentBlock == "stage"
+                    categories?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true
 
                 if (allowSteps) {
                     addJenkinsStepCompletions(metadata)
@@ -585,7 +583,7 @@ object CompletionProvider {
         val safeChar = character.coerceIn(0, currentLine.length)
         val prefix = currentLine.substring(0, safeChar)
         val trimmed = prefix.trimStart()
-        val pattern = Regex("""\b${Regex.escape(methodName)}\s+['"]$""")
+        val pattern = Regex("""\b${Regex.escape(methodName)}\s+['"][^'"]*$""")
         return pattern.containsMatchIn(trimmed)
     }
 

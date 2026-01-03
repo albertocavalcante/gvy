@@ -107,4 +107,42 @@ class JenkinsDeclarativeCompletionTest {
         val labels = completions.map { it.label }
         assertTrue(labels.contains("sh"), "Steps block should still offer step completions")
     }
+
+    @Test
+    fun `post block should suggest post conditions`() = runTest {
+        val jenkinsfile = tempDir.resolve("Jenkinsfile")
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Build') {
+                        steps {
+                            sh 'echo hello'
+                        }
+                    }
+                }
+                post {
+                    
+                }
+            }
+        """.trimIndent()
+        Files.writeString(jenkinsfile, code)
+
+        val uri = jenkinsfile.toUri().toString()
+        val content = Files.readString(jenkinsfile)
+        val completions = CompletionProvider.getContextualCompletions(
+            uri = uri,
+            line = 10,
+            character = 8,
+            compilationService = compilationService,
+            content = content,
+        )
+
+        val labels = completions.map { it.label }
+        assertTrue(labels.contains("success"), "Post block should suggest 'success'")
+        assertTrue(labels.contains("failure"), "Post block should suggest 'failure'")
+        assertTrue(labels.contains("always"), "Post block should suggest 'always'")
+        assertTrue(labels.contains("notBuilt"), "Post block should suggest 'notBuilt'")
+        assertFalse(labels.contains("sh"), "Post block should not suggest pipeline steps")
+    }
 }

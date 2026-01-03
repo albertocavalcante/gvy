@@ -14,7 +14,7 @@ make format  # Fix lint
 ## Rules (ALWAYS APPLY)
 
 1. **Worktrees**: Use `git worktree add` for new work. **Do not edit files in the main worktree.**
-   - The main worktree is at `/Users/adsc/dev/ws/gvy/main` — this is READ-ONLY for reference.
+   - The main worktree (for example, `/path/to/main/worktree`) is READ-ONLY for reference.
    - Before any edit, verify you are in the correct worktree: `git worktree list` or `pwd`.
    - Create worktrees with: `git worktree add ../gvy-<feature-name> -b <branch-name>`.
    - All `cd`, file edits, and git commands must target the worktree path, not `main`.

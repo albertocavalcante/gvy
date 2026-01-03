@@ -92,6 +92,8 @@
         "aborted",
         "fixed",
         "regression",
+        "notBuilt",
+        "unsuccessful",
         "cleanup"
       ],
       "completionCategories": ["post_condition"]

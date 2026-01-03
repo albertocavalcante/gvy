@@ -34,18 +34,18 @@ object DeclarativePipelineSchema {
     fun getInnerInstructions(blockName: String?): Set<String> =
         blockIndex[blockName]?.innerInstructions?.toSet().orEmpty()
 
-    private fun loadSchema(): Schema {
+    private fun loadSchema(): Schema = try {
         val resource = requireNotNull(
-            DeclarativePipelineSchema::class.java.classLoader.getResource("schemas/declarative-pipeline-schema.json"),
+            DeclarativePipelineSchema::class.java.classLoader.getResource(
+                "schemas/declarative-pipeline-schema.json",
+            ),
         ) { "Declarative pipeline schema resource not found" }
 
         val text = resource.readText()
-        return try {
-            json.decodeFromString(Schema.serializer(), text)
-        } catch (cause: Exception) {
-            logger.error("Failed to parse declarative pipeline schema", cause)
-            throw IllegalStateException("Invalid declarative pipeline schema", cause)
-        }
+        json.decodeFromString(Schema.serializer(), text)
+    } catch (cause: Exception) {
+        logger.error("Failed to parse declarative pipeline schema", cause)
+        throw IllegalStateException("Invalid declarative pipeline schema", cause)
     }
 
     @Serializable
