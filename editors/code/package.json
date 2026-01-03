@@ -141,8 +141,8 @@
     "keybindings": [
       {
         "command": "groovy.ast.show",
-        "key": "ctrl+shift+t",
-        "mac": "cmd+shift+t",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
         "when": "editorLangId == groovy"
       }
     ],

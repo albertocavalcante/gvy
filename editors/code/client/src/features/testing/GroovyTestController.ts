@@ -198,11 +198,15 @@ export class GroovyTestController {
 
   private async runTestItem(item: vscode.TestItem, debug: boolean) {
     const request = new vscode.TestRunRequest([item]);
-    // Start a run using the controller's specialized execution service
-    if (debug) {
-      await this.executionService.debugTests(request, new vscode.CancellationTokenSource().token);
-    } else {
-      await this.executionService.runTests(request, new vscode.CancellationTokenSource().token, this.ctrl);
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      if (debug) {
+        await this.executionService.debugTests(request, tokenSource.token);
+      } else {
+        await this.executionService.runTests(request, tokenSource.token, this.ctrl);
+      }
+    } finally {
+      tokenSource.dispose();
     }
   }
 
