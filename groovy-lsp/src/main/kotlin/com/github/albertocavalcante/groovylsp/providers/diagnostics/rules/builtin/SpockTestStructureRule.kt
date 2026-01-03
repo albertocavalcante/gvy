@@ -20,6 +20,7 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
 
     private companion object {
         private const val LOOK_AHEAD_LINES = 20
+        private const val RANGE_END_OFFSET = 1
     }
 
     override val id = "spock-test-structure"
@@ -67,7 +68,7 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
                         diagnostic(
                             lineIndex,
                             match.range.first,
-                            match.range.last + 1,
+                            match.range.last + RANGE_END_OFFSET,
                             "Spock test may be missing expected blocks (given/when/then, expect, or where)",
                             defaultSeverity,
                         ),

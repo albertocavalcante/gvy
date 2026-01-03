@@ -20,6 +20,7 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
     private companion object {
         private const val LOOK_AHEAD_LINES = 10
+        private const val RANGE_END_OFFSET = 1
         private val STEPS_BLOCK_PATTERN = Regex("""\bsteps\s*\{""")
         private val SCRIPT_BLOCK_PATTERN = Regex("""\bscript\s*\{""")
     }
@@ -67,7 +68,7 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
                         diagnostic(
                             lineIndex,
                             match.range.first,
-                            match.range.last + 1,
+                            match.range.last + RANGE_END_OFFSET,
                             "Stage '$stageName' may be missing 'steps' or 'script' block",
                             defaultSeverity,
                         ),

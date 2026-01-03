@@ -145,6 +145,8 @@ class GroovyParserTest {
         // (A resource leak would eventually cause failures or extreme slowdown)
     }
 
+    // TODO(#587): Extract helpers to reduce method length without losing coverage.
+    //   See: https://github.com/albertocavalcante/gvy/issues/587
     @Test
     fun `parse is thread-safe with concurrent access`() {
         // Issue 3: Verify that parse() doesn't have race conditions

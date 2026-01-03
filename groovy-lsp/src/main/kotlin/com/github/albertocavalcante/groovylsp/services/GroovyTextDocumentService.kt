@@ -250,9 +250,9 @@ class GroovyTextDocumentService(
 
         // NOTE: Heuristic / tradeoff:
         // The language client can send definition/references requests immediately after didOpen/didChange.
-        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
-        // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
-        // to make these requests deterministic and avoid flaky e2e behavior.
+        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation
+        // hasn't started yet (so ensureCompiled returns null). We compile on-demand using the in-memory
+        // document text to make these requests deterministic and avoid flaky e2e behavior.
         // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
         //   so ensureCompiled never returns null.
         //   See: https://github.com/albertocavalcante/gvy/issues/564
