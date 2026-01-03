@@ -5,6 +5,8 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.ParseResultAccessor
+import com.github.albertocavalcante.groovylsp.compilation.SymbolIndexingService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
@@ -103,6 +105,8 @@ import kotlin.coroutines.coroutineContext
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
+    private val parseResultAccessor: ParseResultAccessor,
+    private val symbolIndexer: SymbolIndexingService,
     private val serverConfiguration: ServerConfiguration = ServerConfiguration(),
     private val client: () -> LanguageClient?,
     private val documentProvider: DocumentProvider = DocumentProvider(),
