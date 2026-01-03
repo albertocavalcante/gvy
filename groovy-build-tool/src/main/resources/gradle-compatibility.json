@@ -2,7 +2,7 @@
     "compatibility": [
         {
             "java": "17",
-            "gradle": "7.3+"
+            "gradle": "7.2+"
         },
         {
             "java": "18",

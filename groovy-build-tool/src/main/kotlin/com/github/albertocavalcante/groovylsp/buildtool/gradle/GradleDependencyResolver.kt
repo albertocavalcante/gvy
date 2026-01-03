@@ -222,11 +222,7 @@ class GradleDependencyResolver(
 
         // If javaHome is configured, we should check compatibility for THAT JDK.
         // If not, use the current runtime JDK.
-        val jdkMajor = if (javaHome != null) {
-            captureJavaMajorVersion(javaHome)
-        } else {
-            Runtime.version().feature()
-        } ?: Runtime.version().feature()
+        val jdkMajor = javaHome?.let { captureJavaMajorVersion(it) } ?: Runtime.version().feature()
 
         if (!compatibilityService.isCompatible(gradleVersion, jdkMajor)) {
             val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
@@ -240,8 +236,10 @@ class GradleDependencyResolver(
     }
 
     /**
-     * Captures the major version of a JDK at the given path.
-     * Stubs for now, could be improved by running `java -version`.
+     * This is a functional implementation that reads and parses the JDK's {@code release}
+     * file, if present, to determine the {@code JAVA_VERSION} and extract its major
+     * component. It could be enhanced in the future by also invoking {@code bin/java -version}
+     * as an additional fallback when the release file is missing or unreadable.
      */
     private fun captureJavaMajorVersion(javaHome: Path): Int? {
         // Highly simplified: assuming the path ends in something like "jdk-21.jdk" or "java-17"
@@ -253,8 +251,12 @@ class GradleDependencyResolver(
                 val versionLine = content.lines().find { it.startsWith("JAVA_VERSION=") }
                 if (versionLine != null) {
                     val version = versionLine.removePrefix("JAVA_VERSION=").trim('"')
-                    val major = version.split(".").firstOrNull() ?: version
-                    return major.toIntOrNull()
+                    // Handle 1.8.0_xxx or 17.0.2 formats
+                    return if (version.startsWith("1.")) {
+                        version.substringAfter("1.").substringBefore(".").toIntOrNull()
+                    } else {
+                        version.substringBefore(".").toIntOrNull()
+                    }
                 }
             } catch (e: Exception) {
                 logger.warn("Failed to read release file in $javaHome", e)

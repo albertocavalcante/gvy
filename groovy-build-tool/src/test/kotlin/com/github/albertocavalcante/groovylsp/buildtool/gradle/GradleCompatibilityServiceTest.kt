@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
-import org.gradle.util.GradleVersion
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -20,10 +19,11 @@ class GradleCompatibilityServiceTest {
         assertFalse(service.isCompatible("8.4", 21))
         assertFalse(service.isCompatible("8.0", 21))
 
-        // Java 17 requires Gradle 7.3+
+        // Java 17 requires Gradle 7.2+
         assertTrue(service.isCompatible("7.3", 17))
         assertTrue(service.isCompatible("8.0", 17))
-        assertFalse(service.isCompatible("7.2", 17))
+        assertTrue(service.isCompatible("7.2", 17))
+        assertFalse(service.isCompatible("7.1", 17))
     }
 
     @Test
@@ -42,7 +42,7 @@ class GradleCompatibilityServiceTest {
     @Test
     fun `should return minimum gradle version`() {
         assertEquals("8.5", service.getMinimumGradleVersion(21))
-        assertEquals("7.3", service.getMinimumGradleVersion(17))
+        assertEquals("7.2", service.getMinimumGradleVersion(17))
         // Unknown or unset
         assertEquals(null, service.getMinimumGradleVersion(8))
     }

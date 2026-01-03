@@ -31,7 +31,7 @@ You MUST be in a feature branch/worktree. Shipping from `main` is FORBIDDEN.
 
 ```bash
 # 1. Verify we are NOT on main
-git branch --show-current | grep -v "main" || { echo "ERROR: You are on main!"; exit 1; }
+git branch --show-current | grep -q "^main$" && { echo "ERROR: You are on main!"; exit 1; }
 
 # 2. Verify we are in a worktree (optional but recommended)
 git worktree list | grep "$(pwd)"
@@ -166,7 +166,7 @@ rm /tmp/pr_body.md
 ## Quick Reference
 
 ```
-1. VERIFY: git branch | grep -v main && direnv allow . && ./gradlew spotlessApply
+1. VERIFY: [[ $(git branch --show-current) != "main" ]] && direnv allow . && ./gradlew spotlessApply
 2. STAGE:  git add <files> (NO git add .)
 3. COMMIT: git commit -m "title" -m "body"
 4. PUSH:   git push origin <branch>

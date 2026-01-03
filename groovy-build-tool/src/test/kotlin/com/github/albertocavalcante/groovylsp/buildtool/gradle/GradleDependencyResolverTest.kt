@@ -111,4 +111,65 @@ class GradleDependencyResolverTest {
         // Then
         verify { compatibilityService.isCompatible("7.3", 17) }
     }
+
+    @Test
+    fun `should capture jdk 8 version from release file`(
+        @org.junit.jupiter.api.io.TempDir tempDir: java.nio.file.Path,
+    ) {
+        // Given
+        val jdkHome = tempDir.resolve("jdk-8")
+        java.nio.file.Files.createDirectories(jdkHome)
+        val releaseFile = jdkHome.resolve("release")
+        // JDK 8 format: 1.8.0_xxx
+        java.nio.file.Files.writeString(releaseFile, "JAVA_VERSION=\"1.8.0_312\"")
+
+        // Setup mocks
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+        every { connection.getModel(BuildEnvironment::class.java) } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "6.8" // Compatible with 8
+        every { compatibilityService.isCompatible("6.8", 8) } returns true
+
+        val resolver = GradleDependencyResolver(
+            connectionFactory = connectionFactory,
+            compatibilityService = compatibilityService,
+            failureAnalyzer = failureAnalyzer,
+            javaHome = jdkHome,
+        )
+
+        // Force resolution to trigger check
+        runCatching { resolver.resolveDependencies(Paths.get("/tmp/project")) }
+
+        // Then
+        verify { compatibilityService.isCompatible("6.8", 8) }
+    }
+
+    @Test
+    fun `should fallback to runtime version when release file missing`(
+        @org.junit.jupiter.api.io.TempDir tempDir: java.nio.file.Path,
+    ) {
+        // Given empty java home
+        val jdkHome = tempDir.resolve("empty-jdk")
+        java.nio.file.Files.createDirectories(jdkHome)
+
+        // Setup mocks
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+        every { connection.getModel(BuildEnvironment::class.java) } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.0"
+
+        val runtimeVersion = Runtime.version().feature()
+        every { compatibilityService.isCompatible("8.0", runtimeVersion) } returns true
+
+        val resolver = GradleDependencyResolver(
+            connectionFactory = connectionFactory,
+            compatibilityService = compatibilityService,
+            failureAnalyzer = failureAnalyzer,
+            javaHome = jdkHome,
+        )
+
+        // Force resolution
+        runCatching { resolver.resolveDependencies(Paths.get("/tmp/project")) }
+
+        // Then
+        verify { compatibilityService.isCompatible("8.0", runtimeVersion) }
+    }
 }
