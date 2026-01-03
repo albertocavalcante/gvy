@@ -119,6 +119,7 @@ dependencies {
     implementation(project(":indexer:core"))
     implementation(project(":indexer:scip"))
     implementation(project(":indexer:lsif"))
+    implementation(project(":parser:rewrite"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
