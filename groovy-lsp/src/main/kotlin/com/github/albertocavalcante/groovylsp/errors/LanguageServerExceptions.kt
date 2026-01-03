@@ -12,7 +12,7 @@ sealed class GroovyLspException(message: String, cause: Throwable? = null) : Exc
  */
 sealed class CompilationException(message: String, cause: Throwable? = null) : GroovyLspException(message, cause)
 
-class SyntaxErrorException(val uri: URI, val line: Int, val column: Int, message: String, cause: Throwable? = null) :
+class SyntaxErrorException(uri: URI, line: Int, column: Int, message: String, cause: Throwable? = null) :
     CompilationException("Syntax error at $uri:$line:$column - $message", cause)
 
 class CompilerConfigurationException(message: String, cause: Throwable? = null) :
@@ -26,10 +26,10 @@ class AstGenerationException(val uri: URI, message: String, cause: Throwable? = 
  */
 sealed class SymbolResolutionException(message: String, cause: Throwable? = null) : GroovyLspException(message, cause)
 
-class SymbolNotFoundException(val symbolName: String, val uri: URI, val line: Int, val column: Int) :
+class SymbolNotFoundException(symbolName: String, uri: URI, line: Int, column: Int) :
     SymbolResolutionException("Symbol '$symbolName' not found at $uri:$line:$column")
 
-class AmbiguousSymbolException(val symbolName: String, val candidateCount: Int, val uri: URI) :
+class AmbiguousSymbolException(symbolName: String, candidateCount: Int, uri: URI) :
     SymbolResolutionException("Ambiguous symbol '$symbolName' at $uri ($candidateCount candidates found)")
 
 /**
@@ -37,7 +37,7 @@ class AmbiguousSymbolException(val symbolName: String, val candidateCount: Int, 
  */
 sealed class PositionException(message: String, cause: Throwable? = null) : GroovyLspException(message, cause)
 
-class InvalidPositionException(val uri: URI, val line: Int, val column: Int, reason: String) :
+class InvalidPositionException(uri: URI, line: Int, column: Int, reason: String) :
     PositionException("Invalid position at $uri:$line:$column - $reason")
 
 class NodeNotFoundAtPositionException(val uri: URI, val line: Int, val column: Int) :
@@ -48,13 +48,13 @@ class NodeNotFoundAtPositionException(val uri: URI, val line: Int, val column: I
  */
 sealed class ResourceException(message: String, cause: Throwable? = null) : GroovyLspException(message, cause)
 
-class CacheCorruptionException(val cacheType: String, message: String, cause: Throwable? = null) :
+class CacheCorruptionException(cacheType: String, message: String, cause: Throwable? = null) :
     ResourceException("Cache corruption detected in $cacheType: $message", cause)
 
-class ResourceExhaustionException(val resourceType: String, val currentUsage: Long, val maxCapacity: Long) :
+class ResourceExhaustionException(resourceType: String, currentUsage: Long, maxCapacity: Long) :
     ResourceException("Resource exhaustion for $resourceType: $currentUsage/$maxCapacity")
 
-class FileAccessException(val uri: URI, val operation: String, cause: Throwable? = null) :
+class FileAccessException(uri: URI, operation: String, cause: Throwable? = null) :
     ResourceException("Failed to $operation file $uri", cause)
 
 /**
@@ -65,7 +65,7 @@ sealed class ProtocolException(message: String, cause: Throwable? = null) : Groo
 class InvalidRequestException(val method: String, val reason: String) :
     ProtocolException("Invalid LSP request for method '$method': $reason")
 
-class UnsupportedOperationException(val operation: String, val reason: String) :
+class UnsupportedOperationException(operation: String, reason: String) :
     ProtocolException("Unsupported operation '$operation': $reason")
 
 class CommunicationException(message: String, cause: Throwable? = null) :

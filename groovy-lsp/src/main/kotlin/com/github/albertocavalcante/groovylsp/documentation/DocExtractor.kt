@@ -109,11 +109,11 @@ object DocExtractor {
     private fun findRawDocCommentWithGroovyDocParser(sourceText: String, node: ASTNode): String? = runCatching {
         val parser = GroovyDocParser(emptyList<LinkArgument>(), Properties())
         val classDocs = parser.getClassDocsFromSingleSource(".", "Script.groovy", sourceText)
-        findDocForNode(classDocs, node)?.getRawCommentText()
+        findDocForNode(classDocs, node)?.rawCommentText
     }.onFailure { e ->
         logger.debug("GroovyDocParser failed; falling back to comment scan", e)
     }.getOrNull()
-        ?.takeUnless { it.isNullOrBlank() }
+        ?.takeUnless { it.isBlank() }
 
     private fun findDocForNode(classDocs: Map<String, GroovyClassDoc>, node: ASTNode): GroovyProgramElementDoc? {
         val classDoc = findClassDoc(classDocs, node) ?: return null

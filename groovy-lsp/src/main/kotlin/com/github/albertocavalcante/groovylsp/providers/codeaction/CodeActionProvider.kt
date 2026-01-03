@@ -16,9 +16,9 @@ import java.net.URI
  * - Deterministic lint fixes from CodeNarc
  */
 class CodeActionProvider(
-    private val compilationService: GroovyCompilationService,
+    compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
-    private val formatter: Formatter,
+    formatter: Formatter,
 ) {
     private val logger = LoggerFactory.getLogger(CodeActionProvider::class.java)
 

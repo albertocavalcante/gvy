@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.net.URI
@@ -35,7 +36,7 @@ class AstRequestHandler(
         val nativeAst = parseResult.ast
             ?: throw IllegalStateException("AST not available for URI: ${params.uri}")
 
-        val astDto = when (params.parser.lowercase()) {
+        val astDto: AstNodeDto = when (params.parser.lowercase()) {
             "core" -> {
                 val coreAst = GroovyParser.convertFromNative(nativeAst)
                 coreConverter.convert(coreAst)
@@ -49,7 +50,7 @@ class AstRequestHandler(
         }
 
         AstResult(
-            ast = Json.encodeToString(astDto),
+            ast = Json.encodeToString<AstNodeDto>(astDto),
             parser = params.parser,
         )
     }

@@ -22,9 +22,9 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider as D
 class NativeHoverProvider(
     @Suppress("UNUSED_PARAMETER") // TODO: Use parseResult directly instead of delegating
     private val parseResult: ParseResult,
-    private val compilationService: GroovyCompilationService,
-    private val documentProvider: DocumentProvider,
-    private val sourceNavigator: SourceNavigator? = null,
+    compilationService: GroovyCompilationService,
+    documentProvider: DocumentProvider,
+    sourceNavigator: SourceNavigator? = null,
 ) : HoverProvider {
 
     private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
