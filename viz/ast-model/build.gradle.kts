@@ -32,6 +32,7 @@ kotlin {
             dependencies {
                 implementation(project(":parser:core"))
                 implementation(project(":parser:native"))
+                implementation(project(":parser:rewrite"))
             }
         }
         jvmTest {

@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.printer.DotPrinter
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,6 +23,7 @@ import java.net.URI
 enum class ParserType {
     CORE,
     NATIVE,
+    REWRITE,
 }
 
 /**
@@ -102,6 +104,7 @@ class AstViewModel {
             when (selectedParser) {
                 ParserType.CORE -> parseCoreAst()
                 ParserType.NATIVE -> parseNativeAst()
+                ParserType.REWRITE -> parseRewriteAst()
             }
         } catch (e: Exception) {
             parseErrors = listOf("Parse error: ${e.message}")
@@ -145,6 +148,18 @@ class AstViewModel {
         result.ast?.let { moduleNode ->
             val converter = NativeAstConverter()
             astTree = converter.convert(moduleNode)
+        }
+    }
+
+    private fun parseRewriteAst() {
+        val converter = RewriteAstConverter()
+        val result = converter.parse(sourceCode)
+
+        if (result == null) {
+            parseErrors = listOf("Failed to parse with OpenRewrite parser")
+            astTree = null
+        } else {
+            astTree = result
         }
     }
 
