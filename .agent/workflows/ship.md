@@ -118,10 +118,12 @@ git push origin "$(git branch --show-current)"
 
 ### 4.1 Draft PR Body
 
-Create a temporary file for the PR description. This ensures you have a backup and allows for complex formatting.
+Use `write_to_file` (or your agent's equivalent native file tool) to create the PR description. This avoids shell
+escaping hell.
 
-```bash
-cat <<EOF > /tmp/pr_body.md
+**Target File:** `/tmp/pr_body.md` (or a git-ignored path like `.gemini/pr_body.md`)
+
+```markdown
 # Description
 
 [Brief summary of changes]
@@ -136,13 +138,12 @@ cat <<EOF > /tmp/pr_body.md
 # Checklist
 
 - [x] My code follows the code style of this project
-- [x] I have added tests to cover my changes
-- [x] All new and existing tests passed
+- [ ] I have added tests to cover my changes
+- [ ] All new and existing tests passed
 
 # Verification
 
 [Details on how you verified this change]
-EOF
 ```
 
 ### 4.2 Create PR
