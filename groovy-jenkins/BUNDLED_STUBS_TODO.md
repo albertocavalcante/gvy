@@ -17,25 +17,25 @@ Currently, only the `sh` step is included. Need to add **top 10-20 most common J
 
 1. **workflow-basic-steps** - Core pipeline steps
 
-   - [ ] `echo` - Print message
-   - [ ] `error` - Signal error and fail build
-   - [ ] `pwd` - Print working directory
-   - [ ] `sleep` - Sleep for specified seconds
-   - [ ] `timeout` - Enforce time limit
-   - [ ] `waitUntil` - Wait for condition
-   - [ ] `retry` - Retry block on failure
-   - [ ] `readFile` - Read file from workspace
-   - [ ] `writeFile` - Write file to workspace
-   - [ ] `fileExists` - Check if file exists
-   - [ ] `dir` - Change directory
-   - [ ] `deleteDir` - Recursively delete directory
-   - [ ] `isUnix` - Check if running on Unix
+   - [x] `echo` - Print message (DONE)
+   - [x] `error` - Signal error and fail build (DONE)
+   - [x] `pwd` - Print working directory (DONE)
+   - [x] `sleep` - Sleep for specified seconds (DONE)
+   - [x] `timeout` - Enforce time limit (DONE)
+   - [x] `waitUntil` - Wait for condition (DONE)
+   - [x] `retry` - Retry block on failure (DONE)
+   - [x] `readFile` - Read file from workspace (DONE)
+   - [x] `writeFile` - Write file to workspace (DONE)
+   - [x] `fileExists` - Check if file exists (DONE)
+   - [x] `dir` - Change directory (DONE)
+   - [x] `deleteDir` - Recursively delete directory (DONE)
+   - [x] `isUnix` - Check if running on Unix (DONE)
 
 2. **workflow-durable-task-step** - Durable task steps
 
    - [x] `sh` - Shell script (DONE)
-   - [ ] `bat` - Windows batch script
-   - [ ] `powershell` - PowerShell script
+   - [x] `bat` - Windows batch script (DONE)
+   - [x] `powershell` - PowerShell script (DONE)
 
 3. **pipeline-model-definition** - Declarative pipeline
    - [ ] `pipeline` - Declarative pipeline root
@@ -68,25 +68,25 @@ Currently, only the `sh` step is included. Need to add **top 10-20 most common J
    - [ ] `docker.image()` - Create Docker image DSL
    - [ ] `docker.build()` - Build Docker image
    - [ ] `docker.withRegistry()` - Use Docker registry
-   - Global: `docker` object
+   - [x] Global: `docker` object (DONE)
 
 7. **kubernetes** - Kubernetes plugin
    - [ ] `kubernetes` - Define pod template
-   - [ ] `container` - Run in container
-   - Global: `kubernetes` object
+   - [x] `container` - Run in container (DONE)
+   - [x] Global: `kubernetes` object (DONE)
 
 #### Phase 0.4: Credentials & Security (MEDIUM PRIORITY)
 
 8. **credentials-binding** - Bind credentials
 
-   - [ ] `withCredentials` - Bind credentials to variables
-   - [ ] `usernamePassword` - Username/password credential
-   - [ ] `string` - Secret text credential
-   - [ ] `file` - Secret file credential
-   - [ ] `sshUserPrivateKey` - SSH private key
+   - [x] `withCredentials` - Bind credentials to variables (DONE)
+   - [x] `usernamePassword` - Username/password credential (DONE)
+   - [x] `string` - Secret text credential (DONE)
+   - [x] `file` - Secret file credential (DONE)
+   - [x] `sshUserPrivateKey` - SSH private key (DONE)
 
 9. **ssh-agent** - SSH agent
-   - [ ] `sshagent` - Run with SSH agent
+   - [x] `sshagent` - Run with SSH agent (DONE)
 
 #### Phase 0.5: Notifications (MEDIUM PRIORITY)
 
@@ -108,13 +108,13 @@ Currently, only the `sh` step is included. Need to add **top 10-20 most common J
 
 ### Global Variables to Add
 
-Current: `env`, `params`, `currentBuild`
+Current: `env`, `params`, `currentBuild`, `scm`, `docker`, `kubernetes`, `pipeline`
 
 TODO:
 
-- [ ] `docker` - Docker DSL (from docker-workflow)
-- [ ] `kubernetes` - Kubernetes DSL (from kubernetes plugin)
-- [ ] `scm` - SCM information
+- [x] `docker` - Docker DSL (from docker-workflow) (DONE)
+- [x] `kubernetes` - Kubernetes DSL (from kubernetes plugin) (DONE)
+- [x] `scm` - SCM information (DONE)
 - [ ] `manager` - Build manager (from groovy-postbuild)
 
 ### Implementation Approach

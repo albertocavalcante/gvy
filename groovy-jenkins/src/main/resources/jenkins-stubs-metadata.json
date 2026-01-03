@@ -121,6 +121,24 @@
       },
       "documentation": "Mark the build as unstable with a message."
     },
+    "waitUntil": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "initialRecurrencePeriod": {
+          "type": "long",
+          "required": false,
+          "default": "250",
+          "documentation": "Initial wait period in milliseconds before first check"
+        },
+        "quiet": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "If true, suppress intermediate console output"
+        }
+      },
+      "documentation": "Wait for a condition to become true."
+    },
     "warnError": {
       "plugin": "workflow-basic-steps",
       "parameters": {
@@ -522,6 +540,85 @@
       },
       "documentation": "Bind credentials to environment variables for the enclosed steps. Credentials are masked in logs."
     },
+    "usernamePassword": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Username with password credential"
+        },
+        "usernameVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for username"
+        },
+        "passwordVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for password"
+        }
+      },
+      "documentation": "Bind username and password from credentials to environment variables."
+    },
+    "string": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Secret text credential"
+        },
+        "variable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the secret"
+        }
+      },
+      "documentation": "Bind secret text credential to an environment variable."
+    },
+    "file": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Secret file credential"
+        },
+        "variable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the file path"
+        }
+      },
+      "documentation": "Bind secret file credential to an environment variable containing file path."
+    },
+    "sshUserPrivateKey": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the SSH User Private Key credential"
+        },
+        "keyFileVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the private key file path"
+        },
+        "passphraseVariable": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of environment variable for the passphrase (optional)"
+        },
+        "usernameVariable": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of environment variable for the username (optional)"
+        }
+      },
+      "documentation": "Bind SSH private key credential to environment variables."
+    },
     "dir": {
       "plugin": "workflow-basic-steps",
       "positionalParams": [
@@ -695,6 +792,25 @@
       },
       "documentation": "Clean the workspace. More flexible than deleteDir with pattern support."
     },
+    "container": {
+      "plugin": "kubernetes",
+      "positionalParams": [
+        "name"
+      ],
+      "parameters": {
+        "name": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the container to run commands in"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to execute inside the container"
+        }
+      },
+      "documentation": "Run commands inside a specific container within a Kubernetes pod."
+    },
     "timestamps": {
       "plugin": "timestamper",
       "parameters": {
@@ -771,6 +887,10 @@
     "docker": {
       "type": "org.jenkinsci.plugins.docker.workflow.Docker",
       "documentation": "Docker integration object. Provides methods: image(), build(), withRegistry(), withServer(), withTool()."
+    },
+    "kubernetes": {
+      "type": "org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave",
+      "documentation": "Kubernetes integration object. Provides methods for defining pod templates and container configurations."
     },
     "pipeline": {
       "type": "org.jenkinsci.plugins.workflow.cps.CpsScript",

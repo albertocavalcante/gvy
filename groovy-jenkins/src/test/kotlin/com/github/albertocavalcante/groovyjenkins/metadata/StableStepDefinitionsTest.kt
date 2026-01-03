@@ -128,6 +128,24 @@ class StableStepDefinitionsTest {
     }
 
     @Test
+    fun `waitUntil step has correct parameters`() {
+        val metadata = StableStepDefinitions.getStep("waitUntil")
+
+        assertNotNull(metadata)
+        assertEquals("waitUntil", metadata.name)
+        assertEquals("workflow-basic-steps", metadata.plugin)
+
+        assertTrue(metadata.parameters.containsKey("initialRecurrencePeriod"))
+        assertFalse(metadata.parameters["initialRecurrencePeriod"]!!.required)
+        assertEquals("250", metadata.parameters["initialRecurrencePeriod"]!!.default)
+        assertEquals("long", metadata.parameters["initialRecurrencePeriod"]!!.type)
+
+        assertTrue(metadata.parameters.containsKey("quiet"))
+        assertFalse(metadata.parameters["quiet"]!!.required)
+        assertEquals("false", metadata.parameters["quiet"]!!.default)
+    }
+
+    @Test
     fun `dir step has path parameter`() {
         val metadata = StableStepDefinitions.getStep("dir")
 
