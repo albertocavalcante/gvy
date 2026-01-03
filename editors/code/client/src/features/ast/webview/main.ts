@@ -4,9 +4,9 @@
 
 // Type definitions for VSCode API and AST
 interface VsCodeApi {
-    postMessage(message: any): void;
-    getState(): any;
-    setState(state: any): void;
+    postMessage(message: unknown): void;
+    getState(): unknown;
+    setState(state: unknown): void;
 }
 
 declare function acquireVsCodeApi(): VsCodeApi;
@@ -33,7 +33,8 @@ interface AppState {
     const vscode = acquireVsCodeApi();
 
     // Application State
-    let state: AppState = {
+    // Application State
+    const state: AppState = {
         ast: null,
         parser: 'core'
     };

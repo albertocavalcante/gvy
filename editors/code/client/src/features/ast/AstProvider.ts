@@ -112,10 +112,10 @@ class AstProvider {
         try {
             // Request AST from LSP
             const parser = parserOverride || 'core'; // Default to core if not specified
-            const result: any = await client.sendRequest('groovy/ast', {
+            const result = await client.sendRequest('groovy/ast', {
                 uri: editor.document.uri.toString(),
                 parser: parser
-            });
+            }) as { ast: string; parser: string };
 
             const ast = JSON.parse(result.ast);
             this._panel.webview.postMessage({
@@ -123,13 +123,14 @@ class AstProvider {
                 ast: ast,
                 parser: result.parser
             });
-        } catch (e: any) {
-            console.error('AST Request failed', e);
-            this._panel.webview.postMessage({ type: 'error', message: `AST Request failed: ${e.message}` });
+        } catch (_e: unknown) {
+            const error = _e as Error;
+            console.error('AST Request failed', error);
+            this._panel.webview.postMessage({ type: 'error', message: `AST Request failed: ${error.message}` });
         }
     }
 
-    private highlightRange(range: any) {
+    private highlightRange(range: { startLine: number; startColumn: number; endLine: number; endColumn: number } | undefined) {
         if (!range) return;
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
