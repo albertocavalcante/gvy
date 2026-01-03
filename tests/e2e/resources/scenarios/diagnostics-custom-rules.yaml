@@ -45,8 +45,16 @@ steps:
         # Should have Information severity for println
         - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)].severity
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 'Information'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Warning'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Error'
         # Should detect empty block (EmptyBlockRule)
         - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)]
           expect:
@@ -54,8 +62,20 @@ steps:
         # Should have Hint severity for empty block
         - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].severity
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 'Hint'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Warning'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Error'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Information'
         # Verify line numbers are correct
         # println is on line 3 (0-indexed)
         - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)].range.start.line

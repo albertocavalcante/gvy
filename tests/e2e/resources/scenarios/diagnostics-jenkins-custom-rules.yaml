@@ -50,8 +50,16 @@ steps:
         # Should have Warning severity for Jenkins pipeline issues
         - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 'Warning'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Error'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Information'
         # Should detect at least 2 incomplete stages
         - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].length()
           expect:
