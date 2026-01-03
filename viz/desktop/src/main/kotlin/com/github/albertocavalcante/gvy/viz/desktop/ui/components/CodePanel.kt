@@ -122,7 +122,8 @@ fun CodePanel(
 @Composable
 private fun Gutter(code: String) {
     val lines = code.lines()
-    val lineCount = lines.size.coerceAtLeast(1)
+    val nonTrailingLines = lines.dropLastWhile { it.isEmpty() }
+    val lineCount = nonTrailingLines.takeIf { it.isNotEmpty() }?.size?.coerceAtLeast(1) ?: 1
     Column(
         modifier = Modifier
             .fillMaxHeight()
@@ -224,10 +225,29 @@ private fun getOffset(text: String, line: Int, column: Int): Int {
 }
 
 private fun getLineAndColumn(text: String, offset: Int): Pair<Int, Int> {
-    if (offset < 0 || offset > text.length) return 1 to 1
-    val prefix = text.take(offset)
-    val lines = prefix.lines()
-    val line = lines.size
-    val column = lines.last().length + 1
+    val target = offset.coerceIn(0, text.length)
+    var line = 1
+    var column = 1
+    var index = 0
+
+    while (index < target) {
+        val ch = text[index]
+        if (ch == '\n') {
+            line++
+            column = 1
+            index++
+        } else if (ch == '\r') {
+            line++
+            column = 1
+            index++
+            if (index < target && text[index] == '\n') {
+                index++
+            }
+        } else {
+            column++
+            index++
+        }
+    }
+
     return line to column
 }
