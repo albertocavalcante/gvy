@@ -15,6 +15,7 @@ import com.github.albertocavalcante.groovyparser.api.ParseResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
@@ -57,12 +58,14 @@ class GroovyCompilationService(
         sourceNavigator,
         engineConfig,
     )
+    private val resultMapper = CompilationResultMapper()
     private val orchestrator = CompilationOrchestrator(
         cacheService,
         workerSessionManager,
         workspaceManager,
         symbolIndexer,
         parseAccessor,
+        resultMapper,
         ioDispatcher,
         errorHandler,
     )
@@ -71,17 +74,11 @@ class GroovyCompilationService(
     // Core Compilation API (Delegated to Orchestrator)
     // ==========================================================================
 
-    suspend fun compile(
-        uri: URI,
-        content: String,
-        compilePhase: Int = org.codehaus.groovy.control.Phases.CANONICALIZATION,
-    ) = orchestrator.compile(uri, content, compilePhase)
+    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION) =
+        orchestrator.compile(uri, content, compilePhase)
 
-    suspend fun compileTransient(
-        uri: URI,
-        content: String,
-        compilePhase: Int = org.codehaus.groovy.control.Phases.CANONICALIZATION,
-    ) = orchestrator.compileTransient(uri, content, compilePhase)
+    suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION) =
+        orchestrator.compileTransient(uri, content, compilePhase)
 
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 
