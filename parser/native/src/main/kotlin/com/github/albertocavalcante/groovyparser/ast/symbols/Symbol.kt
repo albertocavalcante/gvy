@@ -341,14 +341,16 @@ private fun Symbol.isAccessibleMember(contextUri: URI, contextClass: ClassNode?)
         is Symbol.Method -> visibility
         is Symbol.Field -> visibility
         is Symbol.Property -> visibility
-        else -> Visibility.PUBLIC
+        is Symbol.Class -> visibility
+        is Symbol.Variable, is Symbol.Import -> Visibility.PUBLIC
     }
 
     val memberOwner = when (this) {
         is Symbol.Method -> owner
         is Symbol.Field -> owner
         is Symbol.Property -> owner
-        else -> throw IllegalArgumentException("Symbol $this is not a member and has no owner")
+        is Symbol.Class -> node
+        is Symbol.Variable, is Symbol.Import -> null
     }
 
     return when (memberVisibility) {
