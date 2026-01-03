@@ -3,10 +3,12 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -24,6 +26,7 @@ class CompilationOrchestrator(
     private val workspaceManager: WorkspaceManager,
     private val symbolIndexer: SymbolIndexingService,
     private val parseAccessor: ParseResultAccessor,
+    private val resultMapper: CompilationResultMapper,
     private val ioDispatcher: CoroutineDispatcher,
     private val errorHandler: CompilationErrorHandler,
 ) {
@@ -47,9 +50,7 @@ class CompilationOrchestrator(
                     performCompilation(uri, content, compilePhase)
                 } else {
                     logger.debug("Using cached parse result for: $uri")
-                    val ast = cachedResult.ast!!
-                    val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
-                    CompilationResult.success(ast, diagnostics, content)
+                    resultMapper.map(cachedResult, content)
                 }
             } else {
                 performCompilation(uri, content, compilePhase)
@@ -82,21 +83,17 @@ class CompilationOrchestrator(
             ),
         )
 
-        val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
         val ast = parseResult.ast
 
-        return if (ast != null) {
+        if (ast != null) {
             // Cache parse result
             cacheService.putCached(uri, content, parseResult)
 
             // Index symbols
             symbolIndexer.getSymbolIndex(uri) { parseResult.astModel }
-
-            val isSuccess = parseResult.isSuccessful
-            CompilationResult(isSuccess, ast, diagnostics, content)
-        } else {
-            CompilationResult.failure(diagnostics, content)
         }
+
+        return resultMapper.map(parseResult, content)
     }
 
     /**
@@ -154,10 +151,10 @@ class CompilationOrchestrator(
                 logger.debug("Awaiting active compilation for: $uri")
                 return try {
                     deferred.await()
-                } catch (e: kotlinx.coroutines.CancellationException) {
+                } catch (e: CancellationException) {
                     // If compilation was cancelled, try once more
                     logger.debug("Compilation cancelled for $uri, retrying...")
-                    kotlinx.coroutines.delay(RETRY_DELAY_MS)
+                    delay(RETRY_DELAY_MS)
                     cacheService.getActiveCompilation(uri)?.await()
                 }
             }
@@ -166,9 +163,7 @@ class CompilationOrchestrator(
         // Check cache
         cacheService.getCachedWithContent(uri)?.let { (content, parseResult) ->
             logger.debug("Using cached result for: $uri")
-            val ast = parseResult.ast ?: return null
-            val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
-            return CompilationResult(parseResult.isSuccessful, ast, diagnostics, content)
+            return resultMapper.mapFromCache(parseResult, content)
         }
 
         logger.debug("No compilation found for $uri (not cached, not compiling)")
