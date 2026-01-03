@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
@@ -42,6 +43,8 @@ class ParserDiagnosticProvider(private val compilationService: GroovyCompilation
             diagnostics.forEach { diagnostic ->
                 emit(diagnostic)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to provide parser diagnostics for $uri", e)
             // Don't re-throw - allow other providers to continue
