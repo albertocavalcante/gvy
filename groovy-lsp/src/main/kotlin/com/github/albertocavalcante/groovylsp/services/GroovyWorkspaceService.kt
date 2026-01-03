@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.Version
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.SymbolIndexingService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
@@ -32,6 +33,7 @@ import java.util.concurrent.CompletableFuture
  */
 class GroovyWorkspaceService(
     private val compilationService: GroovyCompilationService,
+    private val symbolIndexer: SymbolIndexingService,
     private val coroutineScope: CoroutineScope,
     private val textDocumentService: GroovyTextDocumentService? = null,
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
@@ -144,7 +146,7 @@ class GroovyWorkspaceService(
         if (toIndex.isNotEmpty()) {
             logger.info("Indexing ${toIndex.size} changed source files")
             coroutineScope.launch {
-                compilationService.indexAllWorkspaceSources(toIndex)
+                symbolIndexer.indexAllWorkspaceSources(toIndex)
             }
         }
     }
@@ -201,7 +203,7 @@ class GroovyWorkspaceService(
             }
             logger.info("Worker changed; reindexing ${sourceUris.size} workspace sources")
             coroutineScope.launch {
-                compilationService.indexAllWorkspaceSources(sourceUris)
+                symbolIndexer.indexAllWorkspaceSources(sourceUris)
             }
         }
     }
@@ -221,7 +223,7 @@ class GroovyWorkspaceService(
             logger.debug("Workspace symbol query blank; returning empty result")
             return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
         }
-        val storages = compilationService.getAllSymbolStorages()
+        val storages = symbolIndexer.getAllSymbolIndices()
         val results = storages.flatMap { (uri, storage) ->
             val symbols: List<Symbol> = storage.findMatching(uri, query)
 
