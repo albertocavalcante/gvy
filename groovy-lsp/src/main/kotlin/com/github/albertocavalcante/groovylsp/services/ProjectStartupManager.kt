@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
