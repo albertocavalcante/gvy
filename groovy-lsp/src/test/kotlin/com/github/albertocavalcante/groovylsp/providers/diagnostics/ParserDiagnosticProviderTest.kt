@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
@@ -13,6 +14,7 @@ import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ParserDiagnosticProviderTest {
@@ -91,6 +93,22 @@ class ParserDiagnosticProviderTest {
         val diagnostics = provider.provideDiagnostics(uri, "some code").toList()
 
         assertTrue(diagnostics.isEmpty(), "Should return empty list on exception")
+    }
+
+    @Test
+    fun `should rethrow cancellation exceptions`() {
+        val compilationService = mockk<GroovyCompilationService>()
+        val uri = URI.create("file:///test.groovy")
+
+        every { compilationService.getDiagnostics(uri) } throws CancellationException("Cancelled")
+
+        val provider = ParserDiagnosticProvider(compilationService)
+
+        assertFailsWith<CancellationException> {
+            runBlocking {
+                provider.provideDiagnostics(uri, "some code").toList()
+            }
+        }
     }
 
     @Test

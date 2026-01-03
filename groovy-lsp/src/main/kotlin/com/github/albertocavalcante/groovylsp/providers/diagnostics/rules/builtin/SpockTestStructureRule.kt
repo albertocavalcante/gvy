@@ -35,7 +35,8 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
         // Only analyze Spock test files
-        if (!uri.path.contains("Spec.groovy") && !uri.path.contains("Test.groovy")) {
+        val path = uri.path ?: return emptyList()
+        if (!path.contains("Spec.groovy") && !path.contains("Test.groovy")) {
             return emptyList()
         }
 
