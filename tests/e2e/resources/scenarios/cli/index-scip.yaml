@@ -32,8 +32,8 @@ steps:
       checks:
         - jsonPath: $.stdout
           expect:
-            type: CONTAINS
-            value: "Successfully generated index"
+            type: MATCHES_REGEX
+            value: "^Successfully exported SCIP index to .*/index\\.scip\\n$"
 
   # Step 3: Verify SCIP file was created
   # (Golden file comparison is not suitable for SCIP because binary content depends on paths)

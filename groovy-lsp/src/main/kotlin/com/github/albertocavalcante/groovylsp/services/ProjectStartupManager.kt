@@ -19,6 +19,7 @@ import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
@@ -66,6 +67,8 @@ class ProjectStartupManager(
 
     var dependencyManager: DependencyManager? = null
         private set
+
+    private var jenkinsInitJob: Job? = null
 
     /**
      * Registers file watchers if the client supports it.
@@ -208,7 +211,7 @@ class ProjectStartupManager(
         compilationService.workspaceManager.initializeJenkinsWorkspace(config, jenkinsPluginManager)
 
         // Asynchronously download and register plugins
-        coroutineScope.launch(Dispatchers.IO) {
+        jenkinsInitJob = coroutineScope.launch(Dispatchers.IO) {
             try {
                 logger.info("Starting Jenkins plugin metadata initialization")
                 jenkinsMetadataService.initialize()
@@ -341,8 +344,11 @@ class ProjectStartupManager(
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             logger.debug("No workspace sources to index")
-            // No files to index, signal ready
-            onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            // No files to index, signal ready after making sure Jenkins init is done
+            coroutineScope.launch(indexingDispatcher) {
+                jenkinsInitJob?.join()
+                onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            }
             return
         }
 
@@ -373,6 +379,10 @@ class ProjectStartupManager(
                 }
                 indexingProgressReporter.complete("✅ Indexed $total files")
                 logger.info("Workspace indexing complete: $total files")
+
+                // Ensure Jenkins initialization is also complete before signaling ready
+                jenkinsInitJob?.join()
+
                 // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total)
             } catch (e: Exception) {

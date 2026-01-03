@@ -22,6 +22,19 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
         writer.write("\n")
     }
 
+    private fun toCanonicalUri(path: String): String {
+        // java.io.File.toURI() produces file:/... on some platforms.
+        // LSP and our golden files expect file:///...
+        val uri = java.io.File(path).toURI().toString()
+        val tripleSlashUri = if (uri.startsWith("file:/") && !uri.startsWith("file:///")) {
+            uri.replaceFirst("file:/", "file:///")
+        } else {
+            uri
+        }
+        // Remove trailing slash which is added for directories
+        return tripleSlashUri.removeSuffix("/")
+    }
+
     private fun emitVertex(label: String, builder: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): Int {
         val id = nextId()
         val vertex = buildJsonObject {
@@ -48,7 +61,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
 
     init {
         // Emit MetaData
-        val rootUri = java.io.File(projectRoot).toURI().toString()
+        val rootUri = toCanonicalUri(projectRoot)
         emitVertex("metaData") {
             put("version", "0.4.3")
             put("projectRoot", rootUri)
@@ -63,7 +76,7 @@ class LsifWriter(outputStream: OutputStream, private val projectRoot: String) : 
     private var currentDocumentId: Int? = null
 
     override fun visitDocumentStart(path: String, content: String) {
-        val fileUri = java.io.File(projectRoot, path).toURI().toString()
+        val fileUri = toCanonicalUri(java.io.File(projectRoot, path).absolutePath)
         // Note: we intentionally do not set a "contents" field here. If desired, the file contents
         // could be embedded (for example, as Base64-encoded text) in the LSIF index, but this
         // implementation omits them to keep the index smaller and avoid duplicating source files.

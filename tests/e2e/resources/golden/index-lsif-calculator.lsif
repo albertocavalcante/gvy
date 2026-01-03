@@ -4,17 +4,17 @@
 {"id":4,"type":"edge","label":"contains","outV":2,"inV":3}
 {"id":5,"type":"vertex","label":"resultSet"}
 {"id":6,"type":"edge","label":"next","outV":3,"inV":5}
-{"id":7,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy maven com.example 0.0.0 com.example.Calculator#","kind":"export"}
+{"id":7,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy manual com.example 0.0.0 com.example.Calculator#","kind":"export"}
 {"id":8,"type":"edge","label":"moniker","outV":5,"inV":7}
 {"id":9,"type":"vertex","label":"range","start":{"line":7,"character":4},"end":{"line":9,"character":5}}
 {"id":10,"type":"edge","label":"contains","outV":2,"inV":9}
 {"id":11,"type":"vertex","label":"resultSet"}
 {"id":12,"type":"edge","label":"next","outV":9,"inV":11}
-{"id":13,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy maven com.example 0.0.0 com.example.Calculator#add(int,int).","kind":"export"}
+{"id":13,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy manual com.example 0.0.0 com.example.Calculator#add(int,int).","kind":"export"}
 {"id":14,"type":"edge","label":"moniker","outV":11,"inV":13}
 {"id":15,"type":"vertex","label":"range","start":{"line":11,"character":4},"end":{"line":13,"character":5}}
 {"id":16,"type":"edge","label":"contains","outV":2,"inV":15}
 {"id":17,"type":"vertex","label":"resultSet"}
 {"id":18,"type":"edge","label":"next","outV":15,"inV":17}
-{"id":19,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy maven com.example 0.0.0 com.example.Calculator#subtract(int,int).","kind":"export"}
+{"id":19,"type":"vertex","label":"moniker","scheme":"scip-groovy","identifier":"scip-groovy manual com.example 0.0.0 com.example.Calculator#subtract(int,int).","kind":"export"}
 {"id":20,"type":"edge","label":"moniker","outV":17,"inV":19}
