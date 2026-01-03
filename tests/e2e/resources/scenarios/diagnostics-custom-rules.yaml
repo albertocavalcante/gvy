@@ -77,15 +77,25 @@ steps:
             type: NONE_CONTAINS
             value: 'Information'
         # Verify line numbers are correct
+        # Verify exactly one match (robustness)
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)]
+          expect:
+            type: SIZE
+            value: 1
         # println is on line 3 (0-indexed)
         - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)].range.start.line
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 3
+        # Verify exactly one match (robustness)
+        - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)]
+          expect:
+            type: SIZE
+            value: 1
         # Empty block is on line 7 (0-indexed)
         - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].range.start.line
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 7
   - changeDocument:
       path: src/Problem.groovy
