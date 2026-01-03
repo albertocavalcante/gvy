@@ -84,23 +84,17 @@ class GroovyLanguageServer(
         sourceNavigator = sourceNavigator,
     )
 
-    // Extracted services from compilation service
-    private val parseResultAccessor = compilationService.parseResultAccessor
-    private val symbolIndexer = compilationService.symbolIndexingService
-
     // Services
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
-        parseResultAccessor = parseResultAccessor,
-        symbolIndexer = symbolIndexer,
         client = { baseClient },
         documentProvider = documentProvider,
         sourceNavigator = sourceNavigator,
     )
     private val workspaceService = GroovyWorkspaceService(
         compilationService,
-        symbolIndexer,
+        compilationService.symbolIndexingService,
         coroutineScope,
         textDocumentService,
     )

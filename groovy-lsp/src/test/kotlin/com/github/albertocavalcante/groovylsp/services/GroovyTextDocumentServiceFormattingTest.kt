@@ -49,8 +49,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -74,8 +72,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -98,8 +94,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -120,8 +114,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -143,8 +135,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -166,8 +156,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -200,8 +188,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = localScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { localClient },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -234,8 +220,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { null },
             documentProvider = documentProvider,
             formatter = formatter,
@@ -257,8 +241,6 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = localScope,
             compilationService = compilationService,
-            parseResultAccessor = compilationService.parseResultAccessor,
-            symbolIndexer = compilationService.symbolIndexingService,
             client = { localClient },
             documentProvider = documentProvider,
             formatter = formatter,

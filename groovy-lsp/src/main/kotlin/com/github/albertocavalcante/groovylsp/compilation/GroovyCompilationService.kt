@@ -11,7 +11,6 @@ import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,11 +39,11 @@ class GroovyCompilationService(
     )
 
     // Specialized services
-    private val cacheService = CompilationCacheService(ioDispatcher)
+    private val cacheService = CompilationCacheService()
     val workspaceManager = WorkspaceManager()
     private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager)
-    val workspaceScanner = WorkspaceScanner(ioDispatcher)
+    val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
 

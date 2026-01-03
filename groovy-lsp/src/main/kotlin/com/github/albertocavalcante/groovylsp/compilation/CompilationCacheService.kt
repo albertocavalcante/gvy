@@ -14,13 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
  * for tracking ongoing compilation jobs to enable async coordination and job reuse.
  *
  * Thread-safe: Uses ConcurrentHashMap for all state management.
- *
- * @param ioDispatcher Coroutine dispatcher for IO-bound operations (default: Dispatchers.IO)
  */
-class CompilationCacheService(
-    // TODO(#621): Remove unused ioDispatcher parameter.
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-) {
+class CompilationCacheService {
     private val cache = CompilationCache()
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 

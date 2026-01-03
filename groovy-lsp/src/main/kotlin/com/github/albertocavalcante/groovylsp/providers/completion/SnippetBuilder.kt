@@ -40,7 +40,7 @@ object SnippetBuilder {
         val validValues = param.validValues
         if (!validValues.isNullOrEmpty()) {
             val escapedValues = validValues.map { escapeSnippetChars(it) }
-            val choice = "\${1|${escapedValues.joinToString(",")}|}"
+            val choice = "${'$'}{1|${escapedValues.joinToString(",")}|}"
             // Conditionally quote based on type - numeric/boolean don't need quotes
             return when (normalizeType(param.type)) {
                 "int", "long", "short", "byte", "float", "double", "boolean" -> choice
@@ -50,11 +50,11 @@ object SnippetBuilder {
 
         // Otherwise, determine by type
         return when (normalizeType(param.type)) {
-            "boolean" -> "\${1|true,false|}"
-            "int", "long", "short", "byte", "float", "double" -> "\$1"
-            "closure" -> "{\n    \$0\n}"
-            "map", "list" -> "[\$1]"
-            else -> "'\$1'" // Default to quoted string for String and unknown types
+            "boolean" -> "${'$'}{1|true,false|}"
+            "int", "long", "short", "byte", "float", "double" -> "$1"
+            "closure" -> "{\n    $0\n}"
+            "map", "list" -> "[$1]"
+            else -> "'$1'" // Default to quoted string for String and unknown types
         }
     }
 
@@ -98,7 +98,7 @@ object SnippetBuilder {
      */
     private fun escapeSnippetChars(value: String): String = value
         .replace("\\", "\\\\") // Escape backslash first
-        .replace("\$", "\\\$")
+        .replace("$", "\\$")
         .replace("|", "\\|")
         .replace(",", "\\,")
         .replace("}", "\\}")
