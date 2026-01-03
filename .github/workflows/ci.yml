@@ -129,6 +129,8 @@ jobs:
               - 'jupyter/*/*.gradle.kts'
               - 'tools/*/src/**'
               - 'tools/*/*.gradle.kts'
+              - 'viz/*/src/**'
+              - 'viz/*/*.gradle.kts'
               # Multi-project parser modules
               - 'parser/**'
               # Root-level files
