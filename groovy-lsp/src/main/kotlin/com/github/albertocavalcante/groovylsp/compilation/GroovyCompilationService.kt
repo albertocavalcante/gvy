@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.api.ParseResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -180,8 +181,6 @@ class GroovyCompilationService(
             cacheService.putCached(uri, content, parseResult)
 
             // Index symbols
-            val index = com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex()
-                .buildFromVisitor(parseResult.astModel)
             symbolIndexer.getSymbolIndex(uri) { parseResult.astModel }
 
             val isSuccess = parseResult.isSuccessful
@@ -196,18 +195,24 @@ class GroovyCompilationService(
     /**
      * Compile a transient version without updating cache.
      * Used for completion with dummy identifiers.
+     * Returns the full ParseResult for access to astModel, tokenIndex etc.
      */
-    suspend fun compileTransient(
-        uri: URI,
-        content: String,
-        compilePhase: Int = Phases.CANONICALIZATION,
-    ): CompilationResult {
+    suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
         logger.debug("Transient compile: $uri")
-        return try {
-            performCompilation(uri, content, compilePhase)
-        } catch (e: Exception) {
-            errorHandler.handleException(e, uri)
-        }
+        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+        val classpath = workspaceManager.getClasspathForFile(uri, content)
+
+        return workerSessionManager.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                classpath = classpath,
+                sourceRoots = workspaceManager.getSourceRoots(),
+                workspaceSources = workspaceManager.getWorkspaceSources(),
+                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                compilePhase = compilePhase,
+            ),
+        )
     }
 
     /**
@@ -328,10 +333,10 @@ class GroovyCompilationService(
      */
     fun getJenkinsGlobalVariables() = workspaceManager.getJenkinsGlobalVariables()
 
-    fun updateWorkspaceModel(root: Path?, dependencyClasspath: List<String>, sourceRoots: List<Path>) {
-        val changed = workspaceManager.updateModel(root, dependencyClasspath, sourceRoots)
+    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
+        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
         if (changed) {
-            classpathService.updateClasspath(dependencyClasspath)
+            classpathService.updateClasspath(dependencies)
             gdkProvider.initialize()
             clearCaches()
         }
@@ -380,7 +385,7 @@ class GroovyCompilationService(
     private fun getOrCreateClassLoader(): URLClassLoader = synchronized(classLoaderLock) {
         cachedClassLoader ?: run {
             val classpath = workspaceManager.getDependencyClasspath()
-            val urls = classpath.map { Path.of(it).toUri().toURL() }.toTypedArray()
+            val urls = classpath.map { it.toUri().toURL() }.toTypedArray()
             URLClassLoader(urls, ClassLoader.getPlatformClassLoader()).also {
                 cachedClassLoader = it
             }
@@ -394,7 +399,46 @@ class GroovyCompilationService(
         }
     }
 
+    // ==========================================================================
+    // Delegation Methods for Backward Compatibility
+    // These methods delegate to extracted services for consumers that haven't
+    // been updated yet. New code should use the exposed services directly.
+    // ==========================================================================
+
+    /** Delegates to [ParseResultAccessor.getAst] */
+    fun getAst(uri: URI) = parseAccessor.getAst(uri)
+
+    /** Delegates to [ParseResultAccessor.getParseResult] */
+    fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
+
+    /** Delegates to [ParseResultAccessor.getDiagnostics] */
+    fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
+
+    /** Delegates to [ParseResultAccessor.getTokenIndex] */
+    fun getTokenIndex(uri: URI) = parseAccessor.getTokenIndex(uri)
+
+    /** Delegates to [ParseResultAccessor.getAstModel] */
+    fun getAstModel(uri: URI) = parseAccessor.getAstModel(uri)
+
+    /** Delegates to [ParseResultAccessor.getSymbolTable] */
+    fun getSymbolTable(uri: URI) = parseAccessor.getSymbolTable(uri)
+
+    /** Delegates to [ParseResultAccessor.getValidParseResult] */
+    suspend fun getValidParseResult(uri: URI) = parseAccessor.getValidParseResult(uri)
+
+    /** Delegates to [SymbolIndexingService.getSymbolIndex] */
+    fun getSymbolStorage(uri: URI) = symbolIndexer.getSymbolIndex(uri)
+
+    /** Delegates to [SymbolIndexingService.getAllSymbolIndices] */
+    fun getAllSymbolStorages() = symbolIndexer.getAllSymbolIndices()
+
+    /** Delegates to [SymbolIndexingService.indexAllWorkspaceSources] */
+    suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) =
+        symbolIndexer.indexAllWorkspaceSources(uris, onProgress)
+
+    // ==========================================================================
     // Expose services for external access
+    // ==========================================================================
     val compilationCacheService: CompilationCacheService get() = cacheService
     val symbolIndexingService: SymbolIndexingService get() = symbolIndexer
     val parseResultAccessor: ParseResultAccessor get() = parseAccessor
