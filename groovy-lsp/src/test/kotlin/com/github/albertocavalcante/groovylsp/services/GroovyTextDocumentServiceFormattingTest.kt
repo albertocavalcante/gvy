@@ -175,8 +175,8 @@ class GroovyTextDocumentServiceFormattingTest {
 
         val params = formattingParams().apply {
             options = FormattingOptions(8, false).apply {
-                setTrimTrailingWhitespace(true)
-                setInsertFinalNewline(true)
+                isTrimTrailingWhitespace = true
+                isInsertFinalNewline = true
             }
         }
 
