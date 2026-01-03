@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyparser.resolution.reflectionmodel
 
-import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedEnumConstantDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedEnumDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
@@ -11,7 +10,6 @@ import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedRefere
 class ReflectionEnumConstantDeclaration(
     private val enumConstant: Enum<*>,
     override val declaringType: ResolvedEnumDeclaration,
-    private val typeSolver: TypeSolver,
 ) : ResolvedEnumConstantDeclaration {
 
     override val name: String = enumConstant.name

@@ -22,6 +22,13 @@ internal class SourcePositionCommentParser(private val source: String) {
     /** Line offsets for quick position-to-index conversion */
     private val lineOffsets: IntArray = computeLineOffsets()
 
+    companion object {
+        private const val BLOCK_COMMENT_START_LENGTH = 2 // Length of "/*"
+        private const val BLOCK_COMMENT_END_LENGTH = 2 // Length of "*/"
+        private const val TRIPLE_QUOTE_LENGTH = 3 // Length of """ or '''
+        private const val ESCAPE_SEQUENCE_LENGTH = 2 // Length of "\X" escape sequences
+    }
+
     /**
      * Extracts all comments from the source between the given positions.
      *
@@ -118,16 +125,19 @@ internal class SourcePositionCommentParser(private val source: String) {
 
     private fun parseBlockComment(startIndex: Int): ParseResult {
         val startPos = indexToPosition(startIndex)
-        val isJavadoc = startIndex + 2 < source.length &&
-            source[startIndex + 2] == '*' &&
-            (startIndex + 3 >= source.length || source[startIndex + 3] != '/')
+        val isJavadoc = startIndex + BLOCK_COMMENT_START_LENGTH < source.length &&
+            source[startIndex + BLOCK_COMMENT_START_LENGTH] == '*' &&
+            (
+                startIndex + TRIPLE_QUOTE_LENGTH >= source.length ||
+                    source[startIndex + TRIPLE_QUOTE_LENGTH] != '/'
+                )
 
-        var i = startIndex + 2 // Skip /*
+        var i = startIndex + BLOCK_COMMENT_START_LENGTH // Skip /*
         val content = StringBuilder()
 
         while (i + 1 < source.length) {
             if (source[i] == '*' && source[i + 1] == '/') {
-                i += 2 // Skip */
+                i += BLOCK_COMMENT_END_LENGTH // Skip */
                 break
             }
             content.append(source[i])
@@ -169,18 +179,18 @@ internal class SourcePositionCommentParser(private val source: String) {
             source[i + 1] == delimiter
 
         if (isTriple) {
-            i += 2
+            i += TRIPLE_QUOTE_LENGTH - 1 // Already at first quote, skip to after third
             // Find closing triple quotes
-            while (i + 2 < source.length) {
+            while (i + TRIPLE_QUOTE_LENGTH <= source.length) {
                 if (source[i] == '\\' && i + 1 < source.length) {
-                    i += 2 // Skip escape sequence
+                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
                     continue
                 }
                 if (source[i] == delimiter &&
                     source[i + 1] == delimiter &&
                     source[i + 2] == delimiter
                 ) {
-                    return i + 3
+                    return i + TRIPLE_QUOTE_LENGTH
                 }
                 i++
             }
@@ -189,7 +199,7 @@ internal class SourcePositionCommentParser(private val source: String) {
             // Regular string
             while (i < source.length) {
                 if (source[i] == '\\' && i + 1 < source.length) {
-                    i += 2 // Skip escape sequence
+                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
                     continue
                 }
                 if (source[i] == delimiter) {
