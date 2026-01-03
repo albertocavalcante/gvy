@@ -53,9 +53,9 @@ steps:
             type: EQUALS
             value: 'Warning'
         # Should detect at least 2 incomplete stages
-        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)]
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].length()
           expect:
-            type: SIZE_GTE
+            type: GTE
             value: 2
         # Build stage diagnostic should be on line 3 (0-indexed)
         - jsonPath: $.diagnostics[0].range.start.line
