@@ -2,7 +2,7 @@
   "name": "gvy",
   "displayName": "gvy - Groovy",
   "description": "Groovy language support powered by gls (Groovy Language Server)",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "publisher": "albertocavalcante",
   "license": "Apache-2.0",
   "engines": {
