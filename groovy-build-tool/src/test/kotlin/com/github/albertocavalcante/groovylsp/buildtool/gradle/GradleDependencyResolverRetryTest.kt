@@ -6,6 +6,7 @@ import io.mockk.verify
 import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.DomainObjectSet
+import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Test
@@ -37,11 +38,17 @@ class GradleDependencyResolverRetryTest {
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         val error = RuntimeException(
-            "Could not open cp_init generic class cache for initialization script '~/.gradle/init.d/foo.gradle'\n" +
-                "Unsupported class file major version 65",
+            "Could not open cp_init generic class cache for initialization script '~/.gradle/init.d/foo.gradle'",
         )
         // Fail both attempts; this test only asserts we try an isolated user home fallback.
         every { modelBuilder.get() } throws error
+        val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+        val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
+        every { firstConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { secondConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+
         every { firstConnection.model(IdeaProject::class.java) } returns modelBuilder
         every { secondConnection.model(IdeaProject::class.java) } returns modelBuilder
 
@@ -54,7 +61,10 @@ class GradleDependencyResolverRetryTest {
             connections[callCount++]
         }
 
-        val resolver = GradleBuildTool(connectionFactory)
+        val resolver = GradleBuildTool(
+            connectionFactory = connectionFactory,
+            retryConfig = GradleDependencyResolver.RetryConfig(initialDelayMs = 0),
+        )
 
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
@@ -91,7 +101,10 @@ class GradleDependencyResolverRetryTest {
 
         every { connectionFactory.getConnection(any(), any()) } returns connection
 
-        val resolver = GradleBuildTool(connectionFactory)
+        val resolver = GradleBuildTool(
+            connectionFactory = connectionFactory,
+            retryConfig = GradleDependencyResolver.RetryConfig(initialDelayMs = 0),
+        )
         resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         verify(exactly = 1) { connectionFactory.getConnection(any(), any()) }
@@ -117,6 +130,12 @@ class GradleDependencyResolverRetryTest {
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
         every { ideaProject.modules } returns emptyModules
 
+        val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+        val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+
         // First attempt fails with lock timeout, second succeeds
         val lockTimeoutError = RuntimeException(
             "Timeout waiting to lock build logic queue. It is currently in use by another process.",
@@ -138,7 +157,10 @@ class GradleDependencyResolverRetryTest {
             initialDelayMs = 0L,
             backoffMultiplier = 1.0,
         )
-        val resolver = GradleBuildTool(connectionFactory, fastRetryConfig)
+        val resolver = GradleBuildTool(
+            connectionFactory = connectionFactory,
+            retryConfig = fastRetryConfig,
+        )
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Verify it retried and succeeded
@@ -161,6 +183,12 @@ class GradleDependencyResolverRetryTest {
         every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
+        val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+        val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+
         // Always fail with lock timeout
         val lockTimeoutError = RuntimeException(
             "Timeout waiting to lock build logic queue. It is currently in use by another process.",
@@ -179,7 +207,10 @@ class GradleDependencyResolverRetryTest {
             initialDelayMs = 0L,
             backoffMultiplier = 1.0,
         )
-        val resolver = GradleBuildTool(connectionFactory, fastRetryConfig)
+        val resolver = GradleBuildTool(
+            connectionFactory = connectionFactory,
+            retryConfig = fastRetryConfig,
+        )
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Should have tried MAX_ATTEMPTS (4) times then given up
