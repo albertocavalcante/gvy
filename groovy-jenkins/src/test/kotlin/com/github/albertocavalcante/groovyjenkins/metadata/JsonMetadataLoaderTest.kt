@@ -53,7 +53,7 @@ class JsonMetadataLoaderTest {
         val exception = assertFailsWith<IllegalStateException> {
             loader.load(nonExistentFile)
         }
-        assertTrue(exception.message!!.contains("not found"))
+        assertEquals(true, exception.message?.contains("not found"))
     }
 
     @Test
@@ -65,6 +65,6 @@ class JsonMetadataLoaderTest {
         val exception = assertFailsWith<IllegalStateException> {
             loader.load(jsonFile)
         }
-        assertTrue(exception.message!!.contains("Failed to parse"))
+        assertEquals(true, exception.message?.contains("Failed to parse"))
     }
 }

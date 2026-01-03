@@ -4,8 +4,12 @@ import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
+import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement
@@ -89,30 +93,37 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
             is CompilationUnit -> {
                 node.types.forEach { analyzeNode(it, violations, inClosure) }
             }
+
             is ClassDeclaration -> {
                 node.methods.forEach { analyzeNode(it, violations, inClosure) }
             }
+
             is MethodDeclaration -> {
                 // Skip @NonCPS annotated methods - they don't need CPS analysis
                 if (!node.isNonCps) {
                     node.body?.let { analyzeNode(it, violations, inClosure) }
                 }
             }
+
             is BlockStatement -> {
                 node.statements.forEach { analyzeNode(it, violations, inClosure) }
             }
+
             is ExpressionStatement -> {
                 analyzeExpression(node.expression, violations, inClosure)
             }
+
             is IfStatement -> {
                 analyzeExpression(node.condition, violations, inClosure)
                 analyzeNode(node.thenStatement, violations, inClosure)
                 node.elseStatement?.let { analyzeNode(it, violations, inClosure) }
             }
+
             is ForStatement -> {
                 analyzeExpression(node.collectionExpression, violations, inClosure)
                 analyzeNode(node.body, violations, inClosure)
             }
+
             is WhileStatement -> {
                 analyzeExpression(node.condition, violations, inClosure)
                 analyzeNode(node.body, violations, inClosure)
@@ -120,15 +131,12 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
         }
     }
 
-    private fun analyzeExpression(
-        expr: com.github.albertocavalcante.groovyparser.ast.expr.Expression,
-        violations: MutableList<CpsViolation>,
-        inClosure: Boolean,
-    ) {
+    private fun analyzeExpression(expr: Expression, violations: MutableList<CpsViolation>, inClosure: Boolean) {
         when (expr) {
             is MethodCallExpr -> {
                 analyzeMethodCall(expr, violations, inClosure)
             }
+
             is ClosureExpr -> {
                 // Closures inside CPS context need special handling
                 if (inClosure) {
@@ -144,11 +152,13 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
                 // Analyze closure body
                 expr.body?.let { analyzeNode(it, violations, true) }
             }
-            is com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr -> {
+
+            is BinaryExpr -> {
                 analyzeExpression(expr.left, violations, inClosure)
                 analyzeExpression(expr.right, violations, inClosure)
             }
-            is com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr -> {
+
+            is PropertyExpr -> {
                 analyzeExpression(expr.objectExpression, violations, inClosure)
             }
         }
@@ -196,7 +206,7 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
         // Check for Thread-related calls
         if (methodName == "sleep" || methodName == "start") {
             val objExpr = call.objectExpression
-            if (objExpr is com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr &&
+            if (objExpr is VariableExpr &&
                 objExpr.name == "Thread"
             ) {
                 violations.add(
@@ -220,10 +230,12 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
         val objExpr = call.objectExpression
         return if (objExpr != null) {
             when (objExpr) {
-                is com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr ->
+                is VariableExpr ->
                     "${objExpr.name}.${call.methodName}"
-                is com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr ->
+
+                is PropertyExpr ->
                     "${objExpr.propertyName}.${call.methodName}"
+
                 else -> call.methodName
             }
         } else {

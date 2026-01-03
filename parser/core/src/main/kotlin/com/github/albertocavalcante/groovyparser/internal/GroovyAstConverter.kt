@@ -61,6 +61,7 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ArrayExpression
 import org.codehaus.groovy.ast.expr.AttributeExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
@@ -582,7 +583,7 @@ internal class GroovyAstConverter {
 
         // Convert arguments
         val args = expr.arguments
-        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
+        if (args is ArgumentListExpression) {
             args.expressions?.forEach { arg ->
                 call.addArgument(convertExpression(arg))
             }
@@ -749,7 +750,7 @@ internal class GroovyAstConverter {
         val constructorCall = ConstructorCallExpr(typeName)
 
         val args = expr.arguments
-        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
+        if (args is ArgumentListExpression) {
             args.expressions?.forEach { arg ->
                 constructorCall.addArgument(convertExpression(arg))
             }

@@ -16,12 +16,15 @@ import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.ExecuteCommandParams
+import org.eclipse.lsp4j.FileChangeType
+import org.eclipse.lsp4j.FileEvent
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.WorkspaceSymbol
 import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.WorkspaceService
 import org.slf4j.LoggerFactory
+import java.net.URI
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -54,7 +57,7 @@ class GroovyWorkspaceService(
         val settings = params.settings
 
         @Suppress("UNCHECKED_CAST")
-        val settingsMap = when (settings) {
+        val settingsMap = when (val settings = params.settings) {
             is Map<*, *> -> settings as? Map<String, Any>
             else -> null
         }
@@ -87,7 +90,7 @@ class GroovyWorkspaceService(
         // Handle GDSL file changes
         val shouldReloadGdsl = params.changes.any { change ->
             try {
-                val uri = java.net.URI.create(change.uri)
+                val uri = URI.create(change.uri)
                 compilationService.workspaceManager.isGdslFile(uri)
             } catch (e: Exception) {
                 false
@@ -113,15 +116,15 @@ class GroovyWorkspaceService(
      * - Changed files: Re-index to update symbols
      * - Deleted files: Remove from symbol index
      */
-    private fun handleSourceFileChanges(changes: List<org.eclipse.lsp4j.FileEvent>) {
-        val created = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Created }
-        val changed = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Changed }
-        val deleted = changes.filter { it.type == org.eclipse.lsp4j.FileChangeType.Deleted }
+    private fun handleSourceFileChanges(changes: List<FileEvent>) {
+        val created = changes.filter { it.type == FileChangeType.Created }
+        val changed = changes.filter { it.type == FileChangeType.Changed }
+        val deleted = changes.filter { it.type == FileChangeType.Deleted }
 
         // Handle deleted files - remove from cache
         deleted.forEach { event ->
             try {
-                val uri = java.net.URI.create(event.uri)
+                val uri = URI.create(event.uri)
                 compilationService.invalidateCache(uri)
                 logger.debug("Removed deleted file from index: ${event.uri}")
             } catch (e: Exception) {
@@ -132,7 +135,7 @@ class GroovyWorkspaceService(
         // Index new and changed files in background
         val toIndex = (created + changed).mapNotNull { event ->
             try {
-                java.net.URI.create(event.uri)
+                URI.create(event.uri)
             } catch (e: Exception) {
                 null
             }
@@ -170,7 +173,7 @@ class GroovyWorkspaceService(
     }
 
     private fun classifyFileChange(uriString: String): FileType {
-        val path = runCatching { java.net.URI.create(uriString).path }.getOrNull() ?: return FileType.OTHER
+        val path = runCatching { URI.create(uriString).path }.getOrNull() ?: return FileType.OTHER
         return FileType.fromPath(path)
     }
 

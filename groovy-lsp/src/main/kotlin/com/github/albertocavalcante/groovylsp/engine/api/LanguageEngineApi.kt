@@ -6,11 +6,13 @@ import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import java.net.URI
 
 /**
  * The Factory Interface for the Language Engine Abstract Factory pattern.
@@ -32,7 +34,7 @@ interface LanguageEngine {
      * This is the unified interface for session creation, allowing polymorphic dispatch
      * without knowing the specific engine type.
      */
-    fun createSession(uri: java.net.URI, content: String): LanguageSession
+    fun createSession(uri: URI, content: String): LanguageSession
 }
 
 /**
@@ -94,7 +96,7 @@ interface HoverProvider {
  * Abstract Provider Interface for Document Symbols.
  */
 interface DocumentSymbolProvider {
-    fun getDocumentSymbols(): List<org.eclipse.lsp4j.DocumentSymbol>
+    fun getDocumentSymbols(): List<DocumentSymbol>
 }
 
 /**

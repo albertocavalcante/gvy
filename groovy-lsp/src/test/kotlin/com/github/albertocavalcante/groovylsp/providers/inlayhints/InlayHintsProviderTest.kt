@@ -159,7 +159,7 @@ class InlayHintsProviderTest {
             // Then - no hint for Object (not useful)
             val typeHints = hints.filter { it.kind == InlayHintKind.Type }
             val objectHints = typeHints.filter {
-                (it.label.left as? String)?.contains("Object") == true
+                it.label.left.contains("Object")
             }
             assertTrue(objectHints.isEmpty(), "Should not show type hint for Object")
         }
@@ -183,7 +183,7 @@ class InlayHintsProviderTest {
             val typeHints = hints.filter { it.kind == InlayHintKind.Type }
             assertTrue(typeHints.isNotEmpty(), "Expected at least one type hint")
             typeHints.forEach { hint ->
-                val label = hint.label.left as? String
+                val label = hint.label.left
                 assertNotNull(label)
                 // Should not contain "java.util" or "java.lang" - should be simplified
                 assertTrue(
@@ -494,8 +494,8 @@ class InlayHintsProviderTest {
             every { compilationService.getAllSymbolStorages() } returns emptyMap()
             every { compilationService.classpathService } returns classpathService
             every { classpathService.loadClass("java.util.ArrayList") } returns java.util.ArrayList::class.java
-            every { classpathService.loadClass("java.util.Collection") } returns java.util.Collection::class.java
-            every { classpathService.loadClass("java.lang.Integer") } returns java.lang.Integer::class.java
+            every { classpathService.loadClass("java.util.Collection") } returns Collection::class.java
+            every { classpathService.loadClass("java.lang.Integer") } returns Int::class.java
 
             provider = InlayHintsProvider(compilationService, InlayHintsConfiguration(parameterHints = true))
 

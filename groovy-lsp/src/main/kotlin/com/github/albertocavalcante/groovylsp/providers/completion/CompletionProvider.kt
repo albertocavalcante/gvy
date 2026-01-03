@@ -20,6 +20,16 @@ import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.MapExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -73,7 +83,7 @@ object CompletionProvider {
         content: String,
     ): List<CompletionItem> {
         return try {
-            val uriObj = java.net.URI.create(uri)
+            val uriObj = URI.create(uri)
 
             // Determine if we are inserting into an existing identifier
             val isClean = isCleanInsertion(content, line, character)
@@ -505,8 +515,8 @@ object CompletionProvider {
 
     private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
         ctx: CompletionContext,
-        nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        nodeAtCursor: ASTNode?,
+        astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
     ) {
         val methodCall = findEnclosingMethodCall(nodeAtCursor, astModel)
@@ -515,8 +525,8 @@ object CompletionProvider {
         // Collect already specified argument map keys if present
         val existingKeys = mutableSetOf<String>()
         val args = methodCall.arguments
-        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
-            args.expressions.filterIsInstance<org.codehaus.groovy.ast.expr.MapExpression>().forEach { mapExpr ->
+        if (args is ArgumentListExpression) {
+            args.expressions.filterIsInstance<MapExpression>().forEach { mapExpr ->
                 mapExpr.mapEntryExpressions.forEach { entry ->
                     val key = entry.keyExpression.text.removeSuffix(":")
                     existingKeys.add(key)
@@ -533,13 +543,10 @@ object CompletionProvider {
         bundledParamCompletions.forEach(::add)
     }
 
-    private fun findEnclosingMethodCall(
-        node: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-    ): org.codehaus.groovy.ast.expr.MethodCallExpression? {
-        var current: org.codehaus.groovy.ast.ASTNode? = node
+    private fun findEnclosingMethodCall(node: ASTNode?, astModel: GroovyAstModel): MethodCallExpression? {
+        var current: ASTNode? = node
         while (current != null) {
-            if (current is org.codehaus.groovy.ast.expr.MethodCallExpression) {
+            if (current is MethodCallExpression) {
                 return current
             }
             current = astModel.getParent(current)
@@ -548,12 +555,12 @@ object CompletionProvider {
     }
 
     private fun findNodeAtOrBefore(
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        astModel: GroovyAstModel,
         uri: java.net.URI,
         content: String,
         line: Int,
         character: Int,
-    ): org.codehaus.groovy.ast.ASTNode? {
+    ): ASTNode? {
         val lines = content.split('\n')
         if (lines.isEmpty()) return null
 
@@ -594,8 +601,8 @@ object CompletionProvider {
      * Detect completion context (member access or type parameter).
      */
     private fun detectCompletionContext(
-        nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        nodeAtCursor: ASTNode?,
+        astModel: GroovyAstModel,
         context: SymbolCompletionContext,
     ): ContextType? {
         if (nodeAtCursor == null) {
@@ -607,7 +614,7 @@ object CompletionProvider {
 
         return when (nodeAtCursor) {
             // Case 1: Direct PropertyExpression (e.g., "myList.ea|" or "env.BUILD|")
-            is org.codehaus.groovy.ast.expr.PropertyExpression -> {
+            is PropertyExpression -> {
                 val objectExpr = nodeAtCursor.objectExpression
                 resolveQualifier(objectExpr, context)?.let { (type, name) ->
                     ContextType.MemberAccess(type, name)
@@ -616,8 +623,8 @@ object CompletionProvider {
 
             // Case 2: VariableExpression that's part of a PropertyExpression or BinaryExpression
             // (e.g., cursor is on "myList" in "myList.")
-            is org.codehaus.groovy.ast.expr.VariableExpression -> {
-                if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
+            is VariableExpression -> {
+                if (parent is PropertyExpression) {
                     var qualifierType = nodeAtCursor.type?.name
                     val qualifierName = nodeAtCursor.name
 
@@ -628,7 +635,7 @@ object CompletionProvider {
                     }
 
                     qualifierType?.let { ContextType.MemberAccess(it, qualifierName) }
-                } else if (parent is org.codehaus.groovy.ast.expr.BinaryExpression &&
+                } else if (parent is BinaryExpression &&
                     parent.operation.text == "<" &&
                     nodeAtCursor.name.contains(DUMMY_IDENTIFIER)
                 ) {
@@ -641,8 +648,8 @@ object CompletionProvider {
 
             // Case 3: ConstantExpression that's the property in a PropertyExpression
             // (e.g., cursor lands on the dummy identifier in "myList.IntelliJIdeaRulezzz")
-            is org.codehaus.groovy.ast.expr.ConstantExpression -> {
-                if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
+            is ConstantExpression -> {
+                if (parent is PropertyExpression) {
                     val objectExpr = parent.objectExpression
                     resolveQualifier(objectExpr, context)?.let { (type, name) ->
                         ContextType.MemberAccess(type, name)
@@ -653,7 +660,7 @@ object CompletionProvider {
             }
 
             // Case 4: ClassExpression (e.g. "List<String>")
-            is org.codehaus.groovy.ast.expr.ClassExpression -> {
+            is ClassExpression -> {
                 val generics = nodeAtCursor.type.genericsTypes
                 if (generics != null && generics.isNotEmpty()) {
                     // Check if any generic type matches our dummy identifier
@@ -671,7 +678,7 @@ object CompletionProvider {
             }
 
             // Case 5: Method call expression (might be incomplete)
-            is org.codehaus.groovy.ast.expr.MethodCallExpression -> {
+            is MethodCallExpression -> {
                 null // For now, don't handle method calls
             }
 
@@ -784,15 +791,12 @@ object CompletionProvider {
         return inferredVar?.type
     }
 
-    private fun resolveQualifier(
-        objectExpr: org.codehaus.groovy.ast.expr.Expression,
-        context: SymbolCompletionContext,
-    ): Pair<String, String?>? {
+    private fun resolveQualifier(objectExpr: Expression, context: SymbolCompletionContext): Pair<String, String?>? {
         var qualifierType = objectExpr.type?.name
         var qualifierName: String? = null
 
         // If object is a variable, capture its name for Jenkins global matching
-        if (objectExpr is org.codehaus.groovy.ast.expr.VariableExpression) {
+        if (objectExpr is VariableExpression) {
             qualifierName = objectExpr.name
             val inferredType = resolveVariableType(objectExpr.name, context)
             if (inferredType != null) {

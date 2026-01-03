@@ -37,7 +37,7 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         }
 
         val name = node.name
-        val coreNode = node.originalNode as Node
+        val coreNode = node.originalNode
 
         // If the node IS a declaration (method, class, field), return it directly
         if (isDeclarationNode(coreNode)) {

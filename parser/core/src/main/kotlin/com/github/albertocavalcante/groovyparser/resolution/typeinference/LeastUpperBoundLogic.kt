@@ -101,43 +101,36 @@ object LeastUpperBoundLogic {
     fun lub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType {
         require(types.isNotEmpty()) { "Cannot compute LUB of empty list" }
 
-        if (types.size == 1) return types.first()
-
-        // Remove nulls
         val nonNullTypes = types.filter { !it.isNull() }
-        if (nonNullTypes.isEmpty()) return ResolvedNullType
-        if (nonNullTypes.size == 1) return nonNullTypes.first()
 
-        // All same type?
+        // Early returns for single types or all same type
+        if (nonNullTypes.size <= 1) {
+            return nonNullTypes.firstOrNull() ?: ResolvedNullType
+        }
         if (nonNullTypes.all { it == nonNullTypes.first() }) {
             return nonNullTypes.first()
         }
 
-        // Check for GString + String special case
-        val gstringLub = checkGStringLub(nonNullTypes, typeSolver)
-        if (gstringLub != null) return gstringLub
+        return computeComplexLub(nonNullTypes, typeSolver)
+    }
 
-        // Check for numeric LUB (including BigInteger/BigDecimal)
-        val numericLub = checkNumericLub(nonNullTypes, typeSolver)
-        if (numericLub != null) return numericLub
+    private fun computeComplexLub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType =
+        checkGStringLub(types, typeSolver)
+            ?: checkNumericLub(types, typeSolver)
+            ?: checkGenericLub(types, typeSolver)
+            ?: computeFallbackLub(types, typeSolver)
 
-        // Check for Generic LUB (List, Map, Closure)
-        val genericLub = checkGenericLub(nonNullTypes, typeSolver)
-        if (genericLub != null) return genericLub
-
-        // All primitives (non-numeric like boolean)?
-        if (nonNullTypes.all { it.isPrimitive() }) {
-            return promoteNumericTypes(nonNullTypes.map { it.asPrimitive() })
+    private fun computeFallbackLub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType {
+        if (types.all { it.isPrimitive() }) {
+            return promoteNumericTypes(types.map { it.asPrimitive() })
         }
 
-        // Find common ancestors for reference types
-        val referenceTypes = nonNullTypes.filter { it.isReferenceType() }
-        if (referenceTypes.size == nonNullTypes.size) {
-            return findCommonAncestor(referenceTypes.map { it.asReferenceType() }, typeSolver)
+        val referenceTypes = types.filter { it.isReferenceType() }
+        return if (referenceTypes.size == types.size) {
+            findCommonAncestor(referenceTypes.map { it.asReferenceType() }, typeSolver)
+        } else {
+            getObjectType(typeSolver)
         }
-
-        // Mixed types - fall back to Object
-        return getObjectType(typeSolver)
     }
 
     /**

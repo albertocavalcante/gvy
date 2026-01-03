@@ -10,7 +10,10 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
+import groovy.lang.Script
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
@@ -26,6 +29,8 @@ import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 import java.net.URI
 import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
@@ -141,10 +146,13 @@ class SignatureHelpProvider(
         if (methodCall.isImplicitThis) {
             // Try to find enclosing class
             var current: ASTNode? = methodCall
-            while (current != null && current !is org.codehaus.groovy.ast.ClassNode) {
+            while (current != null && current !is ClassNode) {
                 current = astVisitor.getParent(current)
             }
-            return (current as? org.codehaus.groovy.ast.ClassNode)?.name ?: "groovy.lang.Script"
+            if (current is ClassNode) {
+                return current.name
+            }
+            return "groovy.lang.Script"
         }
 
         val objExpr = methodCall.objectExpression
@@ -232,7 +240,7 @@ class SignatureHelpProvider(
         val paramsInfo = parameters.map { param ->
             val typeName = when {
                 param.isDynamicTyped -> "def"
-                param.type.isArray() -> param.type.componentType.nameWithoutPackage + "[]"
+                param.type.isArray -> param.type.componentType.nameWithoutPackage + "[]"
                 else -> param.type.nameWithoutPackage
             }
             val defaultValue = param.initialExpression?.let { expr ->
@@ -272,7 +280,7 @@ class SignatureHelpProvider(
             append(")")
         }
 
-        return SignatureInformation(label, doc.takeIf { it.isNotBlank() } as String?, paramsInfo)
+        return SignatureInformation(label, doc.takeIf { it.isNotBlank() }, paramsInfo)
     }
 
     private fun ReflectedMethod.toSignatureInformation(): SignatureInformation {
@@ -294,7 +302,7 @@ class SignatureHelpProvider(
             append(")")
         }
 
-        return SignatureInformation(label, doc.takeIf { it.isNotBlank() } as String?, paramsInfo)
+        return SignatureInformation(label, doc.takeIf { it.isNotBlank() }, paramsInfo)
     }
 
     // --- Helpers ---
@@ -358,8 +366,7 @@ class SignatureHelpProvider(
 
     private fun MethodCallExpression.extractMethodName(): String? {
         methodAsString?.let { return it }
-        val methodExpression = method
-        return when (methodExpression) {
+        return when (val methodExpression = method) {
             is ConstantExpression -> methodExpression.value?.toString()
             is VariableExpression -> methodExpression.name
             is PropertyExpression -> methodExpression.propertyAsString
@@ -374,12 +381,12 @@ class SignatureHelpProvider(
 
     private val scriptMethodsByName by lazy {
         try {
-            groovy.lang.Script::class.java.methods
-                .filter { java.lang.reflect.Modifier.isPublic(it.modifiers) }
+            Script::class.java.methods
+                .filter { p -> Modifier.isPublic(p.modifiers) }
                 .groupBy { it.name }
         } catch (e: Exception) {
             logger.warn("Failed to pre-resolve Script methods: {}", e.message)
-            emptyMap<String, List<java.lang.reflect.Method>>()
+            emptyMap<String, List<Method>>()
         }
     }
 
@@ -388,14 +395,14 @@ class SignatureHelpProvider(
 
     private fun java.lang.reflect.Method.toMethodNode(): MethodNode {
         val params = parameters.map { p ->
-            org.codehaus.groovy.ast.Parameter(org.codehaus.groovy.ast.ClassHelper.make(p.type), p.name)
+            Parameter(ClassHelper.make(p.type), p.name)
         }.toTypedArray()
         return MethodNode(
             name,
             modifiers,
-            org.codehaus.groovy.ast.ClassHelper.make(returnType),
+            ClassHelper.make(returnType),
             params,
-            org.codehaus.groovy.ast.ClassNode.EMPTY_ARRAY,
+            ClassNode.EMPTY_ARRAY,
             null,
         )
     }

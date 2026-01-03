@@ -235,7 +235,7 @@ class XmlPrinter {
     private fun printReturnStatement(stmt: ReturnStatement) {
         if (stmt.expression != null) {
             startElement("ReturnStatement")
-            printNode(stmt.expression!!)
+            printNode(stmt.expression)
             endElement("ReturnStatement")
         } else {
             singleElement("ReturnStatement")

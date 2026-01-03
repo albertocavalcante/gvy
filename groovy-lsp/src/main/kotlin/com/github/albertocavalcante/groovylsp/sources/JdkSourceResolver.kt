@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
@@ -202,7 +203,7 @@ class JdkSourceResolver(
 
                         // Extract file
                         zip.getInputStream(entry).use { input ->
-                            Files.copy(input, outputPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            Files.copy(input, outputPath, StandardCopyOption.REPLACE_EXISTING)
                         }
 
                         logger.debug("Extracted {} from src.zip entry: {}", className, entryPath)
