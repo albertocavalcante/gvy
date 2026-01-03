@@ -1,3 +1,5 @@
+@file:Suppress("TooGenericExceptionCaught", "SwallowedException")
+
 package com.github.albertocavalcante.gvy.viz.desktop.state
 
 import androidx.compose.runtime.getValue
@@ -27,6 +29,14 @@ enum class ParserType {
     REWRITE,
 }
 
+data class CodeError(
+    val message: String,
+    val startLine: Int = -1,
+    val startColumn: Int = -1,
+    val endLine: Int = -1,
+    val endColumn: Int = -1,
+)
+
 /**
  * View model for the AST Visualizer application.
  *
@@ -47,9 +57,50 @@ class AstViewModel {
 
     // Selected node in the tree
     var selectedNode by mutableStateOf<AstNodeDto?>(null)
+        private set
+
+    /**
+     * Select a node in the tree.
+     */
+    fun selectNode(node: AstNodeDto?) {
+        selectedNode = node
+    }
+
+    /**
+     * Find the smallest node containing the given line and column.
+     */
+    fun selectNodeAt(line: Int, column: Int) {
+        val root = astTree ?: return
+        val node = findSmallestNodeAt(root, line, column)
+        if (node != null && node != selectedNode) {
+            selectedNode = node
+        }
+    }
+
+    private fun findSmallestNodeAt(node: AstNodeDto, line: Int, column: Int): AstNodeDto? {
+        val range = node.range ?: return null
+
+        // Check if cursor is within this node
+        val containsCursor = when {
+            line < range.startLine || line > range.endLine -> false
+            line == range.startLine && column < range.startColumn -> false
+            line == range.endLine && column > range.endColumn -> false
+            else -> true
+        }
+
+        if (!containsCursor) return null
+
+        // Search children for a smaller node
+        for (child in node.children) {
+            val result = findSmallestNodeAt(child, line, column)
+            if (result != null) return result
+        }
+
+        return node
+    }
 
     // Parse errors
-    var parseErrors by mutableStateOf<List<String>>(emptyList())
+    var parseErrors by mutableStateOf<List<CodeError>>(emptyList())
         private set
 
     // Parsing state
@@ -61,6 +112,7 @@ class AstViewModel {
         private set
 
     // JSON serializer
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
     private val json = Json {
         prettyPrint = true
         prettyPrintIndent = "  "
@@ -70,13 +122,14 @@ class AstViewModel {
     /**
      * Load Groovy code from a file.
      */
+    @Suppress("TooGenericExceptionCaught")
     fun loadFile(file: File) {
         try {
             sourceCode = file.readText()
             currentFilePath = file.absolutePath
             parseCode()
         } catch (e: Exception) {
-            parseErrors = listOf("Failed to load file: ${e.message}")
+            parseErrors = listOf(CodeError("Failed to load file: ${e.message}"))
         }
     }
 
@@ -108,7 +161,7 @@ class AstViewModel {
                 ParserType.REWRITE -> parseRewriteAst()
             }
         } catch (e: Exception) {
-            parseErrors = listOf("Parse error: ${e.message}")
+            parseErrors = listOf(CodeError("Parse error: ${e.message}"))
             astTree = null
         } finally {
             isParsing = false
@@ -121,7 +174,20 @@ class AstViewModel {
         val result = parser.parse(sourceCode)
 
         if (!result.isSuccessful) {
-            parseErrors = result.problems.map { it.message }
+            parseErrors = result.problems.map { problem ->
+                val range = problem.range
+                if (range != null) {
+                    CodeError(
+                        message = problem.message,
+                        startLine = range.begin.line,
+                        startColumn = -1, // range.begin.column,
+                        endLine = range.end.line,
+                        endColumn = -1, // range.end.column,
+                    )
+                } else {
+                    CodeError(problem.message)
+                }
+            }
         }
 
         result.result.ifPresent { compilationUnit ->
@@ -143,7 +209,15 @@ class AstViewModel {
         val result = parser.parse(request)
 
         if (result.diagnostics.isNotEmpty()) {
-            parseErrors = result.diagnostics.map { it.message }
+            parseErrors = result.diagnostics.map { diagnostic ->
+                CodeError(
+                    message = diagnostic.message,
+                    startLine = diagnostic.range.start.line,
+                    startColumn = -1, // diagnostic.range.start.column,
+                    endLine = diagnostic.range.end.line,
+                    endColumn = -1, // diagnostic.range.end.column,
+                )
+            }
         }
 
         result.ast?.let { moduleNode ->
@@ -159,7 +233,7 @@ class AstViewModel {
         val result = converter.parse(sourceCode)
 
         if (result == null) {
-            parseErrors = listOf("Failed to parse with OpenRewrite parser")
+            parseErrors = listOf(CodeError("Failed to parse with OpenRewrite parser"))
             astTree = null
         } else {
             astTree = result
@@ -174,13 +248,6 @@ class AstViewModel {
             selectedParser = parser
             parseCode()
         }
-    }
-
-    /**
-     * Select a node in the tree.
-     */
-    fun selectNode(node: AstNodeDto?) {
-        selectedNode = node
     }
 
     /**

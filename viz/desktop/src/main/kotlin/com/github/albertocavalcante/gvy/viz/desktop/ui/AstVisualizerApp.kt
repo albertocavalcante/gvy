@@ -1,4 +1,4 @@
-@file:Suppress("ktlint:standard:function-naming")
+@file:Suppress("ktlint:standard:function-naming", "FunctionNaming")
 
 package com.github.albertocavalcante.gvy.viz.desktop.ui
 
@@ -45,6 +45,7 @@ import javax.swing.filechooser.FileNameExtensionFilter
  * Root composable for the AST Visualizer application.
  */
 @Composable
+@Suppress("LongMethod", "MagicNumber")
 fun AstVisualizerApp() {
     val viewModel = remember { AstViewModel() }
 
@@ -68,9 +69,14 @@ fun AstVisualizerApp() {
                 // Left: Code panel (30%)
                 CodePanel(
                     sourceCode = viewModel.sourceCode,
+                    selectedNode = viewModel.selectedNode,
+                    errors = viewModel.parseErrors,
                     onCodeChange = { code ->
                         viewModel.updateSourceCode(code)
                         viewModel.parseCode()
+                    },
+                    onCursorChange = { line, col ->
+                        viewModel.selectNodeAt(line, col)
                     },
                     modifier = Modifier.weight(0.3f).fillMaxSize(),
                 )
@@ -104,7 +110,9 @@ fun AstVisualizerApp() {
                     color = MaterialTheme.colorScheme.errorContainer,
                 ) {
                     Text(
-                        text = viewModel.parseErrors.joinToString("\n"),
+                        text = viewModel.parseErrors.joinToString("\n") {
+                            if (it.startLine != -1) "${it.message} at ${it.startLine}:${it.startColumn}" else it.message
+                        },
                         modifier = Modifier.padding(8.dp),
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         style = MaterialTheme.typography.bodySmall,
@@ -117,6 +125,7 @@ fun AstVisualizerApp() {
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongMethod", "MagicNumber")
 private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
     var showExportMenu by remember { mutableStateOf(false) }
 

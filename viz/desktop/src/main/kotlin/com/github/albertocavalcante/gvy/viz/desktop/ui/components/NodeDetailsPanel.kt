@@ -1,9 +1,8 @@
-@file:Suppress("ktlint:standard:function-naming")
+@file:Suppress("ktlint:standard:function-naming", "FunctionNaming")
 
 package com.github.albertocavalcante.gvy.viz.desktop.ui.components
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +42,7 @@ fun NodeDetailsPanel(node: AstNodeDto?, parserType: ParserType, modifier: Modifi
 }
 
 @Composable
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 private fun NodeDetailsContent(node: AstNodeDto, parserType: ParserType) {
     // Node type
     Text(
