@@ -14,7 +14,7 @@ Move your uncommitted changes to a new feature branch in a separate worktree wit
 In the incorrect worktree (e.g., `main`), stash your changes with a descriptive message.
 
 ```bash
-git stash save "descriptive-name-of-changes"
+git stash push -m "descriptive-name-of-changes"
 ```
 
 ### 2. Create a new worktree

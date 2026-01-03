@@ -217,9 +217,9 @@ class AstViewModel {
                     CodeError(
                         message = problem.message,
                         startLine = range.begin.line,
-                        startColumn = -1, // range.begin.column,
+                        startColumn = range.begin.column,
                         endLine = range.end.line,
-                        endColumn = -1, // range.end.column,
+                        endColumn = range.end.column,
                     )
                 } else {
                     CodeError(problem.message)
@@ -250,9 +250,9 @@ class AstViewModel {
                 CodeError(
                     message = diagnostic.message,
                     startLine = diagnostic.range.start.line,
-                    startColumn = -1, // diagnostic.range.start.column,
+                    startColumn = diagnostic.range.start.column,
                     endLine = diagnostic.range.end.line,
-                    endColumn = -1, // diagnostic.range.end.column,
+                    endColumn = diagnostic.range.end.column,
                 )
             }
         }

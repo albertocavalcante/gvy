@@ -64,8 +64,8 @@ fun CodePanel(
     // Sync external selection (from tree) to editor
     LaunchedEffect(selectedNode) {
         selectedNode?.range?.let { range ->
-            val start = getOffset(sourceCode, range.startLine, range.startColumn)
-            val end = getOffset(sourceCode, range.endLine, range.endColumn)
+            val start = getOffset(textFieldValue.text, range.startLine, range.startColumn)
+            val end = getOffset(textFieldValue.text, range.endLine, range.endColumn)
             if (start != -1 && end != -1) {
                 textFieldValue = textFieldValue.copy(selection = TextRange(start, end))
             }
@@ -151,8 +151,17 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
         for (error in errors) {
             if (error.startLine != -1) {
                 val start = getOffset(text.text, error.startLine, error.startColumn)
-                val end = if (error.endLine != -1) {
+                val end = if (error.endLine != -1 && error.endColumn != -1) {
                     getOffset(text.text, error.endLine, error.endColumn)
+                } else if (start != -1) {
+                    // If end info is missing, highlight to the end of the start line.
+                    val lines = text.text.lines()
+                    if (error.startLine <= lines.size) {
+                        val lineStartOffset = getOffset(text.text, error.startLine, 1)
+                        lineStartOffset + lines[error.startLine - 1].length
+                    } else {
+                        start + 1
+                    }
                 } else {
                     start + 1
                 }
@@ -175,14 +184,39 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
 }
 
 private fun getOffset(text: String, line: Int, column: Int): Int {
-    val lines = text.lines()
-    if (line > lines.size || line < 1) return -1
-    var offset = 0
-    for (i in 0 until line - 1) {
-        offset += lines[i].length + 1
+    if (line < 1) return -1
+
+    var currentLine = 1
+    var index = 0
+    var lineStart = 0
+
+    // Advance through the text until we reach the start of the requested line,
+    // correctly handling '\n', '\r', and '\r\n' line endings.
+    while (index < text.length && currentLine < line) {
+        val ch = text[index]
+        if (ch == '\n') {
+            currentLine++
+            index++
+            lineStart = index
+        } else if (ch == '\r') {
+            currentLine++
+            index++
+            // Handle CRLF as a single line break
+            if (index < text.length && text[index] == '\n') {
+                index++
+            }
+            lineStart = index
+        } else {
+            index++
+        }
     }
+
+    // If we exited the loop without reaching the requested line, the line does not exist.
+    if (currentLine != line) return -1
+
     val col = column.coerceAtLeast(1)
-    return (offset + col - 1).coerceIn(0, text.length)
+    val offset = lineStart + col - 1
+    return offset.coerceIn(0, text.length)
 }
 
 private fun getLineAndColumn(text: String, offset: Int): Pair<Int, Int> {

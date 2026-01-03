@@ -179,10 +179,15 @@ private fun ErrorPanel(errors: List<CodeError>) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (error.startLine != -1) {
-                        "${error.message} [${error.startLine}:${error.startColumn}]"
-                    } else {
-                        error.message
+                    text = buildString {
+                        append(error.message)
+                        if (error.startLine != -1) {
+                            append(" [${error.startLine}")
+                            if (error.startColumn != -1) {
+                                append(":${error.startColumn}")
+                            }
+                            append("]")
+                        }
                     },
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodySmall,
@@ -235,6 +240,9 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onDone = { viewModel.loadFromInputPath() },
                 ),
                 trailingIcon = {
                     IconButton(onClick = { viewModel.loadFromInputPath() }) {
@@ -329,7 +337,6 @@ private fun ParserOption(text: String, selected: Boolean, onClick: () -> Unit) {
         shape = MaterialTheme.shapes.small,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         modifier = Modifier.height(28.dp),
-        elevation = null,
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall)
     }
