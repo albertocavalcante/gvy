@@ -165,8 +165,10 @@ class ParseResultAccessor(
                 ),
             )
 
-            // Update cache with correct result
-            cacheService.putCached(uri, content, parseResult)
+            // Update cache with correct result if parse succeeded
+            if (parseResult.ast != null) {
+                cacheService.putCached(uri, content, parseResult)
+            }
             logger.info(
                 "Re-parsed $uri at CONVERSION: classes=${
                     parseResult.ast?.classes?.map {

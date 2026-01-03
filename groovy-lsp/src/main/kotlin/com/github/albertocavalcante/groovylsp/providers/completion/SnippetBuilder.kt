@@ -51,10 +51,10 @@ object SnippetBuilder {
         // Otherwise, determine by type
         return when (normalizeType(param.type)) {
             "boolean" -> "\${1|true,false|}"
-            "int", "long", "short", "byte", "float", "double" -> "$1"
-            "closure" -> "{\n    $0\n}"
-            "map", "list" -> "[$1]"
-            else -> "'$1'" // Default to quoted string for String and unknown types
+            "int", "long", "short", "byte", "float", "double" -> "\$1"
+            "closure" -> "{\n    \$0\n}"
+            "map", "list" -> "[\$1]"
+            else -> "'\$1'" // Default to quoted string for String and unknown types
         }
     }
 
@@ -98,7 +98,7 @@ object SnippetBuilder {
      */
     private fun escapeSnippetChars(value: String): String = value
         .replace("\\", "\\\\") // Escape backslash first
-        .replace("$", "\\$")
+        .replace("\$", "\\\$")
         .replace("|", "\\|")
         .replace(",", "\\,")
         .replace("}", "\\}")

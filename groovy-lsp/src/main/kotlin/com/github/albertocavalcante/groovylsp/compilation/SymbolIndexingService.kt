@@ -64,14 +64,17 @@ class SymbolIndexingService(
         uri: URI,
         astModelProvider: (() -> com.github.albertocavalcante.groovyparser.ast.GroovyAstModel?)? = null,
     ): SymbolIndex? {
-        // Check cache first
-        symbolStorageCache.get(uri)?.let { return it }
+        // Build from AST model if provided (always updates cache)
+        if (astModelProvider != null) {
+            val astModel = astModelProvider.invoke() ?: return null
+            val storage = SymbolIndex().buildFromVisitor(astModel)
+            symbolStorageCache.put(uri, storage)
+            workspaceSymbolIndex[uri] = storage
+            return storage
+        }
 
-        // Build from AST model if provided
-        val astModel = astModelProvider?.invoke() ?: return null
-        val storage = SymbolIndex().buildFromVisitor(astModel)
-        symbolStorageCache.put(uri, storage)
-        return storage
+        // Check cache for stored results
+        return symbolStorageCache.get(uri)
     }
 
     /**
@@ -195,7 +198,6 @@ class SymbolIndexingService(
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
     private suspend fun performIndexing(uri: URI, path: Path): SymbolIndex? = try {
         val content = Files.readString(path)
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Parse the source code for indexing
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
@@ -207,7 +209,7 @@ class SymbolIndexingService(
                 classpath = workspaceManager.getDependencyClasspath(),
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = emptyList(), // Don't recurse during indexing
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
+                locatorCandidates = buildLocatorCandidates(uri, path),
             ),
         )
 
