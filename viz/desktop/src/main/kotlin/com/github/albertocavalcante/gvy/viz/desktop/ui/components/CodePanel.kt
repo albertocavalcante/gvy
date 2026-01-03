@@ -67,7 +67,10 @@ fun CodePanel(
             val start = getOffset(textFieldValue.text, range.startLine, range.startColumn)
             val end = getOffset(textFieldValue.text, range.endLine, range.endColumn)
             if (start != -1 && end != -1) {
-                textFieldValue = textFieldValue.copy(selection = TextRange(start, end))
+                val targetSelection = TextRange(start, end)
+                if (textFieldValue.selection != targetSelection) {
+                    textFieldValue = textFieldValue.copy(selection = targetSelection)
+                }
             }
         }
     }
@@ -146,6 +149,7 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
     override fun filter(text: AnnotatedString): TransformedText {
         if (errors.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
 
+        val lines = text.text.lines()
         val builder = AnnotatedString.Builder(text)
 
         for (error in errors) {
@@ -155,10 +159,10 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
                     getOffset(text.text, error.endLine, error.endColumn)
                 } else if (start != -1) {
                     // If end info is missing, highlight to the end of the start line.
-                    val lines = text.text.lines()
-                    if (error.startLine <= lines.size) {
-                        val lineStartOffset = getOffset(text.text, error.startLine, 1)
-                        lineStartOffset + lines[error.startLine - 1].length
+                    val lineStartOffset = getOffset(text.text, error.startLine, 1)
+                    val lineLength = lines.getOrNull(error.startLine - 1)?.length ?: 0
+                    if (lineStartOffset != -1) {
+                        lineStartOffset + lineLength
                     } else {
                         start + 1
                     }
