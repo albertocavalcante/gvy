@@ -72,7 +72,7 @@ object NodeCloner {
      */
     // TODO(#587): Split clone into smaller helpers to reduce method length.
     //   See: https://github.com/albertocavalcante/gvy/issues/587
-    @Suppress("UNCHECKED_CAST")
+    @Suppress("UNCHECKED_CAST", "LongMethod", "CyclomaticComplexMethod")
     fun <T : Node> clone(node: T): T = when (node) {
         is CompilationUnit -> cloneCompilationUnit(node) as T
         is ClassDeclaration -> cloneClassDeclaration(node) as T

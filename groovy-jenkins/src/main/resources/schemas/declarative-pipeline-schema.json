@@ -1,8 +1,18 @@
 {
+  "$schema": "https://groovy-lsp.dev/schemas/declarative-pipeline-schema-v1.json",
+  "schemaVersion": "1.0.0",
+  "sourcePlugin": {
+    "artifactId": "pipeline-model-definition",
+    "version": "2.2214.v00573e73ddf1",
+    "jenkinsBaseline": "2.479"
+  },
+  "generatedAt": "2026-01-02T00:00:00Z",
   "sections": [
     {
       "name": "pipeline",
-      "allowedIn": ["root"],
+      "allowedIn": [
+        "root"
+      ],
       "innerInstructions": [
         "agent",
         "stages",
@@ -17,7 +27,10 @@
     },
     {
       "name": "agent",
-      "allowedIn": ["pipeline", "stage"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
       "innerInstructions": [
         "any",
         "none",
@@ -27,16 +40,28 @@
         "kubernetes",
         "node"
       ],
-      "completionCategories": ["agent_type"]
+      "completionCategories": [
+        "agent_type"
+      ]
     },
     {
       "name": "stages",
-      "allowedIn": ["pipeline", "parallel", "matrix"],
-      "innerInstructions": ["stage"]
+      "allowedIn": [
+        "pipeline",
+        "parallel",
+        "matrix"
+      ],
+      "innerInstructions": [
+        "stage"
+      ]
     },
     {
       "name": "stage",
-      "allowedIn": ["stages", "parallel", "matrix"],
+      "allowedIn": [
+        "stages",
+        "parallel",
+        "matrix"
+      ],
       "innerInstructions": [
         "steps",
         "agent",
@@ -51,38 +76,72 @@
     },
     {
       "name": "steps",
-      "allowedIn": ["stage", "parallel", "matrix", "post_condition"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "stage",
+        "parallel",
+        "matrix",
+        "post_condition"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "parallel",
-      "allowedIn": ["stage", "matrix"],
-      "innerInstructions": ["stage"]
+      "allowedIn": [
+        "stage",
+        "matrix"
+      ],
+      "innerInstructions": [
+        "stage"
+      ]
     },
     {
       "name": "matrix",
-      "allowedIn": ["stage"],
-      "innerInstructions": ["axes", "stage"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "stage"
+      ],
+      "innerInstructions": [
+        "axes",
+        "stage"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "axes",
-      "allowedIn": ["matrix"],
-      "innerInstructions": ["axis"]
+      "allowedIn": [
+        "matrix"
+      ],
+      "innerInstructions": [
+        "axis"
+      ]
     },
     {
       "name": "axis",
-      "allowedIn": ["axes"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "axes"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "libraries",
-      "allowedIn": ["pipeline"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "pipeline"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "post",
-      "allowedIn": ["pipeline", "stage"],
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
       "innerInstructions": [
         "always",
         "success",
@@ -96,71 +155,123 @@
         "unsuccessful",
         "cleanup"
       ],
-      "completionCategories": ["post_condition"]
+      "completionCategories": [
+        "post_condition"
+      ]
     },
     {
       "name": "always",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "success",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "failure",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "unstable",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "changed",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "aborted",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "fixed",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "regression",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "notBuilt",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "unsuccessful",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "cleanup",
-      "allowedIn": ["post"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "post"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "script",
-      "allowedIn": ["steps"],
-      "completionCategories": ["step"]
+      "allowedIn": [
+        "steps"
+      ],
+      "completionCategories": [
+        "step"
+      ]
     },
     {
       "name": "when",
-      "allowedIn": ["stage"],
+      "allowedIn": [
+        "stage"
+      ],
       "innerInstructions": [
         "branch",
         "buildingTag",
@@ -172,31 +283,51 @@
         "allOf",
         "anyOf",
         "not",
-        "beforeAgent"
+        "beforeAgent",
+        "beforeInput",
+        "beforeOptions",
+        "equals",
+        "triggeredBy",
+        "isRestartedRun"
       ]
     }
   ],
   "directives": [
     {
       "name": "environment",
-      "allowedIn": ["pipeline", "stage"]
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ]
     },
     {
       "name": "options",
-      "allowedIn": ["pipeline", "stage"],
-      "completionCategories": ["declarative_option"]
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ],
+      "completionCategories": [
+        "declarative_option"
+      ]
     },
     {
       "name": "parameters",
-      "allowedIn": ["pipeline"]
+      "allowedIn": [
+        "pipeline"
+      ]
     },
     {
       "name": "triggers",
-      "allowedIn": ["pipeline"]
+      "allowedIn": [
+        "pipeline"
+      ]
     },
     {
       "name": "tools",
-      "allowedIn": ["pipeline", "stage"]
+      "allowedIn": [
+        "pipeline",
+        "stage"
+      ]
     }
   ]
 }
