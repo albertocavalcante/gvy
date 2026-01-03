@@ -136,12 +136,13 @@ testing {
                         val parallelForks =
                             project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull()
                                 ?: if (System.getenv("GITHUB_ACTIONS") == "true") {
-                                    // GitHub Actions runners: macOS has 7GB RAM, Ubuntu has 16GB RAM
-                                    // Each fork uses ~1-1.5GB. Conservative: 2 on macOS, 3 on Ubuntu
+                                    // GitHub Actions runners: Linux and Windows have ~16GB RAM, while macOS varies—
+                                    // ARM64 (M1/M-style) runners ≈7GB, Intel macOS (macos-13/macos-15-intel) ≈14GB.
+                                    // Each fork uses ~1-1.5GB, so the fork counts (2 on macOS/Windows, 3 on Ubuntu) remain conservative.
                                     when (System.getenv("RUNNER_OS")) {
                                         "macOS" -> 2
                                         "Linux" -> 3
-                                        "Windows" -> 2 // Windows runners have 7GB
+                                        "Windows" -> 2 // Windows runners have ~16GB
                                         else -> 1
                                     }
                                 } else {

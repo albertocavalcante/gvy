@@ -758,36 +758,36 @@ jobs:
             exit 0
           fi
 
-          # Handle cancelled builds (user action or concurrency cancellation)
-          if [[ "$BUILD_RESULT" == "cancelled" ]] || [[ "$LINT_RESULT" == "cancelled" ]] || \
-             [[ "$COVERAGE_RESULT" == "cancelled" ]] || [[ "$E2E_RESULT" == "cancelled" ]]; then
-            echo "⚠️ One or more jobs were cancelled"
-            echo "   This is expected when a newer commit is pushed to the same PR"
-            # Exit 0 for cancelled - it's not a failure, just superseded
-            exit 0
-          fi
-
           # Normal case: all jobs must succeed (or be skipped appropriately)
           FAILED=false
+          CANCELLED=false
 
-          if [[ "$LINT_RESULT" != "success" ]] && [[ "$LINT_RESULT" != "skipped" ]]; then
-            echo "❌ Lint failed"
-            FAILED=true
-          fi
+          check_job_result() {
+            local job_name="$1"
+            local result="$2"
+            if [[ "$result" == "cancelled" ]]; then
+              CANCELLED=true
+              return
+            fi
+            if [[ "$result" != "success" ]] && [[ "$result" != "skipped" ]]; then
+              echo "❌ $job_name failed"
+              FAILED=true
+            fi
+          }
 
-          if [[ "$BUILD_RESULT" != "success" ]] && [[ "$BUILD_RESULT" != "skipped" ]]; then
-            echo "❌ Build failed"
-            FAILED=true
-          fi
+          check_job_result "Lint" "$LINT_RESULT"
+          check_job_result "Build" "$BUILD_RESULT"
+          check_job_result "Coverage" "$COVERAGE_RESULT"
+          check_job_result "E2E" "$E2E_RESULT"
 
-          if [[ "$COVERAGE_RESULT" != "success" ]] && [[ "$COVERAGE_RESULT" != "skipped" ]]; then
-            echo "❌ Coverage failed"
-            FAILED=true
-          fi
-
-          if [[ "$E2E_RESULT" != "success" ]] && [[ "$E2E_RESULT" != "skipped" ]]; then
-            echo "❌ E2E tests failed"
-            FAILED=true
+          if [[ "$CANCELLED" == "true" ]]; then
+            echo "⚠️ One or more jobs were cancelled"
+            echo "   This is expected when a newer commit is pushed to the same PR"
+            if [[ "$FAILED" == "true" ]]; then
+              echo "   However, other jobs still failed"
+              exit 1
+            fi
+            exit 0
           fi
 
           if [[ "$FAILED" == "true" ]]; then

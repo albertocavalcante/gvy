@@ -96,7 +96,14 @@ class AstViewModel {
     }
 
     private fun findSmallestNodeAt(node: AstNodeDto, line: Int, column: Int): AstNodeDto? {
-        val range = node.range ?: return null
+        val range = node.range
+        if (range == null) {
+            for (child in node.children) {
+                val result = findSmallestNodeAt(child, line, column)
+                if (result != null) return result
+            }
+            return null
+        }
 
         // Check if cursor is within this node
         val containsCursor = when {
