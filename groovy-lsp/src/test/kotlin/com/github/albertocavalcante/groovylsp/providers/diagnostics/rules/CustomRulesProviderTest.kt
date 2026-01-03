@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
@@ -196,9 +197,10 @@ class CustomRulesProviderTest {
         val rule = mockk<DiagnosticRule>()
         every { rule.id } returns id
         every { rule.description } returns "Test rule"
+        every { rule.analysisType } returns DiagnosticAnalysisType.HEURISTIC
         every { rule.enabledByDefault } returns enabled
         every { rule.defaultSeverity } returns DiagnosticSeverity.Warning
-        every { runBlocking { rule.analyze(any(), any(), any()) } } returns diagnostics
+        coEvery { rule.analyze(any(), any(), any()) } returns diagnostics
         return rule
     }
 
