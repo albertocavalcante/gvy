@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -228,9 +229,23 @@ class ProjectStartupManager(
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
         logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
+        if (config.javaHome != null) {
+            logger.info("Custom JAVA_HOME configured: ${config.javaHome}")
+        }
+
+        val javaHomePath = config.javaHome?.let { Paths.get(it) }
+
+        // Re-create build tools with configuration (specifically Gradle needs javaHome)
+        val configuredBuildTools = availableBuildTools.map { tool ->
+            if (tool is GradleBuildTool) {
+                GradleBuildTool(javaHome = javaHomePath)
+            } else {
+                tool
+            }
+        }
 
         val newBuildToolManager = BuildToolManager(
-            buildTools = availableBuildTools,
+            buildTools = configuredBuildTools,
             gradleBuildStrategy = config.gradleBuildStrategy,
         )
         buildToolManager = newBuildToolManager
