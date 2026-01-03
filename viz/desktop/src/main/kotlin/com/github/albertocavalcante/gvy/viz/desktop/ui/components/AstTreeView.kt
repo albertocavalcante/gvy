@@ -29,10 +29,11 @@ import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -78,26 +80,30 @@ fun AstTreeView(
         }
     }
 
-    Column(modifier = modifier.padding(8.dp)) {
-        // Filter bar
-        OutlinedTextField(
+    Column(modifier = modifier) {
+        // Borderless Filter bar
+        TextField(
             value = filterText,
             onValueChange = { filterText = it },
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            placeholder = { Text("Filter nodes...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Filter nodes...", style = MaterialTheme.typography.bodySmall) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
             singleLine = true,
             textStyle = MaterialTheme.typography.bodySmall,
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
             ),
         )
 
-        Box(modifier = Modifier.weight(1f)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        Box(modifier = Modifier.weight(1f).padding(top = 4.dp)) {
             if (astTree == null) {
                 Text(
-                    text = "No AST to display. Load a file or paste code.",
+                    text = "No AST to display.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center),
@@ -109,8 +115,8 @@ fun AstTreeView(
 
                 if (filteredTree == null) {
                     Text(
-                        text = "No nodes match \"$filterText\"",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "No match.",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -168,7 +174,7 @@ private fun TreeNodeItem(
 ) {
     val isSelected = selectedNodeId == node.id
     val hasChildren = node.children.isNotEmpty()
-    val indentSize = (depth * 16).dp
+    val indentSize = (depth * 12).dp
 
     Column {
         NodeRow(
@@ -184,7 +190,7 @@ private fun TreeNodeItem(
         // Children (if expanded)
         if (isExpanded && hasChildren) {
             node.children.forEach { child ->
-                val childExpanded = expandedNodes[child.id] ?: (depth < 1) // Auto-expand first 2 levels
+                val childExpanded = expandedNodes[child.id] ?: (depth < 1)
                 TreeNodeItem(
                     node = child,
                     depth = depth + 1,
@@ -215,16 +221,16 @@ private fun NodeRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(2.dp))
             .background(
                 if (isSelected) {
                     MaterialTheme.colorScheme.primaryContainer
                 } else {
-                    MaterialTheme.colorScheme.surface
+                    Color.Transparent
                 },
             )
             .clickable { onNodeClick(node) }
-            .padding(vertical = 4.dp, horizontal = 8.dp)
+            .padding(vertical = 2.dp, horizontal = 4.dp)
             .padding(start = indentSize),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -233,11 +239,11 @@ private fun NodeRow(
             Icon(
                 imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = if (isExpanded) "Collapse" else "Expand",
-                modifier = Modifier.size(20.dp).clickable { onToggleExpand() },
-                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(16.dp).clickable { onToggleExpand() },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(16.dp))
         }
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -246,20 +252,20 @@ private fun NodeRow(
         Icon(
             imageVector = getNodeIcon(node.type),
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(14.dp),
             tint = if (isSelected) {
                 MaterialTheme.colorScheme.onPrimaryContainer
             } else {
-                MaterialTheme.colorScheme.primary
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
             },
         )
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
         // Node type
         Text(
             text = node.type,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             color = if (isSelected) {
@@ -273,26 +279,12 @@ private fun NodeRow(
         node.properties["name"]?.let { name ->
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = ": \"$name\"",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
-
-        // Children count
-        if (hasChildren) {
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "(${node.children.size})",
+                text = name,
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
         }
@@ -305,10 +297,7 @@ private fun getNodeIcon(type: String): ImageVector = when {
         "Method",
         ignoreCase = true,
     ) || type.contains("Constructor", ignoreCase = true) -> Icons.Default.Functions
-    type.contains(
-        "Field",
-        ignoreCase = true,
-    ) || type.contains("Property", ignoreCase = true) -> Icons.Default.Settings
+    type.contains("Field", ignoreCase = true) || type.contains("Property", ignoreCase = true) -> Icons.Default.Settings
     type.contains(
         "Variable",
         ignoreCase = true,

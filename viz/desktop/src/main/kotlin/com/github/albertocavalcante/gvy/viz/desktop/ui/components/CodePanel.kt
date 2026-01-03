@@ -2,10 +2,17 @@
 
 package com.github.albertocavalcante.gvy.viz.desktop.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -24,11 +32,12 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 
 /**
- * Panel displaying the source code.
+ * Panel displaying the source code in an editor-like style.
  */
 @Composable
 @Suppress("LongParameterList")
@@ -55,32 +64,73 @@ fun CodePanel(
         }
     }
 
-    Box(modifier = modifier.padding(8.dp)) {
-        OutlinedTextField(
-            value = textFieldValue,
-            onValueChange = { newValue ->
-                val codeChanged = newValue.text != textFieldValue.text
-                val selectionChanged = newValue.selection != textFieldValue.selection
+    Row(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
+        // Gutter (Line numbers)
+        Gutter(sourceCode)
 
-                textFieldValue = newValue
+        // Editor
+        Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+            BasicTextField(
+                value = textFieldValue,
+                onValueChange = { newValue ->
+                    val codeChanged = newValue.text != textFieldValue.text
+                    val selectionChanged = newValue.selection != textFieldValue.selection
 
-                if (codeChanged) {
-                    onCodeChange(newValue.text)
-                }
+                    textFieldValue = newValue
 
-                if (selectionChanged && !codeChanged) {
-                    val pos = getLineAndColumn(newValue.text, newValue.selection.start)
-                    onCursorChange(pos.first, pos.second)
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-            label = { Text("Groovy Source Code") },
-            placeholder = { Text("Paste Groovy code here or load a file...") },
-            textStyle = androidx.compose.ui.text.TextStyle(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            ),
-            visualTransformation = remember(errors) { ErrorVisualTransformation(errors) },
-        )
+                    if (codeChanged) {
+                        onCodeChange(newValue.text)
+                    }
+
+                    if (selectionChanged && !codeChanged) {
+                        val pos = getLineAndColumn(newValue.text, newValue.selection.start)
+                        onCursorChange(pos.first, pos.second)
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = remember(errors) { ErrorVisualTransformation(errors) },
+            )
+
+            if (sourceCode.isEmpty()) {
+                Text(
+                    "Paste Groovy code here...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Gutter(code: String) {
+    val lines = code.lines()
+    val lineCount = lines.size.coerceAtLeast(1)
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(40.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+    ) {
+        for (i in 1..lineCount) {
+            Text(
+                text = i.toString(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                ),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            )
+        }
     }
 }
 
@@ -93,7 +143,6 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
         for (error in errors) {
             if (error.startLine != -1) {
                 val start = getOffset(text.text, error.startLine, error.startColumn)
-                // Use a default length if end is missing or same as start
                 val end = if (error.endLine != -1) {
                     getOffset(text.text, error.endLine, error.endColumn)
                 } else {
@@ -122,7 +171,7 @@ private fun getOffset(text: String, line: Int, column: Int): Int {
     if (line > lines.size || line < 1) return -1
     var offset = 0
     for (i in 0 until line - 1) {
-        offset += lines[i].length + 1 // +1 for newline
+        offset += lines[i].length + 1
     }
     val col = column.coerceAtLeast(1)
     return (offset + col - 1).coerceIn(0, text.length)
