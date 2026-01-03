@@ -78,6 +78,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await startClient(serverOutputChannel);
 
         registerGradleFeatures(context);
+        registerTestingFeatures(context, testOutputChannel);
 
         // AI Tools Integration
         const lspToolService = new LSPToolService(vscode, getClient);

@@ -33,7 +33,6 @@ interface AppState {
     const vscode = acquireVsCodeApi();
 
     // Application State
-    // Application State
     const state: AppState = {
         ast: null,
         parser: 'core'

@@ -20,12 +20,14 @@ export class GroovyTestController {
 
     this.setupRunProfiles();
     this.setupResolveHandler();
-    this.registerCommands();
+    this.registerCommands(context);
   }
 
-  private registerCommands() {
-    vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args, false));
-    vscode.commands.registerCommand('groovy.test.debug', (args) => this.runTestCommand(args, true));
+  private registerCommands(context: vscode.ExtensionContext) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args, false)),
+      vscode.commands.registerCommand('groovy.test.debug', (args) => this.runTestCommand(args, true))
+    );
   }
 
   private setupRunProfiles() {
@@ -146,9 +148,10 @@ export class GroovyTestController {
     const testItem = this.ctrl.createTestItem(testId, test.test, uri);
 
     // Set the line range for CodeLens and navigation
+    const line = test.line >= 1 ? test.line - 1 : 0;
     testItem.range = new vscode.Range(
-      new vscode.Position(test.line - 1, 0), // 0-indexed
-      new vscode.Position(test.line - 1, 100), // approximate end
+      new vscode.Position(line, 0), // 0-indexed
+      new vscode.Position(line, 100), // approximate end
     );
 
     return testItem;
