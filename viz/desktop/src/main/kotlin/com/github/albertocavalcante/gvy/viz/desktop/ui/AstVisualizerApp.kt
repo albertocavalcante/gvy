@@ -57,6 +57,8 @@ import com.github.albertocavalcante.gvy.viz.desktop.ui.components.AstTreeView
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanel
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.NodeDetailsPanel
 import com.github.albertocavalcante.gvy.viz.desktop.ui.layout.DesktopPanel
+import java.awt.FileDialog
+import java.awt.Frame
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
@@ -334,17 +336,34 @@ private fun ParserOption(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 private fun loadFile(initialDirectory: String): File? {
-    val chooser = JFileChooser(initialDirectory)
-    chooser.fileFilter = FileNameExtensionFilter(
-        "Groovy Files (*.groovy, *.gvy, *.gradle)",
-        "groovy",
-        "gvy",
-        "gradle",
-    )
-
-    return if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-        chooser.selectedFile
+    val os = System.getProperty("os.name").lowercase()
+    return if (os.contains("mac")) {
+        // Use native FileDialog on macOS for better UX (fixes enter/space/type-ahead issues)
+        val fd = FileDialog(null as Frame?, "Load Groovy File", FileDialog.LOAD)
+        fd.directory = initialDirectory
+        fd.setFilenameFilter { _, name ->
+            val n = name.lowercase()
+            n.endsWith(".groovy") || n.endsWith(".gvy") || n.endsWith(".gradle") || n == "jenkinsfile"
+        }
+        fd.isVisible = true
+        if (fd.file != null) File(fd.directory, fd.file) else null
     } else {
-        null
+        // Fallback to JFileChooser for other OS
+        val chooser = JFileChooser(initialDirectory)
+        chooser.fileFilter = object : javax.swing.filechooser.FileFilter() {
+            override fun accept(f: File): Boolean {
+                if (f.isDirectory) return true
+                val n = f.name.lowercase()
+                return n.endsWith(".groovy") || n.endsWith(".gvy") || n.endsWith(".gradle") || n == "jenkinsfile"
+            }
+
+            override fun getDescription(): String = "Groovy Source (*.groovy, *.gradle, Jenkinsfile)"
+        }
+
+        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+            chooser.selectedFile
+        } else {
+            null
+        }
     }
 }
