@@ -39,6 +39,8 @@ import org.codehaus.groovy.control.CompilationUnit as GroovyCompilationUnit
  * errors and return partial ASTs when possible. All errors are collected as
  * [Problem]s with appropriate severity levels.
  */
+// TODO(#586): Address detekt lint debt in parser/core.
+//   See: https://github.com/albertocavalcante/gvy/issues/586
 class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration()) {
     private val logger = LoggerFactory.getLogger(GroovyParser::class.java)
 

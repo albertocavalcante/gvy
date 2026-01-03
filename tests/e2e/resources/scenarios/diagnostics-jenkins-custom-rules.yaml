@@ -1,0 +1,116 @@
+name: diagnostics-jenkins-custom-rules
+description: Validates that Jenkins-specific custom diagnostic rules detect incomplete pipeline stages
+workspace:
+  fixture: jenkins-diagnostics
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: Jenkinsfile
+      languageId: groovy
+      version: 1
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    // Missing steps block - should trigger JenkinsPipelineStageRule
+                    echo 'Building...'
+                }
+                
+                stage('Test') {
+                    steps {
+                        sh 'make test'
+                    }
+                }
+                
+                stage('Deploy') {
+                    // Another incomplete stage
+                }
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: jenkinsDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}Jenkinsfile"
+        - jsonPath: $.diagnostics
+          expect:
+            type: NOT_EMPTY
+  - assert:
+      source: jenkinsDiagnostics
+      checks:
+        # Should detect incomplete stages
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)]
+          expect:
+            type: NOT_EMPTY
+        # Should have Warning severity for Jenkins pipeline issues
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
+          expect:
+            type: CONTAINS
+            value: 'Warning'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Error'
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].severity
+          expect:
+            type: NONE_CONTAINS
+            value: 'Information'
+        # Should detect at least 2 incomplete stages
+        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].length()
+          expect:
+            type: GTE
+            value: 2
+        # Build stage diagnostic should be on line 3 (0-indexed)
+        - jsonPath: $.diagnostics[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 3
+  - changeDocument:
+      path: Jenkinsfile
+      version: 2
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Build') {
+                    steps {
+                        echo 'Building...'
+                        sh 'make build'
+                    }
+                }
+                
+                stage('Test') {
+                    steps {
+                        sh 'make test'
+                    }
+                }
+                
+                stage('Deploy') {
+                    script {
+                        echo 'Deploying...'
+                    }
+                }
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: fixedJenkinsDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}Jenkinsfile"
+  - assert:
+      source: fixedJenkinsDiagnostics
+      checks:
+        # After fixing, should have no incomplete stage diagnostics
+        - jsonPath: $.diagnostics[?(@.message =~ /.*missing.*steps.*/i)]
+          expect:
+            type: EMPTY
+  - shutdown: {}
+  - exit: {}

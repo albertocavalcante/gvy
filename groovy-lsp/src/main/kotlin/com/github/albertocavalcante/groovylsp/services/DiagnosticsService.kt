@@ -19,7 +19,7 @@ import java.net.URI
  * Service for collecting diagnostics from multiple streaming providers.
  *
  * Providers are executed concurrently using Flow-based composition, with configuration-based
- * filtering (denylist/allowlist) and graceful error handling.
+ * filtering (disabled/enabled providers) and graceful error handling.
  *
  * @param providers List of diagnostic providers to use
  * @param config Configuration for filtering providers
@@ -77,8 +77,9 @@ class DiagnosticsService(
 
                             val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
                             logger.debug("Provider {} completed in {}ms", provider.id, elapsedMs)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
-                            if (e is CancellationException) throw e
                             // NOTE: Error isolation - one provider failure doesn't stop others
                             // TODO(#456): Consider publishing provider-specific error diagnostics.
                             //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456

@@ -27,6 +27,10 @@ class SourceNavigationService(
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
 ) : SourceNavigator {
 
+    private companion object {
+        private const val MIN_MAVEN_COORDINATE_PARTS = 3
+    }
+
     private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
 
     /**
@@ -206,7 +210,7 @@ class SourceNavigationService(
         val parts = jarPath.toString().split("/")
         val repoIndex = parts.indexOfFirst { it == "repository" || it == "caches" }
 
-        if (repoIndex == -1 || repoIndex + 3 >= parts.size) {
+        if (repoIndex == -1 || repoIndex + MIN_MAVEN_COORDINATE_PARTS >= parts.size) {
             return extractFromFilename(fileName)
         }
 

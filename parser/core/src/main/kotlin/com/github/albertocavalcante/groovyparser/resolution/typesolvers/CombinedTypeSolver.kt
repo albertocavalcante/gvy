@@ -41,6 +41,9 @@ class CombinedTypeSolver(vararg solvers: TypeSolver) : TypeSolver {
         }
     }
 
+    // TODO(#587): Revisit error handling to avoid broad exception catch.
+    //   See: https://github.com/albertocavalcante/gvy/issues/587
+    @Suppress("TooGenericExceptionCaught") // Solvers can throw arbitrary runtime exceptions.
     override fun tryToSolveType(name: String): SymbolReference<ResolvedTypeDeclaration> {
         // Check cache first
         cache[name]?.let { return it }
