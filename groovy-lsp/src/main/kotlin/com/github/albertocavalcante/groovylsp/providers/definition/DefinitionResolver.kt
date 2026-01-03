@@ -17,10 +17,18 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.Statement
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -78,7 +86,7 @@ class DefinitionResolver(
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed as domain errors
     suspend fun findDefinitionAt(
         uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        position: Position,
     ): DefinitionResult? {
         logger.debug("Finding definition at $uri:${position.line}:${position.character}")
 
@@ -104,10 +112,7 @@ class DefinitionResolver(
      * Validate position and find the target node.
      * Orchestrates validation, node selection, and effective target resolution.
      */
-    private fun validateAndFindNode(
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): ASTNode {
+    private fun validateAndFindNode(uri: URI, position: Position): ASTNode {
         validatePosition(position, uri)
         val trackedNode = astVisitor.getNodeAt(uri, position)
         val targetNode = selectBestNode(uri, position, trackedNode)
@@ -117,7 +122,7 @@ class DefinitionResolver(
     /**
      * Validate that position coordinates are non-negative.
      */
-    private fun validatePosition(position: com.github.albertocavalcante.groovyparser.ast.types.Position, uri: URI) {
+    private fun validatePosition(position: Position, uri: URI) {
         if (position.line < 0 || position.character < 0) {
             handleValidationError("invalidPosition", uri, ValidationContext.PositionContext(position))
         }
@@ -127,11 +132,7 @@ class DefinitionResolver(
      * Select the best node for the given position, using fallback if necessary.
      * Prefers more specific nodes over broad containers (ClassNode, BlockStatement, etc.)
      */
-    private fun selectBestNode(
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-        trackedNode: ASTNode?,
-    ): ASTNode {
+    private fun selectBestNode(uri: URI, position: Position, trackedNode: ASTNode?): ASTNode {
         val fallbackNode = (compilationService?.getAst(uri) as? ModuleNode)
             ?.findNodeAt(position.line, position.character)
 
@@ -172,10 +173,10 @@ class DefinitionResolver(
             else -> null
         }
 
-    private fun isBroadContainer(node: ASTNode): Boolean = node is org.codehaus.groovy.ast.ClassNode ||
-        node is org.codehaus.groovy.ast.MethodNode ||
-        node is org.codehaus.groovy.ast.stmt.BlockStatement ||
-        node is org.codehaus.groovy.ast.stmt.Statement
+    private fun isBroadContainer(node: ASTNode): Boolean = node is ClassNode ||
+        node is MethodNode ||
+        node is BlockStatement ||
+        node is Statement
 
     private fun findMethodCallWhereNodeIsMethodExpression(node: ASTNode): MethodCallExpression? {
         var current: ASTNode? = node
@@ -203,11 +204,7 @@ class DefinitionResolver(
      * - Pipeline short-circuits on first Right (success)
      * - Strategies are tried in priority order (Jenkins vars → Local → Global → Classpath)
      */
-    private suspend fun resolveDefinition(
-        targetNode: ASTNode,
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): DefinitionResult? {
+    private suspend fun resolveDefinition(targetNode: ASTNode, uri: URI, position: Position): DefinitionResult? {
         val context = ResolutionContext(
             targetNode = targetNode,
             documentUri = uri,
@@ -242,18 +239,14 @@ class DefinitionResolver(
     /**
      * Create a SymbolNotFoundException with consistent parameters.
      */
-    private fun createSymbolNotFoundException(
-        symbol: String,
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ) = SymbolNotFoundException(symbol, uri, position.line, position.character)
+    private fun createSymbolNotFoundException(symbol: String, uri: URI, position: Position) =
+        SymbolNotFoundException(symbol, uri, position.line, position.character)
 
     /**
      * Validation context for different error scenarios.
      */
     private sealed class ValidationContext {
-        data class PositionContext(val position: com.github.albertocavalcante.groovyparser.ast.types.Position) :
-            ValidationContext()
+        data class PositionContext(val position: Position) : ValidationContext()
 
         data class NodeContext(val node: ASTNode) : ValidationContext()
     }
@@ -269,15 +262,12 @@ class DefinitionResolver(
             is ValidationContext.NodeContext -> handleNodeValidationError(errorType, uri, context.node)
         }
 
-    private fun handlePositionValidationError(
-        errorType: String,
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): Nothing = when (errorType) {
-        "invalidPosition" -> throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
-        "nodeNotFound" -> throw uri.nodeNotFoundAtPosition(position.line, position.character)
-        else -> throw createSymbolNotFoundException("unknown", uri, position)
-    }
+    private fun handlePositionValidationError(errorType: String, uri: URI, position: Position): Nothing =
+        when (errorType) {
+            "invalidPosition" -> throw uri.invalidPosition(position.line, position.character, "Negative coordinates")
+            "nodeNotFound" -> throw uri.nodeNotFoundAtPosition(position.line, position.character)
+            else -> throw createSymbolNotFoundException("unknown", uri, position)
+        }
 
     private fun handleNodeValidationError(errorType: String, uri: URI, node: ASTNode): Nothing = when (errorType) {
         "invalidDefinitionPosition" -> throw uri.invalidPosition(
@@ -289,7 +279,7 @@ class DefinitionResolver(
         else -> throw createSymbolNotFoundException(
             node.toString(),
             uri,
-            com.github.albertocavalcante.groovyparser.ast.types.Position(node.lineNumber, node.columnNumber),
+            Position(node.lineNumber, node.columnNumber),
         )
     }
 
@@ -297,11 +287,7 @@ class DefinitionResolver(
      * Find all targets at the given position for the specified target kinds.
      * Based on kotlin-lsp's getTargetsAtPosition pattern.
      */
-    fun findTargetsAt(
-        uri: URI,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-        targetKinds: Set<TargetKind>,
-    ): List<ASTNode> {
+    fun findTargetsAt(uri: URI, position: Position, targetKinds: Set<TargetKind>): List<ASTNode> {
         logger.debug("Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds")
 
         val targetNode = astVisitor.getNodeAt(uri, position)
@@ -332,10 +318,10 @@ class DefinitionResolver(
      * Check if a node represents a reference (not a declaration)
      */
     private fun ASTNode.isReference(): Boolean = when (this) {
-        is org.codehaus.groovy.ast.expr.VariableExpression -> true
-        is org.codehaus.groovy.ast.expr.MethodCallExpression -> true
-        is org.codehaus.groovy.ast.expr.ConstructorCallExpression -> true
-        is org.codehaus.groovy.ast.expr.PropertyExpression -> true
+        is VariableExpression -> true
+        is MethodCallExpression -> true
+        is ConstructorCallExpression -> true
+        is PropertyExpression -> true
         else -> false
     }
 

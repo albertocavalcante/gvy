@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -12,6 +13,7 @@ import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -21,7 +23,6 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -85,31 +86,6 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         }
     }
 
-    private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
-        val item = CallHierarchyItem()
-        item.uri = uri.toString()
-        // Set proper range from AST node
-        val nodeRange = node.toLspRange()
-        item.range = nodeRange
-        item.selectionRange = nodeRange
-
-        when (node) {
-            is MethodNode -> {
-                item.name = node.name
-                item.kind = SymbolKind.Method
-                item.detail = node.parameters?.joinToString(", ") { it.type.nameWithoutPackage + " " + it.name }
-
-                // Location logic would be strictly extracted here or use converters
-            }
-
-            is ClassNode -> {
-                item.name = node.nameWithoutPackage
-                item.kind = SymbolKind.Class
-            }
-        }
-        return item
-    }
-
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
         val uri = params.item.uri
         val position = params.item.selectionRange.start
@@ -162,8 +138,6 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
 
     fun outgoingCalls(params: CallHierarchyOutgoingCallsParams): List<CallHierarchyOutgoingCall> {
         val uri = URI.create(params.item.uri)
-        // We need to re-locate the method/symbol defined in 'item'
-        // Since we don't persist node pointers, we use the position to find it again
         val position = params.item.selectionRange.start.toGroovyPosition()
 
         val visitor = compilationService.getAstModel(uri) ?: return emptyList()
@@ -175,54 +149,79 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
 
         if (definition is MethodNode) {
             val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
-
-            // Use visitor pattern for efficient traversal of only this method's code
-            val callVisitor = object : CodeVisitorSupport() {
-                private fun addCall(callee: ASTNode, callRange: Range) {
-                    // Use a stable key for the callee.
-                    // TODO(#564): Include URI once cross-file resolution is supported.
-                    val calleeKey = "${callee.lineNumber}:${callee.columnNumber}"
-
-                    val existing = callsMap[calleeKey]
-                    if (existing != null) {
-                        existing.fromRanges.add(callRange)
-                    } else {
-                        val calleeItem = createCallHierarchyItem(callee, uri)
-                        callsMap[calleeKey] = CallHierarchyOutgoingCall(calleeItem, mutableListOf(callRange))
-                    }
-                }
-
-                override fun visitMethodCallExpression(call: MethodCallExpression) {
-                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
-                    val range = call.toLspRange()
-                    if (callee != null && range != null) {
-                        addCall(callee, range)
-                    }
-                    super.visitMethodCallExpression(call)
-                }
-
-                override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
-                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
-                    val range = call.toLspRange()
-                    if (callee != null && range != null) {
-                        addCall(callee, range)
-                    }
-                    super.visitStaticMethodCallExpression(call)
-                }
-
-                override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-                    val callee = call.resolveToDefinition(visitor, symbolTable, strict = false)
-                    val range = call.toLspRange()
-                    if (callee != null && range != null) {
-                        addCall(callee, range)
-                    }
-                    super.visitConstructorCallExpression(call)
-                }
-            }
+            val callVisitor = CallVisitor(visitor, symbolTable, uri, callsMap)
             definition.code?.visit(callVisitor)
             return callsMap.values.toList()
         }
 
         return emptyList()
+    }
+
+    private class CallVisitor(
+        private val astModel: GroovyAstModel,
+        private val symbolTable: SymbolTable,
+        private val uri: URI,
+        private val callsMap: MutableMap<String, CallHierarchyOutgoingCall>,
+    ) : CodeVisitorSupport() {
+
+        private fun addCall(call: Expression) {
+            val callee = call.resolveToDefinition(astModel, symbolTable, strict = false)
+            val range = call.toLspRange()
+            if (callee != null && range != null) {
+                // Use a stable key for the callee.
+                // TODO(#564): Include URI once cross-file resolution is supported.
+                val calleeKey = "${callee.lineNumber}:${callee.columnNumber}"
+
+                val existing = callsMap[calleeKey]
+                if (existing != null) {
+                    existing.fromRanges.add(range)
+                } else {
+                    val calleeItem = createCallHierarchyItem(callee, uri)
+                    callsMap[calleeKey] = CallHierarchyOutgoingCall(calleeItem, mutableListOf(range))
+                }
+            }
+        }
+
+        override fun visitMethodCallExpression(call: MethodCallExpression) {
+            addCall(call)
+            super.visitMethodCallExpression(call)
+        }
+
+        override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
+            addCall(call)
+            super.visitStaticMethodCallExpression(call)
+        }
+
+        override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
+            addCall(call)
+            super.visitConstructorCallExpression(call)
+        }
+    }
+
+    companion object {
+        private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
+            val item = CallHierarchyItem()
+            item.uri = uri.toString()
+            // Set proper range from AST node
+            val nodeRange = node.toLspRange()
+            item.range = nodeRange
+            item.selectionRange = nodeRange
+
+            when (node) {
+                is MethodNode -> {
+                    item.name = node.name
+                    item.kind = SymbolKind.Method
+                    item.detail = node.parameters?.joinToString(", ") { it.type.nameWithoutPackage + " " + it.name }
+
+                    // Location logic would be strictly extracted here or use converters
+                }
+
+                is ClassNode -> {
+                    item.name = node.nameWithoutPackage
+                    item.kind = SymbolKind.Class
+                }
+            }
+            return item
+        }
     }
 }

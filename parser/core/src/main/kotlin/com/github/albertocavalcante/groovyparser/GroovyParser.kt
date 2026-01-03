@@ -83,86 +83,79 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         try {
             val config = createCompilerConfiguration()
 
-            // Use .use to ensure GroovyClassLoader is properly closed (prevents resource leak)
             return GroovyClassLoader(Thread.currentThread().contextClassLoader).use { classLoader ->
                 val compilationUnit = GroovyCompilationUnit(config, null, classLoader)
-
-                val source = StringReaderSource(code, config)
                 val sourceUnit = SourceUnit(
                     "Script.groovy",
-                    source,
+                    StringReaderSource(code, config),
                     config,
                     classLoader,
                     compilationUnit.errorCollector,
                 )
                 compilationUnit.addSource(sourceUnit)
 
-                var hadCompilationError = false
-                try {
-                    compilationUnit.compile(Phases.CONVERSION)
-                } catch (e: CompilationFailedException) {
-                    logger.debug("Compilation failed: ${e.message}")
-                    hadCompilationError = true
-                    // In lenient mode, continue to extract whatever AST we can get
-                    if (!configuration.lenientMode) {
-                        collectProblems(compilationUnit.errorCollector, problems)
-                        return@use ParseResult(null, problems)
-                    }
+                val hadCompilationError = runCompilation(compilationUnit)
+                if (hadCompilationError && !configuration.lenientMode) {
+                    collectProblems(compilationUnit.errorCollector, problems)
+                    return@use ParseResult(null, problems)
                 }
 
-                // Collect problems from error collector
                 collectProblems(compilationUnit.errorCollector, problems)
-
-                // Extract AST
-                val ast = compilationUnit.ast
-                val moduleNode = ast?.modules?.firstOrNull()
-
-                when {
-                    moduleNode != null -> {
-                        try {
-                            // Pass source for comment extraction if enabled
-                            // Create new converter instance per call to ensure thread-safety
-                            val sourceForComments = if (configuration.attributeComments) code else null
-                            val unit = GroovyAstConverter().convert(moduleNode, sourceForComments)
-                            ParseResult(unit, problems)
-                        } catch (e: Exception) {
-                            // Conversion error - still return partial info in lenient mode
-                            logger.warn("AST conversion error: ${e.message}", e)
-                            problems.add(Problem.error("AST conversion error: ${e.message}"))
-                            if (configuration.lenientMode) {
-                                ParseResult(CompilationUnit(), problems)
-                            } else {
-                                ParseResult(null, problems)
-                            }
-                        }
-                    }
-                    problems.isEmpty() -> {
-                        // Empty source or script with no classes
-                        ParseResult(CompilationUnit(), problems)
-                    }
-                    configuration.lenientMode -> {
-                        // Return empty compilation unit with problems in lenient mode
-                        // (removed && !hadCompilationError to fix lenient mode behavior)
-                        ParseResult(CompilationUnit(), problems)
-                    }
-                    else -> {
-                        ParseResult(null, problems)
-                    }
-                }
+                extractCompilationUnit(compilationUnit, code, problems)
             }
         } catch (e: Exception) {
-            logger.error("Unexpected error during parsing", e)
-            problems.add(
-                Problem(
-                    message = "Internal error: ${e.message}",
-                    position = null,
-                    range = null,
-                    severity = ProblemSeverity.ERROR,
-                    cause = e,
-                ),
-            )
-            return ParseResult(null, problems)
+            return handleInternalError(e, problems)
         }
+    }
+
+    private fun runCompilation(compilationUnit: GroovyCompilationUnit): Boolean = try {
+        compilationUnit.compile(Phases.CONVERSION)
+        false
+    } catch (e: CompilationFailedException) {
+        logger.debug("Compilation failed: ${e.message}")
+        true
+    }
+
+    private fun extractCompilationUnit(
+        compilationUnit: GroovyCompilationUnit,
+        code: String,
+        problems: MutableList<Problem>,
+    ): ParseResult<CompilationUnit> {
+        val moduleNode = compilationUnit.ast?.modules?.firstOrNull()
+
+        return when {
+            moduleNode != null -> convertModuleNode(moduleNode, code, problems)
+            problems.isEmpty() || configuration.lenientMode -> ParseResult(CompilationUnit(), problems)
+            else -> ParseResult(null, problems)
+        }
+    }
+
+    private fun convertModuleNode(
+        moduleNode: org.codehaus.groovy.ast.ModuleNode,
+        code: String,
+        problems: MutableList<Problem>,
+    ): ParseResult<CompilationUnit> = try {
+        val sourceForComments = if (configuration.attributeComments) code else null
+        val unit = GroovyAstConverter().convert(moduleNode, sourceForComments)
+        ParseResult(unit, problems)
+    } catch (e: Exception) {
+        logger.warn("AST conversion error: ${e.message}", e)
+        problems.add(Problem.error("AST conversion error: ${e.message}"))
+        if (configuration.lenientMode) ParseResult(CompilationUnit(), problems) else ParseResult(null, problems)
+    }
+
+    private fun handleInternalError(e: Exception, problems: MutableList<Problem>): ParseResult<CompilationUnit> {
+        logger.error("Unexpected error during parsing", e)
+        problems.add(
+            Problem(
+                message = "Internal error: ${e.message}",
+                position = null,
+                range = null,
+                severity = ProblemSeverity.ERROR,
+                cause = e,
+            ),
+        )
+        return ParseResult(null, problems)
     }
 
     private fun createCompilerConfiguration(): CompilerConfiguration = CompilerConfiguration().apply {
@@ -175,53 +168,15 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
     private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList<Problem>) {
         if (errorCollector == null) return
 
-        // Collect errors
         errorCollector.errors?.forEach { error ->
             when (error) {
-                is SyntaxErrorMessage -> {
-                    val cause = error.cause
-                    if (cause is SyntaxException) {
-                        val range = createRange(cause)
-                        val position = range?.begin ?: if (cause.line > 0 && cause.startColumn > 0) {
-                            Position(cause.line, cause.startColumn)
-                        } else {
-                            null
-                        }
-                        problems.add(
-                            Problem(
-                                message = cause.message ?: "Syntax error",
-                                position = position,
-                                range = range,
-                                severity = ProblemSeverity.ERROR,
-                                cause = cause,
-                            ),
-                        )
-                    } else {
-                        problems.add(Problem.error(cause?.message ?: "Syntax error"))
-                    }
-                }
-                is ExceptionMessage -> {
-                    val cause = error.cause
-                    problems.add(
-                        Problem(
-                            message = cause?.message ?: "Compilation error",
-                            position = null,
-                            range = null,
-                            severity = ProblemSeverity.ERROR,
-                            cause = cause,
-                        ),
-                    )
-                }
-                is SimpleMessage -> {
-                    problems.add(Problem.error(error.message ?: "Error"))
-                }
-                else -> {
-                    problems.add(Problem.error(error.toString()))
-                }
+                is SyntaxErrorMessage -> handleSyntaxError(error.cause, problems)
+                is ExceptionMessage -> handleExceptionMessage(error.cause, problems)
+                is SimpleMessage -> problems.add(Problem.error(error.message ?: "Error"))
+                else -> problems.add(Problem.error(error.toString()))
             }
         }
 
-        // Collect warnings if configured
         if (configuration.collectWarnings) {
             errorCollector.warnings?.forEach { warning ->
                 if (warning is WarningMessage) {
@@ -229,6 +184,42 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
                 }
             }
         }
+    }
+
+    private fun handleSyntaxError(cause: Exception?, problems: MutableList<Problem>) {
+        if (cause !is SyntaxException) {
+            problems.add(Problem.error(cause?.message ?: "Syntax error"))
+            return
+        }
+
+        val range = createRange(cause)
+        val position = range?.begin ?: if (cause.line > 0 && cause.startColumn > 0) {
+            Position(cause.line, cause.startColumn)
+        } else {
+            null
+        }
+
+        problems.add(
+            Problem(
+                message = cause.message ?: "Syntax error",
+                position = position,
+                range = range,
+                severity = ProblemSeverity.ERROR,
+                cause = cause,
+            ),
+        )
+    }
+
+    private fun handleExceptionMessage(cause: Throwable?, problems: MutableList<Problem>) {
+        problems.add(
+            Problem(
+                message = cause?.message ?: "Compilation error",
+                position = null,
+                range = null,
+                severity = ProblemSeverity.ERROR,
+                cause = cause,
+            ),
+        )
     }
 
     /**

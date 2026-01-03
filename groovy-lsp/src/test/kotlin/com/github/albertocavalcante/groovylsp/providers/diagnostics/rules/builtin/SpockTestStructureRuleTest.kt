@@ -4,12 +4,8 @@ import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.RuleCo
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
-import org.eclipse.lsp4j.Diagnostic
 import org.junit.jupiter.api.Test
 import java.net.URI
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 

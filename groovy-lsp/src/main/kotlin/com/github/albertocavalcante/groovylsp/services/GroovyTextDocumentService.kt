@@ -32,6 +32,7 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -93,6 +94,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -344,8 +346,8 @@ class GroovyTextDocumentService(
                         )
 
                         is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
-                        is java.io.IOException -> logger.error("I/O error for: $uri", e)
-                        is kotlinx.coroutines.CancellationException -> {
+                        is IOException -> logger.error("I/O error for: $uri", e)
+                        is CancellationException -> {
                             logger.debug("Diagnostics job cancelled for: $uri")
                             throw e
                         }
@@ -426,17 +428,13 @@ class GroovyTextDocumentService(
         ensureAstPrepared(uri)
 
         val session = compilationService.getSession(uri)
-        if (session != null) {
-            session.features.hoverProvider.getHover(params)
-        } else {
-            Hover().apply {
-                contents = Either.forRight(
-                    MarkupContent().apply {
-                        kind = MarkupKind.MARKDOWN
-                        value = "_No information available (Not Compiled)_"
-                    },
-                )
-            }
+        session?.features?.hoverProvider?.getHover(params) ?: Hover().apply {
+            contents = Either.forRight(
+                MarkupContent().apply {
+                    kind = MarkupKind.MARKDOWN
+                    value = "_No information available (Not Compiled)_"
+                },
+            )
         }
     }
 
@@ -847,7 +845,7 @@ class GroovyTextDocumentService(
         return encoded
     }
 
-    private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
+    private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
             compilationService.compile(uri, content)
             compilationService.getSymbolStorage(uri)
@@ -857,7 +855,7 @@ class GroovyTextDocumentService(
      * Wait for any ongoing diagnostics job for the given URI to complete.
      * This is useful for testing to ensure compilation is done before making assertions.
      */
-    suspend fun awaitDiagnostics(uri: java.net.URI) {
+    suspend fun awaitDiagnostics(uri: URI) {
         diagnosticJobs[uri]?.join()
     }
 
@@ -889,5 +887,5 @@ class GroovyTextDocumentService(
 
 private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
     is Symbol.Variable -> isParameter
-    else -> true
+    is Symbol.Method, is Symbol.Field, is Symbol.Property, is Symbol.Class, is Symbol.Import -> true
 }

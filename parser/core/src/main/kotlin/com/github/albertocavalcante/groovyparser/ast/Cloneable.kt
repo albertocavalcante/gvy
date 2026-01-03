@@ -72,7 +72,7 @@ object NodeCloner {
      */
     // TODO(#587): Split clone into smaller helpers to reduce method length.
     //   See: https://github.com/albertocavalcante/gvy/issues/587
-    @Suppress("UNCHECKED_CAST")
+    @Suppress("UNCHECKED_CAST", "LongMethod", "CyclomaticComplexMethod")
     fun <T : Node> clone(node: T): T = when (node) {
         is CompilationUnit -> cloneCompilationUnit(node) as T
         is ClassDeclaration -> cloneClassDeclaration(node) as T
@@ -146,10 +146,10 @@ object NodeCloner {
         val cloned = CompilationUnit()
         node.packageDeclaration.ifPresent { cloned.setPackageDeclaration(clone(it)) }
         node.imports.forEach { cloned.addImport(clone(it)) }
-        node.types.forEach { cloned.addType(clone(it) as TypeDeclaration) }
+        node.types.forEach { cloned.addType(clone(it)) }
         cloned.range = cloneRange(node.range)
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
-        node.orphanComments.forEach { cloned.addOrphanComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
+        node.orphanComments.forEach { cloned.addOrphanComment(clone(it)) }
         return cloned
     }
 
@@ -167,7 +167,7 @@ object NodeCloner {
         node.constructors.forEach { cloned.addConstructor(clone(it)) }
         cloned.range = cloneRange(node.range)
         node.annotations.forEach { cloned.addAnnotation(clone(it)) }
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
         return cloned
     }
 
@@ -180,7 +180,7 @@ object NodeCloner {
         cloned.isFinal = node.isFinal
         cloned.range = cloneRange(node.range)
         node.annotations.forEach { cloned.addAnnotation(clone(it)) }
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
         return cloned
     }
 
@@ -191,7 +191,7 @@ object NodeCloner {
         cloned.hasInitializer = node.hasInitializer
         cloned.range = cloneRange(node.range)
         node.annotations.forEach { cloned.addAnnotation(clone(it)) }
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
         return cloned
     }
 
@@ -200,7 +200,7 @@ object NodeCloner {
         node.parameters.forEach { cloned.addParameter(clone(it)) }
         cloned.range = cloneRange(node.range)
         node.annotations.forEach { cloned.addAnnotation(clone(it)) }
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
         return cloned
     }
 
@@ -386,7 +386,7 @@ object NodeCloner {
     }
 
     private fun cloneMapExpr(node: MapExpr): MapExpr {
-        val cloned = MapExpr(node.entries.map { clone(it) as MapEntryExpr })
+        val cloned = MapExpr(node.entries.map { clone(it) })
         cloned.range = cloneRange(node.range)
         return cloned
     }
@@ -630,8 +630,8 @@ object NodeCloner {
         val cloned = EmptyExpr()
         cloned.range = cloneRange(node.range)
         node.annotations.forEach { cloned.addAnnotation(clone(it)) }
-        node.comment?.let { cloned.setComment(clone(it) as Comment) }
-        node.orphanComments.forEach { cloned.addOrphanComment(clone(it) as Comment) }
+        node.comment?.let { cloned.setComment(clone(it)) }
+        node.orphanComments.forEach { cloned.addOrphanComment(clone(it)) }
         return cloned
     }
 
