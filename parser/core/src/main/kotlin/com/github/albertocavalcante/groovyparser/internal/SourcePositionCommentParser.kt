@@ -26,6 +26,7 @@ internal class SourcePositionCommentParser(private val source: String) {
         private const val BLOCK_COMMENT_START_LENGTH = 2 // Length of "/*"
         private const val BLOCK_COMMENT_END_LENGTH = 2 // Length of "*/"
         private const val TRIPLE_QUOTE_LENGTH = 3 // Length of """ or '''
+        private const val ESCAPE_SEQUENCE_LENGTH = 2 // Length of "\X" escape sequences
     }
 
     /**
@@ -178,16 +179,16 @@ internal class SourcePositionCommentParser(private val source: String) {
             source[i + 1] == delimiter
 
         if (isTriple) {
-            i += BLOCK_COMMENT_START_LENGTH
+            i += TRIPLE_QUOTE_LENGTH - 1 // Already at first quote, skip to after third
             // Find closing triple quotes
-            while (i + BLOCK_COMMENT_START_LENGTH < source.length) {
+            while (i + TRIPLE_QUOTE_LENGTH <= source.length) {
                 if (source[i] == '\\' && i + 1 < source.length) {
-                    i += BLOCK_COMMENT_END_LENGTH // Skip escape sequence
+                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
                     continue
                 }
                 if (source[i] == delimiter &&
                     source[i + 1] == delimiter &&
-                    source[i + BLOCK_COMMENT_START_LENGTH] == delimiter
+                    source[i + 2] == delimiter
                 ) {
                     return i + TRIPLE_QUOTE_LENGTH
                 }
@@ -198,7 +199,7 @@ internal class SourcePositionCommentParser(private val source: String) {
             // Regular string
             while (i < source.length) {
                 if (source[i] == '\\' && i + 1 < source.length) {
-                    i += BLOCK_COMMENT_END_LENGTH // Skip escape sequence
+                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
                     continue
                 }
                 if (source[i] == delimiter) {

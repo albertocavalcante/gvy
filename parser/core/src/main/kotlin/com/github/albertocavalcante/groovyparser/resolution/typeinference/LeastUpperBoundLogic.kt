@@ -54,7 +54,8 @@ object LeastUpperBoundLogic {
     // Numeric precedence for promoteNumericTypes (different ranking system)
     private const val PRECEDENCE_BOOLEAN = 0
     private const val PRECEDENCE_BYTE = 1
-    private const val PRECEDENCE_SHORT = 2
+    private const val PRECEDENCE_CHAR = 2
+    private const val PRECEDENCE_SHORT = 2 // Same as char in promotion hierarchy
     private const val PRECEDENCE_INT = 3
     private const val PRECEDENCE_LONG = 4
     private const val PRECEDENCE_FLOAT = 5
@@ -379,7 +380,7 @@ object LeastUpperBoundLogic {
     private fun getNumericPrecedence(type: ResolvedPrimitiveType): Int = when (type) {
         ResolvedPrimitiveType.BYTE -> PRECEDENCE_BYTE
         ResolvedPrimitiveType.SHORT -> PRECEDENCE_SHORT
-        ResolvedPrimitiveType.CHAR -> PRECEDENCE_SHORT
+        ResolvedPrimitiveType.CHAR -> PRECEDENCE_CHAR
         ResolvedPrimitiveType.INT -> PRECEDENCE_INT
         ResolvedPrimitiveType.LONG -> PRECEDENCE_LONG
         ResolvedPrimitiveType.FLOAT -> PRECEDENCE_FLOAT
