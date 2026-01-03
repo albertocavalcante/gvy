@@ -119,7 +119,12 @@ class GroovyCompilationService(
         val classLoader = engineManager.getOrCreateClassLoader()
         val resourceName = className.replace('.', '/') + ".class"
         val resource = classLoader.getResource(resourceName) ?: return null
-        return resource.toURI()
+        return try {
+            resource.toURI()
+        } catch (e: Exception) {
+            logger.warn("Invalid classpath resource URI: $resource", e)
+            null
+        }
     }
 
     // ==========================================================================
