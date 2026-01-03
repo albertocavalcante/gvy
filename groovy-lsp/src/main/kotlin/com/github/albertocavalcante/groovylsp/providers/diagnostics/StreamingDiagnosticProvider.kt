@@ -17,7 +17,7 @@ import java.net.URI
 interface StreamingDiagnosticProvider {
     /**
      * Unique identifier for this provider.
-     * Used in configuration (denylist/allowlist) and logging.
+     * Used in configuration (disabled/enabled providers) and logging.
      */
     val id: String
 

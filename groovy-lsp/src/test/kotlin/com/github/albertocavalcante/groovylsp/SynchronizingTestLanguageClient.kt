@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp
 
+import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
+import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import org.eclipse.lsp4j.MessageActionItem
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.ProgressParams
@@ -7,7 +9,6 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkspaceFolder
-import org.eclipse.lsp4j.services.LanguageClient
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -22,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Uses per-URI queues to support concurrent tests without race conditions.
  */
-class SynchronizingTestLanguageClient : LanguageClient {
+class SynchronizingTestLanguageClient : GroovyLanguageClient {
 
     // Per-URI diagnostics queues for thread-safe, order-preserving storage
     private val diagnosticsQueues = ConcurrentHashMap<String, LinkedBlockingQueue<PublishDiagnosticsParams>>()
@@ -36,6 +37,9 @@ class SynchronizingTestLanguageClient : LanguageClient {
     // Synchronization primitives (legacy, kept for simple await methods)
     private var diagnosticsLatch = CountDownLatch(1)
     private var messagesLatch = CountDownLatch(1)
+
+    private val statusRef = AtomicReference<StatusNotification?>()
+    private var statusLatch = CountDownLatch(1)
 
     // Timeout for operations (30 seconds to avoid flakiness in CI/parallel runs)
     private val timeoutMs = 30000L
@@ -74,6 +78,13 @@ class SynchronizingTestLanguageClient : LanguageClient {
         messagesRef.get().add(messageParams)
         messagesQueue.offer(messageParams)
         messagesLatch.countDown()
+    }
+
+    override fun groovyStatus(status: StatusNotification) {
+        statusRef.set(status)
+        if (status.quiescent) {
+            statusLatch.countDown()
+        }
     }
 
     override fun showMessageRequest(requestParams: ShowMessageRequestParams): CompletableFuture<MessageActionItem> =
@@ -153,6 +164,23 @@ class SynchronizingTestLanguageClient : LanguageClient {
     }
 
     /**
+     * Wait for the server to reach a quiescent (idle) state.
+     * This ensures background tasks like indexing or metadata loading are complete.
+     */
+    fun awaitQuiescentStatus(timeoutMs: Long = this.timeoutMs) {
+        // If already quiescent, return immediately
+        if (statusRef.get()?.quiescent == true) return
+
+        if (!statusLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            val lastStatus = statusRef.get()
+            throw TimeoutException(
+                "Server did not become quiescent within ${timeoutMs}ms. " +
+                    "Last status: health=${lastStatus?.health}, message=${lastStatus?.message}",
+            )
+        }
+    }
+
+    /**
      * Reset the client for reuse in another test.
      * This clears all stored data and resets synchronization primitives.
      */
@@ -160,8 +188,10 @@ class SynchronizingTestLanguageClient : LanguageClient {
         diagnosticsRef.set(null)
         diagnosticsQueues.clear()
         messagesRef.set(mutableListOf())
+        statusRef.set(null)
         diagnosticsLatch = CountDownLatch(1)
         messagesLatch = CountDownLatch(1)
+        statusLatch = CountDownLatch(1)
         messagesQueue.clear()
     }
 

@@ -5,19 +5,18 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
-import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
-import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
@@ -56,7 +55,6 @@ import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
-import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -124,30 +122,29 @@ class GroovyTextDocumentService(
      * Factory method for creating DiagnosticsService with configured providers.
      *
      * NOTE: This factory pattern allows for easy testing and future extension.
-     * TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
      */
     private fun createDiagnosticsService(): DiagnosticsService {
         val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
-            // Add CodeNarc if enabled in configuration
-            if (serverConfiguration.codeNarcEnabled) {
-                val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
-                val codeNarcAdapter = DiagnosticProviderAdapter(
-                    delegate = codeNarcProvider,
-                    id = "codenarc",
-                    enabledByDefault = true,
-                )
-                add(codeNarcAdapter)
-            }
+            val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
+            val codeNarcAdapter = DiagnosticProviderAdapter(
+                delegate = codeNarcProvider,
+                id = "codenarc",
+                enabledByDefault = serverConfiguration.codeNarcEnabled,
+            )
+            add(codeNarcAdapter)
 
-            // TODO: Add more providers here as implemented
-            // add(UnusedImportDiagnosticProvider())
+            val customRulesProvider = CustomRulesProvider(
+                rules = BuiltinRules.getAllRules(),
+                compilationService = compilationService,
+                ruleConfig = serverConfiguration.diagnosticRuleConfig,
+            )
+            add(customRulesProvider)
         }
 
-        // TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
-        val config = DiagnosticConfig()
+        val config = serverConfiguration.diagnosticConfig
 
         return DiagnosticsService(providers, config)
     }
@@ -246,17 +243,16 @@ class GroovyTextDocumentService(
         )
     }
 
-    private fun List<Diagnostic>.containsErrors(): Boolean = any { it.severity == DiagnosticSeverity.Error }
-
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
         compilationService.ensureCompiled(uri)?.let { return it }
 
         // NOTE: Heuristic / tradeoff:
         // The language client can send definition/references requests immediately after didOpen/didChange.
-        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
-        // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
-        // to make these requests deterministic and avoid flaky e2e behavior.
-        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
+        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation
+        // hasn't started yet (so ensureCompiled returns null). We compile on-demand using the in-memory
+        // document text to make these requests deterministic and avoid flaky e2e behavior.
+        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
+        //   so ensureCompiled never returns null.
         //   See: https://github.com/albertocavalcante/gvy/issues/564
         val content = documentProvider.get(uri) ?: return null
         return compilationService.compileAsync(coroutineScope, uri, content).await()
@@ -319,22 +315,23 @@ class GroovyTextDocumentService(
 
                     ensureActive() // Ensure job wasn't cancelled before publishing
 
+                    val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+                        "parser",
+                        enabledByDefault = true,
+                    )
+                    val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+
                     // Publish compilation diagnostics first to keep UX responsive.
                     // NOTE: Tradeoff (See #564):
-                    // This can result in two diagnostics publications (compile first, then CodeNarc merge),
-                    // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
-                    publishDiagnostics(uri.toString(), result.diagnostics)
+                    // This can result in two diagnostics publications (compile first, then provider merge),
+                    // but avoids blocking syntax feedback on slow lint initialization.
+                    publishDiagnostics(uri.toString(), parserDiagnostics)
 
-                    // Skip CodeNarc when disabled or when compilation already has errors.
-                    if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
-                        return@runCatching
-                    }
-
-                    val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                    val allDiagnostics = result.diagnostics + codenarcDiagnostics
+                    val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val allDiagnostics = parserDiagnostics + extraDiagnostics
 
                     ensureActive()
-                    if (codenarcDiagnostics.isNotEmpty()) {
+                    if (extraDiagnostics.isNotEmpty()) {
                         publishDiagnostics(uri.toString(), allDiagnostics)
                     }
 
@@ -371,8 +368,13 @@ class GroovyTextDocumentService(
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         // Compile the document and return diagnostics (does not publish them)
         val result = compilationService.compile(uri, content)
-        val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return result.diagnostics + codenarcDiagnostics
+        val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+            "parser",
+            enabledByDefault = true,
+        )
+        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+        val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+        return parserDiagnostics + extraDiagnostics
     }
 
     fun refreshOpenDocuments() {
@@ -391,11 +393,12 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            // Try to get contextual completions from AST
             val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
 
-            val contextualCompletions = CompletionProvider.getContextualCompletions(
+            // Delegate all completion logic (Groovy, Jenkins, Spock) to CompletionProvider
+            // CompletionProvider now uses JenkinsContextDetector internally for context-aware filtering
+            val completions = CompletionProvider.getContextualCompletions(
                 params.textDocument.uri,
                 params.position.line,
                 params.position.character,
@@ -403,23 +406,8 @@ class GroovyTextDocumentService(
                 content,
             )
 
-            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
-            val jenkinsCompletions = if (isJenkinsFile) {
-                val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
-                if (metadata != null) {
-                    JenkinsStepCompletionProvider.getStepCompletions(metadata) +
-                        JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
-                } else {
-                    emptyList()
-                }
-            } else {
-                emptyList()
-            }
-
-            val allCompletions = GroovyCompletions.basic() + contextualCompletions + jenkinsCompletions
-
-            logger.debug("Returning ${allCompletions.size} completions")
-            Either.forLeft(allCompletions)
+            logger.debug("Returning ${completions.size} completions")
+            Either.forLeft(completions)
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =

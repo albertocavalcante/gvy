@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -19,6 +20,7 @@ import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
@@ -66,6 +68,8 @@ class ProjectStartupManager(
 
     var dependencyManager: DependencyManager? = null
         private set
+
+    private var jenkinsInitJob: Job? = null
 
     /**
      * Registers file watchers if the client supports it.
@@ -208,7 +212,7 @@ class ProjectStartupManager(
         compilationService.workspaceManager.initializeJenkinsWorkspace(config, jenkinsPluginManager)
 
         // Asynchronously download and register plugins
-        coroutineScope.launch(Dispatchers.IO) {
+        jenkinsInitJob = coroutineScope.launch(Dispatchers.IO) {
             try {
                 logger.info("Starting Jenkins plugin metadata initialization")
                 jenkinsMetadataService.initialize()
@@ -225,9 +229,23 @@ class ProjectStartupManager(
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
         logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
+        if (config.javaHome != null) {
+            logger.info("Custom JAVA_HOME configured: ${config.javaHome}")
+        }
+
+        val javaHomePath = config.javaHome?.let { Paths.get(it) }
+
+        // Re-create build tools with configuration (specifically Gradle needs javaHome)
+        val configuredBuildTools = availableBuildTools.map { tool ->
+            if (tool is GradleBuildTool) {
+                GradleBuildTool(javaHome = javaHomePath)
+            } else {
+                tool
+            }
+        }
 
         val newBuildToolManager = BuildToolManager(
-            buildTools = availableBuildTools,
+            buildTools = configuredBuildTools,
             gradleBuildStrategy = config.gradleBuildStrategy,
         )
         buildToolManager = newBuildToolManager
@@ -311,7 +329,10 @@ class ProjectStartupManager(
             },
         )
         // Signal warning state but still quiescent (ready for requests, but degraded)
-        onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        coroutineScope.launch(indexingDispatcher) {
+            jenkinsInitJob?.join()
+            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        }
     }
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
@@ -341,8 +362,11 @@ class ProjectStartupManager(
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             logger.debug("No workspace sources to index")
-            // No files to index, signal ready
-            onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            // No files to index, signal ready after making sure Jenkins init is done
+            coroutineScope.launch(indexingDispatcher) {
+                jenkinsInitJob?.join()
+                onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            }
             return
         }
 
@@ -373,6 +397,10 @@ class ProjectStartupManager(
                 }
                 indexingProgressReporter.complete("✅ Indexed $total files")
                 logger.info("Workspace indexing complete: $total files")
+
+                // Ensure Jenkins initialization is also complete before signaling ready
+                jenkinsInitJob?.join()
+
                 // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total)
             } catch (e: Exception) {
@@ -384,7 +412,17 @@ class ProjectStartupManager(
         }
     }
 
-    private fun getWorkspaceRoot(params: InitializeParams): Path? {
+    /**
+     * Resolves the workspace root directory from the initialization parameters.
+     *
+     * It prioritizes the modern [InitializeParams.workspaceFolders] API, falling back
+     * to the deprecated [InitializeParams.rootUri] and [InitializeParams.rootPath]
+     * if no workspace folders are provided.
+     *
+     * @param params The initialization parameters from the client.
+     * @return The resolved [Path] to the workspace root, or null if it cannot be determined.
+     */
+    fun getWorkspaceRoot(params: InitializeParams): Path? {
         val workspaceFolders = params.workspaceFolders
         if (!workspaceFolders.isNullOrEmpty()) {
             return parseUri(workspaceFolders.first().uri, "workspace folder URI")

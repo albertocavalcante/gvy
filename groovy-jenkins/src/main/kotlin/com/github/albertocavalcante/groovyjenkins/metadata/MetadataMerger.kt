@@ -210,12 +210,34 @@ object MetadataMerger {
             )
         }
 
+        val mergedOptions = bundled.declarativeOptions.mapValues { (optionName, option) ->
+            val mergedParams = option.parameters.mapValues { (paramName, param) ->
+                MergedParameter(
+                    name = paramName,
+                    type = param.type,
+                    defaultValue = param.default,
+                    description = param.documentation,
+                    required = param.required,
+                    validValues = null,
+                    examples = emptyList(),
+                )
+            }
+
+            MergedDeclarativeOption(
+                name = option.name.ifEmpty { optionName },
+                plugin = option.plugin,
+                parameters = mergedParams,
+                documentation = option.documentation,
+            )
+        }
+
         return MergedJenkinsMetadata(
             jenkinsVersion = bundled.jenkinsVersion ?: "unknown",
             steps = mergedSteps,
             globalVariables = mergedGlobalVars,
             sections = enrichment.sections,
             directives = enrichment.directives,
+            declarativeOptions = mergedOptions,
         )
     }
 }

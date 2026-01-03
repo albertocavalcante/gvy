@@ -15,7 +15,7 @@ import java.net.URI
 /**
  * Diagnostic provider for unused imports.
  *
- * NOTE: Performance concern - kotlin-lsp denylists unused import inspection as "too slow"
+ * NOTE: Performance concern - kotlin-lsp disables unused import inspection as "too slow"
  * This provider is disabled by default (opt-in via configuration).
  *
  * TODO: Implement full type usage analysis using TypeCollector

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
@@ -81,8 +82,9 @@ object CompletionProvider {
             val ast1 = result1.ast
             val astModel1 = result1.astModel
 
-            // If simple insertion failed and it was a clean insertion, try adding 'def'
-            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.
+            // If simple insertion failed and it was a clean insertion, try adding 'def'.
+            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
+            // but "class Foo { BrazilWorldCup2026 }" is not.
             if (isClean && !result1.isSuccessful) {
                 val content2 = insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
@@ -206,8 +208,38 @@ object CompletionProvider {
         }
 
         // Try to detect member access (e.g., "myList.")
-        val nodeAtCursor = ctx.astModel.getNodeAt(ctx.uri, ctx.line, ctx.character)
+        val nodeAtCursor = findNodeAtOrBefore(ctx.astModel, ctx.uri, ctx.content, ctx.line, ctx.character)
         val completionContext = detectCompletionContext(nodeAtCursor, ctx.astModel, context)
+        // Use text-based context detection (more robust during editing) instead of AST traversal
+        val jenkinsContext = if (isJenkinsFile) {
+            JenkinsContextDetector.detectFromDocument(
+                ctx.content.lines(),
+                ctx.line,
+                ctx.character,
+            )
+        } else {
+            null
+        }
+
+        val metadata = if (isJenkinsFile) {
+            ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+        } else {
+            null
+        }
+
+        val isInOptionsBlock = jenkinsContext?.isOptionsContext == true
+
+        if (isInOptionsBlock) {
+            return completions {
+                if (metadata != null) {
+                    addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+                    val callName = findEnclosingMethodCall(nodeAtCursor, ctx.astModel)?.methodAsString
+                    if (callName == null || metadata.declarativeOptions[callName] == null) {
+                        addJenkinsDeclarativeOptions(metadata)
+                    }
+                }
+            }
+        }
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
@@ -220,6 +252,21 @@ object CompletionProvider {
             addImports(context.imports)
             addKeywords()
 
+            // Add basic Groovy snippet completions (println, print, etc.)
+            GroovyCompletions.basic().forEach(::add)
+
+            // Add Jenkins-specific completions for non-options blocks
+            if (metadata != null) {
+                // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
+                addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+
+                // Suggest pipeline steps (sh, echo, git, etc.)
+                addJenkinsStepCompletions(metadata)
+
+                // Suggest global variables from vars/ directory and plugins
+                addJenkinsGlobalVariables(metadata, ctx.compilationService)
+            }
+
             // Handle contextual completions
             when (completionContext) {
                 is ContextType.MemberAccess -> {
@@ -227,17 +274,14 @@ object CompletionProvider {
                     val qualifierName = completionContext.qualifierName
 
                     // Check if this is a Jenkins global variable with properties (env, currentBuild)
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            val globalVar = findJenkinsGlobalVariable(qualifierName, rawType, metadata)
+                    if (metadata != null) {
+                        val globalVar = findJenkinsGlobalVariable(qualifierName, rawType, metadata)
 
-                            if (globalVar != null && globalVar.properties.isNotEmpty()) {
-                                // Add Jenkins-specific property completions
-                                logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
-                                addJenkinsPropertyCompletions(globalVar)
-                                return@completions
-                            }
+                        if (globalVar != null && globalVar.properties.isNotEmpty()) {
+                            // Add Jenkins-specific property completions
+                            logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
+                            addJenkinsPropertyCompletions(globalVar)
+                            return@completions
                         }
                     }
 
@@ -255,17 +299,7 @@ object CompletionProvider {
                 }
 
                 null -> {
-                    /* No special context */
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                            addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
-
-                            // Suggest global variables from vars/ directory and plugins
-                            addJenkinsGlobalVariables(metadata, ctx.compilationService)
-                        }
-                    }
+                    /* No additional special context handling needed */
                 }
             }
         }
@@ -393,6 +427,16 @@ object CompletionProvider {
         }
     }
 
+    private fun CompletionsBuilder.addJenkinsDeclarativeOptions(metadata: MergedJenkinsMetadata) {
+        val optionCompletions = JenkinsStepCompletionProvider.getDeclarativeOptionCompletions(metadata)
+        optionCompletions.forEach(::add)
+    }
+
+    private fun CompletionsBuilder.addJenkinsStepCompletions(metadata: MergedJenkinsMetadata) {
+        val stepCompletions = JenkinsStepCompletionProvider.getStepCompletions(metadata)
+        stepCompletions.forEach(::add)
+    }
+
     /**
      * Add property completions for Jenkins global variables (env, currentBuild).
      */
@@ -444,6 +488,39 @@ object CompletionProvider {
                 return current
             }
             current = astModel.getParent(current)
+        }
+        return null
+    }
+
+    private fun findNodeAtOrBefore(
+        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
+        uri: java.net.URI,
+        content: String,
+        line: Int,
+        character: Int,
+    ): org.codehaus.groovy.ast.ASTNode? {
+        val lines = content.split('\n')
+        if (lines.isEmpty()) return null
+
+        val clampedLine = line.coerceIn(0, lines.lastIndex)
+        val clampedChar = character.coerceAtLeast(0)
+        astModel.getNodeAt(uri, clampedLine, clampedChar)?.let { return it }
+
+        var lineIndex = clampedLine
+        var charIndex = clampedChar - 1
+        while (lineIndex >= 0) {
+            val lineText = lines.getOrNull(lineIndex).orEmpty()
+            if (charIndex > lineText.lastIndex) {
+                charIndex = lineText.lastIndex
+            }
+            while (charIndex >= 0 && lineText[charIndex].isWhitespace()) {
+                charIndex--
+            }
+            if (charIndex >= 0) {
+                astModel.getNodeAt(uri, lineIndex, charIndex)?.let { return it }
+            }
+            lineIndex--
+            charIndex = Int.MAX_VALUE
         }
         return null
     }
