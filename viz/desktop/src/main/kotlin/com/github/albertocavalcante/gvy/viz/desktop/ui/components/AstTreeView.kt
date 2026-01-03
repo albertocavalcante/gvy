@@ -100,7 +100,7 @@ fun AstTreeView(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-        Box(modifier = Modifier.weight(1f).padding(top = 4.dp)) {
+        Box(modifier = Modifier.weight(1f).padding(top = 4.dp).fillMaxSize()) {
             if (astTree == null) {
                 Text(
                     text = "No AST to display.",

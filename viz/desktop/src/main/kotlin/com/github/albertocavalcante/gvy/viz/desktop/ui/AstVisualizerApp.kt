@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -77,7 +78,7 @@ fun AstVisualizerApp() {
             TopBar(
                 viewModel = viewModel,
                 onLoadFile = {
-                    loadFile()?.let { file ->
+                    loadFile(viewModel.lastDirectory)?.let { file ->
                         viewModel.loadFile(file)
                     }
                 },
@@ -209,9 +210,8 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                // Path display
                 Text(
-                    text = if (viewModel.inputPath.isEmpty()) "Untitled" else viewModel.inputPath,
+                    text = if (viewModel.inputPath.isEmpty()) "Untitled" else File(viewModel.inputPath).name,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -222,12 +222,12 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
             titleContentColor = MaterialTheme.colorScheme.onSurface,
         ),
         actions = {
-            // Path input / Search
+            // Path input - flexible width
             OutlinedTextField(
                 value = viewModel.inputPath,
                 onValueChange = { viewModel.updateInputPath(it) },
-                modifier = Modifier.width(400.dp).padding(vertical = 4.dp),
-                placeholder = { Text("Enter file path...") },
+                modifier = Modifier.widthIn(max = 600.dp).weight(1f, fill = false).padding(vertical = 4.dp),
+                placeholder = { Text("Enter file path...", style = MaterialTheme.typography.bodySmall) },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall,
                 colors = TextFieldDefaults.colors(
@@ -333,8 +333,8 @@ private fun ParserOption(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-private fun loadFile(): File? {
-    val chooser = JFileChooser()
+private fun loadFile(initialDirectory: String): File? {
+    val chooser = JFileChooser(initialDirectory)
     chooser.fileFilter = FileNameExtensionFilter(
         "Groovy Files (*.groovy, *.gvy, *.gradle)",
         "groovy",

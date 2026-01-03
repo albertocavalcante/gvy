@@ -15,10 +15,12 @@ import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.net.URI
+import java.util.prefs.Preferences
 
 /**
  * Supported parser types.
@@ -44,6 +46,8 @@ data class CodeError(
  */
 class AstViewModel {
 
+    private val prefs = Preferences.userNodeForPackage(AstViewModel::class.java)
+
     // Source code
     var sourceCode by mutableStateOf("")
         private set
@@ -59,11 +63,25 @@ class AstViewModel {
     var selectedNode by mutableStateOf<AstNodeDto?>(null)
         private set
 
+    // Last used directory for file picker
+    var lastDirectory by mutableStateOf(prefs.get("lastDirectory", System.getProperty("user.home")))
+        private set
+
     /**
      * Select a node in the tree.
      */
     fun selectNode(node: AstNodeDto?) {
         selectedNode = node
+    }
+
+    /**
+     * Update the last used directory.
+     */
+    fun updateLastDirectory(path: String) {
+        val file = File(path)
+        val dir = if (file.isDirectory) file.absolutePath else file.parent ?: lastDirectory
+        lastDirectory = dir
+        prefs.put("lastDirectory", dir)
     }
 
     /**
@@ -116,7 +134,7 @@ class AstViewModel {
         private set
 
     // JSON serializer
-    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    @OptIn(ExperimentalSerializationApi::class)
     private val json = Json {
         prettyPrint = true
         prettyPrintIndent = "  "
@@ -132,6 +150,7 @@ class AstViewModel {
             sourceCode = file.readText()
             currentFilePath = file.absolutePath
             inputPath = file.absolutePath
+            updateLastDirectory(file.absolutePath)
             parseCode()
         } catch (e: Exception) {
             parseErrors = listOf(CodeError("Failed to load file: ${e.message}"))
