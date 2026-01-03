@@ -540,6 +540,85 @@
       },
       "documentation": "Bind credentials to environment variables for the enclosed steps. Credentials are masked in logs."
     },
+    "usernamePassword": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Username with password credential"
+        },
+        "usernameVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for username"
+        },
+        "passwordVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for password"
+        }
+      },
+      "documentation": "Bind username and password from credentials to environment variables."
+    },
+    "string": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Secret text credential"
+        },
+        "variable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the secret"
+        }
+      },
+      "documentation": "Bind secret text credential to an environment variable."
+    },
+    "file": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the Secret file credential"
+        },
+        "variable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the file path"
+        }
+      },
+      "documentation": "Bind secret file credential to an environment variable containing file path."
+    },
+    "sshUserPrivateKey": {
+      "plugin": "credentials-binding",
+      "parameters": {
+        "credentialsId": {
+          "type": "String",
+          "required": true,
+          "documentation": "ID of the SSH User Private Key credential"
+        },
+        "keyFileVariable": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of environment variable for the private key file path"
+        },
+        "passphraseVariable": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of environment variable for the passphrase (optional)"
+        },
+        "usernameVariable": {
+          "type": "String",
+          "required": false,
+          "documentation": "Name of environment variable for the username (optional)"
+        }
+      },
+      "documentation": "Bind SSH private key credential to environment variables."
+    },
     "dir": {
       "plugin": "workflow-basic-steps",
       "positionalParams": [
