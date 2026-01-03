@@ -5,16 +5,16 @@ package com.github.albertocavalcante.groovyparser.resolution.types
  *
  * Groovy supports all Java primitive types: boolean, char, byte, short, int, long, float, double.
  */
-enum class ResolvedPrimitiveType(private val boxedName: String, private val numericPrecedence: Int) : ResolvedType {
+enum class ResolvedPrimitiveType(private val boxedName: String) : ResolvedType {
 
-    BOOLEAN("java.lang.Boolean", 0),
-    CHAR("java.lang.Character", 1),
-    BYTE("java.lang.Byte", 2),
-    SHORT("java.lang.Short", 3),
-    INT("java.lang.Integer", 4),
-    LONG("java.lang.Long", 5),
-    FLOAT("java.lang.Float", 6),
-    DOUBLE("java.lang.Double", 7),
+    BOOLEAN("java.lang.Boolean"),
+    CHAR("java.lang.Character"),
+    BYTE("java.lang.Byte"),
+    SHORT("java.lang.Short"),
+    INT("java.lang.Integer"),
+    LONG("java.lang.Long"),
+    FLOAT("java.lang.Float"),
+    DOUBLE("java.lang.Double"),
     ;
 
     override fun describe(): String = name.lowercase()
@@ -80,9 +80,7 @@ enum class ResolvedPrimitiveType(private val boxedName: String, private val nume
          * @return The promoted type
          */
         fun promoteNumericTypes(left: ResolvedPrimitiveType, right: ResolvedPrimitiveType): ResolvedPrimitiveType {
-            if (left == BOOLEAN || right == BOOLEAN) {
-                throw IllegalArgumentException("Cannot promote boolean types")
-            }
+            require(left != BOOLEAN && right != BOOLEAN) { "Cannot promote boolean types" }
 
             return when {
                 left == DOUBLE || right == DOUBLE -> DOUBLE

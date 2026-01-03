@@ -25,7 +25,6 @@ object LeastUpperBoundLogic {
     // Groovy type constants
     private const val JAVA_LANG_STRING = "java.lang.String"
     private const val JAVA_LANG_OBJECT = "java.lang.Object"
-    private const val JAVA_LANG_NUMBER = "java.lang.Number"
     private const val JAVA_MATH_BIG_INTEGER = "java.math.BigInteger"
     private const val JAVA_MATH_BIG_DECIMAL = "java.math.BigDecimal"
     private const val GROOVY_LANG_GSTRING = "groovy.lang.GString"
@@ -341,9 +340,7 @@ object LeastUpperBoundLogic {
      */
     private fun promoteNumericTypes(primitives: List<ResolvedPrimitiveType>): ResolvedPrimitiveType {
         // Boolean can't be promoted
-        if (primitives.any { it == ResolvedPrimitiveType.BOOLEAN }) {
-            throw IllegalArgumentException("Cannot compute LUB involving boolean")
-        }
+        require(primitives.none { it == ResolvedPrimitiveType.BOOLEAN }) { "Cannot compute LUB involving boolean" }
 
         // Find the widest type
         return primitives.maxByOrNull { getNumericPrecedence(it) }

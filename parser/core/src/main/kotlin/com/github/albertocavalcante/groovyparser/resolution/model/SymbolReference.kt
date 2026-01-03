@@ -13,8 +13,7 @@ class SymbolReference<T : ResolvedDeclaration> private constructor(private val d
      * Returns the resolved declaration.
      * @throws IllegalStateException if the symbol is not resolved
      */
-    fun getDeclaration(): T = declaration
-        ?: throw IllegalStateException("Symbol is not solved")
+    fun getDeclaration(): T = checkNotNull(declaration) { "Symbol is not solved" }
 
     /**
      * Returns the resolved declaration or null if not resolved.
