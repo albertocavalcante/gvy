@@ -62,9 +62,10 @@ class AstRequestHandlerTest {
 
         assertNotNull(result)
         assertEquals("core", result.parser)
-        assertEquals(
-            "{\"dtoKind\":\"core\",\"id\":\"node-1\",\"type\":\"CompilationUnit\",\"range\":null,\"children\":[],\"properties\":{}}",
-            result.ast,
-        )
+        val expectedJson =
+            "{\"dtoKind\":\"core\",\"id\":\"node-1\",\"type\":\"CompilationUnit\",\"range\":null,\"children\":[],\"properties\":{}}"
+        val expectedElement = Json.parseToJsonElement(expectedJson)
+        val actualElement = Json.parseToJsonElement(result.ast)
+        assertEquals(expectedElement, actualElement)
     }
 }

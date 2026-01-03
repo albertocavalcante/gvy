@@ -480,7 +480,7 @@
             "maven"
           ],
           "default": "auto",
-          "description": "Strategy for resolving dependencies in Gradle projects."
+          "description": "Build tool strategy for dependency resolution."
         }
       }
     },

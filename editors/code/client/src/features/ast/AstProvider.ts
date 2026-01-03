@@ -97,7 +97,7 @@ class AstProvider {
 
         // Update the content based on view state changes
         this._panel.onDidChangeViewState(
-            e => {
+            _ => {
                 if (this._panel.visible) {
                     this.update(this._parserOverride || undefined);
                 }
@@ -159,7 +159,13 @@ class AstProvider {
     }
 
     private highlightRange(range: { startLine: number; startColumn: number; endLine: number; endColumn: number } | undefined) {
-        if (!range) return;
+        if (
+            !range ||
+            range.startLine < 1 ||
+            range.startColumn < 1 ||
+            range.endLine < 1 ||
+            range.endColumn < 1
+        ) return;
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
@@ -203,7 +209,7 @@ class AstProvider {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
                 <title>Groovy AST</title>
                 <link href="${styleUri}" rel="stylesheet">
                 <link href="${codiconsUri}" rel="stylesheet">
