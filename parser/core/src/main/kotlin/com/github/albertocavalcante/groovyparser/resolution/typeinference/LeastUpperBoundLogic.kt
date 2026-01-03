@@ -122,7 +122,18 @@ object LeastUpperBoundLogic {
 
     private fun computeFallbackLub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType {
         if (types.all { it.isPrimitive() }) {
-            return promoteNumericTypes(types.map { it.asPrimitive() })
+            val primitives = types.map { it.asPrimitive() }
+            val hasBoolean = primitives.any { it == ResolvedPrimitiveType.BOOLEAN }
+
+            if (hasBoolean) {
+                return if (primitives.all { it == ResolvedPrimitiveType.BOOLEAN }) {
+                    ResolvedPrimitiveType.BOOLEAN
+                } else {
+                    getObjectType(typeSolver)
+                }
+            }
+
+            return promoteNumericTypes(primitives)
         }
 
         val referenceTypes = types.filter { it.isReferenceType() }
@@ -337,17 +348,25 @@ object LeastUpperBoundLogic {
         val maxRank = ranks.filterNotNull().maxOrNull() ?: return null
 
         // For primitives, return the primitive type directly
+        // For primitives, return the primitive type directly if all can widen to it
         if (allPrimitives) {
-            return when (maxRank) {
-                1 -> ResolvedPrimitiveType.BYTE
-                2 -> ResolvedPrimitiveType.CHAR
-                3 -> ResolvedPrimitiveType.SHORT
-                4 -> ResolvedPrimitiveType.INT
-                5 -> ResolvedPrimitiveType.LONG
-                8 -> ResolvedPrimitiveType.FLOAT
-                9 -> ResolvedPrimitiveType.DOUBLE
+            val maxType = when (maxRank) {
+                RANK_BYTE -> ResolvedPrimitiveType.BYTE
+                RANK_CHAR -> ResolvedPrimitiveType.CHAR
+                RANK_SHORT -> ResolvedPrimitiveType.SHORT
+                RANK_INT -> ResolvedPrimitiveType.INT
+                RANK_LONG -> ResolvedPrimitiveType.LONG
+                RANK_FLOAT -> ResolvedPrimitiveType.FLOAT
+                RANK_DOUBLE -> ResolvedPrimitiveType.DOUBLE
                 else -> null
+            } ?: return null
+
+            if (types.all { maxType.isAssignableBy(it) }) {
+                return maxType
             }
+
+            // Otherwise return null to fallback to computeFallbackLub/promoteNumericTypes
+            return null
         }
 
         // For BigInteger/BigDecimal (ranks 6, 7), return reference types
@@ -366,8 +385,22 @@ object LeastUpperBoundLogic {
         require(primitives.none { it == ResolvedPrimitiveType.BOOLEAN }) { "Cannot compute LUB involving boolean" }
 
         // Find the widest type
-        return primitives.maxByOrNull { getNumericPrecedence(it) }
-            ?: ResolvedPrimitiveType.INT
+        val widest = primitives.maxByOrNull { getNumericPrecedence(it) } ?: ResolvedPrimitiveType.INT
+
+        // If we have mixed types that don't widen to each other (like byte and char),
+        // we must promote to at least INT.
+        if (primitives.size > 1 && widest in listOf(
+                ResolvedPrimitiveType.BYTE,
+                ResolvedPrimitiveType.SHORT,
+                ResolvedPrimitiveType.CHAR,
+            )
+        ) {
+            if (primitives.any { !widest.isAssignableBy(it) }) {
+                return ResolvedPrimitiveType.INT
+            }
+        }
+
+        return widest
     }
 
     private fun getNumericPrecedence(type: ResolvedPrimitiveType): Int = when (type) {

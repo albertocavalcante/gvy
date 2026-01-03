@@ -109,12 +109,31 @@ class LeastUpperBoundLogicTest {
     }
 
     @Test
-    fun `lub with boolean throws for numeric promotion`() {
-        assertThrows<IllegalArgumentException> {
-            LeastUpperBoundLogic.lub(
-                listOf(ResolvedPrimitiveType.BOOLEAN, ResolvedPrimitiveType.INT),
-                typeSolver,
-            )
-        }
+    fun `lub of booleans is boolean`() {
+        val result = LeastUpperBoundLogic.lub(
+            listOf(ResolvedPrimitiveType.BOOLEAN, ResolvedPrimitiveType.BOOLEAN),
+            typeSolver,
+        )
+        assertEquals(ResolvedPrimitiveType.BOOLEAN, result)
+    }
+
+    @Test
+    fun `lub of boolean and numeric is object`() {
+        val result = LeastUpperBoundLogic.lub(
+            listOf(ResolvedPrimitiveType.BOOLEAN, ResolvedPrimitiveType.INT),
+            typeSolver,
+        )
+        // Mixed boolean and numeric should fallback to Object
+        assertTrue(result.isReferenceType())
+        assertEquals("java.lang.Object", (result as ResolvedReferenceType).declaration.qualifiedName)
+    }
+
+    @Test
+    fun `lub of char and byte is int`() {
+        val result = LeastUpperBoundLogic.lub(
+            listOf(ResolvedPrimitiveType.CHAR, ResolvedPrimitiveType.BYTE),
+            typeSolver,
+        )
+        assertEquals(ResolvedPrimitiveType.INT, result)
     }
 }
