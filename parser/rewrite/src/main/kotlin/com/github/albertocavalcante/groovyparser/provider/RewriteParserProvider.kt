@@ -3,8 +3,6 @@ package com.github.albertocavalcante.groovyparser.provider
 import com.github.albertocavalcante.groovyparser.api.ParseUnit
 import com.github.albertocavalcante.groovyparser.api.ParserCapabilities
 import com.github.albertocavalcante.groovyparser.api.ParserProvider
-import org.openrewrite.ExecutionContext
-import org.openrewrite.InMemoryExecutionContext
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.tree.G
 import java.nio.file.Path
