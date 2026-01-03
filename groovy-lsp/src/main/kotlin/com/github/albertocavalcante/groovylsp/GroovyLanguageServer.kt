@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionP
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
+import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
@@ -19,6 +20,7 @@ import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import com.github.albertocavalcante.groovylsp.services.Health
+import com.github.albertocavalcante.groovylsp.services.IndexExportService
 import com.github.albertocavalcante.groovylsp.services.ProjectStartupManager
 import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
@@ -29,6 +31,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.InitializeParams
@@ -99,6 +102,7 @@ class GroovyLanguageServer(
             compilationService,
             buildToolManagerProvider = { startupManager.buildToolManager },
         )
+    private val indexExportService = IndexExportService { startupManager.buildToolManager }
 
     // State
     private var savedInitParams: InitializeParams? = null
@@ -243,6 +247,14 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> = testRequestDelegate.runTest(params)
+
+    @JsonRequest("groovy/exportIndex")
+    fun exportIndex(params: ExportIndexParams): CompletableFuture<String> = CompletableFuture.supplyAsync({
+        val rootPath = savedInitParams?.let { startupManager.getWorkspaceRoot(it) }
+            ?: throw IllegalStateException("No workspace root found")
+
+        indexExportService.exportIndex(params, rootPath)
+    }, dispatcher.asExecutor())
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)

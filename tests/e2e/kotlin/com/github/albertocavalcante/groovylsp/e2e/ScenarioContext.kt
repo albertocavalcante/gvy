@@ -103,7 +103,7 @@ data class ScenarioContext(
             val javaObject = variableNode.toJavaObject()
             val document = JsonPath.using(jsonPathConfig).parse(javaObject)
             val value = try {
-                document.read<Any?>("$." + jsonPath)
+                document.read<Any?>("$.$jsonPath")
             } catch (ex: PathNotFoundException) {
                 throw IllegalArgumentException("Path '.$jsonPath' not found in variable '$variableName'", ex)
             }
@@ -205,16 +205,16 @@ data class ScenarioContext(
     }
 
     private fun JsonExpectation.interpolate(context: ScenarioContext): JsonExpectation = JsonExpectation(
-        type = type,
-        value = context.interpolateNode(value),
-        values = values.map { context.interpolateNode(it) ?: JsonNull },
+        type = this.type,
+        value = context.interpolateNode(this.value),
+        values = this.values.map { context.interpolateNode(it) ?: JsonNull },
     )
 }
 
 data class ScenarioState(var initializedResult: InitializeResult? = null)
 
 class ScenarioWorkspace(val rootDir: java.nio.file.Path) {
-    val rootUri: String? = rootDir.toUri().toString()
+    val rootUri: String = rootDir.toUri().toString()
 
     fun resolveUri(relative: String): String = rootDir.resolve(relative).normalize().toUri().toString()
 
@@ -267,17 +267,18 @@ object JsonExpectationEvaluator {
         if (expected == null || expected is JsonNull) return true
         if (actual == null || actual is JsonNull) return false
 
-        return when {
-            expected is JsonPrimitive && actual is JsonPrimitive -> actual == expected
-            expected is JsonObject && actual is JsonObject -> {
-                expected.entries.all { (key, value) ->
+        return when (expected) {
+            is JsonPrimitive -> actual is JsonPrimitive && actual == expected
+            is JsonObject -> {
+                actual is JsonObject && expected.entries.all { (key, value) ->
                     actual.containsKey(key) && structurallyContains(actual[key], value)
                 }
             }
 
-            expected is JsonArray && actual is JsonArray -> {
-                // All elements in expected must be structurally contained in some element of actual
-                expected.all { exp -> actual.any { act -> structurallyContains(act, exp) } }
+            is JsonArray -> {
+                actual is JsonArray &&
+                    // All elements in expected must be structurally contained in some element of actual
+                    expected.all { exp -> actual.any { act -> structurallyContains(act, exp) } }
             }
 
             else -> false
@@ -308,7 +309,6 @@ object JsonExpectationEvaluator {
             is JsonArray -> actual.size == size
             is JsonPrimitive -> if (actual.isString) actual.content.length == size else false
             is JsonObject -> actual.size == size
-            else -> false
         }
     }
 

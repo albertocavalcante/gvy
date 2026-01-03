@@ -32,6 +32,9 @@ class JenkinsBundledCompletionTest {
         }
         serverHandle!!.server.initialize(initParams).get()
         serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+        // Wait for server to be ready and quiescent (background tasks finished)
+        serverHandle!!.client.awaitQuiescentStatus()
     }
 
     @AfterEach

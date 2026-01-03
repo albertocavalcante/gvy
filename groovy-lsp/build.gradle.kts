@@ -109,6 +109,9 @@ dependencies {
     implementation(project(":groovy-testing"))
     implementation(project(":groovy-junit"))
     implementation(project(":markdown"))
+    implementation(project(":indexer:core"))
+    implementation(project(":indexer:scip"))
+    implementation(project(":indexer:lsif"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
