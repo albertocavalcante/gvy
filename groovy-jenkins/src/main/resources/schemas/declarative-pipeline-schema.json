@@ -139,6 +139,16 @@
       "completionCategories": ["step"]
     },
     {
+      "name": "notBuilt",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "unsuccessful",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
       "name": "cleanup",
       "allowedIn": ["post"],
       "completionCategories": ["step"]

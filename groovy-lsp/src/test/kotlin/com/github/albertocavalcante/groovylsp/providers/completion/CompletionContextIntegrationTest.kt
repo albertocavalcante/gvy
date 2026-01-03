@@ -214,4 +214,48 @@ class CompletionContextIntegrationTest {
         assertTrue(context.isDeclarativePipeline, "Should detect declarative pipeline")
         assertFalse(context.isScriptedPipeline, "Should not be scripted")
     }
+
+    // =====================================================================
+    // Comment and Inline Block Tests
+    // =====================================================================
+
+    @Test
+    fun `blocks in comments should be ignored`() {
+        val lines = listOf(
+            "pipeline {",
+            "    // options {",
+            "    stages {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 3, column = 8)
+
+        assertFalse(context.isOptionsContext, "Should ignore options block in comment")
+        assertEquals(listOf("pipeline", "stages"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `blocks after inline comments should be ignored`() {
+        val lines = listOf(
+            "pipeline { // stages {",
+            "    ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 1, column = 4)
+
+        assertEquals(listOf("pipeline"), context.enclosingBlocks, "Should ignore blocks after //")
+    }
+
+    @Test
+    fun `multiple blocks on same line should be detected`() {
+        val lines = listOf(
+            "pipeline { stages { stage('Test') { steps {",
+            "    ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 1, column = 4)
+
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "steps"),
+            context.enclosingBlocks,
+            "Should detect all blocks on the same line",
+        )
+    }
 }

@@ -135,15 +135,21 @@ object JenkinsContextDetector {
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = lines[i]
+            val cleanLine = stripComments(line)
 
-            addBlockOpenings(line, blockStack)
-            addPostConditionBlocks(line, blockStack)
+            addBlockOpenings(cleanLine, blockStack)
+            addPostConditionBlocks(cleanLine, blockStack)
 
-            braceDepth += line.count { it == '{' } - line.count { it == '}' }
+            braceDepth += cleanLine.count { it == '{' } - cleanLine.count { it == '}' }
             trimBlockStackToDepth(blockStack, braceDepth)
         }
 
         return blockStack.toList()
+    }
+
+    private fun stripComments(line: String): String {
+        val commentIndex = line.indexOf("//")
+        return if (commentIndex != -1) line.substring(0, commentIndex) else line
     }
 
     /**
