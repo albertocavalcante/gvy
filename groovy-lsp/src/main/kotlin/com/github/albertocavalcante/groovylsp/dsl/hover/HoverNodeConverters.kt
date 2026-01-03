@@ -21,6 +21,7 @@ import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MapEntryExpression
 import org.codehaus.groovy.ast.expr.MapExpression
@@ -31,6 +32,7 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import java.lang.reflect.Modifier
 
 /**
  * Extension functions for formatting specific AST node types
@@ -416,7 +418,7 @@ private fun MethodCallExpression.displayMethodName(): String =
 
 private fun MethodCallExpression.displayReceiver(): String = when {
     isImplicitThis -> "this"
-    else -> objectExpression?.text?.takeUnless { it.isNullOrBlank() } ?: "this"
+    else -> objectExpression?.text?.takeUnless { it.isBlank() } ?: "this"
 }
 
 private fun MethodCallExpression.displayCallOperator(): String = when {
@@ -426,8 +428,7 @@ private fun MethodCallExpression.displayCallOperator(): String = when {
 }
 
 private fun MethodCallExpression.displayArguments(): String {
-    val expression = arguments
-    val values = when (expression) {
+    val values = when (val expression = arguments) {
         is ArgumentListExpression -> expression.expressions.map { it.displayArgument() }
         is TupleExpression -> expression.expressions.map { it.displayArgument() }
         is MapExpression -> expression.mapEntryExpressions.map { it.displayNamedArgument() }
@@ -437,7 +438,7 @@ private fun MethodCallExpression.displayArguments(): String {
     return values.filter { it.isNotBlank() }.joinToString(", ")
 }
 
-private fun org.codehaus.groovy.ast.expr.Expression.displayArgument(): String = when (this) {
+private fun Expression.displayArgument(): String = when (this) {
     is ConstantExpression -> text
     is GStringExpression -> text
     is VariableExpression -> name
@@ -482,12 +483,12 @@ private fun ASTNode.modifiersString(): String = buildString {
     }
 
     val parts = mutableListOf<String>()
-    if (java.lang.reflect.Modifier.isPublic(modifiers)) parts += "public"
-    if (java.lang.reflect.Modifier.isPrivate(modifiers)) parts += "private"
-    if (java.lang.reflect.Modifier.isProtected(modifiers)) parts += "protected"
-    if (java.lang.reflect.Modifier.isStatic(modifiers)) parts += "static"
-    if (java.lang.reflect.Modifier.isFinal(modifiers)) parts += "final"
-    if (java.lang.reflect.Modifier.isAbstract(modifiers)) parts += "abstract"
+    if (Modifier.isPublic(modifiers)) parts += "public"
+    if (Modifier.isPrivate(modifiers)) parts += "private"
+    if (Modifier.isProtected(modifiers)) parts += "protected"
+    if (Modifier.isStatic(modifiers)) parts += "static"
+    if (Modifier.isFinal(modifiers)) parts += "final"
+    if (Modifier.isAbstract(modifiers)) parts += "abstract"
 
     append(parts.joinToString(" "))
 }

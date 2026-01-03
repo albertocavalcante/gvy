@@ -26,6 +26,10 @@ object DeclarativePipelineSchema {
         POST_CONDITION,
     }
 
+    val schemaVersion: String get() = schema.schemaVersion
+    val sourcePluginVersion: String? get() = schema.sourcePlugin?.version
+    val jenkinsBaseline: String? get() = schema.sourcePlugin?.jenkinsBaseline
+
     fun getCompletionCategories(blockName: String?): Set<CompletionCategory> =
         blockIndex[blockName]?.completionCategories?.toSet().orEmpty()
 
@@ -42,14 +46,23 @@ object DeclarativePipelineSchema {
         ) { "Declarative pipeline schema resource not found" }
 
         val text = resource.readText()
-        json.decodeFromString(Schema.serializer(), text)
+        json.decodeFromString<Schema>(text)
     } catch (cause: Exception) {
         logger.error("Failed to parse declarative pipeline schema", cause)
         throw IllegalStateException("Invalid declarative pipeline schema", cause)
     }
 
     @Serializable
-    private data class Schema(val sections: List<Block> = emptyList(), val directives: List<Block> = emptyList())
+    private data class Schema(
+        val schemaVersion: String = "0.0.0",
+        val sourcePlugin: PluginInfo? = null,
+        val generatedAt: String? = null,
+        val sections: List<Block> = emptyList(),
+        val directives: List<Block> = emptyList(),
+    )
+
+    @Serializable
+    private data class PluginInfo(val artifactId: String, val version: String, val jenkinsBaseline: String? = null)
 
     @Serializable
     private data class Block(

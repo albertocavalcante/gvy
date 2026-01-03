@@ -9,6 +9,8 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
 import java.lang.reflect.Modifier
+import java.lang.reflect.ParameterizedType
+import java.lang.reflect.Type
 
 /**
  * A resolved class declaration backed by Java reflection.
@@ -23,7 +25,7 @@ class ReflectionClassDeclaration(private val clazz: Class<*>, private val typeSo
     override val superClass: ResolvedReferenceType?
         get() {
             val superType = clazz.genericSuperclass ?: return null
-            if (superType == Object::class.java) {
+            if (superType == Any::class.java) {
                 return null
             }
             return convertType(superType) as? ResolvedReferenceType
@@ -59,11 +61,11 @@ class ReflectionClassDeclaration(private val clazz: Class<*>, private val typeSo
         ReflectionTypeParameterDeclaration(it, this, typeSolver)
     }
 
-    private fun convertType(type: java.lang.reflect.Type): ResolvedType? {
+    private fun convertType(type: Type): ResolvedType? {
         if (type is Class<*>) {
             return createReferenceType(type)
         }
-        if (type is java.lang.reflect.ParameterizedType) {
+        if (type is ParameterizedType) {
             val rawType = type.rawType as? Class<*> ?: return null
             val rawRef = createReferenceType(rawType)
 

@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Discovers test classes and methods across all registered test frameworks.
@@ -43,13 +46,13 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
         for (uri in groovyFiles) {
             // Get parsed result for this file - use getValidParseResult to handle stale Script nodes
-            val parseResult: com.github.albertocavalcante.groovyparser.api.ParseResult =
+            val parseResult: ParseResult =
                 compilationService.getValidParseResult(uri) ?: run {
                     // File not in cache - compile it on demand
                     // This can happen when workspace is indexed but files aren't opened in editor yet
                     logger.info("File not cached, compiling on demand: {}", uri)
                     val content = try {
-                        java.nio.file.Files.readString(java.nio.file.Path.of(uri))
+                        Files.readString(Path.of(uri))
                     } catch (e: Exception) {
                         logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
                         return@run null

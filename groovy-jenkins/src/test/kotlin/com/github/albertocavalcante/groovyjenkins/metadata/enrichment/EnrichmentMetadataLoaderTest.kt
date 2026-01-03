@@ -150,13 +150,13 @@ class EnrichmentMetadataLoaderTest {
         val resultProperty = currentBuildEnrichment.properties["result"]
         assertNotNull(resultProperty)
         assertEquals("String", resultProperty.type)
-        assertTrue(resultProperty.description?.contains("SUCCESS") == true, "Should mention SUCCESS")
+        assertTrue(resultProperty.description.contains("SUCCESS"), "Should mention SUCCESS")
         assertEquals(false, resultProperty.readOnly)
 
         val numberProperty = currentBuildEnrichment.properties["number"]
         assertNotNull(numberProperty)
         assertEquals("int", numberProperty.type)
-        assertTrue(numberProperty.description?.contains("Build number") == true)
+        assertTrue(numberProperty.description.contains("Build number"))
         assertEquals(true, numberProperty.readOnly)
     }
 

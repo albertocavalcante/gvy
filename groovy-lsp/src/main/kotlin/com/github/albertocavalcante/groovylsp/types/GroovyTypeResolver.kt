@@ -11,6 +11,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
@@ -85,9 +86,11 @@ class GroovyTypeResolver(
                 candidate.toLspLocation(context.astModel)
             } else {
                 logger.info(
-                    "No class match found for ${classNode.name}, available: ${context.moduleNode.classes.map {
-                        it.name
-                    }}",
+                    "No class match found for ${classNode.name}, available: ${
+                        context.moduleNode.classes.map {
+                            it.name
+                        }
+                    }",
                 )
                 findExternalClassLocation(classNode)
             }
@@ -97,8 +100,7 @@ class GroovyTypeResolver(
     @Suppress("DEPRECATION") // Groovy's DYNAMIC_TYPE is deprecated in newer APIs but still required here
     private suspend fun resolveVariableType(variable: VariableExpression, context: CompilationContext): ClassNode? {
         // Follow IntelliJ pattern: Variable -> originType -> resolved type
-        val accessedVariable = variable.accessedVariable
-        val resolvedType = when (accessedVariable) {
+        val resolvedType = when (val accessedVariable = variable.accessedVariable) {
             is Variable -> accessedVariable.originType ?: accessedVariable.type
             else -> variable.type
         }
@@ -202,7 +204,7 @@ class GroovyTypeResolver(
         // Simple compatibility check - can be enhanced with argument type checking
         val argumentsSize = call.arguments?.let { args ->
             when (args) {
-                is org.codehaus.groovy.ast.expr.ArgumentListExpression -> args.expressions.size
+                is ArgumentListExpression -> args.expressions.size
                 else -> 1
             }
         } ?: 0

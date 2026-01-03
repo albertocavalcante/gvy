@@ -35,6 +35,23 @@ class DeclarativePipelineSchemaTest {
     }
 
     @Test
+    fun `schema exposes version information`() {
+        assertEquals("1.0.0", schema.schemaVersion)
+        assertEquals("2.2214.v00573e73ddf1", schema.sourcePluginVersion)
+        assertEquals("2.479", schema.jenkinsBaseline)
+    }
+
+    @Test
+    fun `when block contains added conditions`() {
+        val instructions = schema.getInnerInstructions("when")
+        assertTrue(instructions.contains("equals"))
+        assertTrue(instructions.contains("triggeredBy"))
+        assertTrue(instructions.contains("isRestartedRun"))
+        assertTrue(instructions.contains("beforeInput"))
+        assertTrue(instructions.contains("beforeOptions"))
+    }
+
+    @Test
     fun `unknown block returns empty categories`() {
         assertTrue(schema.getCompletionCategories("not-a-block").isEmpty())
     }
