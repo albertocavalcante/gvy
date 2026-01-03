@@ -326,9 +326,10 @@ class SymbolIndexingServiceTest {
             ast = moduleNode,
             astModel = astModel,
             diagnostics = emptyList(),
-            isSuccessful = true,
             symbolTable = mockk(relaxed = true),
             tokenIndex = mockk(relaxed = true),
+            compilationUnit = mockk(relaxed = true),
+            sourceUnit = mockk(relaxed = true),
         )
     }
 }
