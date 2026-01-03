@@ -215,12 +215,15 @@ class GroovyParserTest {
         }
 
     private fun verifyTaskResult(unit: CompilationUnit?, expectedName: String, expectedComment: String) {
-        unit?.let {
-            assertThat(it.types).hasSize(1)
-            assertThat(it.types[0].name).isEqualTo(expectedName)
-            it.types[0].comment?.let { comment ->
-                assertThat(comment.content).contains(expectedComment)
-            }
+        assertThat(unit)
+            .describedAs("Compilation unit for $expectedName should not be null")
+            .isNotNull()
+
+        val nonNullUnit = unit!!
+        assertThat(nonNullUnit.types).hasSize(1)
+        assertThat(nonNullUnit.types[0].name).isEqualTo(expectedName)
+        nonNullUnit.types[0].comment?.let { comment ->
+            assertThat(comment.content).contains(expectedComment)
         }
     }
 }

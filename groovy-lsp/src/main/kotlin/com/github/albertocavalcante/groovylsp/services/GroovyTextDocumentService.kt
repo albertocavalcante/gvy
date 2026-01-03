@@ -887,5 +887,5 @@ class GroovyTextDocumentService(
 
 private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
     is Symbol.Variable -> isParameter
-    else -> true
+    is Symbol.Method, is Symbol.Field, is Symbol.Property, is Symbol.Class, is Symbol.Import -> true
 }

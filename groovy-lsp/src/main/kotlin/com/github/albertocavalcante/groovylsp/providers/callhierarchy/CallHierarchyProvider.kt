@@ -86,31 +86,6 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         }
     }
 
-    private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
-        val item = CallHierarchyItem()
-        item.uri = uri.toString()
-        // Set proper range from AST node
-        val nodeRange = node.toLspRange()
-        item.range = nodeRange
-        item.selectionRange = nodeRange
-
-        when (node) {
-            is MethodNode -> {
-                item.name = node.name
-                item.kind = SymbolKind.Method
-                item.detail = node.parameters?.joinToString(", ") { it.type.nameWithoutPackage + " " + it.name }
-
-                // Location logic would be strictly extracted here or use converters
-            }
-
-            is ClassNode -> {
-                item.name = node.nameWithoutPackage
-                item.kind = SymbolKind.Class
-            }
-        }
-        return item
-    }
-
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
         val uri = params.item.uri
         val position = params.item.selectionRange.start
@@ -182,7 +157,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         return emptyList()
     }
 
-    private inner class CallVisitor(
+    private class CallVisitor(
         private val astModel: GroovyAstModel,
         private val symbolTable: SymbolTable,
         private val uri: URI,
@@ -220,6 +195,33 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
             addCall(call)
             super.visitConstructorCallExpression(call)
+        }
+    }
+
+    companion object {
+        private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
+            val item = CallHierarchyItem()
+            item.uri = uri.toString()
+            // Set proper range from AST node
+            val nodeRange = node.toLspRange()
+            item.range = nodeRange
+            item.selectionRange = nodeRange
+
+            when (node) {
+                is MethodNode -> {
+                    item.name = node.name
+                    item.kind = SymbolKind.Method
+                    item.detail = node.parameters?.joinToString(", ") { it.type.nameWithoutPackage + " " + it.name }
+
+                    // Location logic would be strictly extracted here or use converters
+                }
+
+                is ClassNode -> {
+                    item.name = node.nameWithoutPackage
+                    item.kind = SymbolKind.Class
+                }
+            }
+            return item
         }
     }
 }
