@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import com.github.albertocavalcante.groovyparser.api.ParseUnit as ApiParseUnit
+import com.github.albertocavalcante.groovyparser.api.model.Range as ApiRange
 import com.github.albertocavalcante.groovyparser.api.model.Severity as ApiSeverity
 
 /**
@@ -21,10 +22,7 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
 
     override val diagnostics: List<Diagnostic> = parseUnit.diagnostics().map { apiDiag ->
         Diagnostic(
-            Range(
-                Position(apiDiag.range.start.line - 1, apiDiag.range.start.column - 1),
-                Position(apiDiag.range.end.line - 1, apiDiag.range.end.column - 1),
-            ),
+            apiDiag.range.toLspRange(),
             apiDiag.message,
             when (apiDiag.severity) {
                 ApiSeverity.ERROR -> DiagnosticSeverity.Error
@@ -49,10 +47,7 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
             kind = nodeInfo.kind.toUnifiedKind(),
             type = null, // OpenRewrite doesn't expose type info in initial implementation
             documentation = null, // Could extract from Space/comments in future
-            range = Range(
-                Position(nodeInfo.range.start.line - 1, nodeInfo.range.start.column - 1),
-                Position(nodeInfo.range.end.line - 1, nodeInfo.range.end.column - 1),
-            ),
+            range = nodeInfo.range.toLspRange(),
         )
     }
 
@@ -60,14 +55,8 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
         UnifiedSymbol(
             name = symbol.name,
             kind = symbol.kind.toUnifiedKind(),
-            range = Range(
-                Position(symbol.range.start.line - 1, symbol.range.start.column - 1),
-                Position(symbol.range.end.line - 1, symbol.range.end.column - 1),
-            ),
-            selectionRange = Range(
-                Position(symbol.range.start.line - 1, symbol.range.start.column - 1),
-                Position(symbol.range.end.line - 1, symbol.range.end.column - 1),
-            ),
+            range = symbol.range.toLspRange(),
+            selectionRange = symbol.range.toLspRange(),
         )
     }
 }
@@ -135,3 +124,8 @@ private fun SymbolKind.toUnifiedKind(): UnifiedNodeKind = when (this) {
     SymbolKind.CONSTANT -> UnifiedNodeKind.FIELD
     else -> UnifiedNodeKind.OTHER
 }
+
+private fun ApiRange.toLspRange(): Range = Range(
+    Position(start.line - 1, start.column - 1),
+    Position(end.line - 1, end.column - 1),
+)

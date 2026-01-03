@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.printer.DotPrinter
+import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
@@ -152,7 +153,9 @@ class AstViewModel {
     }
 
     private fun parseRewriteAst() {
-        val converter = RewriteAstConverter()
+        // Create fresh provider for each parse to avoid state issues
+        val parserProvider = RewriteParserProvider()
+        val converter = RewriteAstConverter(parserProvider)
         val result = converter.parse(sourceCode)
 
         if (result == null) {

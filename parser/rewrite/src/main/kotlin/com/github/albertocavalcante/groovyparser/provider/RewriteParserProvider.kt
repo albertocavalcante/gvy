@@ -25,9 +25,6 @@ class RewriteParserProvider : ParserProvider {
 
     private val parser: GroovyParser = GroovyParser.builder().build()
 
-    @Suppress("unused")
-    private val executionContext: ExecutionContext = InMemoryExecutionContext { it.printStackTrace() }
-
     override val name: String = "rewrite"
 
     override val capabilities: ParserCapabilities = ParserCapabilities(
@@ -39,8 +36,11 @@ class RewriteParserProvider : ParserProvider {
 
     @Suppress("TooGenericExceptionCaught")
     override fun parse(source: String, path: Path?): ParseUnit = try {
-        val sourceFiles = parser.parse(source).collect(Collectors.toList())
-        val compilationUnit = sourceFiles.filterIsInstance<G.CompilationUnit>().firstOrNull()
+        // TODO(#626): Consider ThreadLocal<GroovyParser> if contention becomes an issue
+        val compilationUnit = synchronized(parser) {
+            val sourceFiles = parser.parse(source).collect(Collectors.toList())
+            sourceFiles.filterIsInstance<G.CompilationUnit>().firstOrNull()
+        }
         RewriteParseUnit(source, path, compilationUnit)
     } catch (e: Exception) {
         // OpenRewrite throws various exceptions for parse errors

@@ -158,6 +158,7 @@ private class SymbolExtractorVisitor {
                 val kind = when (classDecl.kind) {
                     J.ClassDeclaration.Kind.Type.Interface -> SymbolKind.INTERFACE
                     J.ClassDeclaration.Kind.Type.Enum -> SymbolKind.ENUM
+                    J.ClassDeclaration.Kind.Type.Annotation -> SymbolKind.INTERFACE
                     else -> SymbolKind.CLASS
                 }
                 symbols.add(
@@ -165,7 +166,7 @@ private class SymbolExtractorVisitor {
                         name = classDecl.simpleName,
                         kind = kind,
                         range = range,
-                        containerName = cu.packageDeclaration?.expression?.toString()?.removeSuffix("."),
+                        containerName = cu.packageDeclaration?.expression?.toString()?.trim()?.removeSuffix("."),
                     ),
                 )
 

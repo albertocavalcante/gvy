@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":parser:api"))
     implementation(project(":parser:core"))
     implementation(project(":parser:native"))
+    implementation(project(":parser:rewrite"))
 
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
