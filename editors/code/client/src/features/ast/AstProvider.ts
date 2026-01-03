@@ -73,7 +73,18 @@ class AstProvider {
         vscode.workspace.onDidSaveTextDocument(
             document => {
                 if (this._panel.visible && vscode.window.activeTextEditor?.document === document) {
-                    this.update(); // Refresh with current state
+                    this.update(this._parserOverride || undefined); // Refresh with current state
+                }
+            },
+            null,
+            this._disposables
+        );
+
+        // Auto-update when switching active editor
+        vscode.window.onDidChangeActiveTextEditor(
+            editor => {
+                if (this._panel.visible && editor && editor.document.languageId === 'groovy') {
+                    this.update(this._parserOverride || undefined);
                 }
             },
             null,
@@ -88,7 +99,7 @@ class AstProvider {
         this._panel.onDidChangeViewState(
             e => {
                 if (this._panel.visible) {
-                    this.update();
+                    this.update(this._parserOverride || undefined);
                 }
             },
             null,
@@ -96,11 +107,24 @@ class AstProvider {
         );
     }
 
-    public async update(parserOverride?: string) {
+    private _parserOverride: 'core' | 'native' | null = null;
+    private _parserSelection: 'core' | 'native' = 'core';
+
+    public async update(parserOverride?: 'core' | 'native') {
         const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.document.languageId !== 'groovy') {
-            this._panel.webview.postMessage({ type: 'error', message: 'No active Groovy editor.' });
+        if (!editor) {
+            this._panel.webview.postMessage({ type: 'error', message: 'No active editor' });
             return;
+        }
+
+        if (editor.document.languageId !== 'groovy') {
+            this._panel.webview.postMessage({ type: 'error', message: 'Active editor is not a Groovy file' });
+            return;
+        }
+
+        if (parserOverride) {
+            this._parserOverride = parserOverride;
+            this._parserSelection = parserOverride;
         }
 
         const client = getClient();
@@ -111,11 +135,15 @@ class AstProvider {
 
         try {
             // Request AST from LSP
-            const parser = parserOverride || 'core'; // Default to core if not specified
+            const parser = this._parserSelection;
             const result = await client.sendRequest('groovy/ast', {
                 uri: editor.document.uri.toString(),
                 parser: parser
             }) as { ast: string; parser: string };
+
+            if (!result || typeof result.ast !== 'string') {
+                throw new Error('Invalid LSP response');
+            }
 
             const ast = JSON.parse(result.ast);
             this._panel.webview.postMessage({
@@ -149,12 +177,8 @@ class AstProvider {
         // Clean up our resources
         this._panel.dispose();
 
-        while (this._disposables.length) {
-            const x = this._disposables.pop();
-            if (x) {
-                x.dispose();
-            }
-        }
+        vscode.Disposable.from(...this._disposables).dispose();
+        this._disposables = [];
     }
 
     private _getHtmlForWebview(): string {
@@ -168,6 +192,9 @@ class AstProvider {
         const stylePathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'resources', 'ast-view', 'style.css');
         const styleUri = webview.asWebviewUri(stylePathOnDisk);
 
+        // Codicons
+        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+
         // Use a nonce to whitelist which scripts can be run
         const nonce = getNonce();
 
@@ -176,10 +203,10 @@ class AstProvider {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
                 <title>Groovy AST</title>
                 <link href="${styleUri}" rel="stylesheet">
-                <link href="${webview.cspSource}/codicons/codicon.css" rel="stylesheet">
+                <link href="${codiconsUri}" rel="stylesheet">
             </head>
             <body>
                 <div class="toolbar">

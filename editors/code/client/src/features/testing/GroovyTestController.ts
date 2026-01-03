@@ -19,14 +19,13 @@ export class GroovyTestController {
     context.subscriptions.push(this.ctrl);
 
     this.setupRunProfiles();
-    this.setupRunProfiles();
     this.setupResolveHandler();
     this.registerCommands();
   }
 
   private registerCommands() {
-    vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args));
-    vscode.commands.registerCommand('groovy.test.debug', (args) => this.debugTestCommand(args));
+    vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args, false));
+    vscode.commands.registerCommand('groovy.test.debug', (args) => this.runTestCommand(args, true));
   }
 
   private setupRunProfiles() {
@@ -163,7 +162,9 @@ export class GroovyTestController {
     return parts[parts.length - 1];
   }
 
-  private async runTestCommand(args: { uri: string; suite: string; test: string }) {
+
+  // Unified command handler
+  private async runTestCommand(args: { suite: string; test: string }, debug: boolean) {
     const item = await this.findTestItem(args.suite, args.test);
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
@@ -174,26 +175,10 @@ export class GroovyTestController {
         vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
         return;
       }
-      await this.runTestItem(retryItem, false);
+      await this.runTestItem(retryItem, debug);
       return;
     }
-    await this.runTestItem(item, false);
-  }
-
-
-  private async debugTestCommand(args: { uri: string; suite: string; test: string }) {
-    const item = await this.findTestItem(args.suite, args.test);
-    if (!item) {
-      await this.discoverTests();
-      const retryItem = await this.findTestItem(args.suite, args.test);
-      if (!retryItem) {
-        vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
-        return;
-      }
-      await this.runTestItem(retryItem, true);
-      return;
-    }
-    await this.runTestItem(item, true);
+    await this.runTestItem(item, debug);
   }
 
   private async runTestItem(item: vscode.TestItem, debug: boolean) {

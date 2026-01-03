@@ -32,17 +32,16 @@ class AstRequestHandler(
         val parseResult = compilationService.getParseResult(uri)
             ?: throw IllegalArgumentException("No compilation result found for URI: ${params.uri}")
 
+        val nativeAst = parseResult.ast
+            ?: throw IllegalStateException("AST not available for URI: ${params.uri}")
+
         val astDto = when (params.parser.lowercase()) {
             "core" -> {
-                val nativeAst = parseResult.ast
-                    ?: throw IllegalStateException("AST not available for URI: ${params.uri}")
                 val coreAst = GroovyParser.convertFromNative(nativeAst)
                 coreConverter.convert(coreAst)
             }
 
             "native" -> {
-                val nativeAst = parseResult.ast
-                    ?: throw IllegalStateException("AST not available for URI: ${params.uri}")
                 nativeConverter.convert(nativeAst)
             }
 

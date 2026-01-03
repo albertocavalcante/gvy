@@ -53,8 +53,9 @@ class AstRequestHandlerTest {
 
         // Mock converter
         val astDto = CoreAstNodeDto("node-1", "CompilationUnit", null, emptyList(), emptyMap())
-        // Since GroovyParser.convertFromNative is a static method in Companion, we might need mockkStatic
-        // but for now let's just mock the converter to return what we want.
+        // We are testing that the handler calls the converter.
+        // Note: GroovyParser.convertFromNative is a static call that runs on the real implementation.
+        // We mock the injected converter to return our expected DTO.
         coEvery { coreConverter.convert(any()) } returns astDto
 
         val result = handler.getAst(params).get()

@@ -83,8 +83,14 @@ interface AppState {
                 renderTree();
                 break;
             case 'error':
-                if (treeContainer) treeContainer.innerHTML = `<div class="empty-state">${message.message}</div>`;
-                if (detailsContainer) detailsContainer.innerHTML = 'Select a node to view details';
+                if (treeContainer) {
+                    treeContainer.innerHTML = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'empty-state';
+                    errorDiv.textContent = message.message as string;
+                    treeContainer.appendChild(errorDiv);
+                }
+                if (detailsContainer) detailsContainer.textContent = 'Select a node to view details';
                 break;
         }
     });
@@ -185,30 +191,52 @@ interface AppState {
 
         // Highlight selection
         document.querySelectorAll('.node-content.selected').forEach(el => el.classList.remove('selected'));
-        const selected = treeContainer.querySelector(`[data-id="${node.id}"] > .node-content`);
+        // Escape ID for CSS selector
+        const escapedId = CSS.escape(node.id);
+        const selected = treeContainer.querySelector(`[data-id="${escapedId}"] > .node-content`);
         if (selected) selected.classList.add('selected');
 
-        // Render properties table
-        let html = `<h3>${node.type}</h3>`;
-        html += '<table class="details-table">';
+        // Clear container
+        detailsContainer.innerHTML = '';
+
+        // Header
+        const header = document.createElement('h3');
+        header.textContent = node.type;
+        detailsContainer.appendChild(header);
+
+        const table = document.createElement('table');
+        table.className = 'details-table';
+
+        // Helper to add row
+        const addRow = (key: string, value: string) => {
+            const row = document.createElement('tr');
+            const keyCell = document.createElement('td');
+            keyCell.className = 'key';
+            keyCell.textContent = key;
+            const valueCell = document.createElement('td');
+            valueCell.className = 'value';
+            valueCell.textContent = value;
+            row.appendChild(keyCell);
+            row.appendChild(valueCell);
+            table.appendChild(row);
+        };
 
         // Add ID
-        html += `<tr><td class="key">ID</td><td class="value">${node.id}</td></tr>`;
+        addRow('ID', node.id);
 
         // Add Range
         if (node.range) {
-            html += `<tr><td class="key">Range</td><td class="value">${node.range.startLine}:${node.range.startColumn} - ${node.range.endLine}:${node.range.endColumn}</td></tr>`;
+            addRow('Range', `${node.range.startLine}:${node.range.startColumn} - ${node.range.endLine}:${node.range.endColumn}`);
         }
 
         // Add Properties
         if (node.properties) {
             for (const [key, value] of Object.entries(node.properties)) {
-                html += `<tr><td class="key">${key}</td><td class="value">${value}</td></tr>`;
+                addRow(key, String(value));
             }
         }
 
-        html += '</table>';
-        detailsContainer.innerHTML = html;
+        detailsContainer.appendChild(table);
 
         // Notify extension to highlight range
         if (node.range) {
