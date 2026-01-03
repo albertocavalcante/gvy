@@ -12,6 +12,7 @@ plugins {
     groovy
     id("com.gradleup.shadow")
     application
+    kotlin("plugin.serialization")
 }
 
 buildscript {
@@ -45,6 +46,9 @@ dependencies {
     implementation(libs.lsp4j)
     implementation(libs.lsp4j.jsonrpc)
 
+    // AST Visualization Model
+    implementation(project(":viz:ast-model"))
+
     // Groovy - For AST parsing and analysis
     implementation(libs.groovy.core)
     // Additional Groovy modules needed by runtime features
@@ -61,6 +65,9 @@ dependencies {
 
     // Functional Programming - Arrow-kt for Either type
     implementation(libs.arrow.core)
+
+    // Serialization
+    implementation(libs.kotlin.serialization.json)
 
     // Logging
     implementation(libs.slf4j.api)

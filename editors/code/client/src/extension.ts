@@ -19,6 +19,7 @@ import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
 import { CommandProvider } from "./features/ai/CommandProvider";
 import { TestFeature } from "./features/testing/TestFeature";
+import { registerAstFeatures } from "./features/ast/AstProvider";
 
 /**
  * Activates the extension
@@ -57,8 +58,27 @@ export async function activate(context: vscode.ExtensionContext) {
         // Initialize REPL
         replService.initialize(context);
 
+        // Register features that depend on the client
+        registerFormatting(context);
+
+        // Register testing features
+        const testOutputChannel = vscode.window.createOutputChannel("Groovy Tests");
+        context.subscriptions.push(testOutputChannel);
+        registerTestingFeatures(context, testOutputChannel);
+
+        // Register AST Visualization
+        registerAstFeatures(context);
+
+        // Register Spock Test Scaffolding
+        context.subscriptions.push(new TestFeature());
+
         // Start the Language Server
+        // We start this LAST so that all features (modifiers, providers) are registered
+        // and can potentially function (or be ready) even if the server fails to start immediately.
         await startClient(serverOutputChannel);
+
+        registerGradleFeatures(context);
+        registerTestingFeatures(context, testOutputChannel);
 
         // AI Tools Integration
         const lspToolService = new LSPToolService(vscode, getClient);
@@ -69,19 +89,6 @@ export async function activate(context: vscode.ExtensionContext) {
         const commandProvider = new CommandProvider(lspToolService, toolRegistry);
 
         context.subscriptions.push(lmToolProvider, commandProvider);
-
-        // Register features that depend on the client
-        registerFormatting(context);
-        registerGradleFeatures(context);
-
-        // Register testing features
-        const testOutputChannel = vscode.window.createOutputChannel("Groovy Tests");
-        context.subscriptions.push(testOutputChannel);
-        registerTestingFeatures(context, testOutputChannel);
-
-        // Register Spock Test Scaffolding
-        // TODO: Move this into registerTestingFeatures once refined
-        context.subscriptions.push(new TestFeature());
 
         // Initialize update service for LSP version checking
         // Uses extension version from package.json (which bundles the LSP)

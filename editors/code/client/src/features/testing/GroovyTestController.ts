@@ -20,6 +20,14 @@ export class GroovyTestController {
 
     this.setupRunProfiles();
     this.setupResolveHandler();
+    this.registerCommands(context);
+  }
+
+  private registerCommands(context: vscode.ExtensionContext) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args, false)),
+      vscode.commands.registerCommand('groovy.test.debug', (args) => this.runTestCommand(args, true))
+    );
   }
 
   private setupRunProfiles() {
@@ -140,9 +148,10 @@ export class GroovyTestController {
     const testItem = this.ctrl.createTestItem(testId, test.test, uri);
 
     // Set the line range for CodeLens and navigation
+    const line = test.line >= 1 ? test.line - 1 : 0;
     testItem.range = new vscode.Range(
-      new vscode.Position(test.line - 1, 0), // 0-indexed
-      new vscode.Position(test.line - 1, 100), // approximate end
+      new vscode.Position(line, 0), // 0-indexed
+      new vscode.Position(line, 100), // approximate end
     );
 
     return testItem;
@@ -154,5 +163,50 @@ export class GroovyTestController {
   private getClassName(fqn: string): string {
     const parts = fqn.split('.');
     return parts[parts.length - 1];
+  }
+
+
+  // Unified command handler
+  private async runTestCommand(args: { suite: string; test: string }, debug: boolean) {
+    const item = await this.findTestItem(args.suite, args.test);
+    if (!item) {
+      // If item not found, it might be because tests weren't discovered yet.
+      // Try discovery first.
+      await this.discoverTests();
+      const retryItem = await this.findTestItem(args.suite, args.test);
+      if (!retryItem) {
+        vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
+        return;
+      }
+      await this.runTestItem(retryItem, debug);
+      return;
+    }
+    await this.runTestItem(item, debug);
+  }
+
+  private async runTestItem(item: vscode.TestItem, debug: boolean) {
+    const request = new vscode.TestRunRequest([item]);
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      if (debug) {
+        await this.executionService.debugTests(request, tokenSource.token);
+      } else {
+        await this.executionService.runTests(request, tokenSource.token, this.ctrl);
+      }
+    } finally {
+      tokenSource.dispose();
+    }
+  }
+
+  private async findTestItem(suiteName: string, testName: string): Promise<vscode.TestItem | undefined> {
+    // First find suite
+    const suiteItem = this.ctrl.items.get(suiteName);
+    if (!suiteItem) {
+      return undefined;
+    }
+    // Then find test child
+    // ID format in createTestItem is `${parentId}.${test.test}`
+    const testId = `${suiteName}.${testName}`;
+    return suiteItem.children.get(testId);
   }
 }

@@ -1,6 +1,9 @@
 package com.github.albertocavalcante.gvy.viz.model
 
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
 
 /**
  * Sealed interface representing an AST node in a platform-agnostic, serializable format.
@@ -16,6 +19,8 @@ import kotlinx.serialization.Serializable
  * @property properties Node-specific properties as key-value pairs (e.g., "name" -> "MyClass").
  */
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
+@JsonClassDiscriminator("dtoKind")
 sealed interface AstNodeDto {
     val id: String
     val type: String
@@ -36,6 +41,7 @@ sealed interface AstNodeDto {
  * @property properties Node-specific properties as key-value pairs.
  */
 @Serializable
+@SerialName("core")
 data class CoreAstNodeDto(
     override val id: String,
     override val type: String,
@@ -58,6 +64,7 @@ data class CoreAstNodeDto(
  * @property typeInfo Type resolution information (if available).
  */
 @Serializable
+@SerialName("native")
 data class NativeAstNodeDto(
     override val id: String,
     override val type: String,
