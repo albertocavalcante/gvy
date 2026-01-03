@@ -155,6 +155,14 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                         onClick = { viewModel.setParser(ParserType.NATIVE) },
                     )
                     Text("Native", style = MaterialTheme.typography.bodySmall)
+
+                    Spacer(Modifier.width(8.dp))
+
+                    RadioButton(
+                        selected = viewModel.selectedParser == ParserType.REWRITE,
+                        onClick = { viewModel.setParser(ParserType.REWRITE) },
+                    )
+                    Text("Rewrite", style = MaterialTheme.typography.bodySmall)
                 }
             }
 

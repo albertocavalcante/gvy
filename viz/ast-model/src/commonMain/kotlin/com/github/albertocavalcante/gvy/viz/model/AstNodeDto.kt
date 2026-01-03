@@ -74,3 +74,29 @@ data class NativeAstNodeDto(
     val symbolInfo: SymbolInfoDto? = null,
     val typeInfo: TypeInfoDto? = null,
 ) : AstNodeDto
+
+/**
+ * AST node from the OpenRewrite parser (Lossless Semantic Tree).
+ *
+ * OpenRewrite parser provides lossless representation that preserves:
+ * - Whitespace and formatting
+ * - Comments
+ * - Original source text
+ *
+ * @property id Unique identifier for this node.
+ * @property type The type of this node (e.g., "CompilationUnit", "ClassDeclaration").
+ * @property range The source location of this node, or null if not available.
+ * @property children Child nodes in the AST.
+ * @property properties Node-specific properties as key-value pairs.
+ * @property comments Comments associated with this node.
+ */
+@Serializable
+@SerialName("rewrite")
+data class RewriteAstNodeDto(
+    override val id: String,
+    override val type: String,
+    override val range: RangeDto?,
+    override val children: List<AstNodeDto>,
+    override val properties: Map<String, String>,
+    val comments: List<String> = emptyList(),
+) : AstNodeDto
