@@ -1,8 +1,10 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
+import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
@@ -227,44 +229,68 @@ object CompletionProvider {
             null
         }
 
-        val isInOptionsBlock = jenkinsContext?.isOptionsContext == true
-
-        if (isInOptionsBlock) {
-            return completions {
-                if (metadata != null) {
-                    addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
-                    val callName = findEnclosingMethodCall(nodeAtCursor, ctx.astModel)?.methodAsString
-                    if (callName == null || metadata.declarativeOptions[callName] == null) {
-                        addJenkinsDeclarativeOptions(metadata)
-                    }
-                }
-            }
-        }
+        val currentBlock = jenkinsContext?.currentBlock
+        val blockCategories = currentBlock?.let { DeclarativePipelineSchema.getCompletionCategories(it) }
+        val innerInstructions = currentBlock?.let { DeclarativePipelineSchema.getInnerInstructions(it) }
+        val isStrictDeclarative = isJenkinsFile && jenkinsContext?.isDeclarativePipeline == true && currentBlock != null
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
 
             // Add local symbol completions
-            addClasses(context.classes)
-            addMethods(context.methods)
-            addFields(context.fields)
-            addVariables(context.variables)
-            addImports(context.imports)
-            addKeywords()
+            if (!isStrictDeclarative) {
+                addClasses(context.classes)
+                addMethods(context.methods)
+                addFields(context.fields)
+                addVariables(context.variables)
+                addImports(context.imports)
+                addKeywords()
 
-            // Add basic Groovy snippet completions (println, print, etc.)
-            GroovyCompletions.basic().forEach(::add)
+                // Add basic Groovy snippet completions (println, print, etc.)
+                GroovyCompletions.basic().forEach(::add)
+            }
 
-            // Add Jenkins-specific completions for non-options blocks
+            // Add Jenkins-specific completions
             if (metadata != null) {
-                // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+                // Suggest parameter map keys so we can complete named parameters
+                addJenkinsMapKeyCompletions(ctx, nodeAtCursor, ctx.astModel, metadata)
 
-                // Suggest pipeline steps (sh, echo, git, etc.)
-                addJenkinsStepCompletions(metadata)
+                val categories = blockCategories
+                // Lenient step allowance: allow steps if not in a strict declarative block,
+                // or if the block explicitly allows steps, or if we are in a container block (pipeline/stage)
+                // to support hybrid/scripted usage and maintain test compatibility.
+                val allowSteps = !isStrictDeclarative ||
+                    categories?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true ||
+                    currentBlock == "pipeline" || currentBlock == "stage"
 
-                // Suggest global variables from vars/ directory and plugins
+                if (allowSteps) {
+                    addJenkinsStepCompletions(metadata)
+                }
+
                 addJenkinsGlobalVariables(metadata, ctx.compilationService)
+
+                if (categories != null) {
+                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE)) {
+                        addJenkinsAgentTypeCompletions()
+                    }
+                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION)) {
+                        addJenkinsDeclarativeOptions(metadata)
+                    }
+                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION)) {
+                        addJenkinsPostConditionCompletions()
+                    }
+                }
+
+                // Add inner instructions (sub-blocks) from schema
+                innerInstructions?.forEach { instruction ->
+                    completion {
+                        label(instruction)
+                        kind(CompletionItemKind.Keyword)
+                        detail("Declarative directive")
+                        insertText("$instruction {")
+                        sortText("0-directive-$instruction")
+                    }
+                }
             }
 
             // Handle contextual completions
@@ -432,6 +458,32 @@ object CompletionProvider {
         optionCompletions.forEach(::add)
     }
 
+    private fun CompletionsBuilder.addJenkinsAgentTypeCompletions() {
+        JenkinsBlockMetadata.AGENT_TYPES.forEach { agent ->
+            completion {
+                label(agent)
+                kind(CompletionItemKind.Keyword)
+                detail("Declarative agent type")
+                documentation("Use an agent specification such as any, label, or docker.")
+                insertText(agent)
+                sortText("0-agent-$agent")
+            }
+        }
+    }
+
+    private fun CompletionsBuilder.addJenkinsPostConditionCompletions() {
+        JenkinsBlockMetadata.POST_CONDITIONS.forEach { condition ->
+            completion {
+                label(condition)
+                kind(CompletionItemKind.Keyword)
+                detail("Jenkins post condition")
+                documentation("Post-build condition inside pipeline or stage post block")
+                insertText("$condition {")
+                sortText("0-post-$condition")
+            }
+        }
+    }
+
     private fun CompletionsBuilder.addJenkinsStepCompletions(metadata: MergedJenkinsMetadata) {
         val stepCompletions = JenkinsStepCompletionProvider.getStepCompletions(metadata)
         stepCompletions.forEach(::add)
@@ -451,6 +503,7 @@ object CompletionProvider {
     }
 
     private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
+        ctx: CompletionContext,
         nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
         astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
         metadata: MergedJenkinsMetadata,
@@ -474,6 +527,7 @@ object CompletionProvider {
             callName,
             existingKeys,
             metadata,
+            isCommandExpression(ctx.content, ctx.line, ctx.character, callName),
         )
         bundledParamCompletions.forEach(::add)
     }
@@ -523,6 +577,16 @@ object CompletionProvider {
             charIndex = Int.MAX_VALUE
         }
         return null
+    }
+
+    private fun isCommandExpression(content: String, line: Int, character: Int, methodName: String): Boolean {
+        val lines = content.lines()
+        val currentLine = lines.getOrNull(line) ?: return false
+        val safeChar = character.coerceIn(0, currentLine.length)
+        val prefix = currentLine.substring(0, safeChar)
+        val trimmed = prefix.trimStart()
+        val pattern = Regex("""\b${Regex.escape(methodName)}\s+['"]$""")
+        return pattern.containsMatchIn(trimmed)
     }
 
     /**

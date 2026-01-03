@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins.completion
 
+import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
+
 /**
  * Detects the cursor context within a Jenkinsfile to provide context-aware completions.
  *
@@ -192,6 +194,7 @@ object JenkinsContextDetector {
         val isDeclarative = "pipeline" in blockStack
         val isScripted = !isDeclarative && "node" in blockStack
         val postCondition = blockStack.lastOrNull { it in POST_CONDITIONS }
+        val currentBlock = determineCurrentBlock(blockStack)
 
         return JenkinsCompletionContext(
             // From line context
@@ -222,11 +225,21 @@ object JenkinsContextDetector {
             // Additional info
             postCondition = postCondition,
             enclosingBlocks = blockStack,
+            currentBlock = currentBlock,
 
             // Step context
             isStepParameterContext = lineContext.isStepParameterContext,
             currentStepName = lineContext.currentStepName,
         )
+    }
+
+    private fun determineCurrentBlock(blockStack: List<String>): String? {
+        for (block in blockStack.asReversed()) {
+            if (DeclarativePipelineSchema.containsBlock(block)) {
+                return block
+            }
+        }
+        return null
     }
 }
 
@@ -268,4 +281,5 @@ data class JenkinsCompletionContext(
     val partialText: String = "",
     val postCondition: String? = null,
     val enclosingBlocks: List<String> = emptyList(),
+    val currentBlock: String? = null,
 )

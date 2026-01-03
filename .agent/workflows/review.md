@@ -85,7 +85,7 @@ jq '{pr_id: .data.repository.pullRequest.id, total_threads: .data.repository.pul
 ### 1.3 Inventory Actionable Threads
 
 ```bash
-python3 .agent/scripts/inventory_threads.py /tmp/pr-<PR_NUMBER>-threads.json
+uv run .agent/scripts/inventory_threads.py /tmp/pr-<PR_NUMBER>-threads.json
 ```
 
 <fallback>
@@ -113,6 +113,7 @@ NO EXCEPTIONS. NO SKIPPING.
 │                                                             │
 │  Q1: Is this feedback VALID?                                │
 │      ├─ NO  → REJECT (explain why, cite evidence)           │
+│      │        (Note: Handle false positives here)           │
 │      └─ YES → Continue to Q2                                │
 │                                                             │
 │  Q2: Is this IN SCOPE for this PR?                          │
