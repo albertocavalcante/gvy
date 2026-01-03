@@ -50,11 +50,12 @@ class WorkspaceScanner(private val ioDispatcher: CoroutineDispatcher = Dispatche
             }
 
             try {
-                Files.walk(root)
-                    .asSequence()
-                    .filter { it.isRegularFile() }
-                    .filter { isGroovyFile(it) }
-                    .forEach { yield(it) }
+                Files.walk(root).use { stream ->
+                    stream.asSequence()
+                        .filter { it.isRegularFile() }
+                        .filter { isGroovyFile(it) }
+                        .forEach { yield(it) }
+                }
             } catch (e: Exception) {
                 // Continue with next root if one fails
                 // Errors are expected for inaccessible directories
