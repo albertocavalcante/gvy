@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -124,6 +125,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         is ForStatement -> NodeKind.FOR
         is WhileStatement -> NodeKind.WHILE
         is ReturnStatement -> NodeKind.RETURN
+        is PackageNode -> NodeKind.PACKAGE
         else -> NodeKind.UNKNOWN
     }
 
@@ -134,6 +136,7 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         is PropertyNode -> node.name
         is Parameter -> node.name
         is VariableExpression -> node.name
+        is PackageNode -> node.name.removeSuffix(".")
         else -> null
     }
 

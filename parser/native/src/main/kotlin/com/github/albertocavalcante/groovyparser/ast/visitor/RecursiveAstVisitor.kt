@@ -12,6 +12,7 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -48,6 +49,7 @@ import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
 import org.slf4j.LoggerFactory
 import java.net.URI
+
 // ...
 class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : GroovyAstModel {
     // NOTE: Never write to stdout from LSP code paths (stdio mode): it corrupts the JSON-RPC stream.
@@ -89,6 +91,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
     private fun visitModuleNode(module: ModuleNode) {
         track(module) {
+            module.`package`?.let { visitPackage(it) }
             module.imports?.forEach { visitImport(it) }
             module.starImports?.forEach { visitImport(it) }
             module.staticImports?.values?.forEach { visitImport(it) }
@@ -108,6 +111,12 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
             if (type != null) {
                 track(type) { /* no-op */ }
             }
+        }
+    }
+
+    private fun visitPackage(packageNode: PackageNode) {
+        track(packageNode) {
+            visitAnnotations(packageNode)
         }
     }
 
@@ -208,6 +217,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         private inline fun <T : ASTNode> visitWithTracking(node: T, visitSuper: (T) -> Unit) {
             track(node) { visitSuper(node) }
         }
+
         override fun visitBlockStatement(block: BlockStatement) {
             visitWithTracking(block) { super.visitBlockStatement(it) }
         }

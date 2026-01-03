@@ -160,4 +160,28 @@ class NativeParserProviderTest {
         // checkNode(7, 9, null, NodeKind.WHILE)
         // checkNode(8, 9, null, NodeKind.RETURN)
     }
+
+    @Test
+    fun `nodeAt finds package declaration`() {
+        val source = "package com.example"
+        val unit = provider.parse(source)
+
+        val node = unit.nodeAt(Position(1, 9)) // 'com.example' starts at col 9
+        kotlin.test.assertNotNull(node, "Should find package node at 1:9")
+        assertEquals("com.example", node.name)
+        assertEquals(NodeKind.PACKAGE, node.kind)
+    }
+
+    @Test
+    fun `parse with missing dependency still returns ast`() {
+        val source = "import org.missing.Lib; class Foo {}"
+        val unit = provider.parse(source)
+
+        // Should have errors
+        assertTrue(unit.diagnostics().any { it.severity == Severity.ERROR }, "Should have resolution errors")
+
+        // But should still parse the class
+        val symbols = unit.symbols()
+        assertTrue(symbols.any { it.name == "Foo" && it.kind == SymbolKind.CLASS }, "Should still find class Foo")
+    }
 }
