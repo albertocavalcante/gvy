@@ -39,7 +39,7 @@ val generateProtos by tasks.registering(JavaExec::class) {
 }
 
 sourceSets.main {
-    java.srcDir(generateProtos)
+    kotlin.srcDir(generateProtos)
 }
 
 // Ensure compilation depends on generation
