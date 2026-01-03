@@ -9,7 +9,7 @@ gitHooks = "2.1.6"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
 wire = "5.4.0"
-compose = "1.7.1"
+compose = "1.9.3"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
