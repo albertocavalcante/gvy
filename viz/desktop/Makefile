@@ -26,13 +26,21 @@ dmg:
 
 # Install the app to /Applications (macOS)
 # Assumes the app is built to the standard location
+APP_NAME := Groovy AST Visualizer.app
+BUILD_APP_PATH := build/compose/binaries/main/app/$(APP_NAME)
+INSTALL_DIR := /Applications
+
 install: package
-	@echo "Installing to /Applications..."
-	@if [ -d "build/compose/binaries/main/app/Groovy AST Visualizer.app" ]; then \
-		rm -rf "/Applications/Groovy AST Visualizer.app"; \
-		cp -R "build/compose/binaries/main/app/Groovy AST Visualizer.app" /Applications/; \
-		echo "✅ Installed 'Groovy AST Visualizer' to /Applications"; \
+	@if [ "$$(uname)" != "Darwin" ]; then \
+		echo "❌ Install is only supported on macOS"; \
+		exit 1; \
+	fi
+	@echo "Installing to $(INSTALL_DIR)... (may require sudo password)"
+	@if [ -d "$(BUILD_APP_PATH)" ]; then \
+		sudo rm -rf "$(INSTALL_DIR)/$(APP_NAME)" && \
+		sudo cp -R "$(BUILD_APP_PATH)" "$(INSTALL_DIR)/" && \
+		echo "✅ Installed '$(APP_NAME)' to $(INSTALL_DIR)"; \
 	else \
-		echo "❌ App bundle not found. Build might have failed."; \
+		echo "❌ App bundle not found at $(BUILD_APP_PATH). Build might have failed."; \
 		exit 1; \
 	fi
