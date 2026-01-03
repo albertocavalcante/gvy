@@ -391,11 +391,12 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            // Try to get contextual completions from AST
             val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
 
-            val contextualCompletions = CompletionProvider.getContextualCompletions(
+            // Delegate all completion logic (Groovy, Jenkins, Spock) to CompletionProvider
+            // CompletionProvider now uses JenkinsContextDetector internally for context-aware filtering
+            val completions = CompletionProvider.getContextualCompletions(
                 params.textDocument.uri,
                 params.position.line,
                 params.position.character,
@@ -403,37 +404,8 @@ class GroovyTextDocumentService(
                 content,
             )
 
-            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
-            val astModel = if (isJenkinsFile) compilationService.getAstModel(uri) else null
-            val isInOptionsBlock = isJenkinsFile && astModel != null &&
-                CompletionProvider.isInJenkinsOptionsBlock(
-                    astModel,
-                    uri,
-                    params.position.line,
-                    params.position.character,
-                    content,
-                )
-            val jenkinsCompletions = if (isJenkinsFile) {
-                val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
-                if (metadata != null) {
-                    if (isInOptionsBlock) {
-                        JenkinsStepCompletionProvider.getDeclarativeOptionCompletions(metadata)
-                    } else {
-                        JenkinsStepCompletionProvider.getStepCompletions(metadata) +
-                            JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
-                    }
-                } else {
-                    emptyList()
-                }
-            } else {
-                emptyList()
-            }
-
-            val baseCompletions = if (isInOptionsBlock) emptyList() else GroovyCompletions.basic()
-            val allCompletions = baseCompletions + contextualCompletions + jenkinsCompletions
-
-            logger.debug("Returning ${allCompletions.size} completions")
-            Either.forLeft(allCompletions)
+            logger.debug("Returning ${completions.size} completions")
+            Either.forLeft(completions)
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =

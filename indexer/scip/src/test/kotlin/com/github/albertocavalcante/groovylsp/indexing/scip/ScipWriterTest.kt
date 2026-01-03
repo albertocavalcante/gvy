@@ -21,7 +21,7 @@ class ScipWriterTest {
         // Metadata validation
         assertEquals("groovy-lsp", index.metadata?.tool_info?.name)
         assertEquals("0.0.1", index.metadata?.tool_info?.version)
-        assertTrue(index.metadata?.project_root?.contains("project") == true)
+        assertEquals("file:///project", index.metadata?.project_root)
     }
 
     @Test

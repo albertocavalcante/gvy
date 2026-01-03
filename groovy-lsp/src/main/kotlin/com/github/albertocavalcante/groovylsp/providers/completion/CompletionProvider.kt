@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
@@ -208,7 +209,17 @@ object CompletionProvider {
         // Try to detect member access (e.g., "myList.")
         val nodeAtCursor = findNodeAtOrBefore(ctx.astModel, ctx.uri, ctx.content, ctx.line, ctx.character)
         val completionContext = detectCompletionContext(nodeAtCursor, ctx.astModel, context)
-        val isInOptionsBlock = isJenkinsFile && isInJenkinsOptionsBlock(nodeAtCursor, ctx.astModel)
+        // Use text-based context detection (more robust during editing) instead of AST traversal
+        val jenkinsContext = if (isJenkinsFile) {
+            JenkinsContextDetector.detectFromDocument(
+                ctx.content.lines(),
+                ctx.line,
+                ctx.character,
+            )
+        } else {
+            null
+        }
+        val isInOptionsBlock = jenkinsContext?.isOptionsContext == true
 
         if (isInOptionsBlock) {
             return completions {
@@ -233,6 +244,21 @@ object CompletionProvider {
             addVariables(context.variables)
             addImports(context.imports)
             addKeywords()
+
+            // Add Jenkins-specific completions for non-options blocks
+            if (isJenkinsFile) {
+                val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+                if (metadata != null) {
+                    // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
+                    addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+
+                    // Suggest pipeline steps (sh, echo, git, etc.)
+                    addJenkinsStepCompletions(metadata)
+
+                    // Suggest global variables from vars/ directory and plugins
+                    addJenkinsGlobalVariables(metadata, ctx.compilationService)
+                }
+            }
 
             // Handle contextual completions
             when (completionContext) {
@@ -269,17 +295,7 @@ object CompletionProvider {
                 }
 
                 null -> {
-                    /* No special context */
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                            addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
-
-                            // Suggest global variables from vars/ directory and plugins
-                            addJenkinsGlobalVariables(metadata, ctx.compilationService)
-                        }
-                    }
+                    /* No additional special context handling needed */
                 }
             }
         }
@@ -412,6 +428,11 @@ object CompletionProvider {
         optionCompletions.forEach(::add)
     }
 
+    private fun CompletionsBuilder.addJenkinsStepCompletions(metadata: MergedJenkinsMetadata) {
+        val stepCompletions = JenkinsStepCompletionProvider.getStepCompletions(metadata)
+        stepCompletions.forEach(::add)
+    }
+
     /**
      * Add property completions for Jenkins global variables (env, currentBuild).
      */
@@ -500,36 +521,7 @@ object CompletionProvider {
         return null
     }
 
-    private fun isInJenkinsOptionsBlock(
-        node: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-    ): Boolean {
-        var current: org.codehaus.groovy.ast.ASTNode? = node
-        var depth = 0
-        while (current != null && depth < MAX_PARENT_SEARCH_DEPTH) {
-            if (current is org.codehaus.groovy.ast.expr.MethodCallExpression &&
-                current.methodAsString == "options"
-            ) {
-                return true
-            }
-            current = astModel.getParent(current)
-            depth++
-        }
-        return false
-    }
-
-    internal fun isInJenkinsOptionsBlock(
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-        uri: java.net.URI,
-        line: Int,
-        character: Int,
-        content: String,
-    ): Boolean {
-        val node = findNodeAtOrBefore(astModel, uri, content, line, character)
-        return isInJenkinsOptionsBlock(node, astModel)
-    }
-
-    private const val MAX_PARENT_SEARCH_DEPTH = 50
+    private const val MAX_MEMBER_ACCESS_SEARCH_DEPTH = 50
 
     /**
      * Detect completion context (member access or type parameter).

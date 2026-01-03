@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.indexing.scip
 
 import com.github.albertocavalcante.groovylsp.indexing.IndexWriter
+import com.github.albertocavalcante.groovylsp.indexing.PathUtils
 import com.github.albertocavalcante.groovylsp.indexing.Range
 import scip.Document
 import scip.Index
@@ -81,7 +82,7 @@ class ScipWriter(private val outputStream: OutputStream, private val projectRoot
             metadata = Metadata(
                 version = scip.ProtocolVersion.UnspecifiedProtocolVersion,
                 tool_info = ToolInfo(name = "groovy-lsp", version = "0.0.1"),
-                project_root = java.io.File(projectRoot).toURI().toString(),
+                project_root = PathUtils.toCanonicalUri(projectRoot),
             ),
             documents = documents,
         )
