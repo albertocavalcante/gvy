@@ -4,8 +4,12 @@ import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.RuleCo
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Diagnostic
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -159,10 +163,57 @@ class SpockTestStructureRuleTest {
         assertEquals(1, diagnostics.size)
     }
 
+    @Test
+    fun `should skip analysis when URI has no path`() = runBlocking {
+        val code = """
+            class MySpec extends spock.lang.Specification {
+                def "test without blocks"() {
+                    x = 1
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val uri = URI("mailto", "test@example.com", null)
+
+        assertTrue(uri.path == null)
+
+        val diagnostics = callAnalyzeImpl(uri, code, context)
+
+        assertTrue(diagnostics.isEmpty())
+    }
+
     private fun mockContext(): RuleContext {
         val context = mockk<RuleContext>()
         every { context.hasErrors() } returns false
         every { context.getAst() } returns null
         return context
+    }
+
+    private fun callAnalyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
+        val method = rule.javaClass.getDeclaredMethod(
+            "analyzeImpl",
+            URI::class.java,
+            String::class.java,
+            RuleContext::class.java,
+            Continuation::class.java,
+        )
+        method.isAccessible = true
+
+        var resumeResult: Result<List<Diagnostic>>? = null
+        val continuation = object : Continuation<List<Diagnostic>> {
+            override val context = EmptyCoroutineContext
+            override fun resumeWith(result: Result<List<Diagnostic>>) {
+                resumeResult = result
+            }
+        }
+
+        val returnValue = method.invoke(rule, uri, content, context, continuation)
+        if (returnValue == COROUTINE_SUSPENDED) {
+            return resumeResult?.getOrThrow() ?: error("Expected continuation to resume")
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        return returnValue as List<Diagnostic>
     }
 }

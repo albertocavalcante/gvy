@@ -60,15 +60,17 @@ steps:
           expect:
             type: NONE_CONTAINS
             value: 'Information'
-        # Should detect at least 2 incomplete stages
-        - jsonPath: $.diagnostics[?(@.message =~ /.*steps.*/i)].length()
+        # Should detect incomplete Build and Deploy stages
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Build.*steps.*/i)]
           expect:
-            type: GTE
-            value: 2
+            type: NOT_EMPTY
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Deploy.*steps.*/i)]
+          expect:
+            type: NOT_EMPTY
         # Build stage diagnostic should be on line 3 (0-indexed)
-        - jsonPath: $.diagnostics[0].range.start.line
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Build.*steps.*/i)].range.start.line
           expect:
-            type: EQUALS
+            type: CONTAINS
             value: 3
   - changeDocument:
       path: Jenkinsfile
