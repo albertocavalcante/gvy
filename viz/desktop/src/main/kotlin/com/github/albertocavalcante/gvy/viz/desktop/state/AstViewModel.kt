@@ -61,6 +61,7 @@ class AstViewModel {
     private val json = Json {
         prettyPrint = true
         prettyPrintIndent = "  "
+        classDiscriminator = "nodeClass"
     }
 
     /**
