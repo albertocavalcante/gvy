@@ -25,6 +25,9 @@ import kotlin.io.path.exists
  */
 class GradleDependencyResolver(
     private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
+    private val compatibilityService: GradleCompatibilityService = GradleCompatibilityService(),
+    private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
+    private val javaHome: Path? = null,
     private val retryConfig: RetryConfig = RetryConfig(),
 ) : DependencyResolver {
 
@@ -84,7 +87,7 @@ class GradleDependencyResolver(
         }
 
         // Fall back to isolated Gradle user home for init script errors
-        if (lastException != null && shouldRetryWithIsolatedGradleUserHome(lastException)) {
+        if (lastException != null && failureAnalyzer.isInitScriptError(lastException)) {
             val isolatedResult = tryWithIsolatedUserHome(projectDir)
             if (isolatedResult != null) {
                 return isolatedResult
@@ -119,7 +122,7 @@ class GradleDependencyResolver(
             val exception = lastResult.exceptionOrNull() ?: break
 
             // Only retry if this is a transient failure and we have attempts remaining
-            if (!isTransientFailure(exception) || attempt >= retryConfig.maxAttempts) {
+            if (!failureAnalyzer.isTransient(exception) || attempt >= retryConfig.maxAttempts) {
                 break
             }
 
@@ -182,6 +185,12 @@ class GradleDependencyResolver(
             )
             .setJvmArguments("-Xmx1g", "-XX:+UseG1GC")
 
+        // Inject configured JAVA_HOME if available
+        if (javaHome != null) {
+            logger.info("Setting Java home for Gradle Tooling operation: $javaHome")
+            modelBuilder.setJavaHome(javaHome.toFile())
+        }
+
         val ideaProject = modelBuilder.get()
 
         val dependencies = mutableSetOf<Path>()
@@ -195,20 +204,6 @@ class GradleDependencyResolver(
         val srcCount = sourceDirectories.size
         logger.info("Resolved $depCount dependencies and $srcCount source directories via Gradle Tooling API")
         return WorkspaceResolution(dependencies.toList(), sourceDirectories.toList())
-    }
-
-    private fun shouldRetryWithIsolatedGradleUserHome(error: Throwable): Boolean {
-        val causeChain = error.causeChain().toList()
-        val messages = causeChain.mapNotNull { it.message }
-
-        // Note: "Unsupported class file major version" indicates JDK/Gradle mismatch,
-        // NOT an init script issue. Isolated user home cannot fix this - the pre-flight
-        // check should catch this case before model fetch is attempted.
-        return messages.any {
-            it.contains("init.d") ||
-                it.contains("init script") ||
-                it.contains("cp_init")
-        }
     }
 
     /**
@@ -225,44 +220,47 @@ class GradleDependencyResolver(
             connection.getModel(BuildEnvironment::class.java).gradle.gradleVersion
         }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
 
-        val jdkMajor = GradleJdkCompatibility.getCurrentJdkMajorVersion()
+        // If javaHome is configured, we should check compatibility for THAT JDK.
+        // If not, use the current runtime JDK.
+        val jdkMajor = if (javaHome != null) {
+            captureJavaMajorVersion(javaHome)
+        } else {
+            Runtime.version().feature()
+        } ?: Runtime.version().feature()
 
-        if (!GradleJdkCompatibility.isSupported(gradleVersion, jdkMajor)) {
-            val suggestion = GradleJdkCompatibility.suggestFix(gradleVersion, jdkMajor)
+        if (!compatibilityService.isCompatible(gradleVersion, jdkMajor)) {
+            val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
             logger.error(suggestion)
-            throw GradleJdkIncompatibleException(suggestion)
+            throw GradleJdkIncompatibleException(
+                suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
+            )
         }
 
         logger.debug("JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor")
     }
 
     /**
-     * Detects transient failures that are worth retrying with exponential backoff.
-     * These are typically caused by external processes holding locks temporarily.
+     * Captures the major version of a JDK at the given path.
+     * Stubs for now, could be improved by running `java -version`.
      */
-    private fun isTransientFailure(error: Throwable): Boolean {
-        val causeChain = error.causeChain().toList()
-        val classNames = causeChain.map { it.javaClass.simpleName }
-        val messages = causeChain.mapNotNull { it.message }
-
-        // Lock timeout - another Gradle process holds a lock
-        if (classNames.any { it == "LockTimeoutException" } ||
-            messages.any {
-                it.contains("Timeout waiting to lock") || it.contains("currently in use by another process")
+    private fun captureJavaMajorVersion(javaHome: Path): Int? {
+        // Highly simplified: assuming the path ends in something like "jdk-21.jdk" or "java-17"
+        // for better results we'd need to execute bin/java -version or check release file.
+        val releaseFile = javaHome.resolve("release")
+        if (Files.exists(releaseFile)) {
+            try {
+                val content = Files.readString(releaseFile)
+                val versionLine = content.lines().find { it.startsWith("JAVA_VERSION=") }
+                if (versionLine != null) {
+                    val version = versionLine.removePrefix("JAVA_VERSION=").trim('"')
+                    val major = version.split(".").firstOrNull() ?: version
+                    return major.toIntOrNull()
+                }
+            } catch (e: Exception) {
+                logger.warn("Failed to read release file in $javaHome", e)
             }
-        ) {
-            return true
         }
-
-        // Connection refused - Gradle daemon not ready yet
-        if (messages.any {
-                it.contains("Connection refused") || it.contains("Could not connect to the Gradle daemon")
-            }
-        ) {
-            return true
-        }
-
-        return false
+        return null
     }
 
     private fun isolatedGradleUserHomeDir(): Path {
@@ -283,8 +281,6 @@ class GradleDependencyResolver(
                 tempDir
             }
     }
-
-    private fun Throwable.causeChain(): Sequence<Throwable> = generateSequence(this) { it.cause }
 
     private fun processModule(
         module: IdeaModule,

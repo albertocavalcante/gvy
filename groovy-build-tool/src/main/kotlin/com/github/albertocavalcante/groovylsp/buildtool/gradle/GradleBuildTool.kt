@@ -18,11 +18,20 @@ import kotlin.io.path.exists
  */
 class GradleBuildTool(
     private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
+    private val compatibilityService: GradleCompatibilityService = GradleCompatibilityService(),
+    private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
+    private val javaHome: Path? = null,
     retryConfig: GradleDependencyResolver.RetryConfig = GradleDependencyResolver.RetryConfig(),
 ) : NativeGradleBuildTool {
 
     private val logger = LoggerFactory.getLogger(GradleBuildTool::class.java)
-    private val dependencyResolver = GradleDependencyResolver(connectionFactory, retryConfig)
+    private val dependencyResolver = GradleDependencyResolver(
+        connectionFactory = connectionFactory,
+        compatibilityService = compatibilityService,
+        failureAnalyzer = failureAnalyzer,
+        javaHome = javaHome,
+        retryConfig = retryConfig,
+    )
 
     override val name: String = "Gradle"
 
