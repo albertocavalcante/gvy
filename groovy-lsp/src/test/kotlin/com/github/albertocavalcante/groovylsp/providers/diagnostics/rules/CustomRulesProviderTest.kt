@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -39,18 +40,37 @@ class CustomRulesProviderTest {
     @Test
     fun `should skip disabled rules`() = runBlocking {
         val enabledRule = createMockRule("enabled", listOf(createDiagnostic("Enabled")), enabled = true)
-        val disabledRule = createMockRule("disabled", listOf(createDiagnostic("Disabled")), enabled = false)
+        val disabledRule = createMockRule("disabled", listOf(createDiagnostic("Disabled")), enabled = true)
 
         val compilationService = mockk<GroovyCompilationService>()
         every { compilationService.getAst(any()) } returns null
         every { compilationService.getDiagnostics(any()) } returns emptyList()
 
-        val provider = CustomRulesProvider(listOf(enabledRule, disabledRule), compilationService)
+        val ruleConfig = DiagnosticRuleConfig(disabledRuleIds = setOf("disabled"))
+        val provider = CustomRulesProvider(listOf(enabledRule, disabledRule), compilationService, ruleConfig)
         val uri = URI.create("file:///test.groovy")
         val diagnostics = provider.provideDiagnostics(uri, "test code").toList()
 
         assertEquals(1, diagnostics.size)
         assertEquals("Enabled", diagnostics.first().message)
+    }
+
+    @Test
+    fun `should allow explicitly enabled rules`() = runBlocking {
+        val enabledRule = createMockRule("enabled", listOf(createDiagnostic("Enabled")), enabled = true)
+        val disabledByDefaultRule = createMockRule("opt-in", listOf(createDiagnostic("Opt in")), enabled = false)
+
+        val compilationService = mockk<GroovyCompilationService>()
+        every { compilationService.getAst(any()) } returns null
+        every { compilationService.getDiagnostics(any()) } returns emptyList()
+
+        val ruleConfig = DiagnosticRuleConfig(enabledRuleIds = setOf("opt-in"))
+        val provider = CustomRulesProvider(listOf(enabledRule, disabledByDefaultRule), compilationService, ruleConfig)
+        val uri = URI.create("file:///test.groovy")
+        val diagnostics = provider.provideDiagnostics(uri, "test code").toList()
+
+        assertEquals(2, diagnostics.size)
+        assertTrue(diagnostics.any { it.message == "Opt in" })
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -20,6 +21,7 @@ import java.net.URI
 class CustomRulesProvider(
     private val rules: List<DiagnosticRule>,
     private val compilationService: GroovyCompilationService,
+    private val ruleConfig: DiagnosticRuleConfig = DiagnosticRuleConfig(),
 ) : StreamingDiagnosticProvider {
 
     companion object {
@@ -39,7 +41,7 @@ class CustomRulesProvider(
         // Execute each enabled rule
         for (rule in rules) {
             try {
-                if (!rule.enabledByDefault) {
+                if (!ruleConfig.isRuleEnabled(rule)) {
                     logger.debug("Skipping disabled rule: ${rule.id}")
                     continue
                 }

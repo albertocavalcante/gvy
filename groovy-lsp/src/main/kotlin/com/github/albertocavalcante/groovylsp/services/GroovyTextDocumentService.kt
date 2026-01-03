@@ -5,7 +5,6 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
@@ -18,7 +17,8 @@ import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCo
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
-import com.github.albertocavalcante.groovylsp.providers.diagnostics.ParserDiagnosticProvider
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
@@ -125,34 +125,29 @@ class GroovyTextDocumentService(
      * Factory method for creating DiagnosticsService with configured providers.
      *
      * NOTE: This factory pattern allows for easy testing and future extension.
-     * TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
      */
     private fun createDiagnosticsService(): DiagnosticsService {
         val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
-            // Add parser diagnostics (syntax errors, compilation errors)
-            // NOTE: Parser diagnostics are always enabled as they provide essential error information
-            add(ParserDiagnosticProvider(compilationService))
+            val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
+            val codeNarcAdapter = DiagnosticProviderAdapter(
+                delegate = codeNarcProvider,
+                id = "codenarc",
+                enabledByDefault = serverConfiguration.codeNarcEnabled,
+            )
+            add(codeNarcAdapter)
 
-            // Add CodeNarc if enabled in configuration
-            if (serverConfiguration.codeNarcEnabled) {
-                val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
-                val codeNarcAdapter = DiagnosticProviderAdapter(
-                    delegate = codeNarcProvider,
-                    id = "codenarc",
-                    enabledByDefault = true,
-                )
-                add(codeNarcAdapter)
-            }
-
-            // TODO: Add more providers here as implemented
-            // add(UnusedImportDiagnosticProvider())
+            val customRulesProvider = CustomRulesProvider(
+                rules = BuiltinRules.getAllRules(),
+                compilationService = compilationService,
+                ruleConfig = serverConfiguration.diagnosticRuleConfig,
+            )
+            add(customRulesProvider)
         }
 
-        // TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
-        val config = DiagnosticConfig()
+        val config = serverConfiguration.diagnosticConfig
 
         return DiagnosticsService(providers, config)
     }
@@ -324,22 +319,23 @@ class GroovyTextDocumentService(
 
                     ensureActive() // Ensure job wasn't cancelled before publishing
 
+                    val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+                        "parser",
+                        enabledByDefault = true,
+                    )
+                    val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+
                     // Publish compilation diagnostics first to keep UX responsive.
                     // NOTE: Tradeoff (See #564):
-                    // This can result in two diagnostics publications (compile first, then CodeNarc merge),
-                    // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
-                    publishDiagnostics(uri.toString(), result.diagnostics)
+                    // This can result in two diagnostics publications (compile first, then provider merge),
+                    // but avoids blocking syntax feedback on slow lint initialization.
+                    publishDiagnostics(uri.toString(), parserDiagnostics)
 
-                    // Skip CodeNarc when disabled or when compilation already has errors.
-                    if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
-                        return@runCatching
-                    }
-
-                    val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                    val allDiagnostics = result.diagnostics + codenarcDiagnostics
+                    val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val allDiagnostics = parserDiagnostics + extraDiagnostics
 
                     ensureActive()
-                    if (codenarcDiagnostics.isNotEmpty()) {
+                    if (extraDiagnostics.isNotEmpty()) {
                         publishDiagnostics(uri.toString(), allDiagnostics)
                     }
 
@@ -376,8 +372,13 @@ class GroovyTextDocumentService(
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         // Compile the document and return diagnostics (does not publish them)
         val result = compilationService.compile(uri, content)
-        val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return result.diagnostics + codenarcDiagnostics
+        val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+            "parser",
+            enabledByDefault = true,
+        )
+        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+        val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+        return parserDiagnostics + extraDiagnostics
     }
 
     fun refreshOpenDocuments() {

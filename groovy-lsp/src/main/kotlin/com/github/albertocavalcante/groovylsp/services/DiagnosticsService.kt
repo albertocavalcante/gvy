@@ -19,7 +19,7 @@ import java.net.URI
  * Service for collecting diagnostics from multiple streaming providers.
  *
  * Providers are executed concurrently using Flow-based composition, with configuration-based
- * filtering (denylist/allowlist) and graceful error handling.
+ * filtering (disabled/enabled providers) and graceful error handling.
  *
  * @param providers List of diagnostic providers to use
  * @param config Configuration for filtering providers

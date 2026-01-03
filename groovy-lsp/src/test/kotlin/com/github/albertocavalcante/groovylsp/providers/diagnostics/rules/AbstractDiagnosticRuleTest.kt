@@ -113,7 +113,7 @@ class AbstractDiagnosticRuleTest {
             assertEquals("Test message", diagnostic.message)
             assertEquals(DiagnosticSeverity.Error, diagnostic.severity)
             assertEquals("groovy-lsp", diagnostic.source)
-            assertEquals("test-rule", diagnostic.code.left)
+            assertEquals("H:test-rule", diagnostic.code.left)
         }
     }
 
