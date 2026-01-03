@@ -126,6 +126,6 @@ private fun SymbolKind.toUnifiedKind(): UnifiedNodeKind = when (this) {
 }
 
 private fun ApiRange.toLspRange(): Range = Range(
-    Position(start.line - 1, start.column - 1),
-    Position(end.line - 1, end.column - 1),
+    Position((start.line - 1).coerceAtLeast(0), (start.column - 1).coerceAtLeast(0)),
+    Position((end.line - 1).coerceAtLeast(0), (end.column - 1).coerceAtLeast(0)),
 )
