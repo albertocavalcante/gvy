@@ -308,10 +308,10 @@ jobs:
         # Runner selection:
         #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
         #   - local-macos: Local macOS runner (setup with tools/github/actions/setup-macos-runner.sh)
-        #   - github-hosted: GitHub-hosted (macos-15 for PRs, multi-platform for main)
-        # NOTE: Using macos-15 instead of ubuntu-latest due to runner stability issues
+        #   - github-hosted: GitHub-hosted (Ubuntu is now the default for PRs and main, macOS remains as an additional check)
+        # NOTE: macOS is retained for compatibility, but Ubuntu is the more stable default
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS || 'macos-15') || format('["{0}", "{1}"]', vars.CI_PRIMARY_OS || 'macos-15', (vars.CI_PRIMARY_OS == 'ubuntu-24.04') && 'macos-15' || 'ubuntu-24.04')) ) }}
+        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04') || format('["{0}", "{1}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04', (vars.CI_PRIMARY_OS == 'macos-15') && 'ubuntu-24.04' || 'macos-15')) ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos' || github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
         exclude:
           - os: ubuntu-24.04
