@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
+import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -22,6 +23,8 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
         } else {
             analyzeImpl(uri, content, context)
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         // Log error but don't propagate - rules should be isolated
         org.slf4j.LoggerFactory.getLogger(javaClass).error("Rule $id failed", e)

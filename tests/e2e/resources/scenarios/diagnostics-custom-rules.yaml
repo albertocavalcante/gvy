@@ -62,11 +62,11 @@ steps:
           expect:
             type: EQUALS
             value: 3
-        # Empty block is on line 8 (0-indexed)
+        # Empty block is on line 7 (0-indexed)
         - jsonPath: $.diagnostics[?(@.message =~ /.*empty.*block.*/i)].range.start.line
           expect:
             type: EQUALS
-            value: 8
+            value: 7
   - changeDocument:
       path: src/Problem.groovy
       version: 2

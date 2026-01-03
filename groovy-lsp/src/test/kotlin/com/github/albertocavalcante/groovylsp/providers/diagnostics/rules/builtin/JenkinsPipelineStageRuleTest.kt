@@ -72,6 +72,30 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
+    fun `should not use steps from a later stage`() = runBlocking {
+        val code = """
+            pipeline {
+                stages {
+                    stage('Build') {
+                        // Missing steps
+                    }
+                    stage('Test') {
+                        steps {
+                            echo 'ok'
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
+
+        assertEquals(1, diagnostics.size)
+        assertTrue(diagnostics.first().message.contains("Build"))
+    }
+
+    @Test
     fun `should not analyze non-Jenkins files`() = runBlocking {
         val code = """
             stage('Build') {

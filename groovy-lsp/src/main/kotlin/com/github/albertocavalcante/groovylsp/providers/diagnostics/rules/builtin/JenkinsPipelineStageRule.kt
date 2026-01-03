@@ -20,6 +20,8 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
     private companion object {
         private const val LOOK_AHEAD_LINES = 10
+        private val STEPS_BLOCK_PATTERN = Regex("""\bsteps\s*\{""")
+        private val SCRIPT_BLOCK_PATTERN = Regex("""\bscript\s*\{""")
     }
 
     override val id = "jenkins-stage-structure"
@@ -51,10 +53,16 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
                 // Check if the stage has steps (simple heuristic)
                 // Look ahead a few lines to see if there's a steps block
-                val endLine = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
+                val scanLimit = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
+                val nextStageIndex = (lineIndex + 1 until scanLimit)
+                    .firstOrNull { stagePattern.containsMatchIn(lines[it]) }
+                val endLine = nextStageIndex ?: scanLimit
                 val blockContent = lines.subList(lineIndex, endLine).joinToString("\n")
 
-                if (!blockContent.contains("steps") && !blockContent.contains("script")) {
+                val hasStepsBlock = STEPS_BLOCK_PATTERN.containsMatchIn(blockContent)
+                val hasScriptBlock = SCRIPT_BLOCK_PATTERN.containsMatchIn(blockContent)
+
+                if (!hasStepsBlock && !hasScriptBlock) {
                     diagnostics.add(
                         diagnostic(
                             lineIndex,

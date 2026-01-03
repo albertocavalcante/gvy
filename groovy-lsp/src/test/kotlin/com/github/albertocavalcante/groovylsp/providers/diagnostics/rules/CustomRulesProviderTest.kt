@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
@@ -14,6 +15,7 @@ import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class CustomRulesProviderTest {
@@ -94,6 +96,31 @@ class CustomRulesProviderTest {
         // Should still get diagnostics from good rule
         assertEquals(1, diagnostics.size)
         assertEquals("Good rule", diagnostics.first().message)
+    }
+
+    @Test
+    fun `should rethrow cancellation from rules`() = runBlocking {
+        val cancellingRule = object : DiagnosticRule {
+            override val id = "cancelled"
+            override val description = "Cancelled rule"
+            override val analysisType = DiagnosticAnalysisType.HEURISTIC
+            override val defaultSeverity = DiagnosticSeverity.Warning
+            override val enabledByDefault = true
+
+            override suspend fun analyze(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
+                throw CancellationException("Cancelled")
+        }
+
+        val compilationService = mockk<GroovyCompilationService>()
+        every { compilationService.getAst(any()) } returns null
+        every { compilationService.getDiagnostics(any()) } returns emptyList()
+
+        val provider = CustomRulesProvider(listOf(cancellingRule), compilationService)
+        val uri = URI.create("file:///test.groovy")
+
+        assertFailsWith<CancellationException> {
+            provider.provideDiagnostics(uri, "test code").toList()
+        }
     }
 
     @Test

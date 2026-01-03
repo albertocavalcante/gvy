@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
@@ -55,6 +56,8 @@ class CustomRulesProvider(
                 diagnostics.forEach { diagnostic ->
                     emit(diagnostic)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Rule ${rule.id} failed for $uri", e)
                 // Continue with other rules
@@ -67,6 +70,8 @@ class CustomRulesProvider(
         private val astLazy: Any? by lazy {
             try {
                 compilationService.getAst(uri)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.debug("Failed to get AST for rule context", e)
                 null
@@ -79,6 +84,8 @@ class CustomRulesProvider(
             compilationService.getDiagnostics(uri).any {
                 it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.debug("Failed to check for errors", e)
             true // Assume errors if we can't check

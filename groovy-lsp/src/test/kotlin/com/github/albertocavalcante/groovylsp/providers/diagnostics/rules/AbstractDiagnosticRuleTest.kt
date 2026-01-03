@@ -2,12 +2,14 @@ package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AbstractDiagnosticRuleTest {
@@ -86,6 +88,24 @@ class AbstractDiagnosticRuleTest {
         val diagnostics = rule.analyze(URI.create("file:///test.groovy"), "test", context)
 
         assertTrue(diagnostics.isEmpty(), "Should return empty list on exception")
+    }
+
+    @Test
+    fun `should rethrow cancellation exceptions`() {
+        val rule = object : AbstractDiagnosticRule() {
+            override val id = "test-rule"
+            override val description = "Test rule"
+
+            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
+                throw CancellationException("Cancelled")
+        }
+
+        val context = mockk<RuleContext>()
+        every { context.hasErrors() } returns false
+
+        assertFailsWith<CancellationException> {
+            runBlocking { rule.analyze(URI.create("file:///test.groovy"), "test", context) }
+        }
     }
 
     @Test
