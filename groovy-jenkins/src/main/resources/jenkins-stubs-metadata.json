@@ -792,6 +792,25 @@
       },
       "documentation": "Clean the workspace. More flexible than deleteDir with pattern support."
     },
+    "container": {
+      "plugin": "kubernetes",
+      "positionalParams": [
+        "name"
+      ],
+      "parameters": {
+        "name": {
+          "type": "String",
+          "required": true,
+          "documentation": "Name of the container to run commands in"
+        },
+        "body": {
+          "type": "Closure",
+          "required": true,
+          "documentation": "Body to execute inside the container"
+        }
+      },
+      "documentation": "Run commands inside a specific container within a Kubernetes pod."
+    },
     "timestamps": {
       "plugin": "timestamper",
       "parameters": {
@@ -868,6 +887,10 @@
     "docker": {
       "type": "org.jenkinsci.plugins.docker.workflow.Docker",
       "documentation": "Docker integration object. Provides methods: image(), build(), withRegistry(), withServer(), withTool()."
+    },
+    "kubernetes": {
+      "type": "org.csanchez.jenkins.plugins.kubernetes.KubernetesSlave",
+      "documentation": "Kubernetes integration object. Provides methods for defining pod templates and container configurations."
     },
     "pipeline": {
       "type": "org.jenkinsci.plugins.workflow.cps.CpsScript",
