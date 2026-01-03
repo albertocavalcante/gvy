@@ -49,8 +49,16 @@ fun CodePanel(
     onCursorChange: (Int, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var textFieldValue by remember(sourceCode) {
+    // FIX: Do NOT key remember on sourceCode, to avoid resetting selection on typing.
+    var textFieldValue by remember {
         mutableStateOf(TextFieldValue(text = sourceCode))
+    }
+
+    // Handle external source code changes (e.g. file load)
+    LaunchedEffect(sourceCode) {
+        if (textFieldValue.text != sourceCode) {
+            textFieldValue = TextFieldValue(text = sourceCode) // Reset selection to start
+        }
     }
 
     // Sync external selection (from tree) to editor
