@@ -314,7 +314,10 @@ class ProjectStartupManager(
             },
         )
         // Signal warning state but still quiescent (ready for requests, but degraded)
-        onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        coroutineScope.launch(indexingDispatcher) {
+            jenkinsInitJob?.join()
+            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        }
     }
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {

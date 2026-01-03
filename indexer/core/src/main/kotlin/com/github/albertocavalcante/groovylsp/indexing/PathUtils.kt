@@ -16,7 +16,12 @@ object PathUtils {
         } else {
             uri
         }
-        // Remove trailing slash which is added for directories
-        return tripleSlashUri.removeSuffix("/")
+        // Remove trailing slash which is added for directories, UNLESS it's the root
+        // (e.g. file:/// should remain file:///, file:///C:/ should remain file:///C:/)
+        return if (File(path).parent == null) {
+            tripleSlashUri
+        } else {
+            tripleSlashUri.removeSuffix("/")
+        }
     }
 }

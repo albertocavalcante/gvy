@@ -245,6 +245,9 @@ object CompletionProvider {
             addImports(context.imports)
             addKeywords()
 
+            // Add basic Groovy snippet completions (println, print, etc.)
+            GroovyCompletions.basic().forEach(::add)
+
             // Add Jenkins-specific completions for non-options blocks
             if (isJenkinsFile) {
                 val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
@@ -520,8 +523,6 @@ object CompletionProvider {
         }
         return null
     }
-
-    private const val MAX_MEMBER_ACCESS_SEARCH_DEPTH = 50
 
     /**
      * Detect completion context (member access or type parameter).

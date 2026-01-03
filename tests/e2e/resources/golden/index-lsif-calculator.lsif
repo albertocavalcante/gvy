@@ -1,5 +1,5 @@
-{"id":1,"type":"vertex","label":"metaData","version":"0.4.3","projectRoot":"file:///private{{workspace}}","positionEncoding":"utf-16","toolInfo":{"name":"groovy-lsp","version":"0.0.1"}}
-{"id":2,"type":"vertex","label":"document","uri":"file:///private{{workspace}}/src/main/groovy/com/example/Calculator.groovy","languageId":"groovy"}
+{"id":1,"type":"vertex","label":"metaData","version":"0.4.3","projectRoot":"file://{{workspace}}","positionEncoding":"utf-16","toolInfo":{"name":"groovy-lsp","version":"0.0.1"}}
+{"id":2,"type":"vertex","label":"document","uri":"file://{{workspace}}/src/main/groovy/com/example/Calculator.groovy","languageId":"groovy"}
 {"id":3,"type":"vertex","label":"range","start":{"line":5,"character":0},"end":{"line":14,"character":1}}
 {"id":4,"type":"edge","label":"contains","outV":2,"inV":3}
 {"id":5,"type":"vertex","label":"resultSet"}
