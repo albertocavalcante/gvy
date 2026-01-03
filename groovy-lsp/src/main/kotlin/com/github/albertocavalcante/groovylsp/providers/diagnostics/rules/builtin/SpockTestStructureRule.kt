@@ -17,6 +17,10 @@ import java.net.URI
  */
 class SpockTestStructureRule : AbstractDiagnosticRule() {
 
+    private companion object {
+        private const val LOOK_AHEAD_LINES = 20
+    }
+
     override val id = "spock-test-structure"
 
     override val description = "Detect incomplete Spock test methods missing key blocks"
@@ -43,8 +47,7 @@ class SpockTestStructureRule : AbstractDiagnosticRule() {
             val match = testMethodPattern.find(line)
             if (match != null) {
                 // Check the next several lines for Spock blocks
-                val lookAheadLines = 20
-                val endLine = minOf(lineIndex + lookAheadLines, lines.size)
+                val endLine = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
                 val methodContent = lines.subList(lineIndex, endLine).joinToString("\n")
 
                 val hasGiven = methodContent.contains(Regex("""(\n|^)\s*given:"""))

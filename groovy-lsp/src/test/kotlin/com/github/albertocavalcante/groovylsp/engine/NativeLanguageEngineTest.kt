@@ -262,7 +262,7 @@ class NativeLanguageEngineTest {
 
         // Should be able to iterate without throwing
         var count = 0
-        for (diagnostic in diagnostics) {
+        for (_ in diagnostics) {
             count++
         }
         assertEquals(diagnostics.size, count, "Diagnostics list should be iterable")

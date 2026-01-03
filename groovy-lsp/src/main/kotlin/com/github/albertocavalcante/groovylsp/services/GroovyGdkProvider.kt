@@ -113,7 +113,8 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
             }
         }
 
-        // 3. Always include Object methods (as every object in Groovy is an Object, and interfaces are implemented by Objects)
+        // 3. Always include Object methods (every Groovy object is an Object,
+        // and interfaces are implemented by Objects).
         cache["java.lang.Object"]?.let { results.addAll(it) }
 
         return results.distinctBy {

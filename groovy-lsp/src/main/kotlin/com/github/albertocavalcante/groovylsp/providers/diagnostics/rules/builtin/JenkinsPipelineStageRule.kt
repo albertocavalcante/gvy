@@ -17,6 +17,10 @@ import java.net.URI
  */
 class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
+    private companion object {
+        private const val LOOK_AHEAD_LINES = 10
+    }
+
     override val id = "jenkins-stage-structure"
 
     override val description = "Detect incomplete or malformed Jenkins pipeline stage declarations"
@@ -46,8 +50,7 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
                 // Check if the stage has steps (simple heuristic)
                 // Look ahead a few lines to see if there's a steps block
-                val lookAheadLines = 10
-                val endLine = minOf(lineIndex + lookAheadLines, lines.size)
+                val endLine = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
                 val blockContent = lines.subList(lineIndex, endLine).joinToString("\n")
 
                 if (!blockContent.contains("steps") && !blockContent.contains("script")) {

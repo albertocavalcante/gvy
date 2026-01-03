@@ -57,7 +57,6 @@ import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
-import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -246,8 +245,6 @@ class GroovyTextDocumentService(
         )
     }
 
-    private fun List<Diagnostic>.containsErrors(): Boolean = any { it.severity == DiagnosticSeverity.Error }
-
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
         compilationService.ensureCompiled(uri)?.let { return it }
 
@@ -256,7 +253,8 @@ class GroovyTextDocumentService(
         // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
         // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
         // to make these requests deterministic and avoid flaky e2e behavior.
-        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
+        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
+        //   so ensureCompiled never returns null.
         //   See: https://github.com/albertocavalcante/gvy/issues/564
         val content = documentProvider.get(uri) ?: return null
         return compilationService.compileAsync(coroutineScope, uri, content).await()

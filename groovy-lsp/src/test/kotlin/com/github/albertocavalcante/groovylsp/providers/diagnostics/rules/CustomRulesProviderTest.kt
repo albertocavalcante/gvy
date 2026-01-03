@@ -4,7 +4,6 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
@@ -81,7 +80,7 @@ class CustomRulesProviderTest {
             override val description = "Bad rule"
 
             override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
-                throw RuntimeException("Rule failed")
+                error("Rule failed")
         }
 
         val compilationService = mockk<GroovyCompilationService>()

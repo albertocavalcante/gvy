@@ -82,13 +82,13 @@ class InlayHintsProvider(
 
                 is MethodCallExpression -> {
                     if (config.parameterHints) {
-                        collectParameterHints(node, uri, astModel, symbolTable, workspaceSymbols, hints)
+                        collectParameterHints(node, astModel, symbolTable, workspaceSymbols, hints)
                     }
                 }
 
                 is ConstructorCallExpression -> {
                     if (config.parameterHints) {
-                        collectConstructorParameterHints(node, uri, astModel, symbolTable, workspaceSymbols, hints)
+                        collectConstructorParameterHints(node, astModel, workspaceSymbols, hints)
                     }
                 }
             }
@@ -146,7 +146,6 @@ class InlayHintsProvider(
      */
     private fun collectParameterHints(
         call: MethodCallExpression,
-        uri: URI,
         astModel: GroovyAstModel,
         symbolTable: SymbolTable?,
         workspaceSymbols: List<Symbol>,
@@ -194,9 +193,7 @@ class InlayHintsProvider(
      */
     private fun collectConstructorParameterHints(
         call: ConstructorCallExpression,
-        uri: URI,
         astModel: GroovyAstModel,
-        symbolTable: SymbolTable?,
         workspaceSymbols: List<Symbol>,
         hints: MutableList<InlayHint>,
     ) {

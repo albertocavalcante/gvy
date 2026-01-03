@@ -77,8 +77,9 @@ class DiagnosticsService(
 
                             val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
                             logger.debug("Provider {} completed in {}ms", provider.id, elapsedMs)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
-                            if (e is CancellationException) throw e
                             // NOTE: Error isolation - one provider failure doesn't stop others
                             // TODO(#456): Consider publishing provider-specific error diagnostics.
                             //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
