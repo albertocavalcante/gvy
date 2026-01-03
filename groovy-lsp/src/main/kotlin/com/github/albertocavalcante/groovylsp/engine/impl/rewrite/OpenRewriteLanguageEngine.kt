@@ -41,12 +41,12 @@ class OpenRewriteLanguageEngine : LanguageEngine {
     override fun createSession(request: ParseRequest): LanguageSession {
         val path = try {
             Paths.get(request.uri)
-        } catch (_: Exception) {
+        } catch (_: java.nio.file.InvalidPathException) {
             null
         }
         val parseUnit = parserProvider.parse(request.content, path)
         val adapter = RewriteParserAdapter(parseUnit, request.uri.toString())
-        return OpenRewriteLanguageSession(adapter, request.content)
+        return OpenRewriteLanguageSession(adapter)
     }
 
     override fun createSession(uri: URI, content: String): LanguageSession = createSession(ParseRequest(uri, content))
@@ -55,8 +55,7 @@ class OpenRewriteLanguageEngine : LanguageEngine {
 /**
  * Language Session for the OpenRewrite Engine.
  */
-class OpenRewriteLanguageSession(private val parseUnit: ParseUnit, @Suppress("unused") private val content: String) :
-    LanguageSession {
+class OpenRewriteLanguageSession(private val parseUnit: ParseUnit) : LanguageSession {
 
     override val result: ParseResultMetadata = object : ParseResultMetadata {
         override val isSuccess: Boolean = parseUnit.isSuccessful
@@ -86,7 +85,7 @@ class OpenRewriteLanguageSession(private val parseUnit: ParseUnit, @Suppress("un
  */
 private class RewriteHoverProvider(private val parseUnit: ParseUnit) : HoverProvider {
     override suspend fun getHover(params: HoverParams): Hover {
-        val position = Position(params.position.line, params.position.character)
+        val position = params.position
 
         val nodeInfo = parseUnit.nodeAt(position)
         val markupContent = if (nodeInfo != null) {
