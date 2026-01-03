@@ -121,6 +121,24 @@
       },
       "documentation": "Mark the build as unstable with a message."
     },
+    "waitUntil": {
+      "plugin": "workflow-basic-steps",
+      "parameters": {
+        "initialRecurrencePeriod": {
+          "type": "long",
+          "required": false,
+          "default": "250",
+          "documentation": "Initial wait period in milliseconds before first check"
+        },
+        "quiet": {
+          "type": "boolean",
+          "required": false,
+          "default": "false",
+          "documentation": "If true, suppress intermediate console output"
+        }
+      },
+      "documentation": "Wait for a condition to become true."
+    },
     "warnError": {
       "plugin": "workflow-basic-steps",
       "parameters": {
