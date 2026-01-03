@@ -42,6 +42,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 private const val RETRY_DELAY_MS = 50L
+private const val CONTENT_START_PREVIEW_LENGTH = 50
+private const val CONTENT_PREVIEW_LENGTH = 100
 
 /**
  * Service for compiling and managing Groovy source code.
@@ -102,8 +104,9 @@ class GroovyCompilationService(
         config = engineConfig,
         parser = parser,
         compilationService = this,
-        documentProvider = documentProvider
-            ?: throw IllegalStateException("DocumentProvider required for engine features"),
+        documentProvider = checkNotNull(documentProvider) {
+            "DocumentProvider required for engine features"
+        },
         sourceNavigator = sourceNavigator,
     ).also { logger.info("Active engine initialized: ${engineConfig.type.id}") }
 
@@ -278,7 +281,9 @@ class GroovyCompilationService(
                 cache.getWithContent(uri)?.first
             }
             val content = fileContent ?: return null
-            logger.info("Content starts with: '${content.take(50).replace("\n", "\\n")}'")
+            logger.info(
+                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'",
+            )
             val parseResult = workerSessionManager.parse(
                 ParseRequest(
                     uri = uri,
@@ -302,7 +307,9 @@ class GroovyCompilationService(
                     }
                 }",
             )
-            logger.debug("Content preview: ${content.take(100).replace("\n", "\\n")}")
+            logger.debug(
+                "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}",
+            )
             return parseResult
         }
 

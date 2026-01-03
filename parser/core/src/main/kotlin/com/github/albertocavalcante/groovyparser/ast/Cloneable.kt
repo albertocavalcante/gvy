@@ -70,6 +70,8 @@ object NodeCloner {
      * Deep clones a node and all its children.
      * The cloned node will have no parent set.
      */
+    // TODO(#587): Split clone into smaller helpers to reduce method length.
+    //   See: https://github.com/albertocavalcante/gvy/issues/587
     @Suppress("UNCHECKED_CAST")
     fun <T : Node> clone(node: T): T = when (node) {
         is CompilationUnit -> cloneCompilationUnit(node) as T

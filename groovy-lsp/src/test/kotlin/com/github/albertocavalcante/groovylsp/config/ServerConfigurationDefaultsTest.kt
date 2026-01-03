@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.config
 
 import com.github.albertocavalcante.groovylsp.engine.config.EngineType
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -190,6 +191,42 @@ class ServerConfigurationDefaultsTest {
         assertTrue(config.codeNarcEnabled)
         assertNull(config.codeNarcPropertiesFile)
         assertTrue(config.codeNarcAutoDetect)
+    }
+
+    @Test
+    fun `fromMap parses diagnostic provider configuration`() {
+        val config = ServerConfiguration.fromMap(
+            mapOf(
+                "groovy.diagnostics.providers.enabled" to listOf("custom-rules"),
+                "groovy.diagnostics.providers.disabled" to "codenarc",
+            ),
+        )
+
+        assertEquals(setOf("custom-rules"), config.diagnosticConfig.enabledProviders)
+        assertEquals(setOf("codenarc"), config.diagnosticConfig.disabledProviders)
+    }
+
+    @Test
+    fun `fromMap parses diagnostic rule configuration`() {
+        val config = ServerConfiguration.fromMap(
+            mapOf(
+                "groovy.diagnostics.rules.enabled" to listOf("rule-1", "rule-2"),
+                "groovy.diagnostics.rules.disabled" to "rule-3",
+                "groovy.diagnostics.rules.analysisTypes.enabled" to listOf("ast", "semantic"),
+                "groovy.diagnostics.rules.analysisTypes.disabled" to "heuristic",
+            ),
+        )
+
+        assertEquals(setOf("rule-1", "rule-2"), config.diagnosticRuleConfig.enabledRuleIds)
+        assertEquals(setOf("rule-3"), config.diagnosticRuleConfig.disabledRuleIds)
+        assertEquals(
+            setOf(DiagnosticAnalysisType.AST, DiagnosticAnalysisType.SEMANTIC),
+            config.diagnosticRuleConfig.enabledAnalysisTypes,
+        )
+        assertEquals(
+            setOf(DiagnosticAnalysisType.HEURISTIC),
+            config.diagnosticRuleConfig.disabledAnalysisTypes,
+        )
     }
 
     @Test

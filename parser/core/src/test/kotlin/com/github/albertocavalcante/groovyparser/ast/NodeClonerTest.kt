@@ -328,9 +328,6 @@ class NodeClonerTest {
         val result = parser.parse(code)
         assertTrue(result.isSuccessful)
 
-        // Extract the TryCatchStatement from parsed code
-        val cu = result.result.get()
-        val classBody = cu.types[0].members
         // Code is at top level as script, find the try-catch
 
         // For testing, create a CatchClause manually with range

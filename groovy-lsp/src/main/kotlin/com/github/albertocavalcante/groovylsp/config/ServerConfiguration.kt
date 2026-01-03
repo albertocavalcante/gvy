@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.config
 import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.groovylsp.buildtool.GradleBuildStrategy
 import com.github.albertocavalcante.groovylsp.engine.config.EngineType
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.slf4j.LoggerFactory
 
@@ -28,6 +29,10 @@ data class ServerConfiguration(
     val codeNarcEnabled: Boolean = true,
     val codeNarcPropertiesFile: String? = null,
     val codeNarcAutoDetect: Boolean = true,
+
+    // Diagnostics configuration
+    val diagnosticConfig: DiagnosticConfig = DiagnosticConfig(),
+    val diagnosticRuleConfig: DiagnosticRuleConfig = DiagnosticRuleConfig(),
 
     // TODO comment configuration
     val todoScanEnabled: Boolean = true,
@@ -126,6 +131,22 @@ data class ServerConfiguration(
                     codeNarcPropertiesFile = map["groovy.codenarc.propertiesFile"] as? String,
                     codeNarcAutoDetect = (map["groovy.codenarc.autoDetect"] as? Boolean) ?: true,
 
+                    // Diagnostics configuration
+                    diagnosticConfig = DiagnosticConfig(
+                        enabledProviders = parseStringSet(map["groovy.diagnostics.providers.enabled"]),
+                        disabledProviders = parseStringSet(map["groovy.diagnostics.providers.disabled"]),
+                    ),
+                    diagnosticRuleConfig = DiagnosticRuleConfig(
+                        enabledRuleIds = parseStringSet(map["groovy.diagnostics.rules.enabled"]),
+                        disabledRuleIds = parseStringSet(map["groovy.diagnostics.rules.disabled"]),
+                        enabledAnalysisTypes = parseAnalysisTypes(
+                            map["groovy.diagnostics.rules.analysisTypes.enabled"],
+                        ),
+                        disabledAnalysisTypes = parseAnalysisTypes(
+                            map["groovy.diagnostics.rules.analysisTypes.disabled"],
+                        ),
+                    ),
+
                     // Jenkins configuration
                     jenkinsConfig = JenkinsConfiguration.fromMap(map),
 
@@ -199,6 +220,17 @@ data class ServerConfiguration(
             is String -> raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             else -> emptySet()
         }
+
+        private fun parseStringSet(raw: Any?): Set<String> = when (raw) {
+            is List<*> -> raw.filterIsInstance<String>().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            is String -> raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            else -> emptySet()
+        }
+
+        private fun parseAnalysisTypes(raw: Any?): Set<DiagnosticAnalysisType> =
+            parseStringSet(raw).mapNotNull { value ->
+                DiagnosticAnalysisType.values().firstOrNull { it.name.equals(value, ignoreCase = true) }
+            }.toSet()
 
         private fun parseTraceLevel(map: Map<String, Any>): TraceLevel {
             val traceString = map["groovy.trace.server"] as? String

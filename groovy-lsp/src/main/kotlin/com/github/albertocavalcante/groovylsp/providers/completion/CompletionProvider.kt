@@ -81,8 +81,9 @@ object CompletionProvider {
             val ast1 = result1.ast
             val astModel1 = result1.astModel
 
-            // If simple insertion failed and it was a clean insertion, try adding 'def'
-            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.
+            // If simple insertion failed and it was a clean insertion, try adding 'def'.
+            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
+            // but "class Foo { BrazilWorldCup2026 }" is not.
             if (isClean && !result1.isSuccessful) {
                 val content2 = insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)

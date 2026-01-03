@@ -24,8 +24,12 @@ class JenkinsDocProvider(
     private val jenkinsContext: JenkinsContext? = null,
 ) : PluggableDocProvider {
 
+    private companion object {
+        private const val HIGH_PRIORITY = 100
+    }
+
     override val name: String = "Jenkins Documentation Provider"
-    override val priority: Int = 100 // High priority - check before generic Groovy
+    override val priority: Int = HIGH_PRIORITY // High priority - check before generic Groovy
 
     override fun canHandle(node: ASTNode, documentUri: URI): Boolean {
         // Only handle if this looks like a Jenkinsfile

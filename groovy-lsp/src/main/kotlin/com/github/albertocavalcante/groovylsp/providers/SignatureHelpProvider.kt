@@ -190,9 +190,11 @@ class SignatureHelpProvider(
         // The user feedback specifically requested strict bounds, likely similar to [0, lastIndex].
         // But if I am at cursor position for arg 2 in a 2-arg method, I might be typing the 3rd arg.
         // Standard practice: activeParameter can be >= parameters.length (meaning too many args).
-        // However, user feedback says: "For a method with 2 parameters... this allows indices up to 3... cause LSP clients to receive out-of-bounds".
+        // However, user feedback says: "For a method with 2 parameters... this allows indices
+        // up to 3... cause LSP clients to receive out-of-bounds".
         // So I will clamp to (parameters.size - 1).coerceAtLeast(0).
-        val lastIndex = maxParams.coerceAtLeast(1) - 1 // If maxParams=0 -> lastIndex=0. If maxParams=2 -> lastIndex=1.
+        val lastIndex = maxParams.coerceAtLeast(1) - 1
+        // If maxParams=0 -> lastIndex=0. If maxParams=2 -> lastIndex=1.
         val normalizedActiveParameter = activeParameter.coerceIn(0, lastIndex)
 
         return SignatureHelp().apply {
