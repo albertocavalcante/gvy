@@ -166,7 +166,12 @@ private class SymbolExtractorVisitor {
                         name = classDecl.simpleName,
                         kind = kind,
                         range = range,
-                        containerName = cu.packageDeclaration?.expression?.toString()?.trim()?.removeSuffix("."),
+                        containerName = cu.packageDeclaration?.expression?.printTrimmed(
+                            org.openrewrite.Cursor(
+                                null,
+                                cu,
+                            ),
+                        )?.removeSuffix("."),
                     ),
                 )
 

@@ -58,6 +58,7 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
         val startLine = 1
         val startColumn = 1
         val endLine = if (lines.isEmpty()) 1 else lines.size
+        // Use consistent endColumn calculation
         val endColumn = if (lines.isEmpty()) 1 else lines.last().length.coerceAtLeast(1)
 
         return RewriteAstNodeDto(
