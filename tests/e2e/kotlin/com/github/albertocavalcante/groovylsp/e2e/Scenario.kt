@@ -38,7 +38,7 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
 
     private fun treeNodeToJsonElement(node: TreeNode): JsonElement = when (node) {
         is ObjectNode -> JsonObject(
-            node.fields().asSequence().associate { (k, v) -> k to treeNodeToJsonElement(v) },
+            node.properties().asSequence().associate { (k, v) -> k to treeNodeToJsonElement(v) },
         )
 
         is ArrayNode -> JsonArray(
@@ -78,7 +78,7 @@ class JacksonScenarioParser : ScenarioParser {
         registerModule(jsonElementModule)
         configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         configure(DeserializationFeature.READ_ENUMS_USING_TO_STRING, true)
-        enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
+        configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true)
     }
 
     override fun parseScenarioDefinition(yaml: String): ScenarioDefinition = try {
@@ -342,6 +342,8 @@ enum class PluginSource {
 
 enum class GoldenMode {
     JSON, // Structural JSON comparison (ignores formatting)
+    JSON_NORMALIZED, // JSON comparison with path normalization (replaces workspace paths)
+    NDJSON, // Newline-delimited JSON comparison (each line is a separate JSON object)
     TEXT, // Exact text comparison
     BINARY, // Binary comparison
 }

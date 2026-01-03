@@ -540,33 +540,40 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
         val interpolatedCommand = context.interpolateString(step.command)
         val interpolatedArgs = step.args.map { context.interpolateString(it) }
 
-        val fullCommand = if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
-            // We use the property "groovy.lsp.binary" which should be set by the test runner
-            // Fallback to local build path for local dev
-            val binaryPath = System.getProperty("groovy.lsp.binary")
-                ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
+        val fullCommand =
+            if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
+                // We use the property "groovy.lsp.binary" which should be set by the test runner
+                // Fallback to local build path for local dev
+                val binaryPath = System.getProperty("groovy.lsp.binary")
+                    ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
 
-            val cmd = mutableListOf(binaryPath)
-            if (interpolatedCommand.contains(" ")) {
-                val parts = interpolatedCommand.split(" ")
-                if (parts.first() == "gls") {
-                    cmd.addAll(parts.drop(1))
-                } else {
-                    cmd.addAll(parts)
+                val cmd = mutableListOf(binaryPath)
+                if (interpolatedCommand.contains(" ")) {
+                    val parts = interpolatedCommand.split(" ")
+                    if (parts.first() == "gls") {
+                        cmd.addAll(parts.drop(1))
+                    } else {
+                        cmd.addAll(parts)
+                    }
+                } else if (interpolatedCommand != "gls") {
+                    cmd.add(interpolatedCommand)
                 }
-            } else if (interpolatedCommand != "gls") {
-                cmd.add(interpolatedCommand)
+                cmd.addAll(interpolatedArgs)
+                cmd
+            } else {
+                interpolatedCommand.split(" ") + interpolatedArgs
             }
-            cmd.addAll(interpolatedArgs)
-            cmd
-        } else {
-            interpolatedCommand.split(" ") + interpolatedArgs
-        }
 
         logger.info("Executing CLI command: {}", fullCommand.joinToString(" "))
 
         val builder = ProcessBuilder(fullCommand)
         builder.directory(context.workspace.rootDir.toFile())
+
+        // Forward JAVA_HOME to subprocess
+        val javaHome = System.getProperty("java.home") ?: System.getenv("JAVA_HOME")
+        if (javaHome != null) {
+            builder.environment()["JAVA_HOME"] = javaHome
+        }
 
         // Capture output
         val outputFile = File.createTempFile("cli-stdout", ".log")
@@ -614,6 +621,11 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
 }
 
 class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
+
+    companion object {
+        private const val WORKSPACE_PLACEHOLDER = "{{workspace}}"
+    }
+
     override fun execute(step: ScenarioStep.GoldenAssert, context: ScenarioContext, nextStep: ScenarioStep?) {
         val actualPathString = context.interpolateString(step.actual)
         val expectedRelPath = context.interpolateString(step.expected)
@@ -631,13 +643,29 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             throw AssertionError("Actual file not found for golden assert: $actualFile")
         }
 
+        // Get workspace path for placeholder substitution. Use real path to resolve symlinks (e.g. /var -> /private/var on macOS)
+        val realRootDir = context.workspace.rootDir.toRealPath()
+        val workspacePath = realRootDir.toString()
+        val workspaceUri = realRootDir.toUri().toString().trimEnd('/')
+
         // Logic to update golden files
         val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
 
         if (updateSnapshot) {
             logger.warn("Updating golden file: {}", expectedFile)
             Files.createDirectories(expectedFile.parent)
-            Files.copy(actualFile, expectedFile, StandardCopyOption.REPLACE_EXISTING)
+
+            // For text/JSON files, normalize paths to placeholders for portability
+            if (step.mode != GoldenMode.BINARY) {
+                val actualContent = Files.readString(actualFile)
+                // Replace absolute paths with {{workspace}} placeholder
+                val normalizedContent = actualContent
+                    .replace(workspaceUri, "file://$WORKSPACE_PLACEHOLDER")
+                    .replace(workspacePath, WORKSPACE_PLACEHOLDER)
+                Files.writeString(expectedFile, normalizedContent)
+            } else {
+                Files.copy(actualFile, expectedFile, StandardCopyOption.REPLACE_EXISTING)
+            }
             return
         }
 
@@ -653,9 +681,14 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         when (step.mode) {
             GoldenMode.JSON -> {
                 // Compare as JSON trees to ignore formatting differences
+                // Interpolate {{workspace}} placeholder in expected content for portability
+                val interpolatedExpected = expectedContent
+                    .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
+                    .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+
                 val mapper = ObjectMapper()
                 val actualJson = mapper.readTree(actualContent)
-                val expectedJson = mapper.readTree(expectedContent)
+                val expectedJson = mapper.readTree(interpolatedExpected)
 
                 if (actualJson != expectedJson) {
                     val baseMsg = "JSON content mismatch for $expectedRelPath!"
@@ -664,8 +697,62 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                     //   See: https://github.com/albertocavalcante/gvy/issues/520
                     // If different, show diff
                     throw AssertionError(
-                        "${userMsg}${baseMsg}\nExpected:\n$expectedContent\nActual:\n$actualContent",
+                        "${userMsg}${baseMsg}\nExpected (interpolated):\n$interpolatedExpected\nActual:\n$actualContent",
                     )
+                }
+            }
+
+            GoldenMode.JSON_NORMALIZED -> {
+                // Compare as JSON with path normalization
+                // Replace workspace paths with {{workspace}} placeholder for deterministic comparison
+                val normalizedActual = actualContent.replace(workspaceUri, "file://{{workspace}}")
+                    .replace(workspacePath, "{{workspace}}")
+
+                val mapper = ObjectMapper()
+                val actualJson = mapper.readTree(normalizedActual)
+                val expectedJson = mapper.readTree(expectedContent)
+
+                if (actualJson != expectedJson) {
+                    val baseMsg = "JSON content mismatch for $expectedRelPath!"
+                    val userMsg = step.message?.let { "$it\n" } ?: ""
+                    throw AssertionError(
+                        "${userMsg}${baseMsg}\nExpected:\n$expectedContent\nActual (normalized):\n$normalizedActual",
+                    )
+                }
+            }
+
+            GoldenMode.NDJSON -> {
+                // NDJSON (newline-delimited JSON) comparison
+                // Each line is a separate JSON object - used by LSIF format
+                val mapper = ObjectMapper()
+
+                val actualLines = actualContent.lines().filter { it.isNotBlank() }
+                val expectedLines = expectedContent.lines().filter { it.isNotBlank() }
+
+                if (actualLines.size != expectedLines.size) {
+                    throw AssertionError(
+                        "NDJSON line count mismatch for $expectedRelPath! " +
+                            "Expected ${expectedLines.size} lines, got ${actualLines.size} lines",
+                    )
+                }
+
+                for (i in actualLines.indices) {
+                    val actualLine = actualLines[i]
+                    // Interpolate {{workspace}} placeholder in expected content
+                    val expectedLine = expectedLines[i]
+                        .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
+                        .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+
+                    val actualJson = mapper.readTree(actualLine)
+                    val expectedJson = mapper.readTree(expectedLine)
+
+                    if (actualJson != expectedJson) {
+                        val baseMsg = "NDJSON content mismatch at line ${i + 1} for $expectedRelPath!"
+                        val userMsg = step.message?.let { "$it\n" } ?: ""
+                        throw AssertionError(
+                            "${userMsg}${baseMsg}\nExpected (interpolated):\n$expectedLine\nActual:\n$actualLine",
+                        )
+                    }
                 }
             }
 

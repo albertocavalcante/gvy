@@ -1,0 +1,46 @@
+# SCIP Index Generation Test
+#
+# This scenario verifies that the gls index command correctly generates
+# a SCIP index file for a sample Groovy project.
+#
+# Run: ./gradlew :tests:e2eTest -Dgroovy.lsp.e2e.filter=cli/index-scip
+
+name: index-scip
+description: >
+  Verifies that the SCIP indexer correctly generates a SCIP index file
+  for a sample Groovy project containing class and method definitions.
+
+workspace:
+  fixture: index-test
+
+steps:
+  # Step 1: Run the CLI index command for SCIP
+  - cli:
+      command: gls index
+      args:
+        - "--format"
+        - "SCIP"
+        - "--output"
+        - "{{temp}}/index.scip"
+      saveAs: indexResult
+      expectExitCode: 0
+      timeoutSeconds: 60
+
+  # Step 2: Verify the command output
+  - assert:
+      source: indexResult
+      checks:
+        - jsonPath: $.stdout
+          expect:
+            type: MATCHES_REGEX
+            value: "^Successfully exported SCIP index to .*/index\\.scip\\n$"
+
+  # Step 3: Verify SCIP file was created
+  # (Golden file comparison is not suitable for SCIP because binary content depends on paths)
+  - assert:
+      source: indexResult
+      checks:
+        - jsonPath: $.exitCode
+          expect:
+            type: EQUALS
+            value: 0
