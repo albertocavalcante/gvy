@@ -3,13 +3,9 @@ package com.github.albertocavalcante.groovylsp.buildtool.maven
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
-import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory
-import org.eclipse.aether.impl.DefaultServiceLocator
 import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.repository.RemoteRepository
-import org.eclipse.aether.spi.connector.RepositoryConnectorFactory
-import org.eclipse.aether.spi.connector.transport.TransporterFactory
-import org.eclipse.aether.transport.http.HttpTransporterFactory
+import org.eclipse.aether.supplier.RepositorySystemSupplier
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
@@ -129,19 +125,7 @@ object AetherSessionFactory {
         RemoteRepository.Builder("jenkins", "default", JENKINS_REPO_URL).build(),
     )
 
-    private fun createRepositorySystem(): RepositorySystem {
-        val locator = MavenRepositorySystemUtils.newServiceLocator()
-        locator.addService(RepositoryConnectorFactory::class.java, BasicRepositoryConnectorFactory::class.java)
-        locator.addService(TransporterFactory::class.java, HttpTransporterFactory::class.java)
-
-        locator.setErrorHandler(object : DefaultServiceLocator.ErrorHandler() {
-            override fun serviceCreationFailed(type: Class<*>?, impl: Class<*>?, exception: Throwable?) {
-                logger.error("Aether service creation failed for {} with impl {}", type, impl, exception)
-            }
-        })
-
-        return locator.getService(RepositorySystem::class.java)
-    }
+    private fun createRepositorySystem(): RepositorySystem = RepositorySystemSupplier().get()
 
     // Standard Maven repository URLs
     const val MAVEN_CENTRAL_URL = "https://repo.maven.apache.org/maven2/"
