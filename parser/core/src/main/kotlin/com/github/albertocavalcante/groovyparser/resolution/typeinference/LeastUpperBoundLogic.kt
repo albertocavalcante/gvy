@@ -31,33 +31,62 @@ object LeastUpperBoundLogic {
     private const val JAVA_LANG_CHARSEQUENCE = "java.lang.CharSequence"
     private const val JAVA_LANG_COMPARABLE = "java.lang.Comparable"
 
+    // Numeric type precedence ranks
+    private const val RANK_BYTE = 1
+    private const val RANK_CHAR = 2
+    private const val RANK_SHORT = 3
+    private const val RANK_INT = 4
+    private const val RANK_LONG = 5
+    private const val RANK_BIG_INTEGER = 6
+    private const val RANK_BIG_DECIMAL = 7
+    private const val RANK_FLOAT = 8
+    private const val RANK_DOUBLE = 9
+
+    // Interface priority ranks (for common ancestor selection)
+    private const val PRIORITY_COMMON_COLLECTIONS = 1
+    private const val PRIORITY_COLLECTION = 2
+    private const val PRIORITY_ITERABLE = 3
+    private const val PRIORITY_CHARSEQUENCE = 4
+    private const val PRIORITY_COMPARABLE = 5
+    private const val PRIORITY_SERIALIZABLE = 10
+    private const val PRIORITY_OBJECT = 100
+
+    // Numeric precedence for promoteNumericTypes (different ranking system)
+    private const val PRECEDENCE_BOOLEAN = 0
+    private const val PRECEDENCE_BYTE = 1
+    private const val PRECEDENCE_SHORT = 2
+    private const val PRECEDENCE_INT = 3
+    private const val PRECEDENCE_LONG = 4
+    private const val PRECEDENCE_FLOAT = 5
+    private const val PRECEDENCE_DOUBLE = 6
+
     // Numeric type precedence including BigInteger/BigDecimal
     // Higher number = wider type (wins in LUB)
     private val NUMERIC_RANK = mapOf(
-        "java.lang.Byte" to 1, "byte" to 1,
-        "java.lang.Character" to 2, "char" to 2,
-        "java.lang.Short" to 3, "short" to 3,
-        "java.lang.Integer" to 4, "int" to 4,
-        "java.lang.Long" to 5, "long" to 5,
-        JAVA_MATH_BIG_INTEGER to 6,
-        JAVA_MATH_BIG_DECIMAL to 7,
-        "java.lang.Float" to 8, "float" to 8,
-        "java.lang.Double" to 9, "double" to 9,
+        "java.lang.Byte" to RANK_BYTE, "byte" to RANK_BYTE,
+        "java.lang.Character" to RANK_CHAR, "char" to RANK_CHAR,
+        "java.lang.Short" to RANK_SHORT, "short" to RANK_SHORT,
+        "java.lang.Integer" to RANK_INT, "int" to RANK_INT,
+        "java.lang.Long" to RANK_LONG, "long" to RANK_LONG,
+        JAVA_MATH_BIG_INTEGER to RANK_BIG_INTEGER,
+        JAVA_MATH_BIG_DECIMAL to RANK_BIG_DECIMAL,
+        "java.lang.Float" to RANK_FLOAT, "float" to RANK_FLOAT,
+        "java.lang.Double" to RANK_DOUBLE, "double" to RANK_DOUBLE,
     )
 
     // Preferred types when multiple common ancestors exist
     // Lower number = more preferred
     private val INTERFACE_PRIORITY = mapOf(
-        "java.util.List" to 1,
-        "java.util.Set" to 1,
-        "java.util.Map" to 1,
-        "java.lang.Number" to 1,
-        "java.util.Collection" to 2,
-        "java.lang.Iterable" to 3,
-        JAVA_LANG_CHARSEQUENCE to 4,
-        JAVA_LANG_COMPARABLE to 5,
-        "java.io.Serializable" to 10,
-        JAVA_LANG_OBJECT to 100,
+        "java.util.List" to PRIORITY_COMMON_COLLECTIONS,
+        "java.util.Set" to PRIORITY_COMMON_COLLECTIONS,
+        "java.util.Map" to PRIORITY_COMMON_COLLECTIONS,
+        "java.lang.Number" to PRIORITY_COMMON_COLLECTIONS,
+        "java.util.Collection" to PRIORITY_COLLECTION,
+        "java.lang.Iterable" to PRIORITY_ITERABLE,
+        JAVA_LANG_CHARSEQUENCE to PRIORITY_CHARSEQUENCE,
+        JAVA_LANG_COMPARABLE to PRIORITY_COMPARABLE,
+        "java.io.Serializable" to PRIORITY_SERIALIZABLE,
+        JAVA_LANG_OBJECT to PRIORITY_OBJECT,
     )
 
     /**
@@ -287,13 +316,13 @@ object LeastUpperBoundLogic {
                     val primitive = type.asPrimitive()
                     // Map primitive to its rank
                     when (primitive) {
-                        ResolvedPrimitiveType.BYTE -> 1
-                        ResolvedPrimitiveType.CHAR -> 2
-                        ResolvedPrimitiveType.SHORT -> 3
-                        ResolvedPrimitiveType.INT -> 4
-                        ResolvedPrimitiveType.LONG -> 5
-                        ResolvedPrimitiveType.FLOAT -> 8
-                        ResolvedPrimitiveType.DOUBLE -> 9
+                        ResolvedPrimitiveType.BYTE -> RANK_BYTE
+                        ResolvedPrimitiveType.CHAR -> RANK_CHAR
+                        ResolvedPrimitiveType.SHORT -> RANK_SHORT
+                        ResolvedPrimitiveType.INT -> RANK_INT
+                        ResolvedPrimitiveType.LONG -> RANK_LONG
+                        ResolvedPrimitiveType.FLOAT -> RANK_FLOAT
+                        ResolvedPrimitiveType.DOUBLE -> RANK_DOUBLE
                         ResolvedPrimitiveType.BOOLEAN -> null // Can't promote boolean
                     }
                 }
@@ -348,14 +377,14 @@ object LeastUpperBoundLogic {
     }
 
     private fun getNumericPrecedence(type: ResolvedPrimitiveType): Int = when (type) {
-        ResolvedPrimitiveType.BYTE -> 1
-        ResolvedPrimitiveType.SHORT -> 2
-        ResolvedPrimitiveType.CHAR -> 2
-        ResolvedPrimitiveType.INT -> 3
-        ResolvedPrimitiveType.LONG -> 4
-        ResolvedPrimitiveType.FLOAT -> 5
-        ResolvedPrimitiveType.DOUBLE -> 6
-        ResolvedPrimitiveType.BOOLEAN -> 0
+        ResolvedPrimitiveType.BYTE -> PRECEDENCE_BYTE
+        ResolvedPrimitiveType.SHORT -> PRECEDENCE_SHORT
+        ResolvedPrimitiveType.CHAR -> PRECEDENCE_SHORT
+        ResolvedPrimitiveType.INT -> PRECEDENCE_INT
+        ResolvedPrimitiveType.LONG -> PRECEDENCE_LONG
+        ResolvedPrimitiveType.FLOAT -> PRECEDENCE_FLOAT
+        ResolvedPrimitiveType.DOUBLE -> PRECEDENCE_DOUBLE
+        ResolvedPrimitiveType.BOOLEAN -> PRECEDENCE_BOOLEAN
     }
 
     /**
