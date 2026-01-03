@@ -10,6 +10,9 @@ import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionP
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
+import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
+import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
+import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
@@ -26,6 +29,8 @@ import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
+import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
+import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -103,6 +108,11 @@ class GroovyLanguageServer(
             buildToolManagerProvider = { startupManager.buildToolManager },
         )
     private val indexExportService = IndexExportService { startupManager.buildToolManager }
+    private val astRequestHandler = AstRequestHandler(
+        compilationService,
+        CoreAstConverter(),
+        NativeAstConverter(),
+    )
 
     // State
     private var savedInitParams: InitializeParams? = null
@@ -255,6 +265,9 @@ class GroovyLanguageServer(
 
         indexExportService.exportIndex(params, rootPath)
     }, dispatcher.asExecutor())
+
+    @JsonRequest("groovy/ast")
+    fun getAst(params: AstParams): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)
