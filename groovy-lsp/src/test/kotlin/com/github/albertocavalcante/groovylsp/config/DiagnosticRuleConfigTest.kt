@@ -38,7 +38,11 @@ class DiagnosticRuleConfigTest {
         val config = DiagnosticRuleConfig(
             enabledAnalysisTypes = setOf(DiagnosticAnalysisType.AST),
         )
-        val rule = testRule(id = "rule-1", analysisType = DiagnosticAnalysisType.HEURISTIC)
+        val rule = testRule(
+            id = "rule-1",
+            enabledByDefault = true,
+            analysisType = DiagnosticAnalysisType.HEURISTIC,
+        )
 
         assertFalse(config.isRuleEnabled(rule))
     }

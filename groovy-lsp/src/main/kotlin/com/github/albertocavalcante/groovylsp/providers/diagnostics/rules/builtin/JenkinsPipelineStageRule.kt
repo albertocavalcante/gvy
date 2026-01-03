@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin
 
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.AbstractDiagnosticRule
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.RuleContext
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity

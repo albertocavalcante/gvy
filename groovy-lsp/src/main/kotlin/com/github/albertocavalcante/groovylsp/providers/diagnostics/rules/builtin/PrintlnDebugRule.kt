@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin
 
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.AbstractDiagnosticRule
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.RuleContext
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
@@ -16,6 +17,10 @@ import java.net.URI
  * AST-based analysis could reduce false positives.
  */
 class PrintlnDebugRule : AbstractDiagnosticRule() {
+
+    private companion object {
+        private val PRINTLN_PATTERN = Regex("""(^|\s)(println)\s*[(]""")
+    }
 
     override val id = "println-debug"
 
@@ -33,12 +38,12 @@ class PrintlnDebugRule : AbstractDiagnosticRule() {
 
         lines.forEachIndexed { lineIndex, line ->
             // Match println calls (simple pattern)
-            val printlnPattern = Regex("""(^|\s)println\s*[(]""")
-            val match = printlnPattern.find(line)
+            val match = PRINTLN_PATTERN.find(line)
 
             if (match != null) {
-                val startIndex = match.range.first
-                val endIndex = minOf(startIndex + "println".length, line.length)
+                val printlnGroup = match.groups[2] ?: return@forEachIndexed
+                val startIndex = printlnGroup.range.first
+                val endIndex = printlnGroup.range.last + 1
 
                 diagnostics.add(
                     diagnostic(

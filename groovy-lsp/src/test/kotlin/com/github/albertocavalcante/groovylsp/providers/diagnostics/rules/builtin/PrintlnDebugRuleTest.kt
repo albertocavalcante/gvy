@@ -35,6 +35,30 @@ class PrintlnDebugRuleTest {
     }
 
     @Test
+    fun `should highlight println starting at identifier even with indentation`() = runBlocking {
+        val code = """
+            class Example {
+                void test() {
+                    println("Debug message")
+                }
+            }
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///test.groovy"), code, context)
+
+        assertEquals(1, diagnostics.size)
+        val diagnostic = diagnostics.first()
+        val printlnLine = code.lines()[2]
+        val expectedStart = printlnLine.indexOf("println")
+        val expectedEnd = expectedStart + "println".length
+
+        assertEquals(2, diagnostic.range.start.line)
+        assertEquals(expectedStart, diagnostic.range.start.character)
+        assertEquals(expectedEnd, diagnostic.range.end.character)
+    }
+
+    @Test
     fun `should detect multiple println statements`() = runBlocking {
         val code = """
             println("first")

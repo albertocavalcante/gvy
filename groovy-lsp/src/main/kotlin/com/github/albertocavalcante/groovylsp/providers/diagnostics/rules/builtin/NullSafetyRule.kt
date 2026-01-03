@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin
 
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.AbstractDiagnosticRule
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.RuleContext
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
@@ -74,20 +75,29 @@ class NullSafetyRule : AbstractDiagnosticRule() {
 
         for (i in 0 until position) {
             val char = line[i]
-            if (char == '"' || char == '\'') {
+            if (isQuote(char)) {
                 if (!inString) {
                     inString = true
                     stringChar = char
-                } else if (char == stringChar) {
-                    // Check if escaped
-                    if (i == 0 || line[i - 1] != '\\') {
-                        inString = false
-                        stringChar = null
-                    }
+                } else if (char == stringChar && !isEscaped(line, i)) {
+                    inString = false
+                    stringChar = null
                 }
             }
         }
 
         return inString
+    }
+
+    private fun isQuote(char: Char): Boolean = char == '"' || char == '\''
+
+    private fun isEscaped(line: String, index: Int): Boolean {
+        var backslashCount = 0
+        var currentIndex = index - 1
+        while (currentIndex >= 0 && line[currentIndex] == '\\') {
+            backslashCount++
+            currentIndex--
+        }
+        return backslashCount % 2 == 1
     }
 }

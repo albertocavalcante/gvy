@@ -103,6 +103,18 @@ class NullSafetyRuleTest {
     }
 
     @Test
+    fun `should detect unsafe access after escaped backslash in string`() = runBlocking {
+        val code = """
+            def message = "test\\\\", def value = list.find { it }.name
+        """.trimIndent()
+
+        val context = mockContext()
+        val diagnostics = rule.analyze(URI.create("file:///test.groovy"), code, context)
+
+        assertEquals(1, diagnostics.size, "Should detect unsafe access after string literal")
+    }
+
+    @Test
     fun `should not flag patterns in comments`() = runBlocking {
         val code = """
             // This is unsafe: list.find { it }.getValue()
