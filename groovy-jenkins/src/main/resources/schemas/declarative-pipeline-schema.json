@@ -154,6 +154,11 @@
       "completionCategories": ["step"]
     },
     {
+      "name": "script",
+      "allowedIn": ["steps"],
+      "completionCategories": ["step"]
+    },
+    {
       "name": "when",
       "allowedIn": ["stage"],
       "innerInstructions": [

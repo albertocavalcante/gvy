@@ -102,6 +102,29 @@ class CompletionContextIntegrationTest {
         assertEquals("always", context.postCondition, "Should identify post condition")
     }
 
+    @Test
+    fun `notBuilt and unsuccessful post conditions should be detected`() {
+        val lines = listOf(
+            "pipeline {",
+            "    post {",
+            "        notBuilt {",
+            "            ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 3, column = 12)
+        assertTrue(context.isPostContext)
+        assertEquals("notBuilt", context.postCondition)
+
+        val lines2 = listOf(
+            "pipeline {",
+            "    post {",
+            "        unsuccessful {",
+            "            ",
+        )
+        val context2 = JenkinsContextDetector.detectFromDocument(lines2, lineNumber = 3, column = 12)
+        assertTrue(context2.isPostContext)
+        assertEquals("unsuccessful", context2.postCondition)
+    }
+
     // =====================================================================
     // Edge Cases and Determinism Tests
     // =====================================================================

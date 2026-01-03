@@ -145,4 +145,38 @@ class JenkinsDeclarativeCompletionTest {
         assertTrue(labels.contains("notBuilt"), "Post block should suggest 'notBuilt'")
         assertFalse(labels.contains("sh"), "Post block should not suggest pipeline steps")
     }
+
+    @Test
+    fun `script block should suggest standard Groovy completions`() = runTest {
+        val jenkinsfile = tempDir.resolve("Jenkinsfile")
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Build') {
+                        steps {
+                            script {
+                                
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+        Files.writeString(jenkinsfile, code)
+
+        val uri = jenkinsfile.toUri().toString()
+        val content = Files.readString(jenkinsfile)
+        val completions = CompletionProvider.getContextualCompletions(
+            uri = uri,
+            line = 7,
+            character = 20,
+            compilationService = compilationService,
+            content = content,
+        )
+
+        val labels = completions.map { it.label }
+        assertTrue(labels.contains("println"), "Script block should suggest standard Groovy methods like 'println'")
+        assertTrue(labels.contains("sh"), "Script block should still suggest pipeline steps")
+    }
 }

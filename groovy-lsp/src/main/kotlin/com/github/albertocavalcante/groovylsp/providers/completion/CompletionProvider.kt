@@ -232,7 +232,10 @@ object CompletionProvider {
         val currentBlock = jenkinsContext?.currentBlock
         val blockCategories = currentBlock?.let { DeclarativePipelineSchema.getCompletionCategories(it) }
         val innerInstructions = currentBlock?.let { DeclarativePipelineSchema.getInnerInstructions(it) }
-        val isStrictDeclarative = isJenkinsFile && jenkinsContext?.isDeclarativePipeline == true && currentBlock != null
+        val isStrictDeclarative = isJenkinsFile &&
+            jenkinsContext?.isDeclarativePipeline == true &&
+            currentBlock != null &&
+            currentBlock != "script"
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)

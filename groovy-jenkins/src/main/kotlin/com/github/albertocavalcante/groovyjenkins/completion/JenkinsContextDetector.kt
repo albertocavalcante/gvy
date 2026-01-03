@@ -39,7 +39,7 @@ object JenkinsContextDetector {
     // Post conditions
     private val POST_CONDITIONS = setOf(
         "always", "success", "failure", "unstable",
-        "changed", "fixed", "regression", "aborted", "cleanup",
+        "changed", "fixed", "regression", "aborted", "notBuilt", "unsuccessful", "cleanup",
     )
 
     // Pre-compiled pattern for post conditions (avoids per-iteration regex compilation)
