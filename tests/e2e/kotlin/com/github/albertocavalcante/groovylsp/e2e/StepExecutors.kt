@@ -704,8 +704,8 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             GoldenMode.JSON_NORMALIZED -> {
                 // Compare as JSON with path normalization
                 // Replace workspace paths with {{workspace}} placeholder for deterministic comparison
-                val normalizedActual = actualContent.replace(workspacePath, "{{workspace}}")
-                    .replace(workspaceUri, "file://{{workspace}}")
+                val normalizedActual = actualContent.replace(workspaceUri, "file://{{workspace}}")
+                    .replace(workspacePath, "{{workspace}}")
 
                 val mapper = ObjectMapper()
                 val actualJson = mapper.readTree(normalizedActual)
