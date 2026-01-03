@@ -72,6 +72,7 @@ object JenkinsStepCompletionProvider {
         stepName: String,
         existingKeys: Set<String>,
         metadata: MergedJenkinsMetadata,
+        useCommandExpression: Boolean = false,
     ): List<CompletionItem> {
         val params = metadata.getStep(stepName)?.namedParams
             ?: metadata.getDeclarativeOption(stepName)?.parameters
@@ -86,7 +87,8 @@ object JenkinsStepCompletionProvider {
                     kind = CompletionItemKind.Property
                     detail = param.type
                     // Use SnippetBuilder for type-aware insertion
-                    insertText = SnippetBuilder.buildParameterSnippet(key, param)
+                    insertText =
+                        SnippetBuilder.buildParameterSnippet(key, param, if (useCommandExpression) ", " else "")
                     insertTextFormat = InsertTextFormat.Snippet
                     // Sort required parameters first: "0_key" vs "1_key"
                     sortText = if (param.required) "0_$key" else "1_$key"

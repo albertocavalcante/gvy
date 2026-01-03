@@ -1,0 +1,202 @@
+{
+  "sections": [
+    {
+      "name": "pipeline",
+      "allowedIn": ["root"],
+      "innerInstructions": [
+        "agent",
+        "stages",
+        "options",
+        "environment",
+        "parameters",
+        "triggers",
+        "tools",
+        "post",
+        "libraries"
+      ]
+    },
+    {
+      "name": "agent",
+      "allowedIn": ["pipeline", "stage"],
+      "innerInstructions": [
+        "any",
+        "none",
+        "label",
+        "docker",
+        "dockerfile",
+        "kubernetes",
+        "node"
+      ],
+      "completionCategories": ["agent_type"]
+    },
+    {
+      "name": "stages",
+      "allowedIn": ["pipeline", "parallel", "matrix"],
+      "innerInstructions": ["stage"]
+    },
+    {
+      "name": "stage",
+      "allowedIn": ["stages", "parallel", "matrix"],
+      "innerInstructions": [
+        "steps",
+        "agent",
+        "environment",
+        "options",
+        "tools",
+        "when",
+        "post",
+        "parallel",
+        "matrix"
+      ]
+    },
+    {
+      "name": "steps",
+      "allowedIn": ["stage", "parallel", "matrix", "post_condition"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "parallel",
+      "allowedIn": ["stage", "matrix"],
+      "innerInstructions": ["stage"]
+    },
+    {
+      "name": "matrix",
+      "allowedIn": ["stage"],
+      "innerInstructions": ["axes", "stage"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "axes",
+      "allowedIn": ["matrix"],
+      "innerInstructions": ["axis"]
+    },
+    {
+      "name": "axis",
+      "allowedIn": ["axes"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "libraries",
+      "allowedIn": ["pipeline"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "post",
+      "allowedIn": ["pipeline", "stage"],
+      "innerInstructions": [
+        "always",
+        "success",
+        "failure",
+        "unstable",
+        "changed",
+        "aborted",
+        "fixed",
+        "regression",
+        "notBuilt",
+        "unsuccessful",
+        "cleanup"
+      ],
+      "completionCategories": ["post_condition"]
+    },
+    {
+      "name": "always",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "success",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "failure",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "unstable",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "changed",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "aborted",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "fixed",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "regression",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "notBuilt",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "unsuccessful",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "cleanup",
+      "allowedIn": ["post"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "script",
+      "allowedIn": ["steps"],
+      "completionCategories": ["step"]
+    },
+    {
+      "name": "when",
+      "allowedIn": ["stage"],
+      "innerInstructions": [
+        "branch",
+        "buildingTag",
+        "changeset",
+        "changelog",
+        "expression",
+        "tag",
+        "changeRequest",
+        "allOf",
+        "anyOf",
+        "not",
+        "beforeAgent"
+      ]
+    }
+  ],
+  "directives": [
+    {
+      "name": "environment",
+      "allowedIn": ["pipeline", "stage"]
+    },
+    {
+      "name": "options",
+      "allowedIn": ["pipeline", "stage"],
+      "completionCategories": ["declarative_option"]
+    },
+    {
+      "name": "parameters",
+      "allowedIn": ["pipeline"]
+    },
+    {
+      "name": "triggers",
+      "allowedIn": ["pipeline"]
+    },
+    {
+      "name": "tools",
+      "allowedIn": ["pipeline", "stage"]
+    }
+  ]
+}

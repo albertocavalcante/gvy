@@ -24,9 +24,9 @@ object SnippetBuilder {
      * @param param The merged parameter metadata
      * @return Snippet string ready for insertion
      */
-    fun buildParameterSnippet(paramName: String, param: MergedParameter): String {
+    fun buildParameterSnippet(paramName: String, param: MergedParameter, prefix: String = ""): String {
         val valueSnippet = buildValueSnippet(param)
-        return "$paramName: $valueSnippet"
+        return "${prefix}$paramName: $valueSnippet"
     }
 
     /**

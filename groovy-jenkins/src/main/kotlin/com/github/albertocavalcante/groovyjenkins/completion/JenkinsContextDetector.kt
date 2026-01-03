@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins.completion
 
+import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
+
 /**
  * Detects the cursor context within a Jenkinsfile to provide context-aware completions.
  *
@@ -18,26 +20,26 @@ object JenkinsContextDetector {
 
     // Block opening patterns
     private val BLOCK_PATTERNS = mapOf(
-        "pipeline" to Regex("""^\s*pipeline\s*\{"""),
-        "agent" to Regex("""^\s*agent\s*\{"""),
-        "stages" to Regex("""^\s*stages\s*\{"""),
-        "stage" to Regex("""^\s*stage\s*\([^)]*\)\s*\{"""),
-        "steps" to Regex("""^\s*steps\s*\{"""),
-        "post" to Regex("""^\s*post\s*\{"""),
-        "options" to Regex("""^\s*options\s*\{"""),
-        "environment" to Regex("""^\s*environment\s*\{"""),
-        "parameters" to Regex("""^\s*parameters\s*\{"""),
-        "triggers" to Regex("""^\s*triggers\s*\{"""),
-        "tools" to Regex("""^\s*tools\s*\{"""),
-        "when" to Regex("""^\s*when\s*\{"""),
-        "script" to Regex("""^\s*script\s*\{"""),
-        "node" to Regex("""^\s*node\s*(?:\([^)]*\))?\s*\{"""),
+        "pipeline" to Regex("""\bpipeline\s*\{"""),
+        "agent" to Regex("""\bagent\s*\{"""),
+        "stages" to Regex("""\bstages\s*\{"""),
+        "stage" to Regex("""\bstage\s*\([^)]*\)\s*\{"""),
+        "steps" to Regex("""\bsteps\s*\{"""),
+        "post" to Regex("""\bpost\s*\{"""),
+        "options" to Regex("""\boptions\s*\{"""),
+        "environment" to Regex("""\benvironment\s*\{"""),
+        "parameters" to Regex("""\bparameters\s*\{"""),
+        "triggers" to Regex("""\btriggers\s*\{"""),
+        "tools" to Regex("""\btools\s*\{"""),
+        "when" to Regex("""\bwhen\s*\{"""),
+        "script" to Regex("""\bscript\s*\{"""),
+        "node" to Regex("""\bnode\s*(?:\([^)]*\))?\s*\{"""),
     )
 
     // Post conditions
     private val POST_CONDITIONS = setOf(
         "always", "success", "failure", "unstable",
-        "changed", "fixed", "regression", "aborted", "cleanup",
+        "changed", "fixed", "regression", "aborted", "notBuilt", "unsuccessful", "cleanup",
     )
 
     // Pre-compiled pattern for post conditions (avoids per-iteration regex compilation)
@@ -133,26 +135,36 @@ object JenkinsContextDetector {
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = lines[i]
+            val cleanLine = stripComments(line)
 
-            addBlockOpenings(line, blockStack)
-            addPostConditionBlocks(line, blockStack)
+            addBlockOpenings(cleanLine, blockStack)
+            addPostConditionBlocks(cleanLine, blockStack)
 
-            braceDepth += line.count { it == '{' } - line.count { it == '}' }
+            braceDepth += cleanLine.count { it == '{' } - cleanLine.count { it == '}' }
             trimBlockStackToDepth(blockStack, braceDepth)
         }
 
         return blockStack.toList()
     }
 
+    private fun stripComments(line: String): String {
+        val commentIndex = line.indexOf("//")
+        return if (commentIndex != -1) line.substring(0, commentIndex) else line
+    }
+
     /**
-     * Add any block openings found in the line to the stack.
+     * Add any block openings found in the line to the stack, in the order they appear.
      */
     private fun addBlockOpenings(line: String, blockStack: MutableList<String>) {
+        val matches = mutableListOf<Pair<Int, String>>()
         for ((blockName, pattern) in BLOCK_PATTERNS) {
-            if (pattern.containsMatchIn(line)) {
-                blockStack.add(blockName)
+            pattern.findAll(line).forEach { match ->
+                matches.add(match.range.first to blockName)
             }
         }
+        // Sort by position and add to stack
+        matches.sortBy { it.first }
+        matches.forEach { blockStack.add(it.second) }
     }
 
     /**
@@ -192,6 +204,7 @@ object JenkinsContextDetector {
         val isDeclarative = "pipeline" in blockStack
         val isScripted = !isDeclarative && "node" in blockStack
         val postCondition = blockStack.lastOrNull { it in POST_CONDITIONS }
+        val currentBlock = determineCurrentBlock(blockStack)
 
         return JenkinsCompletionContext(
             // From line context
@@ -222,11 +235,16 @@ object JenkinsContextDetector {
             // Additional info
             postCondition = postCondition,
             enclosingBlocks = blockStack,
+            currentBlock = currentBlock,
 
             // Step context
             isStepParameterContext = lineContext.isStepParameterContext,
             currentStepName = lineContext.currentStepName,
         )
+    }
+
+    private fun determineCurrentBlock(blockStack: List<String>): String? = blockStack.asReversed().firstOrNull {
+        DeclarativePipelineSchema.containsBlock(it)
     }
 }
 
@@ -268,4 +286,5 @@ data class JenkinsCompletionContext(
     val partialText: String = "",
     val postCondition: String? = null,
     val enclosingBlocks: List<String> = emptyList(),
+    val currentBlock: String? = null,
 )

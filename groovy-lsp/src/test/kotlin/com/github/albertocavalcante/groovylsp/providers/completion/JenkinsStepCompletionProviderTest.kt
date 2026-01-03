@@ -227,4 +227,22 @@ class JenkinsStepCompletionProviderTest {
 
         assertTrue(completions.isEmpty(), "Unknown step/option should return no completions")
     }
+
+    @Test
+    fun `command expression parameter completions include comma prefix`() {
+        val metadata = createTestMetadata()
+        val completions = JenkinsStepCompletionProvider.getParameterCompletions(
+            stepName = "sh",
+            existingKeys = emptySet(),
+            metadata = metadata,
+            useCommandExpression = true,
+        )
+
+        val returnStatusCompletion = completions.find { it.label == "returnStatus:" }
+        assertNotNull(returnStatusCompletion, "returnStatus parameter should still be suggested")
+        assertTrue(
+            returnStatusCompletion.insertText?.startsWith(", returnStatus:") == true,
+            "Command expression snippet should start with a comma prefix",
+        )
+    }
 }

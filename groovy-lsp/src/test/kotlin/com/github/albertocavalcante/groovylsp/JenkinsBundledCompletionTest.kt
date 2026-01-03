@@ -61,7 +61,7 @@ class JenkinsBundledCompletionTest {
         openDocument(uri, content)
 
         // Position inside the empty steps block
-        val items = requestCompletionsAt(uri, Position(6, 8))
+        val items = requestCompletionsAt(uri, Position(5, 8))
 
         val sh = items.find { it.label == "sh" }
         assertNotNull(sh, "Bundled Jenkins steps should surface 'sh' completion")
