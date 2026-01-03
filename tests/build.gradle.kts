@@ -133,7 +133,22 @@ testing {
                         // Each test spawns a separate LSP server JVM (~512MB-2GB each).
                         // Override via: ./gradlew e2eTest -Pe2eParallelForks=4
                         // NOTE: Uses stdio (not ports), so no port conflicts. Memory is the constraint.
-                        val parallelForks = project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull() ?: 1
+                        val parallelForks =
+                            project.findProperty("e2eParallelForks")?.toString()?.toIntOrNull()
+                                ?: if (System.getenv("GITHUB_ACTIONS") == "true") {
+                                    // GitHub Actions runners: Linux and Windows have ~16GB RAM, while macOS varies—
+                                    // ARM64 (M1/M-style) runners ≈7GB, Intel macOS (macos-13/macos-15-intel) ≈14GB.
+                                    // Each fork uses ~1-1.5GB, so the fork counts (2 on macOS/Windows, 3 on Ubuntu) remain conservative.
+                                    when (System.getenv("RUNNER_OS")) {
+                                        "macOS" -> 2
+                                        "Linux" -> 3
+                                        "Windows" -> 2 // Windows runners have ~16GB
+                                        else -> 1
+                                    }
+                                } else {
+                                    // Local development: default to 1 to avoid OOM on smaller machines
+                                    1
+                                }
                         maxParallelForks = parallelForks
 
                         // Fail tests that take too long (5 minutes default)
