@@ -37,6 +37,8 @@ class GroovyTextDocumentServiceCodeActionTest {
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
         )
     }
@@ -70,6 +72,8 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
         )
@@ -97,6 +101,8 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
         )
@@ -130,6 +136,8 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
         )
@@ -159,6 +167,8 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { client },
             documentProvider = documentProvider,
         )

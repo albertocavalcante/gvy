@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.ParseResultAccessor
+import com.github.albertocavalcante.groovylsp.compilation.SymbolIndexingService
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
@@ -18,12 +20,16 @@ class GroovyTextDocumentServiceTest {
     fun `test definition returns empty list when compilation fails or is missing`() = runBlocking {
         // Mock dependencies
         val compilationService = mockk<GroovyCompilationService>()
+        val parseResultAccessor = mockk<ParseResultAccessor>()
+        val symbolIndexer = mockk<SymbolIndexingService>()
         val scope = CoroutineScope(Dispatchers.Unconfined)
 
         // Create service under test
         val service = GroovyTextDocumentService(
             coroutineScope = scope,
             compilationService = compilationService,
+            parseResultAccessor = parseResultAccessor,
+            symbolIndexer = symbolIndexer,
             client = { null },
         )
 

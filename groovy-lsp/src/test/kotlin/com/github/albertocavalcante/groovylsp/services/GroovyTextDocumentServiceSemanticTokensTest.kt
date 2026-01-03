@@ -38,6 +38,8 @@ class GroovyTextDocumentServiceSemanticTokensTest {
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
+            parseResultAccessor = compilationService.parseResultAccessor,
+            symbolIndexer = compilationService.symbolIndexingService,
             client = { null },
         )
     }
