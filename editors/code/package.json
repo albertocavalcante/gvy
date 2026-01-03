@@ -130,6 +130,20 @@
         "command": "groovy.repl.show",
         "title": "Groovy: Show REPL",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "groovy.ast.show",
+        "title": "Groovy: Show AST Explorer",
+        "icon": "$(symbol-structure)",
+        "category": "View"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "groovy.ast.show",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == groovy"
       }
     ],
     "languages": [
@@ -267,6 +281,27 @@
           "scope": "machine",
           "type": "string",
           "description": "Absolute path to a custom Groovy Language Server JAR. If not set, the embedded server is used."
+        },
+        "groovy.languageServer.engine": {
+          "type": "string",
+          "enum": [
+            "core",
+            "native"
+          ],
+          "default": "core",
+          "description": "Select the parser engine to use (Core: GroovyParser, Native: Groovy 3)."
+        },
+        "groovy.server.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "trace"
+          ],
+          "default": "info",
+          "description": "Logging level for the language server."
         },
         "groovy.format.enable": {
           "type": "boolean",
@@ -436,6 +471,16 @@
             "all"
           ],
           "description": "List of allowed tools. Use ['all'] to enable all tools, or specify individual tool names (e.g., ['groovy_find_symbol'])."
+        },
+        "groovy.gradle.buildStrategy": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "gradle",
+            "maven"
+          ],
+          "default": "auto",
+          "description": "Strategy for resolving dependencies in Gradle projects."
         }
       }
     },
