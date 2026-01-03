@@ -142,6 +142,7 @@ maven-embedder = { module = "org.apache.maven:maven-embedder", version.ref = "ma
 maven-compat = { module = "org.apache.maven:maven-compat", version.ref = "mavenEmbedder" }
 maven-resolver-connector-basic = { module = "org.apache.maven.resolver:maven-resolver-connector-basic", version.ref = "mavenResolver" }
 maven-resolver-transport-http = { module = "org.apache.maven.resolver:maven-resolver-transport-http", version.ref = "mavenResolver" }
+maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "mavenResolver" }
 
 # Jupyter Kernel Protocol
 jeromq = { module = "org.zeromq:jeromq", version.ref = "jeromq" }

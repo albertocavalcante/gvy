@@ -176,9 +176,9 @@ class SpockTestStructureRuleTest {
         val context = mockContext()
         val uri = URI("mailto", "test@example.com", null)
 
-        assertTrue(uri.path == null)
+        kotlin.test.assertNull(uri.path)
 
-        val diagnostics = callAnalyzeImpl(uri, code, context)
+        val diagnostics = rule.analyze(uri, code, context)
 
         assertTrue(diagnostics.isEmpty())
     }
@@ -188,32 +188,5 @@ class SpockTestStructureRuleTest {
         every { context.hasErrors() } returns false
         every { context.getAst() } returns null
         return context
-    }
-
-    private fun callAnalyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        val method = rule.javaClass.getDeclaredMethod(
-            "analyzeImpl",
-            URI::class.java,
-            String::class.java,
-            RuleContext::class.java,
-            Continuation::class.java,
-        )
-        method.isAccessible = true
-
-        var resumeResult: Result<List<Diagnostic>>? = null
-        val continuation = object : Continuation<List<Diagnostic>> {
-            override val context = EmptyCoroutineContext
-            override fun resumeWith(result: Result<List<Diagnostic>>) {
-                resumeResult = result
-            }
-        }
-
-        val returnValue = method.invoke(rule, uri, content, context, continuation)
-        if (returnValue == COROUTINE_SUSPENDED) {
-            return resumeResult?.getOrThrow() ?: error("Expected continuation to resume")
-        }
-
-        @Suppress("UNCHECKED_CAST")
-        return returnValue as List<Diagnostic>
     }
 }
