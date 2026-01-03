@@ -643,9 +643,10 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             throw AssertionError("Actual file not found for golden assert: $actualFile")
         }
 
-        // Get workspace path for placeholder substitution
-        val workspacePath = context.workspace.rootDir.toString()
-        val workspaceUri = context.workspace.rootDir.toUri().toString().trimEnd('/')
+        // Get workspace path for placeholder substitution. Use real path to resolve symlinks (e.g. /var -> /private/var on macOS)
+        val realRootDir = context.workspace.rootDir.toRealPath()
+        val workspacePath = realRootDir.toString()
+        val workspaceUri = realRootDir.toUri().toString().trimEnd('/')
 
         // Logic to update golden files
         val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"

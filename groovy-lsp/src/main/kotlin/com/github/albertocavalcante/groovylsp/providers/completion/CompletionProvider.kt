@@ -219,11 +219,17 @@ object CompletionProvider {
         } else {
             null
         }
+
+        val metadata = if (isJenkinsFile) {
+            ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+        } else {
+            null
+        }
+
         val isInOptionsBlock = jenkinsContext?.isOptionsContext == true
 
         if (isInOptionsBlock) {
             return completions {
-                val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
                 if (metadata != null) {
                     addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
                     val callName = findEnclosingMethodCall(nodeAtCursor, ctx.astModel)?.methodAsString
@@ -249,18 +255,15 @@ object CompletionProvider {
             GroovyCompletions.basic().forEach(::add)
 
             // Add Jenkins-specific completions for non-options blocks
-            if (isJenkinsFile) {
-                val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                if (metadata != null) {
-                    // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                    addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
+            if (metadata != null) {
+                // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
+                addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
 
-                    // Suggest pipeline steps (sh, echo, git, etc.)
-                    addJenkinsStepCompletions(metadata)
+                // Suggest pipeline steps (sh, echo, git, etc.)
+                addJenkinsStepCompletions(metadata)
 
-                    // Suggest global variables from vars/ directory and plugins
-                    addJenkinsGlobalVariables(metadata, ctx.compilationService)
-                }
+                // Suggest global variables from vars/ directory and plugins
+                addJenkinsGlobalVariables(metadata, ctx.compilationService)
             }
 
             // Handle contextual completions
@@ -270,17 +273,14 @@ object CompletionProvider {
                     val qualifierName = completionContext.qualifierName
 
                     // Check if this is a Jenkins global variable with properties (env, currentBuild)
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            val globalVar = findJenkinsGlobalVariable(qualifierName, rawType, metadata)
+                    if (metadata != null) {
+                        val globalVar = findJenkinsGlobalVariable(qualifierName, rawType, metadata)
 
-                            if (globalVar != null && globalVar.properties.isNotEmpty()) {
-                                // Add Jenkins-specific property completions
-                                logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
-                                addJenkinsPropertyCompletions(globalVar)
-                                return@completions
-                            }
+                        if (globalVar != null && globalVar.properties.isNotEmpty()) {
+                            // Add Jenkins-specific property completions
+                            logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
+                            addJenkinsPropertyCompletions(globalVar)
+                            return@completions
                         }
                     }
 

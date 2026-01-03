@@ -8,17 +8,19 @@ object PathUtils {
      * trailing slashes added by File.toURI() for directories.
      */
     fun toCanonicalUri(path: String): String {
-        // java.io.File.toURI() produces file:/... on some platforms.
-        // LSP and our golden files expect file:///...
-        val uri = File(path).toURI().toString()
+        // Use absolute path and normalize to handle relative components like /..
+        val pathObj = File(path).toPath().toAbsolutePath().normalize()
+        val file = pathObj.toFile()
+        val uri = file.toURI().toString()
         val tripleSlashUri = if (uri.startsWith("file:/") && !uri.startsWith("file:///")) {
             uri.replaceFirst("file:/", "file:///")
         } else {
             uri
         }
-        // Remove trailing slash which is added for directories, UNLESS it's the root
-        // (e.g. file:/// should remain file:///, file:///C:/ should remain file:///C:/)
-        return if (File(path).parent == null) {
+
+        // Root directories (e.g. /, C:\) have no parent and must preserve trailing slash
+        val isRoot = pathObj.parent == null
+        return if (isRoot) {
             tripleSlashUri
         } else {
             tripleSlashUri.removeSuffix("/")

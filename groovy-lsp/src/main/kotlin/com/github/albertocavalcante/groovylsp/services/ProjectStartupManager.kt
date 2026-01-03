@@ -397,6 +397,16 @@ class ProjectStartupManager(
         }
     }
 
+    /**
+     * Resolves the workspace root directory from the initialization parameters.
+     *
+     * It prioritizes the modern [InitializeParams.workspaceFolders] API, falling back
+     * to the deprecated [InitializeParams.rootUri] and [InitializeParams.rootPath]
+     * if no workspace folders are provided.
+     *
+     * @param params The initialization parameters from the client.
+     * @return The resolved [Path] to the workspace root, or null if it cannot be determined.
+     */
     fun getWorkspaceRoot(params: InitializeParams): Path? {
         val workspaceFolders = params.workspaceFolders
         if (!workspaceFolders.isNullOrEmpty()) {
