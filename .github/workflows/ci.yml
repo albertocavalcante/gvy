@@ -662,7 +662,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: e2e-test-results
-          path: '**/build/test-results/e2eTest/'
+          path: |-
+            **/build/test-results/e2eTest/
+            **/build/reports/tests/e2eTest/
           retention-days: 7
 
   # Cross-platform smoke tests - verify JAR works on key platforms
