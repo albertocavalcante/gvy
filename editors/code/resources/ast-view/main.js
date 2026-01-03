@@ -3,7 +3,7 @@
   // client/src/features/ast/webview/main.ts
   (function() {
     const vscode = acquireVsCodeApi();
-    let state = {
+    const state = {
       ast: null,
       parser: "core"
     };
@@ -44,8 +44,14 @@
           renderTree();
           break;
         case "error":
-          if (treeContainer) treeContainer.innerHTML = `<div class="empty-state">${message.message}</div>`;
-          if (detailsContainer) detailsContainer.innerHTML = "Select a node to view details";
+          if (treeContainer) {
+            treeContainer.innerHTML = "";
+            const errorDiv = document.createElement("div");
+            errorDiv.className = "empty-state";
+            errorDiv.textContent = message.message;
+            treeContainer.appendChild(errorDiv);
+          }
+          if (detailsContainer) detailsContainer.textContent = "Select a node to view details";
           break;
       }
     });
@@ -114,21 +120,37 @@
     function showDetails(node) {
       if (!detailsContainer) return;
       document.querySelectorAll(".node-content.selected").forEach((el) => el.classList.remove("selected"));
-      const selected = treeContainer.querySelector(`[data-id="${node.id}"] > .node-content`);
+      const escapedId = CSS.escape(node.id);
+      const selected = treeContainer.querySelector(`[data-id="${escapedId}"] > .node-content`);
       if (selected) selected.classList.add("selected");
-      let html = `<h3>${node.type}</h3>`;
-      html += '<table class="details-table">';
-      html += `<tr><td class="key">ID</td><td class="value">${node.id}</td></tr>`;
+      detailsContainer.innerHTML = "";
+      const header = document.createElement("h3");
+      header.textContent = node.type;
+      detailsContainer.appendChild(header);
+      const table = document.createElement("table");
+      table.className = "details-table";
+      const addRow = (key, value) => {
+        const row = document.createElement("tr");
+        const keyCell = document.createElement("td");
+        keyCell.className = "key";
+        keyCell.textContent = key;
+        const valueCell = document.createElement("td");
+        valueCell.className = "value";
+        valueCell.textContent = value;
+        row.appendChild(keyCell);
+        row.appendChild(valueCell);
+        table.appendChild(row);
+      };
+      addRow("ID", node.id);
       if (node.range) {
-        html += `<tr><td class="key">Range</td><td class="value">${node.range.startLine}:${node.range.startColumn} - ${node.range.endLine}:${node.range.endColumn}</td></tr>`;
+        addRow("Range", `${node.range.startLine}:${node.range.startColumn} - ${node.range.endLine}:${node.range.endColumn}`);
       }
       if (node.properties) {
         for (const [key, value] of Object.entries(node.properties)) {
-          html += `<tr><td class="key">${key}</td><td class="value">${value}</td></tr>`;
+          addRow(key, String(value));
         }
       }
-      html += "</table>";
-      detailsContainer.innerHTML = html;
+      detailsContainer.appendChild(table);
       if (node.range) {
         vscode.postMessage({
           type: "highlight",

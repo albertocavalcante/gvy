@@ -42,11 +42,33 @@ async function main() {
 			esbuildProblemMatcherPlugin,
 		],
 	});
+
+	// Build webview resources
+	const webviewCtx = await esbuild.context({
+		entryPoints: [
+			'client/src/features/ast/webview/main.ts'
+		],
+		bundle: true,
+		format: 'iife',
+		minify: production,
+		sourcemap: !production,
+		sourcesContent: false,
+		platform: 'browser',
+		outfile: 'resources/ast-view/main.js',
+		logLevel: 'silent',
+		plugins: [
+			esbuildProblemMatcherPlugin,
+		],
+	});
+
 	if (watch) {
 		await ctx.watch();
+		await webviewCtx.watch();
 	} else {
 		await ctx.rebuild();
+		await webviewCtx.rebuild();
 		await ctx.dispose();
+		await webviewCtx.dispose();
 	}
 }
 
