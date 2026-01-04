@@ -147,4 +147,34 @@ class TypeLubTest {
         // This seems safer than Object.
         assertEquals(TypeConstants.BIG_DECIMAL, result)
     }
+
+    @Test
+    fun `lub of primitive int and wrapper Long is Long`() {
+        val primitiveInt = SemanticType.Primitive(PrimitiveKind.INT)
+        val wrapperLong = SemanticType.Known("java.lang.Long")
+
+        val result = TypeLub.lub(listOf(primitiveInt, wrapperLong))
+
+        assertEquals(wrapperLong, result, "LUB(int, Long) should be Long")
+    }
+
+    @Test
+    fun `lub of primitive float and wrapper Double is Double`() {
+        val primitiveFloat = SemanticType.Primitive(PrimitiveKind.FLOAT)
+        val wrapperDouble = SemanticType.Known("java.lang.Double")
+
+        val result = TypeLub.lub(listOf(primitiveFloat, wrapperDouble))
+
+        assertEquals(wrapperDouble, result, "LUB(float, Double) should be Double")
+    }
+
+    @Test
+    fun `lub of wrapper Integer and primitive long is long`() {
+        val wrapperInt = SemanticType.Known("java.lang.Integer")
+        val primitiveLong = SemanticType.Primitive(PrimitiveKind.LONG)
+
+        val result = TypeLub.lub(listOf(wrapperInt, primitiveLong))
+
+        assertEquals(TypeConstants.LONG, result, "LUB(Integer, long) should be long")
+    }
 }
