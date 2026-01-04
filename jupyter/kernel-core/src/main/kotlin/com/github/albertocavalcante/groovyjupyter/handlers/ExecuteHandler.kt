@@ -33,126 +33,163 @@ class ExecuteHandler(
         logger.info("Handling execute_request")
 
         val statusPublisher = statusPublisherFactory(connection)
-        val silent = request.content["silent"] as? Boolean ?: false
-        if (!silent) {
-            executionCount++
-        }
+        val silent = request.isSilent()
+        if (!silent) executionCount++
 
-        // 1. Publish busy status
         statusPublisher.publishBusy(request)
 
-        try {
-            // 2. Publish execute_input
-            val code = (request.content["code"] as? String).orEmpty()
-            if (code.isNotEmpty() && !silent) {
-                val inputParams = mapOf(
-                    "code" to code,
-                    "execution_count" to executionCount,
-                )
-                val inputMsg = request.createReply(MessageType.EXECUTE_INPUT).apply {
-                    content = inputParams
-                }
-                // Send to IOPub
-                connection.sendIOPubMessage(inputMsg)
-            }
-
-            // 3. Execute the code
-            val result = execute(request)
-
-            // 4. Publish stream output (stdout)
-            if (result.stdout.isNotEmpty()) {
-                val streamContent = mapOf(
-                    "name" to "stdout",
-                    "text" to result.stdout,
-                )
-                val streamMsg = request.createReply(MessageType.STREAM).apply {
-                    content = streamContent
-                }
-                connection.sendIOPubMessage(streamMsg)
-            }
-
-            // 5. Publish stream output (stderr)
-            if (result.stderr.isNotEmpty()) {
-                val streamContent = mapOf(
-                    "name" to "stderr",
-                    "text" to result.stderr,
-                )
-                val streamMsg = request.createReply(MessageType.STREAM).apply {
-                    content = streamContent
-                }
-                connection.sendIOPubMessage(streamMsg)
-            }
-
-            // 6. Publish result or error
-            if (result.status == ExecuteStatus.OK) {
-                if (result.result != null && result.result.toString().isNotEmpty() && !silent) {
-                    val resultContent = mapOf(
-                        "execution_count" to executionCount,
-                        "data" to mapOf("text/plain" to result.result.toString()),
-                        "metadata" to emptyMap<String, Any>(),
-                    )
-                    val resultMsg = request.createReply(MessageType.EXECUTE_RESULT).apply {
-                        content = resultContent
-                    }
-                    connection.sendIOPubMessage(resultMsg)
-                }
-
-                // 7. Send execute_reply (OK)
-                val replyContent = mapOf(
-                    "status" to "ok",
-                    "execution_count" to executionCount,
-                    "user_expressions" to emptyMap<String, Any>(),
-                    "payload" to emptyList<Any>(),
-                )
-                val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
-                    content = replyContent
-                }
-                connection.sendMessage(replyMsg) // Send to Shell
-            } else {
-                // Publish error to IOPub
-                val errorContent = mapOf(
-                    "ename" to (result.errorName ?: "Error"),
-                    "evalue" to (result.errorValue ?: ""),
-                    "traceback" to result.traceback,
-                )
-                val errorMsg = request.createReply(MessageType.ERROR).apply {
-                    content = errorContent
-                }
-                connection.sendIOPubMessage(errorMsg)
-
-                // Send execute_reply (Error) to Shell
-                val replyContent = mapOf(
-                    "status" to "error",
-                    "execution_count" to executionCount,
-                    "ename" to (result.errorName ?: "Error"),
-                    "evalue" to (result.errorValue ?: ""),
-                    "traceback" to result.traceback,
-                )
-                val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
-                    content = replyContent
-                }
-                connection.sendMessage(replyMsg)
-            }
-        } catch (e: Exception) {
-            logger.error("Error connecting execution", e)
-            // Fallback error reply
-            val replyContent = mapOf(
-                "status" to "error",
-                "execution_count" to executionCount,
-                "ename" to "KernelError",
-                "evalue" to (e.message ?: "Unknown error"),
-                "traceback" to emptyList<String>(),
-            )
-            val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
-                content = replyContent
-            }
-            connection.sendMessage(replyMsg)
-        } finally {
-            // 8. Publish idle status
-            statusPublisher.publishIdle(request)
+        runCatching {
+            handleExecuteRequest(request, connection, silent)
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.error("Error handling execute_request", throwable)
+            sendKernelErrorReply(request, connection, throwable)
         }
 
+        statusPublisher.publishIdle(request)
+
         logger.info("Completed execute_request (execution_count={})", executionCount)
+    }
+
+    private fun handleExecuteRequest(request: JupyterMessage, connection: JupyterConnection, silent: Boolean) {
+        val code = request.code()
+        publishExecuteInput(request, connection, code, silent)
+
+        val result = executeCode(code)
+        publishStreams(request, connection, result)
+
+        when (result.status) {
+            ExecuteStatus.OK -> {
+                publishExecuteResult(request, connection, result, silent)
+                sendOkReply(request, connection)
+            }
+
+            ExecuteStatus.ERROR -> {
+                publishError(request, connection, result)
+                sendErrorReply(request, connection, result)
+            }
+        }
+    }
+
+    private fun publishExecuteInput(
+        request: JupyterMessage,
+        connection: JupyterConnection,
+        code: String,
+        silent: Boolean,
+    ) {
+        if (code.isEmpty() || silent) return
+
+        val inputParams = mapOf(
+            "code" to code,
+            "execution_count" to executionCount,
+        )
+        val inputMsg = request.createReply(MessageType.EXECUTE_INPUT).apply {
+            content = inputParams
+        }
+        connection.sendIOPubMessage(inputMsg)
+    }
+
+    private fun publishStreams(request: JupyterMessage, connection: JupyterConnection, result: ExecuteResult) {
+        if (result.stdout.isNotEmpty()) {
+            publishStream(request, connection, name = "stdout", text = result.stdout)
+        }
+        if (result.stderr.isNotEmpty()) {
+            publishStream(request, connection, name = "stderr", text = result.stderr)
+        }
+    }
+
+    private fun publishStream(request: JupyterMessage, connection: JupyterConnection, name: String, text: String) {
+        val streamContent = mapOf(
+            "name" to name,
+            "text" to text,
+        )
+        val streamMsg = request.createReply(MessageType.STREAM).apply {
+            content = streamContent
+        }
+        connection.sendIOPubMessage(streamMsg)
+    }
+
+    private fun publishExecuteResult(
+        request: JupyterMessage,
+        connection: JupyterConnection,
+        result: ExecuteResult,
+        silent: Boolean,
+    ) {
+        val displayValue = result.result?.toString().orEmpty()
+        if (displayValue.isEmpty() || silent) return
+
+        val resultContent = mapOf(
+            "execution_count" to executionCount,
+            "data" to mapOf("text/plain" to displayValue),
+            "metadata" to emptyMap<String, Any>(),
+        )
+        val resultMsg = request.createReply(MessageType.EXECUTE_RESULT).apply {
+            content = resultContent
+        }
+        connection.sendIOPubMessage(resultMsg)
+    }
+
+    private fun publishError(request: JupyterMessage, connection: JupyterConnection, result: ExecuteResult) {
+        val errorContent = mapOf(
+            "ename" to (result.errorName ?: "Error"),
+            "evalue" to (result.errorValue ?: ""),
+            "traceback" to result.traceback,
+        )
+        val errorMsg = request.createReply(MessageType.ERROR).apply {
+            content = errorContent
+        }
+        connection.sendIOPubMessage(errorMsg)
+    }
+
+    private fun sendOkReply(request: JupyterMessage, connection: JupyterConnection) {
+        val replyContent = mapOf(
+            "status" to "ok",
+            "execution_count" to executionCount,
+            "user_expressions" to emptyMap<String, Any>(),
+            "payload" to emptyList<Any>(),
+        )
+        val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
+            content = replyContent
+        }
+        connection.sendMessage(replyMsg)
+    }
+
+    private fun sendErrorReply(request: JupyterMessage, connection: JupyterConnection, result: ExecuteResult) {
+        val replyContent = mapOf(
+            "status" to "error",
+            "execution_count" to executionCount,
+            "ename" to (result.errorName ?: "Error"),
+            "evalue" to (result.errorValue ?: ""),
+            "traceback" to result.traceback,
+        )
+        val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
+            content = replyContent
+        }
+        connection.sendMessage(replyMsg)
+    }
+
+    private fun sendKernelErrorReply(request: JupyterMessage, connection: JupyterConnection, throwable: Throwable) {
+        val replyContent = mapOf(
+            "status" to "error",
+            "execution_count" to executionCount,
+            "ename" to "KernelError",
+            "evalue" to (throwable.message ?: "Unknown error"),
+            "traceback" to emptyList<String>(),
+        )
+        val replyMsg = request.createReply(MessageType.EXECUTE_REPLY).apply {
+            content = replyContent
+        }
+        connection.sendMessage(replyMsg)
+    }
+
+    private fun JupyterMessage.isSilent(): Boolean = content["silent"] as? Boolean ?: false
+
+    private fun JupyterMessage.code(): String = (content["code"] as? String).orEmpty()
+
+    private fun executeCode(code: String): ExecuteResult = if (code.isBlank()) {
+        ExecuteResult(status = ExecuteStatus.OK)
+    } else {
+        executor.execute(code)
     }
 
     /**
@@ -160,14 +197,5 @@ class ExecuteHandler(
      *
      * This adapts the GroovyExecutor's ExecutionResult to our ExecuteResult.
      */
-    fun execute(request: JupyterMessage): ExecuteResult {
-        val code = (request.content["code"] as? String).orEmpty()
-
-        if (code.isBlank()) {
-            return ExecuteResult(status = ExecuteStatus.OK)
-        }
-
-        // Executor returns ExecuteResult directly
-        return executor.execute(code)
-    }
+    fun execute(request: JupyterMessage): ExecuteResult = executeCode(request.code())
 }
