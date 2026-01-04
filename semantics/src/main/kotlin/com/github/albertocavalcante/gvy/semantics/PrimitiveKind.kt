@@ -1,9 +1,8 @@
 package com.github.albertocavalcante.gvy.semantics
 
 /**
- * Java/Groovy primitive types.
- *
- * Note: Order matters for numeric promotion (higher ordinal = wider type).
+ * Kinds of primitive types supported by the language.
+ * Note: Numeric promotion precedence is defined in TypeLub.getNumericPrecedence, not by enum ordinal.
  */
 enum class PrimitiveKind {
     /** Boolean value (true/false). */
@@ -41,11 +40,14 @@ enum class PrimitiveKind {
      * Whether this is an integral type (no fractional part).
      */
     val isIntegral: Boolean
-        get() = this in listOf(BYTE, CHAR, SHORT, INT, LONG)
+        get() = when (this) {
+            BYTE, CHAR, SHORT, INT, LONG -> true
+            else -> false
+        }
 
     /**
      * Whether this is a floating-point type.
      */
     val isFloatingPoint: Boolean
-        get() = this in listOf(FLOAT, DOUBLE)
+        get() = this == FLOAT || this == DOUBLE
 }

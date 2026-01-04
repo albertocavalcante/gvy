@@ -68,11 +68,9 @@ object TypeLub {
     /**
      * Checks if types can form a valid numeric LUB.
      * Handles mixed primitives and BigInteger/BigDecimal promotion.
-     */
-
-    /**
-     * Checks if types can form a valid numeric LUB.
-     * Handles mixed primitives and BigInteger/BigDecimal promotion.
+     *
+     * @param types List of semantic types to check.
+     * @return The numeric LUB if applicable, or null if not a numeric promotion case.
      */
     private fun checkNumericLub(types: List<SemanticType>): SemanticType? {
         val ranks = types.map { type ->
@@ -179,6 +177,8 @@ object TypeLub {
 
         // Mixed or Reference types
         val referenceTypes = types.mapNotNull {
+            // LSP false positive: SemanticType is sealed but not all subclasses matched here
+            @Suppress("REDUNDANT_ELSE_IN_WHEN")
             when (it) {
                 is SemanticType.Known -> it
                 is SemanticType.Primitive -> {
@@ -238,15 +238,19 @@ object TypeLub {
         "java.lang.Number" to setOf("java.io.Serializable"),
     )
 
+    private val ANCESTOR_CACHE = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+
     private fun getAllAncestors(fqn: String): Set<String> {
-        val parents = HARDCODED_PARENTS[fqn] ?: return emptySet()
-        val result = parents.toMutableSet()
-        for (parent in parents) {
-            result.addAll(getAllAncestors(parent))
+        return ANCESTOR_CACHE.computeIfAbsent(fqn) { key ->
+            val parents = HARDCODED_PARENTS[key] ?: return@computeIfAbsent emptySet()
+            val result = parents.toMutableSet()
+            for (parent in parents) {
+                result.addAll(getAllAncestors(parent))
+            }
+            // Always add Object
+            result.add("java.lang.Object")
+            result
         }
-        // Always add Object
-        result.add("java.lang.Object")
-        return result
     }
 
     private fun findCommonAncestor(types: List<SemanticType.Known>): SemanticType {
@@ -303,6 +307,7 @@ object TypeLub {
     private const val RANK_FLOAT = 8
     private const val RANK_DOUBLE = 9
 
+    @Suppress("REDUNDANT_ELSE_IN_WHEN") // LSP false positive: SemanticType isn't fully exhausted by Primitive/Known
     private fun getNumericRank(type: SemanticType): Int? = when (type) {
         is SemanticType.Primitive -> when (type.kind) {
             PrimitiveKind.BYTE -> RANK_BYTE
