@@ -11,6 +11,7 @@ Agent only needs: thread_id, file, line, message.
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -89,12 +90,14 @@ def get_pr_cache_dir(pr_number: int) -> Path:
 def save_msg_version(pr_number: int, title: str, body: str, source: str = "ai") -> str:
     """Save a version of the merge message and return its short ID."""
     cache_dir = get_pr_cache_dir(pr_number)
-    content = f"{title}\n\n{body}"
-    msg_hash = hashlib.md5(content.encode()).hexdigest()[:7]
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    content = f"{title}\n\n{body}"
+    # Use MD5 for simple, short content addressing (non-cryptographic)
+    msg_hash = hashlib.md5(content.encode()).hexdigest()[:7]
 
-    file_path = cache_dir / f"msg-{timestamp}-{source}-{msg_hash}.md"
-    file_path.write_text(content)
+    # Save version file
+    version_file = cache_dir / f"{timestamp}-{source}-{msg_hash}.md"
+    version_file.write_text(content)
 
     # Also update 'latest' symlink/pointer
     latest_file = cache_dir / "latest.md"
@@ -562,9 +565,12 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
         footer_file.write_text(footer)
 
         # Stream: cat header diff footer | gemini
-        # This effectively wraps the diff content inside <content>...</content> tags
+        # Note: shell=True is used here to construct the pipe.
+        # All file paths are generated from tempfile.gettempdir() and are safe.
+        cmd = f"cat {shlex.quote(str(header_file))} {shlex.quote(str(diff_file))} {shlex.quote(str(footer_file))} | gemini"
+
         ps = subprocess.Popen(
-            f"cat {header_file} {diff_file} {footer_file} | gemini",
+            cmd,
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
