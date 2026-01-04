@@ -37,7 +37,7 @@ data class ScenarioContext(
 
     fun registerBuiltInVariables() {
         val workspaceObject = buildJsonObject {
-            workspace.rootUri?.let { put("uri", it) }
+            put("uri", workspace.rootUri)
             put("path", workspace.rootDir.toString())
         }
         variables["workspace"] = workspaceObject
@@ -182,7 +182,7 @@ data class ScenarioContext(
                     put("items", leftNode)
                 }
             } else {
-                leftNode ?: JsonNull
+                leftNode
             }
         }
 
@@ -193,7 +193,7 @@ data class ScenarioContext(
                     put("items", rightNode)
                 }
             } else {
-                rightNode ?: JsonNull
+                rightNode
             }
         }
 
@@ -280,8 +280,6 @@ object JsonExpectationEvaluator {
                     // All elements in expected must be structurally contained in some element of actual
                     expected.all { exp -> actual.any { act -> structurallyContains(act, exp) } }
             }
-
-            else -> false
         }
     }
 
