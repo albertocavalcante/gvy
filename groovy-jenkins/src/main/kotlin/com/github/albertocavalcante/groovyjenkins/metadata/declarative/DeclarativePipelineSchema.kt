@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovyjenkins.metadata.declarative
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.io.IOException
 
 object DeclarativePipelineSchema {
     private val logger = LoggerFactory.getLogger(DeclarativePipelineSchema::class.java)
@@ -38,18 +40,30 @@ object DeclarativePipelineSchema {
     fun getInnerInstructions(blockName: String?): Set<String> =
         blockIndex[blockName]?.innerInstructions?.toSet().orEmpty()
 
-    private fun loadSchema(): Schema = try {
+    private fun loadSchema(): Schema {
         val resource = requireNotNull(
             DeclarativePipelineSchema::class.java.classLoader.getResource(
                 "schemas/declarative-pipeline-schema.json",
             ),
         ) { "Declarative pipeline schema resource not found" }
 
-        val text = resource.readText()
-        json.decodeFromString<Schema>(text)
-    } catch (cause: Exception) {
-        logger.error("Failed to parse declarative pipeline schema", cause)
-        throw IllegalStateException("Invalid declarative pipeline schema", cause)
+        return runCatching {
+            val text = resource.readText()
+            json.decodeFromString<Schema>(text)
+        }.getOrElse { throwable ->
+            if (throwable is Error) throw throwable
+
+            val wrapped = when (throwable) {
+                is IOException,
+                is SerializationException,
+                is IllegalArgumentException,
+                -> IllegalStateException("Invalid declarative pipeline schema", throwable)
+                else -> IllegalStateException("Failed to load declarative pipeline schema", throwable)
+            }
+
+            logger.error("Failed to parse declarative pipeline schema", wrapped)
+            throw wrapped
+        }
     }
 
     @Serializable

@@ -82,29 +82,26 @@ object JenkinsContextDetector {
 
     private fun matchPropertyContext(text: String): JenkinsCompletionContext? {
         val envMatch = ENV_DOT_PATTERN.find(text)
-        if (envMatch != null) {
-            return JenkinsCompletionContext(
+        val paramsMatch = PARAMS_DOT_PATTERN.find(text)
+        val buildMatch = CURRENT_BUILD_DOT_PATTERN.find(text)
+
+        val result = when {
+            envMatch != null -> JenkinsCompletionContext(
                 isEnvContext = true,
                 partialText = envMatch.groupValues[1],
             )
-        }
-
-        val paramsMatch = PARAMS_DOT_PATTERN.find(text)
-        if (paramsMatch != null) {
-            return JenkinsCompletionContext(
+            paramsMatch != null -> JenkinsCompletionContext(
                 isParamsContext = true,
                 partialText = paramsMatch.groupValues[1],
             )
-        }
-
-        val buildMatch = CURRENT_BUILD_DOT_PATTERN.find(text)
-        if (buildMatch != null) {
-            return JenkinsCompletionContext(
+            buildMatch != null -> JenkinsCompletionContext(
                 isCurrentBuildContext = true,
                 partialText = buildMatch.groupValues[1],
             )
+            else -> null
         }
-        return null
+
+        return result
     }
 
     /**

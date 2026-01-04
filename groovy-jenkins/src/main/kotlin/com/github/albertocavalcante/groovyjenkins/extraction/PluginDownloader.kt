@@ -9,6 +9,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.jvm.javaio.toInputStream
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -25,8 +26,8 @@ class PluginDownloader(
     private val cacheDir: Path,
     private val httpClient: HttpClient = HttpClient(CIO) {
         install(HttpTimeout) {
-            connectTimeoutMillis = 30_000
-            requestTimeoutMillis = 300_000 // 5 minutes
+            connectTimeoutMillis = CONNECT_TIMEOUT_MS
+            requestTimeoutMillis = REQUEST_TIMEOUT_MS
         }
         install(ContentNegotiation) {
             json()
@@ -38,6 +39,8 @@ class PluginDownloader(
 
     companion object {
         private const val JENKINS_RELEASES_BASE = "https://repo.jenkins-ci.org/releases/org/jenkins-ci/plugins"
+        private const val CONNECT_TIMEOUT_MS = 30_000L
+        private const val REQUEST_TIMEOUT_MS = 300_000L
     }
 
     /**
@@ -59,46 +62,49 @@ class PluginDownloader(
         Files.createDirectories(cacheDir)
 
         val urls = buildUrls(pluginId, version)
-        var lastException: Exception? = null
+        var lastFailure: Throwable? = null
 
         for (url in urls) {
             logger.info("Trying URL: {}", url)
-            try {
+            val attempt = runCatching {
                 httpClient.prepareRequest(url).execute { response ->
-                    if (response.status == HttpStatusCode.OK) {
-                        val tempFile = Files.createTempFile(cacheDir, "$pluginId-", ".hpi.tmp")
-                        try {
-                            // Use toInputStream to bridge Ktor channel to Java IO
-                            val channel = response.bodyAsChannel()
-                            channel.toInputStream().use { input ->
-                                Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING)
-                            }
-
-                            Files.move(tempFile, cachedPath, StandardCopyOption.REPLACE_EXISTING)
-                            logger.info("Downloaded plugin to: {}", cachedPath)
-                            return@execute
-                        } catch (e: Exception) {
-                            Files.deleteIfExists(tempFile)
-                            throw e
-                        }
-                    } else {
+                    if (response.status != HttpStatusCode.OK) {
                         logger.debug("URL returned HTTP {}: {}", response.status, url)
+                        return@execute
                     }
+
+                    val tempFile = Files.createTempFile(cacheDir, "$pluginId-", ".hpi.tmp")
+
+                    runCatching {
+                        // Use toInputStream to bridge Ktor channel to Java IO
+                        val channel = response.bodyAsChannel()
+                        channel.toInputStream().use { input ->
+                            Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING)
+                        }
+                        Files.move(tempFile, cachedPath, StandardCopyOption.REPLACE_EXISTING)
+                        logger.info("Downloaded plugin to: {}", cachedPath)
+                    }.onFailure {
+                        runCatching { Files.deleteIfExists(tempFile) }
+                    }.getOrThrow()
                 }
 
-                // If we reached here and file exists, return it
-                if (Files.exists(cachedPath)) {
-                    return cachedPath
-                }
-            } catch (e: Exception) {
-                logger.debug("Failed to download from {}: {}", url, e.message)
-                lastException = e
+                Files.exists(cachedPath)
             }
+
+            val failure = attempt.exceptionOrNull()
+            if (failure is CancellationException || failure is Error) throw failure
+            if (failure != null) {
+                logger.debug("Failed to download from {}: {}", url, failure.message)
+                lastFailure = failure
+                continue
+            }
+
+            if (attempt.getOrDefault(false)) return cachedPath
         }
 
         throw PluginDownloadException(
             "Failed to download $pluginId:$version from any URL. Tried: ${urls.joinToString()}",
-            lastException,
+            lastFailure,
         )
     }
 

@@ -108,7 +108,8 @@ class MetadataOutputGeneratorTest {
 
             // The list is sorted by function name (both "conflict") and then processed.
             // In the map builder, the later one in the list overwrites the former.
-            // Since our sort is stable for equal function names (but steps might be sorted by classname inside scanner),
+            // Since our sort is stable for equal function names
+            // (but steps might be sorted by classname inside scanner),
             // we should rely on the map behavior.
             val metadata = MetadataOutputGenerator.generate(steps)
 
