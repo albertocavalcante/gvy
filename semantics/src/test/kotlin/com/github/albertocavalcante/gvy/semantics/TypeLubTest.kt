@@ -113,6 +113,27 @@ class TypeLubTest {
     }
 
     @Test
+    fun `lub of void and void is void`() {
+        val result = TypeLub.lub(listOf(TypeConstants.VOID, TypeConstants.VOID))
+        assertEquals(TypeConstants.VOID, result)
+    }
+
+    @Test
+    fun `lub of void and int is object`() {
+        val result = TypeLub.lub(listOf(TypeConstants.VOID, TypeConstants.INT))
+        assertEquals(TypeConstants.OBJECT, result)
+    }
+
+    @Test
+    fun `promoteNumeric throws when void is present`() {
+        assertThrows<IllegalArgumentException> {
+            TypeLub.promoteNumeric(
+                listOf(TypeConstants.VOID, TypeConstants.INT),
+            )
+        }
+    }
+
+    @Test
     fun `lub of char and byte is int`() {
         val result = TypeLub.lub(listOf(TypeConstants.CHAR, TypeConstants.BYTE))
         assertEquals(TypeConstants.INT, result)

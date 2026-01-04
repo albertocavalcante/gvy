@@ -339,7 +339,9 @@ object TypeLub {
     private const val PRECEDENCE_DOUBLE = 6
 
     private fun getNumericPrecedence(kind: PrimitiveKind): Int = when (kind) {
-        PrimitiveKind.VOID -> PRECEDENCE_BOOLEAN
+        // Void is not numeric and must not participate in promotion.
+        // promoteNumeric() enforces this, so reaching here indicates a bug in the caller.
+        PrimitiveKind.VOID -> error("Void has no numeric precedence")
         PrimitiveKind.BYTE -> PRECEDENCE_BYTE
         PrimitiveKind.SHORT -> PRECEDENCE_SHORT
         PrimitiveKind.CHAR -> PRECEDENCE_CHAR

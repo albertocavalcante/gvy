@@ -69,4 +69,13 @@ class ReflectionAccessTest {
 
         assertNull(result)
     }
+
+    @Test
+    fun `getProperty returns null for empty property name`() {
+        val node = FieldOnlyList()
+
+        val result = ReflectionAccess.getProperty(node, "")
+
+        assertNull(result)
+    }
 }
