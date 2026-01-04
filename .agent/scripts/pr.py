@@ -168,7 +168,14 @@ def threads(
     # Minimal agent guidance
     print("\n<agent_rules>")
     print("ACTION: FIX|DEFER|REJECT")
+    print("CODE: Use imports, avoid FQNs")
+    print(
+        "COMMIT: Use multiple -m flags for multi-line messages. Avoid multiline strings."
+    )
     print("FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'")
+    print(
+        "HOOK: If commit fails, READ the hook output. Fix lint/format errors before retry."
+    )
     print("DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'")
     print("REJECT: Reply with technical reasoning. Do NOT resolve.")
     print("RESOLVE: uv run .agent/scripts/pr.py resolve <T> '<reply>'")
