@@ -33,7 +33,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
@@ -61,7 +60,6 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 /**
  * Root composable for the AST Visualizer application.
