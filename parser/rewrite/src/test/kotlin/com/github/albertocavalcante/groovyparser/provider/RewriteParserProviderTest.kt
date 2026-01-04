@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.provider
 
 import com.github.albertocavalcante.groovyparser.api.model.Position
+import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -40,7 +41,13 @@ class RewriteParserProviderTest {
         val unit = provider.parse(source)
 
         assertFalse(unit.isSuccessful)
-        // Unlike native parser, we may not get detailed diagnostics
+
+        val diagnostics = unit.diagnostics()
+        assertEquals(1, diagnostics.size)
+        assertEquals(Severity.ERROR, diagnostics.single().severity)
+        assertEquals("rewrite-parser", diagnostics.single().source)
+        assertTrue(diagnostics.single().message.isNotBlank())
+        assertTrue(unit.symbols().isEmpty())
     }
 
     @Test

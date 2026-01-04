@@ -25,8 +25,64 @@ import org.eclipse.lsp4j.InlayHintKind
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.net.URI
+
+private const val MAX_PARENT_SEARCH_DEPTH = 10
+
+private val primitiveTypeAliases = mapOf(
+    "boolean" to "Boolean",
+    "byte" to "Byte",
+    "short" to "Short",
+    "char" to "Character",
+    "int" to "Integer",
+    "long" to "Long",
+    "float" to "Float",
+    "double" to "Double",
+)
+
+private val javaLangTypeAliases = mapOf(
+    "Object" to "java.lang.Object",
+    "String" to "java.lang.String",
+    "Number" to "java.lang.Number",
+    "Boolean" to "java.lang.Boolean",
+    "Byte" to "java.lang.Byte",
+    "Short" to "java.lang.Short",
+    "Character" to "java.lang.Character",
+    "Integer" to "java.lang.Integer",
+    "Long" to "java.lang.Long",
+    "Float" to "java.lang.Float",
+    "Double" to "java.lang.Double",
+    "Void" to "java.lang.Void",
+)
+
+/**
+ * Represents the outcome of resolving parameter names for a callable.
+ */
+private sealed class ResolutionResult {
+    /**
+     * A single best match was found.
+     *
+     * @property parameterNames Parameter names in declaration order.
+     */
+    data class Match(val parameterNames: List<String>) : ResolutionResult()
+
+    /**
+     * No candidates matched the call site.
+     */
+    data object NotFound : ResolutionResult()
+
+    /**
+     * Multiple candidates matched with no clear winner.
+     */
+    data object Ambiguous : ResolutionResult()
+}
+
+/**
+ * Minimal signature needed for overload matching and hint labels.
+ */
+private data class CallableSignature(val parameterNames: List<String>, val parameterTypes: List<String>)
 
 /**
  * Provides LSP Inlay Hints for Groovy source files.
@@ -40,6 +96,14 @@ class InlayHintsProvider(
     private val config: InlayHintsConfiguration = InlayHintsConfiguration(),
 ) {
     private val logger = LoggerFactory.getLogger(InlayHintsProvider::class.java)
+
+    private data class NodeProcessingContext(
+        val range: org.eclipse.lsp4j.Range,
+        val astModel: GroovyAstModel,
+        val symbolTable: SymbolTable?,
+        val workspaceSymbols: List<Symbol>,
+        val hints: MutableList<InlayHint>,
+    )
 
     /**
      * Provides a list of inlay hints for the given document and range.
@@ -65,39 +129,55 @@ class InlayHintsProvider(
         }
 
         val hints = mutableListOf<InlayHint>()
-        val range = params.range
+        val context = NodeProcessingContext(
+            range = params.range,
+            astModel = astModel,
+            symbolTable = symbolTable,
+            workspaceSymbols = workspaceSymbols,
+            hints = hints,
+        )
 
         // Traverse all nodes and collect hints within the requested range
         astModel.getAllNodes().forEach { node ->
-            // Filter nodes outside the requested range (1-indexed to 0-indexed conversion)
-            val nodeLine = node.lineNumber - 1
-            if (nodeLine < range.start.line || nodeLine > range.end.line) {
-                return@forEach
-            }
-
-            when (node) {
-                is DeclarationExpression -> {
-                    if (config.typeHints) {
-                        collectTypeHint(node)?.let { hints.add(it) }
-                    }
-                }
-
-                is MethodCallExpression -> {
-                    if (config.parameterHints) {
-                        collectParameterHints(node, astModel, symbolTable, workspaceSymbols, hints)
-                    }
-                }
-
-                is ConstructorCallExpression -> {
-                    if (config.parameterHints) {
-                        collectConstructorParameterHints(node, astModel, workspaceSymbols, hints)
-                    }
-                }
-            }
+            processNode(node, context)
         }
 
         logger.debug("Returning ${hints.size} inlay hints for ${params.textDocument.uri}")
         return hints
+    }
+
+    private fun processNode(node: ASTNode, context: NodeProcessingContext) {
+        // Filter nodes outside the requested range (1-indexed to 0-indexed conversion)
+        val nodeLine = node.lineNumber - 1
+        if (nodeLine < context.range.start.line || nodeLine > context.range.end.line) {
+            return
+        }
+
+        when (node) {
+            is DeclarationExpression -> {
+                if (config.typeHints) {
+                    collectTypeHint(node)?.let { context.hints.add(it) }
+                }
+            }
+
+            is MethodCallExpression -> {
+                if (config.parameterHints) {
+                    collectParameterHints(
+                        node,
+                        context.astModel,
+                        context.symbolTable,
+                        context.workspaceSymbols,
+                        context.hints,
+                    )
+                }
+            }
+
+            is ConstructorCallExpression -> {
+                if (config.parameterHints) {
+                    collectConstructorParameterHints(node, context.astModel, context.workspaceSymbols, context.hints)
+                }
+            }
+        }
     }
 
     /**
@@ -235,33 +315,6 @@ class InlayHintsProvider(
     }
 
     /**
-     * Represents the outcome of resolving parameter names for a callable.
-     */
-    private sealed class ResolutionResult {
-        /**
-         * A single best match was found.
-         *
-         * @property parameterNames Parameter names in declaration order.
-         */
-        data class Match(val parameterNames: List<String>) : ResolutionResult()
-
-        /**
-         * No candidates matched the call site.
-         */
-        data object NotFound : ResolutionResult()
-
-        /**
-         * Multiple candidates matched with no clear winner.
-         */
-        data object Ambiguous : ResolutionResult()
-    }
-
-    /**
-     * Minimal signature needed for overload matching and hint labels.
-     */
-    private data class CallableSignature(val parameterNames: List<String>, val parameterTypes: List<String>)
-
-    /**
      * Resolve parameter names for a method call.
      *
      * Resolution stages:
@@ -278,15 +331,40 @@ class InlayHintsProvider(
         val methodName = call.methodAsString ?: return emptyList()
         val arguments = call.arguments as? ArgumentListExpression ?: return emptyList()
         val argCount = arguments.expressions.size
-        val argumentTypes = resolveArgumentTypes(arguments.expressions)
-        val receiverType = resolveReceiverType(call, astModel, symbolTable)
+        val argumentTypes = InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, logger)
+        val receiverType = InlayHintsCandidates.resolveReceiverType(call, astModel, symbolTable, logger)
         val isStaticCall = call.objectExpression is ClassExpression
 
-        val result = resolveFromCandidates(
+        val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
-            { findMethodCandidatesInAst(astModel, methodName, argCount, receiverType, isStaticCall) },
-            { findWorkspaceMethodCandidates(methodName, argCount, receiverType, isStaticCall, workspaceSymbols) },
-            { findClasspathMethodCandidates(methodName, argCount, receiverType, isStaticCall) },
+            compilationService,
+            {
+                InlayHintsCandidates.findMethodCandidatesInAst(
+                    astModel,
+                    methodName,
+                    argCount,
+                    receiverType,
+                    isStaticCall,
+                )
+            },
+            {
+                InlayHintsCandidates.findWorkspaceMethodCandidates(
+                    methodName,
+                    argCount,
+                    receiverType,
+                    isStaticCall,
+                    workspaceSymbols,
+                )
+            },
+            {
+                InlayHintsCandidates.findClasspathMethodCandidates(
+                    methodName,
+                    argCount,
+                    receiverType,
+                    isStaticCall,
+                    compilationService,
+                )
+            },
         )
         return (result as? ResolutionResult.Match)?.parameterNames.orEmpty()
     }
@@ -301,24 +379,28 @@ class InlayHintsProvider(
     ): List<String> {
         val arguments = call.arguments as? ArgumentListExpression ?: return emptyList()
         val argCount = arguments.expressions.size
-        val argumentTypes = resolveArgumentTypes(arguments.expressions)
+        val argumentTypes = InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, logger)
         val typeName = call.type.name
 
-        val result = resolveFromCandidates(
+        val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
-            { findConstructorCandidatesInAst(astModel, typeName, argCount) },
-            { findWorkspaceConstructorCandidates(typeName, argCount, workspaceSymbols) },
-            { findClasspathConstructorCandidates(typeName, argCount) },
+            compilationService,
+            { InlayHintsCandidates.findConstructorCandidatesInAst(astModel, typeName, argCount) },
+            { InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, workspaceSymbols) },
+            { InlayHintsCandidates.findClasspathConstructorCandidates(typeName, argCount, compilationService) },
         )
         return (result as? ResolutionResult.Match)?.parameterNames.orEmpty()
     }
+}
 
-    private fun resolveFromCandidates(
+private object InlayHintsCandidates {
+    fun resolveFromCandidates(
         argumentTypes: List<String?>,
+        compilationService: GroovyCompilationService,
         vararg providers: () -> List<CallableSignature>,
     ): ResolutionResult {
         providers.forEach { provider ->
-            when (val result = selectBestCandidate(provider(), argumentTypes)) {
+            when (val result = InlayHintsTypes.selectBestCandidate(provider(), argumentTypes, compilationService)) {
                 is ResolutionResult.Match -> return result
                 ResolutionResult.Ambiguous -> return result
                 ResolutionResult.NotFound -> Unit
@@ -327,58 +409,84 @@ class InlayHintsProvider(
         return ResolutionResult.NotFound
     }
 
-    private fun resolveReceiverType(
+    fun resolveReceiverType(
         call: MethodCallExpression,
         astModel: GroovyAstModel,
         symbolTable: SymbolTable?,
+        logger: Logger,
     ): String? {
         if (call.isImplicitThis) {
-            var current: ASTNode? = call
-            var depth = 0
-            val visited = mutableSetOf<ASTNode>()
-            while (current != null && current !is ClassNode && depth < MAX_PARENT_SEARCH_DEPTH) {
-                if (!visited.add(current)) {
-                    break
-                }
-                val parent = astModel.getParent(current) ?: break
-                if (parent === current) break
-                current = parent
-                depth++
-            }
-            return (current as? ClassNode)?.name
+            return resolveImplicitThisReceiverType(call, astModel)
         }
 
         val objectExpr = call.objectExpression ?: return null
         val directType = (objectExpr as? ClassExpression)?.type?.name
-        var type = directType ?: inferExpressionTypeSafely(objectExpr, "receiver")
+        val type = directType ?: inferExpressionTypeSafely(objectExpr, "receiver", logger)
 
-        if ((type == "java.lang.Object" || type == "java.lang.Class") &&
-            objectExpr is VariableExpression &&
-            symbolTable != null
-        ) {
-            val resolvedVar = symbolTable.resolveSymbol(objectExpr, astModel)
-            if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
-                resolvedVar.initialExpression?.let { initExpr ->
-                    val inferred = inferExpressionTypeSafely(initExpr, "receiver initializer")
-                    if (inferred != null && inferred != "java.lang.Object") {
-                        type = inferred
-                    }
+        return refineReceiverTypeWithSymbolTable(type, objectExpr, astModel, symbolTable, logger)
+            ?.takeUnless { InlayHintsTypes.isDynamicType(it) || it == "java.lang.Class" }
+    }
+
+    fun resolveImplicitThisReceiverType(call: MethodCallExpression, astModel: GroovyAstModel): String? {
+        var current: ASTNode? = call
+        var depth = 0
+        val visited = mutableSetOf<ASTNode>()
+
+        var keepGoing = true
+        while (keepGoing) {
+            if (current == null || current is ClassNode || depth >= MAX_PARENT_SEARCH_DEPTH) {
+                keepGoing = false
+            } else if (!visited.add(current)) {
+                keepGoing = false
+            } else {
+                val parent = astModel.getParent(current)
+                if (parent == null || parent === current) {
+                    keepGoing = false
+                } else {
+                    current = parent
+                    depth += 1
                 }
             }
         }
-
-        return type?.takeUnless { isDynamicType(it) || it == "java.lang.Class" }
+        return (current as? ClassNode)?.name
     }
 
-    private fun resolveArgumentTypes(arguments: List<Expression>): List<String?> =
-        arguments.map { arg -> inferExpressionTypeSafely(arg, "argument") }
+    fun refineReceiverTypeWithSymbolTable(
+        inferredType: String?,
+        objectExpr: Expression,
+        astModel: GroovyAstModel,
+        symbolTable: SymbolTable?,
+        logger: Logger,
+    ): String? {
+        if (inferredType != "java.lang.Object" && inferredType != "java.lang.Class") {
+            return inferredType
+        }
+        if (objectExpr !is VariableExpression) {
+            return inferredType
+        }
+        if (symbolTable == null) {
+            return inferredType
+        }
 
-    private fun inferExpressionTypeSafely(expression: Expression, context: String): String? =
+        val resolvedVar = symbolTable.resolveSymbol(objectExpr, astModel) ?: return inferredType
+        if (!resolvedVar.hasInitialExpression()) {
+            return inferredType
+        }
+
+        val initExpr = resolvedVar.initialExpression ?: return inferredType
+        val refined = inferExpressionTypeSafely(initExpr, "receiver initializer", logger) ?: return inferredType
+        return refined.takeUnless { it == "java.lang.Object" } ?: inferredType
+    }
+
+    fun resolveArgumentTypes(arguments: List<Expression>, logger: Logger): List<String?> =
+        arguments.map { arg -> inferExpressionTypeSafely(arg, "argument", logger) }
+
+    fun inferExpressionTypeSafely(expression: Expression, context: String, logger: Logger): String? =
         runCatching { TypeInferencer.inferExpressionType(expression) }
             .onFailure { logger.debug("Type inference failed for $context", it) }
             .getOrNull()
 
-    private fun findMethodCandidatesInAst(
+    fun findMethodCandidatesInAst(
         astModel: GroovyAstModel,
         methodName: String,
         argCount: Int,
@@ -387,7 +495,11 @@ class InlayHintsProvider(
     ): List<CallableSignature> {
         val classNodes = astModel.getAllClassNodes()
         val searchScope = if (receiverType != null) {
-            val matchingClasses = filterClassesByType(classNodes, receiverType)
+            val normalizedType = InlayHintsTypes.normalizeTypeName(receiverType)
+            val simpleName = normalizedType.substringAfterLast('.')
+            val matchingClasses = classNodes.filter { node ->
+                node.name == normalizedType || node.nameWithoutPackage == simpleName
+            }
             if (matchingClasses.isEmpty()) {
                 return emptyList()
             }
@@ -401,18 +513,18 @@ class InlayHintsProvider(
                 classNode.methods
                     .filter { it.name == methodName && it.parameters.size == argCount }
                     .filter { !isStaticCall || it.isStatic }
-                    .map { toSignature(it.parameters) }
+                    .map { InlayHintsTypes.toSignature(it.parameters.asList()) }
             }
     }
 
-    private fun findWorkspaceMethodCandidates(
+    fun findWorkspaceMethodCandidates(
         methodName: String,
         argCount: Int,
         receiverType: String?,
         isStaticCall: Boolean,
         workspaceSymbols: List<Symbol>,
     ): List<CallableSignature> {
-        val normalizedReceiverType = receiverType?.let { normalizeTypeName(it) } ?: return emptyList()
+        val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
         val receiverSimple = normalizedReceiverType.substringAfterLast('.')
 
         return workspaceSymbols
@@ -420,32 +532,38 @@ class InlayHintsProvider(
             .filterIsInstance<Symbol.Method>()
             .filter { it.name == methodName && it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
-            .filter { matchesOwner(it.owner, normalizedReceiverType, receiverSimple) }
-            .map { toSignature(it.parameters) }
+            .filter { methodSymbol ->
+                val classOwner = methodSymbol.owner ?: return@filter false
+                val ownerName = classOwner.name
+                val ownerSimple = classOwner.nameWithoutPackage
+                ownerName == normalizedReceiverType || ownerSimple == receiverSimple
+            }
+            .map { InlayHintsTypes.toSignature(it.parameters) }
             .toList()
     }
 
-    private fun findClasspathMethodCandidates(
+    fun findClasspathMethodCandidates(
         methodName: String,
         argCount: Int,
         receiverType: String?,
         isStaticCall: Boolean,
+        compilationService: GroovyCompilationService,
     ): List<CallableSignature> {
-        val normalizedReceiverType = receiverType?.let { normalizeTypeName(it) } ?: return emptyList()
+        val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
         // TODO(#581): Resolve synthetic parameter names via JDK source indexing for deterministic hints.
         //   See: https://github.com/albertocavalcante/gvy/issues/581
         return compilationService.classpathService.getMethods(normalizedReceiverType)
             .filter { it.name == methodName && it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
-            .map { toSignature(it) }
+            .map { InlayHintsTypes.toSignature(it) }
     }
 
-    private fun findConstructorCandidatesInAst(
+    fun findConstructorCandidatesInAst(
         astModel: GroovyAstModel,
         typeName: String,
         argCount: Int,
     ): List<CallableSignature> {
-        val normalizedType = normalizeTypeName(typeName)
+        val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
         val classNodes = astModel.getAllClassNodes()
         val matchingClasses = classNodes.filter {
@@ -455,16 +573,16 @@ class InlayHintsProvider(
         return matchingClasses.flatMap { classNode ->
             classNode.declaredConstructors
                 .filter { it.parameters.size == argCount }
-                .map { toSignature(it.parameters) }
+                .map { InlayHintsTypes.toSignature(it.parameters.asList()) }
         }
     }
 
-    private fun findWorkspaceConstructorCandidates(
+    fun findWorkspaceConstructorCandidates(
         typeName: String,
         argCount: Int,
         workspaceSymbols: List<Symbol>,
     ): List<CallableSignature> {
-        val normalizedType = normalizeTypeName(typeName)
+        val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
         return workspaceSymbols
             .asSequence()
@@ -473,41 +591,33 @@ class InlayHintsProvider(
             .flatMap { classSymbol ->
                 classSymbol.node.declaredConstructors
                     .filter { it.parameters.size == argCount }
-                    .map { toSignature(it.parameters) }
+                    .map { InlayHintsTypes.toSignature(it.parameters.asList()) }
             }
             .toList()
     }
 
-    private fun findClasspathConstructorCandidates(typeName: String, argCount: Int): List<CallableSignature> {
-        val normalizedType = normalizeTypeName(typeName)
+    fun findClasspathConstructorCandidates(
+        typeName: String,
+        argCount: Int,
+        compilationService: GroovyCompilationService,
+    ): List<CallableSignature> {
+        val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val clazz = compilationService.classpathService.loadClass(normalizedType) ?: return emptyList()
         return clazz.constructors
             .filter { it.parameterCount == argCount }
             .map { constructor ->
                 val types = constructor.parameterTypes.map { it.name }
                 val names = constructor.parameters.map { it.name }
-                toSignature(types, names)
+                InlayHintsTypes.toSignature(types, names)
             }
     }
+}
 
-    private fun filterClassesByType(classNodes: List<ClassNode>, receiverType: String?): List<ClassNode> {
-        val normalizedType = receiverType?.let { normalizeTypeName(it) } ?: return emptyList()
-        val simpleName = normalizedType.substringAfterLast('.')
-        return classNodes.filter { node ->
-            node.name == normalizedType || node.nameWithoutPackage == simpleName
-        }
-    }
-
-    private fun matchesOwner(owner: ClassNode?, receiverType: String, receiverSimple: String): Boolean {
-        if (owner == null) return false
-        val ownerName = owner.name
-        val ownerSimple = owner.nameWithoutPackage
-        return ownerName == receiverType || ownerSimple == receiverSimple
-    }
-
-    private fun selectBestCandidate(
+private object InlayHintsTypes {
+    fun selectBestCandidate(
         candidates: List<CallableSignature>,
         argumentTypes: List<String?>,
+        compilationService: GroovyCompilationService,
     ): ResolutionResult {
         if (candidates.isEmpty()) return ResolutionResult.NotFound
 
@@ -521,7 +631,7 @@ class InlayHintsProvider(
         }
 
         val scored = candidates.mapNotNull { candidate ->
-            val score = scoreCandidate(candidate, argumentTypes)
+            val score = scoreCandidate(candidate, argumentTypes, compilationService)
             if (score < 0) null else candidate to score
         }
         if (scored.isEmpty()) return ResolutionResult.Ambiguous
@@ -536,14 +646,18 @@ class InlayHintsProvider(
         }
     }
 
-    private fun scoreCandidate(candidate: CallableSignature, argumentTypes: List<String?>): Int {
+    private fun scoreCandidate(
+        candidate: CallableSignature,
+        argumentTypes: List<String?>,
+        compilationService: GroovyCompilationService,
+    ): Int {
         var score = 0
         argumentTypes.forEachIndexed { index, argType ->
             if (isUnknownType(argType)) {
                 return@forEachIndexed
             }
             val paramType = candidate.parameterTypes.getOrNull(index) ?: return -1
-            val matchScore = matchScore(paramType, argType!!)
+            val matchScore = matchScore(paramType, argType!!, compilationService)
             if (matchScore < 0) {
                 return -1
             }
@@ -552,29 +666,25 @@ class InlayHintsProvider(
         return score
     }
 
-    private fun matchScore(parameterType: String, argumentType: String): Int {
+    private fun matchScore(
+        parameterType: String,
+        argumentType: String,
+        compilationService: GroovyCompilationService,
+    ): Int {
         val normalizedParam = normalizeTypeName(parameterType)
         val normalizedArg = normalizeTypeName(argumentType)
+        val paramKey = normalizePrimitiveAlias(normalizedParam)
+        val argKey = normalizePrimitiveAlias(normalizedArg)
 
-        if (isDynamicType(normalizedParam)) return 1
-
-        if (typesMatch(normalizedParam, normalizedArg)) {
-            return 2
+        return when {
+            isDynamicType(normalizedParam) -> 1
+            paramKey == argKey -> 2
+            else -> {
+                val paramClass = resolveClass(normalizedParam, compilationService)
+                val argClass = resolveClass(normalizedArg, compilationService)
+                if (paramClass != null && argClass != null && paramClass.isAssignableFrom(argClass)) 1 else -1
+            }
         }
-
-        val paramClass = resolveClass(normalizedParam)
-        val argClass = resolveClass(normalizedArg)
-        if (paramClass != null && argClass != null) {
-            return if (paramClass.isAssignableFrom(argClass)) 1 else -1
-        }
-
-        return -1
-    }
-
-    private fun typesMatch(parameterType: String, argumentType: String): Boolean {
-        val paramKey = normalizePrimitiveAlias(parameterType)
-        val argKey = normalizePrimitiveAlias(argumentType)
-        return paramKey == argKey
     }
 
     private fun normalizePrimitiveAlias(typeName: String): String {
@@ -582,7 +692,7 @@ class InlayHintsProvider(
         return primitiveTypeAliases[simple] ?: simple
     }
 
-    private fun resolveClass(typeName: String): Class<*>? {
+    private fun resolveClass(typeName: String, compilationService: GroovyCompilationService): Class<*>? {
         val normalized = normalizeTypeName(typeName)
         val aliased = primitiveTypeAliases[normalized] ?: normalized
         val lookupName = when {
@@ -593,7 +703,7 @@ class InlayHintsProvider(
         return compilationService.classpathService.loadClass(lookupName)
     }
 
-    private fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')
+    fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')
 
     private fun isUnknownType(typeName: String?): Boolean {
         if (typeName == null) return true
@@ -601,20 +711,17 @@ class InlayHintsProvider(
         return normalized == "java.lang.Object" || normalized == "Object" || normalized == "def"
     }
 
-    private fun isDynamicType(typeName: String): Boolean =
+    fun isDynamicType(typeName: String): Boolean =
         typeName == "java.lang.Object" || typeName == "Object" || typeName == "def"
 
-    private fun toSignature(parameters: Array<Parameter>): CallableSignature = CallableSignature(
+    fun toSignature(parameters: Iterable<Parameter>): CallableSignature = CallableSignature(
         parameterNames = parameters.map { it.name },
         parameterTypes = parameters.map { it.type.name },
     )
 
-    private fun toSignature(parameters: List<Parameter>): CallableSignature = toSignature(parameters.toTypedArray())
+    fun toSignature(method: ReflectedMethod): CallableSignature = toSignature(method.parameters, method.parameterNames)
 
-    private fun toSignature(method: ReflectedMethod): CallableSignature =
-        toSignature(method.parameters, method.parameterNames)
-
-    private fun toSignature(parameterTypes: List<String>, parameterNames: List<String>): CallableSignature {
+    fun toSignature(parameterTypes: List<String>, parameterNames: List<String>): CallableSignature {
         val normalizedNames = normalizeParameterNames(parameterNames, parameterTypes.size)
         return CallableSignature(
             parameterNames = normalizedNames,
@@ -627,34 +734,5 @@ class InlayHintsProvider(
             return names.mapIndexed { index, name -> name.ifBlank { "arg$index" } }
         }
         return List(size) { index -> "arg$index" }
-    }
-
-    companion object {
-        // Limit how far up the AST we walk when searching parent nodes to avoid deep or cyclic trees.
-        private const val MAX_PARENT_SEARCH_DEPTH = 10
-        private val primitiveTypeAliases = mapOf(
-            "boolean" to "Boolean",
-            "byte" to "Byte",
-            "short" to "Short",
-            "char" to "Character",
-            "int" to "Integer",
-            "long" to "Long",
-            "float" to "Float",
-            "double" to "Double",
-        )
-        private val javaLangTypeAliases = mapOf(
-            "Object" to "java.lang.Object",
-            "String" to "java.lang.String",
-            "Number" to "java.lang.Number",
-            "Boolean" to "java.lang.Boolean",
-            "Byte" to "java.lang.Byte",
-            "Short" to "java.lang.Short",
-            "Character" to "java.lang.Character",
-            "Integer" to "java.lang.Integer",
-            "Long" to "java.lang.Long",
-            "Float" to "java.lang.Float",
-            "Double" to "java.lang.Double",
-            "Void" to "java.lang.Void",
-        )
     }
 }

@@ -59,80 +59,55 @@ data class AgentTypeJson(val parameters: Map<String, ParameterJson> = emptyMap()
 /**
  * Extension function to convert JSON model to domain model.
  */
-fun MetadataJson.toBundledMetadata(): BundledJenkinsMetadata {
-    val stepsMap = steps.map { (stepName, step) ->
-        stepName to JenkinsStepMetadata(
-            name = stepName,
-            plugin = step.plugin,
-            positionalParams = step.positionalParams,
-            parameters = step.parameters.map { (paramName, param) ->
-                paramName to StepParameter(
-                    name = paramName,
-                    type = param.type,
-                    required = param.required,
-                    default = param.default,
-                    documentation = param.documentation,
-                )
-            }.toMap(),
-            documentation = step.documentation,
-        )
-    }.toMap()
-
-    val globalVarsMap = globalVariables.map { (varName, globalVar) ->
-        varName to GlobalVariableMetadata(
+fun MetadataJson.toBundledMetadata(): BundledJenkinsMetadata = BundledJenkinsMetadata(
+    steps = steps.mapValues { (stepName, step) -> step.toDomain(stepName) },
+    globalVariables = globalVariables.mapValues { (varName, globalVar) ->
+        GlobalVariableMetadata(
             name = varName,
             type = globalVar.type,
             documentation = globalVar.documentation,
         )
-    }.toMap()
-
-    val postConditionsMap = postConditions.map { (condName, cond) ->
-        condName to PostConditionMetadata(
+    },
+    postConditions = postConditions.mapValues { (condName, cond) ->
+        PostConditionMetadata(
             name = condName,
             description = cond.description,
             executionOrder = cond.executionOrder,
         )
-    }.toMap()
+    },
+    declarativeOptions = declarativeOptions.mapValues { (optName, opt) -> opt.toDomain(optName) },
+    agentTypes = agentTypes.mapValues { (agentName, agent) -> agent.toDomain(agentName) },
+    jenkinsVersion = jenkinsVersion,
+)
 
-    val declarativeOptionsMap = declarativeOptions.map { (optName, opt) ->
-        optName to DeclarativeOptionMetadata(
-            name = optName,
-            plugin = opt.plugin,
-            parameters = opt.parameters.map { (paramName, param) ->
-                paramName to StepParameter(
-                    name = paramName,
-                    type = param.type,
-                    required = param.required,
-                    default = param.default,
-                    documentation = param.documentation,
-                )
-            }.toMap(),
-            documentation = opt.documentation,
+private fun StepJson.toDomain(stepName: String): JenkinsStepMetadata = JenkinsStepMetadata(
+    name = stepName,
+    plugin = plugin,
+    positionalParams = positionalParams,
+    parameters = parameters.toStepParameters(),
+    documentation = documentation,
+)
+
+private fun DeclarativeOptionJson.toDomain(optionName: String): DeclarativeOptionMetadata = DeclarativeOptionMetadata(
+    name = optionName,
+    plugin = plugin,
+    parameters = parameters.toStepParameters(),
+    documentation = documentation,
+)
+
+private fun AgentTypeJson.toDomain(agentName: String): AgentTypeMetadata = AgentTypeMetadata(
+    name = agentName,
+    parameters = parameters.toStepParameters(),
+    documentation = documentation,
+)
+
+private fun Map<String, ParameterJson>.toStepParameters(): Map<String, StepParameter> =
+    mapValues { (paramName, param) ->
+        StepParameter(
+            name = paramName,
+            type = param.type,
+            required = param.required,
+            default = param.default,
+            documentation = param.documentation,
         )
-    }.toMap()
-
-    val agentTypesMap = agentTypes.map { (agentName, agent) ->
-        agentName to AgentTypeMetadata(
-            name = agentName,
-            parameters = agent.parameters.map { (paramName, param) ->
-                paramName to StepParameter(
-                    name = paramName,
-                    type = param.type,
-                    required = param.required,
-                    default = param.default,
-                    documentation = param.documentation,
-                )
-            }.toMap(),
-            documentation = agent.documentation,
-        )
-    }.toMap()
-
-    return BundledJenkinsMetadata(
-        steps = stepsMap,
-        globalVariables = globalVarsMap,
-        postConditions = postConditionsMap,
-        declarativeOptions = declarativeOptionsMap,
-        agentTypes = agentTypesMap,
-        jenkinsVersion = jenkinsVersion,
-    )
-}
+    }

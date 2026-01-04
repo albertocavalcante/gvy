@@ -78,48 +78,72 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
      * Handles class hierarchy (e.g. Iterable methods are available on List).
      */
     fun getMethodsForType(className: String): List<GdkExtensionMethod> {
-        if (!isInitialized.get()) initialize()
+        ensureInitialized()
 
-        // 1. Exact match
-        val results = (cache[className] ?: emptyList()).toMutableList()
+        val results = mutableListOf<GdkExtensionMethod>()
+        appendCachedMethods(results, className)
 
-        // 2. Hierarchy walk (basic implementation)
-        // We need the actual Class object to walk the hierarchy
         val clazz = classpathService.loadClass(className)
         if (clazz != null) {
-            val superClasses = mutableListOf<Class<*>>()
-            // Add interfaces
-            superClasses.addAll(clazz.interfaces)
-            // Add superclass
-            var superC = clazz.superclass
-            while (superC != null) {
-                superClasses.add(superC)
-                superClasses.addAll(superC.interfaces)
-                superC = superC.superclass
-            }
-
-            superClasses.forEach { parent ->
-                cache[parent.name]?.let { results.addAll(it) }
-            }
+            appendCachedMethodsFromHierarchy(results, clazz)
         } else {
-            // If we can't load the class, try some common fallbacks for standard types
-            if (className == "java.util.ArrayList" || className == "java.util.LinkedList") {
-                cache["java.util.List"]?.let { results.addAll(it) }
-                cache["java.util.Collection"]?.let { results.addAll(it) }
-                cache["java.lang.Iterable"]?.let { results.addAll(it) }
-            }
-            if (className == "java.lang.String") {
-                cache["java.lang.CharSequence"]?.let { results.addAll(it) }
-            }
+            appendFallbackMethods(results, className)
         }
 
-        // 3. Always include Object methods (every Groovy object is an Object).
-        // Interfaces are implemented by Objects.
-        cache["java.lang.Object"]?.let { results.addAll(it) }
+        // Always include Object methods (every Groovy object is an Object).
+        appendCachedMethods(results, JAVA_LANG_OBJECT)
 
-        return results.distinctBy {
-            it.name + it.parameters.joinToString(",")
+        return results.distinctBy { it.signatureKey() }
+    }
+
+    private fun ensureInitialized() {
+        if (!isInitialized.get()) initialize()
+    }
+
+    private fun appendCachedMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+        cache[className]?.let(results::addAll)
+    }
+
+    private fun appendCachedMethodsFromHierarchy(results: MutableList<GdkExtensionMethod>, clazz: Class<*>) {
+        collectHierarchyTypes(clazz).forEach { parent ->
+            appendCachedMethods(results, parent.name)
         }
+    }
+
+    private fun collectHierarchyTypes(clazz: Class<*>): Sequence<Class<*>> = sequence {
+        yieldAll(clazz.interfaces.asSequence())
+
+        var superClass = clazz.superclass
+        while (superClass != null) {
+            yield(superClass)
+            yieldAll(superClass.interfaces.asSequence())
+            superClass = superClass.superclass
+        }
+    }
+
+    private fun appendFallbackMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+        when (className) {
+            in FALLBACK_LIST_TYPES -> {
+                appendCachedMethods(results, JAVA_UTIL_LIST)
+                appendCachedMethods(results, JAVA_UTIL_COLLECTION)
+                appendCachedMethods(results, JAVA_LANG_ITERABLE)
+            }
+
+            JAVA_LANG_STRING -> appendCachedMethods(results, JAVA_LANG_CHAR_SEQUENCE)
+        }
+    }
+
+    private fun GdkExtensionMethod.signatureKey(): String = name + parameters.joinToString(",")
+
+    private companion object {
+        private const val JAVA_LANG_OBJECT = "java.lang.Object"
+        private const val JAVA_LANG_STRING = "java.lang.String"
+        private const val JAVA_LANG_CHAR_SEQUENCE = "java.lang.CharSequence"
+        private const val JAVA_LANG_ITERABLE = "java.lang.Iterable"
+        private const val JAVA_UTIL_LIST = "java.util.List"
+        private const val JAVA_UTIL_COLLECTION = "java.util.Collection"
+
+        private val FALLBACK_LIST_TYPES = setOf("java.util.ArrayList", "java.util.LinkedList")
     }
 }
 

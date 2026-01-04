@@ -9,6 +9,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
 
@@ -31,11 +32,11 @@ class StatusPublisherTest {
         context = ZContext()
 
         // Publisher: what the kernel uses
-        pubSocket = context.createSocket(ZMQ.PUB)
+        pubSocket = context.createSocket(SocketType.PUB)
         pubSocket.bind(endpoint)
 
         // Subscriber: simulates frontend
-        subSocket = context.createSocket(ZMQ.SUB)
+        subSocket = context.createSocket(SocketType.SUB)
         subSocket.connect(endpoint)
         subSocket.subscribe("".toByteArray()) // Subscribe to all
 

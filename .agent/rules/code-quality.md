@@ -80,7 +80,7 @@ Use backtick syntax with descriptive sentences:
 
 ```bash
 ./gradlew lintFix   # Auto-fix what's possible
-./gradlew lint      # Verify no remaining issues
+./gradlew lint --rerun-tasks  # Verify no remaining issues
 ```
 
 ### Handling Lint Issues

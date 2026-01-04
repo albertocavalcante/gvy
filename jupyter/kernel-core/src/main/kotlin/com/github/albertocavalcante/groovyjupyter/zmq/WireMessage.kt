@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
+import org.slf4j.LoggerFactory
 
 /**
  * Represents a Jupyter message in wire protocol format.
@@ -91,35 +92,40 @@ data class WireMessage(
         if (json.isBlank() || json == "{}") {
             return Header()
         }
-        return try {
+        return runCatching {
             jsonParser.decodeFromString<Header>(json)
-        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+        }.onFailure { throwable ->
+            logger.debug("Failed to parse Jupyter header JSON", throwable)
+        }.getOrElse {
             Header()
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     private fun parseJsonObject(json: String): Map<String, Any> {
         if (json.isBlank() || json == "{}") {
             return emptyMap()
         }
-        return try {
+        return runCatching {
             val element = jsonParser.parseToJsonElement(json)
-            jsonElementToMap(element) as Map<String, Any>
-        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            (element as? JsonObject)?.let { jsonObjectToMap(it) } ?: emptyMap()
+        }.onFailure { throwable ->
+            logger.debug("Failed to parse Jupyter JSON object", throwable)
+        }.getOrElse {
             emptyMap()
         }
     }
 
-    private fun jsonElementToMap(element: JsonElement): Any? = when (element) {
+    private fun jsonObjectToMap(element: JsonObject): Map<String, Any> = element.entries
+        .mapNotNull { (k, v) -> jsonElementToValue(v)?.let { value -> k to value } }
+        .toMap()
+
+    private fun jsonArrayToList(element: JsonArray): List<Any> = element.mapNotNull { jsonElementToValue(it) }
+
+    private fun jsonElementToValue(element: JsonElement): Any? = when (element) {
         is JsonNull -> null
         is JsonPrimitive -> parsePrimitive(element)
-        is JsonObject ->
-            element.entries
-                .mapNotNull { (k, v) -> jsonElementToMap(v)?.let { value -> k to value } }
-                .toMap()
-
-        is JsonArray -> element.mapNotNull { jsonElementToMap(it) }
+        is JsonObject -> jsonObjectToMap(element)
+        is JsonArray -> jsonArrayToList(element)
     }
 
     private fun parsePrimitive(element: JsonPrimitive): Any {
@@ -136,6 +142,7 @@ data class WireMessage(
     }
 
     companion object {
+        private val logger = LoggerFactory.getLogger(WireMessage::class.java)
         private val jsonParser = Json { ignoreUnknownKeys = true }
         const val DELIMITER = "<IDS|MSG>"
         private val DELIMITER_BYTES = DELIMITER.toByteArray(Charsets.UTF_8)

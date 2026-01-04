@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovyjenkins.metadata
 
 import com.github.albertocavalcante.groovyjenkins.metadata.json.MetadataJson
 import com.github.albertocavalcante.groovyjenkins.metadata.json.toBundledMetadata
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -27,17 +29,25 @@ class JsonMetadataLoader {
     fun load(path: Path): BundledJenkinsMetadata {
         logger.debug("Loading Jenkins metadata from {}", path)
 
-        if (!Files.exists(path)) {
-            throw IllegalStateException("Jenkins metadata file not found: $path")
-        }
+        check(Files.exists(path)) { "Jenkins metadata file not found: $path" }
 
-        return try {
+        return runCatching {
             val jsonString = Files.readString(path)
             val metadataJson = json.decodeFromString<MetadataJson>(jsonString)
             metadataJson.toBundledMetadata()
-        } catch (e: Exception) {
-            logger.error("Failed to load Jenkins metadata from $path", e)
-            throw IllegalStateException("Failed to parse Jenkins metadata: ${e.message}", e)
+        }.getOrElse { throwable ->
+            if (throwable is Error) throw throwable
+
+            val wrapped = when (throwable) {
+                is IOException,
+                is SerializationException,
+                is IllegalArgumentException,
+                -> IllegalStateException("Failed to parse Jenkins metadata: ${throwable.message}", throwable)
+                else -> IllegalStateException("Failed to load Jenkins metadata: ${throwable.message}", throwable)
+            }
+
+            logger.error("Failed to load Jenkins metadata from $path", wrapped)
+            throw wrapped
         }
     }
 }

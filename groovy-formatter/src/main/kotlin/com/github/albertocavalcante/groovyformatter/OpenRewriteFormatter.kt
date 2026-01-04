@@ -32,21 +32,22 @@ class OpenRewriteFormatter {
             return extraction.shebang!!.trimEnd()
         }
 
-        val sourceFiles = parser.parse(extraction.content).collect(Collectors.toList())
-        if (sourceFiles.isEmpty()) return text
+        val formattedText = runCatching {
+            val sourceFiles = parser.parse(extraction.content).collect(Collectors.toList())
+            val formattedSource = recipe.run(InMemoryLargeSourceSet(sourceFiles), executionContext)
+                .changeset
+                .allResults
+                .mapNotNull { it.after }
+                .firstOrNull()
+                ?: return@runCatching extraction.content
 
-        val formattedSource = recipe.run(InMemoryLargeSourceSet(sourceFiles), executionContext)
-            .changeset
-            .allResults
-            .mapNotNull { it.after }
-            .firstOrNull()
-            ?: return text
-
-        val normalizedSource = PostFormatWhitespaceCollapser().visit(formattedSource, Unit) as SourceFile
-        // TODO(#formatter-followup): move this token-level collapse into a dedicated OpenRewrite recipe once we upstream Groovy spacing fixes.
-        val formattedText = normalizedSource.printAll()
-            .let { MULTI_SPACE_WITHIN_TOKEN_REGEX.replace(it) { " " } }
-            .normalizeLineEndings()
+            val normalizedSource = PostFormatWhitespaceCollapser().visit(formattedSource, Unit) as SourceFile
+            // TODO(#formatter-followup): move this token-level collapse into a dedicated OpenRewrite recipe
+            // once we upstream Groovy spacing fixes.
+            normalizedSource.printAll()
+                .let { MULTI_SPACE_WITHIN_TOKEN_REGEX.replace(it) { " " } }
+                .normalizeLineEndings()
+        }.getOrElse { return text }
 
         // Restore shebang with normalized spacing (always one blank line)
         return extraction.shebang?.let { shebang ->

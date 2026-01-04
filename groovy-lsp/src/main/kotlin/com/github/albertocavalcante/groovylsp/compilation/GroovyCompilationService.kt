@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovylsp.cache.LRUCache
-import com.github.albertocavalcante.groovylsp.engine.EngineFactory
-import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
 import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
@@ -14,626 +11,156 @@ import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
-import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.SymbolTable
-import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
-import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
-import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.Phases
-import org.eclipse.lsp4j.Diagnostic
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.net.URLClassLoader
-import java.nio.file.Files
-import java.nio.file.InvalidPathException
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
-
-private const val RETRY_DELAY_MS = 50L
-private const val CONTENT_START_PREVIEW_LENGTH = 50
-private const val CONTENT_PREVIEW_LENGTH = 100
 
 /**
- * Service for compiling and managing Groovy source code.
- *
- * @param documentProvider Required for engine-based features (hover, completion, etc.).
- *                         If null, calling [getSession] will throw [IllegalStateException].
- * @param sourceNavigator Optional source navigation service for cross-file features.
- * @param engineConfig Configuration for the language engine (parser type, features).
+ * Facade service for Groovy compilation, delegating to specialized services for caching,
+ * symbol indexing, AST access, engine lifecycle, and orchestration.
  */
 class GroovyCompilationService(
     parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val documentProvider: DocumentProvider? = null,
-    private val sourceNavigator: SourceNavigator? = null,
-    private var engineConfig: EngineConfiguration = EngineConfiguration(),
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    documentProvider: DocumentProvider? = null,
+    sourceNavigator: SourceNavigator? = null,
+    engineConfig: EngineConfiguration = EngineConfiguration(),
 ) {
-    companion object {
-        /**
-         * Batch size for parallel workspace indexing.
-         * Balances parallelism with resource usage.
-         */
-        private const val INDEXING_BATCH_SIZE = 10
-    }
-
     private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
-    private val cache = CompilationCache()
     private val errorHandler = CompilationErrorHandler()
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
         defaultSession = InProcessWorkerSession(parser),
         sessionFactory = { InProcessWorkerSession(parser) },
     )
-    private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = 100)
-    private val workspaceSymbolIndex = ConcurrentHashMap<URI, SymbolIndex>()
-    private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
-    private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
 
-    private var activeEngineInstance: LanguageEngine? = null
-    private val activeEngineLock = Any()
-
-    // Language Engine created via factory based on configuration
-    private val activeEngine: LanguageEngine
-        get() = synchronized(activeEngineLock) {
-            activeEngineInstance ?: createEngine().also { activeEngineInstance = it }
-        }
-
-    fun updateEngineConfiguration(newConfig: EngineConfiguration) {
-        synchronized(activeEngineLock) {
-            if (engineConfig != newConfig) {
-                logger.info("Updating engine configuration from ${engineConfig.type.id} to ${newConfig.type.id}")
-                engineConfig = newConfig
-                activeEngineInstance = null // Invalidate to force re-creation
-            }
-        }
-    }
-
-    private fun createEngine(): LanguageEngine = EngineFactory.create(
-        config = engineConfig,
-        parser = parser,
-        compilationService = this,
-        documentProvider = checkNotNull(documentProvider) {
-            "DocumentProvider required for engine features"
-        },
-        sourceNavigator = sourceNavigator,
-    ).also { logger.info("Active engine initialized: ${engineConfig.type.id}") }
-
-    // Track ongoing compilation per URI for proper async coordination
-    private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
-
+    // Specialized services
+    private val cacheService = CompilationCacheService()
     val workspaceManager = WorkspaceManager()
-
-    // Services for GDK and classpath-based completion
+    private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager)
+    private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager)
+    val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
 
-    /**
-     * Compiles Groovy source code and returns the result.
-     *
-     * NOTE: The cache lookup uses (uri, content) as the key and does NOT consider
-     * the [compilePhase] parameter. If a file was previously compiled to a later
-     * phase, subsequent requests for earlier phases may return the cached result
-     * from the later phase. This is a known limitation for Spock feature extraction,
-     * which requires early-phase AST (before Spock's transformations).
-     * TODO: Consider including compilePhase in the cache key for phase-sensitive use cases.
-     */
-    @Suppress("TooGenericExceptionCaught") // Final fallback
-    suspend fun compile(
-        uri: URI,
-        content: String,
-        compilePhase: Int = Phases.CANONICALIZATION,
-    ): CompilationResult {
-        logger.debug("Compiling: $uri (phase=$compilePhase)")
+    // Managers that handle complex lifecycle and orchestration
+    private val engineManager = LanguageEngineManager(
+        this,
+        parser,
+        parentClassLoader,
+        workspaceManager,
+        LanguageEngineManagerOptions(
+            documentProvider = documentProvider,
+            sourceNavigator = sourceNavigator,
+            engineConfig = engineConfig,
+        ),
+    )
+    private val resultMapper = CompilationResultMapper()
+    private val orchestrator = CompilationOrchestrator(
+        CompilationOrchestratorDependencies(
+            cacheService = cacheService,
+            workerSessionManager = workerSessionManager,
+            workspaceManager = workspaceManager,
+            symbolIndexer = symbolIndexer,
+            parseAccessor = parseAccessor,
+            resultMapper = resultMapper,
+            ioDispatcher = ioDispatcher,
+            errorHandler = errorHandler,
+        ),
+    )
 
-        return try {
-            // Check cache first
-            val cachedResult = cache.get(uri, content)
-            if (cachedResult != null) {
-                // Check for suspicious Script node - this happens when file was compiled
-                // before sourceRoots was populated (e.g., during didOpen before workspace init)
-                val isSuspiciousScriptNode = isSuspiciousScript(uri, cachedResult)
+    // ==========================================================================
+    // Core Compilation API (Delegated to Orchestrator)
+    // ==========================================================================
 
-                if (isSuspiciousScriptNode) {
-                    // Cache has a Script node that might be stale - re-compile with current sourceRoots
-                    logger.info("Cached result has suspicious Script node for $uri, re-compiling")
-                    performCompilation(uri, content, compilePhase)
-                } else {
-                    logger.debug("Using cached parse result for: $uri")
-                    val ast = cachedResult.ast!!
-                    val diagnostics = cachedResult.diagnostics.map { it.toLspDiagnostic() }
-                    CompilationResult.success(ast, diagnostics, content)
-                }
-            } else {
-                performCompilation(uri, content, compilePhase)
-            }
-        } catch (e: Exception) {
-            errorHandler.handleException(e, uri)
-        }
-    }
+    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION) =
+        orchestrator.compile(uri, content, compilePhase)
 
-    private suspend fun performCompilation(
-        uri: URI,
-        content: String,
-        compilePhase: Int = Phases.CANONICALIZATION,
-    ): CompilationResult {
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
+    suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION) =
+        orchestrator.compileTransient(uri, content, compilePhase)
 
-        // Get file-specific classpath (may be Jenkins-specific or standard)
-        val classpath = workspaceManager.getClasspathForFile(uri, content)
+    fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 
-        // Parse the source code
-        // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
-        // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                sourceRoots = workspaceManager.getSourceRoots(),
-                workspaceSources = workspaceManager.getWorkspaceSources(),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = compilePhase,
-            ),
-        )
+    suspend fun ensureCompiled(uri: URI) = orchestrator.ensureCompiled(uri)
 
-        val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
-        val ast = parseResult.ast
+    // ==========================================================================
+    // Engine and Configuration API (Delegated to EngineManager)
+    // ==========================================================================
 
-        val result = if (ast != null) {
-            val index = SymbolIndex().buildFromVisitor(parseResult.astModel)
-            cache.put(uri, content, parseResult)
-            symbolStorageCache.put(uri, index)
-            workspaceSymbolIndex[uri] = index
-            val isSuccess = parseResult.isSuccessful
-            CompilationResult(isSuccess, ast, diagnostics, content)
-        } else {
-            symbolStorageCache.remove(uri)
-            workspaceSymbolIndex.remove(uri)
-            CompilationResult.failure(diagnostics, content)
-        }
+    fun updateEngineConfiguration(newConfig: EngineConfiguration) = engineManager.updateEngineConfiguration(newConfig)
 
-        logger.debug("Compilation result for $uri: success=${result.isSuccess}, diagnostics=${diagnostics.size}")
-        return result
-    }
-
-    /**
-     * Compiles code without updating the cache.
-     * Useful for completion where we insert a dummy identifier.
-     */
-    suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
-        logger.debug("Transient compilation for: $uri (phase=$compilePhase)")
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-        val classpath = workspaceManager.getClasspathForFile(uri, content)
-
-        return workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = classpath,
-                sourceRoots = workspaceManager.getSourceRoots(),
-                workspaceSources = workspaceManager.getWorkspaceSources(),
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                compilePhase = compilePhase,
-            ),
-        )
-    }
-
-    fun getParseResult(uri: URI): ParseResult? = cache.get(uri)
-
-    /**
-     * Checks if a parse result contains a suspicious Script node.
-     *
-     * A "suspicious" Script node is one where:
-     * - There's exactly one class in the AST
-     * - The class extends groovy.lang.Script
-     * - The class name matches the filename
-     *
-     * This typically happens when a file is compiled before sourceRoots were populated,
-     * causing the Groovy compiler to fall back to treating it as a Script.
-     */
-    private fun isSuspiciousScript(uri: URI, parseResult: ParseResult): Boolean {
-        val filename = runCatching { Path.of(uri).fileName.toString().substringBeforeLast(".") }.getOrNull()
-            ?: return false
-        val classes = parseResult.ast?.classes ?: return false
-
-        if (classes.size != 1) {
-            return false
-        }
-        val singleClass = classes.single()
-        // Use safe call for superClass - it's null for interfaces
-        return singleClass.superClass?.name == "groovy.lang.Script" && singleClass.name == filename
-    }
-
-    /**
-     * Gets a valid parse result for the URI, ensuring stale Script nodes are recompiled.
-     *
-     * Unlike [getParseResult], this method checks if the cached result contains a suspicious
-     * Script node (which can happen when file was compiled before sourceRoots was populated).
-     * If detected, it parses directly at CONVERSION phase WITHOUT workspaceSources to avoid
-     * name collisions that cause Script fallback.
-     *
-     * Use this method when you need to ensure the AST accurately represents the source code
-     * structure (e.g., test discovery, Spock detection).
-     */
-    suspend fun getValidParseResult(uri: URI): ParseResult? {
-        val cachedResult = cache.get(uri) ?: return null
-
-        // Use helper function to check for suspicious Script node
-        if (isSuspiciousScript(uri, cachedResult)) {
-            logger.info("Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase")
-            // Read content directly from file instead of cache to verify content is correct
-            val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-            val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
-                Files.readString(sourcePath)
-            } else {
-                cache.getWithContent(uri)?.first
-            }
-            val content = fileContent ?: return null
-            logger.info(
-                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'",
-            )
-            val parseResult = workerSessionManager.parse(
-                ParseRequest(
-                    uri = uri,
-                    content = content,
-                    classpath = workspaceManager.getClasspathForFile(uri, content),
-                    // Don't add source roots - prevents classloader from finding .groovy file
-                    sourceRoots = emptyList(),
-                    // Don't add other sources - causes Script fallback
-                    workspaceSources = emptyList(),
-                    locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-                    compilePhase = Phases.CONVERSION,
-                ),
-            )
-
-            // Update cache with correct result
-            cache.put(uri, content, parseResult)
-            logger.info(
-                "Re-parsed $uri at CONVERSION: classes=${
-                    parseResult.ast?.classes?.map {
-                        "${it.name} (super=${it.superClass?.name ?: "null"})"
-                    }
-                }",
-            )
-            logger.debug(
-                "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}",
-            )
-            return parseResult
-        }
-
-        return cachedResult
-    }
-
-    fun getAst(uri: URI): ASTNode? = getParseResult(uri)?.ast
-
-    fun getDiagnostics(uri: URI): List<Diagnostic> =
-        getParseResult(uri)?.diagnostics?.map { it.toLspDiagnostic() } ?: emptyList()
-
-    fun getAstModel(uri: URI): GroovyAstModel? = getParseResult(uri)?.astModel
-
-    fun getSymbolTable(uri: URI): SymbolTable? = getParseResult(uri)?.symbolTable
-
-    fun getTokenIndex(uri: URI) = getParseResult(uri)?.tokenIndex
-
-    fun getSymbolStorage(uri: URI): SymbolIndex? {
-        symbolStorageCache.get(uri)?.let { return it }
-        val visitor = getAstModel(uri) ?: return null
-        val storage = SymbolIndex().buildFromVisitor(visitor)
-        symbolStorageCache.put(uri, storage)
-        return storage
-    }
-
-    /**
-     * Gets the language session for the given URI.
-     * Delegates to the active language engine to wrap the parse result.
-     * NOTE: This assumes the file is already compiled/parsed (returns null if not in cache).
-     */
     fun getSession(uri: URI): LanguageSession? {
-        val cached = cache.getWithContent(uri) ?: return null
+        val cached = cacheService.getCachedWithContent(uri) ?: return null
         val (content, _) = cached
-
-        // Use unified interface for polymorphic session creation
-        return activeEngine.createSession(uri, content)
+        return engineManager.activeEngine.createSession(uri, content)
     }
 
-    fun getAllSymbolStorages(): Map<URI, SymbolIndex> {
-        val cacheSnapshot = symbolStorageCache.snapshot()
-        val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
-        val allStorages = cacheSnapshot.toMutableMap()
+    fun updateGroovyVersion(info: GroovyVersionInfo) = engineManager.updateGroovyVersion(info)
 
-        workspaceSnapshot.forEach { (uri, index) ->
-            val existing = allStorages[uri]
-            if (existing != null && existing !== index) {
-                logger.warn(
-                    "Duplicate SymbolIndex for {} found in cache and workspace index. Using workspace index value.",
-                    uri,
-                )
-            }
-            allStorages[uri] = index
-        }
-
-        return allStorages
-    }
-
-    /**
-     * Indexes a single workspace file for symbol resolution.
-     * Lightweight operation that parses and builds SymbolIndex without full compilation.
-     *
-     * @param uri The URI of the file to index
-     * @return SymbolIndex if indexing succeeded, null otherwise
-     */
-    suspend fun indexWorkspaceFile(uri: URI): SymbolIndex? {
-        // Check if already indexed first
-        symbolStorageCache.get(uri)?.let {
-            logger.debug("File already indexed: $uri")
-            return it
-        }
-
-        val path = parseUriToPath(uri) ?: return null
-
-        return when {
-            !Files.exists(path) || !Files.isRegularFile(path) -> {
-                logger.debug("File does not exist or is not a regular file: $uri")
-                null
-            }
-
-            else -> performIndexing(uri, path)
-        }
-    }
-
-    private fun parseUriToPath(uri: URI): Path? = try {
-        Path.of(uri)
-    } catch (e: InvalidPathException) {
-        logger.debug("Failed to convert URI to path: $uri", e)
-        null
-    }
-
-    // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    // Catch all to prevent indexing failure from stopping workspace indexing
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun performIndexing(uri: URI, path: Path): SymbolIndex? = try {
-        val content = Files.readString(path)
-        val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-
-        // Parse the source code for indexing
-        // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
-        // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
-        val parseResult = workerSessionManager.parse(
-            ParseRequest(
-                uri = uri,
-                content = content,
-                classpath = workspaceManager.getDependencyClasspath(),
-                sourceRoots = workspaceManager.getSourceRoots(),
-                workspaceSources = emptyList(), // Don't recurse during indexing
-                locatorCandidates = buildLocatorCandidates(uri, sourcePath),
-            ),
-        )
-
-        val astModel = parseResult.astModel
-        val index = SymbolIndex().buildFromVisitor(astModel)
-        symbolStorageCache.put(uri, index)
-        workspaceSymbolIndex[uri] = index
-        logger.debug("Indexed workspace file: $uri")
-        index
-    } catch (e: Exception) {
-        logger.warn("Failed to index workspace file: $uri", e)
-        null
-    }
-
-    /**
-     * Indexes all workspace source files in the background.
-     * Reports progress via callback function.
-     *
-     * @param uris List of URIs to index
-     * @param onProgress Callback invoked with (indexed, total) progress
-     */
-    suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) {
-        if (uris.isEmpty()) {
-            logger.debug("No workspace sources to index")
-            return
-        }
-
-        logger.info("Starting workspace indexing: ${uris.size} files")
-        val total = uris.size
-        val indexed = AtomicInteger(0)
-
-        // Index files in parallel batches
-        // NOTE: Batch size balances parallelism with resource usage
-        // Uses ioDispatcher since call chain includes blocking I/O (Files.readString)
-        uris.chunked(INDEXING_BATCH_SIZE).forEach { batch ->
-            coroutineScope {
-                batch.forEach { uri ->
-                    @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
-                    launch(ioDispatcher) {
-                        indexFileWithProgress(uri, indexed, total, onProgress)
-                    }
-                }
-            }
-        }
-
-        logger.info("Workspace indexing complete: ${indexed.get()}/$total files indexed")
-    }
-
-    /**
-     * Indexes a single file and reports progress atomically.
-     */
-    @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
-    private suspend fun indexFileWithProgress(
-        uri: URI,
-        indexed: AtomicInteger,
-        total: Int,
-        onProgress: (Int, Int) -> Unit,
-    ) {
-        try {
-            indexWorkspaceFile(uri)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e // Re-throw cancellation
-        } catch (e: Exception) {
-            // Catch all to prevent batch failure from stopping entire indexing
-            logger.warn("Failed to index file: $uri", e)
-        } finally {
-            val currentCount = indexed.incrementAndGet()
-            onProgress(currentCount, total)
-        }
-    }
-
-    /**
-     * Start async compilation and return Deferred for coordination.
-     * Reuses existing compilation if already in progress for the same URI.
-     */
-    fun compileAsync(scope: CoroutineScope, uri: URI, content: String): Deferred<CompilationResult> {
-        // Check if already compiling this document
-        compilationJobs[uri]?.let { existing ->
-            if (existing.isActive) {
-                logger.debug("Reusing active compilation for $uri")
-                return existing
-            }
-        }
-
-        // Start new compilation on IO dispatcher for file operations
-        @Suppress("kotlin:S6311") // NOSONAR - IO dispatcher required for blocking file operations
-        val deferred = scope.async(ioDispatcher) {
-            try {
-                compile(uri, content)
-            } finally {
-                compilationJobs.remove(uri)
-            }
-        }
-
-        compilationJobs[uri] = deferred
-        return deferred
-    }
-
-    /**
-     * Ensure document is compiled, awaiting if compilation is in progress.
-     * Returns immediately if document is already cached.
-     * Returns null if document is not cached and not currently compiling.
-     */
-
-    /**
-     * Ensure document is compiled, awaiting if compilation is in progress.
-     * Returns immediately if document is already cached.
-     * Returns null if document is not cached and not currently compiling.
-     */
-    suspend fun ensureCompiled(uri: URI): CompilationResult? {
-        while (true) {
-            // If currently compiling, await it
-            val deferred = compilationJobs[uri]
-            if (deferred != null) {
-                try {
-                    logger.debug("Awaiting active compilation for $uri")
-                    return deferred.await()
-                } catch (e: CancellationException) {
-                    logger.debug("Compilation cancelled for $uri while awaiting - retrying ensureCompiled")
-                    // Give a small grace period for the new compilation to start if this was a restart
-                    kotlinx.coroutines.delay(RETRY_DELAY_MS)
-                    continue
-                }
-            }
-
-            // Check if already in cache
-            cache.getWithContent(uri)?.let { (cachedContent, parseResult) ->
-                logger.debug("Using cached compilation for $uri")
-                val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
-                val ast = parseResult.ast
-                val sourceText = cachedContent
-                return if (ast != null) {
-                    CompilationResult.success(ast, diagnostics, sourceText)
-                } else {
-                    CompilationResult.failure(diagnostics, sourceText)
-                }
-            }
-
-            // Not compiling and not cached
-            logger.debug("No compilation found for $uri (not cached, not compiling)")
-            return null
-        }
-    }
-
-    fun clearCaches() {
-        cache.clear()
-        symbolStorageCache.clear()
-        workspaceSymbolIndex.clear()
-        compilationJobs.clear()
-        invalidateClassLoader()
-    }
-
-    fun updateGroovyVersion(info: GroovyVersionInfo) {
-        groovyVersionInfo.set(info)
-        logger.info("Groovy version resolved: {} (source={})", info.version.raw, info.source)
-    }
-
-    fun getGroovyVersionInfo(): GroovyVersionInfo? = groovyVersionInfo.get()
+    fun getGroovyVersionInfo(): GroovyVersionInfo? = engineManager.getGroovyVersionInfo()
 
     fun updateSelectedWorker(worker: WorkerDescriptor?): Boolean {
-        val previous = selectedWorker.getAndSet(worker)
-        val changed = previous != worker
+        val changed = engineManager.getSelectedWorker() != worker
         if (changed) {
+            engineManager.updateSelectedWorker(worker)
             workerSessionManager.select(worker)
             clearCaches()
-            logger.info("Worker changed; cleared compilation caches")
-        }
-        if (worker != null) {
-            logger.info(
-                "Worker selected: {} (range={}, features={})",
-                worker.id,
-                worker.supportedRange,
-                worker.capabilities.features,
-            )
-        } else {
-            logger.warn("No compatible worker selected")
+            logger.info("Worker changed to ${worker?.id}; cleared compilation caches")
         }
         return changed
     }
 
-    fun getSelectedWorker(): WorkerDescriptor? = selectedWorker.get()
+    fun getSelectedWorker(): WorkerDescriptor? = engineManager.getSelectedWorker()
 
-    /**
-     * Invalidates all cached data for a specific URI.
-     * Used when a file is deleted or needs to be fully re-indexed.
-     */
+    fun invalidateClassLoader() = engineManager.invalidateClassLoader()
+
+    fun findClasspathClass(className: String): URI? {
+        val classLoader = engineManager.getOrCreateClassLoader()
+        val resourceName = className.replace('.', '/') + ".class"
+        val resource = classLoader.getResource(resourceName) ?: return null
+        return try {
+            resource.toURI()
+        } catch (e: Exception) {
+            logger.warn("Invalid classpath resource URI: $resource", e)
+            null
+        }
+    }
+
+    // ==========================================================================
+    // Workspace and Cache API
+    // ==========================================================================
+
+    fun clearCaches() {
+        cacheService.clear()
+        symbolIndexer.clear()
+        invalidateClassLoader()
+    }
+
     fun invalidateCache(uri: URI) {
-        cache.invalidate(uri)
-        symbolStorageCache.remove(uri)
-        workspaceSymbolIndex.remove(uri)
-        compilationJobs.remove(uri)
+        cacheService.invalidate(uri)
+        symbolIndexer.invalidate(uri)
         logger.debug("Invalidated cache for: $uri")
     }
 
-    fun getCacheStatistics() = cache.getStatistics()
+    fun getCacheStatistics() = cacheService.getStatistics()
 
-    /**
-     * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
-     * Used by DefinitionResolver to resolve go-to-definition for Jenkins vars calls.
-     */
     fun getJenkinsGlobalVariables() = workspaceManager.getJenkinsGlobalVariables()
 
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
         if (changed) {
-            logger.info("Workspace model changed, updating classpath services")
-            // Update classpath service with new dependencies
             classpathService.updateClasspath(dependencies)
-            // Initialize GDK provider (indexes GDK classes)
             gdkProvider.initialize()
             clearCaches()
         }
     }
 
     fun createContext(uri: URI): CompilationContext? {
-        val parseResult = getParseResult(uri) ?: return null
+        val parseResult = parseAccessor.getParseResult(uri) ?: return null
         val ast = parseResult.ast ?: return null
 
         return CompilationContext(
@@ -645,60 +172,26 @@ class GroovyCompilationService(
         )
     }
 
-    private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
-        val candidates = mutableSetOf<String>()
-        candidates += uri.toString()
-        candidates += uri.path
-        sourcePath?.let { path ->
-            candidates += path.toString()
-            candidates += path.toAbsolutePath().toString()
-        }
-        return candidates
-    }
+    // ==========================================================================
+    // Delegation Methods for Backward Compatibility
+    // ==========================================================================
 
-    // Expose cache for testing purposes
-    internal val astCache get() = cache
+    fun getAst(uri: URI) = parseAccessor.getAst(uri)
+    fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
+    fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
+    fun getTokenIndex(uri: URI) = parseAccessor.getTokenIndex(uri)
+    fun getAstModel(uri: URI) = parseAccessor.getAstModel(uri)
+    fun getSymbolTable(uri: URI) = parseAccessor.getSymbolTable(uri)
+    suspend fun getValidParseResult(uri: URI) = parseAccessor.getValidParseResult(uri)
+    fun getSymbolStorage(uri: URI) = symbolIndexer.getSymbolIndex(uri)
+    fun getAllSymbolStorages() = symbolIndexer.getAllSymbolIndices()
+    suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) =
+        symbolIndexer.indexAllWorkspaceSources(uris, onProgress)
 
-    private val classLoaderLock = Any()
-    private var cachedClassLoader: URLClassLoader? = null
-
-    /**
-     * Find a class on the dependency classpath and return its URI.
-     * Returns a 'jar:file:...' URI if found in a JAR, or 'file:...' if in a directory.
-     */
-    fun findClasspathClass(className: String): URI? {
-        val loader = getOrCreateClassLoader()
-        val resourcePath = className.replace('.', '/') + ".class"
-        val resource = loader.getResource(resourcePath) ?: return null
-
-        return try {
-            resource.toURI()
-        } catch (e: Exception) {
-            logger.warn("Failed to convert resource URL to URI: $resource", e)
-            null
-        }
-    }
-
-    private fun getOrCreateClassLoader(): URLClassLoader {
-        synchronized(classLoaderLock) {
-            cachedClassLoader?.let { return it }
-
-            val classpath = workspaceManager.getDependencyClasspath()
-            val urls = classpath.map { it.toUri().toURL() }.toTypedArray()
-            val loader = URLClassLoader(urls, null) // Parent null to only search dependencies
-            cachedClassLoader = loader
-            return loader
-        }
-    }
-
-    private fun invalidateClassLoader() {
-        synchronized(classLoaderLock) {
-            try {
-                cachedClassLoader?.close()
-            } catch (e: Exception) {
-                logger.warn("Error closing class loader", e)
-            }
-            cachedClassLoader = null
-        }
-    }
+    // ==========================================================================
+    // Exposed services for specialized consumers
+    // ==========================================================================
+    val compilationCacheService: CompilationCacheService get() = cacheService
+    val symbolIndexingService: SymbolIndexingService get() = symbolIndexer
+    val parseResultAccessor: ParseResultAccessor get() = parseAccessor
 }

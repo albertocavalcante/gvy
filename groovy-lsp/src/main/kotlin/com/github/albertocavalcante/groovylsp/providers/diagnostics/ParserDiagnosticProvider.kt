@@ -32,22 +32,27 @@ class ParserDiagnosticProvider(private val compilationService: GroovyCompilation
     override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
         logger.debug("Providing parser diagnostics for: $uri")
 
-        try {
-            // Get diagnostics from compilation service
-            // NOTE: This uses cached parse results, so it's very fast
-            val diagnostics = compilationService.getDiagnostics(uri)
-
-            logger.debug("Found ${diagnostics.size} parser diagnostics for $uri")
-
-            // Emit each diagnostic
-            diagnostics.forEach { diagnostic ->
-                emit(diagnostic)
+        val diagnostics =
+            runCatching {
+                // Get diagnostics from compilation service
+                // NOTE: This uses cached parse results, so it's very fast
+                compilationService.getDiagnostics(uri)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to provide parser diagnostics for $uri", e)
-            // Don't re-throw - allow other providers to continue
+                .onFailure { throwable ->
+                    when (throwable) {
+                        is CancellationException -> throw throwable
+                        is Error -> throw throwable
+                        else -> logger.error("Failed to provide parser diagnostics for $uri", throwable)
+                    }
+                }
+                // Don't re-throw - allow other providers to continue
+                .getOrDefault(emptyList())
+
+        logger.debug("Found ${diagnostics.size} parser diagnostics for $uri")
+
+        // Emit each diagnostic
+        diagnostics.forEach { diagnostic ->
+            emit(diagnostic)
         }
     }
 }

@@ -39,7 +39,11 @@ class RewriteParserProvider : ParserProvider {
             val sourceFiles = parser.parse(source).collect(Collectors.toList())
             sourceFiles.filterIsInstance<G.CompilationUnit>().firstOrNull()
         }
-        RewriteParseUnit(source, path, compilationUnit)
+        if (compilationUnit != null) {
+            RewriteParseUnit(source, path, compilationUnit)
+        } else {
+            RewriteParseUnit(source, path, null, parseError = "Parse failed")
+        }
     } catch (e: Exception) {
         // OpenRewrite throws various exceptions for parse errors
         RewriteParseUnit(source, path, null, parseError = e.message)

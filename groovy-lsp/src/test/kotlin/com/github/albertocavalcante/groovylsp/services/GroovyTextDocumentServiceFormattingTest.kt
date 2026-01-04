@@ -49,9 +49,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val params = formattingParams()
@@ -72,9 +74,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val params = formattingParams()
@@ -94,9 +98,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -114,9 +120,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -135,9 +143,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -156,15 +166,17 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val params = formattingParams().apply {
             options = FormattingOptions(8, false).apply {
-                setTrimTrailingWhitespace(true)
-                setInsertFinalNewline(true)
+                isTrimTrailingWhitespace = true
+                isInsertFinalNewline = true
             }
         }
 
@@ -188,9 +200,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = localScope,
             compilationService = compilationService,
-            client = { localClient },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { localClient },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         try {
@@ -220,9 +234,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { null },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { null },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -241,9 +257,11 @@ class GroovyTextDocumentServiceFormattingTest {
         val service = GroovyTextDocumentService(
             coroutineScope = localScope,
             compilationService = compilationService,
-            client = { localClient },
-            documentProvider = documentProvider,
-            formatter = formatter,
+            options = GroovyTextDocumentServiceOptions(
+                client = { localClient },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
         )
 
         job.cancel()

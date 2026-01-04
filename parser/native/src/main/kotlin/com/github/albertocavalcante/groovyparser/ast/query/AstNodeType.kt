@@ -3,6 +3,8 @@ package com.github.albertocavalcante.groovyparser.ast.query
 import org.codehaus.groovy.ast.ASTNode
 
 object AstNodeType {
+    private const val SNAKE_CASE_EXTRA_CAPACITY = 8
+
     fun matches(node: ASTNode, queryType: String): Boolean {
         val trimmed = queryType.trim()
         if (trimmed.isEmpty()) return false
@@ -18,7 +20,7 @@ object AstNodeType {
 
     private fun toSnakeCase(value: String): String {
         if (value.isEmpty()) return value
-        val result = StringBuilder(value.length + 8)
+        val result = StringBuilder(value.length + SNAKE_CASE_EXTRA_CAPACITY)
         value.forEachIndexed { index, ch ->
             if (ch.isUpperCase()) {
                 if (index > 0) {

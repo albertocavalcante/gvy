@@ -309,7 +309,8 @@ class RulesetResolverTest {
         )
         assertFalse(
             config.rulesetContent.contains("ruleset('rulesets/imports.xml')"),
-            "Jenkins ruleset should NOT include ruleset('rulesets/imports.xml') directive (import organization is not critical for Jenkinsfiles).",
+            "Jenkins ruleset should NOT include ruleset('rulesets/imports.xml') directive " +
+                "(import organization is not critical for Jenkinsfiles).",
         )
         assertFalse(
             config.rulesetContent.contains("ruleset('rulesets/formatting.xml')"),

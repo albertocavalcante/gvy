@@ -55,4 +55,11 @@ class SymbolGeneratorTest {
 
         assertEquals("scip-groovy maven . 0.0.0 MyClass#", symbol)
     }
+
+    @Test
+    fun `local generates local symbol`() {
+        val generator = SymbolGenerator()
+
+        assertEquals("local 123", generator.local(123))
+    }
 }

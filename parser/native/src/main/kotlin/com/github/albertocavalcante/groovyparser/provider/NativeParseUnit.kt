@@ -112,22 +112,26 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
         ParserSeverity.HINT -> Severity.HINT
     }
 
-    private fun mapNodeKind(node: ASTNode): NodeKind = when (node) {
-        is ClassNode -> NodeKind.CLASS
-        is MethodNode -> NodeKind.METHOD
-        is FieldNode -> NodeKind.FIELD
-        is PropertyNode -> NodeKind.PROPERTY
-        is Parameter -> NodeKind.PARAMETER
-        is VariableExpression -> NodeKind.VARIABLE_REFERENCE
-        is MethodCallExpression -> NodeKind.METHOD_CALL
-        is ClosureExpression -> NodeKind.CLOSURE
-        is IfStatement -> NodeKind.IF
-        is ForStatement -> NodeKind.FOR
-        is WhileStatement -> NodeKind.WHILE
-        is ReturnStatement -> NodeKind.RETURN
-        is PackageNode -> NodeKind.PACKAGE
-        else -> NodeKind.UNKNOWN
-    }
+    private val nodeKindMappings: List<Pair<Class<out ASTNode>, NodeKind>> = listOf(
+        ClassNode::class.java to NodeKind.CLASS,
+        MethodNode::class.java to NodeKind.METHOD,
+        FieldNode::class.java to NodeKind.FIELD,
+        PropertyNode::class.java to NodeKind.PROPERTY,
+        Parameter::class.java to NodeKind.PARAMETER,
+        VariableExpression::class.java to NodeKind.VARIABLE_REFERENCE,
+        MethodCallExpression::class.java to NodeKind.METHOD_CALL,
+        ClosureExpression::class.java to NodeKind.CLOSURE,
+        IfStatement::class.java to NodeKind.IF,
+        ForStatement::class.java to NodeKind.FOR,
+        WhileStatement::class.java to NodeKind.WHILE,
+        ReturnStatement::class.java to NodeKind.RETURN,
+        PackageNode::class.java to NodeKind.PACKAGE,
+    )
+
+    private fun mapNodeKind(node: ASTNode): NodeKind = nodeKindMappings
+        .firstOrNull { (nodeType, _) -> nodeType.isInstance(node) }
+        ?.second
+        ?: NodeKind.UNKNOWN
 
     private fun extractNodeName(node: ASTNode): String? = when (node) {
         is ClassNode -> node.nameWithoutPackage

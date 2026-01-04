@@ -18,6 +18,7 @@ import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
+import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
@@ -91,36 +92,52 @@ class CheckCommand : CliktCommand(name = "check") {
     }
 
     private suspend fun checkFile(file: File, service: GroovyTextDocumentService) {
-        try {
+        val result = runCatching {
             val uri = file.toURI()
             val content = file.readText()
-            val diagnostics = service.diagnose(uri, content)
+            service.diagnose(uri, content)
+        }
 
-            if (diagnostics.isEmpty()) {
-                terminal.println(green("OK: ${file.path}"))
-            } else {
-                for (d in diagnostics) {
-                    val (label, style) = when (d.severity) {
-                        DiagnosticSeverity.Error -> "ERROR" to brightRed
-                        DiagnosticSeverity.Warning -> "WARNING" to brightYellow
-                        DiagnosticSeverity.Information -> "INFO" to cyan
-                        DiagnosticSeverity.Hint -> "HINT" to green
-                        else -> "UNKNOWN" to null
+        result
+            .onSuccess { diagnostics ->
+                if (diagnostics.isEmpty()) {
+                    terminal.println(green("OK: ${file.path}"))
+                } else {
+                    diagnostics.forEach { diagnostic ->
+                        terminal.println(formatDiagnosticLine(file, diagnostic))
                     }
-
-                    val severityString = if (terminal.terminalInfo.ansiLevel == AnsiLevel.NONE) {
-                        label
-                    } else {
-                        style?.invoke(label) ?: label
-                    }
-
-                    val line = d.range.start.line + 1
-                    val char = d.range.start.character + 1
-                    terminal.println("${file.path}:$line:$char: [$severityString] ${d.message}")
                 }
             }
-        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            logger.error("Error checking file ${file.path}", e)
+            .onFailure { e ->
+                @Suppress("TooGenericExceptionCaught")
+                if (e is Exception) {
+                    logger.error("Error checking file ${file.path}", e)
+                } else {
+                    throw e
+                }
+            }
+    }
+
+    private fun formatDiagnosticLine(file: File, diagnostic: Diagnostic): String {
+        val severityString = formatDiagnosticSeverity(diagnostic.severity)
+        val line = diagnostic.range.start.line + 1
+        val char = diagnostic.range.start.character + 1
+        return "${file.path}:$line:$char: [$severityString] ${diagnostic.message}"
+    }
+
+    private fun formatDiagnosticSeverity(severity: DiagnosticSeverity?): String {
+        val (label, style) = when (severity) {
+            DiagnosticSeverity.Error -> "ERROR" to brightRed
+            DiagnosticSeverity.Warning -> "WARNING" to brightYellow
+            DiagnosticSeverity.Information -> "INFO" to cyan
+            DiagnosticSeverity.Hint -> "HINT" to green
+            else -> "UNKNOWN" to null
+        }
+
+        return if (terminal.terminalInfo.ansiLevel == AnsiLevel.NONE) {
+            label
+        } else {
+            style?.invoke(label) ?: label
         }
     }
 }

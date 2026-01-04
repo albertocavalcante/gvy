@@ -1,5 +1,11 @@
 package com.github.albertocavalcante.groovylsp.markdown.dsl
 
+private const val HEADER_LEVEL_1 = 1
+private const val HEADER_LEVEL_2 = 2
+private const val HEADER_LEVEL_3 = 3
+
+private const val DEFAULT_HEADER_LEVEL = HEADER_LEVEL_1
+
 /**
  * Builder for creating markdown content using DSL
  */
@@ -10,13 +16,13 @@ class MarkdownBuilder {
         content += MarkdownContent.Text(value)
     }
 
-    fun header(level: Int = 1, value: String) {
+    fun header(level: Int = DEFAULT_HEADER_LEVEL, value: String) {
         content += MarkdownContent.Header(level, value)
     }
 
-    fun h1(value: String) = header(1, value)
-    fun h2(value: String) = header(2, value)
-    fun h3(value: String) = header(3, value)
+    fun h1(value: String) = header(HEADER_LEVEL_1, value)
+    fun h2(value: String) = header(HEADER_LEVEL_2, value)
+    fun h3(value: String) = header(HEADER_LEVEL_3, value)
 
     fun code(language: String = "groovy", value: String) {
         content += MarkdownContent.Code(value, language)

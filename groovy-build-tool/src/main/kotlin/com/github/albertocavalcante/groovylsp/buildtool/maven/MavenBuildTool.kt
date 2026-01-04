@@ -84,16 +84,17 @@ class MavenBuildTool : BuildTool {
         logger.info("Jenkinsfile detected but jenkins-core missing (likely 'provided' scope). Attempting injection.")
 
         // Use repos from POM for resolution
-        val model = try {
+        val model = runCatching {
             val factory = org.apache.maven.model.building.DefaultModelBuilderFactory()
             val request = org.apache.maven.model.building.DefaultModelBuildingRequest().apply {
                 pomFile = pomPath.toFile()
                 validationLevel = org.apache.maven.model.building.ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL
             }
             factory.newInstance().build(request).effectiveModel
-        } catch (e: Exception) {
-            null
-        }
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.debug("Failed to build Maven model for Jenkins core injection; skipping injection", throwable)
+        }.getOrNull()
 
         val repositories = if (model != null) dependencyResolver.getRemoteRepositories(model) else emptyList()
 
@@ -127,17 +128,17 @@ class MavenBuildTool : BuildTool {
         }
     }
 
-    @Suppress("TooGenericExceptionCaught") // Catch-all for embedded resolution fallback
-    private fun tryEmbeddedResolution(pomPath: Path): List<Path> = try {
-        dependencyResolver.resolveDependencies(pomPath)
-    } catch (e: Exception) {
-        logger.warn("Embedded Maven resolution failed, will try CLI fallback", e)
-        emptyList()
-    }
+    private fun tryEmbeddedResolution(pomPath: Path): List<Path> =
+        runCatching { dependencyResolver.resolveDependencies(pomPath) }
+            .onFailure { throwable ->
+                if (throwable is Error) throw throwable
+                logger.warn("Embedded Maven resolution failed, will try CLI fallback", throwable)
+            }
+            .getOrDefault(emptyList())
 
-    @Suppress("TooGenericExceptionCaught") // Catch-all for CLI process errors
     private fun resolveViaCli(workspaceRoot: Path): List<Path> {
         val cpFile = Files.createTempFile("mvn-classpath", ".txt")
+        var result: List<Path> = emptyList()
         try {
             val mvnCommand = BuildExecutableResolver.resolveMaven(workspaceRoot)
             val command = listOf(
@@ -163,19 +164,28 @@ class MavenBuildTool : BuildTool {
 
             if (exitCode != 0) {
                 logger.error("Maven CLI dependency resolution failed. Output:\n$output")
-                return emptyList()
+            } else {
+                val classpathString = Files.readString(cpFile)
+                result = classpathString
+                    .split(File.pathSeparator)
+                    .mapNotNull { entry ->
+                        runCatching { Paths.get(entry.trim()) }
+                            .getOrNull()
+                            ?.takeIf { it.exists() }
+                    }
             }
-
-            val classpathString = Files.readString(cpFile)
-            return classpathString.split(File.pathSeparator)
-                .map { Paths.get(it.trim()) }
-                .filter { it.exists() }
-        } catch (e: Exception) {
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.error("Maven CLI dependency resolution interrupted", e)
+        } catch (e: java.io.IOException) {
             logger.error("Failed to resolve Maven dependencies via CLI", e)
-            return emptyList()
+        } catch (e: SecurityException) {
+            logger.error("Failed to resolve Maven dependencies via CLI", e)
         } finally {
             Files.deleteIfExists(cpFile)
         }
+
+        return result
     }
 
     override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {

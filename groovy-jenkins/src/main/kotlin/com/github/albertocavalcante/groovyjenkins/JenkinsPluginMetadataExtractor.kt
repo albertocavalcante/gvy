@@ -91,45 +91,44 @@ class JenkinsPluginMetadataExtractor {
      * 3. Array values: @Symbol({"step1", "step2"})
      */
     private fun extractStepFromSymbolClass(classInfo: ClassInfo, pluginId: String): JenkinsStepMetadata? {
-        val symbolAnnotation = classInfo.getAnnotationInfo(SYMBOL_ANNOTATION) ?: return null
+        var result: JenkinsStepMetadata? = null
 
-        // Parse @Symbol value - can be String, String[], or wrapped types
-        val symbolValues = symbolAnnotation.parameterValues
-            .find { it.name == "value" }
-            ?.value
+        val symbolAnnotation = classInfo.getAnnotationInfo(SYMBOL_ANNOTATION)
+        if (symbolAnnotation != null) {
+            // Parse @Symbol value - can be String, String[], or wrapped types
+            val symbolValues = symbolAnnotation.parameterValues
+                .find { it.name == "value" }
+                ?.value
 
-        var stepName = extractSymbolName(symbolValues)
+            var stepName = extractSymbolName(symbolValues)
 
-        // FIXME: Some plugins put @Symbol on DescriptorImpl but the value is still
-        // "descriptorImpl" because ClassGraph returns the simple class name as fallback.
-        // This happens when the annotation value is not a literal string but a reference.
-        if (shouldSkipSymbol(stepName)) {
-            // Try to derive step name from enclosing class name
-            stepName = deriveStepNameFromDescriptor(classInfo)
-            if (stepName == null) {
-                logger.debug("Skipping DescriptorImpl with no derivable step name: {}", classInfo.name)
-                return null
+            // FIXME: Some plugins put @Symbol on DescriptorImpl but the value is still
+            // "descriptorImpl" because ClassGraph returns the simple class name as fallback.
+            // This happens when the annotation value is not a literal string but a reference.
+            if (shouldSkipSymbol(stepName)) {
+                // Try to derive step name from enclosing class name
+                stepName = deriveStepNameFromDescriptor(classInfo)
+                if (stepName == null) {
+                    logger.debug("Skipping DescriptorImpl with no derivable step name: {}", classInfo.name)
+                }
+            }
+
+            val validStepName = stepName?.takeUnless { shouldSkipSymbol(it) }
+            if (validStepName != null) {
+                logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
+
+                val parameters = extractParameters(classInfo)
+
+                result = JenkinsStepMetadata(
+                    name = validStepName,
+                    plugin = pluginId,
+                    parameters = parameters,
+                    documentation = extractDocumentation(classInfo),
+                )
             }
         }
 
-        // Skip common non-step symbols (case-insensitive check)
-        if (shouldSkipSymbol(stepName)) {
-            return null
-        }
-
-        // At this point stepName is guaranteed non-null by shouldSkipSymbol check
-        val validStepName = stepName ?: return null
-
-        logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
-
-        val parameters = extractParameters(classInfo)
-
-        return JenkinsStepMetadata(
-            name = validStepName,
-            plugin = pluginId,
-            parameters = parameters,
-            documentation = extractDocumentation(classInfo),
-        )
+        return result
     }
 
     // Symbol name extraction is now handled by com.github.albertocavalcante.groovycommon.text.extractSymbolName

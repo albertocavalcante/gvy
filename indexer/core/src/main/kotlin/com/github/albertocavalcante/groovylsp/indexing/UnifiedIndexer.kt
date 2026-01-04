@@ -19,7 +19,7 @@ class UnifiedIndexer(
     fun indexDocument(path: String, content: String) {
         writers.forEach { it.visitDocumentStart(path, content) }
 
-        try {
+        runCatching {
             val config = CompilerConfiguration()
             // Run in migration mode / lenient if possible, or just standard
             GroovyClassLoader().use { classLoader ->
@@ -27,13 +27,13 @@ class UnifiedIndexer(
                 unit.addSource(path, content)
                 unit.compile(Phases.CONVERSION)
 
-                val module = unit.ast.modules.firstOrNull()
-                if (module != null) {
+                unit.ast.modules.firstOrNull()?.let { module ->
                     visitModule(module)
                 }
             }
-        } catch (e: Exception) {
-            logger.warn("Failed to parse {}: {}", path, e.message)
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.warn("Failed to parse {}", path, throwable)
         }
 
         writers.forEach { it.visitDocumentEnd() }

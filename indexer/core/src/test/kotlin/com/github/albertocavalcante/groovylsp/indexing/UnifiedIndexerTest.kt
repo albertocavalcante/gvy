@@ -24,7 +24,7 @@ class UnifiedIndexerTest {
             events.add("REF $symbol")
         }
 
-        override fun close() {}
+        override fun close() = Unit
     }
 
     @Test

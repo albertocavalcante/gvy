@@ -10,7 +10,6 @@ import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -31,7 +30,6 @@ class AstRequestHandlerTest {
     fun `getAst returns Core AST when requested`() = runTest {
         val uri = "file:///test.groovy"
         val params = AstParams(uri, "core")
-        val content = "class Test {}"
 
         // Mock components for ParseResult
         val nativeAst = mockk<ModuleNode>(relaxed = true)
@@ -62,8 +60,8 @@ class AstRequestHandlerTest {
 
         assertNotNull(result)
         assertEquals("core", result.parser)
-        val expectedJson =
-            "{\"dtoKind\":\"core\",\"id\":\"node-1\",\"type\":\"CompilationUnit\",\"range\":null,\"children\":[],\"properties\":{}}"
+        val expectedJson = "{\"dtoKind\":\"core\", \"id\":\"node-1\", \"type\":\"CompilationUnit\", " +
+            "\"range\":null, \"children\":[], \"properties\":{}}"
         val expectedElement = Json.parseToJsonElement(expectedJson)
         val actualElement = Json.parseToJsonElement(result.ast)
         assertEquals(expectedElement, actualElement)

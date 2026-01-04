@@ -40,43 +40,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             return emptyList()
         }
 
-        // Resolve definitions
-        // If it's a call, we want the definition. If it's a def, we want itself.
-        var definition = node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
-
-        // HEURISTIC: Fallback for script method calls.
-        // In top-level scripts, method calls often appear as VariableExpression (dynamic) or ConstantExpression
-        // (the method name leaf) when the parser can't fully resolve the implicit 'this' or script context.
-        // The core resolveToDefinition might fail to link these to the script's MethodNode.
-        // TODO(#564): Improve parser to resolve strict methods better.
-        //   See: https://github.com/albertocavalcante/gvy/issues/564
-        //
-        // This block attempts a name-based lookup in the same file if the standard resolution failed
-        // (i.e. if definition == node, meaning it didn't resolve to something else).
-        var callNode: MethodCallExpression? = null
-        if (node is MethodCallExpression) {
-            callNode = node
-        } else if (node is ConstantExpression || node is VariableExpression) {
-            val parent = visitor.getParent(node)
-            if (parent is MethodCallExpression) {
-                callNode = parent
-            }
-        }
-
-        if (definition == node || (callNode != null && definition == node)) {
-            if (callNode != null) {
-                val methodName = callNode.methodAsString
-                if (methodName != null) {
-                    // Find first method in file with this name
-                    val methods = visitor.getAllNodes().filterIsInstance<MethodNode>()
-                    val fallback = methods.find { it.name == methodName }
-
-                    if (fallback != null) {
-                        definition = fallback
-                    }
-                }
-            }
-        }
+        val definition = resolveDefinitionWithFallback(node, visitor, symbolTable)
 
         return when (definition) {
             is MethodNode -> listOf(createCallHierarchyItem(definition, uri))
@@ -84,6 +48,46 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
             else -> emptyList()
             // TODO: Handle fields/variables if Call Hierarchy supports them? Usually restricted to callables.
         }
+    }
+
+    private fun resolveDefinitionWithFallback(
+        node: ASTNode,
+        astModel: GroovyAstModel,
+        symbolTable: SymbolTable,
+    ): ASTNode {
+        // Resolve definitions
+        // If it's a call, we want the definition. If it's a def, we want itself.
+        val resolved = node.resolveToDefinition(astModel, symbolTable, strict = false) ?: node
+        if (resolved !== node) {
+            return resolved
+        }
+
+        // HEURISTIC: Fallback for script method calls.
+        // In top-level scripts, method calls often appear as VariableExpression (dynamic) or ConstantExpression
+        // (the method name leaf) when the parser can't fully resolve the implicit 'this' or script context.
+        // The core resolveToDefinition might fail to link these to the script's MethodNode.
+        // TODO(#564): Improve parser to resolve strict methods better.
+        //   See: https://github.com/albertocavalcante/gvy/issues/564
+        val callNode = extractEnclosingMethodCall(node, astModel) ?: return node
+        return findScriptMethodFallback(callNode, astModel) ?: node
+    }
+
+    private fun extractEnclosingMethodCall(node: ASTNode, astModel: GroovyAstModel): MethodCallExpression? {
+        if (node is MethodCallExpression) {
+            return node
+        }
+        if (node is ConstantExpression || node is VariableExpression) {
+            return astModel.getParent(node) as? MethodCallExpression
+        }
+        return null
+    }
+
+    private fun findScriptMethodFallback(call: MethodCallExpression, astModel: GroovyAstModel): MethodNode? {
+        val methodName = call.methodAsString ?: return null
+        return astModel.getAllNodes()
+            .asSequence()
+            .filterIsInstance<MethodNode>()
+            .firstOrNull { it.name == methodName }
     }
 
     suspend fun incomingCalls(params: CallHierarchyIncomingCallsParams): List<CallHierarchyIncomingCall> {
@@ -140,21 +144,24 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         val uri = URI.create(params.item.uri)
         val position = params.item.selectionRange.start.toGroovyPosition()
 
-        val visitor = compilationService.getAstModel(uri) ?: return emptyList()
-        val symbolTable = compilationService.getSymbolTable(uri) ?: return emptyList()
-        val node = visitor.getNodeAt(uri, position) ?: return emptyList()
+        val visitor = compilationService.getAstModel(uri)
+        val symbolTable = compilationService.getSymbolTable(uri)
+        val node = visitor?.getNodeAt(uri, position)
+
+        if (visitor == null || symbolTable == null || node == null) {
+            return emptyList()
+        }
 
         // Resolve to definition (should be MethodNode or ClassNode)
         val definition = node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
-
-        if (definition is MethodNode) {
-            val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
-            val callVisitor = CallVisitor(visitor, symbolTable, uri, callsMap)
-            definition.code?.visit(callVisitor)
-            return callsMap.values.toList()
+        if (definition !is MethodNode) {
+            return emptyList()
         }
 
-        return emptyList()
+        val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
+        val callVisitor = CallVisitor(visitor, symbolTable, uri, callsMap)
+        definition.code?.visit(callVisitor)
+        return callsMap.values.toList()
     }
 
     private class CallVisitor(

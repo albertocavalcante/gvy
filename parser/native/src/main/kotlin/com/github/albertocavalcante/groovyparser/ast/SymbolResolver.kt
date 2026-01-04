@@ -49,10 +49,13 @@ class SymbolResolver(private val registry: SymbolRegistry) {
             current = visitor.getParent(current)
         }
 
-        val enclosingClass = current as? ClassNode ?: return null
+        val enclosingClass = current
+        if (enclosingClass !is ClassNode) {
+            return null
+        }
 
         // Look for the field in the class
-        return enclosingClass.getField(variableExpr.name) as? Variable
+        return enclosingClass.getField(variableExpr.name)
     }
 
     /**

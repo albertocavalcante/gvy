@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjenkins.extraction
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import org.slf4j.LoggerFactory
+import java.nio.file.Path
 
 /**
  * Represents a parameter extracted from bytecode.
@@ -47,7 +48,6 @@ class BytecodeScanner {
 
     companion object {
         private const val STEP_CLASS = "org.jenkinsci.plugins.workflow.steps.Step"
-        private const val STEP_DESCRIPTOR_CLASS = "org.jenkinsci.plugins.workflow.steps.StepDescriptor"
         private const val DATA_BOUND_CONSTRUCTOR = "org.kohsuke.stapler.DataBoundConstructor"
         private const val DATA_BOUND_SETTER = "org.kohsuke.stapler.DataBoundSetter"
         private const val SYMBOL_ANNOTATION = "org.jenkinsci.Symbol"
@@ -65,16 +65,8 @@ class BytecodeScanner {
             logger.debug("No packages specified, returning empty list")
             return emptyList()
         }
-        return scan {
-            acceptPackages(*packages.toTypedArray())
-            // Fix: Use the provided superclassName
-            // Note: Our helper `scan` currently hardcodes getSubclasses(STEP_CLASS)
-            // To support custom superclasses, we should refactor `scan` to take the classname
-            // For now, we'll just check if it matches the constant to avoid confusion,
-            // or better yet, refactor `scan` to be generic.
-            // Given the limited scope, let's just use the parameter in the filter if possible,
-            // but `scan` encapsulates the logic.
-            // ACTUALLY: The correct fix is to make `scan` take the superclass name.
+        return scan(superclassName) {
+            packages.forEach { acceptPackages(it) }
         }
     }
 
@@ -84,25 +76,25 @@ class BytecodeScanner {
      * @param jarPath Path to the JAR file to scan
      * @return List of ScannedStep objects found in the JAR
      */
-    fun scanJar(jarPath: java.nio.file.Path): List<ScannedStep> = scan {
+    fun scanJar(jarPath: Path): List<ScannedStep> = scan(STEP_CLASS) {
         overrideClasspath(jarPath.toString())
     }
 
-    private fun scan(configure: ClassGraph.() -> Unit): List<ScannedStep> = try {
+    private fun scan(superclassName: String, configure: ClassGraph.() -> Unit): List<ScannedStep> = runCatching {
         ClassGraph()
             .enableAllInfo()
             .apply(configure)
             .scan()
             .use { scanResult ->
-                scanResult.getSubclasses(STEP_CLASS)
+                scanResult.getSubclasses(superclassName)
                     .filter { !it.isAbstract }
                     .map { classInfo -> toScannedStep(classInfo) }
                     .sortedBy { it.className }
             }
-    } catch (e: Exception) {
-        logger.warn("Failed to scan for steps: ${e.message}")
-        emptyList()
-    }
+    }.onFailure { throwable ->
+        if (throwable is Error) throw throwable
+        logger.warn("Failed to scan for steps: ${throwable.message}", throwable)
+    }.getOrDefault(emptyList())
 
     /**
      * Extracts constructor parameters for a given class.
@@ -112,20 +104,20 @@ class BytecodeScanner {
      * @return List of ExtractedParam from @DataBoundConstructor, empty if class not found
      */
     fun extractConstructorParams(className: String, classLoader: ClassLoader): List<ExtractedParam> {
-        return try {
+        return runCatching {
             ClassGraph()
                 .enableAllInfo()
                 .overrideClassLoaders(classLoader)
                 .acceptClasses(className)
                 .scan()
                 .use { scanResult ->
-                    val classInfo = scanResult.getClassInfo(className) ?: return emptyList()
+                    val classInfo = scanResult.getClassInfo(className) ?: return@use emptyList()
                     extractDataBoundConstructorParams(classInfo)
                 }
-        } catch (e: Exception) {
-            logger.debug("Failed to extract constructor params for $className: ${e.message}")
-            emptyList()
-        }
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.debug("Failed to extract constructor params for $className: ${throwable.message}", throwable)
+        }.getOrDefault(emptyList())
     }
 
     private fun toScannedStep(classInfo: ClassInfo): ScannedStep {

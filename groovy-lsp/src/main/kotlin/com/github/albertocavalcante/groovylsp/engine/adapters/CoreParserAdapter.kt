@@ -220,9 +220,12 @@ private fun TypeDeclaration.toUnifiedSymbol(): UnifiedSymbol {
     return UnifiedSymbol(
         name = name,
         kind = when {
-            this is ClassDeclaration && isInterface -> UnifiedNodeKind.INTERFACE
-            this is ClassDeclaration && isEnum -> UnifiedNodeKind.ENUM
-            // TODO: Add isTrait when ClassDeclaration supports it
+            this is ClassDeclaration -> when {
+                isInterface -> UnifiedNodeKind.INTERFACE
+                isEnum -> UnifiedNodeKind.ENUM
+                else -> UnifiedNodeKind.CLASS
+            }
+
             else -> UnifiedNodeKind.CLASS
         },
         range = typeRange,

@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.toHoverString
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.stmt.CaseStatement
 import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.junit.jupiter.api.Test
@@ -19,17 +22,7 @@ class KitchenSinkCoverageTest {
 
     @Test
     fun `parse and visit kitchen sink file covers many node types`() {
-        // Load the kitchen sink file
-        // Try relative path first (standard gradle project layout)
-        var file = File("groovy-parser/src/test/resources/kitchen-sink.groovy")
-        if (!file.exists()) {
-            // Try relative to the module root (if running from module dir)
-            file = File("src/test/resources/kitchen-sink.groovy")
-        }
-
-        assertTrue(file.exists(), "Kitchen sink file not found at ${file.absolutePath}")
-
-        val content = file.readText()
+        val content = loadKitchenSinkContent()
         val uri = URI.create("file:///kitchen-sink.groovy")
 
         val result = parser.parse(
@@ -39,15 +32,34 @@ class KitchenSinkCoverageTest {
             ),
         )
 
+        assertParseOk(result)
+        val mainClass = assertAstModel(result)
+        assertSymbols(result, mainClass)
+        assertHoverFormatting(mainClass)
+    }
+
+    private fun loadKitchenSinkContent(): String {
+        // Try relative path first (standard gradle project layout)
+        var file = File("groovy-parser/src/test/resources/kitchen-sink.groovy")
+        if (!file.exists()) {
+            // Try relative to the module root (if running from module dir)
+            file = File("src/test/resources/kitchen-sink.groovy")
+        }
+
+        assertTrue(file.exists(), "Kitchen sink file not found at ${file.absolutePath}")
+        return file.readText()
+    }
+
+    private fun assertParseOk(result: ParseResult) {
         assertTrue(result.isSuccessful, "Parsing failed with: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should not be null")
+    }
 
-        // 1. Inspect AST model
+    private fun assertAstModel(result: ParseResult): ClassNode {
         val astModel = result.astModel
         val allNodes = astModel.getAllNodes()
         val classNodes = astModel.getAllClassNodes()
 
-        // Assert we found the classes
         val mainClass =
             assertNotNull(classNodes.find { it.name == "com.example.KitchenSink" }, "Should find KitchenSink class")
 
@@ -56,7 +68,6 @@ class KitchenSinkCoverageTest {
             "Should find Inner class",
         )
 
-        // Assert we found specific complex nodes
         assertNotNull(
             allNodes.filterIsInstance<TryCatchStatement>().firstOrNull(),
             "Should find TryCatchStatement",
@@ -67,19 +78,20 @@ class KitchenSinkCoverageTest {
             "Should find GStringExpression",
         )
 
-        // Check for the SwitchStatement (Testing coverage/bug)
         assertNotNull(
             allNodes.filterIsInstance<SwitchStatement>().firstOrNull(),
             "Should find SwitchStatement (Testing coverage/bug)",
         )
 
-        // Check for CaseStatement (also likely missing)
         assertNotNull(
-            allNodes.filterIsInstance<org.codehaus.groovy.ast.stmt.CaseStatement>().firstOrNull(),
+            allNodes.filterIsInstance<CaseStatement>().firstOrNull(),
             "Should find CaseStatement",
         )
 
-        // 2. Extract Symbols (Testing SymbolExtractor)
+        return mainClass
+    }
+
+    private fun assertSymbols(result: ParseResult, mainClass: ClassNode) {
         val classSymbols = SymbolExtractor.extractClassSymbols(result.ast!!)
         assertTrue(classSymbols.isNotEmpty(), "Should extract class symbols")
 
@@ -93,8 +105,9 @@ class KitchenSinkCoverageTest {
 
         val completionSymbols = SymbolExtractor.extractCompletionSymbols(result.ast!!, 10, 0)
         assertNotNull(completionSymbols, "Should get completion context")
+    }
 
-        // 3. Test Node Formatting (Testing NodeFormatter)
+    private fun assertHoverFormatting(mainClass: ClassNode) {
         val classHover = mainClass.toHoverString()
         assertTrue(classHover.contains("class KitchenSink"), "Class hover should contain name")
         assertTrue(classHover.contains("implements Serializable"), "Class hover should show interfaces")

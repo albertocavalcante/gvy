@@ -12,7 +12,11 @@ class AstQueryEngineTest {
 
     @Test
     fun `finds matches by type`() {
-        val (tracker, root, childA, childB) = sampleTree()
+        val tree = sampleTree()
+        val tracker = tree.tracker
+        val root = tree.root
+        val childA = tree.childA
+        val childB = tree.childB
         val engine = AstQueryEngine(tracker::getChildren)
         val query = AstQuery.parse("(ConstantExpression)")
 
@@ -25,7 +29,11 @@ class AstQueryEngineTest {
 
     @Test
     fun `captures matching child`() {
-        val (tracker, root, childA, childB) = sampleTree()
+        val tree = sampleTree()
+        val tracker = tree.tracker
+        val root = tree.root
+        val childA = tree.childA
+        val childB = tree.childB
         val engine = AstQueryEngine(tracker::getChildren)
         val query = AstQuery.parse("(BlockStatement (ConstantExpression @value))")
 
@@ -39,7 +47,11 @@ class AstQueryEngineTest {
 
     @Test
     fun `captures distinct children for repeated patterns`() {
-        val (tracker, root, childA, childB) = sampleTree()
+        val tree = sampleTree()
+        val tracker = tree.tracker
+        val root = tree.root
+        val childA = tree.childA
+        val childB = tree.childB
         val engine = AstQueryEngine(tracker::getChildren)
         val query = AstQuery.parse("(BlockStatement (ConstantExpression @a) (ConstantExpression @b))")
 

@@ -50,3 +50,14 @@ tasks.compileKotlin {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Wire-generated protobuf models should not count toward coverage.
+kover {
+    reports {
+        filters {
+            excludes {
+                classes("scip.*")
+            }
+        }
+    }
+}
