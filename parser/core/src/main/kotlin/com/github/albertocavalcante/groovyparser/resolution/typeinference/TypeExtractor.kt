@@ -38,6 +38,8 @@ import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedNullTy
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedPrimitiveType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
+import com.github.albertocavalcante.groovyparser.resolution.types.asReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.isReferenceType
 
 /**
  * Extracts types from AST nodes through type inference.
@@ -50,36 +52,65 @@ class TypeExtractor(private val typeSolver: TypeSolver, private val context: Con
     /**
      * Infers the type of an expression.
      */
+    /**
+     * Infers the type of an expression.
+     */
     fun extractType(expression: Expression): ResolvedType = when (expression) {
         is ConstantExpr -> extractConstant(expression)
         is VariableExpr -> extractVariable(expression)
-        is BinaryExpr -> extractBinary(expression)
         is MethodCallExpr -> extractMethodCall(expression)
         is PropertyExpr -> extractProperty(expression)
-        is ClosureExpr -> resolveType("groovy.lang.Closure")
-        is GStringExpr -> resolveType("groovy.lang.GString")
-        is ListExpr -> extractList(expression)
-        is MapExpr -> extractMap(expression)
-        is RangeExpr -> resolveType("groovy.lang.Range")
-        is TernaryExpr -> extractTernary(expression)
-        is UnaryExpr -> extractUnary(expression)
-        is CastExpr -> GroovyParserTypeResolver.resolveType(expression.targetType, typeSolver)
-        is ConstructorCallExpr -> GroovyParserTypeResolver.resolveType(expression.typeName, typeSolver)
-        is ElvisExpr -> extractType(expression.expression)
-        is SpreadExpr -> extractType(expression.expression)
-        is SpreadMapExpr -> extractType(expression.expression)
         is AttributeExpr -> objectType()
-        is MethodPointerExpr -> resolveType("org.codehaus.groovy.runtime.MethodClosure")
-        is MethodReferenceExpr -> resolveType("org.codehaus.groovy.runtime.MethodClosure")
-        is LambdaExpr -> resolveType("groovy.lang.Closure")
-        is DeclarationExpr -> GroovyParserTypeResolver.resolveType(expression.type, typeSolver)
         is ClassExpr -> extractClassExpr(expression)
-        is ArrayExpr -> ResolvedArrayType(GroovyParserTypeResolver.resolveType(expression.elementType, typeSolver))
+        is DeclarationExpr -> GroovyParserTypeResolver.resolveType(expression.type, typeSolver)
+        is ConstructorCallExpr -> GroovyParserTypeResolver.resolveType(expression.typeName, typeSolver)
+
+        // Grouped extractions
+        is BinaryExpr, is UnaryExpr, is TernaryExpr, is CastExpr, is ElvisExpr,
+        is PostfixExpr, is PrefixExpr, is NotExpr, is BitwiseNegationExpr,
+        -> extractOperation(expression)
+
+        is ListExpr, is MapExpr, is RangeExpr, is ArrayExpr, is SpreadExpr,
+        is SpreadMapExpr, is MapEntryExpr,
+        -> extractCollection(expression)
+
+        is ClosureExpr, is LambdaExpr, is MethodPointerExpr, is MethodReferenceExpr,
+        is GStringExpr,
+        -> extractFunctionalOrString(expression)
+
+        else -> objectType()
+    }
+
+    private fun extractOperation(expression: Expression): ResolvedType = when (expression) {
+        is BinaryExpr -> extractBinary(expression)
+        is UnaryExpr -> extractUnary(expression)
+        is TernaryExpr -> extractTernary(expression)
+        is CastExpr -> GroovyParserTypeResolver.resolveType(expression.targetType, typeSolver)
+        is ElvisExpr -> extractType(expression.expression)
         is PostfixExpr -> extractType(expression.expression)
         is PrefixExpr -> extractType(expression.expression)
         is NotExpr -> ResolvedPrimitiveType.BOOLEAN
         is BitwiseNegationExpr -> extractType(expression.expression)
-        is MapEntryExpr -> objectType()
+        else -> objectType()
+    }
+
+    private fun extractCollection(expression: Expression): ResolvedType = when (expression) {
+        is ListExpr -> extractList(expression)
+        is MapExpr -> extractMap(expression)
+        is RangeExpr -> resolveType("groovy.lang.Range")
+        is ArrayExpr -> ResolvedArrayType(GroovyParserTypeResolver.resolveType(expression.elementType, typeSolver))
+        is SpreadExpr -> extractType(expression.expression)
+        is SpreadMapExpr -> extractType(expression.expression)
+        is MapEntryExpr -> objectType() // Should we have specific type for Map.Entry?
+        else -> objectType()
+    }
+
+    private fun extractFunctionalOrString(expression: Expression): ResolvedType = when (expression) {
+        is ClosureExpr -> resolveType("groovy.lang.Closure")
+        is LambdaExpr -> resolveType("groovy.lang.Closure")
+        is MethodPointerExpr -> resolveType("org.codehaus.groovy.runtime.MethodClosure")
+        is MethodReferenceExpr -> resolveType("org.codehaus.groovy.runtime.MethodClosure")
+        is GStringExpr -> resolveType("groovy.lang.GString")
         else -> objectType()
     }
 
@@ -111,39 +142,7 @@ class TypeExtractor(private val typeSolver: TypeSolver, private val context: Con
     private fun extractBinary(node: BinaryExpr): ResolvedType {
         val leftType = extractType(node.left)
         val rightType = extractType(node.right)
-
-        return when (node.operator) {
-            "==", "!=", "<", ">", "<=", ">=", "===", "!==",
-            "instanceof", "in", "<=>", "=~", "==~",
-            -> ResolvedPrimitiveType.BOOLEAN
-            "&&", "||" -> ResolvedPrimitiveType.BOOLEAN
-            "&", "|", "^" -> {
-                if (leftType == ResolvedPrimitiveType.BOOLEAN && rightType == ResolvedPrimitiveType.BOOLEAN) {
-                    ResolvedPrimitiveType.BOOLEAN
-                } else {
-                    inferArithmeticType(leftType, rightType)
-                }
-            }
-            "+", "-", "*", "/", "%" -> {
-                if (node.operator == "+" && (isString(leftType) || isString(rightType))) {
-                    stringType()
-                } else {
-                    inferArithmeticType(leftType, rightType)
-                }
-            }
-            "**" -> resolveType("java.math.BigDecimal")
-            "<<", ">>", ">>>" -> {
-                if (leftType == ResolvedPrimitiveType.LONG) {
-                    ResolvedPrimitiveType.LONG
-                } else {
-                    ResolvedPrimitiveType.INT
-                }
-            }
-            "?:" -> leftType
-            "..", "..<" -> resolveType("groovy.lang.Range")
-            "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", ">>>=" -> leftType
-            else -> objectType()
-        }
+        return BinaryTypeLogic.extractBinary(node, leftType, rightType, typeSolver)
     }
 
     private fun extractMethodCall(node: MethodCallExpr): ResolvedType {
@@ -270,31 +269,4 @@ class TypeExtractor(private val typeSolver: TypeSolver, private val context: Con
         val ref = typeSolver.tryToSolveType(name)
         return if (ref.isSolved) ResolvedReferenceType(ref.getDeclaration()) else objectType()
     }
-
-    private fun isString(type: ResolvedType): Boolean = type.isReferenceType() &&
-        type.asReferenceType().declaration.qualifiedName == "java.lang.String"
-
-    private fun inferArithmeticType(left: ResolvedType, right: ResolvedType): ResolvedType {
-        if (left.isPrimitive() && right.isPrimitive()) {
-            return ResolvedPrimitiveType.promoteNumericTypes(
-                left.asPrimitive(),
-                right.asPrimitive(),
-            )
-        }
-
-        if (isBigDecimal(left) || isBigDecimal(right)) {
-            return resolveType("java.math.BigDecimal")
-        }
-        if (isBigInteger(left) || isBigInteger(right)) {
-            return resolveType("java.math.BigInteger")
-        }
-
-        return ResolvedPrimitiveType.DOUBLE
-    }
-
-    private fun isBigDecimal(type: ResolvedType): Boolean = type.isReferenceType() &&
-        type.asReferenceType().declaration.qualifiedName == "java.math.BigDecimal"
-
-    private fun isBigInteger(type: ResolvedType): Boolean = type.isReferenceType() &&
-        type.asReferenceType().declaration.qualifiedName == "java.math.BigInteger"
 }

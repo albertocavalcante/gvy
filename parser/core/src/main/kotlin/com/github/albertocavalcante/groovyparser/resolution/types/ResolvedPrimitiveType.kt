@@ -5,7 +5,7 @@ package com.github.albertocavalcante.groovyparser.resolution.types
  *
  * Groovy supports all Java primitive types: boolean, char, byte, short, int, long, float, double.
  */
-enum class ResolvedPrimitiveType(private val boxedName: String) : ResolvedType {
+enum class ResolvedPrimitiveType(val boxedName: String) : ResolvedType {
 
     BOOLEAN("java.lang.Boolean"),
     CHAR("java.lang.Character"),
@@ -19,42 +19,10 @@ enum class ResolvedPrimitiveType(private val boxedName: String) : ResolvedType {
 
     override fun describe(): String = name.lowercase()
 
-    override fun isPrimitive(): Boolean = true
-
-    override fun asPrimitive(): ResolvedPrimitiveType = this
-
     override fun isAssignableBy(other: ResolvedType): Boolean = when {
         other == this -> true
-        other.isPrimitive() -> isNumericAssignable(other.asPrimitive())
+        other.isPrimitive() -> this.isNumericAssignable(other.asPrimitive())
         else -> false
-    }
-
-    /**
-     * Returns the fully qualified name of the boxed wrapper type.
-     */
-    fun box(): String = boxedName
-
-    /**
-     * Checks if a value of the other numeric type can be assigned to this type
-     * without explicit casting (widening conversion).
-     */
-    private fun isNumericAssignable(other: ResolvedPrimitiveType): Boolean {
-        // Boolean is not assignable from any other type
-        if (this == BOOLEAN || other == BOOLEAN) {
-            return this == other
-        }
-
-        // For numeric types, check widening conversion rules
-        return when (this) {
-            CHAR -> other == CHAR
-            BYTE -> other == BYTE
-            SHORT -> other == BYTE || other == SHORT
-            INT -> other == BYTE || other == SHORT || other == INT || other == CHAR
-            LONG -> other == BYTE || other == SHORT || other == INT || other == LONG || other == CHAR
-            FLOAT -> other != DOUBLE && other != BOOLEAN
-            DOUBLE -> other != BOOLEAN
-            BOOLEAN -> false
-        }
     }
 
     companion object {
@@ -91,3 +59,52 @@ enum class ResolvedPrimitiveType(private val boxedName: String) : ResolvedType {
         }
     }
 }
+
+/**
+ * Checks if a value of the other numeric type can be assigned to this type
+ * without explicit casting (widening conversion).
+ */
+private fun ResolvedPrimitiveType.isNumericAssignable(other: ResolvedPrimitiveType): Boolean {
+    // Boolean is not assignable from any other type
+    if (this == ResolvedPrimitiveType.BOOLEAN || other == ResolvedPrimitiveType.BOOLEAN) {
+        return this == other
+    }
+
+    return WIDENING_CONVERSIONS[this]?.contains(other) ?: false
+}
+
+private val WIDENING_CONVERSIONS = mapOf(
+    ResolvedPrimitiveType.CHAR to setOf(ResolvedPrimitiveType.CHAR),
+    ResolvedPrimitiveType.BYTE to setOf(ResolvedPrimitiveType.BYTE),
+    ResolvedPrimitiveType.SHORT to setOf(ResolvedPrimitiveType.BYTE, ResolvedPrimitiveType.SHORT),
+    ResolvedPrimitiveType.INT to setOf(
+        ResolvedPrimitiveType.BYTE,
+        ResolvedPrimitiveType.SHORT,
+        ResolvedPrimitiveType.CHAR,
+        ResolvedPrimitiveType.INT,
+    ),
+    ResolvedPrimitiveType.LONG to setOf(
+        ResolvedPrimitiveType.BYTE,
+        ResolvedPrimitiveType.SHORT,
+        ResolvedPrimitiveType.CHAR,
+        ResolvedPrimitiveType.INT,
+        ResolvedPrimitiveType.LONG,
+    ),
+    ResolvedPrimitiveType.FLOAT to setOf(
+        ResolvedPrimitiveType.BYTE,
+        ResolvedPrimitiveType.SHORT,
+        ResolvedPrimitiveType.CHAR,
+        ResolvedPrimitiveType.INT,
+        ResolvedPrimitiveType.LONG,
+        ResolvedPrimitiveType.FLOAT,
+    ),
+    ResolvedPrimitiveType.DOUBLE to setOf(
+        ResolvedPrimitiveType.BYTE,
+        ResolvedPrimitiveType.SHORT,
+        ResolvedPrimitiveType.CHAR,
+        ResolvedPrimitiveType.INT,
+        ResolvedPrimitiveType.LONG,
+        ResolvedPrimitiveType.FLOAT,
+        ResolvedPrimitiveType.DOUBLE,
+    ),
+)
