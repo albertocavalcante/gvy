@@ -84,6 +84,7 @@ lint:
 
 format:
 	./gradlew lintFix $(GRADLE_ARGS)
+	dprint fmt
 
 # Auto-fix specific issues
 fix-imports:
