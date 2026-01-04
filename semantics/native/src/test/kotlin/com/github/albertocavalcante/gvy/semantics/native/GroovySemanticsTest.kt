@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -86,7 +86,7 @@ class GroovySemanticsTest {
 
     private fun parse(code: String): ModuleNode {
         val request =
-            com.github.albertocavalcante.groovyparser.api.ParseRequest(URI.create("file:///Test.groovy"), code)
+            ParseRequest(URI.create("file:///Test.groovy"), code)
         val result = parser.parse(request)
         if (!result.isSuccessful) {
             error("Parse failed: " + result.diagnostics)

@@ -71,68 +71,45 @@ object StringEscapeUtils {
         var i = 0
         while (i < input.length) {
             if (input[i] == '\\' && i + 1 < input.length) {
-                when (input[i + 1]) {
-                    'n' -> {
-                        append('\n')
-                        i += 2
-                    }
-                    'r' -> {
-                        append('\r')
-                        i += 2
-                    }
-                    't' -> {
-                        append('\t')
-                        i += 2
-                    }
-                    'b' -> {
-                        append('\b')
-                        i += 2
-                    }
-                    'f' -> {
-                        append('\u000C')
-                        i += 2
-                    }
-                    '\\' -> {
-                        append('\\')
-                        i += 2
-                    }
-                    '\'' -> {
-                        append('\'')
-                        i += 2
-                    }
-                    '"' -> {
-                        append('"')
-                        i += 2
-                    }
-                    '$' -> {
-                        append('$')
-                        i += 2
-                    }
-                    'u' -> {
-                        // Unicode escape: \uXXXX
-                        if (i + UNICODE_ESCAPE_LENGTH <= input.length) {
-                            val hex = input.substring(i + UNICODE_START_INDEX, i + UNICODE_ESCAPE_LENGTH)
-                            try {
-                                append(hex.toInt(HEX_RADIX).toChar())
-                                i += UNICODE_ESCAPE_LENGTH
-                            } catch (e: NumberFormatException) {
-                                append(input[i])
-                                i++
-                            }
-                        } else {
-                            append(input[i])
-                            i++
-                        }
-                    }
-                    else -> {
-                        append(input[i])
-                        i++
-                    }
-                }
+                i = unescapeSequence(input, i, this)
             } else {
                 append(input[i])
                 i++
             }
+        }
+    }
+
+    private fun unescapeSequence(input: String, i: Int, builder: StringBuilder): Int =
+        when (val nextChar = input[i + 1]) {
+            'n' -> appendAndAdvance(builder, '\n', i, 2)
+            'r' -> appendAndAdvance(builder, '\r', i, 2)
+            't' -> appendAndAdvance(builder, '\t', i, 2)
+            'b' -> appendAndAdvance(builder, '\b', i, 2)
+            'f' -> appendAndAdvance(builder, '\u000C', i, 2)
+            '\\', '\'', '"', '$' -> appendAndAdvance(builder, nextChar, i, 2)
+            'u' -> unescapeUnicode(input, i, builder)
+            else -> appendAndAdvance(builder, input[i], i, 1) // Not an escape, just return current char
+        }
+
+    private fun appendAndAdvance(builder: StringBuilder, char: Char, currentIndex: Int, advance: Int): Int {
+        builder.append(char)
+        return currentIndex + advance
+    }
+
+    private fun unescapeUnicode(input: String, i: Int, builder: StringBuilder): Int {
+        // Unicode escape: \uXXXX
+        if (i + UNICODE_ESCAPE_LENGTH <= input.length) {
+            val hex = input.substring(i + UNICODE_START_INDEX, i + UNICODE_ESCAPE_LENGTH)
+            return try {
+                builder.append(hex.toInt(HEX_RADIX).toChar())
+                i + UNICODE_ESCAPE_LENGTH
+            } catch (e: NumberFormatException) {
+                builder.append(input[i])
+                i + 1
+            }
+        } else {
+            builder.append(input[i])
+            return i + 1
         }
     }
 

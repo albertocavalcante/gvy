@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovyparser.provider
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseUnit
 import com.github.albertocavalcante.groovyparser.api.ParserCapabilities
 import com.github.albertocavalcante.groovyparser.api.ParserProvider
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import java.nio.file.Path
 
 class NativeParserProvider(private val facade: GroovyParserFacade = GroovyParserFacade()) : ParserProvider {

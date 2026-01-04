@@ -7,6 +7,9 @@ import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
 import com.github.albertocavalcante.groovyparser.resolution.contexts.CompilationUnitContext
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedPrimitiveType
+import com.github.albertocavalcante.groovyparser.resolution.types.asReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.isPrimitive
+import com.github.albertocavalcante.groovyparser.resolution.types.isReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import org.junit.jupiter.api.Test

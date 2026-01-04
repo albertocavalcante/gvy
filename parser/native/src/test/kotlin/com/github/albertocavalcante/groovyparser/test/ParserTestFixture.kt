@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovyparser.test
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import java.net.URI
 
 class ParserTestFixture {

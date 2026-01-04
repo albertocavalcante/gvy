@@ -24,7 +24,7 @@ object DeclarationExpressionAdapter : TypeCalculator<DeclarationExpression> {
 
         // If explicitly typed, use that
         val declaredType = leftExpr.type
-        if (declaredType != null && !declaredType.equals(ClassHelper.DYNAMIC_TYPE) &&
+        if (declaredType != null && !declaredType.equals(ClassHelper.dynamicType()) &&
             !declaredType.equals(ClassHelper.OBJECT_TYPE)
         ) {
             return NativeTypeContext.fromClassNode(declaredType)

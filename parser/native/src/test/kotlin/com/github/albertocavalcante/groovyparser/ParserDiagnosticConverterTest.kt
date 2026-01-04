@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.ErrorCollector
