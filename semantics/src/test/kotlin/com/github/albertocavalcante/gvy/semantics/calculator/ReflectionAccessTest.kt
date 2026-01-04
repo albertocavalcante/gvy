@@ -9,6 +9,8 @@ class ReflectionAccessTest {
     private class GetterBackedList(private val expressions: List<Any?>) {
         private var calls: Int = 0
 
+        fun callCount(): Int = calls
+
         fun getExpressions(): List<Any?> {
             calls += 1
 
@@ -47,6 +49,7 @@ class ReflectionAccessTest {
         val result = ReflectionAccess.getListFromGetterOrField(node, "getExpressions", "expressions")
 
         assertEquals(listOf(1, "x"), result)
+        assertEquals(1, node.callCount())
     }
 
     @Test

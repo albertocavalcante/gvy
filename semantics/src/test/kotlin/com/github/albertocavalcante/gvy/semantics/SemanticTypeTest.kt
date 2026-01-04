@@ -23,6 +23,7 @@ class SemanticTypeTest {
     fun `primitive type toString`() {
         assertEquals("int", SemanticType.Primitive(PrimitiveKind.INT).toString())
         assertEquals("boolean", SemanticType.Primitive(PrimitiveKind.BOOLEAN).toString())
+        assertEquals("void", SemanticType.Primitive(PrimitiveKind.VOID).toString())
     }
 
     @Test

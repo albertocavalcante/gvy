@@ -44,8 +44,10 @@ class MethodCallCalculatorTest {
         val node = MockMethodCall("strInvoker", "indexOf", listOf("arg1"))
 
         val context = object : MockContext() {
-            override fun calculateType(node: Any): SemanticType {
-                return if (node == "strInvoker") stringType else stringType // arg1 is string
+            override fun calculateType(node: Any): SemanticType = when (node) {
+                "strInvoker" -> stringType
+                "arg1" -> stringType
+                else -> SemanticType.Unknown("Mock")
             }
 
             override fun getMethodReturnType(

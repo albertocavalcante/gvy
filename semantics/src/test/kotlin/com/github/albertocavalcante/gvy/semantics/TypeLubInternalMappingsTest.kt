@@ -3,7 +3,6 @@ package com.github.albertocavalcante.gvy.semantics
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
-import java.lang.reflect.Modifier
 
 class TypeLubInternalMappingsTest {
 
@@ -15,7 +14,7 @@ class TypeLubInternalMappingsTest {
         val rankBigDecimal = readPrivateIntConstant(typeLubClass, "RANK_BIG_DECIMAL")
 
         val knownForRankField = typeLubClass.getDeclaredField("KNOWN_FOR_RANK").apply { isAccessible = true }
-        val receiver = if (Modifier.isStatic(knownForRankField.modifiers)) null else TypeLub
+        val receiver = TypeLub
 
         @Suppress("UNCHECKED_CAST")
         val map = knownForRankField.get(receiver) as Map<Int, SemanticType>
@@ -31,7 +30,7 @@ class TypeLubInternalMappingsTest {
 
     private fun readPrivateIntConstant(clazz: Class<*>, name: String): Int {
         val field = clazz.getDeclaredField(name).apply { isAccessible = true }
-        val receiver = if (Modifier.isStatic(field.modifiers)) null else TypeLub
+        val receiver = TypeLub
         return field.get(receiver) as Int
     }
 }

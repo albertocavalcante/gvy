@@ -14,6 +14,11 @@ internal object ReflectionAccess {
     }.getOrNull()
 
     fun getProperty(target: Any, propertyName: String): Any? {
+        if (propertyName.isEmpty()) return null
+
+        // Simple JavaBeans-style getter resolution: getXxx.
+        // This is sufficient for Groovy AST node access patterns used here; it does not attempt to
+        // handle acronym edge-cases like url -> getURL.
         val getterName = "get" + propertyName.replaceFirstChar { it.uppercase() }
         return invokeNoArg(target, getterName) ?: getField(target, propertyName)
     }

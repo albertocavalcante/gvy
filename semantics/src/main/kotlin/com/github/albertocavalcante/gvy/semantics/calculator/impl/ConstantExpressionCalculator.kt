@@ -1,8 +1,11 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import java.math.BigDecimal
+import java.math.BigInteger
 import kotlin.reflect.KClass
 
 /**
@@ -17,17 +20,28 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
     override fun calculate(node: Any, context: TypeContext): SemanticType? =
         when (val result = readValueProperty(node)) {
             ValuePropertyResult.Missing -> null
-            ValuePropertyResult.Unreadable -> null
             is ValuePropertyResult.Present ->
                 result.value?.let(::typeForValue)
-                    ?: SemanticType.Known("java.lang.Object", emptyList())
+                    ?: SemanticType.Null
         }
 
-    private fun typeForValue(value: Any): SemanticType = SemanticType.Known(value.javaClass.name, emptyList())
+    private fun typeForValue(value: Any): SemanticType = when (value) {
+        is Boolean -> TypeConstants.BOOLEAN
+        is Byte -> TypeConstants.BYTE
+        is Char -> TypeConstants.CHAR
+        is Short -> TypeConstants.SHORT
+        is Int -> TypeConstants.INT
+        is Long -> TypeConstants.LONG
+        is Float -> TypeConstants.FLOAT
+        is Double -> TypeConstants.DOUBLE
+        is String -> TypeConstants.STRING
+        is BigDecimal -> TypeConstants.BIG_DECIMAL
+        is BigInteger -> TypeConstants.BIG_INTEGER
+        else -> SemanticType.Known(value.javaClass.name, emptyList())
+    }
 
     private sealed class ValuePropertyResult {
         object Missing : ValuePropertyResult()
-        object Unreadable : ValuePropertyResult()
         data class Present(val value: Any?) : ValuePropertyResult()
     }
 
@@ -49,17 +63,20 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
                 }.getOrNull()
             }
 
-        val valueResult: Result<Any?>? = when {
-            getter != null -> runCatching { getter.invoke(node) }
-            field != null -> runCatching { field.get(node) }
-            else -> null
+        if (getter == null && field == null) return ValuePropertyResult.Missing
+
+        val valueResult = runCatching {
+            when {
+                getter != null -> getter.invoke(node)
+                field != null -> field.get(node)
+                else -> null
+            }
         }
 
-        return when {
-            getter == null && field == null -> ValuePropertyResult.Missing
-            valueResult == null -> ValuePropertyResult.Missing
-            valueResult.isFailure -> ValuePropertyResult.Unreadable
-            else -> ValuePropertyResult.Present(valueResult.getOrNull())
+        return if (valueResult.isFailure) {
+            ValuePropertyResult.Missing
+        } else {
+            ValuePropertyResult.Present(valueResult.getOrNull())
         }
     }
 }

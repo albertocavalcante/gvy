@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 
@@ -21,7 +21,7 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(42)
         val result = calculator.calculate(node, mockContext())
 
-        assertEquals("java.lang.Integer", (result as SemanticType.Known).fqn)
+        assertEquals(TypeConstants.INT, result)
     }
 
     @Test
@@ -30,7 +30,7 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant("hello")
         val result = calculator.calculate(node, mockContext())
 
-        assertEquals("java.lang.String", (result as SemanticType.Known).fqn)
+        assertEquals(TypeConstants.STRING, result)
     }
 
     @Test
@@ -39,7 +39,7 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(true)
         val result = calculator.calculate(node, mockContext())
 
-        assertEquals("java.lang.Boolean", (result as SemanticType.Known).fqn)
+        assertEquals(TypeConstants.BOOLEAN, result)
     }
 
     @Test
@@ -48,7 +48,7 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(BigDecimal("3.14"))
         val result = calculator.calculate(node, mockContext())
 
-        assertEquals("java.math.BigDecimal", (result as SemanticType.Known).fqn)
+        assertEquals(TypeConstants.BIG_DECIMAL, result)
     }
 
     @Test
@@ -57,8 +57,7 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(null)
         val result = calculator.calculate(node, mockContext())
 
-        assertTrue(result is SemanticType.Known)
-        assertEquals("java.lang.Object", (result as SemanticType.Known).fqn)
+        assertEquals(SemanticType.Null, result)
     }
 
     @Test

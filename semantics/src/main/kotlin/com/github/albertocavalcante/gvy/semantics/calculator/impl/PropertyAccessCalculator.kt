@@ -37,6 +37,8 @@ class PropertyAccessCalculator : TypeCalculator<Any> {
     private fun getPropertyName(property: Any): String? {
         // ConstantExpression(value="length") -> "length"
         val fromGetterOrField = ReflectionAccess.getStringFromGetterOrField(property, "getValue", "value")
+
+        // Test doubles may model the property name directly as a String.
         return fromGetterOrField ?: (property as? String)
     }
 }

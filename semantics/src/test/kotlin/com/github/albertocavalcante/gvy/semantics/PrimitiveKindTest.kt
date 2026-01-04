@@ -7,6 +7,7 @@ import kotlin.test.assertTrue
 class PrimitiveKindTest {
     @Test
     fun `isNumeric classification`() {
+        assertFalse(PrimitiveKind.VOID.isNumeric)
         assertTrue(PrimitiveKind.BYTE.isNumeric)
         assertTrue(PrimitiveKind.SHORT.isNumeric)
         assertTrue(PrimitiveKind.INT.isNumeric)
@@ -20,6 +21,7 @@ class PrimitiveKindTest {
 
     @Test
     fun `isIntegral classification`() {
+        assertFalse(PrimitiveKind.VOID.isIntegral)
         assertTrue(PrimitiveKind.BYTE.isIntegral)
         assertTrue(PrimitiveKind.SHORT.isIntegral)
         assertTrue(PrimitiveKind.INT.isIntegral)
@@ -33,6 +35,7 @@ class PrimitiveKindTest {
 
     @Test
     fun `isFloatingPoint classification`() {
+        assertFalse(PrimitiveKind.VOID.isFloatingPoint)
         assertTrue(PrimitiveKind.FLOAT.isFloatingPoint)
         assertTrue(PrimitiveKind.DOUBLE.isFloatingPoint)
 

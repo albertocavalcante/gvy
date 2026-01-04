@@ -17,7 +17,8 @@ class MethodCallCalculator : TypeCalculator<Any> {
 
     override fun calculate(node: Any, context: TypeContext): SemanticType? {
         val receiver = ReflectionAccess.getProperty(node, "receiver")
-        val methodName = ReflectionAccess.getStringProperty(node, "methodName") // Simplified for test double
+        // Test doubles may expose method name as a plain String property; Groovy AST uses getMethodAsString().
+        val methodName = ReflectionAccess.getStringProperty(node, "methodName")
             ?: getMethodAsString(node) // Groovy AST
             ?: return null
 

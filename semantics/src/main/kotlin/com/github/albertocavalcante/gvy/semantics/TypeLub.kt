@@ -14,14 +14,12 @@ object TypeLub {
 
         val nonNullTypes = types.filter { it != SemanticType.Null }
 
-        val result = when {
+        return when {
             nonNullTypes.isEmpty() -> SemanticType.Null
             nonNullTypes.size == 1 -> nonNullTypes.first()
             nonNullTypes.all { it == nonNullTypes.first() } -> nonNullTypes.first()
             else -> computeComplexLub(nonNullTypes)
         }
-
-        return result
     }
 
     /**
@@ -69,11 +67,10 @@ object TypeLub {
      * @return The numeric LUB if applicable, or null if not a numeric promotion case.
      */
     private fun checkNumericLub(types: List<SemanticType>): SemanticType? {
-        val ranks = types.map(::getNumericRank)
-        if (ranks.any { it == null }) return null
+        val ranks = types.mapNotNull(::getNumericRank)
+        if (ranks.size != types.size) return null
 
-        // Safe: ranks contains only non-null values after the early return above.
-        val rawMaxRank = ranks.filterNotNull().maxOrNull() ?: return null
+        val rawMaxRank = ranks.maxOrNull() ?: return null
 
         // Promote byte/short/char to int minimum.
         val maxRank = maxOf(rawMaxRank, RANK_INT)
@@ -98,8 +95,8 @@ object TypeLub {
      * Promote numeric primitives following Java/Groovy rules.
      */
     fun promoteNumeric(types: List<SemanticType.Primitive>): SemanticType.Primitive {
-        require(types.none { it.kind == PrimitiveKind.BOOLEAN }) {
-            "Boolean cannot participate in numeric promotion. Use computeFallbackLub for mixed boolean/numeric types."
+        require(types.none { it.kind == PrimitiveKind.BOOLEAN || it.kind == PrimitiveKind.VOID }) {
+            "Boolean/void cannot participate in numeric promotion. Use computeFallbackLub for mixed types."
         }
 
         val widest = types.maxByOrNull { getNumericPrecedence(it.kind) }
@@ -127,14 +124,7 @@ object TypeLub {
                 @Suppress("UNCHECKED_CAST")
                 val primitives = it as List<SemanticType.Primitive>
 
-                val hasBoolean = primitives.any { p -> p.kind == PrimitiveKind.BOOLEAN }
-                when {
-                    hasBoolean && primitives.all { p -> p.kind == PrimitiveKind.BOOLEAN } ->
-                        SemanticType.Primitive(PrimitiveKind.BOOLEAN)
-
-                    hasBoolean -> TypeConstants.OBJECT
-                    else -> promoteNumeric(primitives)
-                }
+                computePrimitiveLub(primitives)
             }
 
         if (primitiveLub != null) return primitiveLub
@@ -274,6 +264,11 @@ object TypeLub {
 
     // --- Helpers ---
 
+    // Numeric promotion rank (widest type wins). See PRIMITIVE_RANKS/WRAPPER_RANKS for mapping.
+    // Note: FLOAT (8) and DOUBLE (9) are ranked higher than BIG_DECIMAL (7) because
+    // in Groovy, mixed operations often promote to Double unless explicitly coerced.
+    // While BigDecimal is "precise", Double is "wider" in terms of range in this model.
+
     private const val RANK_BYTE = 1
     private const val RANK_CHAR = 2
     private const val RANK_SHORT = 3
@@ -283,11 +278,6 @@ object TypeLub {
     private const val RANK_BIG_DECIMAL = 7
     private const val RANK_FLOAT = 8
     private const val RANK_DOUBLE = 9
-
-    // Numeric promotion rank (widest type wins)
-    // Note: FLOAT (8) and DOUBLE (9) are ranked higher than BIG_DECIMAL (7) because
-    // in Groovy, mixed operations often promote to Double unless explicitly coerced.
-    // While BigDecimal is "precise", Double is "wider" in terms of range in this model.
     private val PRIMITIVE_RANKS = mapOf(
         PrimitiveKind.BYTE to RANK_BYTE,
         PrimitiveKind.CHAR to RANK_CHAR,
@@ -328,6 +318,7 @@ object TypeLub {
         RANK_LONG to SemanticType.Known("java.lang.Long"),
         RANK_FLOAT to SemanticType.Known("java.lang.Float"),
         RANK_DOUBLE to SemanticType.Known("java.lang.Double"),
+        // BigInteger/BigDecimal are usually returned via preferredType above. Kept for completeness/testing.
         RANK_BIG_INTEGER to SemanticType.Known("java.math.BigInteger"),
         RANK_BIG_DECIMAL to SemanticType.Known("java.math.BigDecimal"),
     )
@@ -348,6 +339,7 @@ object TypeLub {
     private const val PRECEDENCE_DOUBLE = 6
 
     private fun getNumericPrecedence(kind: PrimitiveKind): Int = when (kind) {
+        PrimitiveKind.VOID -> PRECEDENCE_BOOLEAN
         PrimitiveKind.BYTE -> PRECEDENCE_BYTE
         PrimitiveKind.SHORT -> PRECEDENCE_SHORT
         PrimitiveKind.CHAR -> PRECEDENCE_CHAR
@@ -356,5 +348,23 @@ object TypeLub {
         PrimitiveKind.FLOAT -> PRECEDENCE_FLOAT
         PrimitiveKind.DOUBLE -> PRECEDENCE_DOUBLE
         PrimitiveKind.BOOLEAN -> PRECEDENCE_BOOLEAN
+    }
+}
+
+private fun computePrimitiveLub(primitives: List<SemanticType.Primitive>): SemanticType {
+    val hasBoolean = primitives.any { p -> p.kind == PrimitiveKind.BOOLEAN }
+    val hasVoid = primitives.any { p -> p.kind == PrimitiveKind.VOID }
+
+    return when {
+        hasVoid && primitives.all { p -> p.kind == PrimitiveKind.VOID } ->
+            SemanticType.Primitive(PrimitiveKind.VOID)
+
+        hasVoid -> TypeConstants.OBJECT
+
+        hasBoolean && primitives.all { p -> p.kind == PrimitiveKind.BOOLEAN } ->
+            SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+
+        hasBoolean -> TypeConstants.OBJECT
+        else -> TypeLub.promoteNumeric(primitives)
     }
 }

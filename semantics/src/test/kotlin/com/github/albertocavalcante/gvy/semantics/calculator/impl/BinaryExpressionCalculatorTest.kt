@@ -87,6 +87,38 @@ class BinaryExpressionCalculatorTest {
         }
     }
 
+    @Test
+    fun `should calculate Groovy pattern and membership operators`() {
+        val calculator = BinaryExpressionCalculator()
+        val ops = listOf("=~", "==~", "in")
+
+        for (op in ops) {
+            val node = MockBinaryExpression("left", "right", MockToken(op))
+            val result = calculator.calculate(node, mockContext(stringType, stringType))
+            assertEquals(booleanType, result, "Failed for op: $op")
+        }
+    }
+
+    @Test
+    fun `should calculate Groovy spaceship operator`() {
+        val calculator = BinaryExpressionCalculator()
+        val node = MockBinaryExpression("left", "right", MockToken("<=>"))
+
+        val result = calculator.calculate(node, mockContext(intType, intType))
+
+        assertEquals(intType, result)
+    }
+
+    @Test
+    fun `should calculate Groovy power operator`() {
+        val calculator = BinaryExpressionCalculator()
+        val node = MockBinaryExpression("left", "right", MockToken("**"))
+
+        val result = calculator.calculate(node, mockContext(intType, doubleType))
+
+        assertEquals(doubleType, result)
+    }
+
     private fun mockContext(leftType: SemanticType, rightType: SemanticType) = object : TypeContext {
         override fun resolveType(fqn: String) = SemanticType.Unknown("Mock")
 

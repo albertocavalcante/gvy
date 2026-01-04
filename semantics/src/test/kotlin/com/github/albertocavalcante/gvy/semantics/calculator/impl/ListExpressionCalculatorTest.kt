@@ -34,7 +34,8 @@ class ListExpressionCalculatorTest {
     fun `should calculate List of mixed types (String, Int)`() {
         // LUB(String, Integer) -> Comparable
         // TypeLub logic: if no common numeric/string rule, fallback to common ancestor.
-        // String and Integer implement Comparable, Serializable. Comparable has higher priority.
+        // String and Integer both implement Comparable and Serializable; this asserts the interface
+        // priority ranking selects Comparable over Serializable.
 
         val calculator = ListExpressionCalculator()
         val node = MockListExpression(listOf("str", "int"))

@@ -32,8 +32,17 @@ class BinaryExpressionCalculator : TypeCalculator<Any> {
             // Boolean result operators
             "==", "!=", "<", ">", "<=", ">=", "&&", "||" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN)
 
+            // Groovy boolean operators
+            "=~", "==~", "in" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+
+            // Groovy comparison
+            "<=>" -> TypeConstants.INT
+
             // Arithmetic operators
             "+", "-", "*", "/", "%" -> calculateArithmetic(leftType, rightType, opText)
+
+            // Groovy power
+            "**" -> TypeLub.lub(leftType, rightType)
 
             // Assignment (not usually a type calculation subject but expression has type of RHS)
             "=" -> rightType
