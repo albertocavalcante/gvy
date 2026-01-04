@@ -139,7 +139,9 @@ object TypeLub {
      * Promote numeric primitives following Java/Groovy rules.
      */
     fun promoteNumeric(types: List<SemanticType.Primitive>): SemanticType.Primitive {
-        require(types.none { it.kind == PrimitiveKind.BOOLEAN }) { "Cannot compute LUB involving boolean" }
+        require(types.none { it.kind == PrimitiveKind.BOOLEAN }) {
+            "Boolean cannot participate in numeric promotion. Use computeFallbackLub for mixed boolean/numeric types."
+        }
 
         val widest = types.maxByOrNull { getNumericPrecedence(it.kind) }
             ?: SemanticType.Primitive(PrimitiveKind.INT)
@@ -182,8 +184,8 @@ object TypeLub {
             when (it) {
                 is SemanticType.Known -> it
                 is SemanticType.Primitive -> {
-                    // Primitives in a mixed context (e.g. int + String) are treated as objects
-                    // for the purpose of finding a common reference ancestor.
+                    // Primitives in mixed context are excluded from reference type ancestor search.
+                    // The outer function returns OBJECT for mixed primitive/reference cases.
                     null
                 }
 
@@ -219,12 +221,14 @@ object TypeLub {
         "java.util.List" to setOf("java.util.Collection"),
         "java.util.Set" to setOf("java.util.Collection"),
         "java.util.Collection" to setOf("java.lang.Iterable"),
+        "java.util.Deque" to setOf("java.util.Collection"),
         "java.lang.Integer" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.Long" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.Double" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.Float" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.Byte" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.Short" to setOf("java.lang.Number", "java.lang.Comparable"),
+        "java.lang.Character" to setOf("java.lang.Comparable"),
         "java.math.BigInteger" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.math.BigDecimal" to setOf("java.lang.Number", "java.lang.Comparable"),
         "java.lang.String" to setOf("java.lang.CharSequence", "java.lang.Comparable", "java.io.Serializable"),
@@ -287,11 +291,14 @@ object TypeLub {
         "java.lang.Object" to 100,
     )
 
+    /** Default priority for types not in INTERFACE_PRIORITY map. */
+    private const val DEFAULT_INTERFACE_PRIORITY = 50
+
     private fun selectBestAncestor(candidates: Set<String>): String {
         val nonObject = candidates - "java.lang.Object"
         if (nonObject.isEmpty()) return "java.lang.Object"
 
-        return nonObject.minByOrNull { INTERFACE_PRIORITY[it] ?: 50 }
+        return nonObject.minByOrNull { INTERFACE_PRIORITY[it] ?: DEFAULT_INTERFACE_PRIORITY }
             ?: "java.lang.Object"
     }
 
