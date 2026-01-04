@@ -420,6 +420,7 @@ class GroovyTextDocumentService(
                 params.position.line,
                 params.position.character,
                 compilationService,
+                semanticResolver = semanticTypeResolver,
                 content,
             )
 

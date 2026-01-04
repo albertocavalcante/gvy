@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
 import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -18,6 +19,7 @@ import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -40,6 +42,8 @@ data class CompletionContext(
     val tokenIndex: GroovyTokenIndex?,
     val compilationService: GroovyCompilationService,
     val content: String,
+    val semanticResolver: SemanticTypeResolver,
+    val moduleNode: ModuleNode?,
 )
 
 /**
@@ -68,6 +72,7 @@ object CompletionProvider {
         line: Int,
         character: Int,
         compilationService: GroovyCompilationService,
+        semanticResolver: SemanticTypeResolver,
         content: String,
     ): List<CompletionItem> {
         return try {
@@ -105,6 +110,8 @@ object CompletionProvider {
                             tokenIndex = result2.tokenIndex,
                             compilationService = compilationService,
                             content = content,
+                            semanticResolver = semanticResolver,
+                            moduleNode = ast2 as? ModuleNode,
                         ),
                         isSpockSpec = isSpockSpec,
                     )
@@ -126,6 +133,8 @@ object CompletionProvider {
                         tokenIndex = result1.tokenIndex,
                         compilationService = compilationService,
                         content = content,
+                        semanticResolver = semanticResolver,
+                        moduleNode = ast1 as? ModuleNode,
                     ),
                     isSpockSpec = isSpockSpec,
                 )
@@ -178,7 +187,13 @@ object CompletionProvider {
             ctx.character,
         )
         val completionContext =
-            CompletionContextDetector.detectCompletionContext(nodeAtCursor, ctx.astModel, symbolContext)
+            CompletionContextDetector.detectCompletionContext(
+                nodeAtCursor,
+                ctx.astModel,
+                symbolContext,
+                ctx.semanticResolver,
+                ctx.moduleNode,
+            )
 
         val jenkinsContext = resolveJenkinsContext(ctx, isJenkinsFile)
         val metadata = jenkinsContext.metadata
@@ -422,6 +437,7 @@ object CompletionProvider {
         val replaceStartCharacter: Int,
         val replaceEndCharacter: Int,
     )
+
     internal sealed interface ContextType {
         /**
          * Member access context (e.g., "myList." or "env.").
