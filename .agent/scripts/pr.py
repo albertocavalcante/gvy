@@ -249,8 +249,9 @@ CODE: Use imports, avoid FQNs
 COMMIT: Use multiple -m flags. Don't use multiline strings.
 FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'
 DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'
-REJECT: Reply with technical reasoning. Do NOT resolve.
-RESOLVE: pr resolve <T> '<reply>'
+REJECT: Reply with technical reasoning. Thread stays open for reviewer.
+RESOLVE: pr.py resolve <T> '<reply with SHA or #issue>'
+REJECT: pr.py reject <T> '<technical rationale>'
 REMINDER: Loop until all threads are resolved. Do not merge with open threads.
 </agent_rules>
 """
@@ -338,6 +339,37 @@ def resolve(
             text=True,
         )
         print(f"✅ {thread_id}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ {e.stderr}", file=sys.stderr)
+        raise typer.Exit(1)
+
+
+@app.command()
+def reject(
+    thread_id: str = typer.Argument(..., help="Thread ID (T=...)"),
+    rationale: str = typer.Argument(..., help="Technical reasoning for rejection"),
+):
+    """Reply to reject a thread (false positive). Does NOT resolve - lets reviewer respond."""
+    try:
+        q_reply = load_query("reply-to-thread.graphql")
+
+        subprocess.run(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-F",
+                f"threadId={thread_id}",
+                "-F",
+                f"body={rationale}",
+                "-f",
+                f"query={q_reply}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print(f"💬 {thread_id} (replied, not resolved)")
     except subprocess.CalledProcessError as e:
         print(f"❌ {e.stderr}", file=sys.stderr)
         raise typer.Exit(1)
