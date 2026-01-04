@@ -6,6 +6,7 @@ import arrow.core.some
 import groovyjarjarantlr4.v4.runtime.CharStreams
 import groovyjarjarantlr4.v4.runtime.Token
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
+import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.slf4j.LoggerFactory
 
 /**
@@ -72,6 +73,8 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             fun toSortedList(): List<TokenSpan> = spans.sortedBy { it.start }
         }
 
+        private fun shouldRethrow(throwable: Throwable): Boolean = throwable is Error && throwable !is GroovySyntaxError
+
         /** Build index from source using Groovy lexer. */
         fun build(source: String): GroovyTokenIndex {
             val collector = SpanCollector()
@@ -87,7 +90,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
         private fun createLexer(source: String): GroovyLangLexer? = runCatching {
             GroovyLangLexer(CharStreams.fromString(source))
         }.onFailure { throwable ->
-            if (throwable is Error) throw throwable
+            if (shouldRethrow(throwable)) throw throwable
             logger.debug("Failed to initialize GroovyLangLexer", throwable)
         }.getOrNull()
 
@@ -107,7 +110,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
                     token = fetchNextToken(lexer, collector)
                 }
             }.onFailure { throwable ->
-                if (throwable is Error) throw throwable
+                if (shouldRethrow(throwable)) throw throwable
                 logger.debug("Ignoring throwable during token indexing for resiliency", throwable)
             }
         }
@@ -115,7 +118,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
         private fun fetchNextToken(lexer: GroovyLangLexer, collector: SpanCollector): Token? = runCatching {
             lexer.nextToken()
         }.onFailure { throwable ->
-            if (throwable is Error) throw throwable
+            if (shouldRethrow(throwable)) throw throwable
             logger.debug(
                 "Lexer error at offset {}: {}",
                 collector.lastOrNull()?.end ?: 0,
