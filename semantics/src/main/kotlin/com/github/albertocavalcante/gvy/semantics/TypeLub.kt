@@ -14,18 +14,12 @@ object TypeLub {
 
         val nonNullTypes = types.filter { it != SemanticType.Null }
 
-        // Early returns for single types or all same type
-        if (nonNullTypes.isEmpty()) {
-            return SemanticType.Null
+        return when {
+            nonNullTypes.isEmpty() -> SemanticType.Null
+            nonNullTypes.size == 1 -> nonNullTypes.first()
+            nonNullTypes.all { it == nonNullTypes.first() } -> nonNullTypes.first()
+            else -> computeComplexLub(nonNullTypes)
         }
-        if (nonNullTypes.size == 1) {
-            return nonNullTypes.first()
-        }
-        if (nonNullTypes.all { it == nonNullTypes.first() }) {
-            return nonNullTypes.first()
-        }
-
-        return computeComplexLub(nonNullTypes)
     }
 
     /**
@@ -73,74 +67,36 @@ object TypeLub {
      * @return The numeric LUB if applicable, or null if not a numeric promotion case.
      */
     private fun checkNumericLub(types: List<SemanticType>): SemanticType? {
-        val ranks = types.map { type ->
-            getNumericRank(type)
+        val ranks = types.mapNotNull(::getNumericRank)
+        if (ranks.size != types.size) return null
+
+        val rawMaxRank = ranks.maxOrNull() ?: return null
+
+        // Promote byte/short/char to int minimum.
+        val maxRank = maxOf(rawMaxRank, RANK_INT)
+
+        val hasBigType = ranks.any { it == RANK_BIG_INTEGER || it == RANK_BIG_DECIMAL }
+        val isFloatOrDouble = maxRank == RANK_FLOAT || maxRank == RANK_DOUBLE
+
+        val preferredType = when {
+            hasBigType && isFloatOrDouble -> TypeConstants.BIG_DECIMAL
+            maxRank == RANK_BIG_INTEGER -> TypeConstants.BIG_INTEGER
+            maxRank == RANK_BIG_DECIMAL -> TypeConstants.BIG_DECIMAL
+            else -> null
         }
 
-        // If any type is not numeric, can't use numeric LUB
-        if (ranks.any { it == null }) return null
+        val hasWrapperWithMaxRank = types.any { it is SemanticType.Known && getNumericRank(it) == maxRank }
+        val wrapper = if (hasWrapperWithMaxRank) KNOWN_FOR_RANK[maxRank] else null
 
-        val validRanks = ranks.filterNotNull()
-        val rawMaxRank = validRanks.maxOrNull() ?: return null
-
-        // Promote byte/short/char to int minimum (Rank 4)
-        val maxRank = if (rawMaxRank < RANK_INT) RANK_INT else rawMaxRank
-
-        // Special Rule: If any input is a BigInteger or BigDecimal, and we have Float/Double involved,
-        // expected result is BigDecimal to preserve precision (Groovy semantics).
-        val hasBigType = types.any {
-            val r = getNumericRank(it)
-            r == RANK_BIG_INTEGER || r == RANK_BIG_DECIMAL
-        }
-
-        if (hasBigType && (maxRank == RANK_FLOAT || maxRank == RANK_DOUBLE)) {
-            return TypeConstants.BIG_DECIMAL
-        }
-
-        // Handle Big numbers explicitly
-        if (maxRank == RANK_BIG_INTEGER) return TypeConstants.BIG_INTEGER
-        if (maxRank == RANK_BIG_DECIMAL) return TypeConstants.BIG_DECIMAL
-
-        // For primitives/wrappers, decide based on the input that determined the max rank.
-        // If we have a Wrapper (Known) with the max rank, return Wrapper.
-        // Otherwise, return Primitive.
-
-        // Check if any original type has MAX rank and is a Known type
-        val hasWrapperWithMaxRank = types.any { type ->
-            getNumericRank(type) == maxRank && type is SemanticType.Known
-        }
-
-        return if (hasWrapperWithMaxRank) {
-            when (maxRank) {
-                RANK_BYTE -> SemanticType.Known("java.lang.Byte")
-                RANK_CHAR -> SemanticType.Known("java.lang.Character")
-                RANK_SHORT -> SemanticType.Known("java.lang.Short")
-                RANK_INT -> SemanticType.Known("java.lang.Integer")
-                RANK_LONG -> SemanticType.Known("java.lang.Long")
-                RANK_FLOAT -> SemanticType.Known("java.lang.Float")
-                RANK_DOUBLE -> SemanticType.Known("java.lang.Double")
-                else -> null // Should not happen given constraints
-            }
-        } else {
-            when (maxRank) {
-                RANK_BYTE -> SemanticType.Primitive(PrimitiveKind.BYTE)
-                RANK_CHAR -> SemanticType.Primitive(PrimitiveKind.CHAR)
-                RANK_SHORT -> SemanticType.Primitive(PrimitiveKind.SHORT)
-                RANK_INT -> SemanticType.Primitive(PrimitiveKind.INT)
-                RANK_LONG -> SemanticType.Primitive(PrimitiveKind.LONG)
-                RANK_FLOAT -> SemanticType.Primitive(PrimitiveKind.FLOAT)
-                RANK_DOUBLE -> SemanticType.Primitive(PrimitiveKind.DOUBLE)
-                else -> null
-            }
-        }
+        return preferredType ?: wrapper ?: PRIMITIVE_FOR_RANK[maxRank]
     }
 
     /**
      * Promote numeric primitives following Java/Groovy rules.
      */
     fun promoteNumeric(types: List<SemanticType.Primitive>): SemanticType.Primitive {
-        require(types.none { it.kind == PrimitiveKind.BOOLEAN }) {
-            "Boolean cannot participate in numeric promotion. Use computeFallbackLub for mixed boolean/numeric types."
+        require(types.none { it.kind == PrimitiveKind.BOOLEAN || it.kind == PrimitiveKind.VOID }) {
+            "Boolean/void cannot participate in numeric promotion. Use computeFallbackLub for mixed types."
         }
 
         val widest = types.maxByOrNull { getNumericPrecedence(it.kind) }
@@ -162,20 +118,16 @@ object TypeLub {
      * - If references involved, finds common class/interface ancestor.
      */
     private fun computeFallbackLub(types: List<SemanticType>): SemanticType {
-        if (types.all { it is SemanticType.Primitive }) {
-            // These satisfy isPrimitive, so we cast safely
-            @Suppress("UNCHECKED_CAST")
-            val primitives = types as List<SemanticType.Primitive>
+        val primitiveLub = types
+            .takeIf { it.all { t -> t is SemanticType.Primitive } }
+            ?.let {
+                @Suppress("UNCHECKED_CAST")
+                val primitives = it as List<SemanticType.Primitive>
 
-            if (primitives.any { it.kind == PrimitiveKind.BOOLEAN }) {
-                if (primitives.all { it.kind == PrimitiveKind.BOOLEAN }) {
-                    return SemanticType.Primitive(PrimitiveKind.BOOLEAN)
-                }
-                return TypeConstants.OBJECT
+                computePrimitiveLub(primitives)
             }
 
-            return promoteNumeric(primitives)
-        }
+        if (primitiveLub != null) return primitiveLub
 
         // Mixed or Reference types
         val referenceTypes = types.mapNotNull {
@@ -194,12 +146,12 @@ object TypeLub {
             }
         }
 
-        if (referenceTypes.size == types.size) {
+        return if (referenceTypes.size == types.size) {
             // All are known/reference types
-            return findCommonAncestor(referenceTypes)
+            findCommonAncestor(referenceTypes)
+        } else {
+            TypeConstants.OBJECT
         }
-
-        return TypeConstants.OBJECT
     }
 
     // --- Hardcoded Hierarchy Logic (since no TypeSolver) ---
@@ -278,17 +230,25 @@ object TypeLub {
     }
 
     // Priority map
+    private const val PRIORITY_PRIMARY = 1
+    private const val PRIORITY_COLLECTION = 2
+    private const val PRIORITY_ITERABLE = 3
+    private const val PRIORITY_CHAR_SEQUENCE = 4
+    private const val PRIORITY_COMPARABLE = 5
+    private const val PRIORITY_SERIALIZABLE = 10
+    private const val PRIORITY_OBJECT = 100
+
     private val INTERFACE_PRIORITY = mapOf(
-        "java.util.List" to 1,
-        "java.util.Set" to 1,
-        "java.util.Map" to 1,
-        "java.lang.Number" to 1,
-        "java.util.Collection" to 2,
-        "java.lang.Iterable" to 3,
-        "java.lang.CharSequence" to 4,
-        "java.lang.Comparable" to 5,
-        "java.io.Serializable" to 10,
-        "java.lang.Object" to 100,
+        "java.util.List" to PRIORITY_PRIMARY,
+        "java.util.Set" to PRIORITY_PRIMARY,
+        "java.util.Map" to PRIORITY_PRIMARY,
+        "java.lang.Number" to PRIORITY_PRIMARY,
+        "java.util.Collection" to PRIORITY_COLLECTION,
+        "java.lang.Iterable" to PRIORITY_ITERABLE,
+        "java.lang.CharSequence" to PRIORITY_CHAR_SEQUENCE,
+        "java.lang.Comparable" to PRIORITY_COMPARABLE,
+        "java.io.Serializable" to PRIORITY_SERIALIZABLE,
+        "java.lang.Object" to PRIORITY_OBJECT,
     )
 
     /** Default priority for types not in INTERFACE_PRIORITY map. */
@@ -304,6 +264,11 @@ object TypeLub {
 
     // --- Helpers ---
 
+    // Numeric promotion rank (widest type wins). See PRIMITIVE_RANKS/WRAPPER_RANKS for mapping.
+    // Note: FLOAT (8) and DOUBLE (9) are ranked higher than BIG_DECIMAL (7) because
+    // in Groovy, mixed operations often promote to Double unless explicitly coerced.
+    // While BigDecimal is "precise", Double is "wider" in terms of range in this model.
+
     private const val RANK_BYTE = 1
     private const val RANK_CHAR = 2
     private const val RANK_SHORT = 3
@@ -313,42 +278,54 @@ object TypeLub {
     private const val RANK_BIG_DECIMAL = 7
     private const val RANK_FLOAT = 8
     private const val RANK_DOUBLE = 9
+    private val PRIMITIVE_RANKS = mapOf(
+        PrimitiveKind.BYTE to RANK_BYTE,
+        PrimitiveKind.CHAR to RANK_CHAR,
+        PrimitiveKind.SHORT to RANK_SHORT,
+        PrimitiveKind.INT to RANK_INT,
+        PrimitiveKind.LONG to RANK_LONG,
+        PrimitiveKind.FLOAT to RANK_FLOAT,
+        PrimitiveKind.DOUBLE to RANK_DOUBLE,
+    )
 
-    // Numeric promotion rank (widest type wins)
-    // Note: FLOAT (8) and DOUBLE (9) are ranked higher than BIG_DECIMAL (7) because
-    // in Groovy, mixed operations often promote to Double unless explicitly coerced.
-    // While BigDecimal is "precise", Double is "wider" in terms of range in this model.
-    @Suppress("REDUNDANT_ELSE_IN_WHEN") // LSP false positive: SemanticType isn't fully exhausted by Primitive/Known
-    /**
-     * Checks if the given type is a numeric primitive.
-     */
-    private fun isNumeric(type: SemanticType): Boolean = getNumericRank(type) != null
+    private val WRAPPER_RANKS = mapOf(
+        "java.lang.Byte" to RANK_BYTE,
+        "java.lang.Character" to RANK_CHAR,
+        "java.lang.Short" to RANK_SHORT,
+        "java.lang.Integer" to RANK_INT,
+        "java.lang.Long" to RANK_LONG,
+        "java.math.BigInteger" to RANK_BIG_INTEGER,
+        "java.math.BigDecimal" to RANK_BIG_DECIMAL,
+        "java.lang.Float" to RANK_FLOAT,
+        "java.lang.Double" to RANK_DOUBLE,
+    )
+
+    private val PRIMITIVE_FOR_RANK = mapOf(
+        RANK_BYTE to SemanticType.Primitive(PrimitiveKind.BYTE),
+        RANK_CHAR to SemanticType.Primitive(PrimitiveKind.CHAR),
+        RANK_SHORT to SemanticType.Primitive(PrimitiveKind.SHORT),
+        RANK_INT to SemanticType.Primitive(PrimitiveKind.INT),
+        RANK_LONG to SemanticType.Primitive(PrimitiveKind.LONG),
+        RANK_FLOAT to SemanticType.Primitive(PrimitiveKind.FLOAT),
+        RANK_DOUBLE to SemanticType.Primitive(PrimitiveKind.DOUBLE),
+    )
+
+    private val KNOWN_FOR_RANK = mapOf(
+        RANK_BYTE to SemanticType.Known("java.lang.Byte"),
+        RANK_CHAR to SemanticType.Known("java.lang.Character"),
+        RANK_SHORT to SemanticType.Known("java.lang.Short"),
+        RANK_INT to SemanticType.Known("java.lang.Integer"),
+        RANK_LONG to SemanticType.Known("java.lang.Long"),
+        RANK_FLOAT to SemanticType.Known("java.lang.Float"),
+        RANK_DOUBLE to SemanticType.Known("java.lang.Double"),
+        // BigInteger/BigDecimal are usually returned via preferredType above. Kept for completeness/testing.
+        RANK_BIG_INTEGER to SemanticType.Known("java.math.BigInteger"),
+        RANK_BIG_DECIMAL to SemanticType.Known("java.math.BigDecimal"),
+    )
 
     private fun getNumericRank(type: SemanticType): Int? = when (type) {
-        is SemanticType.Primitive -> when (type.kind) {
-            PrimitiveKind.BYTE -> RANK_BYTE
-            PrimitiveKind.CHAR -> RANK_CHAR
-            PrimitiveKind.SHORT -> RANK_SHORT
-            PrimitiveKind.INT -> RANK_INT
-            PrimitiveKind.LONG -> RANK_LONG
-            PrimitiveKind.FLOAT -> RANK_FLOAT
-            PrimitiveKind.DOUBLE -> RANK_DOUBLE
-            PrimitiveKind.BOOLEAN -> null
-        }
-
-        is SemanticType.Known -> when (type.fqn) {
-            "java.lang.Byte" -> RANK_BYTE
-            "java.lang.Character" -> RANK_CHAR
-            "java.lang.Short" -> RANK_SHORT
-            "java.lang.Integer" -> RANK_INT
-            "java.lang.Long" -> RANK_LONG
-            "java.math.BigInteger" -> RANK_BIG_INTEGER
-            "java.math.BigDecimal" -> RANK_BIG_DECIMAL
-            "java.lang.Float" -> RANK_FLOAT
-            "java.lang.Double" -> RANK_DOUBLE
-            else -> null
-        }
-
+        is SemanticType.Primitive -> PRIMITIVE_RANKS[type.kind]
+        is SemanticType.Known -> WRAPPER_RANKS[type.fqn]
         else -> null
     }
 
@@ -362,6 +339,9 @@ object TypeLub {
     private const val PRECEDENCE_DOUBLE = 6
 
     private fun getNumericPrecedence(kind: PrimitiveKind): Int = when (kind) {
+        // Void is not numeric and must not participate in promotion.
+        // promoteNumeric() enforces this, so reaching here indicates a bug in the caller.
+        PrimitiveKind.VOID -> error("Void has no numeric precedence")
         PrimitiveKind.BYTE -> PRECEDENCE_BYTE
         PrimitiveKind.SHORT -> PRECEDENCE_SHORT
         PrimitiveKind.CHAR -> PRECEDENCE_CHAR
@@ -370,5 +350,23 @@ object TypeLub {
         PrimitiveKind.FLOAT -> PRECEDENCE_FLOAT
         PrimitiveKind.DOUBLE -> PRECEDENCE_DOUBLE
         PrimitiveKind.BOOLEAN -> PRECEDENCE_BOOLEAN
+    }
+}
+
+private fun computePrimitiveLub(primitives: List<SemanticType.Primitive>): SemanticType {
+    val hasBoolean = primitives.any { p -> p.kind == PrimitiveKind.BOOLEAN }
+    val hasVoid = primitives.any { p -> p.kind == PrimitiveKind.VOID }
+
+    return when {
+        hasVoid && primitives.all { p -> p.kind == PrimitiveKind.VOID } ->
+            SemanticType.Primitive(PrimitiveKind.VOID)
+
+        hasVoid -> TypeConstants.OBJECT
+
+        hasBoolean && primitives.all { p -> p.kind == PrimitiveKind.BOOLEAN } ->
+            SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+
+        hasBoolean -> TypeConstants.OBJECT
+        else -> TypeLub.promoteNumeric(primitives)
     }
 }

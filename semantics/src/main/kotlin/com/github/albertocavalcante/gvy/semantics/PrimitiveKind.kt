@@ -5,6 +5,9 @@ package com.github.albertocavalcante.gvy.semantics
  * Note: Numeric promotion precedence is defined in TypeLub.getNumericPrecedence, not by enum ordinal.
  */
 enum class PrimitiveKind {
+    /** No value / return type for statements and void methods. */
+    VOID,
+
     /** Boolean value (true/false). */
     BOOLEAN,
 
@@ -34,7 +37,7 @@ enum class PrimitiveKind {
      * Whether this is a numeric type (can participate in arithmetic).
      */
     val isNumeric: Boolean
-        get() = this != BOOLEAN
+        get() = this != BOOLEAN && this != VOID
 
     /**
      * Whether this is an integral type (no fractional part).

@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 
@@ -111,6 +110,27 @@ class TypeLubTest {
 
         // Should fall back to Object
         assertEquals(TypeConstants.OBJECT, result)
+    }
+
+    @Test
+    fun `lub of void and void is void`() {
+        val result = TypeLub.lub(listOf(TypeConstants.VOID, TypeConstants.VOID))
+        assertEquals(TypeConstants.VOID, result)
+    }
+
+    @Test
+    fun `lub of void and int is object`() {
+        val result = TypeLub.lub(listOf(TypeConstants.VOID, TypeConstants.INT))
+        assertEquals(TypeConstants.OBJECT, result)
+    }
+
+    @Test
+    fun `promoteNumeric throws when void is present`() {
+        assertThrows<IllegalArgumentException> {
+            TypeLub.promoteNumeric(
+                listOf(TypeConstants.VOID, TypeConstants.INT),
+            )
+        }
     }
 
     @Test

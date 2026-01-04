@@ -96,8 +96,8 @@ object TypeConstants {
 
     // Special
 
-    /** `void` type (represented as Known type "void"). */
-    val VOID = SemanticType.Known("void")
+    /** `void` primitive type. */
+    val VOID = SemanticType.Primitive(PrimitiveKind.VOID)
 
     /** The singleton `null` type. */
     val NULL = SemanticType.Null

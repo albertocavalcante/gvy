@@ -117,6 +117,9 @@ jobs:
               # Code that requires CI to run
               - 'src/**'
               - 'gradle/**'
+              # semantics module
+              - 'semantics/src/**'
+              - 'semantics/*.gradle.kts'
               # Single-level modules (e.g., groovy-lsp/src/)
               - 'groovy-*/src/**'
               - 'groovy-*/*.gradle.kts'
