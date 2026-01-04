@@ -4,7 +4,6 @@ import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 import kotlin.test.BeforeTest
@@ -16,7 +15,6 @@ import kotlin.test.assertTrue
 
 class CompilationCacheServiceTest {
     private lateinit var cacheService: CompilationCacheService
-    private val testDispatcher = UnconfinedTestDispatcher()
 
     @BeforeTest
     fun setup() {

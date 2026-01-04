@@ -38,7 +38,9 @@ class GroovyTextDocumentServiceSemanticTokensTest {
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { null },
+            options = GroovyTextDocumentServiceOptions(
+                client = { null },
+            ),
         )
     }
 

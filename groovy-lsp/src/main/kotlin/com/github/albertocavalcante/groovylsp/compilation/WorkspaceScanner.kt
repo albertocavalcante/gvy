@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
+import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -15,10 +15,10 @@ import kotlin.streams.asSequence
  * This service provides utilities for finding Groovy files, converting paths to URIs,
  * and validating file types. It complements WorkspaceManager by focusing specifically
  * on file system scanning operations.
- *
- * @param ioDispatcher Coroutine dispatcher for IO-bound operations (default: Dispatchers.IO)
  */
-class WorkspaceScanner(private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO) {
+class WorkspaceScanner {
+    private val logger = LoggerFactory.getLogger(WorkspaceScanner::class.java)
+
     companion object {
         private const val GROOVY_EXTENSION = "groovy"
         private const val GRADLE_EXTENSION = "gradle"
@@ -56,9 +56,14 @@ class WorkspaceScanner(private val ioDispatcher: CoroutineDispatcher = Dispatche
                         .filter { isGroovyFile(it) }
                         .forEach { yield(it) }
                 }
-            } catch (e: Exception) {
+            } catch (e: IOException) {
                 // Continue with next root if one fails
                 // Errors are expected for inaccessible directories
+                logger.debug("Failed to scan workspace root: $root", e)
+            } catch (e: SecurityException) {
+                // Continue with next root if one fails
+                // Errors are expected for inaccessible directories
+                logger.debug("Failed to scan workspace root: $root", e)
             }
         }
     }
@@ -91,14 +96,10 @@ class WorkspaceScanner(private val ioDispatcher: CoroutineDispatcher = Dispatche
      * @return List of URIs
      */
     fun pathsToUris(paths: Sequence<Path>): List<URI> = paths
-        .mapNotNull { path ->
-            try {
-                path.toUri()
-            } catch (e: Exception) {
-                null
-            }
-        }
+        .mapNotNull { it.toUriOrNull() }
         .toList()
+
+    private fun Path.toUriOrNull(): URI? = runCatching { toUri() }.getOrNull()
 
     /**
      * Checks if a path points to a Groovy source file.
@@ -126,9 +127,5 @@ class WorkspaceScanner(private val ioDispatcher: CoroutineDispatcher = Dispatche
      * @param uri The URI to check
      * @return true if the URI represents a Groovy source file, false otherwise
      */
-    fun isGroovyFile(uri: URI): Boolean = try {
-        isGroovyFile(Path.of(uri))
-    } catch (e: Exception) {
-        false
-    }
+    fun isGroovyFile(uri: URI): Boolean = runCatching { isGroovyFile(Path.of(uri)) }.getOrDefault(false)
 }

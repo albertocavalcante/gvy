@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionService
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
@@ -20,27 +21,33 @@ class NativeCompletionService(private val compilationService: GroovyCompilationS
         val uri = params.textDocument.uri
         val position = params.position
 
-        return try {
-            // Delegate to legacy provider
-            val items = CompletionProvider.getContextualCompletions(
-                uri = uri,
-                line = position.line,
-                character = position.character,
-                compilationService = compilationService,
-                content = content,
-            )
-            Either.forLeft(items)
-        } catch (e: Exception) {
-            // Log error and return empty list to prevent LSP disruption
-            logger.error(
-                "Error getting completions for URI: {} at position: {}:{}",
-                uri,
-                position.line,
-                position.character,
-                e,
-            )
-            Either.forLeft(emptyList())
-        }
+        val items =
+            runCatching {
+                CompletionProvider.getContextualCompletions(
+                    uri = uri,
+                    line = position.line,
+                    character = position.character,
+                    compilationService = compilationService,
+                    content = content,
+                )
+            }
+                .onFailure { throwable ->
+                    when (throwable) {
+                        is CancellationException -> throw throwable
+                        is Error -> throw throwable
+                        else ->
+                            logger.error(
+                                "Error getting completions for URI: {} at position: {}:{}",
+                                uri,
+                                position.line,
+                                position.character,
+                                throwable,
+                            )
+                    }
+                }
+                .getOrDefault(emptyList())
+
+        return Either.forLeft(items)
     }
 }
 

@@ -6,6 +6,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
@@ -144,7 +146,7 @@ class AbstractDiagnosticRuleTest {
             override val description = "Test rule"
 
             override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext) =
-                listOf(diagnostic(0, 0, 2, 10, "Multi-line"))
+                listOf(diagnostic(Range(Position(0, 0), Position(2, 10)), "Multi-line"))
         }
 
         runBlocking {

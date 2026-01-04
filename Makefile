@@ -80,7 +80,7 @@ clean:
 
 # Code quality
 lint:
-	./gradlew lint $(GRADLE_ARGS)
+	./gradlew lint --rerun-tasks $(GRADLE_ARGS)
 
 format:
 	./gradlew lintFix $(GRADLE_ARGS)

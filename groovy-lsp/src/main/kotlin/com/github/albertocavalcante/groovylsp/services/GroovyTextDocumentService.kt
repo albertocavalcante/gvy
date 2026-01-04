@@ -5,8 +5,6 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.compilation.ParseResultAccessor
-import com.github.albertocavalcante.groovylsp.compilation.SymbolIndexingService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
@@ -102,15 +100,25 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 
+data class GroovyTextDocumentServiceOptions(
+    val serverConfiguration: ServerConfiguration = ServerConfiguration(),
+    val client: () -> LanguageClient? = { null },
+    val documentProvider: DocumentProvider = DocumentProvider(),
+    val formatter: Formatter = OpenRewriteFormatterAdapter(),
+    val sourceNavigator: SourceNavigator = SourceNavigationService(),
+)
+
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
-    private val serverConfiguration: ServerConfiguration = ServerConfiguration(),
-    private val client: () -> LanguageClient?,
-    private val documentProvider: DocumentProvider = DocumentProvider(),
-    private val formatter: Formatter = OpenRewriteFormatterAdapter(),
-    private val sourceNavigator: SourceNavigator = SourceNavigationService(),
+    options: GroovyTextDocumentServiceOptions = GroovyTextDocumentServiceOptions(),
 ) : TextDocumentService {
+
+    private val serverConfiguration: ServerConfiguration = options.serverConfiguration
+    private val client: () -> LanguageClient? = options.client
+    private val documentProvider: DocumentProvider = options.documentProvider
+    private val formatter: Formatter = options.formatter
+    private val sourceNavigator: SourceNavigator = options.sourceNavigator
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
 

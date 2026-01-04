@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
 import com.github.albertocavalcante.groovyjenkins.metadata.JsonMetadataLoader
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +29,13 @@ class JenkinsMetadataService(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
+    private fun rethrowIfCancellationOrError(throwable: Throwable) {
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
+        }
+    }
+
     suspend fun initialize() {
         val pluginsFileStr = configuration.pluginsFile
         if (pluginsFileStr.isNullOrBlank()) {
@@ -43,23 +51,29 @@ class JenkinsMetadataService(
 
         logger.info("Loading Jenkins plugins from: {}", pluginsFile)
 
-        try {
-            val plugins = PluginsParser.parse(pluginsFile)
+        val plugins =
+            runCatching { PluginsParser.parse(pluginsFile) }
+                .onFailure { throwable ->
+                    rethrowIfCancellationOrError(throwable)
+                    logger.error("Failed to parse plugins file: {}", pluginsFile, throwable)
+                }
+                .getOrNull()
 
+        if (plugins != null) {
             plugins.forEach { plugin ->
-                try {
+                runCatching {
                     logger.debug("Downloading plugin: {}", plugin.id)
                     // download is now a suspend function, which is fine since initialize is suspend
                     val jarPath = pluginDownloader.download(plugin.id, plugin.version)
                     pluginManager.registerPluginJar(plugin.id, jarPath)
-                } catch (e: Exception) {
-                    logger.error("Failed to load plugin: ${plugin.id}", e)
                 }
+                    .onFailure { throwable ->
+                        rethrowIfCancellationOrError(throwable)
+                        logger.error("Failed to load plugin: ${plugin.id}", throwable)
+                    }
             }
 
             logger.info("Loaded {} plugins from {}", plugins.size, pluginsFile)
-        } catch (e: Exception) {
-            logger.error("Failed to parse plugins file: {}", pluginsFile, e)
         }
 
         initializeStaticMetadata()
@@ -75,13 +89,15 @@ class JenkinsMetadataService(
             return
         }
 
-        try {
+        runCatching {
             logger.info("Loading static Jenkins metadata from: {}", metadataFile)
             val metadata = JsonMetadataLoader().load(metadataFile)
             pluginManager.registerStaticMetadata(metadata)
             logger.info("Successfully registered static Jenkins metadata")
-        } catch (e: Exception) {
-            logger.error("Failed to load static metadata from: {}", metadataFile, e)
         }
+            .onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.error("Failed to load static metadata from: {}", metadataFile, throwable)
+            }
     }
 }

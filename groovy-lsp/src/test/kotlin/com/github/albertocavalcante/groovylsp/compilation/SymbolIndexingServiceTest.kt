@@ -4,7 +4,6 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -14,8 +13,6 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.writeText
 import kotlin.test.BeforeTest

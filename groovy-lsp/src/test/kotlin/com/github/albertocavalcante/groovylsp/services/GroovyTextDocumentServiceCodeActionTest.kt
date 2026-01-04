@@ -37,7 +37,9 @@ class GroovyTextDocumentServiceCodeActionTest {
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+            ),
         )
     }
 
@@ -70,8 +72,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params = CodeActionParams().apply {
@@ -97,8 +101,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val diagnostic = Diagnostic().apply {
@@ -130,8 +136,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params = CodeActionParams().apply {
@@ -159,8 +167,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params1 = CodeActionParams().apply {

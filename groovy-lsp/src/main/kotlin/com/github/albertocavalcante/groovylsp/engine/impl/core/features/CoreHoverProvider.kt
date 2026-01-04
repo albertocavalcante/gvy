@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
@@ -40,11 +41,18 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
         val coreNode = unifiedNode.originalNode as? Node
             ?: return emptyHover()
 
-        return try {
+        return runCatching {
             createHoverForNode(coreNode)
-        } catch (e: Exception) {
-            logger.debug("Error creating hover: ${e.message}")
-            emptyHover()
+        }.getOrElse { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Exception -> {
+                    logger.debug("Error creating hover", throwable)
+                    emptyHover()
+                }
+
+                else -> throw throwable
+            }
         }
     }
 
@@ -113,27 +121,35 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
         val methodName = methodCall.methodName
 
         // Try to resolve the method for richer info
-        try {
+        val resolvedSignature = runCatching {
             val argTypes = methodCall.arguments.mapNotNull { arg ->
-                try {
-                    resolver.resolveType(arg)
-                } catch (e: Exception) {
-                    null
-                }
+                runCatching { resolver.resolveType(arg) }.getOrNull()
             }
 
             val methodRef = resolver.solveMethod(methodName, argTypes, methodCall)
-            if (methodRef.isSolved) {
+            if (!methodRef.isSolved) {
+                null
+            } else {
                 val resolved = methodRef.getDeclaration()
-                code("groovy") {
-                    val params = resolved.getParameters().joinToString(", ") { "${it.type.describe()} ${it.name}" }
-                    "${resolved.returnType.describe()} ${resolved.name}($params)"
-                }
-                text("*(Method)*")
-                return@markdown
+                val params = resolved.getParameters().joinToString(", ") { "${it.type.describe()} ${it.name}" }
+                "${resolved.returnType.describe()} ${resolved.name}($params)"
             }
-        } catch (e: Exception) {
-            logger.debug("Could not resolve method call {}: {}", methodName, e.message)
+        }.getOrElse { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Exception -> {
+                    logger.debug("Could not resolve method call {}", methodName, throwable)
+                    null
+                }
+
+                else -> throw throwable
+            }
+        }
+
+        if (resolvedSignature != null) {
+            code("groovy", resolvedSignature)
+            text("*(Method)*")
+            return@markdown
         }
 
         // Fallback: show method name
@@ -180,19 +196,32 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
         val name = variable.name
 
         // Try to resolve the symbol
-        try {
+        val resolvedSymbol = runCatching {
             val symbolRef = resolver.solveSymbol(name, variable)
-            if (symbolRef.isSolved) {
-                val resolved = symbolRef.getDeclaration()
-                code("groovy", "${resolved.type} $name")
-                val kind = resolved.javaClass.simpleName
-                    .replace("Resolved", "")
-                    .replace("Declaration", "")
-                text("*($kind)*")
-                return@markdown
+            if (!symbolRef.isSolved) {
+                null
+            } else {
+                symbolRef.getDeclaration()
             }
-        } catch (e: Exception) {
-            logger.debug("Could not resolve symbol {}: {}", name, e.message)
+        }.getOrElse { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Exception -> {
+                    logger.debug("Could not resolve symbol {}", name, throwable)
+                    null
+                }
+
+                else -> throw throwable
+            }
+        }
+
+        if (resolvedSymbol != null) {
+            code("groovy", "${resolvedSymbol.type} $name")
+            val kind = resolvedSymbol.javaClass.simpleName
+                .replace("Resolved", "")
+                .replace("Declaration", "")
+            text("*($kind)*")
+            return@markdown
         }
 
         // Fallback
