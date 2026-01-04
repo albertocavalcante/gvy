@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.calculator.impl
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
@@ -11,6 +12,8 @@ class ConstantExpressionCalculatorTest {
 
     // Test double simulating Groovy's ConstantExpression
     data class TestConstant(val value: Any?)
+
+    data class NoValueProperty(val other: Any?)
 
     @Test
     fun `should calculate Integer type`() {
@@ -56,6 +59,16 @@ class ConstantExpressionCalculatorTest {
 
         assertTrue(result is SemanticType.Known)
         assertEquals("java.lang.Object", (result as SemanticType.Known).fqn)
+    }
+
+    @Test
+    fun `should return null when node has no value property`() {
+        val calculator = ConstantExpressionCalculator()
+        val node = NoValueProperty("x")
+
+        val result = calculator.calculate(node, mockContext())
+
+        assertNull(result)
     }
 
     private fun mockContext() = object : TypeContext {

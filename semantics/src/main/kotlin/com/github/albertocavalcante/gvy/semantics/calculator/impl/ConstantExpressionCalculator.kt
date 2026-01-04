@@ -4,8 +4,6 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
-import java.math.BigDecimal
-import java.math.BigInteger
 import kotlin.reflect.KClass
 
 /**
@@ -27,21 +25,10 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
         // If value is null (null literal), type as Object
         if (value == null) return SemanticType.Known("java.lang.Object", emptyList())
 
-        return when (value) {
-            is Int -> SemanticType.Known("java.lang.Integer", emptyList())
-            is String -> SemanticType.Known("java.lang.String", emptyList())
-            is Boolean -> SemanticType.Known("java.lang.Boolean", emptyList())
-            is BigDecimal -> SemanticType.Known("java.math.BigDecimal", emptyList())
-            is BigInteger -> SemanticType.Known("java.math.BigInteger", emptyList())
-            is Double -> SemanticType.Known("java.lang.Double", emptyList())
-            is Float -> SemanticType.Known("java.lang.Float", emptyList())
-            is Long -> SemanticType.Known("java.lang.Long", emptyList())
-            is Short -> SemanticType.Known("java.lang.Short", emptyList())
-            is Byte -> SemanticType.Known("java.lang.Byte", emptyList())
-            is Char -> SemanticType.Known("java.lang.Character", emptyList())
-            else -> SemanticType.Known(value.javaClass.name, emptyList())
-        }
+        return typeForValue(value)
     }
+
+    private fun typeForValue(value: Any): SemanticType = SemanticType.Known(value.javaClass.name, emptyList())
 
     private fun hasValueProperty(node: Any): Boolean {
         // Check if node has either a getValue() method or a value field
