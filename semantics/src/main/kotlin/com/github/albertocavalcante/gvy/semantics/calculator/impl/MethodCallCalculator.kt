@@ -1,0 +1,47 @@
+package com.github.albertocavalcante.gvy.semantics.calculator.impl
+
+import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import kotlin.reflect.KClass
+
+/**
+ * Calculates return types for method calls.
+ *
+ * Uses context.getMethodReturnType() to resolve.
+ */
+class MethodCallCalculator : TypeCalculator<Any> {
+
+    override val nodeType: KClass<Any> = Any::class
+
+    override fun calculate(node: Any, context: TypeContext): SemanticType? {
+        val receiver = ReflectionAccess.getProperty(node, "receiver")
+        val methodName = ReflectionAccess.getStringProperty(node, "methodName") // Simplified for test double
+            ?: getMethodAsString(node) // Groovy AST
+            ?: return null
+
+        val arguments = getArguments(node)
+
+        val receiverType =
+            if (receiver != null) context.calculateType(receiver) else SemanticType.Unknown("Implicit receiver")
+        // Note: implicit receiver handling needs scope, assuming explicit for now or Unknown
+
+        val argTypes = arguments.map { context.calculateType(it) }
+
+        return context.getMethodReturnType(receiverType, methodName, argTypes)
+    }
+
+    private fun getMethodAsString(node: Any): String? =
+        ReflectionAccess.invokeNoArg(node, "getMethodAsString") as? String
+
+    private fun getArguments(node: Any): List<Any> {
+        val arguments = ReflectionAccess.invokeNoArg(node, "getArguments")
+            ?: ReflectionAccess.getField(node, "arguments")
+
+        return when (arguments) {
+            is List<*> -> arguments.filterNotNull()
+            else -> emptyList()
+        }
+    }
+}
