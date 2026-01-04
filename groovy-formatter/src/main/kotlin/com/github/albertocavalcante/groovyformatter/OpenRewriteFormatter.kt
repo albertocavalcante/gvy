@@ -39,7 +39,7 @@ class OpenRewriteFormatter {
                 .allResults
                 .mapNotNull { it.after }
                 .firstOrNull()
-                ?: return@runCatching text
+                ?: return@runCatching extraction.content
 
             val normalizedSource = PostFormatWhitespaceCollapser().visit(formattedSource, Unit) as SourceFile
             // TODO(#formatter-followup): move this token-level collapse into a dedicated OpenRewrite recipe
@@ -47,7 +47,7 @@ class OpenRewriteFormatter {
             normalizedSource.printAll()
                 .let { MULTI_SPACE_WITHIN_TOKEN_REGEX.replace(it) { " " } }
                 .normalizeLineEndings()
-        }.getOrDefault(text)
+        }.getOrElse { return text }
 
         // Restore shebang with normalized spacing (always one blank line)
         return extraction.shebang?.let { shebang ->
