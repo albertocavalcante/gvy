@@ -119,7 +119,7 @@ uv run .agent/scripts/pr.py merge <PR_NUMBER> \
 The script will:
 
 1. Show preview
-2. Ask for confirmation: `🚀 Proceed with squash merge? [y/N]`
+2. Ask for confirmation: `Proceed with squash merge? [y/N]`
 3. On `y`: Execute `gh pr merge --squash`
 4. On `N`: Cancel
 
