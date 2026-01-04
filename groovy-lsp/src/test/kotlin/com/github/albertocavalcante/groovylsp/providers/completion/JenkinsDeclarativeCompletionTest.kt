@@ -2,6 +2,8 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
