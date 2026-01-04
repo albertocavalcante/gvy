@@ -21,7 +21,18 @@ import org.codehaus.groovy.syntax.Types
  * - Constructor calls: `new Person()` → `Person`
  * - Common method calls: `toString()` → `String`, `hashCode()` → `int`
  * - Binary expressions: `1 + 2` → `int`, `"a" + "b"` → `String`
+ *
+ * @deprecated Use GroovySemantics.resolveType() from semantics-native instead.
+ * This object will be removed in a future version.
  */
+@Deprecated(
+    message = "Use GroovySemantics.resolveType() from semantics-native instead",
+    replaceWith = ReplaceWith(
+        "GroovySemantics",
+        "com.github.albertocavalcante.gvy.semantics.native.GroovySemantics",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 object TypeInferencer {
 
     // Type constants to avoid duplication

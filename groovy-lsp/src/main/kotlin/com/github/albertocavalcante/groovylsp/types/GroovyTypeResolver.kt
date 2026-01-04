@@ -24,7 +24,18 @@ import org.slf4j.LoggerFactory
 /**
  * Concrete implementation of TypeResolver for Groovy code.
  * Combines patterns from IntelliJ, kotlin-lsp, and fork-groovy-language-server.
+ *
+ * @deprecated Use [SemanticTypeResolver] from semantics-native instead.
+ * This class will be removed in a future version.
  */
+@Deprecated(
+    message = "Use SemanticTypeResolver from semantics-native instead",
+    replaceWith = ReplaceWith(
+        "SemanticTypeResolver",
+        "com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 class GroovyTypeResolver(
     private val typeCalculator: GroovyTypeCalculator = GroovyTypeCalculator().apply {
         register(DefaultTypeCalculator())

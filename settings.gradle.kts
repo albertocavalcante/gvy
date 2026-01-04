@@ -43,5 +43,6 @@ include("tools:jenkins-extractor")
 include("viz:ast-model")
 include("viz:desktop")
 include("semantics:core")
-include("semantics:native")
-project(":semantics:native").name = "semantics-native"
+// Use non-colliding name to avoid conflict with parser:native
+include("semantics-native")
+project(":semantics-native").projectDir = file("semantics/native")
