@@ -6,12 +6,20 @@ description: Deterministic protocol to fix the first failing lint gate via small
 
 Fix the first failing gate from `/lint`.
 
+This workflow is designed to be used as a tight inner-loop, and `/lint` may invoke it repeatedly until all required
+gates are green.
+
+`/lint` may also invoke this workflow for **actionable idiomacy/smell fixes** found during the Step 4 smell scan, even
+when Detekt is green. In that case, treat the smell as the “failure” to fix and verify with `make lint` (and `make test`
+if behavior might change).
+
 This workflow is intentionally strict: it is designed to stop LLMs from guessing, fixing multiple things at once, or
 introducing stale/copy-pasted “knowledge”.
 
 ## Hard rules
 
-1. MUST fix **first failure only** → verify → repeat.
+1. MUST fix **first failure only** → verify → repeat (the “repeat” happens by re-running the gate and then returning to
+   `/lint` for the next iteration).
 2. MUST NOT change unrelated code (“drive-by refactors” forbidden).
 3. MUST read the failing file before editing; do not guess intent.
 4. Baseline MUST NOT grow. Shrink allowed only after fixes.
@@ -49,13 +57,14 @@ If failure came from `lefthook run pre-commit`:
 
 ## Step 2 — Classify and fix
 
-| Failure type          | Fix action                                 | Verify command                                             |
-| --------------------- | ------------------------------------------ | ---------------------------------------------------------- |
-| Formatting (Spotless) | `make format`                              | `make lint`                                                |
-| Detekt rule           | Refactor (see hierarchy below)             | `./gradlew :<module>:detekt --rerun-tasks`                 |
-| Compiler warning      | Fix deprecated API / unchecked cast / etc. | `./gradlew :<module>:compileKotlin`                        |
-| Extension lint/types  | Fix TS error                               | `cd editors/code && pnpm run check-types && pnpm run lint` |
-| Extension format      | `cd editors/code && pnpm run format`       | `cd editors/code && pnpm run format:check`                 |
+| Failure type                    | Fix action                                 | Verify command                                             |
+| ------------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
+| Formatting (Spotless)           | `make format`                              | `make lint`                                                |
+| Detekt rule                     | Refactor (see hierarchy below)             | `./gradlew :<module>:detekt --rerun-tasks`                 |
+| Compiler warning                | Fix deprecated API / unchecked cast / etc. | `./gradlew :<module>:compileKotlin`                        |
+| Extension lint/types            | Fix TS error                               | `cd editors/code && pnpm run check-types && pnpm run lint` |
+| Extension format                | `cd editors/code && pnpm run format`       | `cd editors/code && pnpm run format:check`                 |
+| Idiomacy/smell (tools may pass) | Small refactor on change surface           | `make lint`                                                |
 
 ### Detekt refactor hierarchy (try in order)
 
