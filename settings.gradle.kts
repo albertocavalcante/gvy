@@ -44,3 +44,4 @@ include("viz:ast-model")
 include("viz:desktop")
 include("semantics:core")
 include("semantics:native")
+project(":semantics:native").name = "semantics-native"

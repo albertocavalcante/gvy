@@ -20,8 +20,8 @@ import com.github.albertocavalcante.groovylsp.engine.impl.native.features.Native
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.eclipse.lsp4j.Diagnostic
 import java.net.URI
 
