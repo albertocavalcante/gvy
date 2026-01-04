@@ -47,8 +47,9 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
         is SemanticType.Null -> null
         is SemanticType.Unknown -> null
         is SemanticType.Union -> {
-            // Return first type for compatibility
-            type.types.firstOrNull()?.let { toClassNode(it, moduleNode) }
+            // Return first type for compatibility (sorted for determinism)
+            type.types.sortedBy { formatSemanticType(it) }
+                .firstOrNull()?.let { toClassNode(it, moduleNode) }
         }
 
         is SemanticType.Array -> {
