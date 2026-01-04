@@ -7,6 +7,7 @@
 Advanced PR Review Manager.
 - Inventory: Fetches and displays review threads with high token efficiency.
 - Resolve: Replies and resolves threads, enforcing strict traceable closure rules.
+- Context-Aware: Injects workflow guidelines and loads external GraphQL queries.
 """
 
 import json
@@ -21,49 +22,49 @@ from pydantic import BaseModel
 
 app = typer.Typer(help="PR Review Management CLI", add_completion=False)
 
-# --- GraphQL Queries ---
+# --- Configuration ---
 
-QUERY_FETCH = """
-query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      id
-      reviewThreads(first: 100) {
-        nodes {
-          id
-          isResolved
-          isOutdated
-          path
-          line
-          comments(first: 1) {
-            nodes {
-              id
-              body
-              author { login }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-"""
+AGENT_DIR = Path(__file__).resolve().parent.parent
+QUERIES_DIR = AGENT_DIR / "queries"
+WORKFLOWS_DIR = AGENT_DIR / "workflows"
 
-QUERY_REPLY = """
-mutation($threadId: ID!, $body: String!) {
-  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
-    comment { id }
-  }
-}
-"""
 
-QUERY_RESOLVE = """
-mutation($threadId: ID!) {
-  resolveReviewThread(input: {threadId: $threadId}) {
-    thread { isResolved }
-  }
-}
-"""
+def load_query(name: str) -> str:
+    """Load GraphQL query from .agent/queries/."""
+    query_file = QUERIES_DIR / name
+    if not query_file.exists():
+        typer.echo(f"Error: Query file {query_file} not found.", err=True)
+        raise typer.Exit(1)
+    return query_file.read_text()
+
+
+def load_workflow_context(name: str, sections: list[str]) -> str:
+    """Extract specific sections from a markdown workflow file."""
+    workflow_file = WORKFLOWS_DIR / name
+    if not workflow_file.exists():
+        return ""
+
+    content = workflow_file.read_text()
+    extracted = []
+
+    for section in sections:
+        # Simple regex to find content between tags or headers
+        # 1. XML-style tags <tag>...</tag>
+        xml_match = re.search(f"<{section}>(.*?)</{section}>", content, re.DOTALL)
+        if xml_match:
+            extracted.append(f"<{section}>\n{xml_match.group(1).strip()}\n</{section}>")
+            continue
+
+        # 2. Markdown headers # Section ... (until next same-level header)
+        # normalize section name for header search
+        header_match = re.search(
+            f"(?m)^#+ {re.escape(section)}.*$(.*?)(?=>^#+ |\\Z)", content, re.DOTALL
+        )
+        if header_match:
+            extracted.append(f"### {section}\n{header_match.group(1).strip()}")
+
+    return "\n\n".join(extracted)
+
 
 # --- Data Models ---
 
@@ -94,10 +95,12 @@ def get_repo_info() -> tuple[str, str]:
 
 def clean_body(text: str) -> str:
     """Aggressively clean text to save tokens."""
-    # Remove HTML comments (often used by automated tools for metadata)
+    # Remove HTML comments
     text = re.sub(r"<!--[\s\S]*?-->", "", text)
     # Remove images: ![alt](url) -> [IMG:alt]
     text = re.sub(r"!\[(.*?)\]\(.*?\)", r"[IMG:\1]", text)
+    # Remove linked images: [![alt](url)](url) -> [IMG:alt]
+    text = re.sub(r"\[!\[(.*?)\]\(.*?\)\]\(.*?\)", r"[IMG:\1]", text)
     # Clean links: [text](url) -> text
     text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
     # Remove simple HTML tags
@@ -109,7 +112,6 @@ def clean_body(text: str) -> str:
 
 def validate_reply(body: str):
     """Enforce rules: Reply must contain a Commit SHA or Issue ID."""
-    # Commit hash (7+ hex chars) or Issue Ref (#123)
     has_commit = re.search(r"\b[0-9a-f]{7,40}\b", body)
     has_issue = re.search(r"#\d+", body)
 
@@ -134,7 +136,7 @@ def inventory(
     refetch: bool = typer.Option(False, "--refetch", "-r", help="Force refetch"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full content"),
 ):
-    """List actionable threads with agent guidance."""
+    """List actionable threads with injected workflow guidance."""
     cache_file = Path(f"/tmp/pr-{pr_number}-threads.json")
 
     # 1. Fetch
@@ -143,6 +145,7 @@ def inventory(
     else:
         try:
             owner, repo = get_repo_info()
+            query = load_query("pr-review-threads.graphql")
             result = subprocess.run(
                 [
                     "gh",
@@ -155,7 +158,7 @@ def inventory(
                     "-F",
                     f"number={pr_number}",
                     "-f",
-                    f"query={QUERY_FETCH}",
+                    f"query={query}",
                 ],
                 capture_output=True,
                 text=True,
@@ -216,15 +219,31 @@ def inventory(
         print(f"LOC:    {loc}")
         print(f"MSG:    {clean_msg}")
 
-        # System Reminder Injection
-        print("<system_reminder>")
-        print("1. CHECK: Does this require a new test case? Verify coverage.")
-        print("2. STYLE: Is the fix idiomatic for this language?")
-        print("3. RULE:  Follow TDD - Red, Green, Refactor.")
-        print(
-            "4. ACTION: If fixing, reply with 'Fixed in <SHA>'. If deferring, 'Created #<ISSUE>'."
-        )
-        print("</system_reminder>")
+    # 4. Inject System Reminder (Lazy Fetch)
+    print("\n<system_reminder>")
+
+    # Review Guidelines
+    review_context = load_workflow_context(
+        "review.md",
+        [
+            "ironclad_rules",
+            "reply_templates",
+            'decision_tree id="thread-classification"',
+        ],
+    )
+    if review_context:
+        print("=== REVIEW GUIDELINES ===")
+        print(review_context)
+
+    # Deferral Guidelines
+    defer_context = load_workflow_context(
+        "defer.md", ["How It Works", "Step 1: Create Issue"]
+    )
+    if defer_context:
+        print("\n=== DEFERRAL GUIDELINES ===")
+        print(defer_context)
+
+    print("</system_reminder>")
 
 
 @app.command()
@@ -238,6 +257,10 @@ def resolve(
     validate_reply(reply)
 
     try:
+        # Load queries
+        query_reply = load_query("reply-to-thread.graphql")
+        query_resolve = load_query("resolve-review-thread.graphql")
+
         # 1. Reply
         subprocess.run(
             [
@@ -249,7 +272,7 @@ def resolve(
                 "-F",
                 f"body={reply}",
                 "-f",
-                f"query={QUERY_REPLY}",
+                f"query={query_reply}",
             ],
             check=True,
             capture_output=True,
@@ -264,7 +287,7 @@ def resolve(
                 "-F",
                 f"threadId={thread_id}",
                 "-f",
-                f"query={QUERY_RESOLVE}",
+                f"query={query_resolve}",
             ],
             check=True,
             capture_output=True,
