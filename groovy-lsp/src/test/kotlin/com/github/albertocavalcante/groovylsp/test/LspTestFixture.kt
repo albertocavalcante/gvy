@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovylsp.test
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
@@ -65,8 +67,8 @@ class LspTestFixture {
     }
 
     fun assertHoverContains(line: Int, char: Int, expectedText: String) = runBlocking {
-        val resolver = mockk<com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver>(relaxed = true)
-        val generator = com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator(resolver)
+        val resolver = mockk<SemanticTypeResolver>(relaxed = true)
+        val generator = HoverContentGenerator(resolver)
         val hoverProvider = HoverProvider(compilationService, documentProvider, generator)
         val hover = hoverProvider.provideHover(uri.toString(), Position(line, char))
 
