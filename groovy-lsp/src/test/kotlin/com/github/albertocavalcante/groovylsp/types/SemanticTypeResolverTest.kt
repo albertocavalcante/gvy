@@ -6,6 +6,9 @@ import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.assertj.core.api.Assertions.assertThat
 import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.CompileUnit
+import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
@@ -17,6 +20,17 @@ class SemanticTypeResolverTest {
     fun setup() {
         typeSolver = ReflectionTypeSolver()
         resolver = SemanticTypeResolver(typeSolver)
+    }
+
+    @Test
+    fun `resolves ConstantExpression type`() {
+        val node = ConstantExpression("test")
+        val module = ModuleNode(CompileUnit(null, null))
+
+        val type = resolver.resolveType(node, module)
+
+        assertThat(type).isInstanceOf(SemanticType.Known::class.java)
+        assertThat((type as SemanticType.Known).fqn).isEqualTo("java.lang.String")
     }
 
     @Test
@@ -88,8 +102,9 @@ class SemanticTypeResolverTest {
         val classNode = resolver.toClassNode(type, null)
 
         assertThat(classNode).isNotNull
-        // Should return one of the types
-        assertThat(classNode?.name).isIn("java.lang.String", "int")
+        assertThat(classNode).isNotNull
+        // Should return String because "String" < "int" in sort order (S < i)
+        assertThat(classNode?.name).isEqualTo("java.lang.String")
     }
 
     @Test
@@ -153,8 +168,8 @@ class SemanticTypeResolverTest {
             )
         val formatted = resolver.formatSemanticType(type)
 
-        // Union formatting may vary in order, so check both possibilities
-        assertThat(formatted).matches("(String \\| int|int \\| String)")
+        // Union formatting is now deterministic (sorted)
+        assertThat(formatted).isEqualTo("String | int")
     }
 
     @Test
