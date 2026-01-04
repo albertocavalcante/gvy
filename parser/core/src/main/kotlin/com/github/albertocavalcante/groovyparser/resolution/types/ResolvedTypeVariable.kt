@@ -12,10 +12,6 @@ class ResolvedTypeVariable(val name: String, val bounds: List<ResolvedType> = em
 
     override fun describe(): String = name
 
-    override fun isTypeVariable(): Boolean = true
-
-    override fun asTypeVariable(): ResolvedTypeVariable = this
-
     override fun isAssignableBy(other: ResolvedType): Boolean = when {
         other.isTypeVariable() -> other.asTypeVariable().name == name
         bounds.isEmpty() -> true // No bounds means Object bound, accepts anything

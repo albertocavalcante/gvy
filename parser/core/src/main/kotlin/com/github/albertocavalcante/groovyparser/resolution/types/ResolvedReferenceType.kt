@@ -22,10 +22,6 @@ class ResolvedReferenceType(
         }
     }
 
-    override fun isReferenceType(): Boolean = true
-
-    override fun asReferenceType(): ResolvedReferenceType = this
-
     override fun isAssignableBy(other: ResolvedType): Boolean = when {
         other.isNull() -> true // null is assignable to any reference type
         other.isReferenceType() -> isAssignableFromReference(other.asReferenceType())
@@ -58,7 +54,7 @@ class ResolvedReferenceType(
      * Checks if this reference type is assignable from a boxed primitive.
      */
     private fun isAssignableFromBoxed(primitive: ResolvedPrimitiveType): Boolean {
-        val boxedName = primitive.box()
+        val boxedName = primitive.boxedName
         return declaration.qualifiedName == boxedName ||
             declaration.qualifiedName == "java.lang.Object" ||
             declaration.qualifiedName == "java.lang.Number" && primitive in ResolvedPrimitiveType.NUMERIC_TYPES
