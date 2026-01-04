@@ -87,13 +87,13 @@ def threads(
     refetch: bool = typer.Option(False, "--refetch", "-r", help="Force refetch"),
 ):
     """List unresolved threads. Output optimized for LLM consumption."""
-    cache_file = Path(f"/tmp/pr-{pr_number}-threads.json")
+    owner, repo = get_repo_info()
+    cache_file = Path(f"/tmp/pr-{owner}-{repo}-{pr_number}-threads.json")
 
     if cache_file.exists() and not refetch:
         data = json.loads(cache_file.read_text())
     else:
         try:
-            owner, repo = get_repo_info()
             query = load_query("pr-review-threads.graphql")
             result = subprocess.run(
                 [
@@ -138,6 +138,8 @@ def threads(
         if not c_nodes:
             continue
         c = c_nodes[0]
+        if not c:
+            continue
         t_author = (c.get("author") or {}).get("login", "ghost")
         if author and t_author.lower() != author.lower():
             continue
@@ -179,6 +181,9 @@ def threads(
     print("DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'")
     print("REJECT: Reply with technical reasoning. Do NOT resolve.")
     print("RESOLVE: uv run .agent/scripts/pr.py resolve <T> '<reply>'")
+    print(
+        "REMINDER: Loop until all threads are resolved. Do not merge with open threads."
+    )
     print("</agent_rules>")
 
 
@@ -208,6 +213,7 @@ def resolve(
             ],
             check=True,
             capture_output=True,
+            text=True,
         )
         subprocess.run(
             [
@@ -221,6 +227,7 @@ def resolve(
             ],
             check=True,
             capture_output=True,
+            text=True,
         )
         print(f"✅ {thread_id}")
     except subprocess.CalledProcessError as e:
@@ -287,6 +294,47 @@ def get_pr_details(pr_number: int) -> dict:
         check=True,
     )
     return json.loads(result.stdout)
+
+
+def get_unresolved_threads(pr_number: int) -> int:
+    """Check for open review threads."""
+    try:
+        # Re-use threads command logic but simplified for check
+        owner, repo = get_repo_info()
+        query = load_query("pr-review-threads.graphql")
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-F",
+                f"owner={owner}",
+                "-F",
+                f"name={repo}",
+                "-F",
+                f"number={pr_number}",
+                "-f",
+                f"query={query}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+        nodes = (
+            data.get("data", {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+            .get("nodes", [])
+        )
+        count = 0
+        for n in nodes:
+            if n and not n.get("isResolved") and not n.get("isOutdated"):
+                count += 1
+        return count
+    except Exception:
+        return 0
 
 
 def generate_merge_body(pr: dict, pr_number: int) -> str:
@@ -373,6 +421,20 @@ def merge(
             f"Error: PR #{pr_number} has conflicts. Resolve before merging.", err=True
         )
         raise typer.Exit(1)
+
+    # Check for open threads
+    open_threads = get_unresolved_threads(pr_number)
+    if open_threads > 0:
+        typer.echo(
+            f"\n⚠️  WARNING: PR #{pr_number} has {open_threads} unresolved threads!",
+            err=True,
+        )
+        if not typer.confirm(
+            f"Are you SURE you want to merge with {open_threads} open threads?",
+            default=False,
+        ):
+            typer.echo("Merge cancelled.")
+            raise typer.Exit(0)
 
     # Generate or validate title
     if title:

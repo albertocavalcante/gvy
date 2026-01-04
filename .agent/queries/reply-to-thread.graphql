@@ -1,13 +1,5 @@
-# Replies to an existing PR review comment thread.
-# Usage: gh api graphql -F pullRequestId="<PR_NODE_ID>" -F inReplyTo="<COMMENT_NODE_ID>" -F body="Fixed." -f query="$(cat .agent/queries/reply-to-thread.graphql)"
-# Get pullRequestId from: jq '.data.repository.pullRequest.id' /tmp/pr-<N>-threads.json
-# Get inReplyTo (commentId) from: jq '.data.repository.pullRequest.reviewThreads.nodes[].comments.nodes[0].id' /tmp/pr-<N>-threads.json
-#
-# NOTE: GitHub is deprecating addPullRequestReviewComment in favor of addPullRequestReviewThreadReply.
-# This mutation still works but may need migration in the future.
-
-mutation ReplyToThread($pullRequestId: ID!, $inReplyTo: ID!, $body: String!) {
-  addPullRequestReviewComment(input: {pullRequestId: $pullRequestId, inReplyTo: $inReplyTo, body: $body}) {
+mutation ReplyToThread($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
     clientMutationId
     comment {
       id
