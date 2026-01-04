@@ -23,7 +23,7 @@ fun main(args: Array<String>) {
     val connectionFilePath = args[0]
     logger.info("Starting Groovy Kernel with connection file: {}", connectionFilePath)
 
-    try {
+    runCatching {
         val connectionFileContent = File(connectionFilePath).readText()
         val connectionFile = ConnectionFile.parse(connectionFileContent)
 
@@ -55,8 +55,9 @@ fun main(args: Array<String>) {
         server.use {
             it.run()
         }
-    } catch (e: Exception) {
-        logger.error("Fatal error starting kernel", e)
+    }.getOrElse { throwable ->
+        if (throwable is Error) throw throwable
+        logger.error("Fatal error starting kernel", throwable)
         exitProcess(1)
     }
 }
