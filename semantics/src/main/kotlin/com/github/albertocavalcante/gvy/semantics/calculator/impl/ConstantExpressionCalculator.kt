@@ -18,7 +18,14 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
     override val nodeType: KClass<Any> = Any::class
 
     override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        val value = getValue(node) ?: return SemanticType.Known("java.lang.Object", emptyList())
+        // If the node doesn't have a 'value' property, return null (can't handle it)
+        val hasValue = hasValueProperty(node)
+        if (!hasValue) return null
+
+        val value = getValue(node)
+
+        // If value is null (null literal), type as Object
+        if (value == null) return SemanticType.Known("java.lang.Object", emptyList())
 
         return when (value) {
             is Int -> SemanticType.Known("java.lang.Integer", emptyList())
@@ -34,6 +41,16 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
             is Char -> SemanticType.Known("java.lang.Character", emptyList())
             else -> SemanticType.Known(value.javaClass.name, emptyList())
         }
+    }
+
+    private fun hasValueProperty(node: Any): Boolean {
+        // Check if node has either a getValue() method or a value field
+        return runCatching { node::class.java.getMethod("getValue") }.isSuccess ||
+            runCatching {
+                val field = node::class.java.getDeclaredField("value")
+                field.isAccessible = true
+                field
+            }.isSuccess
     }
 
     private fun getValue(node: Any): Any? {

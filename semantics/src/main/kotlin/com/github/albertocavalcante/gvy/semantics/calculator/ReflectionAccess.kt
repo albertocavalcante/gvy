@@ -33,7 +33,6 @@ internal object ReflectionAccess {
         val fromField = getField(target, fieldName)
         if (fromField is List<*>) return fromField.filterNotNull()
 
-        @Suppress("UNCHECKED_CAST")
-        return fromGetter as? List<Any> ?: fromField as? List<Any>
+        return null
     }
 }

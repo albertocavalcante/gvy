@@ -70,10 +70,9 @@ class ListExpressionCalculatorTest {
         assertTrue(result is SemanticType.Known)
         val known = result as SemanticType.Known
         assertEquals("java.util.ArrayList", known.fqn)
-        // Usually treated as raw or List<Object>
-        if (known.typeArgs.isNotEmpty()) {
-            assertEquals("java.lang.Object", (known.typeArgs[0] as SemanticType.Known).fqn)
-        }
+        // Empty list should be typed as List<Object>
+        assertEquals(1, known.typeArgs.size)
+        assertEquals("java.lang.Object", (known.typeArgs[0] as SemanticType.Known).fqn)
     }
 
     private fun mockContext(types: Map<Any, SemanticType>) = object : TypeContext {

@@ -327,6 +327,8 @@ object TypeLub {
         RANK_LONG to SemanticType.Known("java.lang.Long"),
         RANK_FLOAT to SemanticType.Known("java.lang.Float"),
         RANK_DOUBLE to SemanticType.Known("java.lang.Double"),
+        RANK_BIG_INTEGER to SemanticType.Known("java.math.BigInteger"),
+        RANK_BIG_DECIMAL to SemanticType.Known("java.math.BigDecimal"),
     )
 
     private fun getNumericRank(type: SemanticType): Int? = when (type) {
