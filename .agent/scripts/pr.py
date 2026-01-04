@@ -104,8 +104,10 @@ def save_msg_version(pr_number: int, title: str, body: str, source: str = "ai") 
 
 
 def validate_reply(body: str):
-    """Reply must contain Commit SHA or Issue Ref."""
-    if not (re.search(r"\b[0-9a-f]{7,40}\b", body) or re.search(r"#\d+", body)):
+    """Reply must contain Commit SHA (7 or 40 chars) or Issue Ref."""
+    # Match 7 or 40 hex chars exactly, surrounded by word boundaries
+    sha_pattern = r"\b[0-9a-f]{7,40}\b"
+    if not (re.search(sha_pattern, body) or re.search(r"#\d+", body)):
         typer.echo(
             "Error: Reply MUST contain SHA (e.g. 91a4699) or Issue (e.g. #123).",
             err=True,
@@ -157,6 +159,9 @@ def get_thread_inventory(
             cache_file.write_text(json.dumps(data, indent=2))
         except subprocess.CalledProcessError as e:
             typer.echo(f"Error: {e.stderr}", err=True)
+            raise typer.Exit(1)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error decoding GraphQL response: {e}", err=True)
             raise typer.Exit(1)
 
     pr_id = (
@@ -211,8 +216,9 @@ def threads(
             first = comments[0] if comments else {}
             body = first.get("body", "No body")
             author = first.get("author", {}).get("login", "unknown")
-            path = first.get("path", "unknown")
-            line = first.get("line", "?")
+            # Thread path/line are on the thread node itself, not the comment
+            path = t.get("path", "unknown")
+            line = t.get("line", "?")
 
             # Machine readable for agent
             typer.echo(f"\nT={t_id}")
@@ -471,7 +477,7 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
                 body_lines.append(f"Fixes #{issue_number}")
 
     # Auto-detect "Related/Towards" issues from PR body
-    pr_body = pr.get("body", "")
+    pr_body = pr.get("body") or ""
     # Matches: Relates to #123, Towards #123, See #123, Part of #123
     # Case insensitive, handles various separators
     related_pattern = r"(?:relates|towards|part of|connects to|see)\s+(?:to\s+)?#(\d+)"
@@ -481,7 +487,7 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
     related_numbers = [n for n in found_related if int(n) not in closing_numbers]
 
     # Add unique valid related numbers
-    unique_related = sorted(list(set(related_numbers)), key=lambda x: int(x))
+    unique_related = sorted(list(set(related_numbers)), key=int)
 
     if unique_related:
         body_lines.append("")
@@ -506,40 +512,59 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
     except subprocess.CalledProcessError:
         return "", ""
 
-    # Construct prompt
-    prompt = f"""
-You are an expert Release Engineer. Generate a strict Semantic Squash Commit Message.
+    # Construct XML Prompt parts
+    # Part 1: Header (Instructions, Context, Patch start)
+    header = f"""
+<root>
+  <instructions>
+    <instruction>OUTPUT ONLY the commit message. No conversational text.</instruction>
+    <instruction>SOURCE OF TRUTH: The content within the &lt;patch&gt; tag is the DEFINITIVE source of truth. PR titles and descriptions may be outdated or incomplete. Base your summary primarily on the code changes.</instruction>
+    <instruction>
+      Format:
+      TITLE: &lt;type&gt;(&lt;scope&gt;): &lt;description&gt; (#{pr_number})
+      BODY:
+      - &lt;bullet point summary of functional change&gt;
+      - &lt;bullet point summary of functional change&gt;
+    </instruction>
+    <instruction>
+      Rules:
+      - Use strict Conventional Commits types: feat, fix, docs, style, refactor, test, chore, perf, ci.
+      - Description must be lower case, imperative mood.
+      - Body should be a CONCISE summary of functional changes. Focus on "What" and "Why".
+      - FEATURES &amp; DOCS: When documenting new features, signatures, or important code changes, MUST use code blocks (e.g. ```kotlin) to make them standout.
+      - ISSUE GUIDANCE: If referenced issues exist, pro-actively include guidance in the body (e.g. "See #N for full design specs").
+      - Do NOT include footer links like "Fixes #N" (added automatically).
+    </instruction>
+  </instructions>
+  <context>
+    <pr_number>{pr_number}</pr_number>
+    <title>{pr.get("title")}</title>
+    <description>{pr.get("body")}</description>
+  </context>
+  <patch>
+    <location>{diff_file}</location>
+    <content>
+"""
 
-Context:
-PR #{pr_number}
-Title: {pr.get("title")}
-Description: {pr.get("body")}
-
-Instructions:
-1. OUTPUT ONLY the commit message. No conversational text.
-2. Format:
-   TITLE: <type>(<scope>): <description> (#{pr_number})
-   BODY:
-   - <bullet point>
-   - <bullet point>
-3. Rules:
-   - Use strict Conventional Commits (feat, fix, docs, style, refactor, test, chore, perf, ci).
-   - Scope is optional but recommended.
-   - Description must be lower case, imperative mood.
-   - Body should be a CONCISE summary of functional changes. Focus on "What" and "Why".
-   - Do NOT include footer links like "Fixes #N" (added automatically).
-
-The user handles the Diff separately.
+    # Part 3: Footer (Patch end, Root end)
+    footer = """
+    </content>
+  </patch>
+</root>
 """
 
     try:
-        # Write prompt to temp file
-        prompt_file = tmp_base / f"gvy-pr-{pr_number}-prompt.txt"
-        prompt_file.write_text(prompt)
+        # Write parts to temp files
+        header_file = tmp_base / f"gvy-pr-{pr_number}-header.xml"
+        footer_file = tmp_base / f"gvy-pr-{pr_number}-footer.xml"
 
-        # Concatenate prompt + diff -> gemini
+        header_file.write_text(header)
+        footer_file.write_text(footer)
+
+        # Stream: cat header diff footer | gemini
+        # This effectively wraps the diff content inside <content>...</content> tags
         ps = subprocess.Popen(
-            f"cat {prompt_file} {diff_file} | gemini",
+            f"cat {header_file} {diff_file} {footer_file} | gemini",
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -548,10 +573,9 @@ The user handles the Diff separately.
         stdout, stderr = ps.communicate()
 
         # Cleanup
-        if diff_file.exists():
-            diff_file.unlink()
-        if prompt_file.exists():
-            prompt_file.unlink()
+        for f in [diff_file, header_file, footer_file]:
+            if f.exists():
+                f.unlink()
 
         if ps.returncode != 0:
             typer.echo(f"⚠️ Gemini failed: {stderr}", err=True)
@@ -654,7 +678,6 @@ def merge(
             rprint(
                 "[bold red]AI generation failed. Falling back to default.[/bold red]"
             )
-            ai = False  # Fallthrough to manual
 
     # 3. Manual Fallback / Base
     if not merge_title:
