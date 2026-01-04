@@ -164,6 +164,7 @@ object TypeLub {
                 }
 
                 is SemanticType.Dynamic -> TypeConstants.OBJECT // Treat dynamic as Object for LUB?
+                else -> null
             }
         }
 
@@ -302,6 +303,8 @@ object TypeLub {
             "java.lang.Double" -> RANK_DOUBLE
             else -> null
         }
+
+        else -> null
     }
 
     private const val PRECEDENCE_BOOLEAN = 0
