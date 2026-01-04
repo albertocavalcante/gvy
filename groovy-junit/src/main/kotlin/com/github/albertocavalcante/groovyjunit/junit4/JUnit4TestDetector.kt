@@ -17,33 +17,23 @@ class JUnit4TestDetector : TestFrameworkDetector {
     }
 
     override fun appliesTo(classNode: ClassNode, module: ModuleNode?, classLoader: ClassLoader?): Boolean {
-        // 1. Check for imports
-        if (module != null) {
-            val hasImport = module.imports.any {
-                it.className == JUNIT4_TEST_ANNOTATION ||
-                    it.className == JUNIT4_TEST_CASE_CLASS ||
-                    it.className == JUNIT4_RUN_WITH_ANNOTATION
-            }
-            if (hasImport) return true
+        val hasImport = module?.imports?.any {
+            it.className == JUNIT4_TEST_ANNOTATION ||
+                it.className == JUNIT4_TEST_CASE_CLASS ||
+                it.className == JUNIT4_RUN_WITH_ANNOTATION
+        } ?: false
+
+        val hasRunWithAnnotation = classNode.annotations.any {
+            it.classNode.name == "RunWith" || it.classNode.name == JUNIT4_RUN_WITH_ANNOTATION
         }
 
-        // 2. Check for annotations on class (e.g. @RunWith)
-        if (classNode.annotations.any {
-                it.classNode.name == "RunWith" ||
-                    it.classNode.name == JUNIT4_RUN_WITH_ANNOTATION
-            }
-        ) {
-            return true
-        }
+        val isTestCase = isTestCase(classNode)
 
-        // 3. Check inheritance (extends TestCase)
-        if (isTestCase(classNode)) return true
-
-        // 4. Check for @Test on methods
         val hasTestMethod = classNode.methods.any { method ->
             method.annotations.any { it.classNode.name == "Test" || it.classNode.name == JUNIT4_TEST_ANNOTATION }
         }
-        return hasTestMethod
+
+        return hasImport || hasRunWithAnnotation || isTestCase || hasTestMethod
     }
 
     override fun extractTests(classNode: ClassNode): List<TestItem> {
