@@ -41,12 +41,12 @@ class NativeTypeContext(
     ): SemanticType? {
         // Use TypeSolver to find method and return type
         // This is the integration point with parser/core's resolution
-        // TODO: Implement using GroovySymbolResolver
+        // TODO: Implement using GroovySymbolResolver #641
         return null
     }
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? {
-        // TODO: Implement field lookup
+        // TODO: Implement field lookup #641
         return null
     }
 
@@ -56,12 +56,12 @@ class NativeTypeContext(
          */
         fun fromClassNode(classNode: ClassNode): SemanticType = when {
             classNode.equals(ClassHelper.dynamicType()) -> SemanticType.Dynamic()
-            classNode.isPrimaryClassNode || classNode.redirect() != null -> {
-                resolvePrimitiveOrKnown(classNode.name)
-            }
-
             classNode.isArray -> {
                 SemanticType.Array(fromClassNode(classNode.componentType))
+            }
+
+            classNode.isPrimaryClassNode || classNode.redirect() != classNode -> {
+                resolvePrimitiveOrKnown(classNode.name)
             }
 
             else -> SemanticType.Known(classNode.name)
