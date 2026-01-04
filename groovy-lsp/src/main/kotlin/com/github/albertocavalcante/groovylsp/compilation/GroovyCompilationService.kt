@@ -53,20 +53,24 @@ class GroovyCompilationService(
         parser,
         parentClassLoader,
         workspaceManager,
-        documentProvider,
-        sourceNavigator,
-        engineConfig,
+        LanguageEngineManagerOptions(
+            documentProvider = documentProvider,
+            sourceNavigator = sourceNavigator,
+            engineConfig = engineConfig,
+        ),
     )
     private val resultMapper = CompilationResultMapper()
     private val orchestrator = CompilationOrchestrator(
-        cacheService,
-        workerSessionManager,
-        workspaceManager,
-        symbolIndexer,
-        parseAccessor,
-        resultMapper,
-        ioDispatcher,
-        errorHandler,
+        CompilationOrchestratorDependencies(
+            cacheService = cacheService,
+            workerSessionManager = workerSessionManager,
+            workspaceManager = workspaceManager,
+            symbolIndexer = symbolIndexer,
+            parseAccessor = parseAccessor,
+            resultMapper = resultMapper,
+            ioDispatcher = ioDispatcher,
+            errorHandler = errorHandler,
+        ),
     )
 
     // ==========================================================================

@@ -1,13 +1,9 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.jupiter.api.io.TempDir
-import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
-import kotlin.io.path.writeText
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,11 +15,10 @@ class WorkspaceScannerTest {
     lateinit var tempDir: Path
 
     private lateinit var scanner: WorkspaceScanner
-    private val testDispatcher = UnconfinedTestDispatcher()
 
     @BeforeTest
     fun setup() {
-        scanner = WorkspaceScanner(testDispatcher)
+        scanner = WorkspaceScanner()
     }
 
     @Test
@@ -43,6 +38,7 @@ class WorkspaceScannerTest {
 
     @Test
     fun `findGroovyFiles handles gradle files`() {
+        @Suppress("UNUSED_VARIABLE") // createFile() has side effects
         val buildFile = tempDir.resolve("build.gradle").createFile()
 
         val files = scanner.findGroovyFiles(listOf(tempDir)).toList()
@@ -53,6 +49,7 @@ class WorkspaceScannerTest {
 
     @Test
     fun `findGroovyFiles handles Jenkinsfile`() {
+        @Suppress("UNUSED_VARIABLE") // createFile() has side effects
         val jenkinsfile = tempDir.resolve("Jenkinsfile").createFile()
 
         val files = scanner.findGroovyFiles(listOf(tempDir)).toList()
@@ -63,6 +60,7 @@ class WorkspaceScannerTest {
 
     @Test
     fun `findGroovyFiles handles gvy extension`() {
+        @Suppress("UNUSED_VARIABLE") // createFile() has side effects
         val gvyFile = tempDir.resolve("script.gvy").createFile()
 
         val files = scanner.findGroovyFiles(listOf(tempDir)).toList()
@@ -73,6 +71,7 @@ class WorkspaceScannerTest {
 
     @Test
     fun `findGroovyFiles handles gy extension`() {
+        @Suppress("UNUSED_VARIABLE") // createFile() has side effects
         val gyFile = tempDir.resolve("script.gy").createFile()
 
         val files = scanner.findGroovyFiles(listOf(tempDir)).toList()
@@ -83,6 +82,7 @@ class WorkspaceScannerTest {
 
     @Test
     fun `findGroovyFiles handles gsh extension`() {
+        @Suppress("UNUSED_VARIABLE") // createFile() has side effects
         val gshFile = tempDir.resolve("script.gsh").createFile()
 
         val files = scanner.findGroovyFiles(listOf(tempDir)).toList()

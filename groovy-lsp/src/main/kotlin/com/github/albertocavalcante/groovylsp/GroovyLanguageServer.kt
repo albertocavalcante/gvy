@@ -21,6 +21,7 @@ import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
+import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentServiceOptions
 import com.github.albertocavalcante.groovylsp.services.GroovyWorkspaceService
 import com.github.albertocavalcante.groovylsp.services.Health
 import com.github.albertocavalcante.groovylsp.services.IndexExportService
@@ -88,9 +89,11 @@ class GroovyLanguageServer(
     private val textDocumentService = GroovyTextDocumentService(
         coroutineScope = coroutineScope,
         compilationService = compilationService,
-        client = { baseClient },
-        documentProvider = documentProvider,
-        sourceNavigator = sourceNavigator,
+        options = GroovyTextDocumentServiceOptions(
+            client = { baseClient },
+            documentProvider = documentProvider,
+            sourceNavigator = sourceNavigator,
+        ),
     )
     private val workspaceService = GroovyWorkspaceService(
         compilationService,
@@ -266,7 +269,7 @@ class GroovyLanguageServer(
     @JsonRequest("groovy/exportIndex")
     fun exportIndex(params: ExportIndexParams): CompletableFuture<String> = CompletableFuture.supplyAsync({
         val rootPath = savedInitParams?.let { startupManager.getWorkspaceRoot(it) }
-            ?: throw IllegalStateException("No workspace root found")
+            ?: error("No workspace root found")
 
         indexExportService.exportIndex(params, rootPath)
     }, dispatcher.asExecutor())

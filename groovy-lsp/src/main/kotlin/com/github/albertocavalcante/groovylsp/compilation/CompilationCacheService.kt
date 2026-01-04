@@ -1,9 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovyparser.api.ParseResult
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 

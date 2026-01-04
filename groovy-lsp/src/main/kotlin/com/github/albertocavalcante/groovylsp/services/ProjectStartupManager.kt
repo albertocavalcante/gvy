@@ -17,6 +17,7 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,27 @@ private const val PERCENTAGE_MULTIPLIER = 100
 private const val POLLING_INTERVAL_MS = 100L
 private const val MILLIS_PER_SECOND = 1000L
 private const val STATUS_UPDATE_INTERVAL_MS = 100L
+
+private fun rethrowIfCancellationOrError(throwable: Throwable) {
+    when (throwable) {
+        is CancellationException -> throw throwable
+        is Error -> throw throwable
+    }
+}
+
+/**
+ * Sleeps for the polling interval.
+ * @return true if the thread was interrupted, false otherwise.
+ */
+private fun sleepAndCheckInterruption(pollingIntervalMs: Long): Boolean {
+    try {
+        Thread.sleep(pollingIntervalMs)
+        return false
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        return true
+    }
+}
 
 /**
  * Callback type for status updates.
@@ -190,12 +212,14 @@ class ProjectStartupManager(
             workspaceRoot = workspaceRoot,
             onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
             onComplete = createCompletionCallback(
-                workspaceRoot,
-                config,
-                textDocumentServiceRefresh,
-                progressReporter,
-                client,
-                onStatusUpdate,
+                CompletionCallbackContext(
+                    workspaceRoot = workspaceRoot,
+                    config = config,
+                    textDocumentServiceRefresh = textDocumentServiceRefresh,
+                    progressReporter = progressReporter,
+                    client = client,
+                    onStatusUpdate = onStatusUpdate,
+                ),
             ),
             onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
         )
@@ -215,7 +239,7 @@ class ProjectStartupManager(
 
         // Asynchronously download and register plugins
         jenkinsInitJob = coroutineScope.launch(Dispatchers.IO) {
-            try {
+            runCatching {
                 logger.info("Starting Jenkins plugin metadata initialization")
                 jenkinsMetadataService.initialize()
                 logger.info("Jenkins plugin metadata initialization completed")
@@ -223,8 +247,9 @@ class ProjectStartupManager(
                 // but JenkinsContext currently scans lazily or on demand. The jars are added to
                 // potential classpath candidates, so next time buildClasspath is called (e.g. file open),
                 // they will be picked up.
-            } catch (e: Exception) {
-                logger.error("Failed to initialize Jenkins plugin metadata", e)
+            }.onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.error("Failed to initialize Jenkins plugin metadata", throwable)
             }
         }
     }
@@ -274,46 +299,49 @@ class ProjectStartupManager(
         }
     }
 
-    private fun createCompletionCallback(
-        workspaceRoot: Path,
-        config: ServerConfiguration,
-        textDocumentServiceRefresh: () -> Unit,
-        progressReporter: ProgressReporter,
-        client: LanguageClient?,
-        onStatusUpdate: StatusUpdateCallback,
-    ): (WorkspaceResolution) -> Unit = { resolution ->
-        logger.info(
-            "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                "${resolution.sourceDirectories.size} source directories",
-        )
+    private data class CompletionCallbackContext(
+        val workspaceRoot: Path,
+        val config: ServerConfiguration,
+        val textDocumentServiceRefresh: () -> Unit,
+        val progressReporter: ProgressReporter,
+        val client: LanguageClient?,
+        val onStatusUpdate: StatusUpdateCallback,
+    )
 
-        updateGroovyVersion(config, resolution.dependencies)
-
-        compilationService.updateWorkspaceModel(
-            workspaceRoot = workspaceRoot,
-            dependencies = resolution.dependencies,
-            sourceDirectories = resolution.sourceDirectories,
-        )
-        textDocumentServiceRefresh()
-
-        progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
-
-        val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
-        if (client != null) {
-            val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-            logger.info("Sending completion notification to client: $msg")
-            client.showMessage(
-                MessageParams().apply {
-                    type = MessageType.Info
-                    message = msg
-                },
+    private fun createCompletionCallback(context: CompletionCallbackContext): (WorkspaceResolution) -> Unit =
+        { resolution ->
+            logger.info(
+                "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
+                    "${resolution.sourceDirectories.size} source directories",
             )
-        } else {
-            logger.warn("Cannot send completion showMessage - client is null")
-        }
 
-        startWorkspaceIndexing(client, onStatusUpdate)
-    }
+            updateGroovyVersion(context.config, resolution.dependencies)
+
+            compilationService.updateWorkspaceModel(
+                workspaceRoot = context.workspaceRoot,
+                dependencies = resolution.dependencies,
+                sourceDirectories = resolution.sourceDirectories,
+            )
+            context.textDocumentServiceRefresh()
+
+            context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
+
+            val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
+            if (context.client != null) {
+                val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
+                logger.info("Sending completion notification to client: $msg")
+                context.client.showMessage(
+                    MessageParams().apply {
+                        type = MessageType.Info
+                        message = msg
+                    },
+                )
+            } else {
+                logger.warn("Cannot send completion showMessage - client is null")
+            }
+
+            startWorkspaceIndexing(context.client, context.onStatusUpdate)
+        }
 
     private fun createErrorCallback(
         progressReporter: ProgressReporter,
@@ -385,7 +413,7 @@ class ProjectStartupManager(
         )
 
         coroutineScope.launch(indexingDispatcher) {
-            try {
+            runCatching {
                 var lastStatusUpdate = System.currentTimeMillis()
                 compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
                     val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
@@ -405,11 +433,12 @@ class ProjectStartupManager(
 
                 // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total)
-            } catch (e: Exception) {
-                logger.error("Workspace indexing failed", e)
-                indexingProgressReporter.completeWithError("Failed to index workspace: ${e.message}")
+            }.onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.error("Workspace indexing failed", throwable)
+                indexingProgressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
                 // Signal warning state but still quiescent
-                onStatusUpdate(Health.Warning, true, "Indexing failed: ${e.message}", null, null)
+                onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null)
             }
         }
     }
@@ -476,26 +505,12 @@ class ProjectStartupManager(
                 return false
             }
 
-            if (sleepAndCheckInterruption()) {
+            if (sleepAndCheckInterruption(POLLING_INTERVAL_MS)) {
                 // Thread was interrupted
                 return false
             }
         }
         return false
-    }
-
-    /**
-     * Sleeps for the polling interval.
-     * @return true if the thread was interrupted, false otherwise.
-     */
-    private fun sleepAndCheckInterruption(): Boolean {
-        try {
-            Thread.sleep(POLLING_INTERVAL_MS)
-            return false
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            return true
-        }
     }
 
     fun shutdown() {

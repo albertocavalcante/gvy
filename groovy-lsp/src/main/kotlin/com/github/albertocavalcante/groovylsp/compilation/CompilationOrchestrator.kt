@@ -20,16 +20,27 @@ private const val RETRY_DELAY_MS = 50L
  * Orchestrates the Groovy compilation process, handling caching,
  * async coordination, and delegation to the worker sessions.
  */
-class CompilationOrchestrator(
-    private val cacheService: CompilationCacheService,
-    private val workerSessionManager: WorkerSessionManager,
-    private val workspaceManager: WorkspaceManager,
-    private val symbolIndexer: SymbolIndexingService,
-    private val parseAccessor: ParseResultAccessor,
-    private val resultMapper: CompilationResultMapper,
-    private val ioDispatcher: CoroutineDispatcher,
-    private val errorHandler: CompilationErrorHandler,
-) {
+data class CompilationOrchestratorDependencies(
+    val cacheService: CompilationCacheService,
+    val workerSessionManager: WorkerSessionManager,
+    val workspaceManager: WorkspaceManager,
+    val symbolIndexer: SymbolIndexingService,
+    val parseAccessor: ParseResultAccessor,
+    val resultMapper: CompilationResultMapper,
+    val ioDispatcher: CoroutineDispatcher,
+    val errorHandler: CompilationErrorHandler,
+)
+
+class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
+    private val cacheService = dependencies.cacheService
+    private val workerSessionManager = dependencies.workerSessionManager
+    private val workspaceManager = dependencies.workspaceManager
+    private val symbolIndexer = dependencies.symbolIndexer
+    private val parseAccessor = dependencies.parseAccessor
+    private val resultMapper = dependencies.resultMapper
+    private val ioDispatcher = dependencies.ioDispatcher
+    private val errorHandler = dependencies.errorHandler
+
     private val logger = LoggerFactory.getLogger(CompilationOrchestrator::class.java)
 
     /**
@@ -38,7 +49,7 @@ class CompilationOrchestrator(
     suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
         logger.debug("Compiling: $uri (phase=$compilePhase)")
 
-        return try {
+        return runCatching {
             // Check cache first
             val cachedResult = cacheService.getCached(uri, content)
             if (cachedResult != null) {
@@ -55,8 +66,12 @@ class CompilationOrchestrator(
             } else {
                 performCompilation(uri, content, compilePhase)
             }
-        } catch (e: Exception) {
-            errorHandler.handleException(e, uri)
+        }.getOrElse { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Exception -> errorHandler.handleException(throwable, uri)
+                else -> throw throwable
+            }
         }
     }
 
@@ -153,7 +168,7 @@ class CompilationOrchestrator(
                     deferred.await()
                 } catch (e: CancellationException) {
                     // If compilation was cancelled, try once more
-                    logger.debug("Compilation cancelled for $uri, retrying...")
+                    logger.debug("Compilation cancelled for $uri, retrying...", e)
                     delay(RETRY_DELAY_MS)
                     cacheService.getActiveCompilation(uri)?.await()
                 }

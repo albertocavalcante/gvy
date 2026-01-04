@@ -74,11 +74,15 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
      */
     private fun createContext(uri: String, position: GroovyPosition): ImplementationContext? {
         val documentUri = URI.create(uri)
-        val visitor = compilationService.getAstModel(documentUri) ?: return null
-        val symbolTable = compilationService.getSymbolTable(documentUri) ?: return null
-        val targetNode = visitor.getNodeAt(documentUri, position) ?: return null
+        val visitor = compilationService.getAstModel(documentUri)
+        val symbolTable = compilationService.getSymbolTable(documentUri)
+        val targetNode = visitor?.getNodeAt(documentUri, position)
 
-        return ImplementationContext(documentUri, visitor, symbolTable, targetNode)
+        return if (visitor != null && symbolTable != null && targetNode != null) {
+            ImplementationContext(documentUri, visitor, symbolTable, targetNode)
+        } else {
+            null
+        }
     }
 
     /**
@@ -190,21 +194,19 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
             val classSymbols = index.findAll<Symbol.Class>(uri)
 
             for (classSymbol in classSymbols) {
-                // Skip interfaces (we want concrete implementations)
-                if (classSymbol.isInterface) continue
+                val isCandidate =
+                    !classSymbol.isInterface &&
+                        !classSymbol.isAbstract &&
+                        classSymbol.name != targetInterface.name &&
+                        implementsInterface(classSymbol, targetInterface)
 
-                // Skip abstract classes for now (could be configurable)
-                if (classSymbol.isAbstract) continue
-
-                // Skip the interface itself (or placeholders with same name)
-                if (classSymbol.name == targetInterface.name) continue
-
-                // Check if this class implements our target interface
-                if (implementsInterface(classSymbol, targetInterface)) {
-                    // Get the correct visitor for this file's URI (fixes cross-file discovery)
-                    val fileVisitor = compilationService.getAstModel(uri) ?: originVisitor
-                    emitUniqueLocation(classSymbol.node, fileVisitor, emittedLocations)
+                if (!isCandidate) {
+                    continue
                 }
+
+                // Get the correct visitor for this file's URI (fixes cross-file discovery)
+                val fileVisitor = compilationService.getAstModel(uri) ?: originVisitor
+                emitUniqueLocation(classSymbol.node, fileVisitor, emittedLocations)
             }
         }
     }
@@ -223,11 +225,14 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
             val classSymbols = index.findAll<Symbol.Class>(uri)
 
             for (classSymbol in classSymbols) {
-                // Only consider concrete classes
-                if (classSymbol.isInterface || classSymbol.isAbstract) continue
+                val isCandidate =
+                    !classSymbol.isInterface &&
+                        !classSymbol.isAbstract &&
+                        implementsOrExtends(classSymbol, ownerClass)
 
-                // Must implement/extend the owner interface/class
-                if (!implementsOrExtends(classSymbol, ownerClass)) continue
+                if (!isCandidate) {
+                    continue
+                }
 
                 // Find matching method in this class
                 val matchingMethod = classSymbol.methods.find { method ->

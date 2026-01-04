@@ -5,8 +5,10 @@ import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 
 /**
@@ -32,9 +34,8 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
         val testSuites = mutableListOf<TestSuite>()
 
-        // Parse workspace URI for potential future filtering
-        val requestedUri = parseWorkspaceUri(workspaceUri)
-        if (requestedUri == null) {
+        // Validate workspace URI for potential future filtering
+        if (parseWorkspaceUri(workspaceUri) == null) {
             logger.warn("Invalid workspace URI: $workspaceUri")
             return emptyList()
         }
@@ -45,70 +46,7 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
         logger.info("Found {} source URIs, {} are Groovy files", sourceUris.size, groovyFiles.size)
 
         for (uri in groovyFiles) {
-            // Get parsed result for this file - use getValidParseResult to handle stale Script nodes
-            val parseResult: ParseResult =
-                compilationService.getValidParseResult(uri) ?: run {
-                    // File not in cache - compile it on demand
-                    // This can happen when workspace is indexed but files aren't opened in editor yet
-                    logger.info("File not cached, compiling on demand: {}", uri)
-                    val content = try {
-                        Files.readString(Path.of(uri))
-                    } catch (e: Exception) {
-                        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-                        return@run null
-                    }
-                    // Compile the file - this populates the cache
-                    compilationService.compile(uri, content)
-                    // Now fetch the ParseResult from cache
-                    compilationService.getValidParseResult(uri)
-                } ?: continue // Skip if still null after compilation
-
-            val ast = parseResult.ast
-            if (ast == null) {
-                logger.info("No AST for: {} - compilation may have failed", uri)
-                continue
-            }
-            val classLoader = parseResult.compilationUnit.classLoader
-            logger.info("Processing {} - found {} classes in AST", uri.path.substringAfterLast('/'), ast.classes.size)
-
-            // Check each class individually to handle mixed files correctly
-            logger.debug(
-                "Classes in AST for $uri: ${
-                    ast.classes.map {
-                        "${it.name} (super=${it.superClass.name}) methods=[${it.methods.joinToString { m -> m.name }}]"
-                    }
-                }",
-            )
-            for (classNode in ast.classes) {
-                // Use registry to detect and extract tests
-                val testItems = TestFrameworkRegistry.extractTests(classNode, ast, classLoader)
-                if (testItems.isEmpty()) continue
-
-                // Convert TestItems to Test DTOs (only methods, not classes)
-                val tests = testItems
-                    .filter { it.kind == TestItemKind.METHOD }
-                    .map { Test(test = it.name, line = it.line) }
-
-                if (tests.isNotEmpty()) {
-                    // Get framework from first item for logging
-                    val framework = testItems.firstOrNull()?.framework
-
-                    testSuites.add(
-                        TestSuite(
-                            uri = uri.toString(),
-                            suite = classNode.name,
-                            tests = tests,
-                        ),
-                    )
-
-                    logger.debug(
-                        "Found {} test suite: {} with {} tests",
-                        framework,
-                        classNode.name,
-                        tests.size,
-                    )
-                }
-            }
+            testSuites.addAll(discoverTestsForFile(uri))
         }
         logger.info(
             "Test discovery complete: found {} test suites with {} total tests",
@@ -116,6 +54,80 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
             testSuites.sumOf { it.tests.size },
         )
         return testSuites
+    }
+
+    private suspend fun discoverTestsForFile(uri: URI): List<TestSuite> {
+        // Get parsed result for this file - use getValidParseResult to handle stale Script nodes
+        val parseResult = getOrCompileParseResult(uri) ?: return emptyList()
+        val ast = parseResult.ast
+        if (ast == null) {
+            logger.info("No AST for: {} - compilation may have failed", uri)
+            return emptyList()
+        }
+
+        val classLoader = parseResult.compilationUnit.classLoader
+        logger.info("Processing {} - found {} classes in AST", uri.path.substringAfterLast('/'), ast.classes.size)
+
+        // Check each class individually to handle mixed files correctly
+        logger.debug(
+            "Classes in AST for $uri: ${
+                ast.classes.map {
+                    "${it.name} (super=${it.superClass.name}) methods=[${it.methods.joinToString { m -> m.name }}]"
+                }
+            }",
+        )
+
+        return ast.classes.mapNotNull { classNode ->
+            val testItems = TestFrameworkRegistry.extractTests(classNode, ast, classLoader)
+            if (testItems.isEmpty()) return@mapNotNull null
+
+            val tests = testItems
+                .filter { it.kind == TestItemKind.METHOD }
+                .map { Test(test = it.name, line = it.line) }
+            if (tests.isEmpty()) return@mapNotNull null
+
+            val framework = testItems.firstOrNull()?.framework
+            logger.debug(
+                "Found {} test suite: {} with {} tests",
+                framework,
+                classNode.name,
+                tests.size,
+            )
+
+            TestSuite(
+                uri = uri.toString(),
+                suite = classNode.name,
+                tests = tests,
+            )
+        }
+    }
+
+    private suspend fun getOrCompileParseResult(uri: URI): ParseResult? {
+        val cached = compilationService.getValidParseResult(uri)
+        if (cached != null) return cached
+
+        // File not in cache - compile it on demand.
+        // This can happen when workspace is indexed but files aren't opened in editor yet.
+        logger.info("File not cached, compiling on demand: {}", uri)
+        val content = readFileContent(uri) ?: return null
+        compilationService.compile(uri, content)
+        return compilationService.getValidParseResult(uri)
+    }
+
+    private fun readFileContent(uri: URI): String? = try {
+        Files.readString(Path.of(uri))
+    } catch (e: InvalidPathException) {
+        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+        null
+    } catch (e: IllegalArgumentException) {
+        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+        null
+    } catch (e: SecurityException) {
+        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+        null
+    } catch (e: IOException) {
+        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+        null
     }
 
     companion object {

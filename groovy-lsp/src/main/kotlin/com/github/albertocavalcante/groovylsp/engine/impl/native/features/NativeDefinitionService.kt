@@ -27,22 +27,21 @@ class NativeDefinitionService(
         position: Position,
     ): List<UnifiedDefinition> {
         val uriStr = context.uri
-        val uri = try {
-            URI.create(uriStr)
-        } catch (e: Exception) {
-            logger.debug("Failed to parse URI: {}", uriStr, e)
-            return emptyList()
-        }
+        return runCatching { URI.create(uriStr) }
+            .onFailure { e -> logger.debug("Failed to parse URI: {}", uriStr, e) }
+            .map { uri ->
+                val visitor = compilationService.getAstModel(uri)
+                val symbolTable = compilationService.getSymbolTable(uri)
 
-        val visitor = compilationService.getAstModel(uri) ?: return emptyList()
-        val symbolTable = compilationService.getSymbolTable(uri) ?: return emptyList()
-
-        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
-
-        val groovyPos = position.toGroovyPosition()
-        val result = resolver.findDefinitionAt(uri, groovyPos) ?: return emptyList()
-
-        return result.toUnifiedDefinition(visitor)
+                if (visitor == null || symbolTable == null) {
+                    emptyList()
+                } else {
+                    val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
+                    val groovyPos = position.toGroovyPosition()
+                    resolver.findDefinitionAt(uri, groovyPos)?.toUnifiedDefinition(visitor) ?: emptyList()
+                }
+            }
+            .getOrElse { emptyList() }
     }
 
     private fun DefinitionResolver.DefinitionResult.toUnifiedDefinition(

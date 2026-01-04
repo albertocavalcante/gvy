@@ -50,12 +50,16 @@ class IndexCommand : CliktCommand(name = "index") {
         val buildToolManager = BuildToolManager(buildTools)
         val service = IndexExportService { buildToolManager }
 
-        try {
-            val result = service.exportIndex(params, rootPath)
-            echo(result)
-        } catch (e: Exception) {
-            echo("Failed to generate index: ${e.message}", err = true)
-            throw e
-        }
+        val result =
+            runCatching { service.exportIndex(params, rootPath) }
+                .onFailure { throwable ->
+                    echo("Failed to generate index: ${throwable.message}", err = true)
+                    if (throwable is Error) {
+                        throw throwable
+                    }
+                }
+                .getOrThrow()
+
+        echo(result)
     }
 }

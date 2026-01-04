@@ -88,43 +88,48 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
     private fun collectStageBlockContent(lines: List<String>, startIndex: Int, stagePattern: Regex): String {
         val blockLines = mutableListOf<String>()
-        var depth = 0
-        var started = false
-        var index = startIndex
-        var shouldStop = false
+        val state = BlockScanState()
 
-        while (index < lines.size && !shouldStop) {
+        for (index in startIndex until lines.size) {
             val line = lines[index]
-            val isNextStage = index != startIndex && started && stagePattern.containsMatchIn(line)
-            if (isNextStage) {
-                shouldStop = true
-            } else {
-                blockLines.add(line)
-                line.forEach { ch ->
-                    when (ch) {
-                        '{' -> {
-                            depth += 1
-                            started = true
-                        }
-                        '}' -> if (started) {
-                            depth -= 1
-                        }
-                    }
-                }
+            val shouldStopBeforeConsuming = index != startIndex && state.started && stagePattern.containsMatchIn(line)
+            var shouldStop = shouldStopBeforeConsuming
 
-                if (started && depth <= 0) {
-                    shouldStop = true
-                }
+            if (!shouldStopBeforeConsuming) {
+                blockLines.add(line)
+                state.consume(line)
+                shouldStop = shouldStop || (state.started && state.depth <= 0)
             }
 
-            index += 1
+            if (shouldStop) {
+                break
+            }
         }
 
-        if (!started) {
+        if (!state.started) {
             val scanLimit = minOf(startIndex + LOOK_AHEAD_LINES, lines.size)
             return lines.subList(startIndex, scanLimit).joinToString("\n")
         }
 
         return blockLines.joinToString("\n")
+    }
+
+    private class BlockScanState {
+        var depth: Int = 0
+        var started: Boolean = false
+
+        fun consume(line: String) {
+            for (ch in line) {
+                when (ch) {
+                    '{' -> {
+                        depth += 1
+                        started = true
+                    }
+                    '}' -> if (started) {
+                        depth -= 1
+                    }
+                }
+            }
+        }
     }
 }

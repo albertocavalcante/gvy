@@ -8,8 +8,7 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.net.URLClassLoader
 import java.util.concurrent.atomic.AtomicReference
@@ -18,16 +17,24 @@ import java.util.concurrent.atomic.AtomicReference
  * Manages the lifecycle and configuration of the Groovy language engine.
  * Handles engine re-creation on configuration changes and manages associated worker sessions.
  */
+data class LanguageEngineManagerOptions(
+    val documentProvider: DocumentProvider? = null,
+    val sourceNavigator: SourceNavigator? = null,
+    val engineConfig: EngineConfiguration = EngineConfiguration(),
+)
+
 class LanguageEngineManager(
     private val compilationService: GroovyCompilationService,
     private val parser: GroovyParserFacade,
     private val parentClassLoader: ClassLoader,
     private val workspaceManager: WorkspaceManager,
-    private val documentProvider: DocumentProvider?,
-    private val sourceNavigator: SourceNavigator?,
-    private var engineConfig: EngineConfiguration = EngineConfiguration(),
+    options: LanguageEngineManagerOptions = LanguageEngineManagerOptions(),
 ) {
     private val logger = LoggerFactory.getLogger(LanguageEngineManager::class.java)
+
+    private val documentProvider: DocumentProvider? = options.documentProvider
+    private val sourceNavigator: SourceNavigator? = options.sourceNavigator
+    private var engineConfig: EngineConfiguration = options.engineConfig
 
     private val groovyVersionInfo = AtomicReference<GroovyVersionInfo?>(null)
     private val selectedWorker = AtomicReference<WorkerDescriptor?>(null)
@@ -63,7 +70,7 @@ class LanguageEngineManager(
             config = config,
             parser = parser,
             compilationService = compilationService,
-            documentProvider = documentProvider ?: throw IllegalStateException("DocumentProvider required for engine"),
+            documentProvider = documentProvider ?: error("DocumentProvider required for engine"),
             sourceNavigator = sourceNavigator,
         )
     }
@@ -101,13 +108,20 @@ class LanguageEngineManager(
         synchronized(classLoaderLock) {
             currentClassLoader?.let {
                 logger.info("Invalidating ClassLoader")
-                try {
-                    it.close()
-                } catch (e: Exception) {
-                    logger.warn("Failed to close ClassLoader", e)
-                }
+                runCatching { it.close() }
+                    .onFailure { throwable ->
+                        rethrowIfCancellationOrError(throwable)
+                        logger.warn("Failed to close ClassLoader", throwable)
+                    }
                 currentClassLoader = null
             }
+        }
+    }
+
+    private fun rethrowIfCancellationOrError(throwable: Throwable) {
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
         }
     }
 }

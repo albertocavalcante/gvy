@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.api.ParserDiagnostic
-import com.github.albertocavalcante.groovyparser.api.ParserPosition
 import com.github.albertocavalcante.groovyparser.api.ParserRange
 import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -18,14 +17,12 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.net.URI
 
 class CompilationResultMapperTest {
     private val mapper = CompilationResultMapper()
 
     @Test
     fun `should map successful parse result`() {
-        val uri = URI.create("file:///test.groovy")
         val content = "println 'hello'"
         val ast = mockk<ModuleNode>()
         val astModel = mockk<GroovyAstModel>()
@@ -52,7 +49,6 @@ class CompilationResultMapperTest {
 
     @Test
     fun `should map parse result with errors`() {
-        val uri = URI.create("file:///test.groovy")
         val content = "invalid code"
         val diag = ParserDiagnostic(
             message = "Syntax error",
@@ -85,7 +81,6 @@ class CompilationResultMapperTest {
 
     @Test
     fun `should map from cache correctly`() {
-        val uri = URI.create("file:///test.groovy")
         val content = "println 'hello'"
         val ast = mockk<ModuleNode>()
         val compilationUnit = mockk<CompilationUnit>()
@@ -111,7 +106,6 @@ class CompilationResultMapperTest {
 
     @Test
     fun `should return null when mapping from cache without AST`() {
-        val uri = URI.create("file:///test.groovy")
         val compilationUnit = mockk<CompilationUnit>()
         val sourceUnit = mockk<SourceUnit>()
         val symbolTable = mockk<SymbolTable>()

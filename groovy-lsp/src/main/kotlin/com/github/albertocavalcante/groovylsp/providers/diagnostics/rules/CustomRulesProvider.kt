@@ -41,26 +41,29 @@ class CustomRulesProvider(
 
         // Execute each enabled rule
         for (rule in rules) {
-            try {
-                if (!ruleConfig.isRuleEnabled(rule)) {
-                    logger.debug("Skipping disabled rule: ${rule.id}")
-                    continue
-                }
+            if (!ruleConfig.isRuleEnabled(rule)) {
+                logger.debug("Skipping disabled rule: ${rule.id}")
+                continue
+            }
 
-                logger.debug("Executing rule: ${rule.id}")
-                val diagnostics = rule.analyze(uri, content, context)
+            logger.debug("Executing rule: ${rule.id}")
+            val diagnostics =
+                runCatching { rule.analyze(uri, content, context) }
+                    .onFailure { throwable ->
+                        when (throwable) {
+                            is CancellationException -> throw throwable
+                            is Error -> throw throwable
+                            else -> logger.error("Rule ${rule.id} failed for $uri", throwable)
+                        }
+                    }
+                    // Continue with other rules
+                    .getOrDefault(emptyList())
 
-                logger.debug("Rule ${rule.id} found ${diagnostics.size} violations")
+            logger.debug("Rule ${rule.id} found ${diagnostics.size} violations")
 
-                // Emit each diagnostic
-                diagnostics.forEach { diagnostic ->
-                    emit(diagnostic)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.error("Rule ${rule.id} failed for $uri", e)
-                // Continue with other rules
+            // Emit each diagnostic
+            diagnostics.forEach { diagnostic ->
+                emit(diagnostic)
             }
         }
     }
@@ -68,27 +71,32 @@ class CustomRulesProvider(
     private fun createContext(uri: URI): RuleContext = object : RuleContext {
         // Lazy AST retrieval - only fetch if rules need it
         private val astLazy: Any? by lazy {
-            try {
-                compilationService.getAst(uri)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.debug("Failed to get AST for rule context", e)
-                null
-            }
+            runCatching { compilationService.getAst(uri) }
+                .onFailure { throwable ->
+                    when (throwable) {
+                        is CancellationException -> throw throwable
+                        is Error -> throw throwable
+                        else -> logger.debug("Failed to get AST for rule context", throwable)
+                    }
+                }
+                .getOrNull()
         }
 
         override fun getAst(): Any? = astLazy
 
-        override fun hasErrors(): Boolean = try {
+        override fun hasErrors(): Boolean = runCatching {
             compilationService.getDiagnostics(uri).any {
                 it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.debug("Failed to check for errors", e)
-            true // Assume errors if we can't check
         }
+            .onFailure { throwable ->
+                when (throwable) {
+                    is CancellationException -> throw throwable
+                    is Error -> throw throwable
+                    else -> logger.debug("Failed to check for errors", throwable)
+                }
+            }
+            // Assume errors if we can't check
+            .getOrDefault(true)
     }
 }
