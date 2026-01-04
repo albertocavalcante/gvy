@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyparser.api
+package com.github.albertocavalcante.nativeapi
 
 import org.codehaus.groovy.control.Phases
 import java.net.URI

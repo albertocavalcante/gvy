@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.engine.impl.core
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals

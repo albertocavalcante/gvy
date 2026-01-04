@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.resolution.typesolvers
 
+import com.github.albertocavalcante.groovyparser.resolution.types.isPrimitive
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

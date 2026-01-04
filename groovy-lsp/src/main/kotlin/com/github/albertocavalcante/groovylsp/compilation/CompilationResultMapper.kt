@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.slf4j.LoggerFactory
 
 /**

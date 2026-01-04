@@ -42,4 +42,6 @@ include("groovy-repl")
 include("tools:jenkins-extractor")
 include("viz:ast-model")
 include("viz:desktop")
-include("semantics")
+include("semantics:core")
+include("semantics:native")
+project(":semantics:native").name = "semantics-native"

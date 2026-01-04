@@ -49,7 +49,7 @@ class ProjectTypeDetectorTest {
         val projectType = detector.detect(tempDir)
 
         assertTrue(projectType is ProjectType.GradleProject)
-        assertTrue((projectType as ProjectType.GradleProject).hasSpock)
+        assertTrue(projectType.hasSpock)
     }
 
     @Test
@@ -67,7 +67,7 @@ class ProjectTypeDetectorTest {
         val projectType = detector.detect(tempDir)
 
         assertTrue(projectType is ProjectType.GradleProject)
-        assertTrue(!(projectType as ProjectType.GradleProject).hasSpock)
+        assertTrue(!projectType.hasSpock)
     }
 
     @Test

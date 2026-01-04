@@ -75,35 +75,46 @@ class GroovyParserClassDeclaration(
         return if (ref.isSolved) ResolvedReferenceType(ref.getDeclaration()) else null
     }
 
-    private fun resolveTypeName(typeName: String): ResolvedReferenceType? {
-        // First try the fully qualified name
-        val ref = typeSolver.tryToSolveType(typeName)
-        if (ref.isSolved) return ResolvedReferenceType(ref.getDeclaration())
+    private fun resolveTypeName(typeName: String): ResolvedReferenceType? = sequenceOf(
+        { solveFullyQualified(typeName) },
+        { solveImports(typeName) },
+        { solveSamePackage(typeName) },
+        { solveJavaLang(typeName) },
+    )
+        .map { it() }
+        .firstOrNull { it != null }
 
-        // Try with imports
+    private fun solveFullyQualified(typeName: String): ResolvedReferenceType? {
+        val ref = typeSolver.tryToSolveType(typeName)
+        return if (ref.isSolved) ResolvedReferenceType(ref.getDeclaration()) else null
+    }
+
+    private fun solveImports(typeName: String): ResolvedReferenceType? {
         for (import in compilationUnit.imports) {
             if (import.name.endsWith(".$typeName")) {
                 val importedRef = typeSolver.tryToSolveType(import.name)
                 if (importedRef.isSolved) return ResolvedReferenceType(importedRef.getDeclaration())
             }
             if (import.isStarImport) {
-                val starRef = typeSolver.tryToSolveType("${import.name}.$typeName")
+                val starRef = typeSolver.tryToSolveType("${import.name.removeSuffix(".*")}.$typeName")
                 if (starRef.isSolved) return ResolvedReferenceType(starRef.getDeclaration())
             }
         }
+        return null
+    }
 
-        // Try same package
+    private fun solveSamePackage(typeName: String): ResolvedReferenceType? {
         val pkg = compilationUnit.packageDeclaration
         if (pkg.isPresent) {
             val samePackageRef = typeSolver.tryToSolveType("${pkg.get().name}.$typeName")
             if (samePackageRef.isSolved) return ResolvedReferenceType(samePackageRef.getDeclaration())
         }
-
-        // Try java.lang
-        val javaLangRef = typeSolver.tryToSolveType("java.lang.$typeName")
-        if (javaLangRef.isSolved) return ResolvedReferenceType(javaLangRef.getDeclaration())
-
         return null
+    }
+
+    private fun solveJavaLang(typeName: String): ResolvedReferenceType? {
+        val javaLangRef = typeSolver.tryToSolveType("java.lang.$typeName")
+        return if (javaLangRef.isSolved) ResolvedReferenceType(javaLangRef.getDeclaration()) else null
     }
 
     override fun equals(other: Any?): Boolean {

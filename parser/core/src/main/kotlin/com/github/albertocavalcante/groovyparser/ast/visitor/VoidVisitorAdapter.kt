@@ -79,6 +79,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
  *
  * @param A the type of the argument passed to visit methods
  */
+@Suppress("TooManyFunctions")
 open class VoidVisitorAdapter<A> : VoidVisitor<A> {
 
     override fun visit(n: CompilationUnit, arg: A) {
@@ -333,6 +334,7 @@ open class VoidVisitorAdapter<A> : VoidVisitor<A> {
     /**
      * Dispatches to the appropriate visit method for the statement type.
      */
+    @Suppress("CyclomaticComplexMethod")
     protected fun visitStatement(stmt: com.github.albertocavalcante.groovyparser.ast.stmt.Statement, arg: A) {
         when (stmt) {
             is BlockStatement -> visit(stmt, arg)
@@ -354,6 +356,7 @@ open class VoidVisitorAdapter<A> : VoidVisitor<A> {
     /**
      * Dispatches to the appropriate visit method for the expression type.
      */
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     protected fun visitExpression(expr: com.github.albertocavalcante.groovyparser.ast.expr.Expression, arg: A) {
         when (expr) {
             is MethodCallExpr -> visit(expr, arg)

@@ -99,12 +99,26 @@ class DefaultCpsAnalyzer : CpsAnalyzer {
             }
 
             is MethodDeclaration -> {
-                // Skip @NonCPS annotated methods - they don't need CPS analysis
-                if (!node.isNonCps) {
-                    node.body?.let { analyzeNode(it, violations, inClosure) }
-                }
+                analyzeMethodDeclaration(node, violations, inClosure)
             }
 
+            else -> analyzeStatement(node, violations, inClosure)
+        }
+    }
+
+    private fun analyzeMethodDeclaration(
+        node: MethodDeclaration,
+        violations: MutableList<CpsViolation>,
+        inClosure: Boolean,
+    ) {
+        // Skip @NonCPS annotated methods - they don't need CPS analysis
+        if (!node.isNonCps) {
+            node.body?.let { analyzeNode(it, violations, inClosure) }
+        }
+    }
+
+    private fun analyzeStatement(node: Node, violations: MutableList<CpsViolation>, inClosure: Boolean) {
+        when (node) {
             is BlockStatement -> {
                 node.statements.forEach { analyzeNode(it, violations, inClosure) }
             }

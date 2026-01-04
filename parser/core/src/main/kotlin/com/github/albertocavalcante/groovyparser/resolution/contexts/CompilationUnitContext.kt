@@ -27,16 +27,28 @@ class CompilationUnitContext(private val compilationUnit: CompilationUnit, overr
         return SymbolReference.unsolved()
     }
 
-    override fun solveType(name: String): SymbolReference<ResolvedTypeDeclaration> {
-        // 1. Check explicit imports
+    override fun solveType(name: String): SymbolReference<ResolvedTypeDeclaration> = sequenceOf(
+        { solveExplicitImport(name) },
+        { solveStarImport(name) },
+        { solveSamePackage(name) },
+        { solveDirect(name) },
+        { solveDefaultImport(name) },
+    )
+        .map { it() }
+        .firstOrNull { it.isSolved }
+        ?: SymbolReference.unsolved()
+
+    private fun solveExplicitImport(name: String): SymbolReference<ResolvedTypeDeclaration> {
         for (import in compilationUnit.imports) {
             if (!import.isStarImport && import.name.endsWith(".$name")) {
                 val ref = typeSolver.tryToSolveType(import.name)
                 if (ref.isSolved) return ref
             }
         }
+        return SymbolReference.unsolved()
+    }
 
-        // 2. Check star imports
+    private fun solveStarImport(name: String): SymbolReference<ResolvedTypeDeclaration> {
         for (import in compilationUnit.imports) {
             if (import.isStarImport) {
                 val packageName = import.name.removeSuffix(".*")
@@ -45,26 +57,26 @@ class CompilationUnitContext(private val compilationUnit: CompilationUnit, overr
                 if (ref.isSolved) return ref
             }
         }
+        return SymbolReference.unsolved()
+    }
 
-        // 3. Check same package
-        // 3. Check same package
+    private fun solveSamePackage(name: String): SymbolReference<ResolvedTypeDeclaration> {
         val pkg = compilationUnit.packageDeclaration
         if (pkg.isPresent) {
             val samePackageRef = typeSolver.tryToSolveType("${pkg.get().name}.$name")
             if (samePackageRef.isSolved) return samePackageRef
         }
+        return SymbolReference.unsolved()
+    }
 
-        // 4. Try fully qualified name
-        val directRef = typeSolver.tryToSolveType(name)
-        if (directRef.isSolved) return directRef
+    private fun solveDirect(name: String): SymbolReference<ResolvedTypeDeclaration> = typeSolver.tryToSolveType(name)
 
-        // 5. Check default imports
+    private fun solveDefaultImport(name: String): SymbolReference<ResolvedTypeDeclaration> {
         for (defaultImport in DEFAULT_IMPORTS) {
             val fqn = "$defaultImport.$name"
             val ref = typeSolver.tryToSolveType(fqn)
             if (ref.isSolved) return ref
         }
-
         return SymbolReference.unsolved()
     }
 

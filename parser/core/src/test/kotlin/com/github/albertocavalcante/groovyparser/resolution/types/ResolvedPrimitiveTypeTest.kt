@@ -86,10 +86,10 @@ class ResolvedPrimitiveTypeTest {
 
     @Test
     fun `box returns correct boxed type name`() {
-        assertEquals("java.lang.Integer", ResolvedPrimitiveType.INT.box())
-        assertEquals("java.lang.Boolean", ResolvedPrimitiveType.BOOLEAN.box())
-        assertEquals("java.lang.Double", ResolvedPrimitiveType.DOUBLE.box())
-        assertEquals("java.lang.Character", ResolvedPrimitiveType.CHAR.box())
+        assertEquals("java.lang.Integer", ResolvedPrimitiveType.INT.boxedName)
+        assertEquals("java.lang.Boolean", ResolvedPrimitiveType.BOOLEAN.boxedName)
+        assertEquals("java.lang.Double", ResolvedPrimitiveType.DOUBLE.boxedName)
+        assertEquals("java.lang.Character", ResolvedPrimitiveType.CHAR.boxedName)
     }
 
     @Test

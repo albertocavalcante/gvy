@@ -77,35 +77,45 @@ internal class SourcePositionCommentParser(private val source: String) {
 
             if (i >= end) break
 
-            when {
-                // Line comment: //
-                i + 1 < end && source[i] == '/' && source[i + 1] == '/' -> {
-                    val result = parseLineComment(i)
-                    comments.add(result.comment)
-                    i = result.endIndex
-                }
-                // Block comment: /* or /**
-                i + 1 < end && source[i] == '/' && source[i + 1] == '*' -> {
-                    val result = parseBlockComment(i)
-                    comments.add(result.comment)
-                    i = result.endIndex
-                }
-                // String literal - skip to avoid false positives
-                source[i] == '"' || source[i] == '\'' -> {
-                    i = skipStringLiteral(i)
-                }
-                // Regex literal - skip (starts with ~/ or / after certain tokens)
-                source[i] == '/' && i + 1 < end && source[i + 1] != '/' && source[i + 1] != '*' -> {
-                    // Could be division or regex; skip one char to be safe
-                    i++
-                }
-                else -> {
-                    i++
-                }
+            val (comment, newIndex) = tryParseCommentOrSkip(i, end)
+            if (comment != null) {
+                comments.add(comment)
+            }
+
+            // If progress was made, update i. If not (and no comment), force advance to avoid infinite loop
+            if (newIndex > i) {
+                i = newIndex
+            } else {
+                i++ // Should not happen with tryParseCommentOrSkip logic but checking
             }
         }
 
         return comments
+    }
+
+    private fun tryParseCommentOrSkip(i: Int, end: Int): Pair<Comment?, Int> = when {
+        // Line comment: //
+        i + 1 < end && source[i] == '/' && source[i + 1] == '/' -> {
+            val result = parseLineComment(i)
+            result.comment to result.endIndex
+        }
+        // Block comment: /* or /**
+        i + 1 < end && source[i] == '/' && source[i + 1] == '*' -> {
+            val result = parseBlockComment(i)
+            result.comment to result.endIndex
+        }
+        // String literal - skip
+        source[i] == '"' || source[i] == '\'' -> {
+            null to skipStringLiteral(i)
+        }
+        // Regex literal - skip
+        source[i] == '/' && i + 1 < end && source[i + 1] != '/' && source[i + 1] != '*' -> {
+            null to i + 1 // Simply skip /
+        }
+
+        else -> {
+            null to i + 1
+        }
     }
 
     private fun parseLineComment(startIndex: Int): ParseResult {
@@ -124,41 +134,14 @@ internal class SourcePositionCommentParser(private val source: String) {
     }
 
     private fun parseBlockComment(startIndex: Int): ParseResult {
+        val isJavadoc = isJavadocComment(startIndex)
+        val (rawContent, newIndex) = extractBlockCommentContent(startIndex + BLOCK_COMMENT_START_LENGTH)
+
         val startPos = indexToPosition(startIndex)
-        val isJavadoc = startIndex + BLOCK_COMMENT_START_LENGTH < source.length &&
-            source[startIndex + BLOCK_COMMENT_START_LENGTH] == '*' &&
-            (
-                startIndex + TRIPLE_QUOTE_LENGTH >= source.length ||
-                    source[startIndex + TRIPLE_QUOTE_LENGTH] != '/'
-                )
-
-        var i = startIndex + BLOCK_COMMENT_START_LENGTH // Skip /*
-        val content = StringBuilder()
-
-        while (i + 1 < source.length) {
-            if (source[i] == '*' && source[i + 1] == '/') {
-                i += BLOCK_COMMENT_END_LENGTH // Skip */
-                break
-            }
-            content.append(source[i])
-            i++
-        }
-
-        // Handle unclosed comment at EOF
-        if (i + 1 >= source.length && !source.endsWith("*/")) {
-            while (i < source.length) {
-                content.append(source[i])
-                i++
-            }
-        }
-
-        val endPos = indexToPosition(i)
+        val endPos = indexToPosition(newIndex)
         val range = Range(startPos, endPos)
 
-        // Clean up content: remove leading * on each line for Javadoc
-        val cleanContent = content.toString().trim().let { c ->
-            if (isJavadoc && c.startsWith("*")) c.substring(1).trim() else c
-        }
+        val cleanContent = cleanBlockComment(rawContent, isJavadoc)
 
         val comment = if (isJavadoc) {
             JavadocComment(cleanContent, range)
@@ -166,7 +149,40 @@ internal class SourcePositionCommentParser(private val source: String) {
             BlockComment(cleanContent, range)
         }
 
-        return ParseResult(comment, i)
+        return ParseResult(comment, newIndex)
+    }
+
+    private fun isJavadocComment(startIndex: Int): Boolean = startIndex + BLOCK_COMMENT_START_LENGTH < source.length &&
+        source[startIndex + BLOCK_COMMENT_START_LENGTH] == '*' &&
+        (
+            startIndex + TRIPLE_QUOTE_LENGTH >= source.length ||
+                source[startIndex + TRIPLE_QUOTE_LENGTH] != '/'
+            )
+
+    private fun extractBlockCommentContent(contentStartIndex: Int): Pair<String, Int> {
+        var i = contentStartIndex
+        val content = StringBuilder()
+
+        while (i + 1 < source.length) {
+            if (source[i] == '*' && source[i + 1] == '/') {
+                i += BLOCK_COMMENT_END_LENGTH // Skip */
+                return content.toString() to i
+            }
+            content.append(source[i])
+            i++
+        }
+
+        // Append remaining characters if we hit EOF without finding closing */
+        while (i < source.length) {
+            content.append(source[i])
+            i++
+        }
+
+        return content.toString() to i
+    }
+
+    private fun cleanBlockComment(content: String, isJavadoc: Boolean): String = content.trim().let { c ->
+        if (isJavadoc && c.startsWith("*")) c.substring(1).trim() else c
     }
 
     private fun skipStringLiteral(startIndex: Int): Int {
@@ -178,41 +194,49 @@ internal class SourcePositionCommentParser(private val source: String) {
             source[i] == delimiter &&
             source[i + 1] == delimiter
 
-        if (isTriple) {
-            i += TRIPLE_QUOTE_LENGTH - 1 // Already at first quote, skip to after third
-            // Find closing triple quotes
-            while (i + TRIPLE_QUOTE_LENGTH <= source.length) {
-                if (source[i] == '\\' && i + 1 < source.length) {
-                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
-                    continue
-                }
-                if (source[i] == delimiter &&
-                    source[i + 1] == delimiter &&
-                    source[i + 2] == delimiter
-                ) {
-                    return i + TRIPLE_QUOTE_LENGTH
-                }
-                i++
-            }
-            return source.length // Unclosed
+        return if (isTriple) {
+            skipTripleQuotedString(i + 2, delimiter)
         } else {
-            // Regular string
-            while (i < source.length) {
-                if (source[i] == '\\' && i + 1 < source.length) {
-                    i += ESCAPE_SEQUENCE_LENGTH // Skip escape sequence
-                    continue
-                }
-                if (source[i] == delimiter) {
-                    return i + 1
-                }
-                if (source[i] == '\n' || source[i] == '\r') {
-                    // Newline in non-triple string = end of string (malformed)
-                    return i
-                }
-                i++
-            }
-            return source.length // Unclosed
+            skipRegularString(i, delimiter)
         }
+    }
+
+    private fun skipTripleQuotedString(startIndex: Int, delimiter: Char): Int {
+        var i = startIndex
+        // Find closing triple quotes
+        while (i + TRIPLE_QUOTE_LENGTH <= source.length) {
+            if (source[i] == '\\' && i + 1 < source.length) {
+                i += ESCAPE_SEQUENCE_LENGTH
+                continue
+            }
+            if (source[i] == delimiter &&
+                source[i + 1] == delimiter &&
+                source[i + 2] == delimiter
+            ) {
+                return i + TRIPLE_QUOTE_LENGTH
+            }
+            i++
+        }
+        return source.length // Unclosed
+    }
+
+    private fun skipRegularString(startIndex: Int, delimiter: Char): Int {
+        var i = startIndex
+        while (i < source.length) {
+            if (source[i] == '\\' && i + 1 < source.length) {
+                i += ESCAPE_SEQUENCE_LENGTH
+                continue
+            }
+            if (source[i] == delimiter) {
+                return i + 1
+            }
+            if (source[i] == '\n' || source[i] == '\r') {
+                // Newline in non-triple string = end of string (malformed)
+                return i
+            }
+            i++
+        }
+        return source.length // Unclosed
     }
 
     private fun computeLineOffsets(): IntArray {

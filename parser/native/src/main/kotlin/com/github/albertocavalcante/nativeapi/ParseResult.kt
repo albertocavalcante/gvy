@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyparser.api
+package com.github.albertocavalcante.nativeapi
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable

@@ -117,6 +117,7 @@ class JarTypeSolver(private val jarPath: Path) :
         return classIndex.any { it.startsWith("$outerName\$$innerName") }
     }
 
+    @Suppress("SwallowedException")
     private fun resolveFromJar(name: String): SymbolReference<ResolvedTypeDeclaration> = try {
         val clazz = classLoader.loadClass(name)
         val declaration = createDeclaration(clazz)
