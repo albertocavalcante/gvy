@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
-import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import kotlin.reflect.KClass
@@ -15,33 +14,52 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        // If the node doesn't have a 'value' property, return null (can't handle it)
-        val hasValue = hasValueProperty(node)
-        if (!hasValue) return null
-
-        val value = getValue(node)
-
-        // If value is null (null literal), type as Object
-        if (value == null) return SemanticType.Known("java.lang.Object", emptyList())
-
-        return typeForValue(value)
-    }
+    override fun calculate(node: Any, context: TypeContext): SemanticType? =
+        when (val result = readValueProperty(node)) {
+            ValuePropertyResult.Missing -> null
+            ValuePropertyResult.Unreadable -> null
+            is ValuePropertyResult.Present ->
+                result.value?.let(::typeForValue)
+                    ?: SemanticType.Known("java.lang.Object", emptyList())
+        }
 
     private fun typeForValue(value: Any): SemanticType = SemanticType.Known(value.javaClass.name, emptyList())
 
-    private fun hasValueProperty(node: Any): Boolean {
-        // Check if node has either a getValue() method or a value field
-        return runCatching { node::class.java.getMethod("getValue") }.isSuccess ||
-            runCatching {
-                val field = node::class.java.getDeclaredField("value")
-                field.isAccessible = true
-                field
-            }.isSuccess
+    private sealed class ValuePropertyResult {
+        object Missing : ValuePropertyResult()
+        object Unreadable : ValuePropertyResult()
+        data class Present(val value: Any?) : ValuePropertyResult()
     }
 
-    private fun getValue(node: Any): Any? {
-        // Try to get 'value' property via reflection.
-        return ReflectionAccess.invokeNoArg(node, "getValue") ?: ReflectionAccess.getField(node, "value")
+    private fun readValueProperty(node: Any): ValuePropertyResult {
+        // Distinguish:
+        // - No value property (cannot handle) vs
+        // - Value property exists but is null (null literal)
+        //
+        // We intentionally avoid ReflectionAccess here because it collapses
+        // "missing property" and "null value" into the same `null` result.
+
+        val getter = runCatching { node::class.java.getMethod("getValue") }.getOrNull()
+        val field =
+            if (getter != null) {
+                null
+            } else {
+                runCatching {
+                    node::class.java.getDeclaredField("value").apply { isAccessible = true }
+                }.getOrNull()
+            }
+
+        val valueResult: Result<Any?>? = when {
+            getter != null -> runCatching { getter.invoke(node) }
+            field != null -> runCatching { field.get(node) }
+            else -> null
+        }
+
+        return when {
+            getter == null && field == null -> ValuePropertyResult.Missing
+            valueResult == null -> ValuePropertyResult.Missing
+            valueResult.isFailure -> ValuePropertyResult.Unreadable
+            else -> ValuePropertyResult.Present(valueResult.getOrNull())
+        }
     }
 }

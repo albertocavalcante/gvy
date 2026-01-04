@@ -72,7 +72,8 @@ object TypeLub {
         val ranks = types.map(::getNumericRank)
         if (ranks.any { it == null }) return null
 
-        val rawMaxRank = checkNotNull(ranks.filterNotNull().maxOrNull())
+        // Safe: ranks contains only non-null values after the early return above.
+        val rawMaxRank = ranks.filterNotNull().maxOrNull() ?: return null
 
         // Promote byte/short/char to int minimum.
         val maxRank = maxOf(rawMaxRank, RANK_INT)
