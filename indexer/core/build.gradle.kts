@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+tasks.jar {
+    archiveBaseName.set("groovy-indexer-core")
+}
+
 dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.slf4j.api)

@@ -73,12 +73,13 @@ class JacksonScenarioParser : ScenarioParser {
         addDeserializer(JsonElement::class.java, JsonElementDeserializer)
     }
 
+    @Suppress("DEPRECATION")
     private val objectMapper: ObjectMapper = ObjectMapper(YAMLFactory()).apply {
         registerKotlinModule()
         registerModule(jsonElementModule)
         configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         configure(DeserializationFeature.READ_ENUMS_USING_TO_STRING, true)
-        configure(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS, true)
+        enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
     }
 
     override fun parseScenarioDefinition(yaml: String): ScenarioDefinition = try {
