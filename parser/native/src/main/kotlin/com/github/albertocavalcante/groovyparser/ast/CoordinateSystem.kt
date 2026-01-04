@@ -202,31 +202,13 @@ object CoordinateSystem {
         }
 
         val groovyPos = lspToGroovy(lspLine, lspCharacter)
-        val endLine = if (node.lastLineNumber > 0) node.lastLineNumber else node.lineNumber
-        val endColumn = if (node.lastColumnNumber > 0) {
-            node.lastColumnNumber
-        } else {
-            val tokenLen = tokenLengthHint?.invoke(node) ?: 0
-            if (tokenLen > 0) {
-                node.columnNumber + tokenLen - 1
-            } else {
-                node.columnNumber + 1
-            }
-        }
+        val endLine = relaxedEndLine(node)
+        val endColumn = relaxedEndColumn(node, tokenLengthHint)
 
-        return when {
-            groovyPos.line < node.lineNumber || groovyPos.line > endLine -> false
-            groovyPos.line == node.lineNumber && groovyPos.line == endLine -> {
-                groovyPos.column >= node.columnNumber && groovyPos.column <= endColumn
-            }
-            groovyPos.line == node.lineNumber -> {
-                groovyPos.column >= node.columnNumber
-            }
-            groovyPos.line == endLine -> {
-                groovyPos.column <= endColumn
-            }
-            else -> true
-        }
+        val nodeStart = GroovyPosition(node.lineNumber, node.columnNumber)
+        val nodeEnd = GroovyPosition(endLine, endColumn)
+
+        return containsGroovyPositionInRange(groovyPos, nodeStart, nodeEnd)
     }
 
     /**
@@ -246,28 +228,7 @@ object CoordinateSystem {
         logger.debug("Checking if Groovy position $groovyPos is within node range $nodeStart to $nodeEnd")
 
         // Position containment logic using Groovy 1-based coordinates
-        val result = when {
-            // Position is before or after the node's line range
-            groovyPos.line < nodeStart.line || groovyPos.line > nodeEnd.line -> false
-
-            // Single-line node: check column bounds
-            nodeStart.line == nodeEnd.line -> {
-                groovyPos.column >= nodeStart.column && groovyPos.column <= nodeEnd.column
-            }
-
-            // Multi-line node, position on first line: check from start column to end of line
-            groovyPos.line == nodeStart.line -> {
-                groovyPos.column >= nodeStart.column
-            }
-
-            // Multi-line node, position on last line: check from start of line to end column
-            groovyPos.line == nodeEnd.line -> {
-                groovyPos.column <= nodeEnd.column
-            }
-
-            // Multi-line node, position on middle lines: always valid
-            else -> true
-        }
+        val result = containsGroovyPositionInRange(groovyPos, nodeStart, nodeEnd)
 
         if (result) {
             logger.debug("✓ Position $groovyPos is within node ${node.javaClass.simpleName}")
@@ -281,4 +242,31 @@ object CoordinateSystem {
     // ===========================================
     // DEBUGGING AND UTILITIES
     // ===========================================
+}
+
+private fun relaxedEndLine(node: ASTNode): Int = if (node.lastLineNumber > 0) node.lastLineNumber else node.lineNumber
+
+private fun relaxedEndColumn(node: ASTNode, tokenLengthHint: ((ASTNode) -> Int?)?): Int {
+    if (node.lastColumnNumber > 0) {
+        return node.lastColumnNumber
+    }
+
+    val tokenLen = tokenLengthHint?.invoke(node) ?: 0
+    return if (tokenLen > 0) {
+        node.columnNumber + tokenLen - 1
+    } else {
+        node.columnNumber + 1
+    }
+}
+
+private fun containsGroovyPositionInRange(
+    groovyPos: CoordinateSystem.GroovyPosition,
+    nodeStart: CoordinateSystem.GroovyPosition,
+    nodeEnd: CoordinateSystem.GroovyPosition,
+): Boolean = when {
+    groovyPos.line < nodeStart.line || groovyPos.line > nodeEnd.line -> false
+    nodeStart.line == nodeEnd.line -> groovyPos.column in nodeStart.column..nodeEnd.column
+    groovyPos.line == nodeStart.line -> groovyPos.column >= nodeStart.column
+    groovyPos.line == nodeEnd.line -> groovyPos.column <= nodeEnd.column
+    else -> true
 }

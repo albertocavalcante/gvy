@@ -84,12 +84,12 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             return GroovyTokenIndex(collector.toSortedList())
         }
 
-        private fun createLexer(source: String): GroovyLangLexer? = try {
+        private fun createLexer(source: String): GroovyLangLexer? = runCatching {
             GroovyLangLexer(CharStreams.fromString(source))
-        } catch (e: Throwable) {
-            logger.debug("Failed to initialize GroovyLangLexer", e)
-            null
-        }
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.debug("Failed to initialize GroovyLangLexer", throwable)
+        }.getOrNull()
 
         private fun handleShebang(source: String, collector: SpanCollector) {
             if (source.startsWith("#!")) {
@@ -99,29 +99,29 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             }
         }
 
-        @Suppress("TooGenericExceptionCaught") // Lexer can throw various ANTLR exceptions
-        private fun processAllTokens(
-            lexer: GroovyLangLexer,
-            collector: SpanCollector,
-        ) {
-            try {
-                while (true) {
-                    val token = fetchNextToken(lexer, collector) ?: break
-                    if (token.type == Token.EOF) break
-
+        private fun processAllTokens(lexer: GroovyLangLexer, collector: SpanCollector) {
+            runCatching {
+                var token = fetchNextToken(lexer, collector)
+                while (token != null && token.type != Token.EOF) {
                     processToken(token, lexer, collector)
+                    token = fetchNextToken(lexer, collector)
                 }
-            } catch (e: Throwable) {
-                logger.debug("Ignoring throwable during token indexing for resiliency", e)
+            }.onFailure { throwable ->
+                if (throwable is Error) throw throwable
+                logger.debug("Ignoring throwable during token indexing for resiliency", throwable)
             }
         }
 
-        private fun fetchNextToken(lexer: GroovyLangLexer, collector: SpanCollector): Token? = try {
+        private fun fetchNextToken(lexer: GroovyLangLexer, collector: SpanCollector): Token? = runCatching {
             lexer.nextToken()
-        } catch (e: Throwable) {
-            logger.debug("Lexer error at offset {}: {}", collector.lastOrNull()?.end ?: 0, e.message)
-            null
-        }
+        }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.debug(
+                "Lexer error at offset {}: {}",
+                collector.lastOrNull()?.end ?: 0,
+                throwable.message,
+            )
+        }.getOrNull()
 
         private fun processToken(token: Token, lexer: GroovyLangLexer, collector: SpanCollector) {
             val symbolicName = lexer.vocabulary.getSymbolicName(token.type) ?: ""

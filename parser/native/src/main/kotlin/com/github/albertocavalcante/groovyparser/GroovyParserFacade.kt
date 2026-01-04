@@ -13,6 +13,7 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.slf4j.LoggerFactory
@@ -108,7 +109,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // Check if we should retry at an earlier phase
         if (shouldRetryAtConversion(request, result)) {
             logger.info("Detected Script fallback for ${request.uri}, retrying at CONVERSION phase")
-            return parseInternal(request.copy(compilePhase = org.codehaus.groovy.control.Phases.CONVERSION))
+            return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
         }
 
         return result
@@ -123,7 +124,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      */
     private fun shouldRetryAtConversion(request: ParseRequest, result: ParseResult): Boolean {
         // Only retry if we compiled past CONVERSION phase
-        if (request.compilePhase <= org.codehaus.groovy.control.Phases.CONVERSION) {
+        if (request.compilePhase <= Phases.CONVERSION) {
             logger.debug(
                 "shouldRetryAtConversion: false - already at CONVERSION or earlier (phase=${request.compilePhase})",
             )
@@ -134,48 +135,52 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // Groovy often successfully compiles a broken class as a Script, so we must check the AST structure
         // regardless of compilation status.
 
+        var shouldRetry = true
+
         // Check for Script fallback pattern: single class extending groovy.lang.Script
         val ast = result.ast
         if (ast == null) {
             logger.debug("shouldRetryAtConversion: false - AST is null")
-            return false
+            shouldRetry = false
         }
 
-        val classes = ast.classes
-        if (classes.isEmpty()) {
+        val classes = ast?.classes.orEmpty()
+        if (shouldRetry && classes.isEmpty()) {
             logger.debug("shouldRetryAtConversion: false - no classes in AST")
-            return false
+            shouldRetry = false
         }
 
-        // Log class details for debugging - use safe call for superClass (null for interfaces)
-        val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
-        logger.info("shouldRetryAtConversion: checking classes: $classInfo")
+        if (shouldRetry) {
+            // Log class details for debugging - use safe call for superClass (null for interfaces)
+            val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
+            logger.info("shouldRetryAtConversion: checking classes: $classInfo")
+        }
 
-        if (classes.size != 1) {
+        if (shouldRetry && classes.size != 1) {
             logger.debug("shouldRetryAtConversion: false - ${classes.size} classes (expected 1)")
-            return false
+            shouldRetry = false
         }
 
-        val cls = classes[0]
-        // Use safe call for superClass - it's null for interfaces
-        val isScript = cls.superClass?.name == "groovy.lang.Script"
-        if (!isScript) {
-            logger.info("shouldRetryAtConversion: false - not a Script for ${cls.name}")
-            return false
+        val cls = classes.firstOrNull()
+        val isScript = cls?.superClass?.name == "groovy.lang.Script"
+        if (shouldRetry && !isScript) {
+            logger.info("shouldRetryAtConversion: false - not a Script for ${cls?.name}")
+            shouldRetry = false
         }
 
         // Check if the source code actually contains a class declaration.
         // If it doesn't, this is an intentional script (not a class that got converted to Script).
-        // We only want to retry for classes that got incorrectly converted to Script due to
-        // unresolved superclass (e.g., "extends spock.lang.Specification" when Spock isn't on classpath).
         val hasClassKeyword = request.content.contains(Regex("""\bclass\s+\w+"""))
-        if (!hasClassKeyword) {
+        if (shouldRetry && !hasClassKeyword) {
             logger.debug("shouldRetryAtConversion: false - intentional script (no class keyword)")
-            return false
+            shouldRetry = false
         }
 
-        logger.info("shouldRetryAtConversion: true - class ${cls.name} was converted to Script")
-        return true
+        if (shouldRetry) {
+            logger.info("shouldRetryAtConversion: true - class ${cls?.name} was converted to Script")
+        }
+
+        return shouldRetry
     }
 
     private fun parseInternal(request: ParseRequest): ParseResult {
