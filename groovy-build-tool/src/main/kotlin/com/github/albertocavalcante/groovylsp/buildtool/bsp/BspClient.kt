@@ -29,6 +29,7 @@ private const val CLIENT_NAME = "groovy-lsp"
 private const val CLIENT_VERSION = "1.0.0"
 private const val INIT_TIMEOUT_SEC = 60L
 private const val REQUEST_TIMEOUT_SEC = 120L
+private const val SHUTDOWN_TIMEOUT_SEC = 10L
 
 /**
  * BSP client for communicating with build servers (bazel-bsp, sbt, Mill).
@@ -83,7 +84,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
     override fun close() {
         runCatching {
             if (initialized) {
-                server?.buildShutdown()?.get(10, TimeUnit.SECONDS)
+                server?.buildShutdown()?.get(SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS)
                 server?.onBuildExit()
             }
         }.onFailure { logger.warn("Error during BSP shutdown: ${it.message}") }
