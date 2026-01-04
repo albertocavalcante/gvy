@@ -128,6 +128,12 @@ escaping hell.
 
 [Brief summary of changes]
 
+# Linked Issues
+
+<!-- Fixes #123, Relates to #456 -->
+
+[Link issues here to ensure they are tracked. Use 'Fixes #N' to close, or 'Relates to #N' for partial work]
+
 # Type of Change
 
 - [ ] Bug fix
@@ -140,6 +146,7 @@ escaping hell.
 - [x] My code follows the code style of this project
 - [ ] I have added tests to cover my changes
 - [ ] All new and existing tests passed
+- [ ] I have linked relevant issues above
 
 # Verification
 

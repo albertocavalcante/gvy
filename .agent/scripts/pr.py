@@ -337,7 +337,7 @@ def get_unresolved_threads(pr_number: int) -> int:
         return 0
 
 
-def generate_merge_body(pr: dict, pr_number: int) -> str:
+def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
     """Generate a beautiful merge commit body."""
     commits = pr.get("commits", [])
     commit_msgs = [
@@ -359,17 +359,39 @@ def generate_merge_body(pr: dict, pr_number: int) -> str:
         body_lines.append(f"- ... and {len(commits) - 10} more commits")
 
     # Add Fixes references for linked issues
-    linked_issues = pr.get("closingIssuesReferences", [])
-    if linked_issues:
+    closing_issues = pr.get("closingIssuesReferences", [])
+    closing_numbers = {i.get("number") for i in closing_issues if i.get("number")}
+
+    if closing_issues:
         body_lines.append("")
         body_lines.append("## Fixes")
         body_lines.append("")
-        for issue in linked_issues:
+        for issue in closing_issues:
             issue_number = issue.get("number")
             if issue_number:
                 body_lines.append(f"Fixes #{issue_number}")
 
-    return "\n".join(body_lines)
+    # Auto-detect "Related/Towards" issues from PR body
+    pr_body = pr.get("body", "")
+    # Matches: Relates to #123, Towards #123, See #123, Part of #123
+    # Case insensitive, handles various separators
+    related_pattern = r"(?:relates|towards|part of|connects to|see)\s+(?:to\s+)?#(\d+)"
+    found_related = re.findall(related_pattern, pr_body, re.IGNORECASE)
+
+    # Filter out issues that are already "Fixes"
+    related_numbers = [n for n in found_related if int(n) not in closing_numbers]
+
+    # Add unique valid related numbers
+    unique_related = sorted(list(set(related_numbers)), key=lambda x: int(x))
+
+    if unique_related:
+        body_lines.append("")
+        body_lines.append("## Related Issues")
+        body_lines.append("")
+        for num in unique_related:
+            body_lines.append(f"Relates to #{num}")
+
+    return "\n".join(body_lines), unique_related
 
 
 @app.command()
@@ -461,15 +483,20 @@ def merge(
         raise typer.Exit(1)
 
     # Generate body
-    merge_body = generate_merge_body(pr, pr_number)
+    merge_body, auto_related = generate_merge_body(pr, pr_number)
 
-    # Append explicitly related issues
+    # Append explicitly related issues (from CLI)
     if relates_to:
-        merge_body += "\n\n## Related Issues\n"
+        # Check if we need to add header
+        if not auto_related:
+            if "\n\n## Related Issues" not in merge_body:
+                merge_body += "\n\n## Related Issues\n"
+
         for issue in relates_to:
-            # Clean issue number (handle #123 and 123)
             clean_issue = issue.strip().lstrip("#")
-            merge_body += f"\nRelates to #{clean_issue}"
+            # Avoid duplicates if auto-detected
+            if clean_issue not in auto_related:
+                merge_body += f"\nRelates to #{clean_issue}"
 
     # Show linked issues if any
     linked_issues = pr.get("closingIssuesReferences", [])
