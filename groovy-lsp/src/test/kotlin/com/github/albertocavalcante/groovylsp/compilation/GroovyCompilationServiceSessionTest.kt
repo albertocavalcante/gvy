@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.engine.impl.core.CoreLanguageEngine
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position

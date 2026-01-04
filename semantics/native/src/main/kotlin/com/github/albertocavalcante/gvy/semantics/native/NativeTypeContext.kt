@@ -55,7 +55,7 @@ class NativeTypeContext(
          * Convert a Groovy ClassNode to SemanticType.
          */
         fun fromClassNode(classNode: ClassNode): SemanticType = when {
-            classNode.equals(ClassHelper.DYNAMIC_TYPE) -> SemanticType.Dynamic()
+            classNode.equals(ClassHelper.dynamicType()) -> SemanticType.Dynamic()
             classNode.isPrimaryClassNode || classNode.redirect() != null -> {
                 resolvePrimitiveOrKnown(classNode.name)
             }

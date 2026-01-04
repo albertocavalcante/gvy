@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.toHoverString
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.stmt.CaseStatement

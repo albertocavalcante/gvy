@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import org.codehaus.groovy.ast.ModuleNode

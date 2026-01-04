@@ -41,6 +41,19 @@ class GroovySemantics(
                 scope = scope,
                 isStaticCompilation = hasCompileStatic(module),
             )
+
+            // Populate script variables from top-level declarations
+            module.statementBlock?.statements?.forEach { stmt ->
+                if (stmt is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
+                    stmt.expression is org.codehaus.groovy.ast.expr.DeclarationExpression
+                ) {
+                    val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+                    val name = decl.variableExpression.name
+                    val type = calculatorRegistry.calculate(decl, context)
+                    scope.defineVariable(name, type)
+                }
+            }
+
             contextCache[module] = context
         }
     }
@@ -80,13 +93,14 @@ class GroovySemantics(
     }
 
     private fun buildRootScope(module: ModuleNode): NativeScope {
-        // Start with empty scope and add classes
-        val scope = NativeScope.empty()
+        // Start with empty scope or first class's scope
+        var scope = NativeScope.empty()
 
         for (classNode in module.classes) {
-            NativeScope.fromClass(classNode)
-            // TODO: Merge or handle multiple classes correctly.
-            // For now, we just ensure a scope is created for the module.
+            // For now we just use the first class found as the root scope basis
+            // (common for scripts where it's the script class)
+            scope = NativeScope.fromClass(classNode)
+            break
         }
 
         return scope

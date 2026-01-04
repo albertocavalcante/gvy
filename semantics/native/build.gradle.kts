@@ -13,10 +13,6 @@ dependencies {
     implementation(libs.groovy.core)
 
     testImplementation(kotlin("test"))
-    // testImplementation(libs.kotest.assertions)
-    testImplementation(project(":parser:native"))
-    testImplementation(project(":parser:api"))
-    // testImplementation(libs.kotest.assertions)
     testImplementation(project(":parser:native"))
     testImplementation(project(":parser:api"))
     testImplementation(libs.junit.jupiter)
