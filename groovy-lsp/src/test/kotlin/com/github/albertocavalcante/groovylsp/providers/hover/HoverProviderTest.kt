@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
+import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -31,15 +33,15 @@ class HoverProviderTest {
     init {
         // Reset DocumentationProvider singleton to ensure it uses our documentProvider instance
         // TODO: Refactor DocumentationProvider to avoid singleton reset in tests (e.g. dependency injection)
-        com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.reset()
+        DocumentationProvider.reset()
     }
 
     private val semanticResolver =
-        com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver(
+        SemanticTypeResolver(
             compilationService.classpathService.getTypeSolver(),
         )
     private val contentGenerator =
-        com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator(semanticResolver)
+        HoverContentGenerator(semanticResolver)
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
