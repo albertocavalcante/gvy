@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.body.Parameter
 import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.Expression
 import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
@@ -21,6 +22,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.IfStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.Statement
 import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
 
 /**
@@ -35,6 +37,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
  * println(xml)
  * ```
  */
+@Suppress("TooManyFunctions")
 class XmlPrinter {
 
     private val output = StringBuilder()
@@ -68,19 +71,33 @@ class XmlPrinter {
             is PackageDeclaration -> printPackageDeclaration(node)
             is ImportDeclaration -> printImportDeclaration(node)
             is AnnotationExpr -> printAnnotation(node)
-            is BlockStatement -> printBlockStatement(node)
-            is ExpressionStatement -> printExpressionStatement(node)
-            is IfStatement -> printIfStatement(node)
-            is ForStatement -> printForStatement(node)
-            is WhileStatement -> printWhileStatement(node)
-            is ReturnStatement -> printReturnStatement(node)
-            is MethodCallExpr -> printMethodCallExpr(node)
-            is VariableExpr -> printVariableExpr(node)
-            is ConstantExpr -> printConstantExpr(node)
-            is BinaryExpr -> printBinaryExpr(node)
-            is PropertyExpr -> printPropertyExpr(node)
-            is ClosureExpr -> printClosureExpr(node)
+            is Statement -> printStatement(node)
+            is Expression -> printExpression(node)
             else -> printGenericNode(node)
+        }
+    }
+
+    private fun printStatement(stmt: Statement) {
+        when (stmt) {
+            is BlockStatement -> printBlockStatement(stmt)
+            is ExpressionStatement -> printExpressionStatement(stmt)
+            is IfStatement -> printIfStatement(stmt)
+            is ForStatement -> printForStatement(stmt)
+            is WhileStatement -> printWhileStatement(stmt)
+            is ReturnStatement -> printReturnStatement(stmt)
+            else -> printGenericNode(stmt)
+        }
+    }
+
+    private fun printExpression(expr: Expression) {
+        when (expr) {
+            is MethodCallExpr -> printMethodCallExpr(expr)
+            is VariableExpr -> printVariableExpr(expr)
+            is ConstantExpr -> printConstantExpr(expr)
+            is BinaryExpr -> printBinaryExpr(expr)
+            is PropertyExpr -> printPropertyExpr(expr)
+            is ClosureExpr -> printClosureExpr(expr)
+            else -> printGenericNode(expr)
         }
     }
 
