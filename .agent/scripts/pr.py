@@ -256,8 +256,23 @@ def validate_semantic_title(title: str, pr_number: int) -> tuple[bool, str]:
     return True, ""
 
 
+def get_current_pr_number() -> int | None:
+    """Auto-detect PR number from current branch."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", "--json", "number"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+        return data.get("number")
+    except subprocess.CalledProcessError:
+        return None
+
+
 def get_pr_details(pr_number: int) -> dict:
-    """Fetch PR title, body, and commits."""
+    """Fetch PR title, body, commits, and linked issues."""
     result = subprocess.run(
         [
             "gh",
@@ -265,7 +280,7 @@ def get_pr_details(pr_number: int) -> dict:
             "view",
             str(pr_number),
             "--json",
-            "title,body,commits,headRefName,state,mergeable",
+            "title,body,commits,headRefName,state,mergeable,closingIssuesReferences",
         ],
         capture_output=True,
         text=True,
@@ -295,12 +310,25 @@ def generate_merge_body(pr: dict, pr_number: int) -> str:
     if len(commits) > 10:
         body_lines.append(f"- ... and {len(commits) - 10} more commits")
 
+    # Add Fixes references for linked issues
+    linked_issues = pr.get("closingIssuesReferences", [])
+    if linked_issues:
+        body_lines.append("")
+        body_lines.append("## Fixes")
+        body_lines.append("")
+        for issue in linked_issues:
+            issue_number = issue.get("number")
+            if issue_number:
+                body_lines.append(f"Fixes #{issue_number}")
+
     return "\n".join(body_lines)
 
 
 @app.command()
 def merge(
-    pr_number: int = typer.Argument(..., help="PR number to merge"),
+    pr_number: int = typer.Argument(
+        None, help="PR number to merge (auto-detects from current branch if omitted)"
+    ),
     title: str = typer.Option(
         None, "--title", "-t", help="Override commit title (must be semantic)"
     ),
@@ -315,7 +343,19 @@ def merge(
     - Title: type(scope): description (#PR)
     - Types: feat, fix, docs, style, refactor, test, chore, perf, ci
     - PR number MUST be in title
+    - Linked issues automatically get "Fixes #N" in body
     """
+    # Auto-detect PR if not provided
+    if pr_number is None:
+        pr_number = get_current_pr_number()
+        if pr_number is None:
+            typer.echo(
+                "Error: Could not detect PR from current branch. Provide PR number.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        typer.echo(f"📌 Auto-detected PR #{pr_number}")
+
     try:
         pr = get_pr_details(pr_number)
     except subprocess.CalledProcessError as e:
@@ -356,6 +396,12 @@ def merge(
     # Generate body
     merge_body = generate_merge_body(pr, pr_number)
 
+    # Show linked issues if any
+    linked_issues = pr.get("closingIssuesReferences", [])
+    if linked_issues:
+        issue_nums = [f"#{i.get('number')}" for i in linked_issues if i.get("number")]
+        typer.echo(f"🔗 Linked issues: {', '.join(issue_nums)}")
+
     # Preview
     print("\n" + "=" * 60)
     print("MERGE PREVIEW (Squash)")
@@ -369,7 +415,7 @@ def merge(
         return
 
     # Confirmation
-    confirm = typer.confirm("\n🚀 Proceed with squash merge?", default=False)
+    confirm = typer.confirm("\n✨ Proceed with squash merge?", default=False)
     if not confirm:
         typer.echo("Merge cancelled.")
         raise typer.Exit(0)
