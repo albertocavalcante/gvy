@@ -4,10 +4,9 @@
 # dependencies = ["typer", "pydantic"]
 # ///
 """
-Advanced PR Review Manager.
-- Inventory: Fetches and displays review threads with high token efficiency.
-- Resolve: Replies and resolves threads, enforcing strict traceable closure rules.
-- Context-Aware: Injects workflow guidelines and loads external GraphQL queries.
+PR Review Manager - Token-efficient review thread CLI.
+All heavy lifting (GraphQL, caching, mutations) is handled here.
+Agent only needs: thread_id, file, line, message.
 """
 
 import json
@@ -20,13 +19,10 @@ from typing import Optional
 import typer
 from pydantic import BaseModel
 
-app = typer.Typer(help="PR Review Management CLI", add_completion=False)
-
-# --- Configuration ---
+app = typer.Typer(help="PR Review CLI", add_completion=False)
 
 AGENT_DIR = Path(__file__).resolve().parent.parent
 QUERIES_DIR = AGENT_DIR / "queries"
-WORKFLOWS_DIR = AGENT_DIR / "workflows"
 
 
 def load_query(name: str) -> str:
@@ -36,49 +32,6 @@ def load_query(name: str) -> str:
         typer.echo(f"Error: Query file {query_file} not found.", err=True)
         raise typer.Exit(1)
     return query_file.read_text()
-
-
-def load_workflow_context(name: str, sections: list[str]) -> str:
-    """Extract specific sections from a markdown workflow file."""
-    workflow_file = WORKFLOWS_DIR / name
-    if not workflow_file.exists():
-        return ""
-
-    content = workflow_file.read_text()
-    extracted = []
-
-    for section in sections:
-        # Simple regex to find content between tags or headers
-        # 1. XML-style tags <tag>...</tag>
-        xml_match = re.search(f"<{section}>(.*?)</{section}>", content, re.DOTALL)
-        if xml_match:
-            extracted.append(f"<{section}>\n{xml_match.group(1).strip()}\n</{section}>")
-            continue
-
-        # 2. Markdown headers # Section ... (until next same-level header)
-        # normalize section name for header search
-        header_match = re.search(
-            f"(?m)^#+ {re.escape(section)}.*$(.*?)(?=>^#+ |\\Z)", content, re.DOTALL
-        )
-        if header_match:
-            extracted.append(f"### {section}\n{header_match.group(1).strip()}")
-
-    return "\n\n".join(extracted)
-
-
-# --- Data Models ---
-
-
-class Thread(BaseModel):
-    thread_id: str
-    comment_id: str
-    path: str
-    line: Optional[int]
-    author: str
-    body: str
-
-
-# --- Helper Functions ---
 
 
 def get_repo_info() -> tuple[str, str]:
@@ -95,36 +48,34 @@ def get_repo_info() -> tuple[str, str]:
 
 def clean_body(text: str) -> str:
     """Aggressively clean text to save tokens."""
-    # Remove HTML comments
-    text = re.sub(r"<!--[\s\S]*?-->", "", text)
-    # Remove images: ![alt](url) -> [IMG:alt]
-    text = re.sub(r"!\[(.*?)\]\(.*?\)", r"[IMG:\1]", text)
-    # Remove linked images: [![alt](url)](url) -> [IMG:alt]
-    text = re.sub(r"\[!\[(.*?)\]\(.*?\)\]\(.*?\)", r"[IMG:\1]", text)
-    # Clean links: [text](url) -> text
-    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)
-    # Remove simple HTML tags
-    text = re.sub(r"<[^>]+>", "", text)
-    # Compress whitespace
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"<!--[\s\S]*?-->", "", text)  # HTML comments
+    text = re.sub(r"\[!\[(.*?)\]\(.*?\)\]\(.*?\)", "", text)  # Linked images
+    text = re.sub(r"!\[(.*?)\]\(.*?\)", "", text)  # Images
+    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)  # Links -> text only
+    text = re.sub(r"<[^>]+>", "", text)  # HTML tags
+    text = re.sub(r"```[\s\S]*?```", "[CODE]", text)  # Code blocks -> [CODE]
+    text = re.sub(r"`[^`]+`", "[code]", text)  # Inline code -> [code]
+    text = re.sub(r"\s+", " ", text).strip()  # Whitespace
     return text
 
 
 def validate_reply(body: str):
-    """Enforce rules: Reply must contain a Commit SHA or Issue ID."""
-    has_commit = re.search(r"\b[0-9a-f]{7,40}\b", body)
-    has_issue = re.search(r"#\d+", body)
-
-    if not (has_commit or has_issue):
+    """Reply must contain Commit SHA or Issue Ref."""
+    if not (re.search(r"\b[0-9a-f]{7,40}\b", body) or re.search(r"#\d+", body)):
         typer.echo(
-            "Error: Reply MUST contain a Commit SHA (e.g. 91a4699) or Issue Ref (e.g. #123) to verify action.",
+            "Error: Reply MUST contain SHA (e.g. 91a4699) or Issue (e.g. #123).",
             err=True,
         )
-        typer.echo(f"Body provided: {body}", err=True)
         raise typer.Exit(1)
 
 
-# --- Commands ---
+class Thread(BaseModel):
+    thread_id: str
+    comment_id: str
+    path: str
+    line: Optional[int]
+    author: str
+    body: str
 
 
 @app.command()
@@ -134,12 +85,10 @@ def inventory(
         None, "--author", "-a", help="Filter by author"
     ),
     refetch: bool = typer.Option(False, "--refetch", "-r", help="Force refetch"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full content"),
 ):
-    """List actionable threads with injected workflow guidance."""
+    """List unresolved threads. Output optimized for LLM consumption."""
     cache_file = Path(f"/tmp/pr-{pr_number}-threads.json")
 
-    # 1. Fetch
     if cache_file.exists() and not refetch:
         data = json.loads(cache_file.read_text())
     else:
@@ -167,10 +116,12 @@ def inventory(
             data = json.loads(result.stdout)
             cache_file.write_text(json.dumps(data, indent=2))
         except subprocess.CalledProcessError as e:
-            typer.echo(f"Error fetching: {e.stderr}", err=True)
+            typer.echo(f"Error: {e.stderr}", err=True)
             raise typer.Exit(1)
 
-    # 2. Parse & Filter
+    pr_id = (
+        data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("id", "")
+    )
     nodes = (
         data.get("data", {})
         .get("repository", {})
@@ -178,21 +129,18 @@ def inventory(
         .get("reviewThreads", {})
         .get("nodes", [])
     )
-    threads = []
 
+    threads = []
     for n in nodes:
         if not n or n.get("isResolved") or n.get("isOutdated"):
             continue
-
-        c_node = n.get("comments", {}).get("nodes", [])
-        if not c_node:
+        c_nodes = n.get("comments", {}).get("nodes", [])
+        if not c_nodes:
             continue
-        c = c_node[0]
-
+        c = c_nodes[0]
         t_author = (c.get("author") or {}).get("login", "ghost")
         if author and t_author.lower() != author.lower():
             continue
-
         threads.append(
             Thread(
                 thread_id=n.get("id"),
@@ -204,64 +152,41 @@ def inventory(
             )
         )
 
-    # 3. Output
-    typer.echo(f"PR={pr_number} UNRESOLVED={len(threads)}")
+    # Ultra-compact output
+    print(f"PR={pr_number} PR_ID={pr_id} COUNT={len(threads)}")
 
     for t in threads:
-        clean_msg = clean_body(t.body)
-        if not verbose and len(clean_msg) > 100:
-            clean_msg = clean_msg[:97] + "..."
-
+        msg = clean_body(t.body)
+        if len(msg) > 120:
+            msg = msg[:117] + "..."
         loc = f"{t.path}:{t.line}" if t.line else t.path
+        print(f"\nT={t.thread_id}")
+        print(f"C={t.comment_id}")
+        print(f"@={t.author} L={loc}")
+        print(f">{msg}")
 
-        print("-" * 60)
-        print(f"THREAD: {t.thread_id} | AUTHOR: {t.author}")
-        print(f"LOC:    {loc}")
-        print(f"MSG:    {clean_msg}")
-
-    # 4. Inject System Reminder (Lazy Fetch)
-    print("\n<system_reminder>")
-
-    # Review Guidelines
-    review_context = load_workflow_context(
-        "review.md",
-        [
-            "ironclad_rules",
-            "reply_templates",
-            'decision_tree id="thread-classification"',
-        ],
-    )
-    if review_context:
-        print("=== REVIEW GUIDELINES ===")
-        print(review_context)
-
-    # Deferral Guidelines
-    defer_context = load_workflow_context(
-        "defer.md", ["How It Works", "Step 1: Create Issue"]
-    )
-    if defer_context:
-        print("\n=== DEFERRAL GUIDELINES ===")
-        print(defer_context)
-
-    print("</system_reminder>")
+    # Minimal agent guidance
+    print("\n<agent_rules>")
+    print("ACTION: FIX|DEFER|REJECT")
+    print("FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'")
+    print("DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'")
+    print("REJECT: Reply with technical reasoning. Do NOT resolve.")
+    print("RESOLVE: uv run .agent/scripts/review_manager.py resolve <T> '<reply>'")
+    print("</agent_rules>")
 
 
 @app.command()
 def resolve(
-    thread_id: str = typer.Argument(..., help="GraphQL Thread ID"),
-    reply: str = typer.Argument(
-        ..., help="Reply message (Must contain SHA or Issue #)"
-    ),
+    thread_id: str = typer.Argument(..., help="Thread ID (T=...)"),
+    reply: str = typer.Argument(..., help="Reply (must contain SHA or #issue)"),
 ):
-    """Reply to and resolve a thread. Enforces traceability."""
+    """Reply and resolve a thread."""
     validate_reply(reply)
 
     try:
-        # Load queries
-        query_reply = load_query("reply-to-thread.graphql")
-        query_resolve = load_query("resolve-review-thread.graphql")
+        q_reply = load_query("reply-to-thread.graphql")
+        q_resolve = load_query("resolve-review-thread.graphql")
 
-        # 1. Reply
         subprocess.run(
             [
                 "gh",
@@ -272,13 +197,11 @@ def resolve(
                 "-F",
                 f"body={reply}",
                 "-f",
-                f"query={query_reply}",
+                f"query={q_reply}",
             ],
             check=True,
             capture_output=True,
         )
-
-        # 2. Resolve
         subprocess.run(
             [
                 "gh",
@@ -287,16 +210,14 @@ def resolve(
                 "-F",
                 f"threadId={thread_id}",
                 "-f",
-                f"query={query_resolve}",
+                f"query={q_resolve}",
             ],
             check=True,
             capture_output=True,
         )
-
-        print(f"✅ Resolved thread {thread_id}")
-
+        print(f"✅ {thread_id}")
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error: {e.stderr}", file=sys.stderr)
+        print(f"❌ {e.stderr}", file=sys.stderr)
         raise typer.Exit(1)
 
 
