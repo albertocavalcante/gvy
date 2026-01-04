@@ -120,6 +120,8 @@ dependencies {
     implementation(project(":indexer:scip"))
     implementation(project(":indexer:lsif"))
     implementation(project(":parser:rewrite"))
+    implementation(project(":semantics:core"))
+    implementation(project(":semantics-native"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
