@@ -69,6 +69,11 @@ object TypeLub {
      * Checks if types can form a valid numeric LUB.
      * Handles mixed primitives and BigInteger/BigDecimal promotion.
      */
+
+    /**
+     * Checks if types can form a valid numeric LUB.
+     * Handles mixed primitives and BigInteger/BigDecimal promotion.
+     */
     private fun checkNumericLub(types: List<SemanticType>): SemanticType? {
         val ranks = types.map { type ->
             getNumericRank(type)
@@ -78,37 +83,56 @@ object TypeLub {
         if (ranks.any { it == null }) return null
 
         val validRanks = ranks.filterNotNull()
-        val maxRank = validRanks.maxOrNull() ?: return null
+        val rawMaxRank = validRanks.maxOrNull() ?: return null
 
-        // Check if all are primitives
-        val allPrimitives = types.all { it is SemanticType.Primitive }
+        // Promote byte/short/char to int minimum (Rank 4)
+        val maxRank = if (rawMaxRank < RANK_INT) RANK_INT else rawMaxRank
 
-        if (allPrimitives) {
-            val primitives = types.filterIsInstance<SemanticType.Primitive>()
-            // Optimize for pure primitives: use standard numeric promotion.
-            return promoteNumeric(primitives)
+        // Special Rule: If any input is a BigInteger or BigDecimal, and we have Float/Double involved,
+        // expected result is BigDecimal to preserve precision (Groovy semantics).
+        val hasBigType = types.any {
+            val r = getNumericRank(it)
+            r == RANK_BIG_INTEGER || r == RANK_BIG_DECIMAL
         }
 
-        // Mixed primitives and wrappers/Big*
-        return when (maxRank) {
-            RANK_BIG_INTEGER -> TypeConstants.BIG_INTEGER
-            RANK_BIG_DECIMAL -> TypeConstants.BIG_DECIMAL
-            RANK_DOUBLE -> TypeConstants.DOUBLE // Or java.lang.Double?
-            // Standard Java/Groovy promotion ranks
-            // Note: Groovy promotes mixed types to the widest type, often preferring Double or BigDecimal
-            RANK_BYTE -> TypeConstants.BYTE
-            RANK_CHAR -> TypeConstants.CHAR
-            RANK_SHORT -> TypeConstants.SHORT
-            RANK_INT -> TypeConstants.INT
-            RANK_LONG -> TypeConstants.LONG
-            RANK_FLOAT -> TypeConstants.FLOAT
-            else -> null
-        }?.let {
-            // Handle mixed primitive/reference cases (e.g. Integer + int -> int, or BigInteger + Double -> BigDecimal)
-            if (maxRank >= RANK_BIG_INTEGER) {
-                if (maxRank == RANK_BIG_INTEGER) TypeConstants.BIG_INTEGER else TypeConstants.BIG_DECIMAL
-            } else {
-                null
+        if (hasBigType && (maxRank == RANK_FLOAT || maxRank == RANK_DOUBLE)) {
+            return TypeConstants.BIG_DECIMAL
+        }
+
+        // Handle Big numbers explicitly
+        if (maxRank == RANK_BIG_INTEGER) return TypeConstants.BIG_INTEGER
+        if (maxRank == RANK_BIG_DECIMAL) return TypeConstants.BIG_DECIMAL
+
+        // For primitives/wrappers, decide based on the input that determined the max rank.
+        // If we have a Wrapper (Known) with the max rank, return Wrapper.
+        // Otherwise, return Primitive.
+
+        // Check if any original type has MAX rank and is a Known type
+        val hasWrapperWithMaxRank = types.any { type ->
+            getNumericRank(type) == maxRank && type is SemanticType.Known
+        }
+
+        return if (hasWrapperWithMaxRank) {
+            when (maxRank) {
+                RANK_BYTE -> SemanticType.Known("java.lang.Byte")
+                RANK_CHAR -> SemanticType.Known("java.lang.Character")
+                RANK_SHORT -> SemanticType.Known("java.lang.Short")
+                RANK_INT -> SemanticType.Known("java.lang.Integer")
+                RANK_LONG -> SemanticType.Known("java.lang.Long")
+                RANK_FLOAT -> SemanticType.Known("java.lang.Float")
+                RANK_DOUBLE -> SemanticType.Known("java.lang.Double")
+                else -> null // Should not happen given constraints
+            }
+        } else {
+            when (maxRank) {
+                RANK_BYTE -> SemanticType.Primitive(PrimitiveKind.BYTE)
+                RANK_CHAR -> SemanticType.Primitive(PrimitiveKind.CHAR)
+                RANK_SHORT -> SemanticType.Primitive(PrimitiveKind.SHORT)
+                RANK_INT -> SemanticType.Primitive(PrimitiveKind.INT)
+                RANK_LONG -> SemanticType.Primitive(PrimitiveKind.LONG)
+                RANK_FLOAT -> SemanticType.Primitive(PrimitiveKind.FLOAT)
+                RANK_DOUBLE -> SemanticType.Primitive(PrimitiveKind.DOUBLE)
+                else -> null
             }
         }
     }
