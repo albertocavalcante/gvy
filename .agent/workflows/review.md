@@ -85,7 +85,7 @@ jq '{pr_id: .data.repository.pullRequest.id, total_threads: .data.repository.pul
 ### 1.3 Inventory Actionable Threads
 
 ```bash
-uv run .agent/scripts/inventory_threads.py /tmp/pr-<PR_NUMBER>-threads.json
+uv run .agent/scripts/review_manager.py inventory <PR_NUMBER>
 ```
 
 <fallback>
