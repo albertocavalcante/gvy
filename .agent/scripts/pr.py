@@ -79,7 +79,7 @@ class Thread(BaseModel):
 
 
 @app.command()
-def inventory(
+def threads(
     pr_number: int = typer.Argument(..., help="PR number"),
     author: Optional[str] = typer.Option(
         None, "--author", "-a", help="Filter by author"
@@ -171,7 +171,7 @@ def inventory(
     print("FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'")
     print("DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'")
     print("REJECT: Reply with technical reasoning. Do NOT resolve.")
-    print("RESOLVE: uv run .agent/scripts/review_manager.py resolve <T> '<reply>'")
+    print("RESOLVE: uv run .agent/scripts/pr.py resolve <T> '<reply>'")
     print("</agent_rules>")
 
 
