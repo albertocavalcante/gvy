@@ -337,21 +337,8 @@ fun Symbol.isAccessibleFrom(contextUri: URI, contextClass: ClassNode?): Boolean 
  * Helper function for checking member accessibility
  */
 private fun Symbol.isAccessibleMember(contextUri: URI, contextClass: ClassNode?): Boolean {
-    val memberVisibility = when (this) {
-        is Symbol.Method -> visibility
-        is Symbol.Field -> visibility
-        is Symbol.Property -> visibility
-        is Symbol.Class -> visibility
-        is Symbol.Variable, is Symbol.Import -> Visibility.PUBLIC
-    }
-
-    val memberOwner = when (this) {
-        is Symbol.Method -> owner
-        is Symbol.Field -> owner
-        is Symbol.Property -> owner
-        is Symbol.Class -> node
-        is Symbol.Variable, is Symbol.Import -> null
-    }
+    val memberVisibility = memberVisibility()
+    val memberOwner = memberOwner()
 
     return when (memberVisibility) {
         Visibility.PUBLIC -> true
@@ -360,4 +347,20 @@ private fun Symbol.isAccessibleMember(contextUri: URI, contextClass: ClassNode?)
         Visibility.PRIVATE -> contextClass == memberOwner
         Visibility.INTERNAL -> uri == contextUri // Treat as package-private in Groovy
     }
+}
+
+private fun Symbol.memberVisibility(): Visibility = when (this) {
+    is Symbol.Method -> visibility
+    is Symbol.Field -> visibility
+    is Symbol.Property -> visibility
+    is Symbol.Class -> visibility
+    is Symbol.Variable, is Symbol.Import -> Visibility.PUBLIC
+}
+
+private fun Symbol.memberOwner(): ClassNode? = when (this) {
+    is Symbol.Method -> owner
+    is Symbol.Field -> owner
+    is Symbol.Property -> owner
+    is Symbol.Class -> node
+    is Symbol.Variable, is Symbol.Import -> null
 }

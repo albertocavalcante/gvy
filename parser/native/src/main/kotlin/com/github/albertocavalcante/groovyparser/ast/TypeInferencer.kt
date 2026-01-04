@@ -31,6 +31,15 @@ object TypeInferencer {
     private const val TYPE_BOOLEAN = "boolean"
     private const val TYPE_INT = "int"
 
+    private const val PRECEDENCE_UNKNOWN = 0
+    private const val PRECEDENCE_SMALL_INT = 1
+    private const val PRECEDENCE_INT = 2
+    private const val PRECEDENCE_LONG = 3
+    private const val PRECEDENCE_FLOAT = 4
+    private const val PRECEDENCE_DOUBLE = 5
+    private const val PRECEDENCE_BIG_INTEGER = 6
+    private const val PRECEDENCE_BIG_DECIMAL = 7
+
     /**
      * Infer the type of a variable declaration.
      * Prefers explicit type annotations over inference.
@@ -200,7 +209,7 @@ object TypeInferencer {
 
         // If either operand is not a known numeric type, we cannot safely promote.
         // A safe fallback is Object, as Groovy's operator overloading is complex.
-        if (leftPrecedence == 0 || rightPrecedence == 0) {
+        if (leftPrecedence == PRECEDENCE_UNKNOWN || rightPrecedence == PRECEDENCE_UNKNOWN) {
             return TYPE_OBJECT
         }
 
@@ -208,11 +217,11 @@ object TypeInferencer {
 
         // Promote based on the highest precedence, with special handling for small integer types.
         return when {
-            resultPrecedence >= 7 -> "java.math.BigDecimal"
-            resultPrecedence == 6 -> "java.math.BigInteger"
-            resultPrecedence == 5 -> "double"
-            resultPrecedence == 4 -> "float"
-            resultPrecedence == 3 -> "long"
+            resultPrecedence >= PRECEDENCE_BIG_DECIMAL -> "java.math.BigDecimal"
+            resultPrecedence == PRECEDENCE_BIG_INTEGER -> "java.math.BigInteger"
+            resultPrecedence == PRECEDENCE_DOUBLE -> "double"
+            resultPrecedence == PRECEDENCE_FLOAT -> "float"
+            resultPrecedence == PRECEDENCE_LONG -> "long"
             else -> "int" // byte, short, and int operations result in int
         }
     }
@@ -222,15 +231,15 @@ object TypeInferencer {
      * Higher value = higher precedence in numeric operations.
      */
     private fun numericPrecedence(type: String): Int = when (type) {
-        "java.math.BigDecimal", "BigDecimal" -> 7
-        "java.math.BigInteger", "BigInteger" -> 6
-        "double", "java.lang.Double" -> 5
-        "float", "java.lang.Float" -> 4
-        "long", "java.lang.Long" -> 3
-        "int", "java.lang.Integer", "Integer" -> 2
-        "short", "java.lang.Short" -> 1
-        "byte", "java.lang.Byte" -> 1
-        else -> 0
+        "java.math.BigDecimal", "BigDecimal" -> PRECEDENCE_BIG_DECIMAL
+        "java.math.BigInteger", "BigInteger" -> PRECEDENCE_BIG_INTEGER
+        "double", "java.lang.Double" -> PRECEDENCE_DOUBLE
+        "float", "java.lang.Float" -> PRECEDENCE_FLOAT
+        "long", "java.lang.Long" -> PRECEDENCE_LONG
+        "int", "java.lang.Integer", "Integer" -> PRECEDENCE_INT
+        "short", "java.lang.Short" -> PRECEDENCE_SMALL_INT
+        "byte", "java.lang.Byte" -> PRECEDENCE_SMALL_INT
+        else -> PRECEDENCE_UNKNOWN
     }
 
     // ==========================================================================
