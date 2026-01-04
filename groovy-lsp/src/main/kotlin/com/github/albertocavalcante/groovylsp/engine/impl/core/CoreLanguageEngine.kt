@@ -18,9 +18,9 @@ import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreDefi
 import com.github.albertocavalcante.groovylsp.engine.impl.core.features.CoreHoverProvider
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.eclipse.lsp4j.Diagnostic
 
 /**

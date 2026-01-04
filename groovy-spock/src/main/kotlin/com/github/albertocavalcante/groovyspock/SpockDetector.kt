@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyspock
 
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode

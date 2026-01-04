@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.engine.api
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
