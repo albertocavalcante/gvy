@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
-import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
@@ -42,6 +41,7 @@ import java.net.URI
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
+    private val contentGenerator: com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
@@ -239,7 +239,11 @@ class HoverProvider(
      */
     private fun extractClassNameForDocumentation(node: ASTNode): String? = when (node) {
         is ClassNode -> node.name
-        is ImportNode -> node.type?.name ?: node.className
+        is ImportNode -> {
+            val type: ClassNode? = node.type
+            type?.name ?: node.className
+        }
+
         else -> null
     }
 
@@ -248,12 +252,13 @@ class HoverProvider(
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
         // Check if this is a Jenkins step and we have metadata for it
-        val jenkinsHover = tryCreateJenkinsStepHover(node, documentUri)
-        if (jenkinsHover != null) {
-            return jenkinsHover
-        }
+        tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
 
-        val baseHover = createHoverFor(node).getOrNull() ?: return null
+        val module = compilationService.getAst(documentUri) as? ModuleNode
+        val baseHoverResult = contentGenerator.generateHover(node, module)
+        val baseHover = baseHoverResult.getOrNull() ?: return null
+
+        logger.info("DEBUG: Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
 
         // Try to get documentation for the node
         var doc = try {
@@ -312,8 +317,6 @@ class HoverProvider(
         if (varsHover != null) {
             return varsHover
         }
-
-        // Fall back to bundled Jenkins step metadata
         val metadata = compilationService.workspaceManager.getAllJenkinsMetadata() ?: return null
         val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 

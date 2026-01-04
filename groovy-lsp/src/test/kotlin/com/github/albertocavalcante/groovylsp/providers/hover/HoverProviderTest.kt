@@ -34,7 +34,13 @@ class HoverProviderTest {
         com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.reset()
     }
 
-    private val hoverProvider = HoverProvider(compilationService, documentProvider)
+    private val semanticResolver =
+        com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver(
+            compilationService.classpathService.getTypeSolver(),
+        )
+    private val contentGenerator =
+        com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator(semanticResolver)
+    private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
     fun `provideHover returns hover for method declaration`() = runTest {
@@ -428,7 +434,7 @@ class Calculator {
                     content.value.contains("String"),
             )
         } else {
-            println("DEBUG: No hover found for string declaration")
+            logger.debug("No hover found for string declaration")
         }
 
         // Test hover on def variable declaration
@@ -643,11 +649,13 @@ class Calculator {
         // Test regular import - hover over "java.util.List"
         val hover1 = hoverProvider.provideHover(uri.toString(), Position(0, 10)) // On "java"
         assertNotNull(hover1, "Import hover should not be null")
+        logger.debug("hover1: ${hover1.contents.right.value}")
         assertTrue(hover1.contents.right.value.contains("import java.util.List"))
 
         // Hover on the imported type name itself ("List") should still show the import statement.
         val hover1Type = hoverProvider.provideHover(uri.toString(), Position(0, 17)) // On "List"
         assertNotNull(hover1Type, "Import type hover should not be null")
+        logger.debug("hover1Type: ${hover1Type.contents.right.value}")
         assertTrue(hover1Type.contents.right.value.contains("import java.util.List"))
 
         // Test aliased import - hover over "java.util.Date as JDate"
@@ -855,7 +863,8 @@ class Calculator {
         )
 
         // Create HoverProvider with the mock
-        val hoverProviderWithMock = HoverProvider(compilationService, documentProvider, mockSourceNavigator)
+        val hoverProviderWithMock =
+            HoverProvider(compilationService, documentProvider, contentGenerator, mockSourceNavigator)
 
         val groovyCode = """
             import java.text.SimpleDateFormat
@@ -916,7 +925,8 @@ class Calculator {
         )
 
         // Create HoverProvider with the mock
-        val hoverProviderWithMock = HoverProvider(compilationService, documentProvider, mockSourceNavigator)
+        val hoverProviderWithMock =
+            HoverProvider(compilationService, documentProvider, contentGenerator, mockSourceNavigator)
 
         val groovyCode = """
             import java.util.ArrayList

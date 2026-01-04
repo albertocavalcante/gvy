@@ -30,10 +30,18 @@ class NativeHoverProvider(
 
     private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
 
+    // Initialize semantic bridge and generator
+    private val semanticResolver = com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver(
+        compilationService.classpathService.getTypeSolver(),
+    )
+    private val contentGenerator =
+        com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator(semanticResolver)
+
     // Delegate to existing HoverProvider which has all the domain logic
     private val delegate = DelegateHoverProvider(
         compilationService,
         documentProvider,
+        contentGenerator,
         sourceNavigator,
     )
 
