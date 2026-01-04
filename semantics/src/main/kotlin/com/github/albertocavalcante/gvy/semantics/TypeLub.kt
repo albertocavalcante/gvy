@@ -314,7 +314,16 @@ object TypeLub {
     private const val RANK_FLOAT = 8
     private const val RANK_DOUBLE = 9
 
+    // Numeric promotion rank (widest type wins)
+    // Note: FLOAT (8) and DOUBLE (9) are ranked higher than BIG_DECIMAL (7) because
+    // in Groovy, mixed operations often promote to Double unless explicitly coerced.
+    // While BigDecimal is "precise", Double is "wider" in terms of range in this model.
     @Suppress("REDUNDANT_ELSE_IN_WHEN") // LSP false positive: SemanticType isn't fully exhausted by Primitive/Known
+    /**
+     * Checks if the given type is a numeric primitive.
+     */
+    private fun isNumeric(type: SemanticType): Boolean = getNumericRank(type) != null
+
     private fun getNumericRank(type: SemanticType): Int? = when (type) {
         is SemanticType.Primitive -> when (type.kind) {
             PrimitiveKind.BYTE -> RANK_BYTE
