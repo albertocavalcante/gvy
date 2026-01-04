@@ -63,8 +63,6 @@ class InlayHintsProviderTest {
     private val testUri = URI.create("file:///test/Test.groovy")
     private val testDocId = TextDocumentIdentifier(testUri.toString())
 
-// ... (existing imports)
-
     @BeforeEach
     fun setup() {
         compilationService = mockk(relaxed = true)
@@ -304,8 +302,6 @@ class InlayHintsProviderTest {
                 emptyArray(),
                 null,
             )
-
-            mockResolverType("path", "String")
 
             mockResolverType("path", "String")
 

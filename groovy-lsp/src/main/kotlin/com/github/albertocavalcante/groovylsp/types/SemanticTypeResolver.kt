@@ -65,7 +65,9 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
         is SemanticType.Primitive -> type.kind.name.lowercase()
         is SemanticType.Dynamic -> type.hint ?: "def"
         is SemanticType.Unknown -> "unresolved"
-        is SemanticType.Union -> type.types.joinToString(" | ") { formatSemanticType(it) }
+        is SemanticType.Union -> type.types.sortedBy {
+            formatSemanticType(it)
+        }.joinToString(" | ") { formatSemanticType(it) }
         is SemanticType.Null -> "null"
         is SemanticType.Array -> "${formatSemanticType(type.componentType)}[]"
     }
