@@ -102,7 +102,6 @@ class SemanticTypeResolverTest {
         val classNode = resolver.toClassNode(type, null)
 
         assertThat(classNode).isNotNull
-        assertThat(classNode).isNotNull
         // Should return String because "String" < "int" in sort order (S < i)
         assertThat(classNode?.name).isEqualTo("java.lang.String")
     }
