@@ -85,14 +85,18 @@ Expected: `COUNT=0` (no unresolved threads)
 ### 2.1 Dry Run
 
 ```bash
-uv run .agent/scripts/pr.py merge <PR_NUMBER> --dry-run
+# Preview merge (auto-detect PR)
+uv run .agent/scripts/pr.py merge --dry-run
+
+# Include related issues (e.g. tracking issues)
+uv run .agent/scripts/pr.py merge --relates-to 622 --dry-run
 ```
 
 This will:
 
-- Fetch PR details
+- Fetch PR details & linked issues (Fixes)
+- Include related issues (Relates to #N)
 - Validate/generate semantic title
-- Generate commit body from commits
 - Show preview WITHOUT merging
 
 ### 2.2 If Title Invalid
@@ -100,7 +104,7 @@ This will:
 If the existing PR title isn't semantic, provide one:
 
 ```bash
-uv run .agent/scripts/pr.py merge <PR_NUMBER> \
+uv run .agent/scripts/pr.py merge \
   --title "feat(semantics): implement type inference (#<PR_NUMBER>)" \
   --dry-run
 ```
@@ -112,14 +116,15 @@ uv run .agent/scripts/pr.py merge <PR_NUMBER> \
 ### 3.1 Final Merge
 
 ```bash
-uv run .agent/scripts/pr.py merge <PR_NUMBER> \
-  --title "feat(semantics): implement type inference (#<PR_NUMBER>)"
+uv run .agent/scripts/pr.py merge \
+  --title "feat(semantics): implement type inference (#<PR_NUMBER>)" \
+  --relates-to 622
 ```
 
 The script will:
 
 1. Show preview
-2. Ask for confirmation: `Proceed with squash merge? [y/N]`
+2. Ask for confirmation: `✨ Proceed with squash merge? [y/N]`
 3. On `y`: Execute `gh pr merge --squash`
 4. On `N`: Cancel
 
@@ -128,14 +133,17 @@ The script will:
 ## Quick Reference
 
 ```
-# Preview merge
-uv run .agent/scripts/pr.py merge 634 --dry-run
+# Preview merge (auto-detect PR)
+uv run .agent/scripts/pr.py merge --dry-run
 
-# Merge with custom title  
-uv run .agent/scripts/pr.py merge 634 --title "feat(semantics): add type LUB (#634)"
+# Generate semantic commit message using AI
+uv run .agent/scripts/pr.py merge --ai --dry-run
 
-# Check threads are resolved first
-uv run .agent/scripts/pr.py threads 634 --refetch
+# Merge with related issues
+uv run .agent/scripts/pr.py merge --relates-to 622
+
+# Merge with custom title
+uv run .agent/scripts/pr.py merge --title "feat(semantics): add type LUB (#634)"
 ```
 
 ---

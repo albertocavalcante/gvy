@@ -109,7 +109,7 @@ class SemanticTypeTest {
         )
         val str = union.toString()
         assert(str.contains("|"))
-        assert(str.contains("String") || str.contains("int"))
-        assert(str.contains("int") || str.contains("String"))
+        assert(str.contains("String"))
+        assert(str.contains("int"))
     }
 }
