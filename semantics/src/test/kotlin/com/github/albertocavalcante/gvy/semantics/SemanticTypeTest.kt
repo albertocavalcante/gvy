@@ -64,4 +64,52 @@ class SemanticTypeTest {
             SemanticType.Known("Integer"),
         )
     }
+
+    @Test
+    fun `array type toString`() {
+        val arrayType = SemanticType.Array(SemanticType.Primitive(PrimitiveKind.INT))
+        assertEquals("int[]", arrayType.toString())
+
+        val nestedArray = SemanticType.Array(SemanticType.Array(SemanticType.Known("String")))
+        assertEquals("String[][]", nestedArray.toString())
+    }
+
+    @Test
+    fun `array type equality`() {
+        assertEquals(
+            SemanticType.Array(SemanticType.Primitive(PrimitiveKind.INT)),
+            SemanticType.Array(SemanticType.Primitive(PrimitiveKind.INT)),
+        )
+        assertNotEquals(
+            SemanticType.Array(SemanticType.Primitive(PrimitiveKind.INT)),
+            SemanticType.Array(SemanticType.Primitive(PrimitiveKind.LONG)),
+        )
+    }
+
+    @Test
+    fun `null type toString`() {
+        assertEquals("null", SemanticType.Null.toString())
+    }
+
+    @Test
+    fun `null type is singleton`() {
+        val null1 = SemanticType.Null
+        val null2 = SemanticType.Null
+        assertEquals(null1, null2)
+        assert(null1 === null2) // Same reference
+    }
+
+    @Test
+    fun `union type toString contains all types`() {
+        val union = SemanticType.Union(
+            setOf(
+                SemanticType.Known("String"),
+                SemanticType.Primitive(PrimitiveKind.INT),
+            ),
+        )
+        val str = union.toString()
+        assert(str.contains("|"))
+        assert(str.contains("String") || str.contains("int"))
+        assert(str.contains("int") || str.contains("String"))
+    }
 }
