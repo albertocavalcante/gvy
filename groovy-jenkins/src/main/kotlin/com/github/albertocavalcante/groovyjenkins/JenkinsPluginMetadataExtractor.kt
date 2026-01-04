@@ -113,9 +113,8 @@ class JenkinsPluginMetadataExtractor {
                 }
             }
 
-            // Skip common non-step symbols (case-insensitive check)
-            if (!shouldSkipSymbol(stepName)) {
-                val validStepName = stepName
+            val validStepName = stepName?.takeUnless { shouldSkipSymbol(it) }
+            if (validStepName != null) {
                 logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
 
                 val parameters = extractParameters(classInfo)
