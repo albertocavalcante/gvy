@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -107,14 +110,16 @@ internal object CompletionContextDetector {
         nodeAtCursor: ASTNode?,
         astModel: GroovyAstModel,
         context: SymbolCompletionContext,
+        semanticResolver: SemanticTypeResolver,
+        moduleNode: ModuleNode?,
     ): CompletionProvider.ContextType? {
         val node = nodeAtCursor ?: return null
         val parent = astModel.getParent(node)
 
         return when (node) {
-            is PropertyExpression -> memberAccessFromExpression(node.objectExpression, context)
-            is VariableExpression -> completionFromVariableExpression(node, parent, context)
-            is ConstantExpression -> completionFromConstantExpression(parent, context)
+            is PropertyExpression -> memberAccessFromExpression(node.objectExpression, semanticResolver, moduleNode)
+            is VariableExpression -> completionFromVariableExpression(node, parent, semanticResolver, moduleNode)
+            is ConstantExpression -> completionFromConstantExpression(parent, semanticResolver, moduleNode)
             is ClassExpression -> completionFromClassExpression(node)
             is MethodCallExpression -> null
             else -> null
@@ -163,21 +168,21 @@ internal object CompletionContextDetector {
     }
 }
 
-private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
-    val inferredVar = context.variables.find { it.name == variableName }
-    return inferredVar?.type
-}
+private fun resolveQualifier(
+    objectExpr: Expression,
+    semanticResolver: SemanticTypeResolver,
+    moduleNode: ModuleNode?,
+): Pair<String, String?>? {
+    val qualifierName = if (objectExpr is VariableExpression) objectExpr.name else null
 
-private fun resolveQualifier(objectExpr: Expression, context: SymbolCompletionContext): Pair<String, String?>? {
-    var qualifierType = objectExpr.type?.name
-    var qualifierName: String? = null
+    // Resolve type using semantic resolver
+    val resolvedType = semanticResolver.resolveType(objectExpr, moduleNode)
 
-    if (objectExpr is VariableExpression) {
-        qualifierName = objectExpr.name
-        val inferredType = resolveVariableType(objectExpr.name, context)
-        if (inferredType != null) {
-            qualifierType = inferredType
-        }
+    val qualifierType = when (resolvedType) {
+        is SemanticType.Known -> resolvedType.fqn
+        // Fallback for simple cases if semantic resolution returns unknown but AST has basic type info
+        // (though SemanticTypeResolver should handle this)
+        else -> objectExpr.type?.name
     }
 
     return qualifierType?.let { it to qualifierName }
@@ -185,22 +190,28 @@ private fun resolveQualifier(objectExpr: Expression, context: SymbolCompletionCo
 
 private fun memberAccessFromExpression(
     expression: Expression,
-    context: SymbolCompletionContext,
-): CompletionProvider.ContextType.MemberAccess? = resolveQualifier(expression, context)?.let { (type, name) ->
-    CompletionProvider.ContextType.MemberAccess(type, name)
-}
+    semanticResolver: SemanticTypeResolver,
+    moduleNode: ModuleNode?,
+): CompletionProvider.ContextType.MemberAccess? =
+    resolveQualifier(expression, semanticResolver, moduleNode)?.let { (type, name) ->
+        CompletionProvider.ContextType.MemberAccess(type, name)
+    }
 
 private fun completionFromVariableExpression(
     expression: VariableExpression,
     parent: ASTNode?,
-    context: SymbolCompletionContext,
+    semanticResolver: SemanticTypeResolver,
+    moduleNode: ModuleNode?,
 ): CompletionProvider.ContextType? {
     if (parent is PropertyExpression) {
-        var qualifierType = expression.type?.name
         val qualifierName = expression.name
-        val inferredType = resolveVariableType(expression.name, context)
-        if (inferredType != null) {
-            qualifierType = inferredType
+
+        // Resolve type using semantic resolver
+        val resolvedType = semanticResolver.resolveType(expression, moduleNode)
+
+        val qualifierType = when (resolvedType) {
+            is SemanticType.Known -> resolvedType.fqn
+            else -> expression.type?.name
         }
 
         return qualifierType?.let { CompletionProvider.ContextType.MemberAccess(it, qualifierName) }
@@ -220,13 +231,14 @@ private fun completionFromVariableExpression(
 
 private fun completionFromConstantExpression(
     parent: ASTNode?,
-    context: SymbolCompletionContext,
+    semanticResolver: SemanticTypeResolver,
+    moduleNode: ModuleNode?,
 ): CompletionProvider.ContextType.MemberAccess? {
     if (parent !is PropertyExpression) {
         return null
     }
     val objectExpr = parent.objectExpression
-    return memberAccessFromExpression(objectExpr, context)
+    return memberAccessFromExpression(objectExpr, semanticResolver, moduleNode)
 }
 
 private fun completionFromClassExpression(expression: ClassExpression): CompletionProvider.ContextType.TypeParameter? {

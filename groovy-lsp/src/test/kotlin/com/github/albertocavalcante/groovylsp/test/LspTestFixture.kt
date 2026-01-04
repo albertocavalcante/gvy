@@ -38,6 +38,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
+                mockk(relaxed = true),
                 content,
             )
         }
@@ -56,6 +57,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
+                mockk(relaxed = true),
                 content,
             )
         }

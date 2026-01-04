@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.test.LspTestFixture
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionItem
 import org.junit.jupiter.api.BeforeEach
@@ -24,6 +25,7 @@ class ImportCompletionTest {
             line,
             character,
             fixture.compilationService,
+            mockk(relaxed = true),
             content,
         )
     }

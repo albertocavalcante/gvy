@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -43,6 +44,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -72,6 +74,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -101,6 +104,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -129,6 +133,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -156,6 +161,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -187,6 +193,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -214,6 +221,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 

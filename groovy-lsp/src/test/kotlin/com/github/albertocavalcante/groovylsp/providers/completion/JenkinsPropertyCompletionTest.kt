@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -51,6 +52,7 @@ class JenkinsPropertyCompletionTest {
             line = 0,
             character = 12, // After "env."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -77,6 +79,7 @@ class JenkinsPropertyCompletionTest {
             line = 0,
             character = 21, // After "currentBuild."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -100,6 +103,7 @@ class JenkinsPropertyCompletionTest {
             line = 0,
             character = 20, // After "env."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -124,6 +128,7 @@ class JenkinsPropertyCompletionTest {
             line = 0,
             character = 25, // After "myList."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -153,6 +158,7 @@ class JenkinsPropertyCompletionTest {
             line = 1,
             character = 4, // After "env."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -182,6 +188,7 @@ class JenkinsPropertyCompletionTest {
             line = 1,
             character = 13, // After "currentBuild."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -216,6 +223,7 @@ class JenkinsPropertyCompletionTest {
             line = 1,
             character = 7, // After "params."
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
