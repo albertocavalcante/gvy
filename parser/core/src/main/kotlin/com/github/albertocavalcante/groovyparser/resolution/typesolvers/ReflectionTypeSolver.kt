@@ -18,8 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
  * @param jreOnly If true, only resolve types in java.* and javax.* packages
  */
 class ReflectionTypeSolver(
-    private val classLoader: ClassLoader = ReflectionTypeSolver::class.java.classLoader,
     private val jreOnly: Boolean = true,
+    private val classLoader: ClassLoader = ReflectionTypeSolver::class.java.classLoader,
 ) : TypeSolver {
 
     override var parent: TypeSolver? = null

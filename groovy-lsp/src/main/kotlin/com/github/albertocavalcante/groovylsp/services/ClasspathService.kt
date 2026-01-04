@@ -188,13 +188,8 @@ class ClasspathService(
      * Returns a TypeSolver backed by the current classloader.
      */
     fun getTypeSolver(): TypeSolver = CombinedTypeSolver(
-        ReflectionTypeSolver(currentClassLoader, jreOnly = false),
+        ReflectionTypeSolver(classLoader = currentClassLoader, jreOnly = false),
     )
-
-    /**
-     * Returns the current classloader.
-     */
-    fun getCurrentClassLoader(): ClassLoader = currentClassLoader
 
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()
