@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -64,7 +65,9 @@ class LspTestFixture {
     }
 
     fun assertHoverContains(line: Int, char: Int, expectedText: String) = runBlocking {
-        val hoverProvider = HoverProvider(compilationService, documentProvider)
+        val resolver = mockk<com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver>(relaxed = true)
+        val generator = com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator(resolver)
+        val hoverProvider = HoverProvider(compilationService, documentProvider, generator)
         val hover = hoverProvider.provideHover(uri.toString(), Position(line, char))
 
         assertTrue(hover != null, "Hover should not be null at $line:$char")

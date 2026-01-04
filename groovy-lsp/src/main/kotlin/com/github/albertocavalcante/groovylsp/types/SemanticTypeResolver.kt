@@ -29,6 +29,12 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
     }
 
     /**
+     * Convert a ClassNode directly to a SemanticType.
+     * Useful for static type references where we don't need full resolution context.
+     */
+    fun toSemanticType(classNode: ClassNode): SemanticType = resolveType(classNode, null)
+
+    /**
      * Convert SemanticType to ClassNode for backward compatibility.
      * Used during migration to keep existing code working.
      *
