@@ -13,7 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.Expression
  * Jenkins-specific:
  * - `@NonCPS` - marks methods that shouldn't be CPS-transformed
  */
-class AnnotationExpr(val name: String) : Node() {
+class AnnotationExpr(val name: String) : Expression() {
 
     /** Annotation members as key-value pairs */
     val members: MutableMap<String, Expression> = mutableMapOf()
