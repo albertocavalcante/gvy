@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory
  * This class will be removed in a future version.
  */
 @Deprecated(
-    message = "Use SemanticTypeResolver from semantics-native instead",
+    message = "Use SemanticTypeResolver instead",
     replaceWith = ReplaceWith(
         "SemanticTypeResolver",
         "com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver",
