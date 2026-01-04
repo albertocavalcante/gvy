@@ -263,7 +263,7 @@ def validate_semantic_title(title: str, pr_number: int) -> tuple[bool, str]:
     return True, ""
 
 
-def get_current_pr_number() -> int | None:
+def get_current_pr_number() -> Optional[int]:
     """Auto-detect PR number from current branch."""
     try:
         result = subprocess.run(
@@ -383,6 +383,9 @@ def merge(
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="Preview without merging"
     ),
+    relates_to: Optional[list[str]] = typer.Option(
+        None, "--relates-to", "-R", help="Issue numbers this PR relates to (e.g. '622')"
+    ),
 ):
     """
     Squash merge a PR with enforced semantic commit message.
@@ -391,7 +394,9 @@ def merge(
     - Title: type(scope): description (#PR)
     - Types: feat, fix, docs, style, refactor, test, chore, perf, ci
     - PR number MUST be in title
+    - PR number MUST be in title
     - Linked issues automatically get "Fixes #N" in body
+    - Related issues can be added via --relates-to
     """
     # Auto-detect PR if not provided
     if pr_number is None:
@@ -457,6 +462,14 @@ def merge(
 
     # Generate body
     merge_body = generate_merge_body(pr, pr_number)
+
+    # Append explicitly related issues
+    if relates_to:
+        merge_body += "\n\n## Related Issues\n"
+        for issue in relates_to:
+            # Clean issue number (handle #123 and 123)
+            clean_issue = issue.strip().lstrip("#")
+            merge_body += f"\nRelates to #{clean_issue}"
 
     # Show linked issues if any
     linked_issues = pr.get("closingIssuesReferences", [])
