@@ -228,5 +228,173 @@ def resolve(
         raise typer.Exit(1)
 
 
+# --- Merge Command ---
+
+COMMIT_TYPES = [
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "test",
+    "chore",
+    "perf",
+    "ci",
+]
+
+
+def validate_semantic_title(title: str, pr_number: int) -> tuple[bool, str]:
+    """Validate title follows: type(scope): description (#PR)"""
+    # Pattern: type(optional-scope): description (#number)
+    pattern = rf"^({'|'.join(COMMIT_TYPES)})(\([a-z0-9-]+\))?: .+ \(#{pr_number}\)$"
+    if not re.match(pattern, title, re.IGNORECASE):
+        return False, (
+            f"Title must match: type(scope): description (#{pr_number})\n"
+            f"Types: {', '.join(COMMIT_TYPES)}\n"
+            f"Example: feat(semantics): implement type inference (#{pr_number})"
+        )
+    return True, ""
+
+
+def get_pr_details(pr_number: int) -> dict:
+    """Fetch PR title, body, and commits."""
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "title,body,commits,headRefName,state,mergeable",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def generate_merge_body(pr: dict, pr_number: int) -> str:
+    """Generate a beautiful merge commit body."""
+    commits = pr.get("commits", [])
+    commit_msgs = [
+        c.get("messageHeadline", "") for c in commits if c.get("messageHeadline")
+    ]
+
+    body_lines = [
+        f"PR #{pr_number}: {pr.get('title', 'No title')}",
+        "",
+        "## Changes",
+        "",
+    ]
+
+    # Group commits by type
+    for msg in commit_msgs[:10]:  # Limit to 10 commits
+        body_lines.append(f"- {msg}")
+
+    if len(commits) > 10:
+        body_lines.append(f"- ... and {len(commits) - 10} more commits")
+
+    return "\n".join(body_lines)
+
+
+@app.command()
+def merge(
+    pr_number: int = typer.Argument(..., help="PR number to merge"),
+    title: str = typer.Option(
+        None, "--title", "-t", help="Override commit title (must be semantic)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without merging"
+    ),
+):
+    """
+    Squash merge a PR with enforced semantic commit message.
+
+    Requirements:
+    - Title: type(scope): description (#PR)
+    - Types: feat, fix, docs, style, refactor, test, chore, perf, ci
+    - PR number MUST be in title
+    """
+    try:
+        pr = get_pr_details(pr_number)
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"Error fetching PR: {e.stderr}", err=True)
+        raise typer.Exit(1)
+
+    if pr.get("state") != "OPEN":
+        typer.echo(
+            f"Error: PR #{pr_number} is not open (state: {pr.get('state')})", err=True
+        )
+        raise typer.Exit(1)
+
+    if pr.get("mergeable") == "CONFLICTING":
+        typer.echo(
+            f"Error: PR #{pr_number} has conflicts. Resolve before merging.", err=True
+        )
+        raise typer.Exit(1)
+
+    # Generate or validate title
+    if title:
+        merge_title = title
+    else:
+        # Try to make existing title semantic
+        existing = pr.get("title", "")
+        if f"(#{pr_number})" not in existing:
+            merge_title = f"{existing} (#{pr_number})"
+        else:
+            merge_title = existing
+
+    # Validate title
+    valid, error = validate_semantic_title(merge_title, pr_number)
+    if not valid:
+        typer.echo(f"\n❌ Invalid commit title:\n{error}", err=True)
+        typer.echo(f"\nCurrent title: {merge_title}", err=True)
+        typer.echo("\nUse --title to provide a valid semantic title.", err=True)
+        raise typer.Exit(1)
+
+    # Generate body
+    merge_body = generate_merge_body(pr, pr_number)
+
+    # Preview
+    print("\n" + "=" * 60)
+    print("MERGE PREVIEW (Squash)")
+    print("=" * 60)
+    print(f"\n📝 Title:\n{merge_title}")
+    print(f"\n📋 Body:\n{merge_body}")
+    print("\n" + "=" * 60)
+
+    if dry_run:
+        print("\n[DRY RUN] Would merge with above message.")
+        return
+
+    # Confirmation
+    confirm = typer.confirm("\n🚀 Proceed with squash merge?", default=False)
+    if not confirm:
+        typer.echo("Merge cancelled.")
+        raise typer.Exit(0)
+
+    # Execute merge
+    try:
+        subprocess.run(
+            [
+                "gh",
+                "pr",
+                "merge",
+                str(pr_number),
+                "--squash",
+                "--subject",
+                merge_title,
+                "--body",
+                merge_body,
+            ],
+            check=True,
+        )
+        print(f"\n✅ PR #{pr_number} merged successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Merge failed: {e}", file=sys.stderr)
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
