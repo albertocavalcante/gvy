@@ -184,8 +184,8 @@ object TypeLub {
             when (it) {
                 is SemanticType.Known -> it
                 is SemanticType.Primitive -> {
-                    // Primitives in mixed context are excluded from reference type ancestor search.
-                    // The outer function returns OBJECT for mixed primitive/reference cases.
+                    // Primitives in mixed context (e.g., int + String) are excluded from
+                    // reference type ancestor search. The outer function returns OBJECT.
                     null
                 }
 

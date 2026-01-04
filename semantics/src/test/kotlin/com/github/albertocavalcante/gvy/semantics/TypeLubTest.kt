@@ -177,4 +177,21 @@ class TypeLubTest {
 
         assertEquals(TypeConstants.LONG, result, "LUB(Integer, long) should be long")
     }
+
+    @Test
+    fun `lub with Union type returns Object`() {
+        // Union types don't have a simple common ancestor in the current implementation,
+        // so LUB falls back to Object
+        val union = SemanticType.Union(
+            setOf(
+                SemanticType.Known("java.lang.String"),
+                SemanticType.Primitive(PrimitiveKind.INT),
+            ),
+        )
+        val known = SemanticType.Known("java.lang.Integer")
+
+        val result = TypeLub.lub(listOf(union, known))
+
+        assertEquals(TypeConstants.OBJECT, result, "LUB involving Union should fall back to Object")
+    }
 }
