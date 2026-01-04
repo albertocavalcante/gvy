@@ -67,6 +67,38 @@ internal object NumericLubLogic {
         }
     }
 
+    /**
+     * Implements Binary Numeric Promotion according to JLS 5.6.2.
+     *
+     * Rules:
+     * 1. If any operand is of type double, the result is double.
+     * 2. Otherwise, if any operand is of type float, the result is float.
+     * 3. Otherwise, if any operand is of type long, the result is long.
+     * 4. Otherwise, the result is of type int.
+     */
+    fun binaryNumericPromotion(left: ResolvedPrimitiveType, right: ResolvedPrimitiveType): ResolvedPrimitiveType {
+        require(left != ResolvedPrimitiveType.BOOLEAN && right != ResolvedPrimitiveType.BOOLEAN) {
+            "Cannot compute numeric promotion involving boolean"
+        }
+
+        return when {
+            left == ResolvedPrimitiveType.DOUBLE ||
+                right == ResolvedPrimitiveType.DOUBLE -> ResolvedPrimitiveType.DOUBLE
+
+            left == ResolvedPrimitiveType.FLOAT ||
+                right == ResolvedPrimitiveType.FLOAT -> ResolvedPrimitiveType.FLOAT
+
+            left == ResolvedPrimitiveType.LONG ||
+                right == ResolvedPrimitiveType.LONG -> ResolvedPrimitiveType.LONG
+
+            else -> ResolvedPrimitiveType.INT
+        }
+    }
+
+    /**
+     * Computes the Least Upper Bound for a list of primitive types.
+     * Used by LeastUpperBoundLogic.
+     */
     fun promoteNumericTypes(primitives: List<ResolvedPrimitiveType>): ResolvedPrimitiveType {
         require(primitives.none { it == ResolvedPrimitiveType.BOOLEAN }) { "Cannot compute LUB involving boolean" }
 

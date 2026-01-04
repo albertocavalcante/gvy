@@ -59,8 +59,9 @@ internal object BinaryTypeLogic {
 
     private fun inferArithmeticType(left: ResolvedType, right: ResolvedType, typeSolver: TypeSolver): ResolvedType {
         if (left.isPrimitive() && right.isPrimitive()) {
-            return NumericLubLogic.promoteNumericTypes(
-                listOf(left.asPrimitive(), right.asPrimitive()),
+            return NumericLubLogic.binaryNumericPromotion(
+                left.asPrimitive(),
+                right.asPrimitive(),
             )
         }
 
