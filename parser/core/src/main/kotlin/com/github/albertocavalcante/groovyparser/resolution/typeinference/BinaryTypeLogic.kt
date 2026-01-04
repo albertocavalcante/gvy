@@ -25,7 +25,7 @@ internal object BinaryTypeLogic {
         "&&", "||" -> ResolvedPrimitiveType.BOOLEAN
         "&", "|", "^" -> extractBitwise(leftType, rightType, typeSolver)
         "+", "-", "*", "/", "%" -> extractArithmetic(node.operator, leftType, rightType, typeSolver)
-        "**" -> resolveType("java.math.BigDecimal", typeSolver)
+        "**" -> extractPower(leftType, rightType, typeSolver)
         "<<", ">>", ">>>" -> extractShift(leftType)
         "?:" -> leftType
         "..", "..<" -> resolveType("groovy.lang.Range", typeSolver)
@@ -73,6 +73,25 @@ internal object BinaryTypeLogic {
         }
 
         return ResolvedPrimitiveType.DOUBLE
+    }
+
+    private fun extractPower(leftType: ResolvedType, rightType: ResolvedType, typeSolver: TypeSolver): ResolvedType {
+        // For integer bases with non-negative integer exponents, result is typically BigInteger or Integer
+        // For floating point or negative exponents, result is typically Double or BigDecimal
+        if (leftType.isPrimitive() && rightType.isPrimitive()) {
+            val left = leftType.asPrimitive()
+            val right = rightType.asPrimitive()
+
+            // If either is floating point, result is Double
+            if (left == ResolvedPrimitiveType.FLOAT || left == ResolvedPrimitiveType.DOUBLE ||
+                right == ResolvedPrimitiveType.FLOAT || right == ResolvedPrimitiveType.DOUBLE
+            ) {
+                return ResolvedPrimitiveType.DOUBLE
+            }
+        }
+
+        // Default to BigDecimal for general power operations
+        return resolveType("java.math.BigDecimal", typeSolver)
     }
 
     private fun isString(type: ResolvedType): Boolean = type.isReferenceType() &&
