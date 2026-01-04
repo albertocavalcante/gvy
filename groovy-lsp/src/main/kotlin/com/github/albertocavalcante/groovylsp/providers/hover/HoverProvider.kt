@@ -261,7 +261,7 @@ class HoverProvider(
         val baseHoverResult = contentGenerator.generateHover(node, module)
         val baseHover = baseHoverResult.getOrNull() ?: return null
 
-        logger.info("DEBUG: Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
+        logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
 
         // Try to get documentation for the node
         var doc = try {

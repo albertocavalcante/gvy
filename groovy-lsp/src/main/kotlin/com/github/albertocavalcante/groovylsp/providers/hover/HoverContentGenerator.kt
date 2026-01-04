@@ -32,6 +32,7 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
 /**
@@ -41,6 +42,7 @@ import java.lang.reflect.Modifier
 class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) {
     companion object {
         private const val MAX_DISPLAYED_ITEMS = 5
+        private val logger = LoggerFactory.getLogger(HoverContentGenerator::class.java)
     }
 
     /**
@@ -169,9 +171,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }
     }
 
-    // ... Additional renderers following the pattern from HoverNodeConverters.kt but using instance methods ...
-    // ... I will skip implementing ALL of them in this initial write to keep it manageable,
-    // but I will include the structure and essential ones used in tests ...
+    // TODO(#641): Add additional renderers following the pattern from HoverNodeConverters.kt
 
     private fun MarkdownBuilder.renderDeclarationExpression(node: DeclarationExpression, moduleNode: ModuleNode?) {
         val varExpr = node.leftExpression as? VariableExpression
@@ -311,7 +311,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderImportNode(node: ImportNode) {
         val formatted = formatImport(node)
-        println("DEBUG: formatImport result: '$formatted'")
+        logger.debug("formatImport result: '$formatted'")
         section("Import") {
             code("groovy") { formatted }
             keyValue(
@@ -359,8 +359,6 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
     // Helpers (moved from HoverNodeConverters and adapted)
 
     private fun signature(node: MethodNode): String = buildString {
-        if (node.isStatic) append("static ")
-        if (node.isAbstract) append("abstract ")
         append(modifiersString(node)).append(" ")
         append(node.returnType?.nameWithoutPackage ?: "def").append(" ")
         append(node.name).append("(")
