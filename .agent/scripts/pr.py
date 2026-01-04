@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["typer", "pydantic"]
+# dependencies = ["typer", "pydantic", "rich"]
 # ///
 """
 PR Review Manager - Token-efficient review thread CLI.
@@ -18,7 +18,11 @@ from typing import Optional
 
 import typer
 from pydantic import BaseModel
+from rich.console import Console
+from rich.panel import Panel
+from rich.markdown import Markdown
 
+console = Console()
 app = typer.Typer(help="PR Review CLI", add_completion=False)
 
 AGENT_DIR = Path(__file__).resolve().parent.parent
@@ -59,6 +63,16 @@ def clean_body(text: str) -> str:
     return text
 
 
+def rprint(*args, **kwargs):
+    """Print using rich if in a TTY, otherwise use plain typer.echo."""
+    if console.is_terminal:
+        console.print(*args, **kwargs)
+    else:
+        # Typer echo isn't quite the same as print, but for LLM it's fine
+        res = " ".join(str(a) for a in args)
+        typer.echo(res)
+
+
 def validate_reply(body: str):
     """Reply must contain Commit SHA or Issue Ref."""
     if not (re.search(r"\b[0-9a-f]{7,40}\b", body) or re.search(r"#\d+", body)):
@@ -78,19 +92,14 @@ class Thread(BaseModel):
     body: str
 
 
-@app.command()
-def threads(
-    pr_number: int = typer.Argument(..., help="PR number"),
-    author: Optional[str] = typer.Option(
-        None, "--author", "-a", help="Filter by author"
-    ),
-    refetch: bool = typer.Option(False, "--refetch", "-r", help="Force refetch"),
-):
-    """List unresolved threads. Output optimized for LLM consumption."""
+def get_thread_inventory(
+    pr_number: int, force_refetch: bool = False
+) -> tuple[str, list]:
+    """Fetch all open threads for a PR."""
     owner, repo = get_repo_info()
     cache_file = Path(f"/tmp/pr-{owner}-{repo}-{pr_number}-threads.json")
 
-    if cache_file.exists() and not refetch:
+    if cache_file.exists() and not force_refetch:
         data = json.loads(cache_file.read_text())
     else:
         try:
@@ -130,61 +139,86 @@ def threads(
         .get("nodes", [])
     )
 
-    threads = []
+    filtered_threads = []
     for n in nodes:
         if not n or n.get("isResolved") or n.get("isOutdated"):
             continue
         c_nodes = n.get("comments", {}).get("nodes", [])
         if not c_nodes:
             continue
-        c = c_nodes[0]
-        if not c:
-            continue
-        t_author = (c.get("author") or {}).get("login", "ghost")
-        if author and t_author.lower() != author.lower():
-            continue
-        threads.append(
-            Thread(
-                thread_id=n.get("id"),
-                comment_id=c.get("id"),
-                path=n.get("path") or "global",
-                line=n.get("line"),
-                author=t_author,
-                body=c.get("body", ""),
+        filtered_threads.append(n)
+    return pr_id, filtered_threads
+
+
+@app.command()
+def threads(
+    pr_number: int = typer.Argument(None, help="PR number (auto-detected if omitted)"),
+    refetch: bool = typer.Option(False, "--refetch", help="Force refetch from GitHub"),
+):
+    """Inventory open threads and display summary."""
+    if pr_number is None:
+        pr_number = get_current_pr_number()
+        if pr_number is None:
+            rprint(
+                "[bold red]Error: Could not detect PR. Provide PR number.[/bold red]"
             )
-        )
+            raise typer.Exit(1)
 
-    # Ultra-compact output
-    print(f"PR={pr_number} PR_ID={pr_id} COUNT={len(threads)}")
+    try:
+        pr_id, threads = get_thread_inventory(pr_number, force_refetch=refetch)
 
-    for t in threads:
-        msg = clean_body(t.body)
-        if len(msg) > 120:
-            msg = msg[:117] + "..."
-        loc = f"{t.path}:{t.line}" if t.line else t.path
-        print(f"\nT={t.thread_id}")
-        print(f"C={t.comment_id}")
-        print(f"@={t.author} L={loc}")
-        print(f">{msg}")
+        # Output summary for LLM parse
+        typer.echo(f"PR={pr_number} PR_ID={pr_id} COUNT={len(threads)}")
 
-    # Minimal agent guidance
-    print("\n<agent_rules>")
-    print("ACTION: FIX|DEFER|REJECT")
-    print("CODE: Use imports, avoid FQNs")
-    print(
-        "COMMIT: Use multiple -m flags for multi-line messages. Avoid multiline strings."
-    )
-    print("FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'")
-    print(
-        "HOOK: If commit fails, READ the hook output. Fix lint/format errors before retry."
-    )
-    print("DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'")
-    print("REJECT: Reply with technical reasoning. Do NOT resolve.")
-    print("RESOLVE: uv run .agent/scripts/pr.py resolve <T> '<reply>'")
-    print(
-        "REMINDER: Loop until all threads are resolved. Do not merge with open threads."
-    )
-    print("</agent_rules>")
+        if not threads:
+            rprint("\n✨ [bold green]All threads resolved![/bold green]")
+            return
+
+        for t in threads:
+            t_id = t["id"]
+            comments = t.get("comments", {}).get("nodes", [])
+            first = comments[0] if comments else {}
+            body = first.get("body", "No body")
+            author = first.get("author", {}).get("login", "unknown")
+            path = first.get("path", "unknown")
+            line = first.get("line", "?")
+
+            # Machine readable for agent
+            typer.echo(f"\nT={t_id}")
+            typer.echo(f"C={comments[0]['id'] if comments else '?'}")
+
+            # Human readable rich panel
+            if console.is_terminal:
+                rprint(
+                    Panel(
+                        clean_body(body),
+                        title=f"[bold yellow]Thread {t_id}[/bold yellow]",
+                        subtitle=f"[bold cyan]@{author}[/bold cyan] at [bold white]{path}:{line}[/bold white]",
+                        border_style="yellow",
+                    )
+                )
+            else:
+                typer.echo(f"@{author} L={path}:{line}")
+                typer.echo(f">{body[:100]}...")
+
+        # System Reminder
+        reminder = """
+<agent_rules>
+ACTION: FIX|DEFER|REJECT
+CODE: Use imports, avoid FQNs
+COMMIT: Use multiple -m flags. Don't use multiline strings.
+FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'
+DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'
+REJECT: Reply with technical reasoning. Do NOT resolve.
+RESOLVE: pr resolve <T> '<reply>'
+REMINDER: Loop until all threads are resolved. Do not merge with open threads.
+</agent_rules>
+"""
+        typer.echo(reminder)
+
+    except Exception as e:
+        rprint(f"[bold red]Error checking threads: {e}[/bold red]")
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -394,6 +428,99 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
     return "\n".join(body_lines), unique_related
 
 
+def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
+    """Generate commit message using Gemini CLI."""
+    typer.echo("🤖 Generating semantic commit message with Gemini...")
+
+    # Create diff file to handle large diffs
+    diff_file = Path(f"/tmp/pr-{pr_number}.diff")
+    try:
+        with open(diff_file, "w") as f:
+            subprocess.run(["gh", "pr", "diff", str(pr_number)], stdout=f, check=True)
+    except subprocess.CalledProcessError:
+        return "", ""
+
+    # Construct prompt
+    prompt = f"""
+You are an expert Release Engineer. Generate a strict Semantic Squash Commit Message.
+
+Context:
+PR #{pr_number}
+Title: {pr.get("title")}
+Description: {pr.get("body")}
+
+Instructions:
+1. OUTPUT ONLY the commit message. No conversational text.
+2. Format:
+   TITLE: <type>(<scope>): <description> (#{pr_number})
+   BODY:
+   - <bullet point>
+   - <bullet point>
+   - Use strict Conventional Commits (feat, fix, docs, style, refactor, test, chore, perf, ci).
+   - Scope is optional but recommended (e.g. semantics, parser, lsp).
+   - Description must be lower case, imperative mood.
+   - Body should be a concise summary of the functional changes. Use bullet points.
+   - Focus on "What" and "Why", not "How".
+   - Do NOT include "Fixes" or "Relates to" footers (added automatically).
+
+
+The user handles the Diff separately.
+"""
+
+    try:
+        # We need to construct a combined input stream: Prompt + Diff
+        # Since gemini reads stdin, we can cat them together roughly.
+        # But wait, gemini CLI takes the prompt as argument usually or stdin.
+        # If we pipe, we pipe the whole context.
+
+        # Write prompt to temp file
+        prompt_file = Path(f"/tmp/pr-{pr_number}-prompt.txt")
+        prompt_file.write_text(prompt)
+
+        # Concatenate prompt + diff -> gemini
+        # cat prompt.txt diff.txt | gemini
+
+        ps = subprocess.Popen(
+            f"cat {prompt_file} {diff_file} | gemini",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        stdout, stderr = ps.communicate()
+
+        if ps.returncode != 0:
+            typer.echo(f"⚠️ Gemini failed: {stderr}", err=True)
+            return "", ""
+
+        output = stdout.strip()
+
+        # Cleanup
+        if diff_file.exists():
+            diff_file.unlink()
+        if prompt_file.exists():
+            prompt_file.unlink()
+
+        # Parse output
+        title_match = re.search(r"TITLE:\s*(.+)", output)
+        body_match = re.search(r"BODY:\s*(.*)", output, re.DOTALL)
+
+        ai_title = title_match.group(1).strip() if title_match else ""
+        ai_body = body_match.group(1).strip() if body_match else ""
+
+        # Fallback if parsing fails
+        if not ai_title:
+            lines = output.split("\n")
+            ai_title = lines[0]
+            ai_body = "\n".join(lines[1:])
+
+        return ai_title, ai_body
+
+    except Exception as e:
+        typer.echo(f"⚠️ AI Generation failed: {e}", err=True)
+        return "", ""
+
+
 @app.command()
 def merge(
     pr_number: int = typer.Argument(
@@ -408,6 +535,12 @@ def merge(
     relates_to: Optional[list[str]] = typer.Option(
         None, "--relates-to", "-R", help="Issue numbers this PR relates to (e.g. '622')"
     ),
+    ai: bool = typer.Option(
+        False, "--ai", "-a", help="Generate commit message using AI (gemini)"
+    ),
+    edit: bool = typer.Option(
+        False, "--edit", "-e", help="Edit the commit message before finalization"
+    ),
 ):
     """
     Squash merge a PR with enforced semantic commit message.
@@ -415,7 +548,6 @@ def merge(
     Requirements:
     - Title: type(scope): description (#PR)
     - Types: feat, fix, docs, style, refactor, test, chore, perf, ci
-    - PR number MUST be in title
     - PR number MUST be in title
     - Linked issues automatically get "Fixes #N" in body
     - Related issues can be added via --relates-to
@@ -436,6 +568,17 @@ def merge(
     except subprocess.CalledProcessError as e:
         typer.echo(f"Error fetching PR: {e.stderr}", err=True)
         raise typer.Exit(1)
+
+    # AI Generation
+    ai_title = ""
+    ai_body = ""
+    if ai:
+        ai_title, ai_body = generate_ai_message(pr, pr_number)
+        if ai_title:
+            typer.echo(f"\n🧠 AI Suggested Title: {ai_title}")
+            # Use AI title if valid (or let validation fail it later)
+            if not title:
+                title = ai_title
 
     if pr.get("state") != "OPEN":
         typer.echo(
@@ -483,8 +626,22 @@ def merge(
         raise typer.Exit(1)
 
     # Generate body
-    merge_body, auto_related = generate_merge_body(pr, pr_number)
+    if ai and ai_body:
+        merge_body = ai_body
+        # re-scan for related issues for deterministic linking
+        _, auto_related = generate_merge_body(pr, pr_number)
+    else:
+        merge_body, auto_related = generate_merge_body(pr, pr_number)
 
+    # Append Fixes if AI body doesn't have them
+    linked_issues = pr.get("closingIssuesReferences", [])
+    if linked_issues and "Fixes #" not in merge_body:
+        if "\n\n## Fixes" not in merge_body:
+            merge_body += "\n\n## Fixes\n"
+        for issue in linked_issues:
+            num = issue.get("number")
+            if num:
+                merge_body += f"\nFixes #{num}"
     # Append explicitly related issues (from CLI)
     if relates_to:
         # Check if we need to add header
@@ -498,19 +655,61 @@ def merge(
             if clean_issue not in auto_related:
                 merge_body += f"\nRelates to #{clean_issue}"
 
+    # Persist message for potential manual tweaks or re-runs
+    msg_cache_file = Path(f"/tmp/merge-msg-{pr_number}.md")
+    full_msg = f"{merge_title}\n\n{merge_body}"
+    msg_cache_file.write_text(full_msg)
+
+    if edit:
+        edited_msg = typer.edit(full_msg, extension=".md")
+        if edited_msg:
+            # Re-split title and body
+            lines = edited_msg.strip().split("\n", 2)
+            merge_title = lines[0].strip()
+            merge_body = lines[2].strip() if len(lines) > 2 else ""
+            # Re-save
+            msg_cache_file.write_text(edited_msg)
+
+    # Show Preview
+    if console.is_terminal:
+        rprint(
+            "\n[bold cyan]============================================================[/bold cyan]"
+        )
+        rprint("[bold cyan]MERGE PREVIEW (Squash)[/bold cyan]")
+        rprint(
+            "[bold cyan]============================================================[/bold cyan]\n"
+        )
+
+        rprint(
+            Panel(
+                merge_title,
+                title="[bold white]📝 Semantic Title[/bold white]",
+                border_style="green",
+            )
+        )
+        rprint(
+            Panel(
+                Markdown(merge_body),
+                title="[bold white]📋 Body[/bold white]",
+                border_style="blue",
+            )
+        )
+        rprint(
+            "\n[bold cyan]============================================================[/bold cyan]\n"
+        )
+    else:
+        typer.echo("\n" + "=" * 60)
+        typer.echo("MERGE PREVIEW (Squash)")
+        typer.echo("=" * 60)
+        typer.echo(f"\n📝 Title:\n{merge_title}")
+        typer.echo(f"\n📋 Body:\n{merge_body}")
+        typer.echo("\n" + "=" * 60 + "\n")
+
     # Show linked issues if any
     linked_issues = pr.get("closingIssuesReferences", [])
     if linked_issues:
         issue_nums = [f"#{i.get('number')}" for i in linked_issues if i.get("number")]
-        typer.echo(f"🔗 Linked issues: {', '.join(issue_nums)}")
-
-    # Preview
-    print("\n" + "=" * 60)
-    print("MERGE PREVIEW (Squash)")
-    print("=" * 60)
-    print(f"\n📝 Title:\n{merge_title}")
-    print(f"\n📋 Body:\n{merge_body}")
-    print("\n" + "=" * 60)
+        rprint(f"🔗 [bold green]Linked issues:[/bold green] {', '.join(issue_nums)}")
 
     if dry_run:
         print("\n[DRY RUN] Would merge with above message.")
@@ -524,6 +723,10 @@ def merge(
 
     # Execute merge
     try:
+        # Write body to temp file to strict handle newlines and size
+        body_file = Path(f"/tmp/pr-{pr_number}-merge.md")
+        body_file.write_text(merge_body)
+
         subprocess.run(
             [
                 "gh",
@@ -533,12 +736,14 @@ def merge(
                 "--squash",
                 "--subject",
                 merge_title,
-                "--body",
-                merge_body,
+                "--body-file",
+                str(body_file),
             ],
             check=True,
         )
         print(f"\n✅ PR #{pr_number} merged successfully!")
+        if body_file.exists():
+            body_file.unlink()
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Merge failed: {e}", file=sys.stderr)
         raise typer.Exit(1)
