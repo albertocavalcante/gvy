@@ -109,7 +109,6 @@ class GradleDependencyResolverRetryTest {
 
         verify(exactly = 1) { connectionFactory.getConnection(any(), any()) }
         verify { connectionFactory.getConnection(any(), null) }
-        verify(exactly = 0) { connectionFactory.getConnection(any(), match { it != null }) }
     }
 
     @Test

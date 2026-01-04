@@ -77,6 +77,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
      * @param code the Groovy source code to parse
      * @return a [ParseResult] containing the parsed AST or problems
      */
+    @Suppress("TooGenericExceptionCaught")
     fun parse(code: String): ParseResult<CompilationUnit> {
         val problems = mutableListOf<Problem>()
 
@@ -130,6 +131,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         }
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private fun convertModuleNode(
         moduleNode: org.codehaus.groovy.ast.ModuleNode,
         code: String,

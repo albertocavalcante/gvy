@@ -5,6 +5,11 @@ import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedNullTy
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedPrimitiveType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
+import com.github.albertocavalcante.groovyparser.resolution.types.asPrimitive
+import com.github.albertocavalcante.groovyparser.resolution.types.asReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.isNull
+import com.github.albertocavalcante.groovyparser.resolution.types.isPrimitive
+import com.github.albertocavalcante.groovyparser.resolution.types.isReferenceType
 
 /**
  * Implements the Least Upper Bound (LUB) algorithm for type inference.
@@ -25,22 +30,9 @@ object LeastUpperBoundLogic {
     // Groovy type constants
     private const val JAVA_LANG_STRING = "java.lang.String"
     private const val JAVA_LANG_OBJECT = "java.lang.Object"
-    private const val JAVA_MATH_BIG_INTEGER = "java.math.BigInteger"
-    private const val JAVA_MATH_BIG_DECIMAL = "java.math.BigDecimal"
     private const val GROOVY_LANG_GSTRING = "groovy.lang.GString"
     private const val JAVA_LANG_CHARSEQUENCE = "java.lang.CharSequence"
     private const val JAVA_LANG_COMPARABLE = "java.lang.Comparable"
-
-    // Numeric type precedence ranks
-    private const val RANK_BYTE = 1
-    private const val RANK_CHAR = 2
-    private const val RANK_SHORT = 3
-    private const val RANK_INT = 4
-    private const val RANK_LONG = 5
-    private const val RANK_BIG_INTEGER = 6
-    private const val RANK_BIG_DECIMAL = 7
-    private const val RANK_FLOAT = 8
-    private const val RANK_DOUBLE = 9
 
     // Interface priority ranks (for common ancestor selection)
     private const val PRIORITY_COMMON_COLLECTIONS = 1
@@ -50,30 +42,6 @@ object LeastUpperBoundLogic {
     private const val PRIORITY_COMPARABLE = 5
     private const val PRIORITY_SERIALIZABLE = 10
     private const val PRIORITY_OBJECT = 100
-
-    // Numeric precedence for promoteNumericTypes (different ranking system)
-    private const val PRECEDENCE_BOOLEAN = 0
-    private const val PRECEDENCE_BYTE = 1
-    private const val PRECEDENCE_CHAR = 2
-    private const val PRECEDENCE_SHORT = 2 // Same as char in promotion hierarchy
-    private const val PRECEDENCE_INT = 3
-    private const val PRECEDENCE_LONG = 4
-    private const val PRECEDENCE_FLOAT = 5
-    private const val PRECEDENCE_DOUBLE = 6
-
-    // Numeric type precedence including BigInteger/BigDecimal
-    // Higher number = wider type (wins in LUB)
-    private val NUMERIC_RANK = mapOf(
-        "java.lang.Byte" to RANK_BYTE, "byte" to RANK_BYTE,
-        "java.lang.Character" to RANK_CHAR, "char" to RANK_CHAR,
-        "java.lang.Short" to RANK_SHORT, "short" to RANK_SHORT,
-        "java.lang.Integer" to RANK_INT, "int" to RANK_INT,
-        "java.lang.Long" to RANK_LONG, "long" to RANK_LONG,
-        JAVA_MATH_BIG_INTEGER to RANK_BIG_INTEGER,
-        JAVA_MATH_BIG_DECIMAL to RANK_BIG_DECIMAL,
-        "java.lang.Float" to RANK_FLOAT, "float" to RANK_FLOAT,
-        "java.lang.Double" to RANK_DOUBLE, "double" to RANK_DOUBLE,
-    )
 
     // Preferred types when multiple common ancestors exist
     // Lower number = more preferred
@@ -116,7 +84,7 @@ object LeastUpperBoundLogic {
 
     private fun computeComplexLub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType =
         checkGStringLub(types, typeSolver)
-            ?: checkNumericLub(types, typeSolver)
+            ?: NumericLubLogic.checkNumericLub(types, typeSolver)
             ?: checkGenericLub(types, typeSolver)
             ?: computeFallbackLub(types, typeSolver)
 
@@ -133,7 +101,7 @@ object LeastUpperBoundLogic {
                 }
             }
 
-            return promoteNumericTypes(primitives)
+            return NumericLubLogic.promoteNumericTypes(primitives)
         }
 
         val referenceTypes = types.filter { it.isReferenceType() }
@@ -305,113 +273,6 @@ object LeastUpperBoundLogic {
             queue.addAll(ancestor.declaration.getAncestors())
         }
         return false
-    }
-
-    /**
-     * Checks for numeric types including BigInteger and BigDecimal.
-     * Uses Groovy's numeric promotion rules.
-     */
-    private fun checkNumericLub(types: List<ResolvedType>, typeSolver: TypeSolver): ResolvedType? {
-        // Track if all inputs are primitives (to return primitive) or mixed (boxed)
-        var allPrimitives = true
-
-        val ranks = types.map { type ->
-            when {
-                type.isPrimitive() -> {
-                    val primitive = type.asPrimitive()
-                    // Map primitive to its rank
-                    when (primitive) {
-                        ResolvedPrimitiveType.BYTE -> RANK_BYTE
-                        ResolvedPrimitiveType.CHAR -> RANK_CHAR
-                        ResolvedPrimitiveType.SHORT -> RANK_SHORT
-                        ResolvedPrimitiveType.INT -> RANK_INT
-                        ResolvedPrimitiveType.LONG -> RANK_LONG
-                        ResolvedPrimitiveType.FLOAT -> RANK_FLOAT
-                        ResolvedPrimitiveType.DOUBLE -> RANK_DOUBLE
-                        ResolvedPrimitiveType.BOOLEAN -> null // Can't promote boolean
-                    }
-                }
-
-                type.isReferenceType() -> {
-                    allPrimitives = false
-                    NUMERIC_RANK[type.asReferenceType().declaration.qualifiedName]
-                }
-
-                else -> null
-            }
-        }
-
-        // If any type is not numeric, can't use numeric LUB
-        if (ranks.any { it == null }) return null
-
-        // Find highest rank
-        val maxRank = ranks.filterNotNull().maxOrNull() ?: return null
-
-        // For primitives, return the primitive type directly
-        // For primitives, return the primitive type directly if all can widen to it
-        if (allPrimitives) {
-            val maxType = when (maxRank) {
-                RANK_BYTE -> ResolvedPrimitiveType.BYTE
-                RANK_CHAR -> ResolvedPrimitiveType.CHAR
-                RANK_SHORT -> ResolvedPrimitiveType.SHORT
-                RANK_INT -> ResolvedPrimitiveType.INT
-                RANK_LONG -> ResolvedPrimitiveType.LONG
-                RANK_FLOAT -> ResolvedPrimitiveType.FLOAT
-                RANK_DOUBLE -> ResolvedPrimitiveType.DOUBLE
-                else -> null
-            } ?: return null
-
-            if (types.all { maxType.isAssignableBy(it) }) {
-                return maxType
-            }
-
-            // Otherwise return null to fallback to computeFallbackLub/promoteNumericTypes
-            return null
-        }
-
-        // For BigInteger/BigDecimal (ranks 6, 7), return reference types
-        return when (maxRank) {
-            6 -> resolveType(JAVA_MATH_BIG_INTEGER, typeSolver)
-            7 -> resolveType(JAVA_MATH_BIG_DECIMAL, typeSolver)
-            else -> null // Mixed primitive/reference handled elsewhere
-        }
-    }
-
-    /**
-     * Promotes a list of numeric primitive types to their common type.
-     */
-    private fun promoteNumericTypes(primitives: List<ResolvedPrimitiveType>): ResolvedPrimitiveType {
-        // Boolean can't be promoted
-        require(primitives.none { it == ResolvedPrimitiveType.BOOLEAN }) { "Cannot compute LUB involving boolean" }
-
-        // Find the widest type
-        val widest = primitives.maxByOrNull { getNumericPrecedence(it) } ?: ResolvedPrimitiveType.INT
-
-        // If we have mixed types that don't widen to each other (like byte and char),
-        // we must promote to at least INT.
-        if (primitives.size > 1 && widest in listOf(
-                ResolvedPrimitiveType.BYTE,
-                ResolvedPrimitiveType.SHORT,
-                ResolvedPrimitiveType.CHAR,
-            )
-        ) {
-            if (primitives.any { !widest.isAssignableBy(it) }) {
-                return ResolvedPrimitiveType.INT
-            }
-        }
-
-        return widest
-    }
-
-    private fun getNumericPrecedence(type: ResolvedPrimitiveType): Int = when (type) {
-        ResolvedPrimitiveType.BYTE -> PRECEDENCE_BYTE
-        ResolvedPrimitiveType.SHORT -> PRECEDENCE_SHORT
-        ResolvedPrimitiveType.CHAR -> PRECEDENCE_CHAR
-        ResolvedPrimitiveType.INT -> PRECEDENCE_INT
-        ResolvedPrimitiveType.LONG -> PRECEDENCE_LONG
-        ResolvedPrimitiveType.FLOAT -> PRECEDENCE_FLOAT
-        ResolvedPrimitiveType.DOUBLE -> PRECEDENCE_DOUBLE
-        ResolvedPrimitiveType.BOOLEAN -> PRECEDENCE_BOOLEAN
     }
 
     /**

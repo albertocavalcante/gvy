@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovyparser.resolution.typeinference
 
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.asReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.isReferenceType
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import org.junit.jupiter.api.Test

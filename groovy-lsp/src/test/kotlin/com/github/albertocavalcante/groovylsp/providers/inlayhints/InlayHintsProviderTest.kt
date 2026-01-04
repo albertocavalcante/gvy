@@ -5,10 +5,10 @@ import com.github.albertocavalcante.groovylsp.config.InlayHintsConfiguration
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject

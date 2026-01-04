@@ -15,18 +15,26 @@ object PositionUtils {
      * Returns true if node A is entirely before node B in source order.
      */
     fun areInOrder(a: Node, b: Node): Boolean {
-        val rangeA = a.range ?: return false
-        val rangeB = b.range ?: return false
-        return rangeA.end.isBefore(rangeB.begin) || rangeA.end == rangeB.begin
+        val rangeA = a.range
+        val rangeB = b.range
+        return if (rangeA != null && rangeB != null) {
+            rangeA.end.isBefore(rangeB.begin) || rangeA.end == rangeB.begin
+        } else {
+            false
+        }
     }
 
     /**
      * Returns true if the outer node contains the inner node.
      */
     fun nodeContains(outer: Node, inner: Node): Boolean {
-        val outerRange = outer.range ?: return false
-        val innerRange = inner.range ?: return false
-        return rangeContains(outerRange, innerRange)
+        val outerRange = outer.range
+        val innerRange = inner.range
+        return if (outerRange != null && innerRange != null) {
+            rangeContains(outerRange, innerRange)
+        } else {
+            false
+        }
     }
 
     /**
@@ -116,14 +124,15 @@ object PositionUtils {
      * Calculates a range that encompasses all given nodes.
      */
     fun encompassingRange(nodes: Collection<Node>): Range? {
-        if (nodes.isEmpty()) return null
         val nodesWithRange = nodes.filter { it.range != null }
-        if (nodesWithRange.isEmpty()) return null
+        val first = findFirstNode(nodesWithRange)
+        val last = findLastNode(nodesWithRange)
 
-        val first = findFirstNode(nodesWithRange) ?: return null
-        val last = findLastNode(nodesWithRange) ?: return null
-
-        return Range(first.range!!.begin, last.range!!.end)
+        return if (first?.range != null && last?.range != null) {
+            Range(first.range!!.begin, last.range!!.end)
+        } else {
+            null
+        }
     }
 }
 

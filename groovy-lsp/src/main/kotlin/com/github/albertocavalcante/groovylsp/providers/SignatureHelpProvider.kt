@@ -95,7 +95,7 @@ class SignatureHelpProvider(
 
         val canFindMethodCall = astVisitor != null && nodeAtPosition != null
         val methodCall = if (canFindMethodCall) {
-            findMethodCall(astVisitor!!, documentUri, nodeAtPosition!!, groovyPos)
+            findMethodCall(astVisitor, documentUri, nodeAtPosition, groovyPos)
         } else {
             null
         }
@@ -107,15 +107,15 @@ class SignatureHelpProvider(
         }
 
         val hasCompilationContext = astVisitor != null && symbolTable != null
-        val hasCallContext = methodName != null
+        val hasCallContext = methodName != null && nodeAtPosition != null
 
         return if (hasCompilationContext && hasCallContext) {
             ResolvedSignatureInputs(
-                methodCall = methodCall!!,
-                nodeAtPosition = nodeAtPosition!!,
-                methodName = methodName!!,
-                astVisitor = astVisitor!!,
-                symbolTable = symbolTable!!,
+                methodCall = methodCall,
+                nodeAtPosition = nodeAtPosition,
+                methodName = methodName,
+                astVisitor = astVisitor,
+                symbolTable = symbolTable,
             )
         } else {
             null

@@ -61,6 +61,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
  * val source = printer.print(unit)
  * ```
  */
+@Suppress("TooManyFunctions", "LargeClass")
 class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConfiguration()) {
 
     private val sb = StringBuilder()
@@ -412,22 +413,54 @@ class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConf
 
     private fun printExpression(expr: Expression) {
         when (expr) {
+            is ConstantExpr, is VariableExpr, is GStringExpr, is ListExpr, is MapExpr,
+            is RangeExpr, is ArrayExpr, is ClassExpr,
+            ->
+                printValueExpression(expr)
+
+            is BinaryExpr, is TernaryExpr, is ElvisExpr, is UnaryExpr, is NotExpr,
+            is BitwiseNegationExpr, is CastExpr, is PostfixExpr, is PrefixExpr,
+            ->
+                printOperationExpression(expr)
+
+            else -> printStructuralExpression(expr)
+        }
+    }
+
+    private fun printValueExpression(expr: Expression) {
+        when (expr) {
             is ConstantExpr -> printConstantExpr(expr)
             is VariableExpr -> append(expr.name)
-            is BinaryExpr -> printBinaryExpr(expr)
-            is MethodCallExpr -> printMethodCallExpr(expr)
-            is PropertyExpr -> printPropertyExpr(expr)
-            is ClosureExpr -> printClosureExpr(expr)
             is GStringExpr -> printGStringExpr(expr)
             is ListExpr -> printListExpr(expr)
             is MapExpr -> printMapExpr(expr)
             is RangeExpr -> printRangeExpr(expr)
+            is ArrayExpr -> printArrayExpr(expr)
+            is ClassExpr -> append(expr.className)
+            else -> append(expr.toString()) // Fallback
+        }
+    }
+
+    private fun printOperationExpression(expr: Expression) {
+        when (expr) {
+            is BinaryExpr -> printBinaryExpr(expr)
             is TernaryExpr -> printTernaryExpr(expr)
             is ElvisExpr -> printElvisExpr(expr)
             is UnaryExpr -> printUnaryExpr(expr)
             is NotExpr -> printNotExpr(expr)
             is BitwiseNegationExpr -> printBitwiseNegationExpr(expr)
             is CastExpr -> printCastExpr(expr)
+            is PostfixExpr -> printPostfixExpr(expr)
+            is PrefixExpr -> printPrefixExpr(expr)
+            else -> append(expr.toString()) // Fallback
+        }
+    }
+
+    private fun printStructuralExpression(expr: Expression) {
+        when (expr) {
+            is MethodCallExpr -> printMethodCallExpr(expr)
+            is PropertyExpr -> printPropertyExpr(expr)
+            is ClosureExpr -> printClosureExpr(expr)
             is ConstructorCallExpr -> printConstructorCallExpr(expr)
             is SpreadExpr -> printSpreadExpr(expr)
             is SpreadMapExpr -> printSpreadMapExpr(expr)
@@ -436,11 +469,7 @@ class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConf
             is MethodReferenceExpr -> printMethodReferenceExpr(expr)
             is LambdaExpr -> printLambdaExpr(expr)
             is DeclarationExpr -> printDeclarationExpr(expr)
-            is ClassExpr -> append(expr.className)
-            is ArrayExpr -> printArrayExpr(expr)
-            is PostfixExpr -> printPostfixExpr(expr)
-            is PrefixExpr -> printPrefixExpr(expr)
-            else -> append(expr.toString())
+            else -> append(expr.toString()) // Fallback
         }
     }
 
@@ -498,6 +527,7 @@ class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConf
                         indent()
                     }
                 }
+
                 else -> printStatementInline(body)
             }
         }
@@ -510,6 +540,7 @@ class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConf
             is ReturnStatement -> {
                 stmt.expression?.let { printExpression(it) }
             }
+
             else -> append("/* ... */")
         }
     }
@@ -661,6 +692,7 @@ class GroovyPrettyPrinter(private val config: PrinterConfiguration = PrinterConf
                         append("}")
                     }
                 }
+
                 is ExpressionStatement -> printExpression(body.expression)
                 else -> printStatementInline(body)
             }

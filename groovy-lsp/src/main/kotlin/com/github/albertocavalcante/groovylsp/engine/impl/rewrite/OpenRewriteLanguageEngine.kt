@@ -11,8 +11,8 @@ import com.github.albertocavalcante.groovylsp.engine.api.LanguageEngine
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
 import com.github.albertocavalcante.groovylsp.engine.api.ParseResultMetadata
 import com.github.albertocavalcante.groovylsp.engine.features.UnifiedDocumentSymbolProvider
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams

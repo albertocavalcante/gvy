@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovyparser.api.ParserDiagnostic
-import com.github.albertocavalcante.groovyparser.api.ParserPosition
-import com.github.albertocavalcante.groovyparser.api.ParserRange
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserPosition
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals

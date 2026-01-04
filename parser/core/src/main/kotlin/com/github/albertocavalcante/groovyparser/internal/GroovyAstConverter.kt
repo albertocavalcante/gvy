@@ -113,6 +113,7 @@ import org.codehaus.groovy.ast.stmt.WhileStatement as GroovyWhileStatement
  *
  * Supports optional source-based comment extraction when source is provided.
  */
+@Suppress("LargeClass", "TooManyFunctions")
 internal class GroovyAstConverter {
 
     /** Parser for extracting comments from source positions */
@@ -353,23 +354,29 @@ internal class GroovyAstConverter {
     private fun convertStatement(stmt: GroovyStatement): Statement? = when (stmt) {
         is GroovyBlockStatement -> convertBlockStatement(stmt)
         is GroovyExpressionStatement -> convertExpressionStatement(stmt)
-        is GroovyReturnStatement -> convertReturnStatement(stmt)
         is GroovyIfStatement -> convertIfStatement(stmt)
-        is GroovyForStatement -> convertForStatement(stmt)
-        is GroovyWhileStatement -> convertWhileStatement(stmt)
         is GroovyTryCatchStatement -> convertTryCatchStatement(stmt)
         is GroovySwitchStatement -> convertSwitchStatement(stmt)
-        is GroovyThrowStatement -> convertThrowStatement(stmt)
         is GroovyAssertStatement -> convertAssertStatement(stmt)
+        is EmptyStatement -> null
+        else -> convertLoopOrControlStatement(stmt) ?: convertUnknownStatement(stmt)
+    }
+
+    private fun convertLoopOrControlStatement(stmt: GroovyStatement): Statement? = when (stmt) {
+        is GroovyReturnStatement -> convertReturnStatement(stmt)
+        is GroovyForStatement -> convertForStatement(stmt)
+        is GroovyWhileStatement -> convertWhileStatement(stmt)
+        is GroovyThrowStatement -> convertThrowStatement(stmt)
         is GroovyBreakStatement -> convertBreakStatement(stmt)
         is GroovyContinueStatement -> convertContinueStatement(stmt)
-        is EmptyStatement -> null
-        else -> {
-            // For unknown statement types, wrap in a block if possible
-            val block = BlockStatement()
-            setRange(block, stmt)
-            block
-        }
+        else -> null
+    }
+
+    private fun convertUnknownStatement(stmt: GroovyStatement): Statement {
+        // For unknown statement types, wrap in a block if possible
+        val block = BlockStatement()
+        setRange(block, stmt)
+        return block
     }
 
     private fun convertBlockStatement(stmt: GroovyBlockStatement): BlockStatement {
@@ -533,37 +540,48 @@ internal class GroovyAstConverter {
         is AttributeExpression -> convertAttributeExpression(expr)
         is PropertyExpression -> convertPropertyExpression(expr)
         is ClosureExpression -> convertClosureExpression(expr)
+        // Split handling for other expressions
+        is GStringExpression, is ListExpression, is MapExpression, is RangeExpression, is ArrayExpression ->
+            convertValueExpression(expr)
+
+        is ElvisOperatorExpression, is TernaryExpression, is NotExpression, is UnaryMinusExpression,
+        is UnaryPlusExpression, is BitwiseNegationExpression, is PrefixExpression, is PostfixExpression,
+        ->
+            convertLogicExpression(expr)
+
+        else -> convertStructuralExpression(expr)
+    }
+
+    private fun convertValueExpression(expr: GroovyExpression): Expression = when (expr) {
         is GStringExpression -> convertGStringExpression(expr)
         is ListExpression -> convertListExpression(expr)
         is MapExpression -> convertMapExpression(expr)
         is RangeExpression -> convertRangeExpression(expr)
-        // Ternary and Elvis (must check Elvis first as it extends Ternary)
+        is ArrayExpression -> convertArrayExpression(expr)
+        else -> throw IllegalArgumentException("Unknown value expression: ${expr.javaClass.name}")
+    }
+
+    private fun convertLogicExpression(expr: GroovyExpression): Expression = when (expr) {
         is ElvisOperatorExpression -> convertElvisExpression(expr)
         is TernaryExpression -> convertTernaryExpression(expr)
-        // Unary expressions
         is NotExpression -> convertNotExpression(expr)
         is UnaryMinusExpression -> convertUnaryMinusExpression(expr)
         is UnaryPlusExpression -> convertUnaryPlusExpression(expr)
         is BitwiseNegationExpression -> convertBitwiseNegationExpression(expr)
         is PrefixExpression -> convertPrefixExpression(expr)
         is PostfixExpression -> convertPostfixExpression(expr)
-        // Type expressions
+        else -> throw IllegalArgumentException("Unknown logic expression: ${expr.javaClass.name}")
+    }
+
+    private fun convertStructuralExpression(expr: GroovyExpression): Expression = when (expr) {
         is CastExpression -> convertCastExpression(expr)
         is ClassExpression -> convertClassExpression(expr)
         is ConstructorCallExpression -> convertConstructorCallExpression(expr)
-        is ArrayExpression -> convertArrayExpression(expr)
-        // Spread expressions
         is SpreadExpression -> convertSpreadExpression(expr)
         is SpreadMapExpression -> convertSpreadMapExpression(expr)
-        // Method references
         is MethodPointerExpression -> convertMethodPointerExpression(expr)
         is MethodReferenceExpression -> convertMethodReferenceExpression(expr)
-        // Lambda and Declaration
         is LambdaExpression -> convertLambdaExpression(expr)
-        // DeclarationExpression moved up
-        // is DeclarationExpression -> convertDeclarationExpression(expr)
-        // Attribute access moved up
-        // is AttributeExpression -> convertAttributeExpression(expr)
         else -> {
             // Fallback: create a constant with the text representation
             val constant = ConstantExpr(expr.text)

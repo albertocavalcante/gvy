@@ -9,7 +9,5 @@ object ResolvedVoidType : ResolvedType {
 
     override fun describe(): String = "void"
 
-    override fun isVoid(): Boolean = true
-
     override fun isAssignableBy(other: ResolvedType): Boolean = other === ResolvedVoidType
 }

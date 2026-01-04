@@ -37,6 +37,7 @@ class ReflectionTypeSolver(private val jreOnly: Boolean = true) : TypeSolver {
         name.startsWith("javax.") ||
         name.startsWith("groovy.")
 
+    @Suppress("SwallowedException")
     private fun resolveFromReflection(name: String): SymbolReference<ResolvedTypeDeclaration> = try {
         val clazz = classLoader.loadClass(name)
         val declaration = createDeclaration(clazz)

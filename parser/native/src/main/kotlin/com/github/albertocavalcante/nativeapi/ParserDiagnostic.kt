@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyparser.api
+package com.github.albertocavalcante.nativeapi
 
 /**
  * Represents a 0-based position within a document.

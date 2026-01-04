@@ -1,13 +1,13 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -222,8 +222,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         if (compilationFailed && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
             val errorMessage = compilationUnit.errorCollector.lastError?.toString() ?: "Unknown error"
             diagnostics.add(
-                com.github.albertocavalcante.groovyparser.api.ParserDiagnostic(
-                    range = com.github.albertocavalcante.groovyparser.api.ParserRange.point(0, 0),
+                com.github.albertocavalcante.nativeapi.ParserDiagnostic(
+                    range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
                     severity = ParserSeverity.ERROR,
                     message = "Compilation failed: $errorMessage",
                     source = "GroovyParser",
