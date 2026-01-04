@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenera
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
@@ -38,7 +39,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
-                mockk(relaxed = true),
+                SemanticTypeResolver(ReflectionTypeSolver()),
                 content,
             )
         }
@@ -57,7 +58,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
-                mockk(relaxed = true),
+                SemanticTypeResolver(ReflectionTypeSolver()),
                 content,
             )
         }

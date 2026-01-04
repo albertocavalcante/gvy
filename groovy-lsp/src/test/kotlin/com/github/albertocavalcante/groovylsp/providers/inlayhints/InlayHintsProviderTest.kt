@@ -25,6 +25,7 @@ import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.syntax.Token
@@ -304,6 +305,10 @@ class InlayHintsProviderTest {
                 null,
             )
 
+            mockResolverType("path", "String")
+
+            mockResolverType("path", "String")
+
             val callExpr = MethodCallExpression(
                 VariableExpression("this"),
                 "processMatch",
@@ -535,6 +540,11 @@ class InlayHintsProviderTest {
             every { classpathService.loadClass("java.util.ArrayList") } returns java.util.ArrayList::class.java
             every { classpathService.loadClass("java.util.Collection") } returns Collection::class.java
             every { classpathService.loadClass("java.lang.Integer") } returns Int::class.java
+
+            // Mock constructor call type resolution
+            every {
+                semanticResolver.resolveType(match<Expression> { it is ConstructorCallExpression }, any<ModuleNode>())
+            } returns SemanticType.Known("java.util.ArrayList")
 
             provider =
                 InlayHintsProvider(compilationService, semanticResolver, InlayHintsConfiguration(parameterHints = true))
