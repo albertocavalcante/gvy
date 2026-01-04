@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
@@ -73,7 +74,6 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
     }
 
     private fun MarkdownBuilder.renderDeclarationNode(node: ASTNode, moduleNode: ModuleNode?) = when (node) {
-        is VariableExpression -> renderVariableExpression(node, moduleNode) // Treated as declaration in some contexts
         is MethodNode -> renderMethodNode(node)
         is ClassNode -> renderClassNode(node)
         is FieldNode -> renderFieldNode(node)
@@ -117,8 +117,8 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }
 
         val displayType = if (node.type.isDynamic()) {
-            if (type is com.github.albertocavalcante.gvy.semantics.SemanticType.Dynamic ||
-                type is com.github.albertocavalcante.gvy.semantics.SemanticType.Unknown
+            if (type is SemanticType.Dynamic ||
+                type is SemanticType.Unknown
             ) {
                 "def"
             } else {
