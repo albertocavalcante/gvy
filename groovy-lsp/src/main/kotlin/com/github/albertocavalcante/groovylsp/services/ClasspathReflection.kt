@@ -12,7 +12,7 @@ interface ClasspathReflection {
 class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader) : ClasspathReflection {
     private val logger = LoggerFactory.getLogger(JvmClasspathReflection::class.java)
 
-    override fun getMethods(className: String): List<ReflectedMethod> = try {
+    override fun getMethods(className: String): List<ReflectedMethod> = runCatching {
         val clazz = classLoaderProvider().loadClass(className)
         clazz.methods.map { method ->
             ReflectedMethod(
@@ -25,25 +25,38 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 doc = "JDK/Classpath method from ${clazz.simpleName}",
             )
         }
-    } catch (e: ClassNotFoundException) {
-        logger.debug("Class not found on classpath: $className")
-        emptyList()
-    } catch (e: NoClassDefFoundError) {
-        logger.debug("Class definition not found: $className")
-        emptyList()
-    } catch (e: Exception) {
-        logger.error("Error reflecting on class $className", e)
-        emptyList()
+    }.getOrElse { throwable ->
+        when (throwable) {
+            is ClassNotFoundException -> {
+                logger.debug("Class not found on classpath: $className", throwable)
+                emptyList()
+            }
+
+            is NoClassDefFoundError -> {
+                logger.debug("Class definition not found: $className", throwable)
+                emptyList()
+            }
+
+            is Exception -> {
+                logger.error("Error reflecting on class $className", throwable)
+                emptyList()
+            }
+
+            else -> throw throwable
+        }
     }
 
-    override fun loadClass(className: String): Class<*>? = try {
-        classLoaderProvider().loadClass(className)
-    } catch (e: ClassNotFoundException) {
-        null
-    } catch (e: NoClassDefFoundError) {
-        null
-    } catch (e: Exception) {
-        logger.error("Error loading class $className", e)
-        null
-    }
+    override fun loadClass(className: String): Class<*>? =
+        runCatching { classLoaderProvider().loadClass(className) }.getOrElse { throwable ->
+            when (throwable) {
+                is ClassNotFoundException -> null
+                is NoClassDefFoundError -> null
+                is Exception -> {
+                    logger.error("Error loading class $className", throwable)
+                    null
+                }
+
+                else -> throw throwable
+            }
+        }
 }

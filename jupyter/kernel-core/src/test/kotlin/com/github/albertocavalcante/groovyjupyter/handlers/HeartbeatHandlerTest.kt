@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
 import kotlin.text.Charsets
@@ -27,11 +28,11 @@ class HeartbeatHandlerTest {
         context = ZContext()
 
         // Server side: REP socket (what the kernel uses)
-        serverSocket = context.createSocket(ZMQ.REP)
+        serverSocket = context.createSocket(SocketType.REP)
         serverSocket.bind(endpoint)
 
         // Client side: REQ socket (simulates Jupyter frontend)
-        clientSocket = context.createSocket(ZMQ.REQ)
+        clientSocket = context.createSocket(SocketType.REQ)
         clientSocket.connect(endpoint)
     }
 

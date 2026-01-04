@@ -207,7 +207,7 @@ class MethodCompletionBuilder {
             detail("$returnType $name(${parameters.joinToString(", ")})")
 
             val paramSnippet = parameters.mapIndexed { index, param ->
-                "\${${index + 1}:$param}"
+                $$"${$${index + 1}:$$param}"
             }.joinToString(", ")
             snippet("$name($paramSnippet)")
 

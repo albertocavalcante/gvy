@@ -54,24 +54,26 @@ class CoreCompletionService : CompletionService {
         return Either.forLeft(items.distinctBy { it.label to it.kind })
     }
 
-    private fun mapSymbolKind(kind: UnifiedNodeKind): CompletionItemKind = when (kind) {
-        UnifiedNodeKind.CLASS -> CompletionItemKind.Class
-        UnifiedNodeKind.INTERFACE -> CompletionItemKind.Interface
-        UnifiedNodeKind.TRAIT -> CompletionItemKind.Interface
-        UnifiedNodeKind.ENUM -> CompletionItemKind.Enum
-        UnifiedNodeKind.METHOD -> CompletionItemKind.Method
-        UnifiedNodeKind.CONSTRUCTOR -> CompletionItemKind.Constructor
-        UnifiedNodeKind.FIELD -> CompletionItemKind.Field
-        UnifiedNodeKind.PROPERTY -> CompletionItemKind.Property
-        UnifiedNodeKind.VARIABLE -> CompletionItemKind.Variable
-        UnifiedNodeKind.PARAMETER -> CompletionItemKind.Variable
-        UnifiedNodeKind.CLOSURE -> CompletionItemKind.Function
-        UnifiedNodeKind.IMPORT -> CompletionItemKind.Module
-        UnifiedNodeKind.PACKAGE -> CompletionItemKind.Module
-        else -> CompletionItemKind.Text
-    }
+    private fun mapSymbolKind(kind: UnifiedNodeKind): CompletionItemKind =
+        symbolKindToCompletionItemKind[kind] ?: CompletionItemKind.Text
 
     companion object {
+        private val symbolKindToCompletionItemKind: Map<UnifiedNodeKind, CompletionItemKind> = mapOf(
+            UnifiedNodeKind.CLASS to CompletionItemKind.Class,
+            UnifiedNodeKind.INTERFACE to CompletionItemKind.Interface,
+            UnifiedNodeKind.TRAIT to CompletionItemKind.Interface,
+            UnifiedNodeKind.ENUM to CompletionItemKind.Enum,
+            UnifiedNodeKind.METHOD to CompletionItemKind.Method,
+            UnifiedNodeKind.CONSTRUCTOR to CompletionItemKind.Constructor,
+            UnifiedNodeKind.FIELD to CompletionItemKind.Field,
+            UnifiedNodeKind.PROPERTY to CompletionItemKind.Property,
+            UnifiedNodeKind.VARIABLE to CompletionItemKind.Variable,
+            UnifiedNodeKind.PARAMETER to CompletionItemKind.Variable,
+            UnifiedNodeKind.CLOSURE to CompletionItemKind.Function,
+            UnifiedNodeKind.IMPORT to CompletionItemKind.Module,
+            UnifiedNodeKind.PACKAGE to CompletionItemKind.Module,
+        )
+
         private val GROOVY_KEYWORDS = listOf(
             "def", "var", "void", "class", "interface", "trait", "enum",
             "if", "else", "for", "while", "do", "switch", "case", "default",

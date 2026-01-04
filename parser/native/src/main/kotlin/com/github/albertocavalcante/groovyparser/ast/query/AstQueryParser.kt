@@ -5,9 +5,7 @@ class AstQueryParser(private val raw: String) {
 
     fun parse(): AstQuery {
         skipWhitespace()
-        if (isEof()) {
-            throw IllegalArgumentException("Query is empty")
-        }
+        require(!isEof()) { "Query is empty" }
         val patterns = mutableListOf<AstQueryPattern>()
         while (!isEof()) {
             patterns.add(parsePattern())

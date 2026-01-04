@@ -6,7 +6,6 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
-import com.github.albertocavalcante.groovyparser.ast.body.TypeDeclaration
 import com.github.albertocavalcante.groovyparser.ast.expr.ArgumentListExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.ArrayExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.AttributeExpr

@@ -241,28 +241,29 @@ class GradleDependencyResolver(
      * component. It could be enhanced in the future by also invoking {@code bin/java -version}
      * as an additional fallback when the release file is missing or unreadable.
      */
-    private fun captureJavaMajorVersion(javaHome: Path): Int? {
-        // Highly simplified: assuming the path ends in something like "jdk-21.jdk" or "java-17"
-        // for better results we'd need to execute bin/java -version or check release file.
-        val releaseFile = javaHome.resolve("release")
-        if (Files.exists(releaseFile)) {
-            try {
-                val content = Files.readString(releaseFile)
-                val versionLine = content.lines().find { it.startsWith("JAVA_VERSION=") }
-                if (versionLine != null) {
-                    val version = versionLine.removePrefix("JAVA_VERSION=").trim('"')
-                    // Handle 1.8.0_xxx or 17.0.2 formats
-                    return if (version.startsWith("1.")) {
-                        version.substringAfter("1.").substringBefore(".").toIntOrNull()
-                    } else {
-                        version.substringBefore(".").toIntOrNull()
-                    }
+    private fun captureJavaMajorVersion(javaHome: Path): Int? = javaHome.resolve("release")
+        .takeIf { Files.exists(it) }
+        ?.let { releaseFile ->
+            runCatching { Files.readString(releaseFile) }
+                .onFailure { throwable ->
+                    if (throwable is Error) throw throwable
+                    logger.warn("Failed to read release file in $javaHome", throwable)
                 }
-            } catch (e: Exception) {
-                logger.warn("Failed to read release file in $javaHome", e)
-            }
+                .getOrNull()
         }
-        return null
+        ?.lineSequence()
+        ?.firstOrNull { it.startsWith("JAVA_VERSION=") }
+        ?.removePrefix("JAVA_VERSION=")
+        ?.trim('"')
+        ?.let(::parseJavaMajorVersion)
+
+    private fun parseJavaMajorVersion(version: String): Int? {
+        // Handle 1.8.0_xxx or 17.0.2 formats
+        return if (version.startsWith("1.")) {
+            version.substringAfter("1.").substringBefore(".").toIntOrNull()
+        } else {
+            version.substringBefore(".").toIntOrNull()
+        }
     }
 
     private fun isolatedGradleUserHomeDir(): Path {

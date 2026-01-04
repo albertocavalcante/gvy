@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
 import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
 import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -19,6 +20,13 @@ import kotlin.io.path.readText
 
 class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
     private val logger = LoggerFactory.getLogger(IndexExportService::class.java)
+
+    private fun rethrowIfCancellationOrError(throwable: Throwable) {
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
+        }
+    }
 
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
         logger.info("Exporting index format=${params.format} to=${params.outputPath}")
@@ -44,19 +52,18 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
     }
 
     private fun createWriters(format: IndexFormat, outputStream: FileOutputStream, root: Path): List<IndexWriter> =
-        try {
+        runCatching {
             when (format) {
                 IndexFormat.SCIP -> listOf(ScipWriter(outputStream, root.toString()))
                 IndexFormat.LSIF -> listOf(LsifWriter(outputStream, root.toString()))
             }
-        } catch (e: Exception) {
-            try {
-                outputStream.close()
-            } catch (_: Exception) {
-                // Ignore
-            }
-            throw e
         }
+            .onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                runCatching { outputStream.close() }
+                throw throwable
+            }
+            .getOrThrow()
 
     private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
         Files.walk(root).use { stream ->
@@ -65,13 +72,16 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
                     path.name in FileExtensions.FILENAMES
             }
                 .forEach { path ->
-                    try {
+                    runCatching {
                         val relativePath = root.relativize(path).toString()
                         val content = path.readText()
                         indexer.indexDocument(relativePath, content)
-                    } catch (e: Exception) {
-                        logger.warn("Failed to index file $path", e)
                     }
+                        .onFailure { throwable ->
+                            rethrowIfCancellationOrError(throwable)
+                            // Keep indexing other files; log for debugging.
+                            logger.warn("Failed to index file $path", throwable)
+                        }
                 }
         }
     }

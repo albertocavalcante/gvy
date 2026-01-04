@@ -39,56 +39,46 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         val name = node.name
         val coreNode = node.originalNode
 
-        // If the node IS a declaration (method, class, field), return it directly
-        if (isDeclarationNode(coreNode)) {
-            val targetRange = node.range ?: extractRangeFromNode(coreNode) ?: return emptyList()
-            return listOf(
-                UnifiedDefinition(
-                    uri = context.uri,
-                    range = targetRange,
-                    selectionRange = targetRange,
-                    kind = DefinitionKind.SOURCE,
-                    originSelectionRange = node.range,
-                ),
-            )
+        val targetRange = if (isDeclarationNode(coreNode)) {
+            node.range ?: extractRangeFromNode(coreNode)
+        } else {
+            runCatching {
+                val symbolRef = resolver.solveSymbol(name, coreNode)
+                if (!symbolRef.isSolved) {
+                    logger.debug("findDefinition: symbol '{}' not resolved", name)
+                    return@runCatching null
+                }
+
+                val declNode = symbolRef.getDeclaration().declarationNode
+                if (declNode == null) {
+                    logger.debug("findDefinition: declaration has no AST node for '{}'", name)
+                    return@runCatching null
+                }
+
+                val resolvedRange = extractRangeFromNode(declNode)
+                if (resolvedRange == null) {
+                    logger.debug("findDefinition: declaration node has no range for '{}'", name)
+                    return@runCatching null
+                }
+
+                resolvedRange
+            }.getOrElse { e ->
+                logger.debug("findDefinition: error resolving symbol '{}': {}", name, e.message)
+                null
+            }
         }
 
-        // For references (variable usages, method calls), use resolver
-        return try {
-            val symbolRef = resolver.solveSymbol(name, coreNode)
+        if (targetRange == null) return emptyList()
 
-            if (!symbolRef.isSolved) {
-                logger.debug("findDefinition: symbol '{}' not resolved", name)
-                return emptyList()
-            }
-
-            // Use declaration's AST node to get its source range
-            val declaration = symbolRef.getDeclaration()
-            val declNode = declaration.declarationNode
-            if (declNode == null) {
-                logger.debug("findDefinition: declaration has no AST node for '{}'", name)
-                return emptyList()
-            }
-
-            val targetRange = extractRangeFromNode(declNode)
-            if (targetRange == null) {
-                logger.debug("findDefinition: declaration node has no range for '{}'", name)
-                return emptyList()
-            }
-
-            listOf(
-                UnifiedDefinition(
-                    uri = context.uri,
-                    range = targetRange,
-                    selectionRange = targetRange,
-                    kind = DefinitionKind.SOURCE,
-                    originSelectionRange = node.range,
-                ),
-            )
-        } catch (e: Exception) {
-            logger.debug("findDefinition: error resolving symbol '{}': {}", name, e.message)
-            emptyList()
-        }
+        return listOf(
+            UnifiedDefinition(
+                uri = context.uri,
+                range = targetRange,
+                selectionRange = targetRange,
+                kind = DefinitionKind.SOURCE,
+                originSelectionRange = node.range,
+            ),
+        )
     }
 
     private fun isDeclarationNode(node: Node): Boolean = when (node) {

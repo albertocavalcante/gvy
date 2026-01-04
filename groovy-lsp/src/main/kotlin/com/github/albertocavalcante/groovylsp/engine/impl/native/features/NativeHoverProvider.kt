@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.api.ParseResult
+import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
@@ -22,9 +23,9 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider as D
 class NativeHoverProvider(
     @Suppress("UNUSED_PARAMETER") // TODO: Use parseResult directly instead of delegating
     private val parseResult: ParseResult,
-    private val compilationService: GroovyCompilationService,
-    private val documentProvider: DocumentProvider,
-    private val sourceNavigator: SourceNavigator? = null,
+    compilationService: GroovyCompilationService,
+    documentProvider: DocumentProvider,
+    sourceNavigator: SourceNavigator? = null,
 ) : HoverProvider {
 
     private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
@@ -36,12 +37,17 @@ class NativeHoverProvider(
         sourceNavigator,
     )
 
-    override suspend fun getHover(params: HoverParams): Hover = try {
+    override suspend fun getHover(params: HoverParams): Hover = runCatching {
         delegate.provideHover(params.textDocument.uri, params.position) ?: emptyHover()
-    } catch (e: Exception) {
-        logger.error("Error providing hover", e)
-        emptyHover()
     }
+        .onFailure { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Error -> throw throwable
+                else -> logger.error("Error providing hover", throwable)
+            }
+        }
+        .getOrDefault(emptyHover())
 
     private fun emptyHover() = Hover().apply {
         contents = Either.forRight(MarkupContent(MarkupKind.MARKDOWN, ""))

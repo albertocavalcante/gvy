@@ -8,6 +8,46 @@ description: Comprehensive codebase review and planning for next improvements
 
 Systematic review of codebase health, recent activity, and planning for improvements.
 
+## Phase 0: Choose Scope (Monorepo)
+
+This is a monorepo with **two build systems**:
+
+- **Kotlin/Gradle** (most modules) → `make lint`, `make test`, `make build`
+- **VS Code extension** under `editors/code` (Node/pnpm) → `pnpm run lint`, `pnpm run check-types`,
+  `pnpm run format:check`, `pnpm run test:all`
+
+Pick the right scope before doing anything else:
+
+- **Component-only**: you’re changing a single module/component (fast loop).
+- **PR scope**: you want CI-like confidence for what changed.
+- **Repo-wide health**: you’re doing broad cleanup/refactors.
+
+### 0.1 Path-based gating (PR scope)
+
+```bash
+git diff --name-only origin/main...HEAD
+```
+
+Rules of thumb:
+
+- If changes include `editors/code/**`, include the extension checks.
+- If changes include Kotlin, include the Gradle checks.
+- If changes include both, run both toolchains.
+
+### 0.2 If the work is "quality" / lint-driven
+
+Use the dedicated deterministic workflows:
+
+- `/lint` for assessment and smell review
+- `/lintfix` for fixing findings via small verified loops
+
+If you want the repo’s **pre-commit definition** (cross-toolchain) as your source-of-truth gate, run:
+
+```bash
+command -v lefthook
+lefthook run pre-commit
+```
+
 ## Phase 1: Recent Activity Review
 
 ### 1.1 Review Latest Commits
@@ -32,6 +72,19 @@ gh run list --limit 5
 ---
 
 ## Phase 2: Code Quality Analysis
+
+### 2.0 Monorepo Quality Gates (recommended)
+
+For **PR scope** validation:
+
+```bash
+# Kotlin/Gradle side
+make lint
+
+# Extension side (only if editors/code changed)
+cd editors/code && pnpm install --frozen-lockfile
+cd editors/code && pnpm run check-types && pnpm run lint && pnpm run format:check
+```
 
 ### 2.1 SonarCloud Issues (Code Smells, Bugs, Vulnerabilities)
 
@@ -142,3 +195,23 @@ Create `/implementation_plan.md` with:
 | Missing sealed classes  | Refactor type hierarchies                        |
 | Excessive `!!` usage    | Add proper null handling                         |
 | No CI for something     | Add GitHub Action workflow                       |
+
+## Quick Reference: Monorepo Commands
+
+Kotlin/Gradle:
+
+```bash
+make lint
+make test
+make build
+```
+
+VS Code extension (from repo root):
+
+```bash
+cd editors/code && pnpm install --frozen-lockfile
+cd editors/code && pnpm run check-types
+cd editors/code && pnpm run lint
+cd editors/code && pnpm run format:check
+cd editors/code && pnpm run test:all
+```

@@ -34,21 +34,25 @@ class UnifiedDocumentSymbolProvider(private val parseUnit: ParseUnit) : Document
         return symbol
     }
 
-    private fun UnifiedNodeKind.toSymbolKind(): SymbolKind = when (this) {
-        UnifiedNodeKind.CLASS -> SymbolKind.Class
-        UnifiedNodeKind.INTERFACE -> SymbolKind.Interface
-        UnifiedNodeKind.TRAIT -> SymbolKind.Interface // Map trait to Interface
-        UnifiedNodeKind.ENUM -> SymbolKind.Enum
-        UnifiedNodeKind.METHOD -> SymbolKind.Method
-        UnifiedNodeKind.CONSTRUCTOR -> SymbolKind.Constructor
-        UnifiedNodeKind.FIELD -> SymbolKind.Field
-        UnifiedNodeKind.PROPERTY -> SymbolKind.Property
-        UnifiedNodeKind.VARIABLE -> SymbolKind.Variable
-        UnifiedNodeKind.PARAMETER -> SymbolKind.Variable
-        UnifiedNodeKind.CLOSURE -> SymbolKind.Function
-        UnifiedNodeKind.IMPORT -> SymbolKind.Module
-        UnifiedNodeKind.PACKAGE -> SymbolKind.Package
-        UnifiedNodeKind.SCRIPT -> SymbolKind.File
-        UnifiedNodeKind.OTHER -> SymbolKind.Variable // Fallback
+    private fun UnifiedNodeKind.toSymbolKind(): SymbolKind = unifiedNodeKindToSymbolKind[this] ?: SymbolKind.Variable
+
+    private companion object {
+        private val unifiedNodeKindToSymbolKind: Map<UnifiedNodeKind, SymbolKind> = mapOf(
+            UnifiedNodeKind.CLASS to SymbolKind.Class,
+            UnifiedNodeKind.INTERFACE to SymbolKind.Interface,
+            UnifiedNodeKind.TRAIT to SymbolKind.Interface,
+            UnifiedNodeKind.ENUM to SymbolKind.Enum,
+            UnifiedNodeKind.METHOD to SymbolKind.Method,
+            UnifiedNodeKind.CONSTRUCTOR to SymbolKind.Constructor,
+            UnifiedNodeKind.FIELD to SymbolKind.Field,
+            UnifiedNodeKind.PROPERTY to SymbolKind.Property,
+            UnifiedNodeKind.VARIABLE to SymbolKind.Variable,
+            UnifiedNodeKind.PARAMETER to SymbolKind.Variable,
+            UnifiedNodeKind.CLOSURE to SymbolKind.Function,
+            UnifiedNodeKind.IMPORT to SymbolKind.Module,
+            UnifiedNodeKind.PACKAGE to SymbolKind.Package,
+            UnifiedNodeKind.SCRIPT to SymbolKind.File,
+            UnifiedNodeKind.OTHER to SymbolKind.Variable,
+        )
     }
 }

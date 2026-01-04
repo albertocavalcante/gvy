@@ -64,49 +64,29 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
 /**
  * Extension to convert API NodeKind to unified kind.
  */
-private fun NodeKind.toUnifiedKind(): UnifiedNodeKind = when (this) {
+private val nodeKindToUnifiedKind: Map<NodeKind, UnifiedNodeKind> = mapOf(
     // Declarations
-    NodeKind.CLASS -> UnifiedNodeKind.CLASS
-    NodeKind.INTERFACE -> UnifiedNodeKind.INTERFACE
-    NodeKind.ENUM -> UnifiedNodeKind.ENUM
-    NodeKind.TRAIT -> UnifiedNodeKind.TRAIT
-    NodeKind.METHOD -> UnifiedNodeKind.METHOD
-    NodeKind.CONSTRUCTOR -> UnifiedNodeKind.CONSTRUCTOR
-    NodeKind.FIELD -> UnifiedNodeKind.FIELD
-    NodeKind.PROPERTY -> UnifiedNodeKind.PROPERTY
-    NodeKind.PARAMETER -> UnifiedNodeKind.PARAMETER
-    NodeKind.VARIABLE -> UnifiedNodeKind.VARIABLE
+    NodeKind.CLASS to UnifiedNodeKind.CLASS,
+    NodeKind.INTERFACE to UnifiedNodeKind.INTERFACE,
+    NodeKind.ENUM to UnifiedNodeKind.ENUM,
+    NodeKind.TRAIT to UnifiedNodeKind.TRAIT,
+    NodeKind.METHOD to UnifiedNodeKind.METHOD,
+    NodeKind.CONSTRUCTOR to UnifiedNodeKind.CONSTRUCTOR,
+    NodeKind.FIELD to UnifiedNodeKind.FIELD,
+    NodeKind.PROPERTY to UnifiedNodeKind.PROPERTY,
+    NodeKind.PARAMETER to UnifiedNodeKind.PARAMETER,
+    NodeKind.VARIABLE to UnifiedNodeKind.VARIABLE,
 
     // Expressions
-    NodeKind.METHOD_CALL -> UnifiedNodeKind.OTHER
-    NodeKind.PROPERTY_ACCESS -> UnifiedNodeKind.OTHER
-    NodeKind.VARIABLE_REFERENCE -> UnifiedNodeKind.VARIABLE
-    NodeKind.LITERAL -> UnifiedNodeKind.OTHER
-    NodeKind.BINARY_EXPRESSION -> UnifiedNodeKind.OTHER
-    NodeKind.UNARY_EXPRESSION -> UnifiedNodeKind.OTHER
-    NodeKind.CLOSURE -> UnifiedNodeKind.CLOSURE
-    NodeKind.LIST -> UnifiedNodeKind.OTHER
-    NodeKind.MAP -> UnifiedNodeKind.OTHER
-    NodeKind.RANGE -> UnifiedNodeKind.OTHER
-
-    // Statements
-    NodeKind.IF -> UnifiedNodeKind.OTHER
-    NodeKind.FOR -> UnifiedNodeKind.OTHER
-    NodeKind.WHILE -> UnifiedNodeKind.OTHER
-    NodeKind.SWITCH -> UnifiedNodeKind.OTHER
-    NodeKind.TRY -> UnifiedNodeKind.OTHER
-    NodeKind.RETURN -> UnifiedNodeKind.OTHER
-    NodeKind.THROW -> UnifiedNodeKind.OTHER
-    NodeKind.ASSERT -> UnifiedNodeKind.OTHER
-    NodeKind.BLOCK -> UnifiedNodeKind.OTHER
+    NodeKind.VARIABLE_REFERENCE to UnifiedNodeKind.VARIABLE,
+    NodeKind.CLOSURE to UnifiedNodeKind.CLOSURE,
 
     // Other
-    NodeKind.IMPORT -> UnifiedNodeKind.IMPORT
-    NodeKind.PACKAGE -> UnifiedNodeKind.PACKAGE
-    NodeKind.ANNOTATION -> UnifiedNodeKind.OTHER
-    NodeKind.COMMENT -> UnifiedNodeKind.OTHER
-    NodeKind.UNKNOWN -> UnifiedNodeKind.OTHER
-}
+    NodeKind.IMPORT to UnifiedNodeKind.IMPORT,
+    NodeKind.PACKAGE to UnifiedNodeKind.PACKAGE,
+)
+
+private fun NodeKind.toUnifiedKind(): UnifiedNodeKind = nodeKindToUnifiedKind[this] ?: UnifiedNodeKind.OTHER
 
 /**
  * Extension to convert API SymbolKind to unified kind.
