@@ -13,6 +13,9 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+import hashlib
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -73,6 +76,33 @@ def rprint(*args, **kwargs):
         typer.echo(res)
 
 
+def get_pr_cache_dir(pr_number: int) -> Path:
+    """Get a safe, multiplatform cache directory for a specific PR."""
+    owner, repo = get_repo_info()
+    # Use repo name in hash to avoid collisions across different repos for same PR#
+    repo_hash = hashlib.md5(f"{owner}/{repo}".encode()).hexdigest()[:8]
+    tmp_dir = Path(tempfile.gettempdir()) / f"gvy-pr-{repo_hash}-{pr_number}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return tmp_dir
+
+
+def save_msg_version(pr_number: int, title: str, body: str, source: str = "ai") -> str:
+    """Save a version of the merge message and return its short ID."""
+    cache_dir = get_pr_cache_dir(pr_number)
+    content = f"{title}\n\n{body}"
+    msg_hash = hashlib.md5(content.encode()).hexdigest()[:7]
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    file_path = cache_dir / f"msg-{timestamp}-{source}-{msg_hash}.md"
+    file_path.write_text(content)
+
+    # Also update 'latest' symlink/pointer
+    latest_file = cache_dir / "latest.md"
+    latest_file.write_text(content)
+
+    return msg_hash
+
+
 def validate_reply(body: str):
     """Reply must contain Commit SHA or Issue Ref."""
     if not (re.search(r"\b[0-9a-f]{7,40}\b", body) or re.search(r"#\d+", body)):
@@ -97,7 +127,8 @@ def get_thread_inventory(
 ) -> tuple[str, list]:
     """Fetch all open threads for a PR."""
     owner, repo = get_repo_info()
-    cache_file = Path(f"/tmp/pr-{owner}-{repo}-{pr_number}-threads.json")
+    tmp_base = Path(tempfile.gettempdir())
+    cache_file = tmp_base / f"gvy-pr-{owner}-{repo}-{pr_number}-threads.json"
 
     if cache_file.exists() and not force_refetch:
         data = json.loads(cache_file.read_text())
@@ -219,6 +250,40 @@ REMINDER: Loop until all threads are resolved. Do not merge with open threads.
     except Exception as e:
         rprint(f"[bold red]Error checking threads: {e}[/bold red]")
         raise typer.Exit(1)
+
+
+@app.command()
+def history(
+    pr_number: int = typer.Argument(None, help="PR number (auto-detected if omitted)"),
+):
+    """List historical merge messages for this PR."""
+    if pr_number is None:
+        pr_number = get_current_pr_number()
+        if pr_number is None:
+            rprint("[bold red]Error: Could not detect PR.[/bold red]")
+            raise typer.Exit(1)
+
+    cache_dir = get_pr_cache_dir(pr_number)
+    files = sorted(cache_dir.glob("msg-*.md"), reverse=True)
+
+    if not files:
+        rprint(f"\n[yellow]No history found for PR #{pr_number}[/yellow]")
+        return
+
+    rprint(f"\n[bold cyan]Message History for PR #{pr_number}:[/bold cyan]")
+    for f in files:
+        parts = f.stem.split("-")
+        # msg-timestamp-source-hash
+        ts = f"{parts[1]}-{parts[2]}" if len(parts) > 2 else "unknown"
+        source = parts[3] if len(parts) > 3 else "unknown"
+        v_id = parts[4] if len(parts) > 4 else f.stem[-7:]
+
+        content = f.read_text().split("\n", 1)
+        title = content[0][:60] + "..." if content else "no title"
+
+        rprint(
+            f"  [bold green]{v_id}[/bold green] | {ts} | [dim]{source:7}[/dim] | {title}"
+        )
 
 
 @app.command()
@@ -432,8 +497,9 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
     """Generate commit message using Gemini CLI."""
     typer.echo("🤖 Generating semantic commit message with Gemini...")
 
-    # Create diff file to handle large diffs
-    diff_file = Path(f"/tmp/pr-{pr_number}.diff")
+    # Create diff file in multiplatform temp dir
+    tmp_base = Path(tempfile.gettempdir())
+    diff_file = tmp_base / f"gvy-pr-{pr_number}.diff"
     try:
         with open(diff_file, "w") as f:
             subprocess.run(["gh", "pr", "diff", str(pr_number)], stdout=f, check=True)
@@ -456,30 +522,22 @@ Instructions:
    BODY:
    - <bullet point>
    - <bullet point>
+3. Rules:
    - Use strict Conventional Commits (feat, fix, docs, style, refactor, test, chore, perf, ci).
-   - Scope is optional but recommended (e.g. semantics, parser, lsp).
+   - Scope is optional but recommended.
    - Description must be lower case, imperative mood.
-   - Body should be a concise summary of the functional changes. Use bullet points.
-   - Focus on "What" and "Why", not "How".
-   - Do NOT include "Fixes" or "Relates to" footers (added automatically).
-
+   - Body should be a CONCISE summary of functional changes. Focus on "What" and "Why".
+   - Do NOT include footer links like "Fixes #N" (added automatically).
 
 The user handles the Diff separately.
 """
 
     try:
-        # We need to construct a combined input stream: Prompt + Diff
-        # Since gemini reads stdin, we can cat them together roughly.
-        # But wait, gemini CLI takes the prompt as argument usually or stdin.
-        # If we pipe, we pipe the whole context.
-
         # Write prompt to temp file
-        prompt_file = Path(f"/tmp/pr-{pr_number}-prompt.txt")
+        prompt_file = tmp_base / f"gvy-pr-{pr_number}-prompt.txt"
         prompt_file.write_text(prompt)
 
         # Concatenate prompt + diff -> gemini
-        # cat prompt.txt diff.txt | gemini
-
         ps = subprocess.Popen(
             f"cat {prompt_file} {diff_file} | gemini",
             shell=True,
@@ -489,17 +547,17 @@ The user handles the Diff separately.
         )
         stdout, stderr = ps.communicate()
 
-        if ps.returncode != 0:
-            typer.echo(f"⚠️ Gemini failed: {stderr}", err=True)
-            return "", ""
-
-        output = stdout.strip()
-
         # Cleanup
         if diff_file.exists():
             diff_file.unlink()
         if prompt_file.exists():
             prompt_file.unlink()
+
+        if ps.returncode != 0:
+            typer.echo(f"⚠️ Gemini failed: {stderr}", err=True)
+            return "", ""
+
+        output = stdout.strip()
 
         # Parse output
         title_match = re.search(r"TITLE:\s*(.+)", output)
@@ -541,81 +599,82 @@ def merge(
     edit: bool = typer.Option(
         False, "--edit", "-e", help="Edit the commit message before finalization"
     ),
+    version: Optional[str] = typer.Option(
+        None, "--version", "-v", help="Use a specific historical message version"
+    ),
+    history_list: bool = typer.Option(
+        False, "--history", help="List historical messages for this PR"
+    ),
 ):
     """
     Squash merge a PR with enforced semantic commit message.
-
-    Requirements:
-    - Title: type(scope): description (#PR)
-    - Types: feat, fix, docs, style, refactor, test, chore, perf, ci
-    - PR number MUST be in title
-    - Linked issues automatically get "Fixes #N" in body
-    - Related issues can be added via --relates-to
     """
     # Auto-detect PR if not provided
     if pr_number is None:
         pr_number = get_current_pr_number()
         if pr_number is None:
-            typer.echo(
-                "Error: Could not detect PR from current branch. Provide PR number.",
-                err=True,
+            rprint(
+                "[bold red]Error: Could not detect PR. Provide PR number.[/bold red]"
             )
             raise typer.Exit(1)
-        typer.echo(f"📌 Auto-detected PR #{pr_number}")
+
+    if history_list:
+        history(pr_number)
+        return
 
     try:
         pr = get_pr_details(pr_number)
     except subprocess.CalledProcessError as e:
-        typer.echo(f"Error fetching PR: {e.stderr}", err=True)
+        rprint(f"[bold red]Error fetching PR: {e.stderr}[/bold red]")
         raise typer.Exit(1)
 
-    # AI Generation
-    ai_title = ""
-    ai_body = ""
-    if ai:
+    # Initial Title/Body logic
+    merge_title = ""
+    merge_body = ""
+    source = "ai" if ai else "manual"
+
+    # 1. Load from history if requested
+    if version:
+        cache_dir = get_pr_cache_dir(pr_number)
+        v_files = list(cache_dir.glob(f"*{version}*"))
+        if not v_files:
+            rprint(f"[bold red]Error: Version {version} not found.[/bold red]")
+            raise typer.Exit(1)
+        content = v_files[0].read_text().split("\n\n", 1)
+        merge_title = content[0].strip()
+        merge_body = content[1].strip() if len(content) > 1 else ""
+        source = f"v{version}"
+    # 2. AI Generation
+    elif ai:
         ai_title, ai_body = generate_ai_message(pr, pr_number)
         if ai_title:
-            typer.echo(f"\n🧠 AI Suggested Title: {ai_title}")
-            # Use AI title if valid (or let validation fail it later)
-            if not title:
-                title = ai_title
-
-    if pr.get("state") != "OPEN":
-        typer.echo(
-            f"Error: PR #{pr_number} is not open (state: {pr.get('state')})", err=True
-        )
-        raise typer.Exit(1)
-
-    if pr.get("mergeable") == "CONFLICTING":
-        typer.echo(
-            f"Error: PR #{pr_number} has conflicts. Resolve before merging.", err=True
-        )
-        raise typer.Exit(1)
-
-    # Check for open threads
-    open_threads = get_unresolved_threads(pr_number)
-    if open_threads > 0:
-        typer.echo(
-            f"\n⚠️  WARNING: PR #{pr_number} has {open_threads} unresolved threads!",
-            err=True,
-        )
-        if not typer.confirm(
-            f"Are you SURE you want to merge with {open_threads} open threads?",
-            default=False,
-        ):
-            typer.echo("Merge cancelled.")
-            raise typer.Exit(0)
-
-    # Generate or validate title
-    if title:
-        merge_title = title
-    else:
-        # Try to make existing title semantic
-        existing = pr.get("title", "")
-        if f"(#{pr_number})" not in existing:
-            merge_title = f"{existing} (#{pr_number})"
+            merge_title = ai_title
+            merge_body = ai_body
         else:
-            merge_title = existing
+            rprint(
+                "[bold red]AI generation failed. Falling back to default.[/bold red]"
+            )
+            ai = False  # Fallthrough to manual
+
+    # 3. Manual Fallback / Base
+    if not merge_title:
+        if title:
+            merge_title = title
+        else:
+            existing = pr.get("title", "")
+            merge_title = (
+                existing
+                if f"(#{pr_number})" in existing
+                else f"{existing} (#{pr_number})"
+            )
+
+        if not merge_body:
+            body_text, _ = generate_merge_body(pr, pr_number)
+            merge_body = body_text
+
+    # Title Override (Manual always wins if provided via CLI flag)
+    if title and not version:
+        merge_title = title
 
     # Validate title
     valid, error = validate_semantic_title(merge_title, pr_number)
@@ -625,107 +684,116 @@ def merge(
         typer.echo("\nUse --title to provide a valid semantic title.", err=True)
         raise typer.Exit(1)
 
-    # Generate body
-    if ai and ai_body:
-        merge_body = ai_body
-        # re-scan for related issues for deterministic linking
-        _, auto_related = generate_merge_body(pr, pr_number)
-    else:
-        merge_body, auto_related = generate_merge_body(pr, pr_number)
-
-    # Append Fixes if AI body doesn't have them
+    # Append Fixes if not present (DETERMINISTIC)
     linked_issues = pr.get("closingIssuesReferences", [])
-    if linked_issues and "Fixes #" not in merge_body:
-        if "\n\n## Fixes" not in merge_body:
+    if linked_issues:
+        if "## Fixes" not in merge_body:
             merge_body += "\n\n## Fixes\n"
         for issue in linked_issues:
             num = issue.get("number")
-            if num:
+            if num and f"Fixes #{num}" not in merge_body:
                 merge_body += f"\nFixes #{num}"
-    # Append explicitly related issues (from CLI)
-    if relates_to:
-        # Check if we need to add header
-        if not auto_related:
-            if "\n\n## Related Issues" not in merge_body:
-                merge_body += "\n\n## Related Issues\n"
 
+    # Related issues from PR body
+    _, auto_related = generate_merge_body(pr, pr_number)
+    if auto_related:
+        if "## Related Issues" not in merge_body:
+            merge_body += "\n\n## Related Issues\n"
+        for num in auto_related:
+            if f"Relates to #{num}" not in merge_body:
+                merge_body += f"\nRelates to #{num}"
+
+    # Explicitly related issues (from CLI)
+    if relates_to:
+        if "## Related Issues" not in merge_body:
+            merge_body += "\n\n## Related Issues\n"
         for issue in relates_to:
             clean_issue = issue.strip().lstrip("#")
-            # Avoid duplicates if auto-detected
-            if clean_issue not in auto_related:
+            if (
+                clean_issue not in auto_related
+                and f"Relates to #{clean_issue}" not in merge_body
+            ):
                 merge_body += f"\nRelates to #{clean_issue}"
 
-    # Persist message for potential manual tweaks or re-runs
-    msg_cache_file = Path(f"/tmp/merge-msg-{pr_number}.md")
-    full_msg = f"{merge_title}\n\n{merge_body}"
-    msg_cache_file.write_text(full_msg)
+    # Final Validation
+    valid, error = validate_semantic_title(merge_title, pr_number)
+    if not valid:
+        rprint(f"\n❌ [bold red]Invalid commit title:[/bold red]\n{error}")
+        rprint(f"\nCurrent title: {merge_title}")
+        raise typer.Exit(1)
 
+    # Save version before potential edit
+    v_id = save_msg_version(pr_number, merge_title, merge_body, source=source)
+    if source == "ai":
+        rprint(
+            f"\n✨ [bold cyan]AI Generated Version:[/bold cyan] [bold green]{v_id}[/bold green]"
+        )
+    elif version:
+        rprint(
+            f"\n📦 [bold cyan]Loaded Version:[/bold cyan] [bold green]{v_id}[/bold green]"
+        )
+
+    # Optional Editing
     if edit:
+        full_msg = f"{merge_title}\n\n{merge_body}"
         edited_msg = typer.edit(full_msg, extension=".md")
-        if edited_msg:
-            # Re-split title and body
-            lines = edited_msg.strip().split("\n", 2)
+        if edited_msg and edited_msg.strip() != full_msg.strip():
+            lines = edited_msg.strip().split("\n", 1)
             merge_title = lines[0].strip()
-            merge_body = lines[2].strip() if len(lines) > 2 else ""
-            # Re-save
-            msg_cache_file.write_text(edited_msg)
+            merge_body = lines[1].strip() if len(lines) > 1 else ""
+            # Save edited version
+            v_id = save_msg_version(pr_number, merge_title, merge_body, source="edit")
+            rprint(
+                f"📝 [bold cyan]Edited Version saved:[/bold cyan] [bold green]{v_id}[/bold green]"
+            )
 
-    # Show Preview
+    # ---- FULL PREVIEW (EXACT CONTENT) ----
     if console.is_terminal:
-        rprint(
-            "\n[bold cyan]============================================================[/bold cyan]"
-        )
-        rprint("[bold cyan]MERGE PREVIEW (Squash)[/bold cyan]")
-        rprint(
-            "[bold cyan]============================================================[/bold cyan]\n"
-        )
+        rprint("\n[bold cyan]" + "=" * 60 + "[/bold cyan]")
+        rprint("[bold white]FINAL COMMIT MESSAGE PREVIEW[/bold white]")
+        rprint("[bold cyan]" + "=" * 60 + "[/bold cyan]\n")
 
         rprint(
             Panel(
                 merge_title,
-                title="[bold white]📝 Semantic Title[/bold white]",
+                title="[bold white]Subject[/bold white]",
                 border_style="green",
             )
         )
         rprint(
             Panel(
                 Markdown(merge_body),
-                title="[bold white]📋 Body[/bold white]",
+                title="[bold white]Body[/bold white]",
                 border_style="blue",
             )
         )
-        rprint(
-            "\n[bold cyan]============================================================[/bold cyan]\n"
-        )
+        rprint("\n[bold cyan]" + "=" * 60 + "[/bold cyan]\n")
     else:
         typer.echo("\n" + "=" * 60)
-        typer.echo("MERGE PREVIEW (Squash)")
+        typer.echo("FINAL COMMIT MESSAGE PREVIEW")
         typer.echo("=" * 60)
-        typer.echo(f"\n📝 Title:\n{merge_title}")
-        typer.echo(f"\n📋 Body:\n{merge_body}")
+        typer.echo(f"\nSUBJECT: {merge_title}")
+        typer.echo(f"\nBODY:\n{merge_body}")
         typer.echo("\n" + "=" * 60 + "\n")
 
-    # Show linked issues if any
-    linked_issues = pr.get("closingIssuesReferences", [])
-    if linked_issues:
-        issue_nums = [f"#{i.get('number')}" for i in linked_issues if i.get("number")]
-        rprint(f"🔗 [bold green]Linked issues:[/bold green] {', '.join(issue_nums)}")
-
     if dry_run:
-        print("\n[DRY RUN] Would merge with above message.")
+        rprint(
+            f"\n[bold yellow]DRY RUN[/bold yellow]: Would merge PR #{pr_number} with version [bold green]{v_id}[/bold green]."
+        )
         return
 
-    # Confirmation
-    confirm = typer.confirm("\n✨ Proceed with squash merge?", default=False)
-    if not confirm:
-        typer.echo("Merge cancelled.")
-        raise typer.Exit(0)
+    if not typer.confirm(
+        f"✨ Proceed with squash merge of PR #{pr_number}?", default=False
+    ):
+        rprint("[yellow]Merge cancelled.[/yellow]")
+        return
 
     # Execute merge
     try:
-        # Write body to temp file to strict handle newlines and size
-        body_file = Path(f"/tmp/pr-{pr_number}-merge.md")
-        body_file.write_text(merge_body)
+        # Use tempfile for body to handle large content/newlines
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tf:
+            tf.write(merge_body)
+            tf_path = tf.name
 
         subprocess.run(
             [
@@ -737,15 +805,14 @@ def merge(
                 "--subject",
                 merge_title,
                 "--body-file",
-                str(body_file),
+                tf_path,
             ],
             check=True,
         )
-        print(f"\n✅ PR #{pr_number} merged successfully!")
-        if body_file.exists():
-            body_file.unlink()
+        rprint(f"\n✅ [bold green]PR #{pr_number} merged successfully![/bold green]")
+        Path(tf_path).unlink()
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Merge failed: {e}", file=sys.stderr)
+        rprint(f"\n❌ [bold red]Merge failed: {e}[/bold red]")
         raise typer.Exit(1)
 
 
