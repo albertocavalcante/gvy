@@ -21,9 +21,10 @@ class GradleCompatibilityService {
         loadCompatibilityMatrix()
     }
 
-    private fun loadCompatibilityMatrix(): Map<Int, GradleVersion> = try {
-        val resourceStream = javaClass.getResourceAsStream("/gradle-compatibility.json")
-            ?: throw IllegalStateException("Detailed gradle-compatibility.json not found in resources")
+    private fun loadCompatibilityMatrix(): Map<Int, GradleVersion> = runCatching {
+        val resourceStream = checkNotNull(javaClass.getResourceAsStream("/gradle-compatibility.json")) {
+            "Detailed gradle-compatibility.json not found in resources"
+        }
 
         val content = InputStreamReader(resourceStream).use { it.readText() }
         val matrix = Json.decodeFromString<CompatibilityMatrix>(content)
@@ -33,8 +34,9 @@ class GradleCompatibilityService {
             val minGradle = parseMinGradleVersion(entry.gradle)
             jdkVersion to minGradle
         }
-    } catch (e: Exception) {
-        logger.error("Failed to load Gradle compatibility matrix", e)
+    }.getOrElse { throwable ->
+        if (throwable is Error) throw throwable
+        logger.error("Failed to load Gradle compatibility matrix", throwable)
         emptyMap()
     }
 
@@ -70,10 +72,10 @@ class GradleCompatibilityService {
      */
     fun getMinimumGradleVersion(jdkVersion: Int): String? = minimumGradleVersions[jdkVersion]?.version
 
-    private fun parseGradleVersionSafe(version: String): GradleVersion? = try {
-        GradleVersion.version(version)
-    } catch (e: Exception) {
-        logger.warn("Failed to parse Gradle version: $version", e)
-        null
-    }
+    private fun parseGradleVersionSafe(version: String): GradleVersion? = runCatching { GradleVersion.version(version) }
+        .onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.warn("Failed to parse Gradle version: $version", throwable)
+        }
+        .getOrNull()
 }
