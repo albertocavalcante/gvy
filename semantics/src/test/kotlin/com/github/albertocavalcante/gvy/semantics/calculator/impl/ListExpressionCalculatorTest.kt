@@ -32,9 +32,9 @@ class ListExpressionCalculatorTest {
 
     @Test
     fun `should calculate List of mixed types (String, Int)`() {
-        // LUB(String, Integer) -> Object (or Comparable/Serializable)
+        // LUB(String, Integer) -> Comparable
         // TypeLub logic: if no common numeric/string rule, fallback to common ancestor.
-        // String and Integer implement Comparable, Serializable.
+        // String and Integer implement Comparable, Serializable. Comparable has higher priority.
 
         val calculator = ListExpressionCalculator()
         val node = MockListExpression(listOf("str", "int"))
@@ -46,17 +46,8 @@ class ListExpressionCalculatorTest {
         val known = result as SemanticType.Known
         assertEquals("java.util.ArrayList", known.fqn)
 
-        // Verifying the LUB. Depending on TypeLub implementation, might be Object or Comparable.
-        // Let's assert it is one of the valid common ancestors or Object.
         val elemType = known.typeArgs[0] as SemanticType.Known
-        // "java.lang.Object" is the safest fallback if interfaces aren't prioritized perfectly.
-        // Based on TypeLub code, it tries common ancestors. String & Integer share Comparable & Serializable.
-        // Interfaces are prioritized. Object has priority 100 (worst). Comparable 5. Serializable 10.
-        // So it should pick Comparable.
-        assertTrue(
-            elemType.fqn == "java.lang.Comparable" || elemType.fqn == "java.io.Serializable" ||
-                elemType.fqn == "java.lang.Object",
-        )
+        assertEquals("java.lang.Comparable", elemType.fqn)
     }
 
     @Test
