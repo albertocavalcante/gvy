@@ -15,6 +15,9 @@ interface TypeCalculator<T : Any> {
 
     /**
      * The node type this calculator handles.
+     *
+     * TODO(#640): Document (and where possible narrow) calculators that register as Any::class.
+     *   See: https://github.com/albertocavalcante/gvy/issues/640
      */
     val nodeType: KClass<T>
 

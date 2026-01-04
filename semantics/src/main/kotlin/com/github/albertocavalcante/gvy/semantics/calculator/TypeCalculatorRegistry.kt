@@ -38,6 +38,9 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
         // Check exact match first
         calculators[nodeClass]?.let { return it }
 
+        // TODO(#639): Cache resolved calculator lists per runtime node class.
+        //   See: https://github.com/albertocavalcante/gvy/issues/639
+
         // Check superclasses and interfaces
         return calculators.entries
             .filter { (key, _) -> key.java.isAssignableFrom(nodeClass.java) }

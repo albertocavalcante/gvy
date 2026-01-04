@@ -25,7 +25,8 @@ class MethodCallCalculator : TypeCalculator<Any> {
 
         val receiverType =
             if (receiver != null) context.calculateType(receiver) else SemanticType.Unknown("Implicit receiver")
-        // Note: implicit receiver handling needs scope, assuming explicit for now or Unknown
+        // TODO(#638): Support implicit receiver resolution (this/owner/delegate) via TypeContext.
+        //   See: https://github.com/albertocavalcante/gvy/issues/638
 
         val argTypes = arguments.map { context.calculateType(it) }
 

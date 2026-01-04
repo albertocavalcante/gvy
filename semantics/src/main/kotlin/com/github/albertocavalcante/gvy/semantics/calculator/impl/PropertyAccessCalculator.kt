@@ -26,6 +26,9 @@ class PropertyAccessCalculator : TypeCalculator<Any> {
         val receiverType =
             if (receiver != null) context.calculateType(receiver) else SemanticType.Unknown("Implicit receiver")
 
+        // TODO(#638): Support implicit receiver resolution (this/owner/delegate) via TypeContext.
+        //   See: https://github.com/albertocavalcante/gvy/issues/638
+
         val propertyName = getPropertyName(property) ?: return null
 
         return context.getFieldType(receiverType, propertyName)
