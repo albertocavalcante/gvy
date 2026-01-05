@@ -14,6 +14,7 @@ import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.readText
 
 /**
@@ -77,8 +78,9 @@ class WorkspaceCompiler(
 
     /**
      * Whether initial compilation has been performed.
+     * Thread-safe using AtomicBoolean to prevent race conditions.
      */
-    private var initialCompilationDone = false
+    private val initialCompilationDone = AtomicBoolean(false)
 
     /**
      * Compiles all workspace files together for full cross-file semantic resolution.
@@ -133,10 +135,10 @@ class WorkspaceCompiler(
         logger.info("Incremental compile requested for ${changedUris.size} files")
 
         // On first incremental compile, do initial compilation to build dependency graph
-        if (!initialCompilationDone) {
+        // Use compareAndSet to atomically check and set the flag
+        if (initialCompilationDone.compareAndSet(false, true)) {
             logger.info("First incremental compile - performing initial compilation")
             val result = incrementalCompiler.initialCompile()
-            initialCompilationDone = true
             return result
         }
 
