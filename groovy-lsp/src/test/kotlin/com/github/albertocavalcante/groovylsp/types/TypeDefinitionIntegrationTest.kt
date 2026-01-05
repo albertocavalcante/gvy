@@ -202,19 +202,12 @@ class TypeDefinitionIntegrationTest {
         val (cleanCode, position) = extractCursorPosition(code, "//^")
         val context = compileGroovy(cleanCode)
 
-        // Debug output
-        println("=== Constructor Call Test Debug ===")
-        println("Position: $position")
-        println("Module classes: ${context.moduleNode.classes.map { it.name }}")
-
         val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
-        println("Found node: ${node?.javaClass?.simpleName} at ${node?.lineNumber}:${node?.columnNumber}")
 
         assertNotNull(node, "Should find AST node at position $position")
 
         typeResolver.semantics.inject(context.moduleNode)
         val type = typeResolver.resolveType(node, context.moduleNode)
-        println("Resolved type: $type")
 
         assertNotNull(type, "Should resolve constructor call to a type")
         assertTrue(type is SemanticType.Known, "Should be Known type")

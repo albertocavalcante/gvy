@@ -63,18 +63,13 @@ class NativeTypeContext(
         classFqn: String,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): org.codehaus.groovy.ast.MethodNode? {
-        // Extract class name from FQN
-        val className = classFqn.substringAfterLast('.')
-
-        return scope.currentModule?.classes
-            ?.find { it.name == className }
-            ?.methods
-            ?.find { method ->
-                method.name == methodName &&
-                    method.parameters.size == argumentTypes.size
-            }
-    }
+    ): org.codehaus.groovy.ast.MethodNode? = scope.currentModule?.classes
+        ?.find { it.name == classFqn }
+        ?.methods
+        ?.find { method ->
+            method.name == methodName &&
+                method.parameters.size == argumentTypes.size
+        }
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
         is SemanticType.Known -> {
@@ -101,15 +96,11 @@ class NativeTypeContext(
      * Find a field in the current module by class and field name.
      * Returns null if not found.
      */
-    private fun findFieldInModule(classFqn: String, fieldName: String): org.codehaus.groovy.ast.FieldNode? {
-        // Extract class name from FQN
-        val className = classFqn.substringAfterLast('.')
-
-        return scope.currentModule?.classes
-            ?.find { it.name == className }
+    private fun findFieldInModule(classFqn: String, fieldName: String): org.codehaus.groovy.ast.FieldNode? =
+        scope.currentModule?.classes
+            ?.find { it.name == classFqn }
             ?.fields
             ?.find { it.name == fieldName }
-    }
 
     companion object {
         /**
