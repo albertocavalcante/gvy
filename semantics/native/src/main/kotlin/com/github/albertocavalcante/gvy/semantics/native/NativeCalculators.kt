@@ -10,6 +10,9 @@ import com.github.albertocavalcante.gvy.semantics.calculator.impl.MethodCallCalc
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.PropertyAccessCalculator
 import com.github.albertocavalcante.gvy.semantics.native.adapters.ClosureExpressionAdapter
 import com.github.albertocavalcante.gvy.semantics.native.adapters.DeclarationExpressionAdapter
+import com.github.albertocavalcante.gvy.semantics.native.adapters.FieldNodeCalculator
+import com.github.albertocavalcante.gvy.semantics.native.adapters.MethodNodeCalculator
+import com.github.albertocavalcante.gvy.semantics.native.adapters.ParameterCalculator
 import com.github.albertocavalcante.gvy.semantics.native.adapters.VariableExpressionAdapter
 
 /**
@@ -30,7 +33,11 @@ object NativeCalculators {
     const val SCOPE_AWARE_PRIORITY = 20
 
     fun createRegistry(): TypeCalculatorRegistry = TypeCalculatorRegistry.builder()
-        // Scope-aware calculators (higher priority)
+        // Direct node type calculators (highest priority)
+        .register(FieldNodeCalculator)
+        .register(MethodNodeCalculator)
+        .register(ParameterCalculator)
+        // Scope-aware calculators (high priority)
         .register(VariableExpressionAdapter)
         .register(DeclarationExpressionAdapter)
         .register(ClosureExpressionAdapter)

@@ -130,11 +130,10 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    @Disabled("TODO(#615): External class resolution not yet implemented in TypeDefinitionProvider")
     fun `type definition resolves to class declaration`() = runBlocking {
         val params = TypeDefinitionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
-            position = Position(7, 25)
+            position = Position(7, 22) // Position on "Greeter" in "new Greeter()"
         }
 
         val either = server.textDocumentService.typeDefinition(params).get()
