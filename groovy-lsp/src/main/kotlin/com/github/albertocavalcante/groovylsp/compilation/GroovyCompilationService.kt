@@ -48,11 +48,12 @@ class GroovyCompilationService(
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
-    private val workspaceCompiler = WorkspaceCompiler(workerSessionManager, workspaceManager)
 
     // Semantic database and workspace symbol index for cross-file resolution
+    // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
+    private val workspaceCompiler = WorkspaceCompiler(workerSessionManager, workspaceManager, semanticDb)
 
     // Managers that handle complex lifecycle and orchestration
     private val engineManager = LanguageEngineManager(
