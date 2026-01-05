@@ -29,7 +29,6 @@ import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformat
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
-import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
@@ -164,10 +163,10 @@ class GroovyTextDocumentService(
 
     // Type definition provider - created lazily
     private val typeDefinitionProvider by lazy {
-        val typeResolver = GroovyTypeResolver()
         TypeDefinitionProvider(
             coroutineScope = coroutineScope,
-            typeResolver = typeResolver,
+            semanticResolver = semanticTypeResolver,
+            sourceNavigator = sourceNavigator,
             contextProvider = { uri -> compilationService.createContext(uri) },
         )
     }

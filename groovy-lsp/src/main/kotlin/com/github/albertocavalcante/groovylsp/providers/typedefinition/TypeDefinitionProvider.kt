@@ -3,7 +3,10 @@ package com.github.albertocavalcante.groovylsp.providers.typedefinition
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
-import com.github.albertocavalcante.groovylsp.types.TypeResolver
+import com.github.albertocavalcante.groovylsp.converters.toLspLocation
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import kotlinx.coroutines.CoroutineScope
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
@@ -16,13 +19,11 @@ import java.util.concurrent.CompletableFuture
  * Provides type definition functionality for Groovy language server.
  * When a user requests "Go to Type Definition", this provider resolves the type
  * of the symbol at the cursor and returns the location where that type is defined.
- *
- * Based on patterns from fork-groovy-language-server TypeDefinitionProvider,
- * but enhanced with our improved type resolution system.
  */
 class TypeDefinitionProvider(
     private val coroutineScope: CoroutineScope,
-    private val typeResolver: TypeResolver,
+    private val semanticResolver: SemanticTypeResolver,
+    private val sourceNavigator: SourceNavigator, // TODO: Will be used for external class resolution (see issue #615).
     private val contextProvider: (URI) -> CompilationContext?,
 ) {
 
@@ -30,11 +31,8 @@ class TypeDefinitionProvider(
 
     /**
      * Provides type definition for the symbol at the given position.
-     *
-     * @param params LSP TypeDefinitionParams containing document URI and position
-     * @return CompletableFuture with Location of the type definition, or empty list if not found
      */
-    @Suppress("TooGenericExceptionCaught") // Final fallback for any unexpected runtime errors
+    @Suppress("TooGenericExceptionCaught")
     fun provideTypeDefinition(params: TypeDefinitionParams): CompletableFuture<List<Location>> = coroutineScope.future {
         try {
             val uri = URI.create(params.textDocument.uri)
@@ -49,41 +47,61 @@ class TypeDefinitionProvider(
                 logger.debug("No type definition found")
                 emptyList()
             }
-        } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments for type definition", e)
-            emptyList()
-        } catch (e: NullPointerException) {
-            logger.error("Null reference in type definition processing", e)
-            emptyList()
-        } catch (e: RuntimeException) {
-            logger.error("Runtime error providing type definition", e)
+        } catch (e: Exception) {
+            logger.error("Error providing type definition", e)
             emptyList()
         }
     }
 
-    /**
-     * Finds the type definition for the symbol at the given position.
-     *
-     * @param uri The document URI
-     * @param position The cursor position
-     * @return Location of the type definition, or null if not found
-     */
     private suspend fun findTypeDefinition(uri: URI, position: Position): Location? {
-        val context = contextProvider(uri) ?: run {
-            logger.debug("No compilation context available for $uri")
-            return null
-        }
+        val context = contextProvider(uri) ?: return null
 
         // Find the AST node at the given position
-        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
-            logger.debug("No AST node found at position $position")
-            return null
-        }
-
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: return null
         logger.debug("Found AST node: ${node.javaClass.simpleName}")
 
-        // Resolve the type definition using our TypeResolver
-        return typeResolver.resolveTypeDefinition(node, context)
+        // Resolve semantic type
+        val semanticType = semanticResolver.resolveType(node, context.moduleNode)
+
+        // Convert to location
+        return resolveTypeLocation(semanticType, context)
+    }
+
+    private suspend fun resolveTypeLocation(type: SemanticType, context: CompilationContext): Location? = when (type) {
+        is SemanticType.Known -> findClassLocation(type.fqn, context)
+        is SemanticType.Array -> resolveTypeLocation(type.componentType, context)
+        is SemanticType.Union -> {
+            // Return first resolvable type location
+            type.types.firstNotNullOfOrNull { resolveTypeLocation(it, context) }
+        }
+        else -> null
+    }
+
+    private suspend fun findClassLocation(fqn: String, context: CompilationContext): Location? {
+        // 1. Check if defined in current file/module
+        // This handles classes defined in the same file we are currently editing.
+        context.moduleNode.classes.find { it.name == fqn }?.let { classNode ->
+            return classNode.toLspLocation(context.astModel)
+        }
+
+        // 2. External Class Resolution
+        // TODO(#615): Implement Go-To-Type-Definition for external classes (JARs, JDK).
+        //
+        // Current Limitation:
+        // We cannot currently resolve the location of classes defined outside the current file.
+        // The `context` object does not provide a `findClass(fqn)` method to look up
+        // external ClassNodes or their source URIs.
+        //
+        // Required Implementation Steps:
+        // 1. Expose `ClasspathService` or a similar lookup mechanism to `TypeDefinitionProvider`.
+        // 2. Use `classpathService.findClasspathClass(fqn)` to get the binary URI (jar:file:...).
+        // 3. Pass this URI to `sourceNavigator.navigateToSource(uri, fqn)`.
+        // 4. If source is found, return the `Location` with the correct URI and range.
+        //
+        // For now, we return null, which means the client will stay at the current cursor position
+        // or show a "Definition not found" message for external types.
+
+        return null
     }
 }
 
@@ -94,11 +112,13 @@ class TypeDefinitionProvider(
 object TypeDefinitionProviderFactory {
     fun create(
         coroutineScope: CoroutineScope,
-        typeResolver: TypeResolver,
+        semanticResolver: SemanticTypeResolver,
+        sourceNavigator: SourceNavigator,
         contextProvider: (URI) -> CompilationContext?,
     ): TypeDefinitionProvider = TypeDefinitionProvider(
         coroutineScope = coroutineScope,
-        typeResolver = typeResolver,
+        semanticResolver = semanticResolver,
+        sourceNavigator = sourceNavigator,
         contextProvider = contextProvider,
     )
 }

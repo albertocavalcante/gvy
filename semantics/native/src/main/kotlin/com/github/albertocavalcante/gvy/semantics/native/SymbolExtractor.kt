@@ -1,6 +1,8 @@
-package com.github.albertocavalcante.groovyparser.ast
+package com.github.albertocavalcante.gvy.semantics.native
 
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -15,12 +17,23 @@ import java.lang.reflect.Modifier
  */
 object SymbolExtractor {
 
+    private fun ClassNode.isDynamicOrObject(): Boolean =
+        ClassHelper.isDynamicTyped(this) || this == ClassHelper.OBJECT_TYPE || this == ClassHelper.DYNAMIC_TYPE
+
     // ... existing extractClassSymbols ...
 
     /**
      * Extract variable symbols from a method node (parameters and local variables).
+     *
+     * @param methodNode The method node to extract variables from
+     * @param semantics Optional GroovySemantics instance for type inference
+     * @param module Optional ModuleNode for multi-document safe type resolution
      */
-    fun extractVariableSymbols(methodNode: Any): List<VariableSymbol> {
+    fun extractVariableSymbols(
+        methodNode: Any,
+        semantics: GroovySemantics? = null,
+        module: ModuleNode? = null,
+    ): List<VariableSymbol> {
         if (methodNode !is MethodNode) return emptyList()
 
         val variables = mutableListOf<VariableSymbol>()
@@ -47,11 +60,23 @@ object SymbolExtractor {
                     val decl = stmt.expression as DeclarationExpression
                     val variable = decl.variableExpression
 
-                    // Use TypeInferencer to determine the best type
-                    val inferredType = try {
-                        TypeInferencer.inferType(decl)
-                    } catch (e: Exception) {
-                        "java.lang.Object"
+                    val inferredType = if (semantics != null && module != null) {
+                        try {
+                            // Use module-aware API for multi-document safety
+                            val type = semantics.resolveType(decl, module)
+                            // Format type for display (e.g., "ArrayList<String>")
+                            formatSemanticType(type)
+                        } catch (e: Exception) {
+                            "java.lang.Object"
+                        }
+                    } else {
+                        // Fallback: Use declared type or Object (no semantics or module)
+                        val declaredType = variable.type
+                        if (!declaredType.isDynamicOrObject()) {
+                            declaredType.name
+                        } else {
+                            decl.rightExpression?.type?.name ?: "java.lang.Object"
+                        }
                     }
 
                     variables.add(
@@ -67,6 +92,24 @@ object SymbolExtractor {
         }
 
         return variables
+    }
+
+    private fun formatSemanticType(type: SemanticType, depth: Int = 0): String {
+        if (depth > 10) return "..." // Prevent StackOverflow from potential circularity (e.g. in mocks)
+
+        return when (type) {
+            is SemanticType.Known -> {
+                if (type.typeArgs.isEmpty()) {
+                    type.fqn
+                } else {
+                    "${type.fqn}<${type.typeArgs.joinToString(", ") { formatSemanticType(it, depth + 1) }}>"
+                }
+            }
+            is SemanticType.Primitive -> type.kind.name.lowercase()
+            is SemanticType.Dynamic -> "def"
+            is SemanticType.Array -> "${formatSemanticType(type.componentType, depth + 1)}[]"
+            else -> type.toString()
+        }
     }
 
     /**
@@ -205,7 +248,12 @@ object SymbolExtractor {
     /**
      * Extract all symbols relevant for code completion at a given cursor position.
      */
-    fun extractCompletionSymbols(ast: ASTNode, line: Int, character: Int): SymbolCompletionContext {
+    fun extractCompletionSymbols(
+        ast: ASTNode,
+        line: Int,
+        character: Int,
+        semantics: GroovySemantics? = null,
+    ): SymbolCompletionContext {
         if (ast !is ModuleNode) return SymbolCompletionContext.EMPTY
 
         val classes = extractClassSymbols(ast)
@@ -234,7 +282,7 @@ object SymbolExtractor {
             }
 
             if (methodNode != null) {
-                variables = extractVariableSymbols(methodNode)
+                variables = extractVariableSymbols(methodNode, semantics, ast)
             }
         }
 
