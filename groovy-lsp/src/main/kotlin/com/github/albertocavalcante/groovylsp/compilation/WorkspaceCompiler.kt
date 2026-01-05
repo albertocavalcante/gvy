@@ -50,11 +50,13 @@ data class WorkspaceCompilationResult(
  *
  * @param workerSessionManager The worker session manager for executing compilation
  * @param workspaceManager The workspace manager providing workspace sources and configuration
+ * @param semanticDb The shared semantic database for symbol storage (must be the same instance used by providers)
  * @param semanticCache Optional semantic cache for persistent storage (improves startup time)
  */
 class WorkspaceCompiler(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
+    private val semanticDb: GroovySemanticDB,
     private val semanticCache: SemanticCache? = null,
 ) {
     private val logger = LoggerFactory.getLogger(WorkspaceCompiler::class.java)
@@ -67,12 +69,13 @@ class WorkspaceCompiler(
 
     /**
      * Lazy-initialized incremental compiler for dependency-aware compilation.
+     * Uses the shared semanticDb to ensure symbol visibility across all components.
      */
     private val incrementalCompiler: IncrementalCompiler by lazy {
         IncrementalCompiler(
             workspaceCompiler = this,
             dependencyGraph = DependencyGraph(),
-            semanticDb = GroovySemanticDB(),
+            semanticDb = semanticDb,
         )
     }
 
