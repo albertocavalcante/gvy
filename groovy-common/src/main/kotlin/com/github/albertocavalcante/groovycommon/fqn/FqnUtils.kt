@@ -43,11 +43,7 @@ fun packageName(className: String): String {
         else -> return "" // No package
     }
 
-    return if (className.contains(separator)) {
-        className.substringBeforeLast(separator)
-    } else {
-        ""
-    }
+    return className.substringBeforeLast(separator)
 }
 
 /**

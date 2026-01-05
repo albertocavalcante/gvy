@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cache
 
+import com.github.albertocavalcante.groovycommon.hash.sha256
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range
@@ -15,7 +16,6 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
-import java.security.MessageDigest
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -175,7 +175,7 @@ class SemanticCache(private val cacheDir: Path) {
      */
     private fun getCacheFile(uri: URI): Path {
         // Create a safe filename from URI
-        val hash = sha256Hash(uri.toString())
+        val hash = sha256(uri.toString())
         return cacheDir.resolve("$hash.json")
     }
 
@@ -183,16 +183,7 @@ class SemanticCache(private val cacheDir: Path) {
         /**
          * Hash source content to detect changes.
          */
-        fun hashSource(content: String): String = sha256Hash(content)
-
-        /**
-         * Compute SHA-256 hash of a string.
-         */
-        private fun sha256Hash(input: String): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hashBytes = digest.digest(input.toByteArray())
-            return hashBytes.joinToString("") { "%02x".format(it) }
-        }
+        fun hashSource(content: String): String = sha256(content)
     }
 }
 
