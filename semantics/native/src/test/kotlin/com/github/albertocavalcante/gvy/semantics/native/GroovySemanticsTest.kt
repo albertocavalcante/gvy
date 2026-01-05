@@ -288,4 +288,55 @@ class GroovySemanticsTest {
             "Binary expression with explicitly typed int variables should resolve to int or Integer, got: $type",
         )
     }
+
+    @Test
+    fun `resolveType for map literal variable`() {
+        val code = """
+            def p = [key1: 'value1', key2: 'value2']
+            def x = p
+        """.trimIndent()
+
+        val module = parse(code)
+        val semantics = GroovySemantics(stubSolver)
+        semantics.inject(module)
+
+        // Find the variable reference 'p' on the RHS of 'def x = p'
+        val decls = findNodes<DeclarationExpression>(module)
+        assertEquals(2, decls.size, "Should have two declarations")
+
+        val secondDecl = decls[1]
+        val pRef = secondDecl.rightExpression as VariableExpression
+
+        val type = semantics.resolveType(pRef, module)
+        assertTrue(
+            type is SemanticType.Known && type.fqn.contains("LinkedHashMap"),
+            "Variable 'p' should resolve to LinkedHashMap from map literal, got: $type",
+        )
+    }
+
+    @Test
+    fun `resolveType for PropertyExpression object (completion scenario)`() {
+        // This simulates what happens during completion when user types "p." after map declaration
+        val code = """
+            def p = [key1: 'value1', key2: 'value2']
+            p.someProperty
+        """.trimIndent()
+
+        val module = parse(code)
+        val semantics = GroovySemantics(stubSolver)
+        semantics.inject(module)
+
+        // Find the PropertyExpression 'p.someProperty'
+        val block = module.statementBlock
+        val secondStmt = block.statements[1] as ExpressionStatement
+        val propExpr = secondStmt.expression as org.codehaus.groovy.ast.expr.PropertyExpression
+        val objectExpr = propExpr.objectExpression as VariableExpression
+
+        // The objectExpression 'p' should resolve to LinkedHashMap
+        val type = semantics.resolveType(objectExpr, module)
+        assertTrue(
+            type is SemanticType.Known && type.fqn.contains("LinkedHashMap"),
+            "PropertyExpression.objectExpression 'p' should resolve to LinkedHashMap, got: $type",
+        )
+    }
 }
