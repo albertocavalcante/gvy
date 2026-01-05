@@ -43,12 +43,17 @@ data class GroovyVersion(
         }
 
         private fun parsePart(part: String): Int = part.toIntOrNull() ?: when (part.lowercase()) {
-            "snapshot" -> 999
-            "alpha" -> -3
-            "beta" -> -2
-            "rc" -> -1
+            "snapshot" -> SNAPSHOT_VERSION
+            "alpha" -> ALPHA_VERSION
+            "beta" -> BETA_VERSION
+            "rc" -> RC_VERSION
             else -> DEFAULT_PART
         }
+
+        private const val SNAPSHOT_VERSION = 999
+        private const val ALPHA_VERSION = -3
+        private const val BETA_VERSION = -2
+        private const val RC_VERSION = -1
     }
 }
 

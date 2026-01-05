@@ -628,6 +628,31 @@ object StableStepDefinitions {
             ),
         )
 
+        put(
+            "waitUntil",
+            JenkinsStepMetadata(
+                name = "waitUntil",
+                plugin = Plugins.BASIC_STEPS,
+                documentation = "Wait for a condition to become true.",
+                parameters = mapOf(
+                    "initialRecurrencePeriod" to StepParameter(
+                        name = "initialRecurrencePeriod",
+                        type = "long",
+                        required = false,
+                        default = "250",
+                        documentation = "Initial wait period in milliseconds before first check.",
+                    ),
+                    "quiet" to StepParameter(
+                        name = "quiet",
+                        type = "boolean",
+                        required = false,
+                        default = "false",
+                        documentation = "If true, suppress intermediate console output.",
+                    ),
+                ),
+            ),
+        )
+
         // ========== workflow-cps plugin ==========
         put(
             "parallel",

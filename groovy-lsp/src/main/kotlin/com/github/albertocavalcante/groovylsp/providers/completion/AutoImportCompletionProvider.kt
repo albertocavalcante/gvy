@@ -80,7 +80,7 @@ object AutoImportCompletionProvider {
             index.getSymbols(indexUri).filterIsInstance<Symbol.Class>()
                 .filter { it.name.startsWith(prefix, ignoreCase = true) }
                 .forEach { symbol ->
-                    val fqn = symbol.fullyQualifiedName ?: return@forEach
+                    val fqn = symbol.fullyQualifiedName
                     if (fqn !in existingImports) {
                         candidates.add(
                             TypeCandidate(

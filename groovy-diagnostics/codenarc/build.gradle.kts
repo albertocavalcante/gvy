@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":groovy-diagnostics:api"))
-    implementation(project(":groovy-parser"))
+    implementation(project(":parser:native"))
 
     // LSP4J - Language Server Protocol implementation
     implementation(libs.lsp4j)

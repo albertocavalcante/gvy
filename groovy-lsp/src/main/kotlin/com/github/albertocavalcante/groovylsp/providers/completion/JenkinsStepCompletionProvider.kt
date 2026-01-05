@@ -55,15 +55,31 @@ object JenkinsStepCompletionProvider {
             }
         }
 
+    fun getDeclarativeOptionCompletions(metadata: MergedJenkinsMetadata): List<CompletionItem> =
+        metadata.declarativeOptions.values.map { option ->
+            val documentationText = option.documentation ?: "Jenkins declarative option"
+            CompletionItem().apply {
+                label = option.name
+                kind = CompletionItemKind.Function
+                detail = "Jenkins option (${option.plugin})"
+                documentation = Either.forRight(
+                    MarkupContent(MarkupKind.MARKDOWN, documentationText),
+                )
+            }
+        }
+
     fun getParameterCompletions(
         stepName: String,
         existingKeys: Set<String>,
         metadata: MergedJenkinsMetadata,
+        useCommandExpression: Boolean = false,
     ): List<CompletionItem> {
-        val step = metadata.getStep(stepName) ?: return emptyList()
+        val params = metadata.getStep(stepName)?.namedParams
+            ?: metadata.getDeclarativeOption(stepName)?.parameters
+            ?: return emptyList()
 
-        // Use namedParams instead of parameters
-        return step.namedParams
+        // Use named parameters for steps and declarative options.
+        return params
             .filterKeys { key -> key !in existingKeys }
             .map { (key, param) ->
                 CompletionItem().apply {
@@ -71,7 +87,8 @@ object JenkinsStepCompletionProvider {
                     kind = CompletionItemKind.Property
                     detail = param.type
                     // Use SnippetBuilder for type-aware insertion
-                    insertText = SnippetBuilder.buildParameterSnippet(key, param)
+                    insertText =
+                        SnippetBuilder.buildParameterSnippet(key, param, if (useCommandExpression) ", " else "")
                     insertTextFormat = InsertTextFormat.Snippet
                     // Sort required parameters first: "0_key" vs "1_key"
                     sortText = if (param.required) "0_$key" else "1_$key"

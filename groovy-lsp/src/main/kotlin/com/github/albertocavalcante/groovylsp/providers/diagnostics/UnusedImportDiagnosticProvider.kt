@@ -15,7 +15,7 @@ import java.net.URI
 /**
  * Diagnostic provider for unused imports.
  *
- * NOTE: Performance concern - kotlin-lsp denylists unused import inspection as "too slow"
+ * NOTE: Performance concern - kotlin-lsp disables unused import inspection as "too slow"
  * This provider is disabled by default (opt-in via configuration).
  *
  * TODO: Implement full type usage analysis using TypeCollector
@@ -57,9 +57,11 @@ class UnusedImportDiagnosticProvider : StreamingDiagnosticProvider {
 
     private fun createDiagnostic(importNode: ImportNode): Diagnostic {
         // Line numbers in Groovy AST are 1-based, LSP is 0-based
+        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
+        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
         val range = Range(
             Position(importNode.lineNumber - 1, importNode.columnNumber - 1),
-            Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber - 1),
+            Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber),
         )
         return Diagnostic().apply {
             this.range = range

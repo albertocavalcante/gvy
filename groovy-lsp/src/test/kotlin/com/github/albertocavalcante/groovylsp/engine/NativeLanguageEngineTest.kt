@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.engine
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
+import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
@@ -30,7 +32,11 @@ class NativeLanguageEngineTest {
     @BeforeEach
     fun setup() {
         documentProvider = DocumentProvider()
-        compilationService = GroovyCompilationService(documentProvider = documentProvider)
+        val config = EngineConfiguration(type = EngineType.Native)
+        compilationService = GroovyCompilationService(
+            documentProvider = documentProvider,
+            engineConfig = config,
+        )
     }
 
     @Test
@@ -256,12 +262,8 @@ class NativeLanguageEngineTest {
 
         // Should be able to iterate without throwing
         var count = 0
-        for (diagnostic in diagnostics) {
-            count++
-        }
-        assertEquals(0, count, "Valid code should have zero diagnostics")
-
-        // Should be a proper list
-        assertTrue(diagnostics is List, "Diagnostics should be a List")
+        diagnostics.forEach { count++ }
+        assertEquals(diagnostics.size, count, "Diagnostics list should be iterable")
+        assertTrue(diagnostics.isEmpty(), "Valid code should have zero diagnostics")
     }
 }

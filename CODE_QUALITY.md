@@ -24,7 +24,10 @@ IDE-agnostic configuration for consistent formatting across different editors.
 
 ```bash
 # Run all linting (Detekt + Spotless)
-./gradlew lint
+make lint
+
+# Or run directly via Gradle (force rerun to avoid up-to-date hiding findings)
+./gradlew lint --rerun-tasks
 
 # Run individual tools
 ./gradlew detekt

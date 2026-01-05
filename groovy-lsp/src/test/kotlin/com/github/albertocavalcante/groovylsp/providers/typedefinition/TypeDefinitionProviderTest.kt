@@ -1,6 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.typedefinition
 
-import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
+import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -12,12 +15,15 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class TypeDefinitionProviderTest {
 
     private lateinit var typeDefinitionProvider: TypeDefinitionProvider
     private lateinit var coroutineScope: CoroutineScope
+    private lateinit var semanticResolver: SemanticTypeResolver
+    private lateinit var sourceNavigator: SourceNavigator
 
     private val testUri = URI.create("file:///test.groovy")
     private val testPosition = Position(5, 10)
@@ -26,13 +32,17 @@ class TypeDefinitionProviderTest {
     fun setUp() {
         // Use real CoroutineScope instead of TestScope to avoid hanging
         coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val typeResolver = GroovyTypeResolver()
+
+        // Mock dependencies
+        semanticResolver = mockk(relaxed = true)
+        sourceNavigator = mockk(relaxed = true)
 
         val contextProvider = { _: URI -> null } // Simplified - returns null
 
         typeDefinitionProvider = TypeDefinitionProvider(
             coroutineScope = coroutineScope,
-            typeResolver = typeResolver,
+            semanticResolver = semanticResolver,
+            sourceNavigator = sourceNavigator,
             contextProvider = contextProvider,
         )
     }
@@ -55,17 +65,19 @@ class TypeDefinitionProviderTest {
     @Test
     fun `TypeDefinitionProviderFactory creates provider correctly`() {
         // Given
-        val typeResolver = GroovyTypeResolver()
+        val semanticResolver = SemanticTypeResolver(ReflectionTypeSolver())
+        val sourceNavigator = mockk<SourceNavigator>()
         val contextProvider = { _: URI -> null }
 
         // When
         val provider = TypeDefinitionProviderFactory.create(
             coroutineScope = coroutineScope,
-            typeResolver = typeResolver,
+            semanticResolver = semanticResolver,
+            sourceNavigator = sourceNavigator,
             contextProvider = contextProvider,
         )
 
         // Then
-        assertTrue(provider is TypeDefinitionProvider)
+        assertEquals(TypeDefinitionProvider::class, provider::class)
     }
 }

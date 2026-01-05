@@ -3,8 +3,6 @@ package com.github.albertocavalcante.groovyjenkins.extraction
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
 
 /**
  * TDD tests for BytecodeScanner.
@@ -20,7 +18,7 @@ class BytecodeScannerTest {
     inner class `Step Detection` {
 
         @Test
-        fun `finds Step subclasses in JAR`(@TempDir tempDir: Path) {
+        fun `finds Step subclasses in JAR`() {
             // For this test, we'll use ClassGraph to scan a package we control
             // We simulate finding Step-like classes by scanning our own test classes
             val scanner = BytecodeScanner()
@@ -63,7 +61,7 @@ class BytecodeScannerTest {
     inner class `Determinism` {
 
         @Test
-        fun `scanning same JAR produces identical results`(@TempDir tempDir: Path) {
+        fun `scanning same JAR produces identical results`() {
             val scanner = BytecodeScanner()
 
             // Scan twice with same parameters

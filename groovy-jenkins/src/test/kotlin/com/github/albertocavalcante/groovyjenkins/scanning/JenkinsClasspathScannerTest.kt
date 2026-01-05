@@ -69,7 +69,7 @@ class JenkinsClasspathScannerTest {
         assertEquals(true, steps.containsKey("fieldStep"), "Should find fieldStep")
         val fieldStep = steps["fieldStep"]
         assertNotNull(fieldStep)
-        val fParams = fieldStep!!.parameters
+        val fParams = fieldStep.parameters
 
         assertEquals(true, fParams.containsKey("msg"), "Should have constructor param 'msg'. Found: ${fParams.keys}")
         assertEquals(true, fParams.containsKey("fieldParam"), "Should have field param 'fieldParam'")
@@ -85,7 +85,7 @@ class JenkinsClasspathScannerTest {
         assertNotNull(complexStep)
 
         // Check parameters
-        val params = complexStep!!.parameters
+        val params = complexStep.parameters
         if (!params.containsKey("requiredParam")) {
             throw AssertionError("Missing requiredParam. Found: ${params.keys}")
         }

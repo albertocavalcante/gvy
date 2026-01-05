@@ -47,20 +47,29 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
     /**
      * Find the most specific node at the given position.
      * Uses a simple recursive descent through the AST.
+     *
+     * Note: Some synthetic nodes (e.g., script's run() method, CompilationUnit) may not have
+     * ranges, so we continue searching their children if the node has no range or doesn't
+     * contain the position.
      */
     private fun findNodeAt(node: Node, line: Int, col: Int): Node? {
-        // Check if this node contains the position
-        val range = node.range ?: return null
-        if (!rangeContains(range, line, col)) return null
+        val range = node.range
+        val contains = range?.let { rangeContains(it, line, col) } ?: false
+        val containsWithPointRange = range?.let { contains || pointRangeContains(it, line, col) } ?: false
+        val children = node.getChildNodes()
 
-        // Try to find a more specific child node
-        for (child in node.getChildNodes()) {
+        if (range != null && !containsWithPointRange && children.isEmpty()) {
+            return null
+        }
+
+        // Try to find a more specific child node.
+        for (child in children) {
             val found = findNodeAt(child, line, col)
             if (found != null) return found
         }
 
-        // This node contains the position but no child does
-        return node
+        // Return this node only if its range contains the position (or the point-range fallback).
+        return if (range != null && containsWithPointRange) node else null
     }
 
     private fun rangeContains(range: CoreRange, line: Int, col: Int): Boolean {
@@ -69,6 +78,11 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         if (line == range.end.line && col > range.end.column) return false
         return true
     }
+
+    private fun isPointRange(range: CoreRange): Boolean = range.begin == range.end
+
+    private fun pointRangeContains(range: CoreRange, line: Int, col: Int): Boolean =
+        isPointRange(range) && line == range.begin.line && col >= range.begin.column
 }
 
 /**
@@ -88,7 +102,7 @@ private fun Problem.toLspDiagnostic(): Diagnostic {
         when {
             problemRange != null -> Range(
                 Position(problemRange.begin.line - 1, problemRange.begin.column - 1),
-                Position(problemRange.end.line - 1, problemRange.end.column - 1),
+                Position(problemRange.end.line - 1, problemRange.end.column),
             )
 
             problemPosition != null -> {
@@ -149,7 +163,7 @@ private fun Node.extractType(): String? = when (this) {
 
 private fun CoreRange.toLspRange(): Range = Range(
     Position(begin.line - 1, begin.column - 1),
-    Position(end.line - 1, end.column - 1),
+    Position(end.line - 1, end.column),
 )
 
 /**
@@ -206,9 +220,12 @@ private fun TypeDeclaration.toUnifiedSymbol(): UnifiedSymbol {
     return UnifiedSymbol(
         name = name,
         kind = when {
-            this is ClassDeclaration && isInterface -> UnifiedNodeKind.INTERFACE
-            this is ClassDeclaration && isEnum -> UnifiedNodeKind.ENUM
-            // TODO: Add isTrait when ClassDeclaration supports it
+            this is ClassDeclaration -> when {
+                isInterface -> UnifiedNodeKind.INTERFACE
+                isEnum -> UnifiedNodeKind.ENUM
+                else -> UnifiedNodeKind.CLASS
+            }
+
             else -> UnifiedNodeKind.CLASS
         },
         range = typeRange,

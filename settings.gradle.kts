@@ -6,6 +6,8 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         mavenLocal()
+        // Google Maven repository for androidx dependencies (required by Compose)
+        google()
         // Gradle repository for Tooling API
         maven { url = uri("https://repo.gradle.org/gradle/libs-releases") }
     }
@@ -14,9 +16,16 @@ dependencyResolutionManagement {
 rootProject.name = "groovy-lsp-root"
 
 include("groovy-formatter")
-include("groovy-parser")
+include("markdown")
+include("parser:api")
+include("parser:native")
+include("parser:core")
+include("parser:rewrite")
 include("groovy-common")
 include("groovy-lsp")
+include("indexer:core")
+include("indexer:scip")
+include("indexer:lsif")
 include("tests")
 include("groovy-diagnostics:api")
 include("groovy-diagnostics:codenarc")
@@ -31,6 +40,9 @@ include("jupyter:kernels:groovy")
 include("jupyter:kernels:jenkins")
 include("groovy-repl")
 include("tools:jenkins-extractor")
-
-// Standalone GroovyParser library (JavaParser-inspired API)
-include("groovyparser-core")
+include("viz:ast-model")
+include("viz:desktop")
+include("semantics:core")
+// Use non-colliding name to avoid conflict with parser:native
+include("semantics-native")
+project(":semantics-native").projectDir = file("semantics/native")

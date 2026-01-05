@@ -2,12 +2,15 @@ package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
-import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
+import com.github.albertocavalcante.groovylsp.documentation.DocFormatter
+import com.github.albertocavalcante.groovylsp.documentation.Documentation
+import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -41,12 +44,13 @@ import java.net.URI
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
+    private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
 
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
-    private val documentationProvider = com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
+    private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
     /**
@@ -203,7 +207,7 @@ class HoverProvider(
         // If it's a declaration, return the DeclarationExpression for richer hover info
         val parent = visitor.getParent(node)
         if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
-            return parent // Return parent so TypeInferencer can infer the type
+            return parent // Return parent so SemanticTypeResolver can resolve the type
         }
 
         // Otherwise resolve to definition
@@ -238,7 +242,11 @@ class HoverProvider(
      */
     private fun extractClassNameForDocumentation(node: ASTNode): String? = when (node) {
         is ClassNode -> node.name
-        is ImportNode -> node.type?.name ?: node.className
+        is ImportNode -> {
+            val type: ClassNode? = node.type
+            type?.name ?: node.className
+        }
+
         else -> null
     }
 
@@ -247,19 +255,20 @@ class HoverProvider(
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
         // Check if this is a Jenkins step and we have metadata for it
-        val jenkinsHover = tryCreateJenkinsStepHover(node, documentUri)
-        if (jenkinsHover != null) {
-            return jenkinsHover
-        }
+        tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
 
-        val baseHover = createHoverFor(node).getOrNull() ?: return null
+        val module = compilationService.getAst(documentUri) as? ModuleNode
+        val baseHoverResult = contentGenerator.generateHover(node, module)
+        val baseHover = baseHoverResult.getOrNull() ?: return null
+
+        logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
 
         // Try to get documentation for the node
         var doc = try {
             documentationProvider.getDocumentation(node, documentUri)
         } catch (e: Exception) {
             logger.debug("Failed to get documentation for node", e)
-            com.github.albertocavalcante.groovylsp.documentation.Documentation.EMPTY
+            Documentation.EMPTY
         }
 
         // If standard doc is empty, try source navigation for binary classes
@@ -311,33 +320,32 @@ class HoverProvider(
         if (varsHover != null) {
             return varsHover
         }
-
-        // Fall back to bundled Jenkins step metadata
         val metadata = compilationService.workspaceManager.getAllJenkinsMetadata() ?: return null
         val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 
         // Build rich hover content for Jenkins step
-        val markdownContent = buildString {
-            append("## Jenkins Step: `$stepName`\n\n")
+        val markdownContent = markdown {
+            h2("Jenkins Step: `$stepName`")
+
             stepMetadata.documentation?.let { doc ->
-                append(doc)
-                append("\n\n")
+                text(doc)
             }
+
             stepMetadata.plugin?.let { plugin ->
-                append("**Plugin:** $plugin\n\n")
+                text("**Plugin:** $plugin")
             }
 
             // Use namedParams instead of parameters for MergedStepMetadata
             if (stepMetadata.namedParams.isNotEmpty()) {
-                append("### Parameters\n\n")
-                stepMetadata.namedParams.forEach { (name, param) ->
-                    val required = if (param.required) " *(required)*" else ""
-                    val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
-                    append("- **`$name`**: `${param.type}`$required$defaultVal\n")
-                    param.description?.let { doc ->
-                        append("  - $doc\n")
-                    }
-                }
+                h3("Parameters")
+                list(
+                    stepMetadata.namedParams.map { (name, param) ->
+                        val required = if (param.required) " *(required)*" else ""
+                        val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
+                        val base = "**`$name`**: `${param.type}`$required$defaultVal"
+                        param.description?.let { desc -> "$base\n  - $desc" } ?: base
+                    },
+                )
             }
         }
 
@@ -347,9 +355,11 @@ class HoverProvider(
         }
 
         // Build hover range from the method call expression
+        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
+        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
         val hoverRange = Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
+            Position(node.lastLineNumber - 1, node.lastColumnNumber),
         )
 
         return Hover().apply {
@@ -367,17 +377,16 @@ class HoverProvider(
         val globalVar = globalVariables.find { it.name == varName } ?: return null
 
         // Build hover content
-        val markdownContent = buildString {
-            append("## Jenkins Shared Library: `$varName`\n\n")
+        val markdownContent = markdown {
+            h2("Jenkins Shared Library: `$varName`")
 
             if (globalVar.documentation.isNotEmpty()) {
-                append(globalVar.documentation)
-                append("\n\n")
+                text(globalVar.documentation)
             } else {
-                append("_No documentation available. Add a `vars/$varName.txt` file to provide documentation._\n\n")
+                text(italic("No documentation available. Add a `vars/$varName.txt` file to provide documentation."))
             }
 
-            append("**Source:** `${globalVar.path.fileName}`\n")
+            text("**Source:** `${globalVar.path.fileName}`")
         }
 
         val markupContent = MarkupContent().apply {
@@ -385,9 +394,11 @@ class HoverProvider(
             value = markdownContent
         }
 
+        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
+        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
         val hoverRange = Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
+            Position(node.lastLineNumber - 1, node.lastColumnNumber),
         )
 
         return Hover().apply {
@@ -399,12 +410,9 @@ class HoverProvider(
     /**
      * Enhance existing hover content with documentation.
      */
-    private fun enhanceHoverWithDocumentation(
-        baseHover: Hover,
-        doc: com.github.albertocavalcante.groovylsp.documentation.Documentation,
-    ): Hover {
+    private fun enhanceHoverWithDocumentation(baseHover: Hover, doc: Documentation): Hover {
         val existingContent = baseHover.contents.right?.value ?: return baseHover
-        val docMarkdown = com.github.albertocavalcante.groovylsp.documentation.DocFormatter.formatAsMarkdown(doc)
+        val docMarkdown = DocFormatter.formatAsMarkdown(doc)
 
         if (docMarkdown.isBlank()) {
             return baseHover
@@ -417,8 +425,8 @@ class HoverProvider(
             append(docMarkdown)
         }
 
-        val markupContent = org.eclipse.lsp4j.MarkupContent().apply {
-            kind = org.eclipse.lsp4j.MarkupKind.MARKDOWN
+        val markupContent = MarkupContent().apply {
+            kind = MarkupKind.MARKDOWN
             value = enhancedContent
         }
 

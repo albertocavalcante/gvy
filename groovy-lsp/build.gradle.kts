@@ -12,6 +12,7 @@ plugins {
     groovy
     id("com.gradleup.shadow")
     application
+    kotlin("plugin.serialization")
 }
 
 buildscript {
@@ -45,6 +46,9 @@ dependencies {
     implementation(libs.lsp4j)
     implementation(libs.lsp4j.jsonrpc)
 
+    // AST Visualization Model
+    implementation(project(":viz:ast-model"))
+
     // Groovy - For AST parsing and analysis
     implementation(libs.groovy.core)
     // Additional Groovy modules needed by runtime features
@@ -61,6 +65,9 @@ dependencies {
 
     // Functional Programming - Arrow-kt for Either type
     implementation(libs.arrow.core)
+
+    // Serialization
+    implementation(libs.kotlin.serialization.json)
 
     // Logging
     implementation(libs.slf4j.api)
@@ -99,8 +106,8 @@ dependencies {
     // Local Modules
     implementation(project(":groovy-common"))
     implementation(project(":groovy-formatter"))
-    implementation(project(":groovy-parser"))
-    implementation(project(":groovyparser-core"))
+    implementation(project(":parser:native"))
+    implementation(project(":parser:core"))
     implementation(project(":groovy-diagnostics:api"))
     implementation(project(":groovy-diagnostics:codenarc"))
     implementation(project(":groovy-jenkins"))
@@ -108,6 +115,13 @@ dependencies {
     implementation(project(":groovy-spock"))
     implementation(project(":groovy-testing"))
     implementation(project(":groovy-junit"))
+    implementation(project(":markdown"))
+    implementation(project(":indexer:core"))
+    implementation(project(":indexer:scip"))
+    implementation(project(":indexer:lsif"))
+    implementation(project(":parser:rewrite"))
+    implementation(project(":semantics:core"))
+    implementation(project(":semantics-native"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
@@ -119,8 +133,17 @@ configurations.configureEach {
 tasks.test {
     useJUnitPlatform()
     // execute tests in parallel to speed up the build
-    // Use half of available processors to avoid resource contention, but at least 1
-    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+    // Smarter choice: 1 fork per 1GB of max heap, but capped by CPU and at least 1.
+    // This avoids OOMs on memory-constrained machines like 3GB Mac Minis.
+    maxParallelForks =
+        run {
+            val maxHeapGb = Runtime.getRuntime().maxMemory() / (1024 * 1024 * 1024)
+            val processors = Runtime.getRuntime().availableProcessors()
+            // Reserve 1GB of daemon heap for overhead, then 1 fork per remaining GB.
+            val forksByMemory = (maxHeapGb - 1).coerceAtLeast(1).toInt()
+            val forksByCpu = (processors / 2).coerceAtLeast(1)
+            minOf(forksByMemory, forksByCpu)
+        }
 
     // Set memory limits to avoid OOMs and ensure consistent environment
     maxHeapSize = "1G"
@@ -299,6 +322,9 @@ tasks.shadowJar {
             exclude(dependency("com.github.ajalt.clikt:.*"))
             exclude(dependency("com.github.ajalt.mordant:.*"))
             exclude(dependency("net.java.dev.jna:.*"))
+            // Ktor and kotlinx-serialization use ServiceLoader for runtime providers
+            exclude(dependency("io.ktor:.*"))
+            exclude(dependency("org.jetbrains.kotlinx:kotlinx-serialization-.*"))
         }
     }
 }

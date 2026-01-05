@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.engine.impl.native
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.compilation.toLspDiagnostic
 import com.github.albertocavalcante.groovylsp.engine.adapters.NativeParserAdapter
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionProvider
@@ -20,10 +19,12 @@ import com.github.albertocavalcante.groovylsp.engine.impl.native.features.Native
 import com.github.albertocavalcante.groovylsp.engine.impl.native.features.NativeHoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.eclipse.lsp4j.Diagnostic
+import java.net.URI
 
 class NativeLanguageEngine(
     private val parserFacade: GroovyParserFacade,
@@ -53,6 +54,11 @@ class NativeLanguageEngine(
             sourceNavigator,
             content,
         )
+    }
+
+    override fun createSession(uri: URI, content: String): LanguageSession {
+        val parseResult = parserFacade.parse(ParseRequest(uri, content))
+        return createSession(parseResult, uri.toString(), content)
     }
 }
 
@@ -84,7 +90,10 @@ class NativeLanguageSession(
             override val completionProvider: CompletionProvider =
                 UnifiedCompletionProvider(
                     parseUnit,
-                    NativeCompletionService(compilationService),
+                    NativeCompletionService(
+                        compilationService,
+                        SemanticTypeResolver(compilationService.classpathService.getTypeSolver()),
+                    ),
                     content,
                 )
         }

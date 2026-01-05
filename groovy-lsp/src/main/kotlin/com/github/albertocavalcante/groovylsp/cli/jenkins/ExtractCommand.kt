@@ -1,10 +1,8 @@
 package com.github.albertocavalcante.groovylsp.cli.jenkins
 
 import com.github.ajalt.clikt.core.CliktCommand
-import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.options.default
-import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
@@ -12,8 +10,11 @@ import com.github.ajalt.mordant.terminal.Terminal
 import com.github.albertocavalcante.groovyjenkins.extraction.BytecodeScanner
 import com.github.albertocavalcante.groovyjenkins.extraction.MetadataOutputGenerator
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
+import com.github.albertocavalcante.groovyjenkins.extraction.PluginSpec
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
 import com.github.albertocavalcante.groovyjenkins.extraction.ScannedStep
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -58,6 +59,19 @@ class ExtractCommand : CliktCommand(name = "extract") {
             return
         }
 
+        ensureDirectoriesExist()
+
+        val pluginPaths = downloadPlugins(plugins)
+        if (pluginPaths.isEmpty()) {
+            terminal.println("${terminal.theme.danger("✗")} No plugins downloaded successfully")
+            return
+        }
+
+        val allSteps = scanPlugins(pluginPaths)
+        writeOutput(allSteps)
+    }
+
+    private fun ensureDirectoriesExist() {
         // Ensure directories exist
         if (!outputDir.exists()) {
             outputDir.createDirectories()
@@ -67,44 +81,76 @@ class ExtractCommand : CliktCommand(name = "extract") {
             cacheDir.createDirectories()
             terminal.println("${terminal.theme.info("→")} Created cache directory: $cacheDir")
         }
+    }
 
+    private fun downloadPlugins(plugins: List<PluginSpec>): Map<String, Path> {
         // Download plugins
         terminal.println("${terminal.theme.info("→")} Downloading plugins...")
         val downloader = PluginDownloader(cacheDir)
         val pluginPaths = mutableMapOf<String, Path>()
 
-        plugins.forEach { plugin ->
-            try {
-                terminal.println("  ${terminal.theme.muted("•")} ${plugin.id}:${plugin.version}")
-                val path = downloader.download(plugin.id, plugin.version)
-                pluginPaths[plugin.id] = path
-            } catch (e: Exception) {
-                terminal.println("  ${terminal.theme.danger("✗")} Failed to download ${plugin.id}: ${e.message}")
+        runBlocking {
+            plugins.forEach { plugin ->
+                val pluginDescriptor = "${plugin.id}:${plugin.version}"
+                terminal.println(
+                    "  ${terminal.theme.muted("•")} $pluginDescriptor",
+                )
+                runCatching { downloader.download(plugin.id, plugin.version) }
+                    .onFailure { throwable ->
+                        when (throwable) {
+                            is CancellationException -> throw throwable
+                            is Error -> throw throwable
+                            else ->
+                                terminal.println(
+                                    "  ${terminal.theme.danger("✗")} Failed to download " +
+                                        "${plugin.id}: ${throwable.message}",
+                                )
+                        }
+                    }
+                    .onSuccess { path ->
+                        pluginPaths[plugin.id] = path
+                    }
             }
         }
 
-        if (pluginPaths.isEmpty()) {
-            terminal.println("${terminal.theme.danger("✗")} No plugins downloaded successfully")
-            return
-        }
+        return pluginPaths
+    }
 
+    private fun scanPlugins(pluginPaths: Map<String, Path>): List<ScannedStep> {
         // Scan bytecode
-        terminal.println("${terminal.theme.info("→")} Scanning ${pluginPaths.size} plugins for Step classes...")
+        terminal.println(
+            "${terminal.theme.info("→")} Scanning ${pluginPaths.size} plugins for Step classes...",
+        )
         val scanner = BytecodeScanner()
         val allSteps = mutableListOf<ScannedStep>()
 
         pluginPaths.forEach { (pluginId, jarPath) ->
-            try {
+            runCatching {
                 val steps = scanner.scanJar(jarPath)
                 // Associate steps with their source plugin
-                val stepsWithPlugin = steps.map { it.copy(pluginId = pluginId) }
-                terminal.println("  ${terminal.theme.success("✓")} $pluginId: ${steps.size} steps")
-                allSteps.addAll(stepsWithPlugin)
-            } catch (e: Exception) {
-                terminal.println("  ${terminal.theme.danger("✗")} Failed to scan $pluginId: ${e.message}")
+                steps.map { it.copy(pluginId = pluginId) }
             }
+                .onFailure { throwable ->
+                    when (throwable) {
+                        is CancellationException -> throw throwable
+                        is Error -> throw throwable
+                        else ->
+                            terminal.println(
+                                "  ${terminal.theme.danger("✗")} Failed to scan " +
+                                    "$pluginId: ${throwable.message}",
+                            )
+                    }
+                }
+                .onSuccess { stepsWithPlugin ->
+                    terminal.println("  ${terminal.theme.success("✓")} $pluginId: ${stepsWithPlugin.size} steps")
+                    allSteps.addAll(stepsWithPlugin)
+                }
         }
 
+        return allSteps
+    }
+
+    private fun writeOutput(allSteps: List<ScannedStep>) {
         // Generate output
         terminal.println("${terminal.theme.info("→")} Generating metadata JSON...")
         val metadata = MetadataOutputGenerator.generate(allSteps)

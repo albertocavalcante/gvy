@@ -1,5 +1,5 @@
 [versions]
-kotlin = "2.2.21"
+kotlin = "2.3.0"
 detekt = "1.23.8"
 spotless = "8.1.0"
 kover = "0.9.4"
@@ -8,6 +8,8 @@ shadow = "9.3.0"
 gitHooks = "2.1.6"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
+wire = "5.4.0"
+compose = "1.9.3"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
@@ -15,6 +17,7 @@ lsp4j = "0.24.0"
 codenarc = "3.7.0-groovy-4.0"
 gmetrics = "2.1.0"
 gradleTooling = "9.2.1"
+ktor = "3.3.3"
 coroutines = "1.10.2"
 collectionsImmutable = "0.4.0"
 serialization = "1.9.0"
@@ -66,6 +69,10 @@ ivy = { module = "org.apache.ivy:ivy", version.ref = "ivy" }
 lsp4j = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j", version.ref = "lsp4j" }
 lsp4j-jsonrpc = { module = "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc", version.ref = "lsp4j" }
 
+# SCIP / Protobuf
+wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
+wire-compiler = { module = "com.squareup.wire:wire-compiler", version.ref = "wire" }
+
 # Code Quality & Analysis
 codenarc = { module = "org.codenarc:CodeNarc", version.ref = "codenarc" }
 gmetrics = { module = "org.gmetrics:GMetrics-Groovy4", version.ref = "gmetrics" }
@@ -84,6 +91,13 @@ kotlin-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collect
 kotlin-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+
+# Ktor
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 
 # Functional Programming
 arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }
@@ -128,6 +142,7 @@ maven-embedder = { module = "org.apache.maven:maven-embedder", version.ref = "ma
 maven-compat = { module = "org.apache.maven:maven-compat", version.ref = "mavenEmbedder" }
 maven-resolver-connector-basic = { module = "org.apache.maven.resolver:maven-resolver-connector-basic", version.ref = "mavenResolver" }
 maven-resolver-transport-http = { module = "org.apache.maven.resolver:maven-resolver-transport-http", version.ref = "mavenResolver" }
+maven-resolver-supplier = { module = "org.apache.maven.resolver:maven-resolver-supplier", version.ref = "mavenResolver" }
 
 # Jupyter Kernel Protocol
 jeromq = { module = "org.zeromq:jeromq", version.ref = "jeromq" }
@@ -138,7 +153,10 @@ mordant = { module = "com.github.ajalt.mordant:mordant", version.ref = "mordant"
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
@@ -148,3 +166,4 @@ gitHooks = { id = "org.danilopianini.gradle-pre-commit-git-hooks", version.ref =
 jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
 gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradleVersions" }
+wire = { id = "com.squareup.wire", version.ref = "wire" }

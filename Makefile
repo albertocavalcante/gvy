@@ -47,6 +47,11 @@ help:
 	@echo "  ext-agy       - Install to Antigravity"
 	@echo "  ext-kiro      - Install to Kiro"
 	@echo "  ext-editors   - Install to all available editors"
+	@echo ""
+	@echo "Viz Desktop App (viz/desktop/):"
+	@echo "  viz-run       - Run the desktop app"
+	@echo "  viz-install   - Install the desktop app to /Applications (macOS)"
+
 
 
 # Quick JAR build without tests (most common during development)
@@ -75,10 +80,11 @@ clean:
 
 # Code quality
 lint:
-	./gradlew lint $(GRADLE_ARGS)
+	./gradlew lint --rerun-tasks $(GRADLE_ARGS)
 
 format:
 	./gradlew lintFix $(GRADLE_ARGS)
+	dprint fmt
 
 # Auto-fix specific issues
 fix-imports:
@@ -95,10 +101,10 @@ e2e-single:
 
 # Run the language server
 run-stdio: jar
-	java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar
+	java -jar build/libs/gls-*-all.jar
 
 run-socket: jar
-	java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar socket 8080
+	java -jar build/libs/gls-*-all.jar socket 8080
 
 # Version information
 version:
@@ -180,6 +186,14 @@ ext-editors: ext-package
 	fi
 	@command -v agy >/dev/null 2>&1 && agy --install-extension $(EXT_VSIX) --force && echo "✅ Antigravity" || echo "⏭️  Antigravity not found"
 	@command -v kiro >/dev/null 2>&1 && kiro --install-extension $(EXT_VSIX) --force && echo "✅ Kiro" || echo "⏭️  Kiro not found"
+
+# Viz Desktop App
+viz-run:
+	$(MAKE) -C viz/desktop run
+
+viz-install:
+	$(MAKE) -C viz/desktop install
+
 
 # Release
 release: release-build

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
 import kotlin.io.path.createFile
 
@@ -116,12 +117,12 @@ class BuildExecutableResolverTest {
     }
 
     private fun makeExecutable(path: Path) {
-        try {
-            val perms = Files.getPosixFilePermissions(path).toMutableSet()
-            perms.add(PosixFilePermission.OWNER_EXECUTE)
-            Files.setPosixFilePermissions(path, perms)
-        } catch (e: UnsupportedOperationException) {
-            // Non-POSIX filesystem (Windows), skip
-        }
+        val fileStore = Files.getFileStore(path)
+        val supportsPosix = fileStore.supportsFileAttributeView(PosixFileAttributeView::class.java)
+        if (!supportsPosix) return
+
+        val perms = Files.getPosixFilePermissions(path).toMutableSet()
+        perms.add(PosixFilePermission.OWNER_EXECUTE)
+        Files.setPosixFilePermissions(path, perms)
     }
 }

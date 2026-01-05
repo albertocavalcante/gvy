@@ -8,7 +8,6 @@ package com.github.albertocavalcante.groovyjenkins.metadata
 
 import com.github.albertocavalcante.groovyjenkins.metadata.json.MetadataJson
 import com.github.albertocavalcante.groovyjenkins.metadata.json.toBundledMetadata
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 

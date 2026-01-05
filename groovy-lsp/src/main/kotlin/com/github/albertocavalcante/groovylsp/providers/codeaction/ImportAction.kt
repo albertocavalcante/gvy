@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.codeaction
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolCategory
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Diagnostic
@@ -59,11 +61,11 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
             .flatMap { (symbolUri, symbolIndex) ->
                 symbolIndex.findByCategory(
                     symbolUri,
-                    com.github.albertocavalcante.groovyparser.ast.symbols.SymbolCategory.CLASS,
+                    SymbolCategory.CLASS,
                 )
             }
             .asSequence()
-            .filterIsInstance<com.github.albertocavalcante.groovyparser.ast.symbols.Symbol.Class>()
+            .filterIsInstance<Symbol.Class>()
             .filter { it.name == symbolName }
             .map { it.fullyQualifiedName }
             .filter { it.isNotEmpty() && it.contains('.') }
@@ -154,9 +156,9 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
             UNABLE_TO_RESOLVE_PATTERN,
             CANNOT_FIND_PATTERN,
             UNRESOLVED_REFERENCE_PATTERN,
-        ).mapNotNull { pattern ->
+        ).firstNotNullOfOrNull { pattern ->
             Regex(pattern, RegexOption.IGNORE_CASE).find(message)?.groupValues?.get(1)
-        }.firstOrNull()
+        }
     }
 
     companion object {

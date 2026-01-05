@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -16,9 +17,11 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.DidChangeWatchedFilesRegistrationOptions
@@ -33,6 +36,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.FileSystemNotFoundException
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -40,6 +45,27 @@ private const val PERCENTAGE_MULTIPLIER = 100
 private const val POLLING_INTERVAL_MS = 100L
 private const val MILLIS_PER_SECOND = 1000L
 private const val STATUS_UPDATE_INTERVAL_MS = 100L
+
+private fun rethrowIfCancellationOrError(throwable: Throwable) {
+    when (throwable) {
+        is CancellationException -> throw throwable
+        is Error -> throw throwable
+    }
+}
+
+/**
+ * Sleeps for the polling interval.
+ * @return true if the thread was interrupted, false otherwise.
+ */
+private fun sleepAndCheckInterruption(pollingIntervalMs: Long): Boolean {
+    try {
+        Thread.sleep(pollingIntervalMs)
+        return false
+    } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        return true
+    }
+}
 
 /**
  * Callback type for status updates.
@@ -66,6 +92,8 @@ class ProjectStartupManager(
 
     var dependencyManager: DependencyManager? = null
         private set
+
+    private var jenkinsInitJob: Job? = null
 
     /**
      * Registers file watchers if the client supports it.
@@ -184,12 +212,14 @@ class ProjectStartupManager(
             workspaceRoot = workspaceRoot,
             onProgress = createProgressCallback(progressReporter, client, onStatusUpdate),
             onComplete = createCompletionCallback(
-                workspaceRoot,
-                config,
-                textDocumentServiceRefresh,
-                progressReporter,
-                client,
-                onStatusUpdate,
+                CompletionCallbackContext(
+                    workspaceRoot = workspaceRoot,
+                    config = config,
+                    textDocumentServiceRefresh = textDocumentServiceRefresh,
+                    progressReporter = progressReporter,
+                    client = client,
+                    onStatusUpdate = onStatusUpdate,
+                ),
             ),
             onError = createErrorCallback(progressReporter, client, config, onStatusUpdate),
         )
@@ -208,8 +238,8 @@ class ProjectStartupManager(
         compilationService.workspaceManager.initializeJenkinsWorkspace(config, jenkinsPluginManager)
 
         // Asynchronously download and register plugins
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
+        jenkinsInitJob = coroutineScope.launch(Dispatchers.IO) {
+            runCatching {
                 logger.info("Starting Jenkins plugin metadata initialization")
                 jenkinsMetadataService.initialize()
                 logger.info("Jenkins plugin metadata initialization completed")
@@ -217,17 +247,32 @@ class ProjectStartupManager(
                 // but JenkinsContext currently scans lazily or on demand. The jars are added to
                 // potential classpath candidates, so next time buildClasspath is called (e.g. file open),
                 // they will be picked up.
-            } catch (e: Exception) {
-                logger.error("Failed to initialize Jenkins plugin metadata", e)
+            }.onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.error("Failed to initialize Jenkins plugin metadata", throwable)
             }
         }
     }
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
         logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
+        if (config.javaHome != null) {
+            logger.info("Custom JAVA_HOME configured: ${config.javaHome}")
+        }
+
+        val javaHomePath = config.javaHome?.let { Paths.get(it) }
+
+        // Re-create build tools with configuration (specifically Gradle needs javaHome)
+        val configuredBuildTools = availableBuildTools.map { tool ->
+            if (tool is GradleBuildTool) {
+                GradleBuildTool(javaHome = javaHomePath)
+            } else {
+                tool
+            }
+        }
 
         val newBuildToolManager = BuildToolManager(
-            buildTools = availableBuildTools,
+            buildTools = configuredBuildTools,
             gradleBuildStrategy = config.gradleBuildStrategy,
         )
         buildToolManager = newBuildToolManager
@@ -254,46 +299,49 @@ class ProjectStartupManager(
         }
     }
 
-    private fun createCompletionCallback(
-        workspaceRoot: Path,
-        config: ServerConfiguration,
-        textDocumentServiceRefresh: () -> Unit,
-        progressReporter: ProgressReporter,
-        client: LanguageClient?,
-        onStatusUpdate: StatusUpdateCallback,
-    ): (WorkspaceResolution) -> Unit = { resolution ->
-        logger.info(
-            "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                "${resolution.sourceDirectories.size} source directories",
-        )
+    private data class CompletionCallbackContext(
+        val workspaceRoot: Path,
+        val config: ServerConfiguration,
+        val textDocumentServiceRefresh: () -> Unit,
+        val progressReporter: ProgressReporter,
+        val client: LanguageClient?,
+        val onStatusUpdate: StatusUpdateCallback,
+    )
 
-        updateGroovyVersion(config, resolution.dependencies)
-
-        compilationService.updateWorkspaceModel(
-            workspaceRoot = workspaceRoot,
-            dependencies = resolution.dependencies,
-            sourceDirectories = resolution.sourceDirectories,
-        )
-        textDocumentServiceRefresh()
-
-        progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
-
-        val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
-        if (client != null) {
-            val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-            logger.info("Sending completion notification to client: $msg")
-            client.showMessage(
-                MessageParams().apply {
-                    type = MessageType.Info
-                    message = msg
-                },
+    private fun createCompletionCallback(context: CompletionCallbackContext): (WorkspaceResolution) -> Unit =
+        { resolution ->
+            logger.info(
+                "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
+                    "${resolution.sourceDirectories.size} source directories",
             )
-        } else {
-            logger.warn("Cannot send completion showMessage - client is null")
-        }
 
-        startWorkspaceIndexing(client, onStatusUpdate)
-    }
+            updateGroovyVersion(context.config, resolution.dependencies)
+
+            compilationService.updateWorkspaceModel(
+                workspaceRoot = context.workspaceRoot,
+                dependencies = resolution.dependencies,
+                sourceDirectories = resolution.sourceDirectories,
+            )
+            context.textDocumentServiceRefresh()
+
+            context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
+
+            val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
+            if (context.client != null) {
+                val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
+                logger.info("Sending completion notification to client: $msg")
+                context.client.showMessage(
+                    MessageParams().apply {
+                        type = MessageType.Info
+                        message = msg
+                    },
+                )
+            } else {
+                logger.warn("Cannot send completion showMessage - client is null")
+            }
+
+            startWorkspaceIndexing(context.client, context.onStatusUpdate)
+        }
 
     private fun createErrorCallback(
         progressReporter: ProgressReporter,
@@ -311,7 +359,10 @@ class ProjectStartupManager(
             },
         )
         // Signal warning state but still quiescent (ready for requests, but degraded)
-        onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        coroutineScope.launch(indexingDispatcher) {
+            jenkinsInitJob?.join()
+            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+        }
     }
 
     private fun updateGroovyVersion(config: ServerConfiguration, dependencies: List<Path>) {
@@ -341,8 +392,11 @@ class ProjectStartupManager(
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             logger.debug("No workspace sources to index")
-            // No files to index, signal ready
-            onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            // No files to index, signal ready after making sure Jenkins init is done
+            coroutineScope.launch(indexingDispatcher) {
+                jenkinsInitJob?.join()
+                onStatusUpdate(Health.Ok, true, "Ready", null, null)
+            }
             return
         }
 
@@ -359,7 +413,7 @@ class ProjectStartupManager(
         )
 
         coroutineScope.launch(indexingDispatcher) {
-            try {
+            runCatching {
                 var lastStatusUpdate = System.currentTimeMillis()
                 compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
                     val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
@@ -373,23 +427,39 @@ class ProjectStartupManager(
                 }
                 indexingProgressReporter.complete("✅ Indexed $total files")
                 logger.info("Workspace indexing complete: $total files")
+
+                // Ensure Jenkins initialization is also complete before signaling ready
+                jenkinsInitJob?.join()
+
                 // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total)
-            } catch (e: Exception) {
-                logger.error("Workspace indexing failed", e)
-                indexingProgressReporter.completeWithError("Failed to index workspace: ${e.message}")
+            }.onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.error("Workspace indexing failed", throwable)
+                indexingProgressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
                 // Signal warning state but still quiescent
-                onStatusUpdate(Health.Warning, true, "Indexing failed: ${e.message}", null, null)
+                onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null)
             }
         }
     }
 
-    private fun getWorkspaceRoot(params: InitializeParams): Path? {
+    /**
+     * Resolves the workspace root directory from the initialization parameters.
+     *
+     * It prioritizes the modern [InitializeParams.workspaceFolders] API, falling back
+     * to the deprecated [InitializeParams.rootUri] and [InitializeParams.rootPath]
+     * if no workspace folders are provided.
+     *
+     * @param params The initialization parameters from the client.
+     * @return The resolved [Path] to the workspace root, or null if it cannot be determined.
+     */
+    fun getWorkspaceRoot(params: InitializeParams): Path? {
         val workspaceFolders = params.workspaceFolders
         if (!workspaceFolders.isNullOrEmpty()) {
             return parseUri(workspaceFolders.first().uri, "workspace folder URI")
         }
 
+        @Suppress("DEPRECATION")
         val rootUri = params.rootUri
 
         @Suppress("DEPRECATION")
@@ -407,14 +477,14 @@ class ProjectStartupManager(
     } catch (e: IllegalArgumentException) {
         logger.error("Invalid $description format: $uriString", e)
         null
-    } catch (e: java.nio.file.FileSystemNotFoundException) {
+    } catch (e: FileSystemNotFoundException) {
         logger.error("File system not found for $description: $uriString", e)
         null
     }
 
     private fun parsePath(pathString: String, description: String): Path? = try {
         Paths.get(pathString)
-    } catch (e: java.nio.file.InvalidPathException) {
+    } catch (e: InvalidPathException) {
         logger.error("Invalid $description: $pathString", e)
         null
     }
@@ -425,11 +495,7 @@ class ProjectStartupManager(
         val timeoutMs = timeoutSeconds * MILLIS_PER_SECOND
 
         while (System.currentTimeMillis() - start < timeoutMs) {
-            val manager = dependencyManager
-            if (manager == null) {
-                // Stop if no manager, which is an error state.
-                return false
-            }
+            val manager = dependencyManager ?: return false
 
             if (manager.isDependenciesReady()) {
                 return true
@@ -439,26 +505,12 @@ class ProjectStartupManager(
                 return false
             }
 
-            if (sleepAndCheckInterruption()) {
+            if (sleepAndCheckInterruption(POLLING_INTERVAL_MS)) {
                 // Thread was interrupted
                 return false
             }
         }
         return false
-    }
-
-    /**
-     * Sleeps for the polling interval.
-     * @return true if the thread was interrupted, false otherwise.
-     */
-    private fun sleepAndCheckInterruption(): Boolean {
-        try {
-            Thread.sleep(POLLING_INTERVAL_MS)
-            return false
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            return true
-        }
     }
 
     fun shutdown() {

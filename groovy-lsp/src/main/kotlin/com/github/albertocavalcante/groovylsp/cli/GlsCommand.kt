@@ -45,6 +45,7 @@ class GlsCommand : CliktCommand(name = "gls") {
             StdioCommand(),
             SocketCommand(),
             JenkinsCommand(),
+            IndexCommand(),
         )
     }
 

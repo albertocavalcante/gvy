@@ -38,7 +38,7 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
 
     private fun treeNodeToJsonElement(node: TreeNode): JsonElement = when (node) {
         is ObjectNode -> JsonObject(
-            node.fields().asSequence().associate { (k, v) -> k to treeNodeToJsonElement(v) },
+            node.properties().asSequence().associate { (k, v) -> k to treeNodeToJsonElement(v) },
         )
 
         is ArrayNode -> JsonArray(
@@ -73,6 +73,7 @@ class JacksonScenarioParser : ScenarioParser {
         addDeserializer(JsonElement::class.java, JsonElementDeserializer)
     }
 
+    @Suppress("DEPRECATION")
     private val objectMapper: ObjectMapper = ObjectMapper(YAMLFactory()).apply {
         registerKotlinModule()
         registerModule(jsonElementModule)
@@ -342,6 +343,8 @@ enum class PluginSource {
 
 enum class GoldenMode {
     JSON, // Structural JSON comparison (ignores formatting)
+    JSON_NORMALIZED, // JSON comparison with path normalization (replaces workspace paths)
+    NDJSON, // Newline-delimited JSON comparison (each line is a separate JSON object)
     TEXT, // Exact text comparison
     BINARY, // Binary comparison
 }

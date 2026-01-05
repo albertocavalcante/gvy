@@ -2,15 +2,21 @@ package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovycommon.text.ShebangUtils
 import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.CompilationUnit
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import org.slf4j.LoggerFactory
 
 /**
@@ -31,43 +37,54 @@ class LibraryParser {
     /**
      * Parses library references from Jenkinsfile source code.
      */
-    @Suppress("TooGenericExceptionCaught")
     fun parseLibraries(source: String): List<LibraryReference> {
         var currentSource = source
-        var attempts = 0
+        var result: List<LibraryReference> = emptyList()
+        var finished = false
 
-        while (attempts < MAX_PARSING_ATTEMPTS) {
-            try {
-                // Try to parse the current source
-                val ast = parseToAst(currentSource)
-                return extractLibraries(ast)
-            } catch (e: org.codehaus.groovy.control.MultipleCompilationErrorsException) {
-                // Determine if we can recover by stripping the error lines
-                attempts++
-                val newSource = tryRecoverFromError(currentSource, e)
-                if (newSource == null || newSource == currentSource) {
-                    logger.warn("Unrecoverable parsing error in Jenkinsfile: ${e.message}")
-                    break
+        repeat(MAX_PARSING_ATTEMPTS) { attemptIndex ->
+            if (finished) return@repeat
+
+            val attemptNumber = attemptIndex + 1
+            val parseResult = runCatching { extractLibraries(parseToAst(currentSource)) }
+            parseResult.getOrNull()?.let { libraries ->
+                result = libraries
+                finished = true
+                return@repeat
+            }
+
+            val failure = parseResult.exceptionOrNull() ?: return@repeat
+            if (failure is Error) throw failure
+
+            when (failure) {
+                is MultipleCompilationErrorsException -> {
+                    val newSource = tryRecoverFromError(currentSource, failure)
+                    if (newSource == null || newSource == currentSource) {
+                        logger.warn("Unrecoverable parsing error in Jenkinsfile: ${failure.message}")
+                        finished = true
+                        return@repeat
+                    }
+
+                    currentSource = newSource
+                    logger.info("Retrying parsing after stripping invalid lines (Attempt $attemptNumber)")
                 }
-                currentSource = newSource
-                logger.info("Retrying parsing after stripping invalid lines (Attempt $attempts)")
-            } catch (e: Exception) {
-                logger.warn("Failed to parse libraries from Jenkinsfile", e)
-                break
+
+                else -> {
+                    logger.warn("Failed to parse libraries from Jenkinsfile", failure)
+                    finished = true
+                }
             }
         }
-        return emptyList()
+
+        return result
     }
 
-    private fun tryRecoverFromError(
-        source: String,
-        e: org.codehaus.groovy.control.MultipleCompilationErrorsException,
-    ): String? {
+    private fun tryRecoverFromError(source: String, e: MultipleCompilationErrorsException): String? {
         val lines = source.lines().toMutableList()
         val errorCollector = e.errorCollector
         var changed = false
 
-        errorCollector.errors?.filterIsInstance<org.codehaus.groovy.control.messages.SyntaxErrorMessage>()
+        errorCollector.errors?.filterIsInstance<SyntaxErrorMessage>()
             ?.forEach { message ->
                 val cause = message.cause // Now safely accessible as SyntaxException
                 val line = cause.line
@@ -82,7 +99,7 @@ class LibraryParser {
     }
 
     private fun parseToAst(source: String): ModuleNode {
-        val config = org.codehaus.groovy.control.CompilerConfiguration()
+        val config = CompilerConfiguration()
         val unit = CompilationUnit(config)
         val preprocessed = ShebangUtils.replaceShebangWithEmptyLine(source)
         val sourceUnit = SourceUnit("Jenkinsfile", preprocessed, config, null, unit.errorCollector)
@@ -120,7 +137,7 @@ class LibraryParser {
     /**
      * Extracts @Library annotations from class-level annotations.
      */
-    private fun extractClassAnnotations(classNode: org.codehaus.groovy.ast.ClassNode): List<LibraryReference> {
+    private fun extractClassAnnotations(classNode: ClassNode): List<LibraryReference> {
         val libraries = mutableListOf<LibraryReference>()
         classNode.annotations?.forEach { annotation ->
             if (isLibraryAnnotation(annotation)) {
@@ -133,7 +150,7 @@ class LibraryParser {
     /**
      * Extracts @Library annotations from field declarations (e.g., @Library('utils') _ syntax).
      */
-    private fun extractFieldAnnotations(classNode: org.codehaus.groovy.ast.ClassNode): List<LibraryReference> {
+    private fun extractFieldAnnotations(classNode: ClassNode): List<LibraryReference> {
         val libraries = mutableListOf<LibraryReference>()
         classNode.fields?.forEach { field ->
             field.annotations?.forEach { annotation ->
@@ -148,15 +165,11 @@ class LibraryParser {
     /**
      * Extracts @Library annotations from variable declarations within methods.
      */
-    private fun extractMethodDeclarationAnnotations(
-        classNode: org.codehaus.groovy.ast.ClassNode,
-    ): List<LibraryReference> {
+    private fun extractMethodDeclarationAnnotations(classNode: ClassNode): List<LibraryReference> {
         val libraries = mutableListOf<LibraryReference>()
         classNode.methods?.forEach { method ->
-            method.code?.visit(object : org.codehaus.groovy.ast.CodeVisitorSupport() {
-                override fun visitDeclarationExpression(
-                    expression: org.codehaus.groovy.ast.expr.DeclarationExpression,
-                ) {
+            method.code?.visit(object : CodeVisitorSupport() {
+                override fun visitDeclarationExpression(expression: DeclarationExpression) {
                     expression.annotations?.forEach { annotation ->
                         if (isLibraryAnnotation(annotation)) {
                             libraries.addAll(extractFromAnnotation(annotation))
@@ -197,18 +210,14 @@ class LibraryParser {
     /**
      * Extracts library references from library() method calls in script.
      */
-    private fun extractLibraryMethodCalls(ast: ModuleNode): List<LibraryReference> {
-        val libraries = mutableListOf<LibraryReference>()
-        ast.statementBlock?.statements?.forEach { statement ->
-            if (statement is ExpressionStatement) {
-                val expr = statement.expression
-                if (expr is MethodCallExpression && expr.methodAsString == "library") {
-                    extractFromMethodCall(expr)?.let { libraries.add(it) }
-                }
-            }
-        }
-        return libraries
-    }
+    private fun extractLibraryMethodCalls(ast: ModuleNode): List<LibraryReference> = ast.statementBlock?.statements
+        .orEmpty()
+        .asSequence()
+        .filterIsInstance<ExpressionStatement>()
+        .mapNotNull { it.expression as? MethodCallExpression }
+        .filter { it.methodAsString == "library" }
+        .mapNotNull { extractFromMethodCall(it) }
+        .toList()
 
     private fun isLibraryAnnotation(annotation: AnnotationNode): Boolean = annotation.classNode.name == "Library" ||
         annotation.classNode.name.endsWith(".Library")

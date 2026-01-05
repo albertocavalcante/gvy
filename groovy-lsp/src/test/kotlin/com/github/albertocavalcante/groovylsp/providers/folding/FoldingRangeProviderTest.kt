@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.providers.folding
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.runBlocking
-import org.eclipse.lsp4j.FoldingRange
 import org.eclipse.lsp4j.FoldingRangeKind
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

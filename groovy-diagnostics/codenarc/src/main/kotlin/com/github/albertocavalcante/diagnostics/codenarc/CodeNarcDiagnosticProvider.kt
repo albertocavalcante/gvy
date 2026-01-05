@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
@@ -152,7 +153,7 @@ class CodeNarcDiagnosticProvider(
         sourceLines: List<String>,
     ) {
         logger.debug("Processing leaf node with ${violations.size} violations")
-        violations.filterIsInstance<Violation>().forEach { violation ->
+        violations.forEach { violation ->
             val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
             if (diagnostic != null) {
                 diagnostics.add(diagnostic)
@@ -180,50 +181,25 @@ class CodeNarcDiagnosticProvider(
             }
 
             val line = sourceLines[lspPosition.line]
-            val endColumn = calculateEndColumn(line, lspPosition.character, violation)
+
+            // precise range calculation using rule-specific heuristics
+            val (startCol, endCol) = RuleRangeCalculator.calculateRange(violation, line)
 
             Diagnostic().apply {
                 range = Range(
-                    Position(lspPosition.line, maxOf(0, lspPosition.character)),
-                    Position(lspPosition.line, endColumn),
+                    Position(lspPosition.line, maxOf(0, startCol)),
+                    Position(lspPosition.line, endCol),
                 )
                 severity = mapPriorityToSeverity(violation.rule.priority)
                 source = "CodeNarc"
                 message = violation.message ?: "CodeNarc violation: ${violation.rule.name}"
-                code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(violation.rule.name)
+                code = Either.forLeft(violation.rule.name)
             }
         } catch (e: Exception) {
             logger.warn("Failed to convert violation to diagnostic: ${violation.message}", e)
             null
         }
     }
-
-    /**
-     * Calculate end column for better range highlighting.
-     */
-    private fun calculateEndColumn(line: String, startColumn: Int, violation: Violation): Int =
-        when (violation.rule.name) {
-            "TrailingWhitespace" -> {
-                // Highlight trailing whitespace
-                val trimmedLength = line.trimEnd().length
-                if (trimmedLength < line.length) line.length else startColumn + 1
-            }
-            "UnnecessarySemicolon" -> {
-                // Highlight semicolon
-                val semicolonIndex = line.lastIndexOf(';')
-                if (semicolonIndex >= 0) semicolonIndex + 1 else line.length
-            }
-            else -> {
-                // Default: try to find end of word or highlight entire line
-                if (startColumn >= 0 && startColumn < line.length) {
-                    val remainingLine = line.substring(startColumn)
-                    val wordEnd = remainingLine.indexOfFirst { it.isWhitespace() || it in "(){}[].,;" }
-                    if (wordEnd > 0) startColumn + wordEnd else line.length
-                } else {
-                    line.length
-                }
-            }
-        }
 
     /**
      * Maps CodeNarc rule priority to LSP diagnostic severity.

@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.zmq
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import org.slf4j.LoggerFactory
+import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
 import java.io.Closeable
@@ -25,11 +26,11 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
     private val createdSockets = mutableListOf<ZMQ.Socket>()
 
     // Socket instances (created lazily on first access)
-    val shellSocket: ZMQ.Socket by lazy { createSocket(ZMQ.ROUTER, "shell") }
-    val iopubSocket: ZMQ.Socket by lazy { createSocket(ZMQ.PUB, "iopub") }
-    val controlSocket: ZMQ.Socket by lazy { createSocket(ZMQ.ROUTER, "control") }
-    val stdinSocket: ZMQ.Socket by lazy { createSocket(ZMQ.ROUTER, "stdin") }
-    val heartbeatSocket: ZMQ.Socket by lazy { createSocket(ZMQ.REP, "heartbeat") }
+    val shellSocket: ZMQ.Socket by lazy { createSocket(SocketType.ROUTER, "shell") }
+    val iopubSocket: ZMQ.Socket by lazy { createSocket(SocketType.PUB, "iopub") }
+    val controlSocket: ZMQ.Socket by lazy { createSocket(SocketType.ROUTER, "control") }
+    val stdinSocket: ZMQ.Socket by lazy { createSocket(SocketType.ROUTER, "stdin") }
+    val heartbeatSocket: ZMQ.Socket by lazy { createSocket(SocketType.REP, "heartbeat") }
 
     var isBound: Boolean = false
         private set
@@ -70,7 +71,7 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
         logger.info("All sockets closed")
     }
 
-    private fun createSocket(type: Int, name: String): ZMQ.Socket {
+    private fun createSocket(type: SocketType, name: String): ZMQ.Socket {
         logger.debug("Creating {} socket", name)
         return context.createSocket(type).also { createdSockets.add(it) }
     }

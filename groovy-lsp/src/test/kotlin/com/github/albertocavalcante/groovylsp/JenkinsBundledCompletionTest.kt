@@ -28,9 +28,13 @@ class JenkinsBundledCompletionTest {
         // Initialize the server with a workspace folder so Jenkins file detection works
         val initParams = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/jenkins-test", "jenkins-test"))
+            initializationOptions = mapOf("groovy.languageServer.engine" to "native")
         }
         serverHandle!!.server.initialize(initParams).get()
         serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+        // Wait for server to be ready and quiescent (background tasks finished)
+        serverHandle!!.client.awaitQuiescentStatus()
     }
 
     @AfterEach
@@ -57,7 +61,7 @@ class JenkinsBundledCompletionTest {
         openDocument(uri, content)
 
         // Position inside the empty steps block
-        val items = requestCompletionsAt(uri, Position(6, 8))
+        val items = requestCompletionsAt(uri, Position(5, 8))
 
         val sh = items.find { it.label == "sh" }
         assertNotNull(sh, "Bundled Jenkins steps should surface 'sh' completion")
@@ -84,6 +88,57 @@ class JenkinsBundledCompletionTest {
         val returnStdout = items.find { it.label == "returnStdout:" }
         assertNotNull(returnStdout, "Should suggest returnStdout map key for sh")
         assertEquals(CompletionItemKind.Property, returnStdout.kind)
+    }
+
+    @Test
+    fun `jenkinsfile should suggest map keys for declarative options`() = runBlocking {
+        val uri = "file:///tmp/jenkins-test/Jenkinsfile"
+        val content = """
+            pipeline {
+              agent any
+              options {
+                disableConcurrentBuilds(
+                  
+                )
+              }
+            }
+        """.trimIndent()
+
+        openDocument(uri, content)
+
+        // Position inside the disableConcurrentBuilds map literal area
+        val items = requestCompletionsAt(uri, Position(4, 6))
+
+        val abortPrevious = items.find { it.label == "abortPrevious:" }
+        assertNotNull(abortPrevious, "Should suggest abortPrevious map key for disableConcurrentBuilds")
+        assertEquals(CompletionItemKind.Property, abortPrevious.kind)
+        assertEquals("boolean", abortPrevious.detail)
+        assertTrue(abortPrevious.insertText?.contains("abortPrevious:") == true)
+        assertTrue(abortPrevious.insertText?.contains("true,false") == true)
+    }
+
+    @Test
+    fun `options block should not suggest groovy keywords or steps`() = runBlocking {
+        val uri = "file:///tmp/jenkins-test/Jenkinsfile"
+        val content = """
+            pipeline {
+              agent any
+              options {
+                
+              }
+            }
+        """.trimIndent()
+
+        openDocument(uri, content)
+
+        val items = requestCompletionsAt(uri, Position(3, 4))
+        val labels = items.map { it.label }
+
+        assertTrue(labels.contains("disableConcurrentBuilds"), "Should suggest declarative options")
+        assertTrue(labels.contains("timestamps"), "Should suggest declarative options")
+        assertTrue(labels.none { it == "abstract" }, "Should not suggest Groovy keywords in options block")
+        assertTrue(labels.none { it == "class" }, "Should not suggest Groovy keywords in options block")
+        assertTrue(labels.none { it == "sh" }, "Should not suggest pipeline steps in options block")
     }
 
     @Test

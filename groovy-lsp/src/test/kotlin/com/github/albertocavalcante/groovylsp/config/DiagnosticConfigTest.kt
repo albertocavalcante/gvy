@@ -12,26 +12,26 @@ import kotlin.test.assertTrue
 class DiagnosticConfigTest {
 
     @Test
-    fun `provider enabled by default when not in denylist`() {
-        val config = DiagnosticConfig(denylist = emptySet())
+    fun `provider enabled by default when not disabled`() {
+        val config = DiagnosticConfig(disabledProviders = emptySet())
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = true)
 
         assertTrue(config.isProviderEnabled(provider))
     }
 
     @Test
-    fun `provider disabled when in denylist`() {
-        val config = DiagnosticConfig(denylist = setOf("test-provider"))
+    fun `provider disabled when in disabled providers`() {
+        val config = DiagnosticConfig(disabledProviders = setOf("test-provider"))
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = true)
 
         assertFalse(config.isProviderEnabled(provider))
     }
 
     @Test
-    fun `provider enabled when in allowlist even if disabled by default`() {
+    fun `provider enabled when in enabled providers even if disabled by default`() {
         val config = DiagnosticConfig(
-            denylist = emptySet(),
-            allowlist = setOf("test-provider"),
+            disabledProviders = emptySet(),
+            enabledProviders = setOf("test-provider"),
         )
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = false)
 
@@ -39,18 +39,18 @@ class DiagnosticConfigTest {
     }
 
     @Test
-    fun `provider disabled by default when not in allowlist`() {
-        val config = DiagnosticConfig(denylist = emptySet(), allowlist = emptySet())
+    fun `provider disabled by default when not enabled`() {
+        val config = DiagnosticConfig(disabledProviders = emptySet(), enabledProviders = emptySet())
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = false)
 
         assertFalse(config.isProviderEnabled(provider))
     }
 
     @Test
-    fun `denylist takes precedence over allowlist`() {
+    fun `disabled providers take precedence over enabled providers`() {
         val config = DiagnosticConfig(
-            denylist = setOf("test-provider"),
-            allowlist = setOf("test-provider"),
+            disabledProviders = setOf("test-provider"),
+            enabledProviders = setOf("test-provider"),
         )
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = true)
 
@@ -58,18 +58,18 @@ class DiagnosticConfigTest {
     }
 
     @Test
-    fun `denylist takes precedence over enabledByDefault`() {
-        val config = DiagnosticConfig(denylist = setOf("test-provider"))
+    fun `disabled providers take precedence over enabledByDefault`() {
+        val config = DiagnosticConfig(disabledProviders = setOf("test-provider"))
         val provider = TestStreamingDiagnosticProvider(id = "test-provider", enabledByDefault = true)
 
         assertFalse(config.isProviderEnabled(provider))
     }
 
     @Test
-    fun `allowlist overrides enabledByDefault=false`() {
+    fun `enabled providers override enabledByDefault=false`() {
         val config = DiagnosticConfig(
-            denylist = emptySet(),
-            allowlist = setOf("disabled-provider"),
+            disabledProviders = emptySet(),
+            enabledProviders = setOf("disabled-provider"),
         )
         val provider = TestStreamingDiagnosticProvider(id = "disabled-provider", enabledByDefault = false)
 

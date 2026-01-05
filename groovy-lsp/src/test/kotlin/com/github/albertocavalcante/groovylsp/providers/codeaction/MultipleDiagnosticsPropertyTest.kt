@@ -120,7 +120,7 @@ class MultipleDiagnosticsPropertyTest {
     fun diagnosticLists(): Arbitrary<DiagnosticList> {
         // Generate lists of 1-5 diagnostics with registered handlers
         return Arbitraries.integers().between(1, 5).flatMap { count ->
-            generateDiagnosticList(count, onlyRegistered = true)
+            generateDiagnosticList(count)
         }
     }
 
@@ -135,7 +135,7 @@ class MultipleDiagnosticsPropertyTest {
     /**
      * Generates a list of diagnostics with appropriate content.
      */
-    private fun generateDiagnosticList(count: Int, onlyRegistered: Boolean): Arbitrary<DiagnosticList> {
+    private fun generateDiagnosticList(count: Int): Arbitrary<DiagnosticList> {
         val registeredRules = FixHandlerRegistry.getRegisteredRules().toList()
 
         return Arbitraries.integers().between(0, registeredRules.size - 1)

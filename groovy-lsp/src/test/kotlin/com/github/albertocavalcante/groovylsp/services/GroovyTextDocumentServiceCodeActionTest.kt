@@ -8,8 +8,13 @@ import kotlinx.coroutines.cancel
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.MessageActionItem
+import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
@@ -17,6 +22,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 class GroovyTextDocumentServiceCodeActionTest {
@@ -37,7 +43,9 @@ class GroovyTextDocumentServiceCodeActionTest {
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+            ),
         )
     }
 
@@ -70,8 +78,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params = CodeActionParams().apply {
@@ -97,14 +107,16 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val diagnostic = Diagnostic().apply {
             range = Range(Position(0, 8), Position(0, 20))
             message = "unable to resolve class UnknownClass"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Error
+            severity = DiagnosticSeverity.Error
         }
 
         val params = CodeActionParams().apply {
@@ -130,8 +142,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params = CodeActionParams().apply {
@@ -159,8 +173,10 @@ class GroovyTextDocumentServiceCodeActionTest {
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            client = { client },
-            documentProvider = documentProvider,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+            ),
         )
 
         val params1 = CodeActionParams().apply {
@@ -199,20 +215,18 @@ private class RecordingLanguageClient : LanguageClient {
         // No-op for testing
     }
 
-    override fun publishDiagnostics(diagnostics: org.eclipse.lsp4j.PublishDiagnosticsParams?) {
+    override fun publishDiagnostics(diagnostics: PublishDiagnosticsParams?) {
         // No-op for testing
     }
 
-    override fun showMessage(params: org.eclipse.lsp4j.MessageParams?) {
+    override fun showMessage(params: MessageParams?) {
         // No-op for testing
     }
 
-    override fun showMessageRequest(
-        params: org.eclipse.lsp4j.ShowMessageRequestParams?,
-    ): java.util.concurrent.CompletableFuture<org.eclipse.lsp4j.MessageActionItem> =
-        java.util.concurrent.CompletableFuture.completedFuture(null)
+    override fun showMessageRequest(params: ShowMessageRequestParams?): CompletableFuture<MessageActionItem> =
+        CompletableFuture.completedFuture(null)
 
-    override fun logMessage(params: org.eclipse.lsp4j.MessageParams?) {
+    override fun logMessage(params: MessageParams?) {
         // No-op for testing
     }
 }

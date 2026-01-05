@@ -132,7 +132,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     fun `type definition resolves to class declaration`() = runBlocking {
         val params = TypeDefinitionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
-            position = Position(7, 25)
+            position = Position(7, 22) // Position on "Greeter" in "new Greeter()"
         }
 
         val either = server.textDocumentService.typeDefinition(params).get()
@@ -151,6 +151,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `workspace symbol search returns matches`() = runBlocking {
         val result: Either<List<SymbolInformation>, List<WorkspaceSymbol>> =
             server.workspaceService.symbol(WorkspaceSymbolParams("Greeter")).get()

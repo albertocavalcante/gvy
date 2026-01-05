@@ -17,6 +17,12 @@ import java.nio.file.Path
  * unlike Groovy's parser which fails on C-style array declarations and other Java-specific constructs.
  */
 class JavaSourceInspector {
+
+    private companion object {
+        private const val PROBLEM_PREVIEW_LIMIT = 3
+        private const val DOC_FALLBACK_LENGTH = 200
+    }
+
     private val logger = LoggerFactory.getLogger(JavaSourceInspector::class.java)
 
     // Configure JavaParser to be lenient and handle modern Java syntax
@@ -69,7 +75,7 @@ class JavaSourceInspector {
                 logger.debug(
                     "Failed to parse Java source {}: {}",
                     sourceName,
-                    parseResult.problems.take(3).joinToString("; ") { it.message },
+                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
                 )
                 return null
             }
@@ -223,7 +229,7 @@ class JavaSourceInspector {
             cleanText.substring(0, sentenceEnd + 1).trim()
         } else {
             // Take first 200 chars as fallback
-            cleanText.take(200).trim()
+            cleanText.take(DOC_FALLBACK_LENGTH).trim()
         }
     }
 }

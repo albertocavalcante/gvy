@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp.engine.adapters
 
-import com.github.albertocavalcante.groovyparser.api.ParseResult
-import com.github.albertocavalcante.groovyparser.api.ParserDiagnostic
-import com.github.albertocavalcante.groovyparser.api.ParserPosition
-import com.github.albertocavalcante.groovyparser.api.ParserRange
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.nativeapi.ParseResult
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserPosition
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -124,6 +124,50 @@ class NativeParserAdapterTest {
         val node = adapter.nodeAt(Position(1000, 0))
 
         assertNull(node)
+    }
+
+    @Test
+    fun `allSymbols range end column is exclusive (LSP spec)`() {
+        // Groovy AST uses 1-based inclusive columns
+        // LSP uses 0-based, start inclusive, end EXCLUSIVE
+        // Groovy lastColumnNumber 5 (1-based, inclusive) should become LSP end character 5 (0-based, exclusive)
+        // This verifies the fix for the range end column bug
+        val moduleNode = createModuleWithClassAndMethod("MyClass", "myMethod")
+        val parseResult = createParseResult(moduleNode)
+        val adapter = NativeParserAdapter(parseResult, "file:///Test.groovy")
+
+        val symbols = adapter.allSymbols()
+        val methodSymbol = symbols[0].children.first { it.kind == UnifiedNodeKind.METHOD }
+
+        // Method is at Groovy lines 2-4, columns 5-5 (1-based, inclusive)
+        // LSP should be: line 1-3 (0-based), character 4-5 (0-based, end exclusive)
+        assertEquals(1, methodSymbol.range.start.line, "Start line should be 1 (0-based)")
+        assertEquals(4, methodSymbol.range.start.character, "Start character should be 4 (0-based)")
+        assertEquals(3, methodSymbol.range.end.line, "End line should be 3 (0-based)")
+        // This is the key assertion - end character should be 5 (exclusive), NOT 4
+        assertEquals(5, methodSymbol.range.end.character, "End character should be 5 (0-based, exclusive)")
+    }
+
+    @Test
+    fun `toRange uses single character fallback when lastColumnNumber is invalid`() {
+        val moduleNode = createModuleWithClass("MyClass")
+        val classNode = moduleNode.classes[0]
+        classNode.lineNumber = 1
+        classNode.columnNumber = 1
+        classNode.lastLineNumber = 1
+        classNode.lastColumnNumber = -1 // Invalid
+
+        val parseResult = createParseResult(moduleNode)
+        val adapter = NativeParserAdapter(parseResult, "file:///Test.groovy")
+        val symbols = adapter.allSymbols()
+
+        val classRange = symbols[0].range
+        assertEquals(0, classRange.start.character)
+        assertEquals(
+            1,
+            classRange.end.character,
+            "End character should be start + 1 (1 character width) for invalid lastColumn",
+        )
     }
 
     // Helper methods

@@ -2,8 +2,12 @@ package com.github.albertocavalcante.groovylsp.test
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -35,6 +39,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
+                SemanticTypeResolver(ReflectionTypeSolver()),
                 content,
             )
         }
@@ -53,6 +58,7 @@ class LspTestFixture {
                 line,
                 char,
                 compilationService,
+                SemanticTypeResolver(ReflectionTypeSolver()),
                 content,
             )
         }
@@ -64,15 +70,22 @@ class LspTestFixture {
     }
 
     fun assertHoverContains(line: Int, char: Int, expectedText: String) = runBlocking {
-        val hoverProvider = HoverProvider(compilationService, documentProvider)
+        val resolver = mockk<SemanticTypeResolver>(relaxed = true)
+        val generator = HoverContentGenerator(resolver)
+        val hoverProvider = HoverProvider(compilationService, documentProvider, generator)
         val hover = hoverProvider.provideHover(uri.toString(), Position(line, char))
 
         assertTrue(hover != null, "Hover should not be null at $line:$char")
 
         val content = if (hover!!.contents.isLeft) {
-            hover.contents.left.first().let {
-                // Handle LSP4J string unions safely
-                if (it is org.eclipse.lsp4j.MarkedString) it.value else (it as String)
+            // Handle LSP4J string unions safely.
+            val marked = hover.contents.left.first()
+            if (marked.isLeft) {
+                marked.left
+            } else {
+                @Suppress("DEPRECATION")
+                val legacy = marked.right
+                legacy.value
             }
         } else {
             hover.contents.right.value

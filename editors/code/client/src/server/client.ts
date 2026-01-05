@@ -127,7 +127,10 @@ export function buildServerSettingsMap(): Record<string, unknown> {
 
     const settings: Record<string, unknown> = {
         'groovy.server.maxNumberOfProblems': config.get<number>('server.maxNumberOfProblems', 100),
+        'groovy.server.logLevel': config.get<string>('server.logLevel', 'info'),
         'groovy.trace.server': config.get<'off' | 'messages' | 'verbose'>('trace.server', 'off'),
+
+        'groovy.languageServer.engine': config.get<'core' | 'native'>('languageServer.engine', 'core'),
 
         'groovy.compilation.mode': config.get<'workspace' | 'single-file'>('compilation.mode', 'workspace'),
         'groovy.compilation.incrementalThreshold': config.get<number>('compilation.incrementalThreshold', 50),
@@ -147,6 +150,8 @@ export function buildServerSettingsMap(): Record<string, unknown> {
         'jenkins.gdslExecution.enabled': config.get<boolean>('jenkins.gdslExecution.enabled', false),
         'jenkins.plugins': config.get<string[]>('jenkins.plugins', []),
         'jenkins.includeDefaultPlugins': config.get<boolean>('jenkins.includeDefaultPlugins', true),
+
+        'groovy.gradle.buildStrategy': config.get<'auto' | 'gradle' | 'maven'>('gradle.buildStrategy', 'auto'),
     };
 
     const javaHome = config.get<string>('java.home');

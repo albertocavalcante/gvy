@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovylsp.types
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import groovy.lang.GroovyClassLoader
-import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
@@ -36,7 +35,7 @@ class SimpleTypeTest {
         val module = sourceUnit.ast
 
         assertNotNull(module, "Should have compiled AST")
-        assertTrue(module is ModuleNode, "Should be ModuleNode")
+        assertTrue(module.classes.isNotEmpty(), "Should contain class nodes")
 
         // Try AST visitor
         val tracker = NodeRelationshipTracker()

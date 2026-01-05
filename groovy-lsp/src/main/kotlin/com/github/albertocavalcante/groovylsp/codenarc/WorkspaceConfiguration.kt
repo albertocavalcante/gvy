@@ -16,7 +16,10 @@ data class WorkspaceConfiguration(val workspaceRoot: Path?, val serverConfig: Se
 
     override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
         override val isEnabled: Boolean
-            get() = serverConfig.codeNarcEnabled
+            get() = serverConfig.diagnosticConfig.isProviderEnabled(
+                "codenarc",
+                serverConfig.codeNarcEnabled,
+            )
 
         override val propertiesFile: String?
             get() = serverConfig.codeNarcPropertiesFile

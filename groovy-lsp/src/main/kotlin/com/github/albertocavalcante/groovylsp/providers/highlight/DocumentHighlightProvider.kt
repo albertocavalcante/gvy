@@ -49,36 +49,40 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
         val documentUri = URI.create(uri)
         val groovyPosition = position.toGroovyPosition()
 
-        // Get AST model
         val astModel = compilationService.getAstModel(documentUri)
-        if (astModel == null) {
-            logger.debug("No AST model available for $uri")
-            return emptyList()
-        }
-
-        // Get symbol table for resolution
         val symbolTable = compilationService.getSymbolTable(documentUri)
-        if (symbolTable == null) {
-            logger.debug("No symbol table available for $uri")
-            return emptyList()
+        val targetNode = astModel?.getNodeAt(documentUri, groovyPosition)
+
+        val resolved = when {
+            astModel == null -> {
+                logger.debug("No AST model available for $uri")
+                null
+            }
+
+            symbolTable == null -> {
+                logger.debug("No symbol table available for $uri")
+                null
+            }
+
+            targetNode == null || !targetNode.isHighlightableSymbol() -> {
+                logger.debug("No highlightable symbol at position")
+                null
+            }
+
+            else -> {
+                val definition = targetNode.resolveToDefinition(astModel, symbolTable, strict = false)
+                if (definition == null) {
+                    logger.debug("Could not resolve definition for node")
+                    null
+                } else {
+                    Triple(definition, astModel, symbolTable)
+                }
+            }
         }
 
-        // Find node at position
-        val targetNode = astModel.getNodeAt(documentUri, groovyPosition)
-        if (targetNode == null || !targetNode.isHighlightableSymbol()) {
-            logger.debug("No highlightable symbol at position")
-            return emptyList()
-        }
-
-        // Resolve to definition
-        val definition = targetNode.resolveToDefinition(astModel, symbolTable, strict = false)
-        if (definition == null) {
-            logger.debug("Could not resolve definition for node")
-            return emptyList()
-        }
-
-        // Find all occurrences in the same document
-        return findHighlights(definition, astModel, symbolTable, documentUri)
+        if (resolved == null) return emptyList()
+        val (definition, model, table) = resolved
+        return findHighlights(definition, model, table, documentUri)
     }
 
     /**
@@ -146,48 +150,26 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      * Classify whether a node represents a read or write operation.
      */
     private fun classifyHighlightKind(node: ASTNode, astModel: GroovyAstModel): DocumentHighlightKind {
-        // Increment/decrement operators are writes
-        if (node is PostfixExpression || node is PrefixExpression) {
-            return DocumentHighlightKind.Write
-        }
+        val isWrite = when (node) {
+            is PostfixExpression, is PrefixExpression -> true
+            is Parameter -> true
+            is VariableExpression -> {
+                val parent = astModel.getParent(node)
+                when {
+                    parent is PostfixExpression || parent is PrefixExpression -> true
+                    parent is DeclarationExpression && parent.leftExpression == node -> true
+                    parent is BinaryExpression &&
+                        parent.operation.text in ASSIGNMENT_OPERATORS &&
+                        parent.leftExpression == node -> true
 
-        // Check if node is part of an assignment (write)
-        if (node is VariableExpression) {
-            val parent = astModel.getParent(node)
-
-            // Postfix/prefix increment/decrement is a write
-            if (parent is PostfixExpression || parent is PrefixExpression) {
-                return DocumentHighlightKind.Write
-            }
-
-            // Declaration is a write
-            if (parent is DeclarationExpression && parent.leftExpression == node) {
-                return DocumentHighlightKind.Write
-            }
-
-            // Assignment to this variable is a write
-            if (parent is BinaryExpression) {
-                // Include all assignment operators: standard, arithmetic, bitwise, shift, and power
-                val assignmentOperators = setOf(
-                    "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic
-                    "&=", "|=", "^=", // Bitwise
-                    "<<=", ">>=", ">>>=", // Shift
-                    "**=", // Power
-                )
-                val isAssignment = parent.operation.text in assignmentOperators
-                if (isAssignment && parent.leftExpression == node) {
-                    return DocumentHighlightKind.Write
+                    else -> false
                 }
             }
+
+            else -> false
         }
 
-        // Parameters are declarations (write)
-        if (node is Parameter) {
-            return DocumentHighlightKind.Write
-        }
-
-        // Default to read
-        return DocumentHighlightKind.Read
+        return if (isWrite) DocumentHighlightKind.Write else DocumentHighlightKind.Read
     }
 
     /**
@@ -195,11 +177,19 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      */
     private fun ASTNode.hasValidPosition(): Boolean = lineNumber > 0 && columnNumber > 0
 
-    /**
-     * Check if this node represents a highlightable symbol.
-     */
-    private fun ASTNode.isHighlightableSymbol(): Boolean {
-        val highlightableTypes = setOf(
+    private fun ASTNode.isHighlightableSymbol(): Boolean = HIGHLIGHTABLE_TYPES.contains(this::class)
+
+    companion object {
+        private val logger = LoggerFactory.getLogger(DocumentHighlightProvider::class.java)
+
+        private val ASSIGNMENT_OPERATORS = setOf(
+            "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic
+            "&=", "|=", "^=", // Bitwise
+            "<<=", ">>=", ">>>=", // Shift
+            "**=", // Power
+        )
+
+        private val HIGHLIGHTABLE_TYPES = setOf(
             VariableExpression::class,
             DeclarationExpression::class,
             Parameter::class,
@@ -215,7 +205,6 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
             PostfixExpression::class,
             PrefixExpression::class,
         )
-        return highlightableTypes.contains(this::class)
     }
 
     /**
