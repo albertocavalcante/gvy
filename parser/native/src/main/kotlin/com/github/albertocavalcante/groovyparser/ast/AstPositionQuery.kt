@@ -2,7 +2,19 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.Statement
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -38,7 +50,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
         if (logger.isDebugEnabled) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
-            val classNodes = nodes.filterIsInstance<org.codehaus.groovy.ast.ClassNode>()
+            val classNodes = nodes.filterIsInstance<ClassNode>()
             logger.debug("[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)")
             logger.debug("[getNodeAt] Total nodes tracked: ${nodes.size}")
             logger.debug("[getNodeAt] ClassNodes tracked:")
@@ -72,7 +84,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         // Groovy ASTs. For symbol-oriented features we usually want an expression/declaration node instead.
         // If there are any non-statement candidates, prefer them.
         val candidates = candidatesWithoutModule
-            .filterNot { it is org.codehaus.groovy.ast.stmt.Statement }
+            .filterNot { it is Statement }
             .ifEmpty { candidatesWithoutModule }
 
         return candidates.minWithOrNull(
@@ -101,14 +113,14 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 // 2. Tie-breaker: Prefer specific atomic expressions over containers
                 // Lower numbers = higher priority (prefer more specific nodes)
                 when (node) {
-                    is org.codehaus.groovy.ast.expr.VariableExpression -> 0
-                    is org.codehaus.groovy.ast.expr.ConstantExpression -> 0
-                    is org.codehaus.groovy.ast.expr.GStringExpression -> 0
-                    is org.codehaus.groovy.ast.expr.Expression -> 1 // Generic expressions (ArgumentList, MethodCall)
-                    is org.codehaus.groovy.ast.stmt.Statement -> 2
-                    is org.codehaus.groovy.ast.FieldNode -> 3 // Fields are more specific than methods/classes
-                    is org.codehaus.groovy.ast.MethodNode -> 4 // Methods are more specific than classes
-                    is org.codehaus.groovy.ast.ClassNode -> 5 // Classes are broad containers
+                    is VariableExpression -> 0
+                    is ConstantExpression -> 0
+                    is GStringExpression -> 0
+                    is Expression -> 1 // Generic expressions (ArgumentList, MethodCall)
+                    is Statement -> 2
+                    is FieldNode -> 3 // Fields are more specific than methods/classes
+                    is MethodNode -> 4 // Methods are more specific than classes
+                    is ClassNode -> 5 // Classes are broad containers
                     else -> 6
                 }
             },
@@ -116,7 +128,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
     }
 
     private fun ASTNode.tokenLengthHint(): Int? = when (this) {
-        is org.codehaus.groovy.ast.ClassNode -> {
+        is ClassNode -> {
             val nameLen = this.nameWithoutPackage.length
             // NOTE: Heuristic / tradeoff:
             // Some Groovy ClassNodes use the declaration start column (e.g. `public class`) rather than the name.
@@ -124,7 +136,8 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             // TODO: Replace with deterministic token span (requires parser-provided offsets or tokenization).
             if (this.columnNumber <= 20) nameLen + 32 else nameLen
         }
-        is org.codehaus.groovy.ast.expr.VariableExpression ->
+
+        is VariableExpression ->
             when (this.name) {
                 // Avoid widening implicit receivers like `this` / `super`, which can otherwise "steal" the cursor
                 // from adjacent call sites (e.g., hovering `println(...)` returning hover for `this`).
@@ -134,21 +147,24 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
 
                 else -> this.name.length
             }
-        is org.codehaus.groovy.ast.expr.ConstructorCallExpression -> (this.type.nameWithoutPackage.length) + 1
-        is org.codehaus.groovy.ast.expr.ClassExpression -> this.type.nameWithoutPackage.length
-        is org.codehaus.groovy.ast.expr.MethodCallExpression -> {
+
+        is ConstructorCallExpression -> (this.type.nameWithoutPackage.length) + 1
+        is ClassExpression -> this.type.nameWithoutPackage.length
+        is MethodCallExpression -> {
             val methodName =
                 when (val methodExpr = this.method) {
-                    is org.codehaus.groovy.ast.expr.ConstantExpression -> methodExpr.text
-                    is org.codehaus.groovy.ast.expr.VariableExpression -> methodExpr.name
+                    is ConstantExpression -> methodExpr.text
+                    is VariableExpression -> methodExpr.name
                     else -> null
                 }
             (methodName?.length ?: 0) + 1
         }
-        is org.codehaus.groovy.ast.ImportNode -> {
+
+        is ImportNode -> {
             this.type?.nameWithoutPackage?.length
                 ?: this.className?.substringAfterLast('.')?.length
         }
+
         else -> null
     }
 }

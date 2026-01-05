@@ -73,6 +73,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }
     }
 
+    @Suppress("UNUSED_PARAMETER") // moduleNode reserved for future semantic resolution in properties/fields
     private fun MarkdownBuilder.renderDeclarationNode(node: ASTNode, moduleNode: ModuleNode?) = when (node) {
         is MethodNode -> renderMethodNode(node)
         is ClassNode -> renderClassNode(node)
@@ -216,6 +217,8 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
                 "Type" to node.type.nameWithoutPackage,
                 "Modifiers" to modifiersString(node),
                 "Owner" to (node.declaringClass?.nameWithoutPackage ?: "unknown"),
+                "Getter" to if (node.getterBlock != null) "available" else "none",
+                "Setter" to if (node.setterBlock != null) "available" else "none",
             )
         }
     }

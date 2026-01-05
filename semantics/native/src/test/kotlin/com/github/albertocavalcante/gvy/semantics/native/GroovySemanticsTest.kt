@@ -41,6 +41,7 @@ class GroovySemanticsTest {
         val decl = findNode<DeclarationExpression>(module)!!
         val constantExpr = decl.rightExpression as ConstantExpression
 
+        @Suppress("DEPRECATION")
         val type = semantics.resolveType(constantExpr)
         assertEquals(TypeConstants.STRING, type)
     }
@@ -63,6 +64,7 @@ class GroovySemanticsTest {
         val rhs = secondDecl.rightExpression
         assertTrue(rhs is VariableExpression)
 
+        @Suppress("DEPRECATION")
         val type = semantics.resolveType(rhs)
         assertEquals(TypeConstants.STRING, type, "Variable 'x' should resolve to String inferred from initializer")
     }
@@ -78,10 +80,57 @@ class GroovySemanticsTest {
         semantics.inject(module)
 
         val decl = findNode<DeclarationExpression>(module)!!
+
+        @Suppress("DEPRECATION")
         val type = semantics.resolveType(decl)
 
         // String x ... explicit type is String
         assertEquals(TypeConstants.STRING, type)
+    }
+
+    @Test
+    fun `resolveType with module parameter uses correct context`() {
+        val code = """
+            def x = "hello"
+        """.trimIndent()
+
+        val module = parse(code)
+        val semantics = GroovySemantics(stubSolver)
+
+        val decl = findNode<DeclarationExpression>(module)!!
+        val constantExpr = decl.rightExpression as ConstantExpression
+
+        // Use the new module-aware API (no need to call inject separately)
+        val type = semantics.resolveType(constantExpr, module)
+        assertEquals(TypeConstants.STRING, type)
+    }
+
+    @Test
+    fun `resolveType with multiple modules resolves independently`() {
+        val code1 = """
+            def x = "string value"
+        """.trimIndent()
+
+        val code2 = """
+            def y = 42
+        """.trimIndent()
+
+        val module1 = parse(code1)
+        val module2 = parse(code2)
+        val semantics = GroovySemantics(stubSolver)
+
+        val decl1 = findNode<DeclarationExpression>(module1)!!
+        val decl2 = findNode<DeclarationExpression>(module2)!!
+
+        val expr1 = decl1.rightExpression as ConstantExpression
+        val expr2 = decl2.rightExpression as ConstantExpression
+
+        // Resolve with respective modules - should use correct context for each
+        val type1 = semantics.resolveType(expr1, module1)
+        val type2 = semantics.resolveType(expr2, module2)
+
+        assertEquals(TypeConstants.STRING, type1, "First module should resolve to String")
+        assertEquals(TypeConstants.INT, type2, "Second module should resolve to int")
     }
 
     private fun parse(code: String): ModuleNode {

@@ -6,7 +6,6 @@ import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
@@ -14,9 +13,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.spyk
-import io.mockk.unmockkObject
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -634,6 +631,51 @@ class InlayHintsProviderTest {
             val paramHints = hints.filter { it.kind == InlayHintKind.Parameter }
             assertEquals(1, paramHints.size, "Should have 1 parameter hint from classpath methods")
             assertEquals("element:", paramHints[0].label.left as String)
+        }
+
+        @Test
+        fun `should not crash when argument type resolution fails`() {
+            // Given: a method call where type resolution throws for arguments
+            val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+            classNode.addMethod(
+                "process",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(Parameter(ClassHelper.STRING_TYPE, "path")),
+                emptyArray(),
+                null,
+            )
+
+            val callExpr = MethodCallExpression(
+                VariableExpression("this"),
+                "process",
+                ArgumentListExpression(
+                    ConstantExpression("input.txt").apply {
+                        lineNumber = 5
+                        columnNumber = 10
+                    },
+                ),
+            ).apply {
+                lineNumber = 5
+                columnNumber = 5
+            }
+
+            setupCompilationWithNodes(listOf(callExpr), listOf(classNode))
+
+            // Mock type resolution to throw for arguments
+            every { semanticResolver.resolveType(any(), any()) } throws RuntimeException("Type resolution failed")
+            every { semanticResolver.formatSemanticType(any()) } returns "String"
+
+            provider =
+                InlayHintsProvider(compilationService, semanticResolver, InlayHintsConfiguration(parameterHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+
+            // When / Then - should not crash
+            val hints = provider.provideInlayHints(params)
+
+            // May return partial hints or empty, but should not crash
+            assertNotNull(hints, "Should not crash when argument type resolution fails")
         }
     }
 

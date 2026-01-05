@@ -190,7 +190,6 @@ object CompletionProvider {
             CompletionContextDetector.detectCompletionContext(
                 nodeAtCursor,
                 ctx.astModel,
-                symbolContext,
                 ctx.semanticResolver,
                 ctx.moduleNode,
             )

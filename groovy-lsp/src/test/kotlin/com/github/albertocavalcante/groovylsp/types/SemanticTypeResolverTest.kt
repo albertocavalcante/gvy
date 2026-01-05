@@ -197,4 +197,47 @@ class SemanticTypeResolverTest {
 
         assertThat(formatted).isEqualTo("int[][]")
     }
+
+    @Test
+    fun `resolves type with null moduleNode uses fallback`() {
+        val node = ConstantExpression(42)
+
+        // Should not throw when moduleNode is null
+        val type = resolver.resolveType(node, null)
+
+        // Returns Unknown because no module context is available for injection
+        assertThat(type).isInstanceOf(SemanticType::class.java)
+    }
+
+    @Test
+    fun `resolves type with different modules independently`() {
+        // Create two different modules
+        val module1 = ModuleNode(CompileUnit(null, null))
+        val module2 = ModuleNode(CompileUnit(null, null))
+
+        val node1 = ConstantExpression("string1")
+        val node2 = ConstantExpression(123)
+
+        // Resolve types with different modules
+        val type1 = resolver.resolveType(node1, module1)
+        val type2 = resolver.resolveType(node2, module2)
+
+        // Both should resolve correctly to their respective types
+        assertThat(type1).isInstanceOf(SemanticType.Known::class.java)
+        assertThat((type1 as SemanticType.Known).fqn).isEqualTo("java.lang.String")
+
+        // Integer literals resolve to Primitive(INT) in Groovy, not a boxed type
+        assertThat(type2).isInstanceOf(SemanticType.Primitive::class.java)
+        assertThat((type2 as SemanticType.Primitive).kind).isEqualTo(PrimitiveKind.INT)
+    }
+
+    @Test
+    fun `toSemanticType converts ClassNode to SemanticType`() {
+        val classNode = ClassHelper.STRING_TYPE
+
+        val type = resolver.toSemanticType(classNode)
+
+        assertThat(type).isInstanceOf(SemanticType.Known::class.java)
+        assertThat((type as SemanticType.Known).fqn).isEqualTo("java.lang.String")
+    }
 }

@@ -2,7 +2,6 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
@@ -109,7 +108,6 @@ internal object CompletionContextDetector {
     fun detectCompletionContext(
         nodeAtCursor: ASTNode?,
         astModel: GroovyAstModel,
-        context: SymbolCompletionContext,
         semanticResolver: SemanticTypeResolver,
         moduleNode: ModuleNode?,
     ): CompletionProvider.ContextType? {
@@ -175,13 +173,13 @@ private fun resolveQualifier(
 ): Pair<String, String?>? {
     val qualifierName = if (objectExpr is VariableExpression) objectExpr.name else null
 
-    // Resolve type using semantic resolver
-    val resolvedType = semanticResolver.resolveType(objectExpr, moduleNode)
+    // Resolve type using semantic resolver (with safe fallback)
+    val resolvedType = runCatching { semanticResolver.resolveType(objectExpr, moduleNode) }
+        .getOrNull()
 
     val qualifierType = when (resolvedType) {
         is SemanticType.Known -> resolvedType.fqn
-        // Fallback for simple cases if semantic resolution returns unknown but AST has basic type info
-        // (though SemanticTypeResolver should handle this)
+        // Fallback to AST type info if semantic resolution fails or returns unknown
         else -> objectExpr.type?.name
     }
 
@@ -206,8 +204,9 @@ private fun completionFromVariableExpression(
     if (parent is PropertyExpression) {
         val qualifierName = expression.name
 
-        // Resolve type using semantic resolver
-        val resolvedType = semanticResolver.resolveType(expression, moduleNode)
+        // Resolve type using semantic resolver (with safe fallback)
+        val resolvedType = runCatching { semanticResolver.resolveType(expression, moduleNode) }
+            .getOrNull()
 
         val qualifierType = when (resolvedType) {
             is SemanticType.Known -> resolvedType.fqn
