@@ -139,7 +139,7 @@ tasks.test {
         run {
             val maxHeapGb = Runtime.getRuntime().maxMemory() / (1024 * 1024 * 1024)
             val processors = Runtime.getRuntime().availableProcessors()
-            // Reserve 1GB for the daemon itself, then 1 fork per remaining GB.
+            // Reserve 1GB of daemon heap for overhead, then 1 fork per remaining GB.
             val forksByMemory = (maxHeapGb - 1).coerceAtLeast(1).toInt()
             val forksByCpu = (processors / 2).coerceAtLeast(1)
             minOf(forksByMemory, forksByCpu)

@@ -58,6 +58,7 @@ class TypeDefinitionIntegrationTest {
 
         assertNotNull(node, "Should find AST node at position $position")
 
+        typeResolver.semantics.inject(context.moduleNode)
         val type = typeResolver.resolveType(node, context.moduleNode)
         logger.debug("Resolved type: {}", type)
 

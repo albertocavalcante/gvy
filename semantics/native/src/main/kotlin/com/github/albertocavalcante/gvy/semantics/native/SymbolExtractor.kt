@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -53,9 +54,6 @@ object SymbolExtractor {
 
                     val inferredType = if (semantics != null) {
                         try {
-                            // Ensure module is injected if available
-                            (methodNode as? MethodNode)?.declaringClass?.module?.let { semantics.inject(it) }
-
                             val type = semantics.resolveType(decl)
                             // Format type for display (e.g., "ArrayList<String>")
                             formatSemanticType(type)
@@ -87,26 +85,20 @@ object SymbolExtractor {
         return variables
     }
 
-    private fun formatSemanticType(
-        type: com.github.albertocavalcante.gvy.semantics.SemanticType,
-        depth: Int = 0,
-    ): String {
+    private fun formatSemanticType(type: SemanticType, depth: Int = 0): String {
         if (depth > 10) return "..." // Prevent StackOverflow from potential circularity (e.g. in mocks)
 
         return when (type) {
-            is com.github.albertocavalcante.gvy.semantics.SemanticType.Known -> {
+            is SemanticType.Known -> {
                 if (type.typeArgs.isEmpty()) {
                     type.fqn
                 } else {
                     "${type.fqn}<${type.typeArgs.joinToString(", ") { formatSemanticType(it, depth + 1) }}>"
                 }
             }
-            is com.github.albertocavalcante.gvy.semantics.SemanticType.Primitive -> type.kind.name.lowercase()
-            is com.github.albertocavalcante.gvy.semantics.SemanticType.Dynamic -> "def"
-            is com.github.albertocavalcante.gvy.semantics.SemanticType.Array -> "${formatSemanticType(
-                type.componentType,
-                depth + 1,
-            )}[]"
+            is SemanticType.Primitive -> type.kind.name.lowercase()
+            is SemanticType.Dynamic -> "def"
+            is SemanticType.Array -> "${formatSemanticType(type.componentType, depth + 1)}[]"
             else -> type.toString()
         }
     }
