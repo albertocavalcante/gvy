@@ -46,3 +46,7 @@ include("semantics:core")
 // Use non-colliding name to avoid conflict with parser:native
 include("semantics-native")
 project(":semantics-native").projectDir = file("semantics/native")
+
+// OpenRewrite CodeNarc auto-fix recipes
+include("refactor:openrewrite:rewrite-codenarc")
+project(":refactor:openrewrite:rewrite-codenarc").projectDir = file("refactor/openrewrite/rewrite-codenarc")
