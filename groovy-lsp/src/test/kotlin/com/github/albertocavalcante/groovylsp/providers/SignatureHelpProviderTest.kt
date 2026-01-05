@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
@@ -13,7 +14,8 @@ class SignatureHelpProviderTest {
 
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
-    private val signatureHelpProvider = SignatureHelpProvider(compilationService, documentProvider)
+    private val semanticResolver = SemanticTypeResolver(compilationService.classpathService.getTypeSolver())
+    private val signatureHelpProvider = SignatureHelpProvider(compilationService, documentProvider, semanticResolver)
 
     @Test
     fun `returns signatures for method call`() = runTest {
