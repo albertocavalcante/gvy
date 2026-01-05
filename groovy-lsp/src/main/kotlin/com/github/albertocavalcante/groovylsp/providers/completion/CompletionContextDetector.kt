@@ -113,10 +113,6 @@ internal object CompletionContextDetector {
     ): CompletionProvider.ContextType? {
         val node = nodeAtCursor ?: return null
         val parent = astModel.getParent(node)
-        java.io.File("/tmp/groovy-lsp-debug.log")
-            .appendText(
-                "DETECT: node=${node.javaClass.simpleName}, parent=${parent?.javaClass?.simpleName}, text=${node.text}\n",
-            )
 
         return when (node) {
             is PropertyExpression -> memberAccessFromExpression(node.objectExpression, semanticResolver, moduleNode)
