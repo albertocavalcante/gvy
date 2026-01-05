@@ -90,7 +90,6 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    @Disabled("TODO(#615): FieldNode type resolution not yet implemented in SemanticTypeResolver")
     fun `test field type definition`() = runTest {
         val code = """
             class Person {
@@ -114,7 +113,6 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    @Disabled("TODO(#615): Return type resolution not yet implemented in SemanticTypeResolver")
     fun `test method return type`() = runTest {
         val code = """
             class Calculator {
@@ -133,7 +131,6 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    @Disabled("TODO(#615): Parameter type resolution not yet implemented in SemanticTypeResolver")
     fun `test parameter type`() = runTest {
         val code = """
             class Service {
@@ -186,6 +183,42 @@ class TypeDefinitionIntegrationTest {
                 "Should resolve to List type, got: ${known.fqn}",
             )
         }
+    }
+
+    @Test
+    fun `test constructor call type definition`() = runTest {
+        val code = """
+            class Greeter{
+                String message="Hi"
+                void greet(){
+                    println message
+                }
+            }
+
+            def greeter = new Greeter()
+                             //^ cursor here
+        """.trimIndent()
+
+        val (cleanCode, position) = extractCursorPosition(code, "//^")
+        val context = compileGroovy(cleanCode)
+
+        // Debug output
+        println("=== Constructor Call Test Debug ===")
+        println("Position: $position")
+        println("Module classes: ${context.moduleNode.classes.map { it.name }}")
+
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
+        println("Found node: ${node?.javaClass?.simpleName} at ${node?.lineNumber}:${node?.columnNumber}")
+
+        assertNotNull(node, "Should find AST node at position $position")
+
+        typeResolver.semantics.inject(context.moduleNode)
+        val type = typeResolver.resolveType(node, context.moduleNode)
+        println("Resolved type: $type")
+
+        assertNotNull(type, "Should resolve constructor call to a type")
+        assertTrue(type is SemanticType.Known, "Should be Known type")
+        assertEquals("Greeter", (type as SemanticType.Known).fqn, "Should resolve to Greeter class")
     }
 
     // Test helper methods
