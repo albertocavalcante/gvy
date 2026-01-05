@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.Expression
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -18,22 +19,22 @@ import org.codehaus.groovy.ast.expr.Expression
  * val semantics = GroovySemantics(typeSolver)
  * semantics.inject(moduleNode)
  *
- * val type = semantics.resolveType(expression)
+ * val type = semantics.resolveType(expression, moduleNode)
  * ```
  */
 class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
-    // Cache of contexts per module
-    private val contextCache = mutableMapOf<ModuleNode, NativeTypeContext>()
+    // Thread-safe cache of contexts per module
+    private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
 
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        if (module !in contextCache) {
+        if (!contextCache.containsKey(module)) {
             val scope = buildRootScope(module)
             val context = NativeTypeContext(
                 typeSolver = typeSolver,
@@ -59,8 +60,24 @@ class GroovySemantics(
     }
 
     /**
-     * Resolve the type of an AST node.
+     * Resolve the type of an AST node using the specified module's context.
+     * This is the preferred API for multi-document workspaces.
      */
+    fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
+        inject(module)
+        val context = contextCache[module]
+            ?: return SemanticType.Unknown("Module not injected")
+        return calculatorRegistry.calculate(node, context)
+    }
+
+    /**
+     * Resolve the type of an AST node.
+     * @deprecated Use resolveType(node, module) for multi-document safety
+     */
+    @Deprecated(
+        "Use resolveType(node, module) for multi-document safety",
+        ReplaceWith("resolveType(node, module)"),
+    )
     fun resolveType(node: ASTNode): SemanticType {
         val context = findContext(node)
             ?: return SemanticType.Unknown("Node not in injected module")
@@ -69,7 +86,12 @@ class GroovySemantics(
 
     /**
      * Resolve the type of an expression.
+     * @deprecated Use resolveType(expression, module) for multi-document safety
      */
+    @Deprecated(
+        "Use resolveType(expression, module) for multi-document safety",
+        ReplaceWith("resolveType(expression, module)"),
+    )
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
 
     /**

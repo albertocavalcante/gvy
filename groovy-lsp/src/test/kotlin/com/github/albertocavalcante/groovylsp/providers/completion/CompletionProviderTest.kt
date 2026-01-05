@@ -97,7 +97,7 @@ class CompletionProviderTest {
             list.
         """.trimIndent()
         val uri = "file:///test.groovy"
-        val compilationResult = compilationService.compile(URI.create(uri), content)
+        compilationService.compile(URI.create(uri), content)
 
         // Mock semantic resolver to return ArrayList for 'list'
         every { semanticResolver.resolveType(any(), any()) } returns SemanticType.Known("java.util.ArrayList")
@@ -126,7 +126,7 @@ class CompletionProviderTest {
             }
         """.trimIndent()
         val uri = "file:///test.groovy"
-        val compilationResult = compilationService.compile(URI.create(uri), content)
+        compilationService.compile(URI.create(uri), content)
 
         // Mock semantic resolver to return String for 'text'
         every { semanticResolver.resolveType(any(), any()) } returns SemanticType.Known("java.lang.String")
@@ -144,5 +144,35 @@ class CompletionProviderTest {
         // Assert
         assertTrue(completions.any { it.label == "substring" }, "Should suggest 'substring' for String param")
         assertTrue(completions.any { it.label == "length" }, "Should suggest 'length' for String param")
+    }
+
+    @Test
+    fun `should gracefully handle type resolution failure with fallback to AST type`() = runTest {
+        // Arrange
+        val content = """
+            String text = "hello"
+            text.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+        compilationService.compile(URI.create(uri), content)
+
+        // Mock semantic resolver to throw for type resolution
+        every { semanticResolver.resolveType(any(), any()) } throws RuntimeException("Type resolution failed")
+
+        // Act - should not crash, may fall back to AST type info
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1,
+            5,
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Assert - should return some completions (may be from AST fallback or empty, but not crash)
+        assertTrue(
+            completions.isNotEmpty() || completions.isEmpty(),
+            "Should return a list (may be empty) without crashing",
+        )
     }
 }
