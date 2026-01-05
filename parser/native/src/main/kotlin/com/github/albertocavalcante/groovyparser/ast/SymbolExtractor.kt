@@ -2,9 +2,11 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import java.lang.reflect.Modifier
 
 /**
@@ -19,7 +21,7 @@ object SymbolExtractor {
      * Extract variable symbols from a method node (parameters and local variables).
      */
     fun extractVariableSymbols(methodNode: Any): List<VariableSymbol> {
-        if (methodNode !is org.codehaus.groovy.ast.MethodNode) return emptyList()
+        if (methodNode !is MethodNode) return emptyList()
 
         val variables = mutableListOf<VariableSymbol>()
 
@@ -39,7 +41,7 @@ object SymbolExtractor {
         val code = methodNode.code
         if (code is BlockStatement) {
             code.statements.forEach { stmt ->
-                if (stmt is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
+                if (stmt is ExpressionStatement &&
                     stmt.expression is DeclarationExpression
                 ) {
                     val decl = stmt.expression as DeclarationExpression
@@ -211,7 +213,7 @@ object SymbolExtractor {
 
         // Find the class we're currently in (if any)
         val currentClass = classes.find { classSymbol ->
-            val classNode = classSymbol.astNode as org.codehaus.groovy.ast.ClassNode
+            val classNode = classSymbol.astNode as ClassNode
             line >= classSymbol.line && line <= classNode.lastLineNumber // Relaxed check
         }
 
@@ -221,7 +223,7 @@ object SymbolExtractor {
         // Find current method and extract variables
         var variables: List<VariableSymbol> = emptyList()
         if (currentClass != null) {
-            val classNode = currentClass.astNode as org.codehaus.groovy.ast.ClassNode
+            val classNode = currentClass.astNode as ClassNode
             var methodNode = classNode.methods.find { method ->
                 line >= method.lineNumber - 1 && line <= method.lastLineNumber - 1
             }

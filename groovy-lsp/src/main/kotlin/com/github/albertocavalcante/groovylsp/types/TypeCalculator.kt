@@ -8,7 +8,17 @@ import org.codehaus.groovy.ast.expr.Expression
 /**
  * Interface for calculating types of Groovy expressions.
  * Inspired by IntelliJ's GrTypeCalculator pattern.
+ *
+ * @deprecated Use [com.github.albertocavalcante.gvy.semantics.TypeCalculator] from semantics-core instead.
  */
+@Deprecated(
+    message = "Use TypeCalculator from gvy-semantics instead",
+    replaceWith = ReplaceWith(
+        "TypeCalculator",
+        "com.github.albertocavalcante.gvy.semantics.TypeCalculator",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 interface TypeCalculator {
 
     /**
@@ -30,7 +40,17 @@ interface TypeCalculator {
 /**
  * Manages a chain of TypeCalculators and delegates to them in priority order.
  * Based on IntelliJ's ClassExtension pattern but adapted for Kotlin coroutines.
+ *
+ * @deprecated Use [com.github.albertocavalcante.gvy.semantics.TypeCalculatorRegistry] from semantics-core instead.
  */
+@Deprecated(
+    message = "Use TypeCalculatorRegistry from gvy-semantics instead",
+    replaceWith = ReplaceWith(
+        "TypeCalculatorRegistry",
+        "com.github.albertocavalcante.gvy.semantics.TypeCalculatorRegistry",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 class GroovyTypeCalculator {
 
     private val calculators = mutableListOf<TypeCalculator>()
@@ -61,7 +81,18 @@ class GroovyTypeCalculator {
 /**
  * Default type calculator for basic expressions.
  * Handles common cases like literals, variables, and method calls.
+ *
+ * @deprecated Use calculators from [com.github.albertocavalcante.gvy.semantics.native.NativeCalculators] instead.
  */
+@Suppress("DEPRECATION")
+@Deprecated(
+    message = "Use NativeCalculators from gvy-semantics-native instead",
+    replaceWith = ReplaceWith(
+        "NativeCalculators",
+        "com.github.albertocavalcante.gvy.semantics.native.NativeCalculators",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 class DefaultTypeCalculator : TypeCalculator {
 
     companion object {

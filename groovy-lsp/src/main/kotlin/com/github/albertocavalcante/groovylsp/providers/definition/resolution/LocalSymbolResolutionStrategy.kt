@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionRes
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -162,7 +163,7 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
         .filter { it.name == className && hasValidPosition(it) }
         .minByOrNull { it.lineNumber }
 
-    private fun hasValidPosition(node: org.codehaus.groovy.ast.ASTNode): Boolean =
+    private fun hasValidPosition(node: ASTNode): Boolean =
         node.lineNumber > 0 && node.columnNumber > 0 && node.lastLineNumber > 0 && node.lastColumnNumber > 0
 
     companion object {

@@ -229,7 +229,16 @@ function findLocalGroovyLspJar() {
               file.endsWith(".jar") &&
               (file.includes("groovy-lsp") || file.startsWith("gls-")),
           )
-          .sort(); // Sort to get consistent results
+          .sort((a, b) => {
+            // Priority 1: Files ending in -all.jar (Shadow JARs)
+            const aIsAll = a.endsWith("-all.jar");
+            const bIsAll = b.endsWith("-all.jar");
+            if (aIsAll && !bIsAll) return -1;
+            if (!aIsAll && bIsAll) return 1;
+
+            // Priority 2: Alphabetical
+            return a.localeCompare(b);
+          });
 
         if (jarFiles.length > 0) {
           const foundJar = path.join(searchPath, jarFiles[0]); // Use first match
@@ -678,8 +687,8 @@ async function prepareServer(runtimeOptions = {}) {
       process.env.USE_LATEST_GLS === "true";
 
     const autoPreferLocal = isMonorepo &&
-                            !explicitUrl &&
-                            !hasExplicitVersionSelection;
+      !explicitUrl &&
+      !hasExplicitVersionSelection;
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 

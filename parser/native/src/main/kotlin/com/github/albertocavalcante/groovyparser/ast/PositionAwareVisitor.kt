@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast
 
+import com.github.albertocavalcante.groovyparser.ast.visitor.PositionNodeVisitor
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -7,9 +8,11 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 
 /**
  * Position-aware visitor for finding the smallest AST node at a specific position.
@@ -42,11 +45,11 @@ private sealed class NodePriority(val weight: Int) {
 private fun ASTNode.priority(): NodePriority = when (this) {
     is MethodNode, is ClassNode, is FieldNode, is PropertyNode -> NodePriority.Definition
     is GStringExpression -> NodePriority.Definition
-    is org.codehaus.groovy.ast.expr.ConstantExpression -> NodePriority.Definition
+    is ConstantExpression -> NodePriority.Definition
     is DeclarationExpression -> NodePriority.Declaration
     is BinaryExpression -> NodePriority.Declaration
     is MethodCallExpression -> NodePriority.Call
-    is org.codehaus.groovy.ast.expr.VariableExpression -> NodePriority.Reference
+    is VariableExpression -> NodePriority.Reference
     else -> NodePriority.Literal
 }
 
@@ -73,10 +76,11 @@ private fun ASTNode.calculateRangeSize(): Int {
 
     return lineSpan * PositionConstants.LINE_WEIGHT + columnSpan
 }
+
 internal class PositionAwareVisitor(private val targetLine: Int, private val targetColumn: Int) {
     var smallestNode: ASTNode? = null
     private var smallestRangeSize = Int.MAX_VALUE
-    private val nodeVisitor = com.github.albertocavalcante.groovyparser.ast.visitor.PositionNodeVisitor(this)
+    private val nodeVisitor = PositionNodeVisitor(this)
 
     // Core API (10 functions maximum)
     fun visitModule(module: ModuleNode) {
@@ -101,6 +105,7 @@ internal class PositionAwareVisitor(private val targetLine: Int, private val tar
             val existingPriority = smallestNode!!.priority().weight
             currentPriority > existingPriority
         }
+
         else -> false
     }
 

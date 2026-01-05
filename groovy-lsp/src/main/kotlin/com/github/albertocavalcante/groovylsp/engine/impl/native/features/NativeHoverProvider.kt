@@ -2,8 +2,10 @@ package com.github.albertocavalcante.groovylsp.engine.impl.native.features
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
+import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Hover
@@ -30,10 +32,18 @@ class NativeHoverProvider(
 
     private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
 
+    // Initialize semantic bridge and generator
+    private val semanticResolver = SemanticTypeResolver(
+        compilationService.classpathService.getTypeSolver(),
+    )
+    private val contentGenerator =
+        HoverContentGenerator(semanticResolver)
+
     // Delegate to existing HoverProvider which has all the domain logic
     private val delegate = DelegateHoverProvider(
         compilationService,
         documentProvider,
+        contentGenerator,
         sourceNavigator,
     )
 

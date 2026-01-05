@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -48,6 +49,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -81,6 +83,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -115,6 +118,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -146,6 +150,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -179,6 +184,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -214,6 +220,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 
@@ -249,6 +256,7 @@ class SpockBlockCompletionTest {
             line,
             character,
             compilationService,
+            mockk(relaxed = true),
             content,
         )
 

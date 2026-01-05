@@ -4,6 +4,10 @@ plugins {
     `java-library`
 }
 
+tasks.jar {
+    archiveBaseName.set("groovy-parser-core")
+}
+
 group = "com.github.albertocavalcante"
 version = rootProject.version
 
