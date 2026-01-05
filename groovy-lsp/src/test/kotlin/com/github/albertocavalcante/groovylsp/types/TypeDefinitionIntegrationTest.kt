@@ -62,7 +62,7 @@ class TypeDefinitionIntegrationTest {
         // For property access like "person.name", we expect to resolve to String type
         assertNotNull(type, "Should resolve to a type")
         assertTrue(type is SemanticType.Known, "Should be Known type")
-        assertEquals("java.lang.String", (type as SemanticType.Known).fqn)
+        assertEquals("java.lang.String", type.fqn)
     }
 
     @Test
@@ -106,7 +106,7 @@ class TypeDefinitionIntegrationTest {
         logger.debug("Resolved type: {}", type)
 
         assertTrue(type is SemanticType.Known)
-        assertEquals("java.lang.String", (type as SemanticType.Known).fqn)
+        assertEquals("java.lang.String", type.fqn)
     }
 
     @Test
@@ -174,10 +174,9 @@ class TypeDefinitionIntegrationTest {
             val type = typeResolver.resolveType(node, context.moduleNode)
             assertNotNull(type, "Should resolve collection type")
             assertTrue(type is SemanticType.Known, "Should be Known type")
-            val known = type as SemanticType.Known
             assertTrue(
-                known.fqn.contains("List") || known.fqn.contains("ArrayList"),
-                "Should resolve to List type, got: ${known.fqn}",
+                type.fqn.contains("List") || type.fqn.contains("ArrayList"),
+                "Should resolve to List type, got: ${type.fqn}",
             )
         }
     }
@@ -208,7 +207,7 @@ class TypeDefinitionIntegrationTest {
 
         assertNotNull(type, "Should resolve constructor call to a type")
         assertTrue(type is SemanticType.Known, "Should be Known type")
-        assertEquals("Greeter", (type as SemanticType.Known).fqn, "Should resolve to Greeter class")
+        assertEquals("Greeter", type.fqn, "Should resolve to Greeter class")
     }
 
     // Test helper methods
@@ -233,7 +232,7 @@ class TypeDefinitionIntegrationTest {
         expectedType?.let {
             assertNotNull(type, "Should resolve to a type")
             assertTrue(type is SemanticType.Known, "Should be Known type for $it")
-            assertEquals(it, (type as SemanticType.Known).fqn, "Type name mismatch")
+            assertEquals(it, type.fqn, "Type name mismatch")
         }
     }
 

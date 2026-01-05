@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
@@ -14,6 +15,7 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -25,6 +27,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.syntax.Token
 import org.codehaus.groovy.syntax.Types
 import org.eclipse.lsp4j.InlayHintKind
@@ -872,12 +875,12 @@ class InlayHintsProviderTest {
         every { compilationService.getAst(testUri) } returns parseResult.ast
     }
 
-    private fun setupCompilationWithNodes(
-        nodes: List<org.codehaus.groovy.ast.ASTNode>,
-        classNodes: List<ClassNode> = emptyList(),
-    ) {
-        val astModel = mockk<com.github.albertocavalcante.groovyparser.ast.GroovyAstModel>(relaxed = true)
-        val moduleNode = ModuleNode(null as? org.codehaus.groovy.control.SourceUnit)
+    private fun setupCompilationWithNodes(nodes: List<ASTNode>, classNodes: List<ClassNode> = emptyList()) {
+        val astModel = mockk<GroovyAstModel>(relaxed = true)
+
+        // Suppress warning as the cast is required to resolve ambiguity with ModuleNode(CompileUnit)
+        @Suppress("USELESS_CAST")
+        val moduleNode = ModuleNode(null as SourceUnit?)
         classNodes.forEach { moduleNode.addClass(it) }
 
         every { compilationService.getAstModel(testUri) } returns astModel
