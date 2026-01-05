@@ -362,7 +362,6 @@ object CompletionProvider {
         ctx: CompletionContext,
         metadata: MergedJenkinsMetadata?,
     ): Boolean {
-        System.err.println("[DEBUG-MEMBER] qualifierType=${completionContext.qualifierType}")
         val rawType = completionContext.qualifierType.substringBefore('<')
         val qualifierName = completionContext.qualifierName
 
