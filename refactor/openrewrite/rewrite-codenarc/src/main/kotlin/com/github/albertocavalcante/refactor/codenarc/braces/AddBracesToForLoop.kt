@@ -5,11 +5,6 @@ import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JRightPadded
-import org.openrewrite.java.tree.Space
-import org.openrewrite.java.tree.Statement
-import org.openrewrite.marker.Markers
-import java.util.UUID
 
 /**
  * Recipe to add braces to for loops that don't have them.
@@ -32,7 +27,7 @@ class AddBracesToForLoop : Recipe() {
 
                 val body = f.body
                 if (body !is J.Block) {
-                    f = f.withBody(wrapInBlock(body))
+                    f = f.withBody(BraceUtils.wrapInBlock(body))
                 }
 
                 return f
@@ -43,31 +38,10 @@ class AddBracesToForLoop : Recipe() {
 
                 val body = f.body
                 if (body !is J.Block) {
-                    f = f.withBody(wrapInBlock(body))
+                    f = f.withBody(BraceUtils.wrapInBlock(body))
                 }
 
                 return f
-            }
-
-            private fun wrapInBlock(statement: Statement): J.Block {
-                val indentedStatement: Statement = statement.withPrefix<Statement>(
-                    Space.format("\n    "),
-                )
-
-                val paddedStatement: JRightPadded<Statement> = JRightPadded(
-                    indentedStatement,
-                    Space.EMPTY,
-                    Markers.EMPTY,
-                )
-
-                return J.Block(
-                    UUID.randomUUID(),
-                    Space.SINGLE_SPACE,
-                    Markers.EMPTY,
-                    JRightPadded(false, Space.EMPTY, Markers.EMPTY),
-                    listOf(paddedStatement),
-                    Space.format("\n"),
-                )
             }
         }
     }
