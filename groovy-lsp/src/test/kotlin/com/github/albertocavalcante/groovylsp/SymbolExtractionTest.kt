@@ -1,11 +1,12 @@
 package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
-import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
-import com.github.albertocavalcante.groovyparser.ast.ImportSymbol
-import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
-import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
+import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
+import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
+import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
+import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -21,10 +22,12 @@ import kotlin.test.assertTrue
 class SymbolExtractionTest {
 
     private lateinit var compilationService: GroovyCompilationService
+    private lateinit var semanticResolver: SemanticTypeResolver
 
     @BeforeEach
     fun setup() {
         compilationService = GroovyCompilationService(SymbolExtractionTest::class.java.classLoader)
+        semanticResolver = SemanticTypeResolver(compilationService.classpathService.getTypeSolver())
     }
 
     @Test
@@ -222,7 +225,7 @@ class SymbolExtractionTest {
         val classNode = testClass.astNode as org.codehaus.groovy.ast.ClassNode
         val methodNode = classNode.methods.first()
 
-        val variables = SymbolExtractor.extractVariableSymbols(methodNode)
+        val variables = SymbolExtractor.extractVariableSymbols(methodNode, semanticResolver.semantics)
 
         assertEquals(3, variables.size)
 

@@ -9,15 +9,16 @@ import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
-import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
-import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.ImportSymbol
-import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
-import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
-import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
+import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
+import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
+import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
+import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
+import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
+import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
+import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -166,7 +167,12 @@ object CompletionProvider {
     }
 
     private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
-        val symbolContext = SymbolExtractor.extractCompletionSymbols(ctx.ast, ctx.line, ctx.character)
+        val symbolContext = SymbolExtractor.extractCompletionSymbols(
+            ctx.ast,
+            ctx.line,
+            ctx.character,
+            ctx.semanticResolver.semantics,
+        )
         val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
 
         val importContext = CompletionContextDetector.detectImportCompletionContext(
@@ -255,7 +261,7 @@ object CompletionProvider {
     }
 
     private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
-        context: com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext,
+        context: com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext,
         isStrictDeclarative: Boolean,
     ) {
         if (isStrictDeclarative) {

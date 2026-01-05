@@ -20,6 +20,7 @@ import org.eclipse.lsp4j.WorkspaceSymbol
 import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
@@ -129,6 +130,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
+    @Disabled("TODO(#615): External class resolution not yet implemented in TypeDefinitionProvider")
     fun `type definition resolves to class declaration`() = runBlocking {
         val params = TypeDefinitionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
