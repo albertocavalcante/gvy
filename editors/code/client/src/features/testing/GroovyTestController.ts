@@ -168,6 +168,16 @@ export class GroovyTestController {
 
   // Unified command handler
   private async runTestCommand(args: { suite: string; test: string; uri?: string }, debug: boolean) {
+    // Validate suite and test names
+    if (!args.suite || args.suite.trim() === '') {
+      vscode.window.showErrorMessage('Test suite name cannot be empty');
+      return;
+    }
+    if (!args.test || args.test.trim() === '') {
+      vscode.window.showErrorMessage('Test name cannot be empty');
+      return;
+    }
+
     let item = await this.findTestItem(args.suite, args.test);
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
@@ -220,6 +230,14 @@ export class GroovyTestController {
    * This allows running tests from CodeLens on files opened from outside the workspace.
    */
   private createOnTheFlyTestItem(uriString: string, suiteName: string, testName: string): vscode.TestItem {
+    // Validate inputs
+    if (!suiteName || suiteName.trim() === '') {
+      throw new Error('Suite name cannot be empty for on-the-fly test creation');
+    }
+    if (!testName || testName.trim() === '') {
+      throw new Error('Test name cannot be empty for on-the-fly test creation');
+    }
+
     const uri = vscode.Uri.parse(uriString);
 
     // Check if suite item already exists, if not create it
