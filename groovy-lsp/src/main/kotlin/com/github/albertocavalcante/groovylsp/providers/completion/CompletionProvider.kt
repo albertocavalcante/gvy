@@ -425,8 +425,8 @@ object CompletionProvider {
      * For now, this is a simple implementation that extracts parameter types from the signature.
      * Future enhancement: Parse the full signature with parameter names.
      *
-     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int).")
-     * @return List of parameter strings (e.g., ["String", "int"])
+     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
+     * @return List of parameter strings (e.g., ["String", "int"] or ["Map<String,String>"])
      */
     private fun parseSignatureToParams(signature: String?): List<String> {
         if (signature == null) return emptyList()
@@ -441,10 +441,39 @@ object CompletionProvider {
         val params = signature.substring(startIndex + 1, endIndex).trim()
         if (params.isEmpty()) return emptyList()
 
-        // Split by comma and extract simple names
-        return params.split(',').map { param ->
-            param.trim().substringAfterLast('/').substringAfterLast('.')
+        // Split by comma while respecting angle brackets for generics
+        val result = mutableListOf<String>()
+        val currentParam = StringBuilder()
+        var bracketDepth = 0
+
+        for (char in params) {
+            when (char) {
+                '<' -> {
+                    bracketDepth++
+                    currentParam.append(char)
+                }
+                '>' -> {
+                    bracketDepth--
+                    currentParam.append(char)
+                }
+                ',' -> {
+                    if (bracketDepth == 0) {
+                        result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
+                        currentParam.clear()
+                    } else {
+                        currentParam.append(char)
+                    }
+                }
+                else -> currentParam.append(char)
+            }
         }
+
+        // Add the last parameter
+        if (currentParam.isNotEmpty()) {
+            result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
+        }
+
+        return result
     }
 
     private fun CompletionsBuilder.handleMemberAccessContext(
