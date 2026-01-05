@@ -49,6 +49,7 @@ class TestCodeLensProvider(private val compilationService: GroovyCompilationServ
                         range,
                         Command(
                             "▶ Run Test",
+                            // TODO(#624): Move execution to server-side via BSP commands
                             "groovy.test.run",
                             listOf(
                                 mapOf(

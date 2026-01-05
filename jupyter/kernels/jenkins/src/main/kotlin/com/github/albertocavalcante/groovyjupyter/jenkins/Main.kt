@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.util.concurrent.CancellationException
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
@@ -23,7 +24,7 @@ fun main(args: Array<String>) {
     val connectionFilePath = args[0]
     logger.info("Starting Jenkins Kernel with connection file: {}", connectionFilePath)
 
-    try {
+    runCatching {
         val connectionFileContent = File(connectionFilePath).readText()
         val connectionFile = ConnectionFile.parse(connectionFileContent)
 
@@ -54,8 +55,12 @@ fun main(args: Array<String>) {
         server.use {
             it.run()
         }
-    } catch (e: Exception) {
-        logger.error("Fatal error starting kernel", e)
+    }.getOrElse { throwable ->
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
+        }
+        logger.error("Fatal error starting kernel", throwable)
         exitProcess(1)
     }
 }

@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.ZipFile
 
@@ -71,7 +72,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
 
                         // Extract file (use REPLACE_EXISTING for re-extraction after cache clear)
                         zip.getInputStream(entry).use { input ->
-                            Files.copy(input, outputPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            Files.copy(input, outputPath, StandardCopyOption.REPLACE_EXISTING)
                         }
 
                         // Index: convert path to class name

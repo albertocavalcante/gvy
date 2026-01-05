@@ -1,25 +1,33 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
-import com.github.albertocavalcante.groovyparser.ast.ClassSymbol
-import com.github.albertocavalcante.groovyparser.ast.FieldSymbol
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.ImportSymbol
-import com.github.albertocavalcante.groovyparser.ast.MethodSymbol
-import com.github.albertocavalcante.groovyparser.ast.SymbolCompletionContext
-import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
-import com.github.albertocavalcante.groovyparser.ast.VariableSymbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
+import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
+import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
+import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
+import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
+import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
+import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
+import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -35,6 +43,8 @@ data class CompletionContext(
     val tokenIndex: GroovyTokenIndex?,
     val compilationService: GroovyCompilationService,
     val content: String,
+    val semanticResolver: SemanticTypeResolver,
+    val moduleNode: ModuleNode?,
 )
 
 /**
@@ -46,8 +56,9 @@ object CompletionProvider {
     // Note: IntelliJ uses "IntelliJIdeaRulezzz"
     // Kotlin LSP uses "RWwgUHN5IEtvbmdyb28g" (El Psy Kongroo)
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
-    private const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
+    internal const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
     private const val MAX_TYPE_COMPLETION_RESULTS = 20
+    private const val MAX_IMPORT_COMPLETION_RESULTS = 50
 
     /**
      * Get basic Groovy language completion items using DSL.
@@ -62,24 +73,26 @@ object CompletionProvider {
         line: Int,
         character: Int,
         compilationService: GroovyCompilationService,
+        semanticResolver: SemanticTypeResolver,
         content: String,
     ): List<CompletionItem> {
         return try {
-            val uriObj = java.net.URI.create(uri)
+            val uriObj = URI.create(uri)
 
             // Determine if we are inserting into an existing identifier
-            val isClean = isCleanInsertion(content, line, character)
+            val isClean = CompletionContextDetector.isCleanInsertion(content, line, character)
 
             // Strategy 1: Simple insertion (e.g. "myList.BrazilWorldCup2026")
-            val content1 = insertDummyIdentifier(content, line, character, withDef = false)
+            val content1 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = false)
             val result1 = compilationService.compileTransient(uriObj, content1)
             val ast1 = result1.ast
             val astModel1 = result1.astModel
 
-            // If simple insertion failed and it was a clean insertion, try adding 'def'
-            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid, but "class Foo { BrazilWorldCup2026 }" is not.
+            // If simple insertion failed and it was a clean insertion, try adding 'def'.
+            // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
+            // but "class Foo { BrazilWorldCup2026 }" is not.
             if (isClean && !result1.isSuccessful) {
-                val content2 = insertDummyIdentifier(content, line, character, withDef = true)
+                val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
                 val ast2 = result2.ast
                 val astModel2 = result2.astModel
@@ -98,6 +111,8 @@ object CompletionProvider {
                             tokenIndex = result2.tokenIndex,
                             compilationService = compilationService,
                             content = content,
+                            semanticResolver = semanticResolver,
+                            moduleNode = ast2 as? ModuleNode,
                         ),
                         isSpockSpec = isSpockSpec,
                     )
@@ -119,6 +134,8 @@ object CompletionProvider {
                         tokenIndex = result1.tokenIndex,
                         compilationService = compilationService,
                         content = content,
+                        semanticResolver = semanticResolver,
+                        moduleNode = ast1 as? ModuleNode,
                     ),
                     isSpockSpec = isSpockSpec,
                 )
@@ -149,141 +166,224 @@ object CompletionProvider {
         return emptyList()
     }
 
-    private fun isCleanInsertion(content: String, line: Int, character: Int): Boolean {
-        val lines = content.lines()
-        if (line < 0 || line >= lines.size) return true
-
-        val targetLine = lines[line]
-        // Ensure character is within bounds
-        val safeChar = character.coerceIn(0, targetLine.length)
-
-        val charBefore = if (safeChar > 0) targetLine[safeChar - 1] else ' '
-        val charAfter = if (safeChar < targetLine.length) targetLine[safeChar] else ' '
-
-        // If surrounded by identifier parts, it's NOT a clean insertion (we are inside a word)
-        return !Character.isJavaIdentifierPart(charBefore) && !Character.isJavaIdentifierPart(charAfter)
-    }
-
-    private fun insertDummyIdentifier(content: String, line: Int, character: Int, withDef: Boolean): String {
-        val lines = content.lines().toMutableList()
-        if (line < 0 || line >= lines.size) return content
-
-        // Fix hanging assignments on previous line to ensure parser continues to current line
-        if (line > 0) {
-            val prevLineIdx = line - 1
-            if (lines[prevLineIdx].trim().endsWith("=")) {
-                lines[prevLineIdx] = lines[prevLineIdx] + " null;"
-            }
-        }
-
-        val targetLine = lines[line]
-        // Ensure character is within bounds
-        val safeChar = character.coerceIn(0, targetLine.length)
-
-        // Insert dummy identifier
-        val insertion = if (withDef) "def $DUMMY_IDENTIFIER" else DUMMY_IDENTIFIER
-        val modifiedLine = targetLine.substring(0, safeChar) + insertion + targetLine.substring(safeChar)
-        lines[line] = modifiedLine
-
-        return lines.joinToString("\n")
-    }
-
     private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
-        // Extract completion context
-        val context = SymbolExtractor.extractCompletionSymbols(ctx.ast, ctx.line, ctx.character)
+        ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
+        val symbolContext = SymbolExtractor.extractCompletionSymbols(
+            ctx.ast,
+            ctx.line,
+            ctx.character,
+            ctx.semanticResolver.semantics,
+        )
         val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
 
-        // Try to detect member access (e.g., "myList.")
-        val nodeAtCursor = ctx.astModel.getNodeAt(ctx.uri, ctx.line, ctx.character)
-        val completionContext = detectCompletionContext(nodeAtCursor, ctx.astModel, context)
+        val importContext = CompletionContextDetector.detectImportCompletionContext(
+            content = ctx.content,
+            line = ctx.line,
+            character = ctx.character,
+            tokenIndex = ctx.tokenIndex,
+        )
+        if (importContext != null) {
+            return completions { addImportCompletions(importContext, ctx.compilationService) }
+        }
+
+        val nodeAtCursor = CompletionContextDetector.findNodeAtOrBefore(
+            ctx.astModel,
+            ctx.uri,
+            ctx.content,
+            ctx.line,
+            ctx.character,
+        )
+
+        val completionContext =
+            CompletionContextDetector.detectCompletionContext(
+                nodeAtCursor,
+                ctx.astModel,
+                ctx.semanticResolver,
+                ctx.moduleNode,
+            )
+
+        val jenkinsContext = resolveJenkinsContext(ctx, isJenkinsFile)
+        val metadata = jenkinsContext.metadata
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
 
-            // Add local symbol completions
-            addClasses(context.classes)
-            addMethods(context.methods)
-            addFields(context.fields)
-            addVariables(context.variables)
-            addImports(context.imports)
-            addKeywords()
+            // For member access context (e.g., "p."), only add member completions
+            // Skip local symbols, keywords, etc. as they are not relevant for member completion
+            if (completionContext is ContextType.MemberAccess) {
+                handleMemberAccessContext(completionContext, ctx, metadata)
+                return@completions
+            }
 
-            // Handle contextual completions
-            when (completionContext) {
-                is ContextType.MemberAccess -> {
-                    val rawType = completionContext.qualifierType.substringBefore('<')
-                    val qualifierName = completionContext.qualifierName
+            addLocalSymbolsIfApplicable(symbolContext, jenkinsContext.isStrictDeclarative)
 
-                    // Check if this is a Jenkins global variable with properties (env, currentBuild)
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            val globalVar = findJenkinsGlobalVariable(qualifierName, rawType, metadata)
+            addJenkinsCompletionsIfApplicable(
+                jenkinsContext = jenkinsContext,
+                ctx = ctx,
+                nodeAtCursor = nodeAtCursor,
+            )
 
-                            if (globalVar != null && globalVar.properties.isNotEmpty()) {
-                                // Add Jenkins-specific property completions
-                                logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
-                                addJenkinsPropertyCompletions(globalVar)
-                                return@completions
-                            }
-                        }
-                    }
-
-                    // Standard GDK/classpath methods (fallback)
-                    logger.debug("Adding GDK/Classpath methods for {}", rawType)
-                    addGdkMethods(rawType, ctx.compilationService)
-                    addClasspathMethods(rawType, ctx.compilationService)
-                }
-
-                is ContextType.TypeParameter -> {
-                    logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
-                    addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
-                    // Also add auto-import completions for unimported types
-                    addAutoImportCompletions(completionContext.prefix, ctx.uri, ctx.content, ctx.compilationService)
-                }
-
-                null -> {
-                    /* No special context */
-                    if (isJenkinsFile) {
-                        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
-                        if (metadata != null) {
-                            // Best-effort: if inside a method call on root (e.g., sh(...)), suggest map keys.
-                            addJenkinsMapKeyCompletions(nodeAtCursor, ctx.astModel, metadata)
-
-                            // Suggest global variables from vars/ directory and plugins
-                            addJenkinsGlobalVariables(metadata, ctx.compilationService)
-                        }
-                    }
-                }
+            if (handleContextualCompletions(completionContext, ctx, metadata)) {
+                return@completions
             }
         }
     }
 
-    /**
-     * Resolves a Jenkins global variable by name or type, with shadowing protection.
-     */
-    private fun findJenkinsGlobalVariable(
-        name: String?,
-        type: String,
-        metadata: MergedJenkinsMetadata,
-    ): MergedGlobalVariable? {
-        // 1. Try to find by name (e.g. "env")
-        if (name != null) {
-            val byName = metadata.getGlobalVariable(name)
-            if (byName != null) {
-                // VERIFICATION: Check if the inferred type matches the global variable type
-                // If it doesn't match (and isn't Object/dynamic), it's likely a shadowed variable.
-                // We assume "java.lang.Object" might be an untyped 'def', so we allow it to fall back to the global.
-                if (type != "java.lang.Object" && type != byName.type) {
-                    return null
+    private data class JenkinsContext(
+        val metadata: MergedJenkinsMetadata?,
+        val blockCategories: Set<DeclarativePipelineSchema.CompletionCategory>?,
+        val innerInstructions: Set<String>?,
+        val isStrictDeclarative: Boolean,
+    )
+
+    private fun resolveJenkinsContext(ctx: CompletionContext, isJenkinsFile: Boolean): JenkinsContext {
+        if (!isJenkinsFile) {
+            return JenkinsContext(
+                metadata = null,
+                blockCategories = null,
+                innerInstructions = null,
+                isStrictDeclarative = false,
+            )
+        }
+
+        // Use text-based context detection (more robust during editing) instead of AST traversal.
+        val detected = JenkinsContextDetector.detectFromDocument(
+            ctx.content.lines(),
+            ctx.line,
+            ctx.character,
+        )
+        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+
+        val currentBlock = detected.currentBlock
+        val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories)
+        val innerInstructions = currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions)
+        val isStrictDeclarative =
+            detected.isDeclarativePipeline &&
+                currentBlock != null &&
+                currentBlock != "script"
+
+        return JenkinsContext(
+            metadata = metadata,
+            blockCategories = blockCategories,
+            innerInstructions = innerInstructions,
+            isStrictDeclarative = isStrictDeclarative,
+        )
+    }
+
+    private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
+        context: com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext,
+        isStrictDeclarative: Boolean,
+    ) {
+        if (isStrictDeclarative) {
+            return
+        }
+
+        addClasses(context.classes)
+        addMethods(context.methods)
+        addFields(context.fields)
+        addVariables(context.variables)
+        addImports(context.imports)
+        addKeywords()
+
+        // Add basic Groovy snippet completions (println, print, etc.)
+        GroovyCompletions.basic().forEach(::add)
+    }
+
+    private fun CompletionsBuilder.addJenkinsCompletionsIfApplicable(
+        jenkinsContext: JenkinsContext,
+        ctx: CompletionContext,
+        nodeAtCursor: ASTNode?,
+    ) {
+        val metadata = jenkinsContext.metadata ?: return
+
+        with(JenkinsCompletionProvider) {
+            // Suggest parameter map keys so we can complete named parameters
+            addJenkinsMapKeyCompletions(ctx, nodeAtCursor, ctx.astModel, metadata)
+
+            // Lenient step allowance: allow steps if not in a strict declarative block,
+            // or if the block explicitly allows steps.
+            val allowSteps =
+                !jenkinsContext.isStrictDeclarative ||
+                    jenkinsContext.blockCategories
+                        ?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true
+
+            if (allowSteps) {
+                // TODO(#657): Refactor to use a determined JenkinsCompletionStrategy.
+                addJenkinsStepCompletions(metadata)
+            }
+
+            addJenkinsGlobalVariables(metadata, ctx.compilationService)
+
+            jenkinsContext.blockCategories?.let { categories ->
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE)) {
+                    addJenkinsAgentTypeCompletions()
                 }
-                return byName
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION)) {
+                    addJenkinsDeclarativeOptions(metadata)
+                }
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION)) {
+                    addJenkinsPostConditionCompletions()
+                }
             }
         }
 
-        // 2. Fallback: Find by type (e.g. "org.jenkinsci.plugins.workflow.cps.EnvActionImpl")
-        // Note: metadata.globalVariables is keyed by variable name, so we scan values for matching type.
-        return metadata.globalVariables.values.find { it.type == type }
+        // Add inner instructions (sub-blocks) from schema
+        jenkinsContext.innerInstructions?.forEach { instruction ->
+            completion {
+                label(instruction)
+                kind(CompletionItemKind.Keyword)
+                detail("Declarative directive")
+                insertText("$instruction {")
+                sortText("0-directive-$instruction")
+            }
+        }
+    }
+
+    private fun CompletionsBuilder.handleContextualCompletions(
+        completionContext: ContextType?,
+        ctx: CompletionContext,
+        metadata: MergedJenkinsMetadata?,
+    ): Boolean = when (completionContext) {
+        // MemberAccess is handled via early return in buildCompletionsList
+        is ContextType.MemberAccess -> false
+        is ContextType.TypeParameter -> {
+            logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
+            addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
+            // Also add auto-import completions for unimported types
+            addAutoImportCompletions(completionContext.prefix, ctx.uri, ctx.content, ctx.compilationService)
+            false
+        }
+
+        null -> false
+    }
+
+    private fun CompletionsBuilder.handleMemberAccessContext(
+        completionContext: ContextType.MemberAccess,
+        ctx: CompletionContext,
+        metadata: MergedJenkinsMetadata?,
+    ): Boolean {
+        val rawType = completionContext.qualifierType.substringBefore('<')
+        val qualifierName = completionContext.qualifierName
+
+        val globalVar = metadata
+            ?.let { JenkinsCompletionProvider.findJenkinsGlobalVariable(qualifierName, rawType, it) }
+
+        if (globalVar != null && globalVar.properties.isNotEmpty()) {
+            logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
+            addJenkinsGlobalVariablePropertyCompletions(globalVar)
+            return true
+        }
+
+        logger.debug("Adding GDK/Classpath methods for {}", rawType)
+        addGdkMethods(rawType, ctx.compilationService)
+        addClasspathMethods(rawType, ctx.compilationService)
+        return false
+    }
+
+    private fun CompletionsBuilder.addJenkinsGlobalVariablePropertyCompletions(globalVar: MergedGlobalVariable) {
+        with(JenkinsCompletionProvider) {
+            addJenkinsPropertyCompletions(globalVar)
+        }
     }
 
     private fun CompletionsBuilder.addSpockBlockLabelsIfApplicable(
@@ -346,212 +446,16 @@ object CompletionProvider {
         return prefix.all { it == ' ' || it == '\t' }
     }
 
-    private fun CompletionsBuilder.addJenkinsGlobalVariables(
-        metadata: MergedJenkinsMetadata,
-        compilationService: GroovyCompilationService,
-    ) {
-        // 1. Add global variables from bundled plugin metadata
-        val bundledCompletions = JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
-        bundledCompletions.forEach { item ->
-            val docString = when {
-                item.documentation?.isRight == true -> item.documentation.right.value
-                item.documentation?.isLeft == true -> item.documentation.left
-                else -> null
-            } ?: item.detail
+    internal data class ImportCompletionContext(
+        val prefix: String,
+        val isStatic: Boolean,
+        val canSuggestStatic: Boolean,
+        val line: Int,
+        val replaceStartCharacter: Int,
+        val replaceEndCharacter: Int,
+    )
 
-            variable(
-                name = item.label,
-                type = item.detail?.substringAfterLast('.') ?: "Object",
-                doc = docString ?: "Jenkins global variable",
-            )
-        }
-
-        // 2. Add global variables from workspace vars/ directory
-        // TODO: Consider caching these completions if performance becomes an issue
-        val varsGlobals = compilationService.workspaceManager.getJenkinsGlobalVariables()
-        varsGlobals.forEach { globalVar ->
-            // Use function() to insert as method call with parens: buildPlugin($1)
-            function(
-                name = globalVar.name,
-                returnType = "Object",
-                doc = globalVar.documentation.ifEmpty {
-                    "Shared library global variable from vars/${globalVar.name}.groovy"
-                },
-            )
-        }
-    }
-
-    /**
-     * Add property completions for Jenkins global variables (env, currentBuild).
-     */
-    private fun CompletionsBuilder.addJenkinsPropertyCompletions(globalVar: MergedGlobalVariable) {
-        globalVar.properties.forEach { (name, prop) ->
-            property(
-                name = name,
-                type = prop.type,
-                doc = prop.description,
-            )
-        }
-    }
-
-    private fun CompletionsBuilder.addJenkinsMapKeyCompletions(
-        nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-        metadata: MergedJenkinsMetadata,
-    ) {
-        val methodCall = findEnclosingMethodCall(nodeAtCursor, astModel)
-        val callName = methodCall?.methodAsString ?: return
-
-        // Collect already specified argument map keys if present
-        val existingKeys = mutableSetOf<String>()
-        val args = methodCall.arguments
-        if (args is org.codehaus.groovy.ast.expr.ArgumentListExpression) {
-            args.expressions.filterIsInstance<org.codehaus.groovy.ast.expr.MapExpression>().forEach { mapExpr ->
-                mapExpr.mapEntryExpressions.forEach { entry ->
-                    val key = entry.keyExpression.text.removeSuffix(":")
-                    existingKeys.add(key)
-                }
-            }
-        }
-
-        val bundledParamCompletions = JenkinsStepCompletionProvider.getParameterCompletions(
-            callName,
-            existingKeys,
-            metadata,
-        )
-        bundledParamCompletions.forEach(::add)
-    }
-
-    private fun findEnclosingMethodCall(
-        node: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-    ): org.codehaus.groovy.ast.expr.MethodCallExpression? {
-        var current: org.codehaus.groovy.ast.ASTNode? = node
-        while (current != null) {
-            if (current is org.codehaus.groovy.ast.expr.MethodCallExpression) {
-                return current
-            }
-            current = astModel.getParent(current)
-        }
-        return null
-    }
-
-    /**
-     * Detect completion context (member access or type parameter).
-     */
-    private fun detectCompletionContext(
-        nodeAtCursor: org.codehaus.groovy.ast.ASTNode?,
-        astModel: com.github.albertocavalcante.groovyparser.ast.GroovyAstModel,
-        context: SymbolCompletionContext,
-    ): ContextType? {
-        if (nodeAtCursor == null) {
-            return null
-        }
-
-        // Check parent as well
-        val parent = astModel.getParent(nodeAtCursor)
-
-        return when (nodeAtCursor) {
-            // Case 1: Direct PropertyExpression (e.g., "myList.ea|" or "env.BUILD|")
-            is org.codehaus.groovy.ast.expr.PropertyExpression -> {
-                val objectExpr = nodeAtCursor.objectExpression
-                resolveQualifier(objectExpr, context)?.let { (type, name) ->
-                    ContextType.MemberAccess(type, name)
-                }
-            }
-
-            // Case 2: VariableExpression that's part of a PropertyExpression or BinaryExpression
-            // (e.g., cursor is on "myList" in "myList.")
-            is org.codehaus.groovy.ast.expr.VariableExpression -> {
-                if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
-                    var qualifierType = nodeAtCursor.type?.name
-                    val qualifierName = nodeAtCursor.name
-
-                    // Try to get inferred type from context
-                    val inferredType = resolveVariableType(nodeAtCursor.name, context)
-                    if (inferredType != null) {
-                        qualifierType = inferredType
-                    }
-
-                    qualifierType?.let { ContextType.MemberAccess(it, qualifierName) }
-                } else if (parent is org.codehaus.groovy.ast.expr.BinaryExpression &&
-                    parent.operation.text == "<" &&
-                    nodeAtCursor.name.contains(DUMMY_IDENTIFIER)
-                ) {
-                    val prefix = nodeAtCursor.name.substringBefore(DUMMY_IDENTIFIER)
-                    ContextType.TypeParameter(prefix)
-                } else {
-                    null
-                }
-            }
-
-            // Case 3: ConstantExpression that's the property in a PropertyExpression
-            // (e.g., cursor lands on the dummy identifier in "myList.IntelliJIdeaRulezzz")
-            is org.codehaus.groovy.ast.expr.ConstantExpression -> {
-                if (parent is org.codehaus.groovy.ast.expr.PropertyExpression) {
-                    val objectExpr = parent.objectExpression
-                    resolveQualifier(objectExpr, context)?.let { (type, name) ->
-                        ContextType.MemberAccess(type, name)
-                    }
-                } else {
-                    null
-                }
-            }
-
-            // Case 4: ClassExpression (e.g. "List<String>")
-            is org.codehaus.groovy.ast.expr.ClassExpression -> {
-                val generics = nodeAtCursor.type.genericsTypes
-                if (generics != null && generics.isNotEmpty()) {
-                    // Check if any generic type matches our dummy identifier
-                    val dummyGeneric = generics.find { it.name.contains(DUMMY_IDENTIFIER) }
-                    if (dummyGeneric != null) {
-                        // Extract prefix (everything before the dummy identifier)
-                        val prefix = dummyGeneric.name.substringBefore(DUMMY_IDENTIFIER)
-                        ContextType.TypeParameter(prefix)
-                    } else {
-                        null
-                    }
-                } else {
-                    null
-                }
-            }
-
-            // Case 5: Method call expression (might be incomplete)
-            is org.codehaus.groovy.ast.expr.MethodCallExpression -> {
-                null // For now, don't handle method calls
-            }
-
-            else -> {
-                null
-            }
-        }
-    }
-
-    private fun resolveVariableType(variableName: String, context: SymbolCompletionContext): String? {
-        val inferredVar = context.variables.find { it.name == variableName }
-        return inferredVar?.type
-    }
-
-    private fun resolveQualifier(
-        objectExpr: org.codehaus.groovy.ast.expr.Expression,
-        context: SymbolCompletionContext,
-    ): Pair<String, String?>? {
-        var qualifierType = objectExpr.type?.name
-        var qualifierName: String? = null
-
-        // If object is a variable, capture its name for Jenkins global matching
-        if (objectExpr is org.codehaus.groovy.ast.expr.VariableExpression) {
-            qualifierName = objectExpr.name
-            val inferredType = resolveVariableType(objectExpr.name, context)
-            if (inferredType != null) {
-                qualifierType = inferredType
-            }
-        }
-
-        return qualifierType?.let { it to qualifierName }
-    }
-
-    private sealed interface ContextType {
+    internal sealed interface ContextType {
         /**
          * Member access context (e.g., "myList." or "env.").
          * @param qualifierType The type of the qualifier (e.g., "ArrayList" or "Object")
@@ -643,6 +547,54 @@ object CompletionProvider {
                 doc = "Keyword/Type: $k",
             )
         }
+    }
+
+    /**
+     * Adds import-specific completions (static keyword and matching class names).
+     */
+    private fun CompletionsBuilder.addImportCompletions(
+        ctx: ImportCompletionContext,
+        compilationService: GroovyCompilationService,
+    ) {
+        if (ctx.canSuggestStatic) {
+            keyword(
+                keyword = "static",
+                doc = "Static import",
+            )
+        }
+
+        val prefix = ctx.prefix.trim()
+        if (prefix.isBlank()) {
+            // TODO(#575): Provide curated suggestions for empty import prefixes.
+            //   See: https://github.com/albertocavalcante/gvy/issues/575
+            return
+        }
+
+        val classpathService = compilationService.classpathService
+        val candidates = if (prefix.contains('.')) {
+            classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        } else {
+            classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
+        }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+        candidates
+            .map { it.fullName }
+            .distinct()
+            .forEach { fullName ->
+                add(
+                    CompletionItem().apply {
+                        label = fullName
+                        kind = CompletionItemKind.Class
+                        detail = fullName
+                        insertText = fullName
+                        textEdit = Either.forLeft(TextEdit(range, fullName))
+                    },
+                )
+            }
     }
 
     /**

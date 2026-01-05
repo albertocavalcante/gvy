@@ -2,11 +2,11 @@ package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsContext
 import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
+import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -24,10 +24,12 @@ class JenkinsDocProvider(
     private val jenkinsContext: JenkinsContext? = null,
 ) : PluggableDocProvider {
 
-    private val logger = LoggerFactory.getLogger(JenkinsDocProvider::class.java)
+    private companion object {
+        private const val HIGH_PRIORITY = 100
+    }
 
     override val name: String = "Jenkins Documentation Provider"
-    override val priority: Int = 100 // High priority - check before generic Groovy
+    override val priority: Int = HIGH_PRIORITY // High priority - check before generic Groovy
 
     override fun canHandle(node: ASTNode, documentUri: URI): Boolean {
         // Only handle if this looks like a Jenkinsfile
@@ -60,23 +62,22 @@ class JenkinsDocProvider(
         }
 
         return if (metadata != null) {
-            val content = buildString {
-                appendLine("### `$stepName`")
-                appendLine()
+            val content = markdown {
+                h3("`$stepName`")
 
                 metadata.documentation?.let {
-                    appendLine(it)
-                    appendLine()
+                    text(it)
                 }
 
-                appendLine("**Plugin:** ${metadata.plugin}")
-                appendLine()
+                text("**Plugin:** ${metadata.plugin}")
 
                 if (metadata.parameters.isNotEmpty()) {
-                    appendLine("**Parameters:**")
-                    metadata.parameters.forEach { (paramName, param) ->
-                        appendLine("- `$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}")
-                    }
+                    text("**Parameters:**")
+                    list(
+                        metadata.parameters.map { (paramName, param) ->
+                            "`$paramName`: ${param.type}${if (param.required) " *(required)*" else ""}"
+                        },
+                    )
                 }
             }
 
@@ -103,13 +104,11 @@ class JenkinsDocProvider(
 
         return if (stepName in knownSteps) {
             GroovyDocumentation.markdown(
-                content = """
-                    ### `$stepName`
-                    
-                    Jenkins Pipeline step.
-                    
-                    [View documentation](https://www.jenkins.io/doc/pipeline/steps/)
-                """.trimIndent(),
+                content = markdown {
+                    h3("`$stepName`")
+                    text("Jenkins Pipeline step.")
+                    link("View documentation", "https://www.jenkins.io/doc/pipeline/steps/")
+                },
                 source = "Jenkins Pipeline",
             )
         } else {

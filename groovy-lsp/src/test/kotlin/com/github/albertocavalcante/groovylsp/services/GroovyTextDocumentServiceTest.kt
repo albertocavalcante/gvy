@@ -24,7 +24,9 @@ class GroovyTextDocumentServiceTest {
         val service = GroovyTextDocumentService(
             coroutineScope = scope,
             compilationService = compilationService,
-            client = { null },
+            options = GroovyTextDocumentServiceOptions(
+                client = { null },
+            ),
         )
 
         val uri = "file:///test/Test.groovy"

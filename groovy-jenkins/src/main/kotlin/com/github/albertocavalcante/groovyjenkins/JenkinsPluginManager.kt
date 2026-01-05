@@ -86,15 +86,9 @@ class JenkinsPluginManager(
      */
     suspend fun registerStaticMetadata(metadata: BundledJenkinsMetadata) {
         staticMetadataMutex.withLock {
-            // Merge with existing if any, or just set it
-            if (staticMetadataCache == null) {
-                staticMetadataCache = metadata
-            } else {
-                // Simplistic merge: overwrite (since we expect one main file)
-                // Or we could implement deep merging logic here if needed.
-                // For now, let's treat it as "last writer wins" or just replacement.
-                staticMetadataCache = metadata
-            }
+            // Simplistic merge: overwrite (since we expect one main file)
+            // Or we could implement deep merging logic here if needed via MetadataMerger.
+            staticMetadataCache = metadata
         }
         logger.debug("Registered static Jenkins metadata with {} steps", metadata.steps.size)
     }

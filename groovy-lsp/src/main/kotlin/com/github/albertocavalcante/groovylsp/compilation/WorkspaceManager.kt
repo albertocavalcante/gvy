@@ -1,7 +1,10 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import com.github.albertocavalcante.groovyjenkins.GlobalVariable
+import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovyjenkins.JenkinsWorkspaceManager
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
@@ -137,24 +140,28 @@ class WorkspaceManager {
      * Converts Path objects to URI objects for use in compilation service.
      */
     fun getWorkspaceSourceUris(): List<URI> = workspaceSources.mapNotNull { path ->
-        try {
-            path.toUri()
-        } catch (e: Exception) {
-            logger.warn("Failed to convert path to URI: $path", e)
-            null
+        runCatching { path.toUri() }
+            .getOrElse { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                logger.warn("Failed to convert path to URI: $path", throwable)
+                null
+            }
+    }
+
+    private fun rethrowIfCancellationOrError(throwable: Throwable) {
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
         }
     }
 
     /**
      * Initializes Jenkins workspace manager with configuration.
      */
-    fun initializeJenkinsWorkspace(
-        config: ServerConfiguration,
-        pluginManager: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager? = null,
-    ) {
+    fun initializeJenkinsWorkspace(config: ServerConfiguration, pluginManager: JenkinsPluginManager? = null) {
         val root = workspaceRoot
         if (root != null) {
-            val pm = pluginManager ?: com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager()
+            val pm = pluginManager ?: JenkinsPluginManager()
             jenkinsWorkspaceManager = JenkinsWorkspaceManager(config.jenkinsConfig, root, pm)
             logger.info("Initialized Jenkins workspace manager")
 
@@ -215,8 +222,7 @@ class WorkspaceManager {
     /**
      * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
      */
-    fun getJenkinsGlobalVariables(): List<com.github.albertocavalcante.groovyjenkins.GlobalVariable> =
-        jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
+    fun getJenkinsGlobalVariables(): List<GlobalVariable> = jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
 
     /**
      * Gets combined Jenkins metadata (steps, globals) including scanned plugins.

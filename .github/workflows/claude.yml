@@ -1,0 +1,56 @@
+name: Claude Code
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@0a2593483e318c6693adcb04af942367df7157f0 # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # This is an optional setting that allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+
+          # Security constraints to enforce AGENTS.md rules
+          # Allows: Read/analyze code, run Gradle, check git status, use gh CLI, run make commands
+          # Prevents: git add ., git push --force, rm -rf, curl/wget (use gh instead)
+          claude_args: |
+            --allowed-tools "Read,Glob,Grep,Edit,Bash(./gradlew :*),Bash(git status),Bash(git diff:*),Bash(git log:*),Bash(git branch:*),Bash(gh :*),Bash(make :*)"
+            --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(rm -rf:*),Bash(curl :*),Bash(wget :*)"
+            --max-turns 10
+

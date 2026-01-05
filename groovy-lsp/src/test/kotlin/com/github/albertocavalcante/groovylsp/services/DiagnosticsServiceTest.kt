@@ -93,7 +93,7 @@ class DiagnosticsServiceTest {
     // ==================== Configuration Filtering Tests ====================
 
     @Test
-    fun `respects denylist and skips denied provider`() = runBlocking {
+    fun `respects disabled providers and skips disabled provider`() = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Should not appear", 1)
         val provider = TestStreamingDiagnosticProvider(
@@ -104,7 +104,7 @@ class DiagnosticsServiceTest {
 
         val service = DiagnosticsService(
             providers = listOf(provider),
-            config = DiagnosticConfig(denylist = setOf("test-provider")),
+            config = DiagnosticConfig(disabledProviders = setOf("test-provider")),
         )
 
         // When
@@ -115,7 +115,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `respects allowlist and enables disabled-by-default provider`() = runBlocking {
+    fun `respects enabled providers and enables disabled-by-default provider`() = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Should appear", 1)
         val provider = TestStreamingDiagnosticProvider(
@@ -126,7 +126,7 @@ class DiagnosticsServiceTest {
 
         val service = DiagnosticsService(
             providers = listOf(provider),
-            config = DiagnosticConfig(allowlist = setOf("slow-provider")),
+            config = DiagnosticConfig(enabledProviders = setOf("slow-provider")),
         )
 
         // When
@@ -158,7 +158,7 @@ class DiagnosticsServiceTest {
 
         val service = DiagnosticsService(
             providers = listOf(enabledProvider1, disabledProvider, enabledProvider2),
-            config = DiagnosticConfig(), // No allowlist
+            config = DiagnosticConfig(), // No enabled providers
         )
 
         // When
@@ -172,7 +172,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `denylist takes precedence over allowlist`() = runBlocking {
+    fun `disabled providers take precedence over enabled providers`() = runBlocking {
         // Given
         val provider = TestStreamingDiagnosticProvider(
             id = "conflicted-provider",
@@ -183,8 +183,8 @@ class DiagnosticsServiceTest {
         val service = DiagnosticsService(
             providers = listOf(provider),
             config = DiagnosticConfig(
-                denylist = setOf("conflicted-provider"),
-                allowlist = setOf("conflicted-provider"),
+                disabledProviders = setOf("conflicted-provider"),
+                enabledProviders = setOf("conflicted-provider"),
             ),
         )
 
@@ -192,7 +192,7 @@ class DiagnosticsServiceTest {
         val result = service.getDiagnostics(testUri, "test content")
 
         // Then
-        assertTrue(result.isEmpty(), "Denylist should take precedence over allowlist")
+        assertTrue(result.isEmpty(), "Disabled providers should take precedence over enabled providers")
     }
 
     // ==================== Error Handling Tests ====================

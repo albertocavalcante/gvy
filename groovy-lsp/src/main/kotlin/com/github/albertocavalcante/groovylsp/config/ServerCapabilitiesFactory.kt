@@ -75,6 +75,12 @@ object ServerCapabilitiesFactory {
 
             // Folding range support
             foldingRangeProvider = Either.forLeft(true)
+
+            // Call hierarchy support
+            callHierarchyProvider = Either.forLeft(true)
+
+            // Inlay hints support
+            inlayHintProvider = Either.forLeft(true)
         }
 
         val serverInfo = ServerInfo().apply {

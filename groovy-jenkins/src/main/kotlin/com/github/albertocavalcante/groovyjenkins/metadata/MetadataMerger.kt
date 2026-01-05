@@ -162,60 +162,87 @@ object MetadataMerger {
      * Note: This is a complex transformation, not a simple semigroup merge,
      * so we keep it as a specialized function but use immutable operations.
      */
-    fun mergeWithEnrichment(bundled: BundledJenkinsMetadata, enrichment: JenkinsEnrichment): MergedJenkinsMetadata {
-        val mergedSteps = bundled.steps.mapValues { (stepName, bundledStep) ->
-            val stepEnrichment = enrichment.steps[stepName]
+    fun mergeWithEnrichment(bundled: BundledJenkinsMetadata, enrichment: JenkinsEnrichment): MergedJenkinsMetadata =
+        MergedJenkinsMetadata(
+            jenkinsVersion = bundled.jenkinsVersion ?: "unknown",
+            steps = mergeSteps(bundled, enrichment),
+            globalVariables = mergeGlobalVariables(bundled, enrichment),
+            sections = enrichment.sections,
+            directives = enrichment.directives,
+            declarativeOptions = mergeDeclarativeOptions(bundled),
+        )
 
-            // Merge parameters strictly
-            val mergedParams = bundledStep.parameters.mapValues { (paramName, bundledParam) ->
-                val paramEnrichment = stepEnrichment?.parameterEnrichment?.get(paramName)
+    private fun mergeSteps(
+        bundled: BundledJenkinsMetadata,
+        enrichment: JenkinsEnrichment,
+    ): Map<String, MergedStepMetadata> = bundled.steps.mapValues { (stepName, bundledStep) ->
+        val stepEnrichment = enrichment.steps[stepName]
 
+        val mergedParams = bundledStep.parameters.mapValues { (paramName, bundledParam) ->
+            val paramEnrichment = stepEnrichment?.parameterEnrichment?.get(paramName)
+
+            MergedParameter(
+                name = paramName,
+                type = bundledParam.type,
+                defaultValue = bundledParam.default,
+                description = paramEnrichment?.description ?: bundledParam.documentation,
+                required = paramEnrichment?.required ?: bundledParam.required,
+                validValues = paramEnrichment?.validValues,
+                examples = paramEnrichment?.examples ?: emptyList(),
+            )
+        }
+
+        MergedStepMetadata(
+            name = stepName,
+            scope = StepScope.GLOBAL,
+            positionalParams = emptyList(),
+            namedParams = mergedParams,
+            extractedDocumentation = bundledStep.documentation,
+            returnType = null,
+            plugin = stepEnrichment?.plugin ?: bundledStep.plugin,
+            enrichedDescription = stepEnrichment?.description,
+            documentationUrl = stepEnrichment?.documentationUrl,
+            category = stepEnrichment?.category,
+            examples = stepEnrichment?.examples ?: emptyList(),
+            deprecation = stepEnrichment?.deprecation,
+        )
+    }
+
+    private fun mergeGlobalVariables(
+        bundled: BundledJenkinsMetadata,
+        enrichment: JenkinsEnrichment,
+    ): Map<String, MergedGlobalVariable> = bundled.globalVariables.mapValues { (varName, bundledVar) ->
+        val varEnrichment = enrichment.globalVariables[varName]
+
+        MergedGlobalVariable(
+            name = varName,
+            type = bundledVar.type,
+            extractedDocumentation = bundledVar.documentation,
+            enrichedDescription = varEnrichment?.description,
+            documentationUrl = varEnrichment?.documentationUrl,
+            properties = varEnrichment?.properties ?: emptyMap(),
+        )
+    }
+
+    private fun mergeDeclarativeOptions(bundled: BundledJenkinsMetadata): Map<String, MergedDeclarativeOption> =
+        bundled.declarativeOptions.mapValues { (optionName, option) ->
+            val mergedParams = option.parameters.mapValues { (paramName, param) ->
                 MergedParameter(
                     name = paramName,
-                    type = bundledParam.type,
-                    defaultValue = bundledParam.default,
-                    description = paramEnrichment?.description ?: bundledParam.documentation,
-                    required = paramEnrichment?.required ?: bundledParam.required,
-                    validValues = paramEnrichment?.validValues,
-                    examples = paramEnrichment?.examples ?: emptyList(),
+                    type = param.type,
+                    defaultValue = param.default,
+                    description = param.documentation,
+                    required = param.required,
+                    validValues = null,
+                    examples = emptyList(),
                 )
             }
 
-            MergedStepMetadata(
-                name = stepName,
-                scope = StepScope.GLOBAL,
-                positionalParams = emptyList(),
-                namedParams = mergedParams,
-                extractedDocumentation = bundledStep.documentation,
-                returnType = null,
-                plugin = stepEnrichment?.plugin ?: bundledStep.plugin,
-                enrichedDescription = stepEnrichment?.description,
-                documentationUrl = stepEnrichment?.documentationUrl,
-                category = stepEnrichment?.category,
-                examples = stepEnrichment?.examples ?: emptyList(),
-                deprecation = stepEnrichment?.deprecation,
+            MergedDeclarativeOption(
+                name = option.name.ifEmpty { optionName },
+                plugin = option.plugin,
+                parameters = mergedParams,
+                documentation = option.documentation,
             )
         }
-
-        val mergedGlobalVars = bundled.globalVariables.mapValues { (varName, bundledVar) ->
-            val varEnrichment = enrichment.globalVariables[varName]
-
-            MergedGlobalVariable(
-                name = varName,
-                type = bundledVar.type,
-                extractedDocumentation = bundledVar.documentation,
-                enrichedDescription = varEnrichment?.description,
-                documentationUrl = varEnrichment?.documentationUrl,
-                properties = varEnrichment?.properties ?: emptyMap(),
-            )
-        }
-
-        return MergedJenkinsMetadata(
-            jenkinsVersion = bundled.jenkinsVersion ?: "unknown",
-            steps = mergedSteps,
-            globalVariables = mergedGlobalVars,
-            sections = enrichment.sections,
-            directives = enrichment.directives,
-        )
-    }
 }

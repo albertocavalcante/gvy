@@ -21,7 +21,7 @@ class BundledJenkinsMetadataLoaderTest {
         // For now we just check that the property exists and doesn't crash.
         // Once we update the JSON, we can assert a specific version.
         val version = metadata.jenkinsVersion
-        // assertNotNull(version) // Uncomment when JSON is updated
+        assertTrue(version == null || version.isNotBlank())
     }
 
     @Test

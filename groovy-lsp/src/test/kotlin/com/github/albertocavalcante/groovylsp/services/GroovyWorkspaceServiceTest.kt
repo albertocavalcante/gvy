@@ -22,7 +22,8 @@ class GroovyWorkspaceServiceTest {
 
     @Test
     fun `blank workspace symbol query returns empty result`() {
-        val service = GroovyWorkspaceService(GroovyCompilationService(), testScope)
+        val compilationService = GroovyCompilationService()
+        val service = GroovyWorkspaceService(compilationService, compilationService.symbolIndexingService, testScope)
 
         val either = service.symbol(WorkspaceSymbolParams("   ")).get()
 
@@ -41,6 +42,7 @@ class GroovyWorkspaceServiceTest {
         )
         val service = GroovyWorkspaceService(
             compilationService = compilationService,
+            symbolIndexer = compilationService.symbolIndexingService,
             coroutineScope = testScope,
             workerRouter = WorkerRouter(listOf(worker)),
         )

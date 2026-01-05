@@ -1,16 +1,18 @@
 package com.github.albertocavalcante.groovylsp.engine.api
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import java.net.URI
 
 /**
  * The Factory Interface for the Language Engine Abstract Factory pattern.
@@ -26,6 +28,13 @@ interface LanguageEngine {
      * Creates a new session by parsing the code with the engine's specific parser.
      */
     fun createSession(request: ParseRequest): LanguageSession
+
+    /**
+     * Creates a new session from URI and content.
+     * This is the unified interface for session creation, allowing polymorphic dispatch
+     * without knowing the specific engine type.
+     */
+    fun createSession(uri: URI, content: String): LanguageSession
 }
 
 /**
@@ -87,7 +96,7 @@ interface HoverProvider {
  * Abstract Provider Interface for Document Symbols.
  */
 interface DocumentSymbolProvider {
-    fun getDocumentSymbols(): List<org.eclipse.lsp4j.DocumentSymbol>
+    fun getDocumentSymbols(): List<DocumentSymbol>
 }
 
 /**

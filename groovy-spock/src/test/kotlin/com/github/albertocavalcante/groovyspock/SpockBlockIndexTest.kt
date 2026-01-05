@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyspock
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.Test

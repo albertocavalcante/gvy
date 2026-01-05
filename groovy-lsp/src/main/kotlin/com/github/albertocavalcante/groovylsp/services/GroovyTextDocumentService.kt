@@ -5,20 +5,22 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
-import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
+import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
+import com.github.albertocavalcante.groovylsp.providers.callhierarchy.CallHierarchyProvider
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
-import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
+import com.github.albertocavalcante.groovylsp.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
@@ -27,15 +29,23 @@ import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformat
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
-import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import org.codehaus.groovy.control.CompilationFailedException
+import org.eclipse.lsp4j.CallHierarchyIncomingCall
+import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
+import org.eclipse.lsp4j.CallHierarchyItem
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall
+import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
+import org.eclipse.lsp4j.CallHierarchyPrepareParams
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.CodeLens
@@ -46,7 +56,6 @@ import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Diagnostic
-import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -61,6 +70,8 @@ import org.eclipse.lsp4j.FoldingRangeRequestParams
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.ImplementationParams
+import org.eclipse.lsp4j.InlayHint
+import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
@@ -76,24 +87,38 @@ import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.WorkspaceEdit
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.net.URI
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 
+data class GroovyTextDocumentServiceOptions(
+    val serverConfiguration: ServerConfiguration = ServerConfiguration(),
+    val client: () -> LanguageClient? = { null },
+    val documentProvider: DocumentProvider = DocumentProvider(),
+    val formatter: Formatter = OpenRewriteFormatterAdapter(),
+    val sourceNavigator: SourceNavigator = SourceNavigationService(),
+)
+
 class GroovyTextDocumentService(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
-    private val serverConfiguration: ServerConfiguration = ServerConfiguration(),
-    private val client: () -> LanguageClient?,
-    private val documentProvider: DocumentProvider = DocumentProvider(),
-    private val formatter: Formatter = OpenRewriteFormatterAdapter(),
-    private val sourceNavigator: SourceNavigator = SourceNavigationService(),
+    options: GroovyTextDocumentServiceOptions = GroovyTextDocumentServiceOptions(),
 ) : TextDocumentService {
+
+    private val serverConfiguration: ServerConfiguration = options.serverConfiguration
+    private val client: () -> LanguageClient? = options.client
+    private val documentProvider: DocumentProvider = options.documentProvider
+    private val formatter: Formatter = options.formatter
+    private val sourceNavigator: SourceNavigator = options.sourceNavigator
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
 
@@ -109,40 +134,39 @@ class GroovyTextDocumentService(
      * Factory method for creating DiagnosticsService with configured providers.
      *
      * NOTE: This factory pattern allows for easy testing and future extension.
-     * TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
      */
     private fun createDiagnosticsService(): DiagnosticsService {
         val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
-            // Add CodeNarc if enabled in configuration
-            if (serverConfiguration.codeNarcEnabled) {
-                val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
-                val codeNarcAdapter = DiagnosticProviderAdapter(
-                    delegate = codeNarcProvider,
-                    id = "codenarc",
-                    enabledByDefault = true,
-                )
-                add(codeNarcAdapter)
-            }
+            val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
+            val codeNarcAdapter = DiagnosticProviderAdapter(
+                delegate = codeNarcProvider,
+                id = "codenarc",
+                enabledByDefault = serverConfiguration.codeNarcEnabled,
+            )
+            add(codeNarcAdapter)
 
-            // TODO: Add more providers here as implemented
-            // add(UnusedImportDiagnosticProvider())
+            val customRulesProvider = CustomRulesProvider(
+                rules = BuiltinRules.getAllRules(),
+                compilationService = compilationService,
+                ruleConfig = serverConfiguration.diagnosticRuleConfig,
+            )
+            add(customRulesProvider)
         }
 
-        // TODO: Load DiagnosticConfig from ServerConfiguration (Phase 6)
-        val config = DiagnosticConfig()
+        val config = serverConfiguration.diagnosticConfig
 
         return DiagnosticsService(providers, config)
     }
 
     // Type definition provider - created lazily
     private val typeDefinitionProvider by lazy {
-        val typeResolver = GroovyTypeResolver()
         TypeDefinitionProvider(
             coroutineScope = coroutineScope,
-            typeResolver = typeResolver,
+            semanticResolver = semanticTypeResolver,
+            sourceNavigator = sourceNavigator,
             contextProvider = { uri -> compilationService.createContext(uri) },
         )
     }
@@ -151,6 +175,7 @@ class GroovyTextDocumentService(
         SignatureHelpProvider(
             compilationService = compilationService,
             documentProvider = documentProvider,
+            semanticResolver = semanticTypeResolver,
         )
     }
 
@@ -178,6 +203,42 @@ class GroovyTextDocumentService(
         FoldingRangeProvider(compilationService)
     }
 
+    private val callHierarchyProvider by lazy {
+        CallHierarchyProvider(compilationService)
+    }
+
+    private val semanticTypeResolver by lazy {
+        SemanticTypeResolver(compilationService.classpathService.getTypeSolver())
+    }
+
+    private val inlayHintsProvider by lazy {
+        InlayHintsProvider(compilationService, semanticTypeResolver)
+    }
+
+    override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
+        coroutineScope.future {
+            logger.debug("Prepare call hierarchy requested for ${params.textDocument.uri}")
+            val uri = URI.create(params.textDocument.uri)
+
+            compilationService.ensureCompiled(uri)
+
+            callHierarchyProvider.prepareCallHierarchy(params)
+        }
+
+    override fun callHierarchyIncomingCalls(
+        params: CallHierarchyIncomingCallsParams,
+    ): CompletableFuture<List<CallHierarchyIncomingCall>> = coroutineScope.future {
+        logger.debug("Incoming calls requested for ${params.item.name}")
+        callHierarchyProvider.incomingCalls(params)
+    }
+
+    override fun callHierarchyOutgoingCalls(
+        params: CallHierarchyOutgoingCallsParams,
+    ): CompletableFuture<List<CallHierarchyOutgoingCall>> = coroutineScope.future {
+        logger.debug("Outgoing calls requested for ${params.item.name}")
+        callHierarchyProvider.outgoingCalls(params)
+    }
+
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
         logger.debug(
             "Signature help requested for ${params.textDocument.uri} at " +
@@ -199,25 +260,24 @@ class GroovyTextDocumentService(
         )
     }
 
-    private fun List<Diagnostic>.containsErrors(): Boolean = any { it.severity == DiagnosticSeverity.Error }
-
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
         compilationService.ensureCompiled(uri)?.let { return it }
 
         // NOTE: Heuristic / tradeoff:
         // The language client can send definition/references requests immediately after didOpen/didChange.
-        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation hasn't
-        // started yet (so ensureCompiled returns null). We compile on-demand using the in-memory document text
-        // to make these requests deterministic and avoid flaky e2e behavior.
-        // TODO: Pre-register compilation jobs synchronously on didOpen/didChange so ensureCompiled never returns null
-        // for open documents.
+        // Our diagnostics pipeline compiles asynchronously, and there is a small window where compilation
+        // hasn't started yet (so ensureCompiled returns null). We compile on-demand using the in-memory
+        // document text to make these requests deterministic and avoid flaky e2e behavior.
+        // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
+        //   so ensureCompiled never returns null.
+        //   See: https://github.com/albertocavalcante/gvy/issues/564
         val content = documentProvider.get(uri) ?: return null
         return compilationService.compileAsync(coroutineScope, uri, content).await()
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
         logger.info("Document opened: ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         val content = params.textDocument.text
         documentProvider.put(uri, content)
 
@@ -230,11 +290,11 @@ class GroovyTextDocumentService(
         // For full sync, we get the entire document content
         if (params.contentChanges.isNotEmpty()) {
             val newContent = params.contentChanges.first().text
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             documentProvider.put(uri, newContent)
 
             // Invalidate documentation cache for this document
-            com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider.invalidateDocument(uri)
+            DocumentationProvider.invalidateDocument(uri)
 
             triggerDiagnostics(uri, newContent)
         }
@@ -242,7 +302,7 @@ class GroovyTextDocumentService(
 
     override fun didClose(params: DidCloseTextDocumentParams) {
         logger.info("Document closed: ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
 
         // Cancel any running diagnostics for this file
@@ -266,42 +326,50 @@ class GroovyTextDocumentService(
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
             try {
-                // Use compileAsync for proper coordination
-                val result = compilationService.compileAsync(this, uri, content).await()
+                runCatching {
+                    // Use compileAsync for proper coordination
+                    val result = compilationService.compileAsync(this, uri, content).await()
 
-                ensureActive() // Ensure job wasn't cancelled before publishing
+                    ensureActive() // Ensure job wasn't cancelled before publishing
 
-                // Publish compilation diagnostics first to keep UX responsive.
-                // NOTE: Tradeoff:
-                // This can result in two diagnostics publications (compile first, then CodeNarc merge),
-                // but avoids blocking syntax feedback on slow lint initialization (e.g., CodeNarc ruleset load).
-                publishDiagnostics(uri.toString(), result.diagnostics)
+                    val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+                        "parser",
+                        enabledByDefault = true,
+                    )
+                    val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
 
-                // Skip CodeNarc when disabled or when compilation already has errors.
-                if (!serverConfiguration.codeNarcEnabled || result.diagnostics.containsErrors()) {
-                    return@launch
+                    // Publish compilation diagnostics first to keep UX responsive.
+                    // NOTE: Tradeoff (See #564):
+                    // This can result in two diagnostics publications (compile first, then provider merge),
+                    // but avoids blocking syntax feedback on slow lint initialization.
+                    publishDiagnostics(uri.toString(), parserDiagnostics)
+
+                    val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val allDiagnostics = parserDiagnostics + extraDiagnostics
+
+                    ensureActive()
+                    if (extraDiagnostics.isNotEmpty()) {
+                        publishDiagnostics(uri.toString(), allDiagnostics)
+                    }
+
+                    logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
+                }.onFailure { e ->
+                    when (e) {
+                        is CompilationFailedException -> logger.error(
+                            "Compilation failed for: $uri",
+                            e,
+                        )
+
+                        is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
+                        is IOException -> logger.error("I/O error for: $uri", e)
+                        is CancellationException -> {
+                            logger.debug("Diagnostics job cancelled for: $uri")
+                            throw e
+                        }
+
+                        else -> logger.error("Unexpected error during diagnostics for: $uri", e)
+                    }
                 }
-
-                val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                val allDiagnostics = result.diagnostics + codenarcDiagnostics
-
-                ensureActive()
-                if (codenarcDiagnostics.isNotEmpty()) {
-                    publishDiagnostics(uri.toString(), allDiagnostics)
-                }
-
-                logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
-            } catch (e: org.codehaus.groovy.control.CompilationFailedException) {
-                logger.error("Compilation failed for: $uri", e)
-            } catch (e: IllegalArgumentException) {
-                logger.error("Invalid arguments for: $uri", e)
-            } catch (e: java.io.IOException) {
-                logger.error("I/O error for: $uri", e)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                logger.debug("Diagnostics job cancelled for: $uri")
-                throw e
-            } catch (e: Exception) {
-                logger.error("Unexpected error during diagnostics for: $uri", e)
             } finally {
                 // Remove job from map if it's the current one
                 diagnosticJobs.remove(uri, coroutineContext[Job])
@@ -317,8 +385,13 @@ class GroovyTextDocumentService(
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
         // Compile the document and return diagnostics (does not publish them)
         val result = compilationService.compile(uri, content)
-        val codenarcDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return result.diagnostics + codenarcDiagnostics
+        val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+            "parser",
+            enabledByDefault = true,
+        )
+        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+        val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+        return parserDiagnostics + extraDiagnostics
     }
 
     fun refreshOpenDocuments() {
@@ -337,38 +410,22 @@ class GroovyTextDocumentService(
                     "${params.position.line}:${params.position.character}",
             )
 
-            val basicCompletions = GroovyCompletions.basic()
-
-            // Try to get contextual completions from AST
-            // Try to get contextual completions from AST
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
 
-            val contextualCompletions = CompletionProvider.getContextualCompletions(
+            // Delegate all completion logic (Groovy, Jenkins, Spock) to CompletionProvider
+            // CompletionProvider now uses JenkinsContextDetector internally for context-aware filtering
+            val completions = CompletionProvider.getContextualCompletions(
                 params.textDocument.uri,
                 params.position.line,
                 params.position.character,
                 compilationService,
+                semanticResolver = semanticTypeResolver,
                 content,
             )
 
-            val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
-            val jenkinsCompletions = if (isJenkinsFile) {
-                val metadata = compilationService.workspaceManager.getAllJenkinsMetadata()
-                if (metadata != null) {
-                    JenkinsStepCompletionProvider.getStepCompletions(metadata) +
-                        JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
-                } else {
-                    emptyList()
-                }
-            } else {
-                emptyList()
-            }
-
-            val allCompletions = basicCompletions + contextualCompletions + jenkinsCompletions
-
-            logger.debug("Returning ${allCompletions.size} completions")
-            Either.forLeft(allCompletions)
+            logger.debug("Returning ${completions.size} completions")
+            Either.forLeft(completions)
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
@@ -380,24 +437,20 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}",
         )
 
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
 
         // Ensure AST is prepared (compiles if needed)
         // This is still needed because getSession expects cached result
         ensureAstPrepared(uri)
 
         val session = compilationService.getSession(uri)
-        if (session != null) {
-            session.features.hoverProvider.getHover(params)
-        } else {
-            Hover().apply {
-                contents = Either.forRight(
-                    MarkupContent().apply {
-                        kind = MarkupKind.MARKDOWN
-                        value = "_No information available (Not Compiled)_"
-                    },
-                )
-            }
+        session?.features?.hoverProvider?.getHover(params) ?: Hover().apply {
+            contents = Either.forRight(
+                MarkupContent().apply {
+                    kind = MarkupKind.MARKDOWN
+                    value = "_No information available (Not Compiled)_"
+                },
+            )
         }
     }
 
@@ -471,7 +524,7 @@ class GroovyTextDocumentService(
         )
 
         try {
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide references")
@@ -529,7 +582,7 @@ class GroovyTextDocumentService(
         )
 
         try {
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide implementations")
@@ -563,7 +616,7 @@ class GroovyTextDocumentService(
             )
 
             try {
-                val uri = java.net.URI.create(params.textDocument.uri)
+                val uri = URI.create(params.textDocument.uri)
                 val compilationResult = ensureCompiledOrCompileNow(uri)
                 if (compilationResult == null) {
                     logger.warn("Document $uri not compiled, cannot provide highlights")
@@ -590,7 +643,7 @@ class GroovyTextDocumentService(
     override fun documentSymbol(
         params: DocumentSymbolParams,
     ): CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> = coroutineScope.future {
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
         val storage = ensureSymbolStorage(uri) ?: return@future emptyList()
 
         storage.getSymbols(uri).filter { it.shouldIncludeInDocumentSymbols() }.mapNotNull { symbol ->
@@ -618,23 +671,23 @@ class GroovyTextDocumentService(
                 params.position,
                 params.newName,
             )
-        } catch (e: org.eclipse.lsp4j.jsonrpc.ResponseErrorException) {
+        } catch (e: ResponseErrorException) {
             logger.error("Rename failed: ${e.message}")
             throw e
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid arguments for rename", e)
-            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InvalidParams,
+            throw ResponseErrorException(
+                ResponseError(
+                    ResponseErrorCode.InvalidParams,
                     e.message ?: "Invalid arguments for rename",
                     null,
                 ),
             )
         } catch (e: Exception) {
             logger.error("Unexpected error during rename", e)
-            throw org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
-                org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
-                    org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.InternalError,
+            throw ResponseErrorException(
+                ResponseError(
+                    ResponseErrorCode.InternalError,
                     e.message ?: "Unexpected error during rename",
                     null,
                 ),
@@ -657,7 +710,7 @@ class GroovyTextDocumentService(
 
     override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> = coroutineScope.future {
         logger.debug("CodeLens requested for ${params.textDocument.uri}")
-        val uri = java.net.URI.create(params.textDocument.uri)
+        val uri = URI.create(params.textDocument.uri)
 
         // Ensure file is compiled before providing CodeLenses
         compilationService.ensureCompiled(uri)
@@ -668,7 +721,7 @@ class GroovyTextDocumentService(
     override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
         coroutineScope.future {
             logger.debug("Folding range requested for ${params.textDocument.uri}")
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
 
             // Ensure file is compiled before providing folding ranges
             val compilationResult = ensureCompiledOrCompileNow(uri)
@@ -680,11 +733,26 @@ class GroovyTextDocumentService(
             foldingRangeProvider.provideFoldingRanges(uri)
         }
 
+    override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
+        logger.debug("Inlay hints requested for ${params.textDocument.uri}")
+        val uri = URI.create(params.textDocument.uri)
+
+        // TODO(#566): Read dynamic configuration from client settings.
+        //  See: https://github.com/albertocavalcante/gvy/issues/566
+        val compilationResult = ensureCompiledOrCompileNow(uri)
+        if (compilationResult == null) {
+            logger.warn("Document $uri not compiled, cannot provide inlay hints")
+            return@future emptyList()
+        }
+
+        inlayHintsProvider.provideInlayHints(params)
+    }
+
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
         coroutineScope.future {
             logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
 
-            val uri = java.net.URI.create(params.textDocument.uri)
+            val uri = URI.create(params.textDocument.uri)
 
             try {
                 // Ensure document is compiled
@@ -793,7 +861,7 @@ class GroovyTextDocumentService(
         return encoded
     }
 
-    private suspend fun ensureSymbolStorage(uri: java.net.URI): SymbolIndex? =
+    private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
             compilationService.compile(uri, content)
             compilationService.getSymbolStorage(uri)
@@ -803,7 +871,7 @@ class GroovyTextDocumentService(
      * Wait for any ongoing diagnostics job for the given URI to complete.
      * This is useful for testing to ensure compilation is done before making assertions.
      */
-    suspend fun awaitDiagnostics(uri: java.net.URI) {
+    suspend fun awaitDiagnostics(uri: URI) {
         diagnosticJobs[uri]?.join()
     }
 
@@ -835,5 +903,5 @@ class GroovyTextDocumentService(
 
 private fun Symbol.shouldIncludeInDocumentSymbols(): Boolean = when (this) {
     is Symbol.Variable -> isParameter
-    else -> true
+    is Symbol.Method, is Symbol.Field, is Symbol.Property, is Symbol.Class, is Symbol.Import -> true
 }

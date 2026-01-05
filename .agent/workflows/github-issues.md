@@ -1,17 +1,19 @@
 ---
 description: GitHub issue creation patterns and label conventions
 ---
+
 // turbo
 
 # GitHub Issues
 
 ## Project Variables
 
-| Variable | Value |
-|----------|-------|
+| Variable     | Value                          |
+| ------------ | ------------------------------ |
 | `OWNER/REPO` | `albertocavalcante/groovy-lsp` |
 
 ## Quick Issue Creation
+
 ```bash
 gh issue create -R OWNER/REPO \
   --title "[lsp/completion] Add method signatures" \
@@ -22,6 +24,7 @@ gh issue create -R OWNER/REPO \
 ## Label Formula: Type + Area + Priority + Size
 
 ### Type Labels
+
 - `bug` - Something isn't working
 - `enhancement` - New feature or request
 - `documentation` - Documentation improvements
@@ -29,6 +32,7 @@ gh issue create -R OWNER/REPO \
 - `tech-debt` - Technical debt cleanup
 
 ### Area Labels
+
 - `lsp/completion` - Completion features
 - `lsp/navigation` - Navigation features
 - `lsp/diagnostics` - Diagnostic features
@@ -36,12 +40,14 @@ gh issue create -R OWNER/REPO \
 - `lsp/symbols` - Symbol features
 
 ### Priority Labels
+
 - `P0-critical` - Must fix immediately
 - `P1-must` - Must have for next release
 - `P2-should` - Should have
 - `P3-nice` - Nice to have
 
 ### Size Labels
+
 - `size/XS` - Extra small (< 1 hour)
 - `size/S` - Small (< 4 hours)
 - `size/M` - Medium (1-2 days)
@@ -49,6 +55,7 @@ gh issue create -R OWNER/REPO \
 - `size/XL` - Extra large (> 1 week)
 
 ## Create Labels
+
 ```bash
 gh label create "lsp/completion" -c "c2e0c6" -d "Completion features"
 ```

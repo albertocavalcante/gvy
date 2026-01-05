@@ -17,6 +17,7 @@ import java.net.URI
 class SymbolLspExtensionsTest {
 
     @Test
+    @Suppress("DEPRECATION")
     fun `class symbol converts to document and symbol information`() {
         val classNode = ClassNode("Greeter", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE).apply {
             setLineNumber(1)
@@ -44,6 +45,7 @@ class SymbolLspExtensionsTest {
     }
 
     @Test
+    @Suppress("DEPRECATION")
     fun `method symbol includes signature in detail`() {
         val classNode = ClassNode("Greeter", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
         val methodNode = MethodNode(

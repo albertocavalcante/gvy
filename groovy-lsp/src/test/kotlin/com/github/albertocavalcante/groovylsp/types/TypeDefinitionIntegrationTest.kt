@@ -4,9 +4,10 @@ import com.github.albertocavalcante.groovylsp.compilation.CompilationContext
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import groovy.lang.GroovyClassLoader
 import kotlinx.coroutines.test.runTest
-import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -20,7 +21,6 @@ import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -30,11 +30,11 @@ import kotlin.test.assertTrue
 class TypeDefinitionIntegrationTest {
 
     private val logger = LoggerFactory.getLogger(TypeDefinitionIntegrationTest::class.java)
-    private lateinit var typeResolver: GroovyTypeResolver
+    private lateinit var typeResolver: SemanticTypeResolver
 
     @BeforeEach
     fun setUp() {
-        typeResolver = GroovyTypeResolver()
+        typeResolver = SemanticTypeResolver(ReflectionTypeSolver())
     }
 
     @Test
@@ -50,27 +50,23 @@ class TypeDefinitionIntegrationTest {
 
         // Diagnostic version with enhanced debugging
         val (cleanCode, position) = extractCursorPosition(code, "//^")
-        logger.debug("=== Debug: Variable Type Definition Test ===")
-        logger.debug("Clean code: {}", cleanCode)
-        logger.debug("Target position: line={}, col={}", position.line, position.character)
-
         val context = compileGroovy(cleanCode)
         val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
-        logger.debug("Found node: {}", node?.javaClass?.simpleName)
         assertNotNull(node, "Should find AST node at position $position")
 
-        val type = typeResolver.resolveType(node, context)
+        typeResolver.semantics.inject(context.moduleNode)
+        val type = typeResolver.resolveType(node, context.moduleNode)
         logger.debug("Resolved type: {}", type)
-        logger.debug("Type name: {}", type?.name)
 
         // For property access like "person.name", we expect to resolve to String type
         assertNotNull(type, "Should resolve to a type")
-        assertEquals("java.lang.String", type.name, "Should resolve to String type")
+        assertTrue(type is SemanticType.Known, "Should be Known type")
+        assertEquals("java.lang.String", (type as SemanticType.Known).fqn)
     }
 
     @Test
-    fun `test primitive types return null location`() = runTest {
+    fun `test primitive types return correct type`() = runTest {
         val code = """
             int count = 42
             count + 1
@@ -78,30 +74,16 @@ class TypeDefinitionIntegrationTest {
         """.trimIndent()
 
         val (cleanCode, position) = extractCursorPosition(code, "//^")
-        logger.debug("=== Debug: Primitive Types Test ===")
-        logger.debug("Clean code: {}", cleanCode)
-        logger.debug("Target position: line={}, col={}", position.line, position.character)
-
         val context = compileGroovy(cleanCode)
         val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
-        logger.debug("Found node: {}", node?.javaClass?.simpleName)
         assertNotNull(node, "Should find AST node at position $position")
 
-        val type = typeResolver.resolveType(node, context)
+        typeResolver.semantics.inject(context.moduleNode)
+        val type = typeResolver.resolveType(node, context.moduleNode)
         logger.debug("Resolved type: {}", type)
-        logger.debug("Type name: {}", type?.name)
-        logger.debug("Is primitive: {}", type?.let { ClassHelper.isPrimitiveType(it) })
 
-        // For int primitives, we expect either null, int primitive, or Object (due to boxing)
-        assertTrue(
-            type == null || ClassHelper.isPrimitiveType(type) || type.name == "java.lang.Object",
-            "Should resolve to primitive, Object, or null, got: ${type?.name}",
-        )
-
-        val location = typeResolver.resolveClassLocation(type ?: ClassHelper.int_TYPE, context)
-        logger.debug("Location: $location")
-        assertNull(location, "Primitive types should not have location")
+        assertTrue(type is SemanticType.Primitive || (type is SemanticType.Known && type.fqn == "java.lang.Integer"))
     }
 
     @Test
@@ -114,29 +96,17 @@ class TypeDefinitionIntegrationTest {
             }
         """.trimIndent()
 
-        // Debug version to understand the failure
         val (cleanCode, position) = extractCursorPosition(code, "//^")
-        logger.debug("=== Debug: Field Type Definition Test ===")
-        logger.debug("Clean code: {}", cleanCode)
-        logger.debug("Target position: line={}, col={}", position.line, position.character)
-
         val context = compileGroovy(cleanCode)
         val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
-        logger.debug("Found node: {}", node?.javaClass?.simpleName)
-        logger.debug("Node details: $node")
         assertNotNull(node, "Should find AST node at position $position")
 
-        val type = typeResolver.resolveType(node, context)
+        val type = typeResolver.resolveType(node, context.moduleNode)
         logger.debug("Resolved type: {}", type)
-        logger.debug("Type name: {}", type?.name)
 
-        // For now, let's see what we actually get instead of asserting
-        if (type != null) {
-            logger.debug("✓ Successfully resolved to type: {}", type.name)
-        } else {
-            logger.warn("❌ Failed to resolve type for node: {}", node.javaClass.simpleName)
-        }
+        assertTrue(type is SemanticType.Known)
+        assertEquals("java.lang.String", (type as SemanticType.Known).fqn)
     }
 
     @Test
@@ -201,13 +171,44 @@ class TypeDefinitionIntegrationTest {
         val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
 
         if (node != null) {
-            val type = typeResolver.resolveType(node, context)
+            val type = typeResolver.resolveType(node, context.moduleNode)
             assertNotNull(type, "Should resolve collection type")
+            assertTrue(type is SemanticType.Known, "Should be Known type")
+            val known = type as SemanticType.Known
             assertTrue(
-                type.name.contains("List") || type.name.contains("ArrayList"),
-                "Should resolve to List type, got: ${type.name}",
+                known.fqn.contains("List") || known.fqn.contains("ArrayList"),
+                "Should resolve to List type, got: ${known.fqn}",
             )
         }
+    }
+
+    @Test
+    fun `test constructor call type definition`() = runTest {
+        val code = """
+            class Greeter{
+                String message="Hi"
+                void greet(){
+                    println message
+                }
+            }
+
+            def greeter = new Greeter()
+                             //^ cursor here
+        """.trimIndent()
+
+        val (cleanCode, position) = extractCursorPosition(code, "//^")
+        val context = compileGroovy(cleanCode)
+
+        val node = context.astModel.getNodeAt(context.uri, position.toGroovyPosition())
+
+        assertNotNull(node, "Should find AST node at position $position")
+
+        typeResolver.semantics.inject(context.moduleNode)
+        val type = typeResolver.resolveType(node, context.moduleNode)
+
+        assertNotNull(type, "Should resolve constructor call to a type")
+        assertTrue(type is SemanticType.Known, "Should be Known type")
+        assertEquals("Greeter", (type as SemanticType.Known).fqn, "Should resolve to Greeter class")
     }
 
     // Test helper methods
@@ -227,18 +228,12 @@ class TypeDefinitionIntegrationTest {
 
         assertNotNull(node, "Should find AST node at position $position")
 
-        val type = typeResolver.resolveType(node, context)
+        context.moduleNode.let { typeResolver.semantics.inject(it) }
+        val type = typeResolver.resolveType(node, context.moduleNode)
         expectedType?.let {
             assertNotNull(type, "Should resolve to a type")
-            assertEquals(it, type.name, "Type name mismatch")
-        }
-
-        if (type != null && !ClassHelper.isPrimitiveType(type)) {
-            val location = typeResolver.resolveClassLocation(type, context)
-            expectedLocation?.let {
-                assertNotNull(location, "Should have location for non-primitive type")
-                assertTrue(location.uri.contains(it), "Location should contain: $it")
-            }
+            assertTrue(type is SemanticType.Known, "Should be Known type for $it")
+            assertEquals(it, (type as SemanticType.Known).fqn, "Type name mismatch")
         }
     }
 

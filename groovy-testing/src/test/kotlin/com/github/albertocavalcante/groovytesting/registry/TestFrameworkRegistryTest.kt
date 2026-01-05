@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovytesting.registry
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovytesting.api.TestFramework
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals

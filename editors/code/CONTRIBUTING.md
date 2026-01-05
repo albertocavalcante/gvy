@@ -80,6 +80,7 @@ When a new stable LSP version is released:
    ```
 
 Note: Users get the **latest release by default**. The pinned version serves as:
+
 - Fallback for network issues (with `GLS_ALLOW_PINNED_FALLBACK=true`)
 - Explicit stability option (with `GLS_USE_PINNED=true`)
 - Emergency escape hatch if latest has critical bugs
@@ -112,6 +113,7 @@ We enforce code quality through automated checks:
 - **Bundle size**: Must stay under 2MB
 
 Run quality checks:
+
 ```bash
 npm run lint
 npm run check-types
@@ -132,6 +134,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for automate
 - `test:` - Adding tests
 
 **Examples:**
+
 ```bash
 git commit -m "feat: add Gradle task provider integration"
 git commit -m "fix: resolve Java detection on Windows"
@@ -198,27 +201,29 @@ Our automated pipeline includes:
 
 We use automated tests to ensure the quality of the extension.
 
-**Running All Tests**
-To run both unit and integration tests:
+**Running All Tests** To run both unit and integration tests:
+
 ```bash
 npm run test:all
 ```
-*Note: Integration tests on Linux require `xvfb`. Using the CI environment or a Docker container is recommended for headless testing.*
 
-**Running Unit Tests**
-Unit tests cover individual components in isolation:
+_Note: Integration tests on Linux require `xvfb`. Using the CI environment or a Docker container is recommended for
+headless testing._
+
+**Running Unit Tests** Unit tests cover individual components in isolation:
+
 ```bash
 npm test
 ```
 
-**Running Integration Tests**
-Integration tests run within a VS Code Extension Host instance:
+**Running Integration Tests** Integration tests run within a VS Code Extension Host instance:
+
 ```bash
 npm run test:integration
 ```
 
-**Debugging Tests**
-You can debug tests directly in VS Code:
+**Debugging Tests** You can debug tests directly in VS Code:
+
 1. Open the Debug view (`Cmd+Shift+D` / `Ctrl+Shift+D`).
 2. Select **"Extension Tests"** from the configuration dropdown.
 3. Press `F5` to start debugging.
@@ -237,6 +242,7 @@ You can debug tests directly in VS Code:
 ### File Type Testing
 
 Test with these file types:
+
 - `.groovy` - General Groovy scripts
 - `.gradle` - Gradle build files
 - `Jenkinsfile` - Jenkins Pipeline files
@@ -245,6 +251,7 @@ Test with these file types:
 ### Platform Testing
 
 Verify functionality on:
+
 - Linux (primary CI platform)
 - Windows (path separator handling, Java detection)
 - macOS (Java detection, file permissions)

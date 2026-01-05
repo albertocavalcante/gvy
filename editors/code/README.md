@@ -9,6 +9,7 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 ## Features
 
 ### Core Language Support
+
 - [x] Syntax highlighting for all Groovy file types
 - [x] Code completion and IntelliSense with type information
 - [x] Real-time error detection and diagnostics
@@ -22,17 +23,20 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 - [x] Automatic language server management
 
 ### Static Analysis
+
 - [x] CodeNarc integration with project-specific rulesets
 - [x] Auto-detection of project types (Jenkins, Gradle, Spock)
 - [x] Quick fixes for common issues
 - [x] TODO/FIXME comment scanning
 
 ### Build Integration
+
 - [x] Gradle project support
 - [x] Automatic dependency resolution
 - [x] Multi-workspace support
 
 ### Jenkins Pipeline
+
 - [x] Jenkinsfile syntax support
 - [x] Shared library configuration
 - [x] GDSL file support for DSL extensions
@@ -40,11 +44,11 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 
 ## Supported Files
 
-| File Type | Extensions | What it's for |
-|-----------|------------|---------------|
-| Groovy Scripts | `.groovy`, `.gvy`, `.gy`, `.gsh` | General Groovy code |
-| Gradle Build | `.gradle` | Build scripts |
-| Jenkins Pipeline | `Jenkinsfile`, `Jenkinsfile.*` | CI/CD pipelines |
+| File Type        | Extensions                       | What it's for       |
+| ---------------- | -------------------------------- | ------------------- |
+| Groovy Scripts   | `.groovy`, `.gvy`, `.gy`, `.gsh` | General Groovy code |
+| Gradle Build     | `.gradle`                        | Build scripts       |
+| Jenkins Pipeline | `Jenkinsfile`, `Jenkinsfile.*`   | CI/CD pipelines     |
 
 ## Setup
 
@@ -172,19 +176,20 @@ Use `Groovy: Check for Language Server Updates` command to check manually.
 
 The extension displays real-time language server status in the status bar:
 
-| Display | State | Meaning |
-|---------|-------|---------|
-| `✓ Groovy` | Ready | All features available |
-| `⟳ Groovy: Deps` | Resolving | Loading dependencies |
-| `⟳ Groovy: Indexing` | Indexing | Analyzing source files |
-| `⚠ Groovy` | Degraded | Limited functionality |
-| `■ Groovy` | Stopped | Server not running |
+| Display              | State     | Meaning                |
+| -------------------- | --------- | ---------------------- |
+| `✓ Groovy`           | Ready     | All features available |
+| `⟳ Groovy: Deps`     | Resolving | Loading dependencies   |
+| `⟳ Groovy: Indexing` | Indexing  | Analyzing source files |
+| `⚠ Groovy`           | Degraded  | Limited functionality  |
+| `■ Groovy`           | Stopped   | Server not running     |
 
 **Tip**: Hover over the status bar for details and quick actions (restart, check updates).
 
 ### Why This Matters
 
-When dependencies are loading, you may see import errors. The status bar shows "Groovy: Deps" to indicate this is temporary and will resolve once dependencies finish loading.
+When dependencies are loading, you may see import errors. The status bar shows "Groovy: Deps" to indicate this is
+temporary and will resolve once dependencies finish loading.
 
 ## Development
 
@@ -216,4 +221,5 @@ Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guid
 
 ---
 
-**Links:** [GitHub](https://github.com/albertocavalcante/gvy) • [Issues](https://github.com/albertocavalcante/gvy/issues) • [Language Server](https://github.com/albertocavalcante/gvy)
+**Links:** [GitHub](https://github.com/albertocavalcante/gvy) •
+[Issues](https://github.com/albertocavalcante/gvy/issues) • [Language Server](https://github.com/albertocavalcante/gvy)

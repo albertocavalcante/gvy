@@ -1,161 +1,208 @@
 ---
-description: Review open PRs, address feedback, and verify CI status
+description: Strict, deterministic workflow for addressing PR review feedback using pr.py
 ---
+
+# /review
+
 // turbo-all
 
-# PR Review Workflow
+<purpose>
+A STRICT, DETERMINISTIC workflow for addressing PR review feedback.
+Powered by `.agent/scripts/pr.py` to enforce traceability and reduce token usage.
+</purpose>
 
-Systematic review of open pull requests, addressing reviewer feedback, and verifying CI health.
+<ironclad_rules>
 
-## Phase 1: List and Prioritize PRs
+1. **NEVER IGNORE ANY COMMENT** — Every thread MUST be accounted for
+2. **SCRIPT IS KING** — Use `.agent/scripts/pr.py` for ALL thread interactions
+3. **DIFF FIRST** — ALWAYS read `gh pr diff` before ANY action
+4. **REPLY THEN RESOLVE** — Every addressed thread gets a reply AND explicit resolution via script
+5. **VERIFY BEFORE COMMIT** — Run tests for EVERY code change </ironclad_rules>
 
-### 1.1 Get All Open PRs (Summary View)
+---
+
+## Phase 0: Understand the PR (MANDATORY FIRST STEP)
+
+<critical>
+You MUST understand what the PR does BEFORE looking at review comments.
+Skipping this step leads to incorrect fixes and wasted cycles.
+</critical>
+
+### 0.1 Get PR Metadata
+
 ```bash
-gh pr list --json number,title,state,author,reviewDecision,createdAt --jq '.[] | "\(.number): \(.title) [\(.reviewDecision // "PENDING")]"'
+gh pr view <PR_NUMBER> --json title,body,headRefName,baseRefName,state,author \
+  --jq '{title, body: (.body[:500] + "..."), branch: .headRefName, base: .baseRefName, state, author: .author.login}'
 ```
 
-### 1.2 Get Detailed PR Status with CI
+### 0.2 Read the Diff (SOURCE OF TRUTH FOR CHANGES)
+
 ```bash
-gh pr view PR_NUMBER --json state,statusCheckRollup --jq '{state: .state, checks: [.statusCheckRollup[]? | {name: .name, status: .status, conclusion: .conclusion}]}'
+# Full diff to file for reference
+gh pr diff <PR_NUMBER> > /tmp/pr-<PR_NUMBER>-diff.patch
+
+# Quick summary: files changed
+gh pr diff <PR_NUMBER> --name-only
 ```
 
 ---
 
-## Phase 2: Review Comments and Feedback
+## Phase 1: Fetch Status & Threads
 
-### 2.1 Get PR Review Comments (Inline Code Comments)
+### 1.1 CI Status Check
+
 ```bash
-gh api repos/{owner}/{repo}/pulls/PR_NUMBER/comments --jq '.[] | {author: .user.login, path: .path, line: .line, body: .body}'
+gh pr view <PR_NUMBER> --json state,statusCheckRollup \
+  --jq '{state: .state, checks: [.statusCheckRollup[]? | {name: .name, status: .status, conclusion: .conclusion}]}'
 ```
 
-### 2.2 Get PR Level Reviews (Approve/Request Changes)
-```bash
-gh pr view PR_NUMBER --json reviews --jq '.reviews[] | {author: .author.login, state: .state, body: .body}'
-```
+### 1.2 Fetch Review Threads (SINGLE TRUTH SOURCE)
 
-### 2.3 Get Conversation Comments
+Use the dedicated script to fetch and display threads in a token-optimized format.
+
 ```bash
-gh pr view PR_NUMBER --json comments --jq '.comments[] | {author: .author.login, body: .body}'
+uv run .agent/scripts/pr.py threads <PR_NUMBER>
 ```
 
 ---
 
-## Phase 3: Address Feedback
+## Phase 2: Evaluate Each Thread
 
-### 3.1 Checkout PR Branch
-```bash
-git checkout BRANCH_NAME
+<critical>
+For EACH actionable thread (listed by `pr.py`), you MUST classify it using this decision tree.
+NO EXCEPTIONS. NO SKIPPING.
+</critical>
+
+<decision_tree id="thread-classification">
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    THREAD CLASSIFICATION                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Q1: Is this feedback VALID?                                │
+│      ├─ NO  → REJECT (explain why, cite evidence)           │
+│      │        (Note: Handle false positives here)           │
+│      └─ YES → Continue to Q2                                │
+│                                                             │
+│  Q2: Is this IN SCOPE for this PR?                          │
+│      ├─ NO  → DEFER (create issue, link in reply)           │
+│      └─ YES → Continue to Q3                                │
+│                                                             │
+│  Q3: Is this a QUICK FIX (< 5 min)?                         │
+│      ├─ YES → FIX immediately                               │
+│      └─ NO  → FIX with dedicated commit                     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Make Required Changes
-After making code changes, verify:
-```bash
-# Compile check
-./gradlew compileKotlin --no-daemon
+</decision_tree>
 
-# Run relevant tests
-./gradlew :MODULE:test --no-daemon
+### Classification Actions
+
+<action id="FIX">
+1. Locate the file and line from thread output (`L=...`)
+2. Cross-reference with `/tmp/pr-<PR_NUMBER>-diff.patch`
+3. Make the code change
+4. Run relevant tests: `./gradlew :MODULE:test --tests "TestClass"`
+5. Commit: `git commit -m "fix: address review - <brief description>"`
+</action>
+
+<action id="REJECT">
+1. Formulate clear technical reasoning
+2. Cite specific code/docs as evidence
+3. Reply with explanation (Phase 3)
+4. Do NOT resolve — let reviewer respond
+</action>
+
+<action id="DEFER">
+1. Follow `/defer` workflow to create GitHub issue
+2. Reply: "Created #NNN to track this. Out of scope for this PR because [reason]."
+3. Resolve thread after reply
+</action>
+
+---
+
+## Phase 3: Reply & Resolve (SCRIPT ENFORCED)
+
+<critical>
+You MUST use `pr.py resolve` to close threads.
+The script ENFORCES that your reply contains a commit SHA or issue reference.
+ID (`T=...`) comes from Phase 1 output.
+</critical>
+
+```bash
+# Template:
+# uv run .agent/scripts/pr.py resolve <THREAD_ID> "Fixed in <SHA>."
+
+uv run .agent/scripts/pr.py resolve <THREAD_ID> "Fixed in <COMMIT_SHA>."
 ```
 
-### 3.3 Commit with Reference to Feedback
-```bash
-git commit -m "chore: address reviewer feedback
+<reply_templates>
 
-- Point 1 from review
-- Point 2 from review"
+| Scenario             | Reply Template                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| Fixed                | "Fixed in `abc123`."                                                                   |
+| Fixed with detail    | "Fixed in `abc123`. [brief explanation of change]"                                     |
+| Deferred             | "Created #NNN to track this. [reason for deferral]"                                    |
+| Rejected             | "[Technical reasoning]. [Evidence/citation]. Happy to discuss."                        |
+| Clarification needed | "Could you clarify [specific question]? I want to make sure I address this correctly." |
+
+</reply_templates>
+
+---
+
+## Phase 4: Push & Verify CI
+
+### 4.1 Pre-Push Checklist
+
+```bash
+# Verify branch
+git branch --show-current
+
+# Verify no uncommitted changes
+git status
+
+# Run full test suite
+./gradlew test
+
+# Run lint
+./gradlew lintFix
 ```
 
-### 3.4 Push and Verify CI
+### 4.2 Push
+
 ```bash
-git push origin BRANCH_NAME
+git push origin <BRANCH_NAME>
+```
+
+### 4.3 Watch CI
+
+```bash
+gh pr checks <PR_NUMBER> --watch
 ```
 
 ---
 
-## Phase 4: Verify CI Status
+## Phase 5: Final Verification (ZERO CHECK)
 
-### 4.1 Check CI Run Status
+<critical>
+This phase is NON-NEGOTIABLE.
+</critical>
+
+### 5.1 Re-Fetch Threads
+
 ```bash
-# Get latest run for the branch
-gh run list --branch BRANCH_NAME --limit 1 --json databaseId,status,conclusion
-
-# View detailed job status
-gh run view RUN_ID --json jobs --jq '.jobs[] | {name: .name, status: .status, conclusion: .conclusion, startedAt: .startedAt, completedAt: .completedAt}'
+# Should show COUNT=0
+uv run .agent/scripts/pr.py threads <PR_NUMBER> --refetch
 ```
 
-### 4.2 Check Expected Jobs Ran
-Expected jobs for code changes:
-- `check-paths` → SUCCESS
-- `Check Runner Availability` → SUCCESS or SKIPPED (for github-hosted)
-- `Build and Test` → SUCCESS (NOT skipped for code changes!)
-- `Validation Check` → SUCCESS
+<assertion>
+**RESULT MUST BE ZERO ACTIONABLE THREADS**
 
-### 4.3 Investigate Skipped Build and Test
-If `Build and Test` is SKIPPED but shouldn't be:
-```bash
-# Check paths filter output
-gh run view RUN_ID --log 2>/dev/null | grep -E "(filter|run_main_ci)" | head -20
+If not zero:
 
-# Verify changed files match CI trigger paths
-gh pr view PR_NUMBER --json files --jq '.files[].path'
-```
-
----
-
-## Phase 5: Document Learnings
-
-After reviewing PRs, note any patterns or issues to add to `.agent/rules/`:
-
-| Issue Found | Where to Document |
-|------------|------------------|
-| Code comment anti-patterns | `.agent/rules/code-quality.md` |
-| Git workflow issues | `.agent/rules/git-workflow.md` |
-| CI configuration problems | `.github/workflows/ci.yml` + AGENTS.md |
-| Recurring lint issues | `.agent/rules/code-quality.md` |
-
----
-
-## Quick Reference: Common Review Actions
-
-| Reviewer Feedback | Action |
-|------------------|--------|
-| "Remove metadata from comments" | Move tool-specific info to PR description |
-| "Pre-compile regex" | Extract to class/object level constant |
-| "Unused variable" | Remove or replace with `_` |
-| "Cognitive complexity too high" | Extract helper methods |
-| "Add tests" | Follow TDD, add test file first |
-
----
-
-## Phase 6: Summary Report
-
-After completing the review, produce a summary table for the user:
-
-### Output Format
-
-```markdown
-## PR Review Summary
-
-| PR | Title | Comments | Changes Made | Pushed | CI Status | Ready |
-|----|-------|----------|--------------|--------|-----------|-------|
-| #293 | Extract string constants | 2 | Remove SonarCloud metadata | ✅ | ✅ Pass | ✅ |
-| #294 | Decompose JenkinsContextDetector | 1 | Pre-compile regex | ✅ | ✅ Pass | ✅ |
-| #295 | Decompose SpockBlockIndex | 0 | - | N/A | ✅ Pass | ✅ |
-
-### Legend
-- **Comments**: Number of review comments addressed
-- **Changes Made**: Brief description of fixes
-- **Pushed**: Whether changes were pushed to remote
-- **CI Status**: Latest CI run result
-- **Ready**: ✅ = Ready for merge, ⏳ = Pending CI, ❌ = Needs work
-```
-
-### Checklist Before Reporting
-
-For each PR, confirm:
-- [ ] All inline review comments addressed
-- [ ] Changes committed with descriptive message
-- [ ] Pushed to remote branch
-- [ ] CI run triggered and passed (or pending)
-- [ ] No new lint issues introduced
-
+1. List remaining threads
+2. Return to Phase 2
+3. DO NOT proceed until zero
+   </assertion>

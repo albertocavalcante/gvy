@@ -69,7 +69,7 @@ class NonBlockingServerTest {
             // Test completion
             val completionParams = CompletionParams().apply {
                 textDocument = TextDocumentIdentifier("file:///TestClass.groovy")
-                position = Position(3, 12) // Inside the method
+                position = Position(2, 12) // Inside the method body on the println line
             }
 
             val completions = server.textDocumentService.completion(completionParams).get()

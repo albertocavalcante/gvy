@@ -14,8 +14,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    ```
    Shows files with conflicts marked as "both modified"
 
-2. **View Conflict Markers**
-   Open the file and look for:
+2. **View Conflict Markers** Open the file and look for:
    ```
    <<<<<<< HEAD
    Your changes
@@ -34,8 +33,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    git add resolved-file.kt
    ```
 
-5. **Continue the Operation**
-   For rebase:
+5. **Continue the Operation** For rebase:
    ```bash
    git rebase --continue
    ```
@@ -44,8 +42,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
    git commit
    ```
 
-6. **Push Changes**
-   If you rebased:
+6. **Push Changes** If you rebased:
    ```bash
    git push --force-with-lease
    ```
@@ -57,6 +54,7 @@ When `git rebase` or `git pull` results in conflicts, follow these steps:
 ## Abort If Stuck
 
 If conflicts are too complex or something went wrong:
+
 ```bash
 git rebase --abort  # Returns to pre-rebase state
 git merge --abort   # Returns to pre-merge state
@@ -65,7 +63,9 @@ git merge --abort   # Returns to pre-merge state
 ## Common Conflict Scenarios
 
 ### After Squash Merge of Base PR
+
 When your stacked PR's base was squash-merged:
+
 ```bash
 git fetch origin main
 git rebase origin/main
@@ -74,10 +74,13 @@ git push --force-with-lease
 ```
 
 ### Conflicting Imports
+
 Often happens with Kotlin imports. Keep the union of necessary imports.
 
 ### Format Differences
+
 If conflicts are purely formatting, run the formatter after resolving:
+
 ```bash
 ./gradlew lintFix
 ```

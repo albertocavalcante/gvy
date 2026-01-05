@@ -28,10 +28,14 @@ class SocketCommand : CliktCommand(name = "socket") {
 
     private val port by argument()
         .int()
-        .default(8080)
+        .default(DEFAULT_PORT)
 
     override fun run() {
         // Delegate directly to LspCommand's internal method
         LspCommand().runSocket(port)
+    }
+
+    companion object {
+        private const val DEFAULT_PORT = 8080
     }
 }
