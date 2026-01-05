@@ -27,6 +27,17 @@ class ConstructorCallExpressionCalculatorTest {
     }
 
     @Test
+    fun `returns null for class containing but not ending with ConstructorCallExpression`() {
+        // A class name like "ConstructorCallExpressionWrapper" would match contains()
+        // but should NOT match endsWith() - verify the stricter check
+        val fakeWrapper = ConstructorCallExpressionWrapper(object {
+            val name = "example.Type"
+        })
+        val result = calculator.calculate(fakeWrapper, context)
+        assertNull(result)
+    }
+
+    @Test
     fun `returns Known type for mock constructor call`() {
         // Create a mock that matches the expected structure
         val mockType = object {
@@ -39,8 +50,12 @@ class ConstructorCallExpressionCalculatorTest {
         assertEquals(SemanticType.Known("java.util.ArrayList"), result)
     }
 
-    // Mock class with the expected structure
+    // Mock class with the expected structure (name ends with "ConstructorCallExpression")
     private class MockConstructorCallExpression(val type: Any)
+
+    // Mock class that contains but doesn't end with "ConstructorCallExpression"
+    // This simulates a wrapper class that should NOT be matched by the stricter check
+    private class ConstructorCallExpressionWrapper(val type: Any)
 
     private fun mockContext(): TypeContext = object : TypeContext {
         override fun resolveType(fqn: String) = SemanticType.Unknown("not needed")
@@ -51,6 +66,7 @@ class ConstructorCallExpressionCalculatorTest {
             methodName: String,
             argumentTypes: List<SemanticType>,
         ) = null
+
         override fun getFieldType(receiverType: SemanticType, fieldName: String) = null
         override val isStaticCompilation = false
     }

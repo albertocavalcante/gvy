@@ -766,8 +766,11 @@ private object InlayHintsTypes {
         return normalized == "java.lang.Object" || normalized == "Object" || normalized == "def"
     }
 
-    fun isDynamicType(typeName: String): Boolean =
-        typeName == "java.lang.Object" || typeName == "Object" || typeName == "def"
+    fun isDynamicType(typeName: String): Boolean = typeName == "java.lang.Object" ||
+        typeName == "Object" ||
+        typeName == "def" ||
+        typeName == "unresolved" ||
+        typeName == "null"
 
     fun toSignature(parameters: Iterable<Parameter>): CallableSignature = CallableSignature(
         parameterNames = parameters.map { it.name },
