@@ -1,0 +1,84 @@
+package com.github.albertocavalcante.refactor.codenarc.braces
+
+import org.openrewrite.ExecutionContext
+import org.openrewrite.Recipe
+import org.openrewrite.TreeVisitor
+import org.openrewrite.groovy.GroovyIsoVisitor
+import org.openrewrite.java.tree.J
+import org.openrewrite.java.tree.JRightPadded
+import org.openrewrite.java.tree.Space
+import org.openrewrite.java.tree.Statement
+import org.openrewrite.marker.Markers
+import java.util.UUID
+
+/**
+ * Recipe to add braces to if statements that don't have them.
+ *
+ * This aligns with CodeNarc rule: IfStatementBraces
+ *
+ * Single-line if statements without braces are converted to properly
+ * braced blocks for better readability and maintainability.
+ *
+ * @see <a href="https://codenarc.org/codenarc-rules-braces.html#ifstatementbraces">CodeNarc Rule</a>
+ */
+class AddBracesToIfStatement : Recipe() {
+
+    override fun getDisplayName(): String = "Add braces to if statements"
+
+    override fun getDescription(): String = "Adds braces to if statements that don't have them. " +
+        "Single-line if statements are converted to braced blocks."
+
+    override fun getVisitor(): TreeVisitor<*, ExecutionContext> {
+        return object : GroovyIsoVisitor<ExecutionContext>() {
+
+            override fun visitIf(iff: J.If, ctx: ExecutionContext): J.If {
+                var i = super.visitIf(iff, ctx)
+
+                // Check if the then part needs braces
+                val thenPart = i.thenPart
+                if (thenPart !is J.Block) {
+                    i = i.withThenPart(wrapInBlock(thenPart))
+                }
+
+                // Check if the else part needs braces
+                val elsePart = i.elsePart
+                if (elsePart != null) {
+                    val elseBody = elsePart.body
+                    // Don't wrap if it's already a block or another if (else-if chain)
+                    if (elseBody !is J.Block && elseBody !is J.If) {
+                        i = i.withElsePart(elsePart.withBody(wrapInBlock(elseBody)))
+                    }
+                }
+
+                return i
+            }
+
+            /**
+             * Wrap a statement in a block with proper formatting.
+             */
+            private fun wrapInBlock(statement: Statement): J.Block {
+                // Create the statement list with proper indentation
+                val indentedStatement: Statement = statement.withPrefix<Statement>(
+                    Space.format("\n    "),
+                )
+
+                val paddedStatement: JRightPadded<Statement> = JRightPadded(
+                    indentedStatement,
+                    Space.EMPTY,
+                    Markers.EMPTY,
+                )
+
+                val statements: List<JRightPadded<Statement>> = listOf(paddedStatement)
+
+                return J.Block(
+                    UUID.randomUUID(),
+                    Space.SINGLE_SPACE,
+                    Markers.EMPTY,
+                    JRightPadded(false, Space.EMPTY, Markers.EMPTY),
+                    statements,
+                    Space.format("\n"),
+                )
+            }
+        }
+    }
+}
