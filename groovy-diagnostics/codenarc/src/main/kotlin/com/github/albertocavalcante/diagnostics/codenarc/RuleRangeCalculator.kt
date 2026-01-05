@@ -132,27 +132,27 @@ object RuleRangeCalculator {
     private fun calculateGStringRange(sourceLine: String, message: String): Pair<Int, Int> {
         // Try to find the string content from the message
         val stringContent = extractQuotedValue(message)
-        return if (stringContent != null) {
+        if (stringContent != null) {
             val index = sourceLine.indexOf("\"$stringContent\"")
             if (index >= 0) {
-                Pair(index, index + stringContent.length + 2) // +2 for quotes
-            } else {
-                calculateDefaultRange(sourceLine)
-            }
-        } else {
-            // Find first double-quoted string
-            val startQuote = sourceLine.indexOf('"')
-            if (startQuote >= 0) {
-                val endQuote = sourceLine.indexOf('"', startQuote + 1)
-                if (endQuote > startQuote) {
-                    Pair(startQuote, endQuote + 1)
-                } else {
-                    calculateDefaultRange(sourceLine)
-                }
-            } else {
-                calculateDefaultRange(sourceLine)
+                return Pair(index, index + stringContent.length + 2) // +2 for quotes
             }
         }
+
+        // Find first semi-smart unescaped double-quoted string
+        val startQuote = sourceLine.indexOf('"')
+        if (startQuote >= 0) {
+            var i = startQuote + 1
+            while (i < sourceLine.length) {
+                // If we find a quote that isn't escaped
+                if (sourceLine[i] == '"' && sourceLine.getOrNull(i - 1) != '\\') {
+                    return Pair(startQuote, i + 1)
+                }
+                i++
+            }
+        }
+
+        return calculateDefaultRange(sourceLine)
     }
 
     /**
@@ -173,7 +173,8 @@ object RuleRangeCalculator {
     private fun calculateDefaultRange(sourceLine: String): Pair<Int, Int> {
         val startIndex = sourceLine.indexOfFirst { !it.isWhitespace() }
         if (startIndex < 0) {
-            return Pair(0, maxOf(1, sourceLine.length))
+            // Empty line or whitespace only -> highlighted as (0, 0)
+            return Pair(0, 0)
         }
 
         // Find end of first word

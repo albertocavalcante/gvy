@@ -297,6 +297,90 @@ class CodeNarcDiagnosticFixTest {
         assertEquals(7, diag.range.end.character, "End should be at end of first word")
     }
 
+    @Test
+    fun `should handle escaped quotes in GString violations`() {
+        // sourceLine: def s = "escaped \" quote"
+        val sourceCode = "class Test {\n    def s = \"escaped \\\" quote\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String \"escaped \" quote\" can be a single quoted string"
+        every { violation.sourceLine } returns "    def s = \"escaped \\\" quote\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+
+        // "    def s = " -> length 12
+        // GString starts at index 12
+        // Content: "escaped \" quote" -> length 16 + 2 quotes + 1 backslash = 19?
+        // Wait, source line literal: "    def s = \"escaped \\\" quote\""
+        // Indices:
+        // 0123456789012
+        //     def s = "escaped \" quote"
+        //             ^ start at 12
+        //                             ^ end at 12 + 19 = 31?
+        // Let's rely on the calculator logic: startQuote (12), endQuote (30, exclusive)
+
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        // The closing quote is at index 29 (inclusive), so end 30 (exclusive).
+        assertEquals(30, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `should handle empty line violations with zero length range`() {
+        val sourceCode = "" // Empty file, violation on line 1
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "SomeRule"
+        every { rule.priority } returns 2
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 1
+        every { violation.message } returns "Violation on empty line"
+        every { violation.sourceLine } returns "" // Empty source line
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        // We need to allow empty source analysis for this test
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        // Force analyzing " " to trigger logic but simulating empty line in violation
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(" ", "Test.groovy")
+
+        // Let's pass a newline so there is a line, but it's empty.
+        val diagnostics2 = diagnosticProvider.analyzeAndGetDiagnostics("\n", "Test.groovy")
+
+        assertEquals(1, diagnostics2.size)
+        val diag = diagnostics2[0]
+
+        assertEquals(0, diag.range.start.character)
+        assertEquals(0, diag.range.end.character, "Range on empty line should be (0, 0)")
+    }
+
     private fun createTestWorkspaceContext(): WorkspaceContext = object : WorkspaceContext {
         override val root: Path? = Paths.get(".")
         override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
