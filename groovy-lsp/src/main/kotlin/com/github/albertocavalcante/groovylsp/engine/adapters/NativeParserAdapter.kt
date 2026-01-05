@@ -104,7 +104,9 @@ private fun ASTNode.toRange(): Range? {
     val startLine = lineNumber - 1 // Convert to 0-based
     val startCol = columnNumber - 1
     val endLine = if (lastLineNumber >= 1) lastLineNumber - 1 else startLine
-    val endCol = if (lastColumnNumber >= 1) lastColumnNumber - 1 else startCol
+    // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
+    // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed)
+    val endCol = if (lastColumnNumber >= 1) lastColumnNumber else startCol + 1
     return Range(Position(startLine, startCol), Position(endLine, endCol))
 }
 

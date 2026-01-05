@@ -154,13 +154,13 @@ class CoordinateSystemTest {
 
             // Test position within the field declaration
             val range = CoordinateSystem.getNodeLspRange(fieldNode)
-            if (range != null) {
-                // Test position within range
-                assertTrue(CoordinateSystem.nodeContainsPosition(fieldNode, range.start.line, range.start.character))
+            assertNotNull(range)
 
-                // Test position outside range
-                assertFalse(CoordinateSystem.nodeContainsPosition(fieldNode, range.end.line + 1, 0))
-            }
+            // Test position within range
+            assertTrue(CoordinateSystem.nodeContainsPosition(fieldNode, range.start.line, range.start.character))
+
+            // Test position outside range
+            assertFalse(CoordinateSystem.nodeContainsPosition(fieldNode, range.end.line + 1, 0))
         }
     }
 
@@ -186,9 +186,8 @@ class CoordinateSystemTest {
 
         // Test position on last line (if we can determine it)
         val range = CoordinateSystem.getNodeLspRange(classNode)
-        if (range != null) {
-            assertTrue(CoordinateSystem.nodeContainsPosition(classNode, range.end.line, range.end.character))
-        }
+        assertNotNull(range)
+        assertFalse(CoordinateSystem.nodeContainsPosition(classNode, range.end.line, range.end.character))
     }
 
     @Test
@@ -245,5 +244,40 @@ class CoordinateSystemTest {
         assertEquals(lspRange.start.character, convertedLspRange.start.character)
         assertEquals(lspRange.end.line, convertedLspRange.end.line)
         assertEquals(lspRange.end.character, convertedLspRange.end.character)
+    }
+
+    @Test
+    fun `getNodeLspRange returns exclusive end column for LSP spec compliance`() = runTest {
+        // Groovy AST uses 1-based INCLUSIVE columns for both start and end
+        // LSP uses 0-based, start INCLUSIVE, end EXCLUSIVE
+        // This test verifies the fix for incorrect end column conversion
+        //
+        // For a node at Groovy columns 5-10 (inclusive):
+        // - Start: 5 -> 4 (subtract 1 for 0-based)
+        // - End: 10 -> 10 (NO subtraction - 1-based inclusive = 0-based exclusive)
+        val groovyCode = "def x = 42"
+        val uri = URI.create("file:///test.groovy")
+        val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
+
+        // Find a node with valid position info
+        val scriptClass = ast.scriptClassDummy
+        if (scriptClass.fields.isNotEmpty()) {
+            val fieldNode = scriptClass.fields.first()
+            val range = CoordinateSystem.getNodeLspRange(fieldNode)
+            assertNotNull(range)
+
+            // The end character should equal lastColumnNumber (no -1)
+            // because LSP end is exclusive and Groovy end is 1-based inclusive
+            // Example: Groovy lastColumnNumber=10 (1-based, inclusive, meaning char at col 10 is last)
+            // LSP end.character=10 (0-based, exclusive, meaning "up to but not including pos 10")
+            // These represent the same boundary!
+
+            // Verify end character equals the Groovy lastColumnNumber (not lastColumnNumber - 1)
+            assertEquals(
+                fieldNode.lastColumnNumber,
+                range.end.character,
+                "LSP end character should equal Groovy lastColumnNumber (exclusive boundary)",
+            )
+        }
     }
 }
