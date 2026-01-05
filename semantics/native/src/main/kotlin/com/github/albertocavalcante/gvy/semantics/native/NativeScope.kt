@@ -3,13 +3,16 @@ package com.github.albertocavalcante.gvy.semantics.native
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.ModuleNode
 
 /**
  * Scope tracking for variable resolution in native Groovy AST.
+ * Supports module-level resolution for field and method lookups.
  */
 class NativeScope private constructor(
     private val parent: NativeScope?,
     private val variables: MutableMap<String, SemanticType> = mutableMapOf(),
+    val currentModule: ModuleNode? = null,
 ) {
     /**
      * Look up a variable by name in this scope or parent scopes.
@@ -25,8 +28,9 @@ class NativeScope private constructor(
 
     /**
      * Create a child scope.
+     * Propagates module reference from parent.
      */
-    fun child(): NativeScope = NativeScope(parent = this)
+    fun child(): NativeScope = NativeScope(parent = this, currentModule = this.currentModule)
 
     companion object {
         /**
@@ -65,5 +69,14 @@ class NativeScope private constructor(
          * Create an empty root scope.
          */
         fun empty(): NativeScope = NativeScope(parent = null)
+
+        /**
+         * Create a root scope from a module.
+         * Enables module-level resolution for fields and methods.
+         */
+        fun fromModule(moduleNode: ModuleNode): NativeScope = NativeScope(
+            parent = null,
+            currentModule = moduleNode,
+        )
     }
 }

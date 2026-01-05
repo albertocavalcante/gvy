@@ -160,13 +160,17 @@ class GroovySemantics(
     }
 
     private fun buildRootScope(module: ModuleNode): NativeScope {
-        // Start with empty scope or first class's scope
-        var scope = NativeScope.empty()
+        // Create scope from module to enable module-level field/method resolution
+        val scope = NativeScope.fromModule(module)
 
+        // Populate with first class's fields
         for (classNode in module.classes) {
             // Use the first class found as the root scope basis
             // (common for scripts where it's the script class)
-            scope = NativeScope.fromClass(classNode)
+            for (field in classNode.fields) {
+                val type = NativeTypeContext.fromClassNode(field.type)
+                scope.defineVariable(field.name, type)
+            }
             break
         }
 
