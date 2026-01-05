@@ -258,7 +258,7 @@ class HoverContentGeneratorTest {
     @Test
     fun `generateHover propagates resolveType exception for dynamic variables`() {
         // Create a dynamic variable (def x = ...) that requires semantic resolution
-        val varExpr = VariableExpression("testVar", ClassHelper.DYNAMIC_TYPE)
+        val varExpr = VariableExpression("testVar", ClassHelper.OBJECT_TYPE)
         val moduleNode = mockk<ModuleNode>(relaxed = true)
 
         // resolveType throws exception for dynamic types
