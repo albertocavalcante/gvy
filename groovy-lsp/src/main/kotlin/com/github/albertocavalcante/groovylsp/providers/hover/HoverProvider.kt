@@ -5,7 +5,6 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.documentation.DocFormatter
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
-import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
