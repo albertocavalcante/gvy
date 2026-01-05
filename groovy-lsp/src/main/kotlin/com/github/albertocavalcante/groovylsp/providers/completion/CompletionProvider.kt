@@ -45,6 +45,7 @@ data class CompletionContext(
     val content: String,
     val semanticResolver: SemanticTypeResolver,
     val moduleNode: ModuleNode?,
+    val workspaceSymbolIndex: com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex? = null,
 )
 
 /**
@@ -113,6 +114,7 @@ object CompletionProvider {
                             content = content,
                             semanticResolver = semanticResolver,
                             moduleNode = ast2 as? ModuleNode,
+                            workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
                         ),
                         isSpockSpec = isSpockSpec,
                     )
@@ -136,6 +138,7 @@ object CompletionProvider {
                         content = content,
                         semanticResolver = semanticResolver,
                         moduleNode = ast1 as? ModuleNode,
+                        workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
                     ),
                     isSpockSpec = isSpockSpec,
                 )
@@ -357,6 +360,93 @@ object CompletionProvider {
         null -> false
     }
 
+    /**
+     * Adds workspace members (fields, methods, properties) to completions.
+     *
+     * @param members List of member information from WorkspaceSymbolIndex
+     */
+    private fun CompletionsBuilder.addWorkspaceMembers(
+        members: List<com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo>,
+    ) {
+        members.forEach { member ->
+            when (member.kind) {
+                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.FIELD,
+                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.PROPERTY,
+                -> {
+                    field(
+                        name = member.name,
+                        type = member.type?.let { formatType(it) } ?: "def",
+                        doc = "Field: ${member.name}",
+                    )
+                }
+                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD -> {
+                    method(
+                        name = member.name,
+                        returnType = member.type?.let { formatType(it) } ?: "def",
+                        parameters = parseSignatureToParams(member.signature),
+                        doc = "Method: ${member.name}${member.signature ?: "()"}",
+                    )
+                }
+                else -> { /* Skip constructors and other kinds */ }
+            }
+        }
+    }
+
+    /**
+     * Formats a SemanticType into a human-readable string for display.
+     *
+     * @param type The semantic type to format
+     * @return A formatted type string
+     */
+    private fun formatType(type: com.github.albertocavalcante.gvy.semantics.SemanticType): String = when (type) {
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Known -> {
+            val baseName = type.fqn.substringAfterLast('.')
+            if (type.typeArgs.isEmpty()) {
+                baseName
+            } else {
+                val params = type.typeArgs.joinToString(", ") { formatType(it) }
+                "$baseName<$params>"
+            }
+        }
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Primitive -> type.kind.name.lowercase()
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Array -> "${formatType(type.componentType)}[]"
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Unknown -> "def"
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Dynamic -> "def"
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Union -> {
+            // For union types, just show the first type
+            type.types.firstOrNull()?.let { formatType(it) } ?: "def"
+        }
+        is com.github.albertocavalcante.gvy.semantics.SemanticType.Null -> "null"
+    }
+
+    /**
+     * Parses a method signature into parameter strings for display.
+     *
+     * For now, this is a simple implementation that extracts parameter types from the signature.
+     * Future enhancement: Parse the full signature with parameter names.
+     *
+     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int).")
+     * @return List of parameter strings (e.g., ["String", "int"])
+     */
+    private fun parseSignatureToParams(signature: String?): List<String> {
+        if (signature == null) return emptyList()
+
+        val startIndex = signature.indexOf('(')
+        val endIndex = signature.indexOf(')')
+
+        if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) {
+            return emptyList()
+        }
+
+        val params = signature.substring(startIndex + 1, endIndex).trim()
+        if (params.isEmpty()) return emptyList()
+
+        // Split by comma and extract simple names
+        return params.split(',').map { param ->
+            param.trim().substringAfterLast('/').substringAfterLast('.')
+        }
+    }
+
     private fun CompletionsBuilder.handleMemberAccessContext(
         completionContext: ContextType.MemberAccess,
         ctx: CompletionContext,
@@ -365,6 +455,7 @@ object CompletionProvider {
         val rawType = completionContext.qualifierType.substringBefore('<')
         val qualifierName = completionContext.qualifierName
 
+        // Strategy 1: Jenkins global variables
         val globalVar = metadata
             ?.let { JenkinsCompletionProvider.findJenkinsGlobalVariable(qualifierName, rawType, it) }
 
@@ -374,9 +465,25 @@ object CompletionProvider {
             return true
         }
 
-        logger.debug("Adding GDK/Classpath methods for {}", rawType)
+        // Strategy 2: Workspace members (cross-file classes)
+        ctx.workspaceSymbolIndex?.let { index ->
+            // Try to resolve as fully qualified name first
+            val classFqn = rawType.replace('.', '/')
+            val members = index.getAllMembers(classFqn, includeInherited = true)
+            if (members.isNotEmpty()) {
+                logger.debug("Adding workspace members for {} (found {} members)", rawType, members.size)
+                addWorkspaceMembers(members)
+            }
+        }
+
+        // Strategy 3: GDK methods
+        logger.debug("Adding GDK methods for {}", rawType)
         addGdkMethods(rawType, ctx.compilationService)
+
+        // Strategy 4: Classpath methods
+        logger.debug("Adding Classpath methods for {}", rawType)
         addClasspathMethods(rawType, ctx.compilationService)
+
         return false
     }
 

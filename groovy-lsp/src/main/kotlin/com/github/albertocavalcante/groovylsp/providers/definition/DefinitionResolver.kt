@@ -6,11 +6,13 @@ import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.SymbolNotFoundException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.errors.nodeNotFoundAtPosition
+import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.ClasspathResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.GlobalClassResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.JenkinsVarsResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.LocalSymbolResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.ResolutionContext
+import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SymbolResolutionStrategy
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -37,6 +39,7 @@ class DefinitionResolver(
     private val symbolTable: SymbolTable,
     private val compilationService: GroovyCompilationService? = null,
     private val sourceNavigator: SourceNavigator? = null,
+    private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
@@ -47,8 +50,9 @@ class DefinitionResolver(
      * Strategies are tried in priority order:
      * 1. JenkinsVars - Jenkins vars/ directory lookup (highest priority)
      * 2. LocalSymbol - Same-file definitions via AST/symbol table
-     * 3. GlobalClass - Cross-file class lookup via symbol index
-     * 4. Classpath - JAR/JRT external dependencies (lowest priority)
+     * 3. SemanticDB - Cross-file resolution for all symbol types (methods, fields, properties, etc.)
+     * 4. GlobalClass - Cross-file class lookup via symbol index (fallback for class-only)
+     * 5. Classpath - JAR/JRT external dependencies (lowest priority)
      *
      * The pipeline short-circuits on first success (Either.Right).
      */
@@ -57,6 +61,9 @@ class DefinitionResolver(
             val strategies = buildList {
                 compilationService?.let { add(JenkinsVarsResolutionStrategy(it)) }
                 add(LocalSymbolResolutionStrategy(astVisitor, symbolTable))
+                workspaceSymbolIndex?.let { index ->
+                    add(SemanticDBResolutionStrategy(index))
+                }
                 compilationService?.let {
                     add(GlobalClassResolutionStrategy(it))
                     add(ClasspathResolutionStrategy(it, sourceNavigator))
