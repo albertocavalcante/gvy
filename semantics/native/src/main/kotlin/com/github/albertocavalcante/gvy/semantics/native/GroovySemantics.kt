@@ -10,7 +10,6 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
-import org.codehaus.groovy.ast.stmt.Statement
 import java.util.concurrent.ConcurrentHashMap
 
 /**

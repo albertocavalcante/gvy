@@ -7,10 +7,8 @@ import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReferenc
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.nativeapi.ParseRequest
-import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
