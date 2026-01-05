@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.MethodNode
 
 /**
  * TypeContext implementation for native Groovy AST.
@@ -63,7 +65,7 @@ class NativeTypeContext(
         classFqn: String,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): org.codehaus.groovy.ast.MethodNode? = scope.currentModule?.classes
+    ): MethodNode? = scope.currentModule?.classes
         ?.find { it.name == classFqn }
         ?.methods
         ?.find { method ->
@@ -96,11 +98,10 @@ class NativeTypeContext(
      * Find a field in the current module by class and field name.
      * Returns null if not found.
      */
-    private fun findFieldInModule(classFqn: String, fieldName: String): org.codehaus.groovy.ast.FieldNode? =
-        scope.currentModule?.classes
-            ?.find { it.name == classFqn }
-            ?.fields
-            ?.find { it.name == fieldName }
+    private fun findFieldInModule(classFqn: String, fieldName: String): FieldNode? = scope.currentModule?.classes
+        ?.find { it.name == classFqn }
+        ?.fields
+        ?.find { it.name == fieldName }
 
     companion object {
         /**
