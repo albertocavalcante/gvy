@@ -252,12 +252,13 @@ describe('GroovyTestController', () => {
             await runTestHandler(args);
 
             // Assert
-            // Even with empty suite name, should attempt to create item
-            // (implementation may vary on how to handle this edge case)
             assert.ok(
-                executionServiceMock.runTests.calledOnce ||
                 vscodeMock.window.showErrorMessage.calledOnce,
-                'Should either run test or show error'
+                'Should show error message for empty suite name'
+            );
+            assert.ok(
+                executionServiceMock.runTests.notCalled,
+                'Should not attempt to run tests with empty suite name'
             );
         });
     });
