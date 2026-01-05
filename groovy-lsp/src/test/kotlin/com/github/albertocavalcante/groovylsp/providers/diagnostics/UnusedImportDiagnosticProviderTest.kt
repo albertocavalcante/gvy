@@ -30,7 +30,7 @@ class UnusedImportDiagnosticProviderTest {
         unusedImport.lineNumber = 10
         unusedImport.columnNumber = 1
         unusedImport.lastLineNumber = 10
-        unusedImport.lastColumnNumber = 21 // Groovy AST: exclusive end column
+        unusedImport.lastColumnNumber = 21 // Groovy AST: 1-based INCLUSIVE end column
 
         every { moduleNode.imports } returns listOf(unusedImport)
 
@@ -43,9 +43,10 @@ class UnusedImportDiagnosticProviderTest {
         assertEquals(9, diagnostic.range.start.line) // LSP is 0-indexed
         assertEquals(0, diagnostic.range.start.character)
         assertEquals(9, diagnostic.range.end.line)
-        // NOTE: lastColumnNumber in Groovy AST is 1-based and exclusive, LSP range.end.character is 0-based
-        // Groovy AST lastColumnNumber 21 - 1 (0-based conversion) = 20
-        assertEquals(20, diagnostic.range.end.character)
+        // Groovy AST lastColumnNumber is 1-based INCLUSIVE (the 21st character is the last one)
+        // LSP range.end.character is 0-based EXCLUSIVE (points after the last character)
+        // 1-based inclusive 21 = 0-based exclusive 21 (no conversion needed!)
+        assertEquals(21, diagnostic.range.end.character)
         assertEquals(org.eclipse.lsp4j.DiagnosticTag.Unnecessary, diagnostic.tags.first())
     }
 
