@@ -5,11 +5,12 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GdkExtensionMethod
 import com.github.albertocavalcante.groovylsp.services.ReflectedMethod
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
-import com.github.albertocavalcante.groovyparser.ast.TypeInferencer
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.safePosition
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import groovy.lang.Script
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -37,6 +38,7 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPos
 class SignatureHelpProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
+    private val semanticResolver: SemanticTypeResolver,
 ) {
 
     private val logger = LoggerFactory.getLogger(SignatureHelpProvider::class.java)
@@ -58,6 +60,7 @@ class SignatureHelpProvider(
     )
 
     private data class ResolvedSignatureInputs(
+        val documentUri: URI,
         val methodCall: MethodCallExpression,
         val nodeAtPosition: ASTNode,
         val methodName: String,
@@ -111,6 +114,7 @@ class SignatureHelpProvider(
 
         return if (hasCompilationContext && hasCallContext) {
             ResolvedSignatureInputs(
+                documentUri = documentUri,
                 methodCall = methodCall,
                 nodeAtPosition = nodeAtPosition,
                 methodName = methodName,
@@ -131,6 +135,7 @@ class SignatureHelpProvider(
             // 2-4. Resolved Methods (Superclass, GDK, Classpath)
             addAll(
                 resolveMethodsOnReceiver(
+                    inputs.documentUri,
                     inputs.methodCall,
                     inputs.methodName,
                     inputs.symbolTable,
@@ -140,6 +145,7 @@ class SignatureHelpProvider(
         }
 
     private fun resolveMethodsOnReceiver(
+        documentUri: URI,
         methodCall: MethodCallExpression,
         methodName: String,
         symbolTable: SymbolTable,
@@ -148,7 +154,7 @@ class SignatureHelpProvider(
         val signatures = mutableListOf<SignatureInformation>()
 
         // Determine the type of the object the method is being called on
-        val receiverType = resolveReceiverType(methodCall, symbolTable, astVisitor)
+        val receiverType = resolveReceiverType(documentUri, methodCall, symbolTable, astVisitor)
         val targetType = receiverType.substringBefore("<")
 
         // 2. Script Methods (Implicit 'this')
@@ -179,6 +185,7 @@ class SignatureHelpProvider(
     }
 
     private fun resolveReceiverType(
+        documentUri: URI,
         methodCall: MethodCallExpression,
         symbolTable: SymbolTable,
         astVisitor: GroovyAstModel,
@@ -188,15 +195,62 @@ class SignatureHelpProvider(
         }
 
         val objExpr = methodCall.objectExpression
-        var type = TypeInferencer.inferExpressionType(objExpr)
+        val moduleNode = compilationService.getAst(documentUri) as? org.codehaus.groovy.ast.ModuleNode
+            ?: return "java.lang.Object"
+
+        // Use SemanticTypeResolver for type resolution
+        val semanticType = semanticResolver.resolveType(objExpr, moduleNode)
+        var type = formatSemanticTypeToFqn(semanticType)
+
+        // Refine type from initializer for def/Object variables
         val canRefine = (type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression
         if (canRefine) {
             val resolvedVar = symbolTable.resolveSymbol(objExpr as VariableExpression, astVisitor)
             val init = resolvedVar?.initialExpression
-            val refined = init?.let { TypeInferencer.inferExpressionType(it) }
-            type = refined?.takeUnless { it == "java.lang.Object" } ?: type
+            if (init != null) {
+                val refinedType = semanticResolver.resolveType(init, moduleNode)
+                val refinedFqn = formatSemanticTypeToFqn(refinedType)
+                type = refinedFqn.takeUnless { it == "java.lang.Object" } ?: type
+            }
         }
         return type
+    }
+
+    /**
+     * Format SemanticType to fully qualified name for classpath lookups.
+     */
+    private fun formatSemanticTypeToFqn(type: SemanticType): String = when (type) {
+        is SemanticType.Known -> type.fqn
+        is SemanticType.Primitive -> when (type.kind) {
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.INT -> "int"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.LONG -> "long"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.DOUBLE -> "double"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.FLOAT -> "float"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.BOOLEAN -> "boolean"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.BYTE -> "byte"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.CHAR -> "char"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.SHORT -> "short"
+            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.VOID -> "void"
+        }
+
+        is SemanticType.Dynamic -> "java.lang.Object"
+        is SemanticType.Unknown -> "java.lang.Object"
+        is SemanticType.Null -> "java.lang.Object"
+        is SemanticType.Union -> {
+            // Return first known type, or Object as fallback
+            type.types.firstNotNullOfOrNull {
+                when (it) {
+                    is SemanticType.Known -> it.fqn
+                    else -> null
+                }
+            } ?: "java.lang.Object"
+        }
+
+        is SemanticType.Array -> {
+            val componentFqn = formatSemanticTypeToFqn(type.componentType)
+            // Array types in reflection use format like "java.lang.String[]"
+            "$componentFqn[]"
+        }
     }
 
     private fun resolveImplicitThisReceiverType(methodCall: MethodCallExpression, astVisitor: GroovyAstModel): String {

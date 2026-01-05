@@ -176,6 +176,7 @@ class GroovyTextDocumentService(
         SignatureHelpProvider(
             compilationService = compilationService,
             documentProvider = documentProvider,
+            semanticResolver = semanticTypeResolver,
         )
     }
 
