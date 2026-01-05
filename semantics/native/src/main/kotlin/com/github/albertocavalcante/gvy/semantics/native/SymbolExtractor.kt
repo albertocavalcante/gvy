@@ -24,8 +24,16 @@ object SymbolExtractor {
 
     /**
      * Extract variable symbols from a method node (parameters and local variables).
+     *
+     * @param methodNode The method node to extract variables from
+     * @param semantics Optional GroovySemantics instance for type inference
+     * @param module Optional ModuleNode for multi-document safe type resolution
      */
-    fun extractVariableSymbols(methodNode: Any, semantics: GroovySemantics? = null): List<VariableSymbol> {
+    fun extractVariableSymbols(
+        methodNode: Any,
+        semantics: GroovySemantics? = null,
+        module: ModuleNode? = null,
+    ): List<VariableSymbol> {
         if (methodNode !is MethodNode) return emptyList()
 
         val variables = mutableListOf<VariableSymbol>()
@@ -52,16 +60,17 @@ object SymbolExtractor {
                     val decl = stmt.expression as DeclarationExpression
                     val variable = decl.variableExpression
 
-                    val inferredType = if (semantics != null) {
+                    val inferredType = if (semantics != null && module != null) {
                         try {
-                            val type = semantics.resolveType(decl)
+                            // Use module-aware API for multi-document safety
+                            val type = semantics.resolveType(decl, module)
                             // Format type for display (e.g., "ArrayList<String>")
                             formatSemanticType(type)
                         } catch (e: Exception) {
                             "java.lang.Object"
                         }
                     } else {
-                        // Fallback: Use declared type or Object (no TypeInferencer)
+                        // Fallback: Use declared type or Object (no semantics or module)
                         val declaredType = variable.type
                         if (!declaredType.isDynamicOrObject()) {
                             declaredType.name
@@ -273,7 +282,7 @@ object SymbolExtractor {
             }
 
             if (methodNode != null) {
-                variables = extractVariableSymbols(methodNode, semantics)
+                variables = extractVariableSymbols(methodNode, semantics, ast)
             }
         }
 
