@@ -10,6 +10,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { listZipEntries } = require("./zip.js");
 
 const SERVER_DIR = path.join(__dirname, "..", "server");
 const JAR_PATH = path.join(SERVER_DIR, "gls.jar");
@@ -51,10 +52,14 @@ function validateJarFile(filePath) {
       );
     }
 
-    // Check file size - should be at least a few KB for a valid JAR
-    if (stat.size < 1024) {
+    // Check file size - should be at least 5MB for a valid fat JAR (Groovy + LSP are large)
+    // Thin JARs are usually ~1.5MB or less; Shadow JARs are ~50MB+
+    const MIN_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+    if (stat.size < MIN_SIZE_BYTES) {
       throw new Error(
-        `JAR file is too small (${stat.size} bytes), likely corrupt: ${filePath}`,
+        `JAR file is too small (${(stat.size / 1024 / 1024).toFixed(
+          2,
+        )} MB). Expected > 5MB. This looks like a thin JAR (missing dependencies). Run 'make jar' to build the shadow JAR. Path: ${filePath}`,
       );
     }
 
@@ -82,6 +87,28 @@ function validateJarFile(filePath) {
         `JAR file appears to be truncated or corrupt (no ZIP end signature): ${filePath}`,
       );
     }
+
+    // validate content (check for existence of key classes)
+    // Using listZipEntries from zip.js (avoiding extra deps)
+    try {
+      const entries = listZipEntries(filePath);
+      // Check for a core groovy dependency that should be in the fat jar
+      // org.codehaus.groovy.ast.ClassNode is a good candidate as it comes from groovy-core
+      const hasGroovy = entries.some(
+        (e) => e.name === "org/codehaus/groovy/ast/ClassNode.class",
+      );
+
+      if (!hasGroovy) {
+        throw new Error(
+          "JAR appears to be missing dependencies (thin JAR detected). It does not contain 'org/codehaus/groovy/ast/ClassNode.class'. Please ensure you are building the shadow JAR (gradle shadowJar).",
+        );
+      }
+    } catch (zipError) {
+      // If listing fails, re-throw if it's our error, or wrap it
+      if (zipError.message.includes("thin JAR")) throw zipError;
+      throw new Error(`Failed to inspect JAR content: ${zipError.message}`);
+    }
+
   } finally {
     fs.closeSync(fd);
   }
