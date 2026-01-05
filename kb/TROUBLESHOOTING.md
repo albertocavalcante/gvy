@@ -516,3 +516,24 @@ git status  # In your current worktree
 | accessedVariable is null            | Check compilation phase (needs SEMANTIC_ANALYSIS)                   |
 | Same-named param collision          | Use identity comparison (`===`)                                     |
 | Debug output not visible            | Use `System.err.println`, check test XML                            |
+
+### Debugging in Tests (Advanced)
+
+#### Probing with Exceptions
+
+When standard logging is swallowed or not visible, throw a `RuntimeException` to verify code reachability. The exception
+message or stack trace will appear in the test failure output.
+
+```kotlin
+throw RuntimeException("PROBE: I am here")
+```
+
+#### File-Based Logging
+
+If `System.out`/`System.err` are captured and hidden by the test runner, write directly to a file in `/tmp`.
+
+```kotlin
+java.io.File("/tmp/groovy-lsp-debug.log").appendText("DEBUG: value=$value\n")
+```
+
+_Remember to remove these probes before committing!_

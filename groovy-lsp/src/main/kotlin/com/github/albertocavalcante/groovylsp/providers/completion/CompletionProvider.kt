@@ -193,6 +193,7 @@ object CompletionProvider {
             ctx.line,
             ctx.character,
         )
+
         val completionContext =
             CompletionContextDetector.detectCompletionContext(
                 nodeAtCursor,
@@ -206,6 +207,14 @@ object CompletionProvider {
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
+
+            // For member access context (e.g., "p."), only add member completions
+            // Skip local symbols, keywords, etc. as they are not relevant for member completion
+            if (completionContext is ContextType.MemberAccess) {
+                handleMemberAccessContext(completionContext, ctx, metadata)
+                return@completions
+            }
+
             addLocalSymbolsIfApplicable(symbolContext, jenkinsContext.isStrictDeclarative)
 
             addJenkinsCompletionsIfApplicable(
@@ -299,6 +308,7 @@ object CompletionProvider {
                         ?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true
 
             if (allowSteps) {
+                // TODO(#657): Refactor to use a determined JenkinsCompletionStrategy.
                 addJenkinsStepCompletions(metadata)
             }
 
@@ -334,7 +344,8 @@ object CompletionProvider {
         ctx: CompletionContext,
         metadata: MergedJenkinsMetadata?,
     ): Boolean = when (completionContext) {
-        is ContextType.MemberAccess -> handleMemberAccessContext(completionContext, ctx, metadata)
+        // MemberAccess is handled via early return in buildCompletionsList
+        is ContextType.MemberAccess -> false
         is ContextType.TypeParameter -> {
             logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
             addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
