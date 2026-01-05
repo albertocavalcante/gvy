@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.native
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.BinaryExpressionCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.ConstantExpressionCalculator
+import com.github.albertocavalcante.gvy.semantics.calculator.impl.ConstructorCallExpressionCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.ListExpressionCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.MapExpressionCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.MethodCallCalculator
@@ -35,6 +36,7 @@ object NativeCalculators {
         .register(ClosureExpressionAdapter)
         // Reflection-based calculators from Phase 2
         .register(ConstantExpressionCalculator())
+        .register(ConstructorCallExpressionCalculator())
         .register(BinaryExpressionCalculator())
         .register(ListExpressionCalculator())
         .register(MapExpressionCalculator())

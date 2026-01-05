@@ -5,7 +5,9 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.net.URI
 
@@ -62,11 +64,11 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
                 }
 
                 is ImportNode -> registry.addImportDeclaration(uri, node)
-                is org.codehaus.groovy.ast.expr.DeclarationExpression -> {
+                is DeclarationExpression -> {
                     processDeclarationExpression(node, uri)
                 }
 
-                is org.codehaus.groovy.ast.Parameter -> {
+                is Parameter -> {
                     registry.addVariableDeclaration(uri, node)
                 }
             }
@@ -76,11 +78,12 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
     /**
      * Process a declaration expression to extract variable information.
      */
-    private fun processDeclarationExpression(node: org.codehaus.groovy.ast.expr.DeclarationExpression, uri: URI) {
+    private fun processDeclarationExpression(node: DeclarationExpression, uri: URI) {
         if (node.isMultipleAssignmentDeclaration) return
 
         val leftExpr = node.leftExpression as? VariableExpression ?: return
-        // Store the actual VariableExpression instead of creating synthetic Variable
+        // TODO(#649): Store initializer (rightExpression) to avoid AST walking in consumers.
+        //   See: https://github.com/albertocavalcante/gvy/issues/649
         registry.addVariableDeclaration(uri, leftExpr)
     }
 }

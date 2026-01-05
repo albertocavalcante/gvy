@@ -30,6 +30,7 @@ import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefin
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.GroovyTypeResolver
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CancellationException
@@ -175,6 +176,7 @@ class GroovyTextDocumentService(
         SignatureHelpProvider(
             compilationService = compilationService,
             documentProvider = documentProvider,
+            semanticResolver = semanticTypeResolver,
         )
     }
 
@@ -206,8 +208,12 @@ class GroovyTextDocumentService(
         CallHierarchyProvider(compilationService)
     }
 
+    private val semanticTypeResolver by lazy {
+        SemanticTypeResolver(compilationService.classpathService.getTypeSolver())
+    }
+
     private val inlayHintsProvider by lazy {
-        InlayHintsProvider(compilationService)
+        InlayHintsProvider(compilationService, semanticTypeResolver)
     }
 
     override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
@@ -415,6 +421,7 @@ class GroovyTextDocumentService(
                 params.position.line,
                 params.position.character,
                 compilationService,
+                semanticResolver = semanticTypeResolver,
                 content,
             )
 

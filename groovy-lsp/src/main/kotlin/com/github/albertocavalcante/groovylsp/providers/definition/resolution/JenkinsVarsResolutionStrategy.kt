@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.slf4j.LoggerFactory
@@ -54,8 +55,7 @@ class JenkinsVarsResolutionStrategy(private val compilationService: GroovyCompil
     /**
      * Extract a method name from the target node for vars/ lookup.
      */
-    private fun extractMethodName(node: org.codehaus.groovy.ast.ASTNode): String? =
-        (node as? MethodCallExpression)?.methodAsString
+    private fun extractMethodName(node: ASTNode): String? = (node as? MethodCallExpression)?.methodAsString
 
     companion object {
         private const val STRATEGY_NAME = "JenkinsVars"

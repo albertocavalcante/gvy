@@ -6,7 +6,12 @@ import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.codehaus.groovy.ast.stmt.Statement
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -18,22 +23,22 @@ import org.codehaus.groovy.ast.expr.Expression
  * val semantics = GroovySemantics(typeSolver)
  * semantics.inject(moduleNode)
  *
- * val type = semantics.resolveType(expression)
+ * val type = semantics.resolveType(expression, moduleNode)
  * ```
  */
 class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
-    // Cache of contexts per module
-    private val contextCache = mutableMapOf<ModuleNode, NativeTypeContext>()
+    // Thread-safe cache of contexts per module
+    private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
 
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        if (module !in contextCache) {
+        if (!contextCache.containsKey(module)) {
             val scope = buildRootScope(module)
             val context = NativeTypeContext(
                 typeSolver = typeSolver,
@@ -44,13 +49,30 @@ class GroovySemantics(
 
             // Populate script variables from top-level declarations
             module.statementBlock?.statements?.forEach { stmt ->
-                if (stmt is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
-                    stmt.expression is org.codehaus.groovy.ast.expr.DeclarationExpression
+                if (stmt is ExpressionStatement &&
+                    stmt.expression is DeclarationExpression
                 ) {
-                    val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+                    val decl = stmt.expression as DeclarationExpression
                     val name = decl.variableExpression.name
                     val type = calculatorRegistry.calculate(decl, context)
                     scope.defineVariable(name, type)
+                }
+            }
+
+            // Populate method parameters and local variables
+            for (classNode in module.classes) {
+                for (method in classNode.methods) {
+                    // Register method parameters
+                    for (param in method.parameters) {
+                        val paramType = NativeTypeContext.fromClassNode(param.type)
+                        scope.defineVariable(param.name, paramType)
+                    }
+
+                    // Traverse method body and register declarations
+                    val code = method.code
+                    if (code is BlockStatement) {
+                        populateScopeFromBlock(code, scope, context)
+                    }
                 }
             }
 
@@ -59,8 +81,48 @@ class GroovySemantics(
     }
 
     /**
-     * Resolve the type of an AST node.
+     * Populates scope with variables from a BlockStatement.
+     * Traverses DeclarationExpressions and registers their types.
      */
+    private fun populateScopeFromBlock(block: BlockStatement, scope: NativeScope, context: NativeTypeContext) {
+        for (stmt in block.statements) {
+            when (stmt) {
+                is ExpressionStatement -> {
+                    val expr = stmt.expression
+                    if (expr is DeclarationExpression) {
+                        val name = expr.variableExpression.name
+                        val type = calculatorRegistry.calculate(expr, context)
+                        scope.defineVariable(name, type)
+                    }
+                }
+
+                is BlockStatement -> {
+                    // Recurse into nested blocks
+                    populateScopeFromBlock(stmt, scope, context)
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve the type of an AST node using the specified module's context.
+     * This is the preferred API for multi-document workspaces.
+     */
+    fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
+        inject(module)
+        val context = contextCache[module]
+            ?: return SemanticType.Unknown("Module not injected")
+        return calculatorRegistry.calculate(node, context)
+    }
+
+    /**
+     * Resolve the type of an AST node.
+     * @deprecated Use resolveType(node, module) for multi-document safety
+     */
+    @Deprecated(
+        "Use resolveType(node, module) for multi-document safety",
+        ReplaceWith("resolveType(node, module)"),
+    )
     fun resolveType(node: ASTNode): SemanticType {
         val context = findContext(node)
             ?: return SemanticType.Unknown("Node not in injected module")
@@ -69,7 +131,12 @@ class GroovySemantics(
 
     /**
      * Resolve the type of an expression.
+     * @deprecated Use resolveType(expression, module) for multi-document safety
      */
+    @Deprecated(
+        "Use resolveType(expression, module) for multi-document safety",
+        ReplaceWith("resolveType(expression, module)"),
+    )
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
 
     /**
@@ -97,7 +164,7 @@ class GroovySemantics(
         var scope = NativeScope.empty()
 
         for (classNode in module.classes) {
-            // For now we just use the first class found as the root scope basis
+            // Use the first class found as the root scope basis
             // (common for scripts where it's the script class)
             scope = NativeScope.fromClass(classNode)
             break

@@ -1,6 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -43,6 +46,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -72,6 +76,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -101,6 +106,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -129,6 +135,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -156,12 +163,14 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = SemanticTypeResolver(ReflectionTypeSolver()),
                 content = groovyCode,
             )
 
             val completionLabels = completions.map { it.label }
 
             // forEach is a default method on Iterable (Java 8+), so it should be available
+            // Note: This requires type resolution to know myList is Iterable
             assertThat(completionLabels).contains("forEach")
         }
     }
@@ -187,6 +196,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
@@ -214,6 +224,7 @@ class GdkCompletionIntegrationTest {
                 line = line,
                 character = character,
                 compilationService = compilationService,
+                semanticResolver = mockk(relaxed = true),
                 content = groovyCode,
             )
 
