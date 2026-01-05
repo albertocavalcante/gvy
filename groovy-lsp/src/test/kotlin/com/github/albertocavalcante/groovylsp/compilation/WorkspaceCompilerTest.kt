@@ -334,20 +334,47 @@ class WorkspaceCompilerTest {
         workspaceManager.initializeWorkspace(tempDir)
 
         // Launch multiple concurrent incremental compiles
-        val results = List(5) {
+        val concurrentCalls = 5
+        val results = List(concurrentCalls) {
             async {
                 workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
             }
         }.awaitAll()
+
+        // Verify exact count of results
+        assertEquals(
+            concurrentCalls,
+            results.size,
+            "Should have exactly $concurrentCalls results",
+        )
 
         // All should succeed
         results.forEach { result ->
             assertTrue(result.success, "All incremental compiles should succeed")
         }
 
-        // All should have compiled the file (they all see the initial compilation result)
+        // All should have compiled the file with exact count
         results.forEach { result ->
-            assertTrue(result.modules.isNotEmpty(), "Should have compiled modules")
+            assertEquals(
+                1,
+                result.modules.size,
+                "Each result should have exactly 1 compiled module",
+            )
+            assertTrue(
+                result.modules.containsKey(file1.toUri()),
+                "Each result should contain File1",
+            )
+        }
+
+        // Verify compilation result consistency - all results should have same module structure
+        val firstModuleClasses = results[0].modules[file1.toUri()]?.classes?.map { it.name }
+        results.drop(1).forEach { result ->
+            val moduleClasses = result.modules[file1.toUri()]?.classes?.map { it.name }
+            assertEquals(
+                firstModuleClasses,
+                moduleClasses,
+                "All results should have identical module structure",
+            )
         }
     }
 
@@ -365,17 +392,43 @@ class WorkspaceCompilerTest {
 
         workspaceManager.initializeWorkspace(tempDir)
 
-        // First incremental compile (will trigger initial compilation)
+        // First incremental compile (will trigger initial compilation of entire workspace)
         val firstResult = workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
-        assertTrue(firstResult.success)
+        assertTrue(firstResult.success, "First incremental compile should succeed")
 
-        // Second incremental compile (should skip initial compilation)
+        // First call triggers full workspace compilation, so both files should be compiled
+        assertEquals(
+            2,
+            firstResult.modules.size,
+            "First incremental compile should compile entire workspace (2 files)",
+        )
+        assertTrue(
+            firstResult.modules.containsKey(file1.toUri()),
+            "First result should contain File1",
+        )
+        assertTrue(
+            firstResult.modules.containsKey(file2.toUri()),
+            "First result should contain File2 from workspace compilation",
+        )
+
+        // Second incremental compile (should skip initial compilation, only compile file2)
         val secondResult = workspaceCompiler.incrementalCompile(setOf(file2.toUri()))
-        assertTrue(secondResult.success)
+        assertTrue(secondResult.success, "Second incremental compile should succeed")
 
-        // Both should have compiled modules
-        assertTrue(firstResult.modules.isNotEmpty())
-        assertTrue(secondResult.modules.isNotEmpty())
+        // Second call should only recompile the requested file
+        assertEquals(
+            1,
+            secondResult.modules.size,
+            "Second incremental compile should only recompile requested file",
+        )
+        assertTrue(
+            secondResult.modules.containsKey(file2.toUri()),
+            "Second result should contain File2",
+        )
+        assertFalse(
+            secondResult.modules.containsKey(file1.toUri()),
+            "Second result should NOT recompile File1 (not requested)",
+        )
     }
 
     @Test
@@ -386,7 +439,7 @@ class WorkspaceCompilerTest {
         Files.createDirectories(srcDir)
 
         val file1 = srcDir.resolve("File1.groovy")
-        file1.writeText("class File1 { }")
+        file1.writeText("class File1 { String field }")
 
         workspaceManager.initializeWorkspace(tempDir)
 
@@ -398,15 +451,163 @@ class WorkspaceCompilerTest {
             }
         }.awaitAll()
 
+        // Verify exact count of results
+        assertEquals(
+            concurrentCalls,
+            results.size,
+            "Should have exactly $concurrentCalls results",
+        )
+
         // All calls should complete successfully
-        assertEquals(concurrentCalls, results.size)
         results.forEach { result ->
             assertTrue(result.success, "All concurrent calls should succeed")
         }
 
-        // Verify all got consistent results
+        // Verify all got consistent results with exact module count
         results.forEach { result ->
-            assertTrue(result.modules.containsKey(file1.toUri()))
+            assertEquals(
+                1,
+                result.modules.size,
+                "Each result should have exactly 1 module",
+            )
+            assertTrue(
+                result.modules.containsKey(file1.toUri()),
+                "Each result should contain File1",
+            )
         }
+
+        // Verify module content is consistent across all results
+        val firstModule = results[0].modules[file1.toUri()]
+        assertNotNull(firstModule, "First module should not be null")
+        assertEquals(
+            1,
+            firstModule.classes.size,
+            "Module should have exactly 1 class",
+        )
+        assertEquals(
+            "File1",
+            firstModule.classes[0].name,
+            "Class name should be 'File1'",
+        )
+
+        // All other results should match the first
+        results.drop(1).forEach { result ->
+            val module = result.modules[file1.toUri()]
+            assertNotNull(module, "Module should not be null")
+            assertEquals(
+                1,
+                module.classes.size,
+                "Each module should have exactly 1 class",
+            )
+            assertEquals(
+                "File1",
+                module.classes[0].name,
+                "Each class name should be 'File1'",
+            )
+        }
+    }
+
+    @Test
+    fun `concurrent incrementalCompile with 50 threads`() = runTest {
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        val file1 = srcDir.resolve("File1.groovy")
+        file1.writeText("class File1 { String field }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val concurrentCalls = 50
+        val results = List(concurrentCalls) {
+            async {
+                workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+            }
+        }.awaitAll()
+
+        assertEquals(
+            concurrentCalls,
+            results.size,
+            "Should handle $concurrentCalls concurrent calls",
+        )
+        results.forEach { result ->
+            assertTrue(result.success, "All 50 concurrent calls should succeed")
+            assertEquals(
+                1,
+                result.modules.size,
+                "Each result should have exactly 1 module",
+            )
+        }
+    }
+
+    @Test
+    fun `concurrent incrementalCompile with 100 threads`() = runTest {
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        val file1 = srcDir.resolve("File1.groovy")
+        file1.writeText("class File1 { String field }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val concurrentCalls = 100
+        val results = List(concurrentCalls) {
+            async {
+                workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+            }
+        }.awaitAll()
+
+        assertEquals(
+            concurrentCalls,
+            results.size,
+            "Should handle $concurrentCalls concurrent calls",
+        )
+        results.forEach { result ->
+            assertTrue(result.success, "All 100 concurrent calls should succeed")
+            assertEquals(
+                1,
+                result.modules.size,
+                "Each result should have exactly 1 module",
+            )
+        }
+    }
+
+    @Test
+    fun `incrementalCompile populates exact field count in compiled class`() = runTest {
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        val file1 = srcDir.resolve("MultiField.groovy")
+        file1.writeText(
+            """
+            class MultiField {
+                String field1
+                Integer field2
+                Boolean field3
+            }
+            """.trimIndent(),
+        )
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val result = workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+
+        assertTrue(result.success, "Compilation should succeed")
+        val module = result.modules[file1.toUri()]
+        assertNotNull(module, "Module should exist")
+
+        val multiFieldClass = module.classes.find { it.name == "MultiField" }
+        assertNotNull(multiFieldClass, "MultiField class should exist")
+        assertEquals(
+            3,
+            multiFieldClass.fields.size,
+            "MultiField should have exactly 3 fields",
+        )
+
+        val fieldNames = multiFieldClass.fields.map { it.name }.toSet()
+        assertEquals(
+            setOf("field1", "field2", "field3"),
+            fieldNames,
+            "Fields should have exact names: field1, field2, field3",
+        )
     }
 }
