@@ -425,8 +425,8 @@ object CompletionProvider {
      * For now, this is a simple implementation that extracts parameter types from the signature.
      * Future enhancement: Parse the full signature with parameter names.
      *
-     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int).")
-     * @return List of parameter strings (e.g., ["String", "int"])
+     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
+     * @return List of parameter strings (e.g., ["String", "int"] or ["Map<String,String>"])
      */
     private fun parseSignatureToParams(signature: String?): List<String> {
         if (signature == null) return emptyList()
@@ -441,10 +441,55 @@ object CompletionProvider {
         val params = signature.substring(startIndex + 1, endIndex).trim()
         if (params.isEmpty()) return emptyList()
 
-        // Split by comma and extract simple names
-        return params.split(',').map { param ->
-            param.trim().substringAfterLast('/').substringAfterLast('.')
+        // Split by comma while respecting angle brackets for generics
+        val result = mutableListOf<String>()
+        val currentParam = StringBuilder()
+        var bracketDepth = 0
+        var invalidBrackets = false
+
+        fun addCurrentParam() {
+            result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
+            currentParam.clear()
         }
+
+        for (char in params) {
+            when (char) {
+                '<' -> {
+                    bracketDepth++
+                    currentParam.append(char)
+                }
+                '>' -> {
+                    bracketDepth--
+                    if (bracketDepth < 0) {
+                        invalidBrackets = true
+                        break
+                    }
+                    currentParam.append(char)
+                }
+                ',' -> {
+                    if (bracketDepth == 0) {
+                        addCurrentParam()
+                    } else {
+                        currentParam.append(char)
+                    }
+                }
+                else -> currentParam.append(char)
+            }
+        }
+
+        // If brackets are unbalanced, fall back to simple comma-based parsing
+        if (invalidBrackets || bracketDepth != 0) {
+            return params.split(',')
+                .map { it.trim().substringAfterLast('/').substringAfterLast('.') }
+                .filter { it.isNotEmpty() }
+        }
+
+        // Add the last parameter
+        if (currentParam.isNotEmpty()) {
+            addCurrentParam()
+        }
+
+        return result
     }
 
     private fun CompletionsBuilder.handleMemberAccessContext(

@@ -8,12 +8,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.readText
 
 /**
@@ -49,11 +52,13 @@ data class WorkspaceCompilationResult(
  *
  * @param workerSessionManager The worker session manager for executing compilation
  * @param workspaceManager The workspace manager providing workspace sources and configuration
+ * @param semanticDb The shared semantic database for symbol storage (must be the same instance used by providers)
  * @param semanticCache Optional semantic cache for persistent storage (improves startup time)
  */
 class WorkspaceCompiler(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
+    private val semanticDb: GroovySemanticDB,
     private val semanticCache: SemanticCache? = null,
 ) {
     private val logger = LoggerFactory.getLogger(WorkspaceCompiler::class.java)
@@ -66,19 +71,27 @@ class WorkspaceCompiler(
 
     /**
      * Lazy-initialized incremental compiler for dependency-aware compilation.
+     * Uses the shared semanticDb to ensure symbol visibility across all components.
      */
     private val incrementalCompiler: IncrementalCompiler by lazy {
         IncrementalCompiler(
             workspaceCompiler = this,
             dependencyGraph = DependencyGraph(),
-            semanticDb = GroovySemanticDB(),
+            semanticDb = semanticDb,
         )
     }
 
     /**
      * Whether initial compilation has been performed.
+     * Thread-safe using AtomicBoolean to prevent race conditions.
      */
-    private var initialCompilationDone = false
+    private val initialCompilationDone = AtomicBoolean(false)
+
+    /**
+     * Mutex to ensure only one thread performs initial compilation.
+     * Other threads will wait for the initial compilation to complete.
+     */
+    private val initialCompilationMutex = Mutex()
 
     /**
      * Compiles all workspace files together for full cross-file semantic resolution.
@@ -133,11 +146,16 @@ class WorkspaceCompiler(
         logger.info("Incremental compile requested for ${changedUris.size} files")
 
         // On first incremental compile, do initial compilation to build dependency graph
-        if (!initialCompilationDone) {
-            logger.info("First incremental compile - performing initial compilation")
-            val result = incrementalCompiler.initialCompile()
-            initialCompilationDone = true
-            return result
+        // Use mutex to ensure only one thread performs initial compilation while others wait
+        if (!initialCompilationDone.get()) {
+            initialCompilationMutex.withLock {
+                // Double-check inside the lock to avoid redundant compilation
+                if (initialCompilationDone.compareAndSet(false, true)) {
+                    logger.info("First incremental compile - performing initial compilation")
+                    val result = incrementalCompiler.initialCompile()
+                    return result
+                }
+            }
         }
 
         // Perform incremental compilation using dependency tracking

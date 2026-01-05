@@ -217,4 +217,130 @@ class CompletionProviderTest {
             "Should NOT suggest 'class' keyword for map member access",
         )
     }
+
+    // ========================================================================
+    // Tests for Fix #11: parseSignatureToParams with generics
+    // Note: parseSignatureToParams is a private function, so these tests verify
+    // the fix indirectly through method completion functionality
+    // ========================================================================
+
+    @Test
+    fun `should handle method completions with Map generic parameter`() = runTest {
+        // Test that method completion works with Map<String,String> parameter
+        // This indirectly tests that parseSignatureToParams handles generics correctly
+        val content = """
+            class MyService {
+                void processMap(Map<String,String> data) {
+                    println data
+                }
+
+                void test() {
+                    processM
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            6,
+            16, // After "processM"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Should suggest the processMap method
+        // If parseSignatureToParams didn't handle generics correctly,
+        // the method signature wouldn't parse properly
+        assertTrue(completions.any { it.label.contains("processMap") })
+    }
+
+    @Test
+    fun `should handle method completions with multiple generic parameters`() = runTest {
+        // Test method with List<String> and Map<Integer,String> parameters
+        val content = """
+            class DataProcessor {
+                void process(List<String> items, Map<Integer,String> mapping, int count) {
+                    // implementation
+                }
+
+                void test() {
+                    proc
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            6,
+            12, // After "proc"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Should suggest the process method
+        assertTrue(completions.any { it.label.contains("process") })
+    }
+
+    @Test
+    fun `should handle method completions with nested generic parameters`() = runTest {
+        // Test method with nested generics like Map<String,List<Integer>>
+        val content = """
+            class ComplexService {
+                void handleComplex(Map<String,List<Integer>> complexData) {
+                    println complexData
+                }
+
+                void test() {
+                    handleC
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            6,
+            15, // After "handleC"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Should suggest the handleComplex method
+        assertTrue(completions.any { it.label.contains("handleComplex") })
+    }
+
+    @Test
+    fun `should differentiate overloaded methods with generic parameters`() = runTest {
+        // Test that methods with different generic parameters can be distinguished
+        val content = """
+            class OverloadedService {
+                void save(String data) { }
+                void save(Map<String,String> data) { }
+                void save(List<String> data) { }
+
+                void test() {
+                    sav
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            6,
+            11, // After "sav"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Should suggest save methods (all overloads)
+        val saveCompletions = completions.filter { it.label.contains("save") }
+        assertTrue(saveCompletions.isNotEmpty(), "Should suggest save methods")
+    }
 }

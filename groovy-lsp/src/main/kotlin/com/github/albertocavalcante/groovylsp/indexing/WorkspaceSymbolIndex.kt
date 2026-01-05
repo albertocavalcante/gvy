@@ -330,6 +330,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * - "com/example/MyClass#myMethod()." -> 0
      * - "com/example/MyClass#myMethod(String)." -> 1
      * - "com/example/MyClass#myMethod(String,int)." -> 2
+     * - "com/example/MyClass#myMethod(Map<String,String>)." -> 1
      *
      * @param methodSymbolId The method symbol ID
      * @return The number of parameters
@@ -345,7 +346,33 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         val params = methodSymbolId.substring(startIndex + 1, endIndex)
         if (params.isEmpty()) return 0
 
-        return params.split(',').size
+        // Split by comma while respecting angle brackets for generics
+        var count = 0
+        var bracketDepth = 0
+        var invalidBrackets = false
+        for (char in params) {
+            when (char) {
+                '<' -> bracketDepth++
+                '>' -> {
+                    bracketDepth--
+                    if (bracketDepth < 0) {
+                        invalidBrackets = true
+                        break
+                    }
+                }
+                ',' -> if (bracketDepth == 0) count++
+            }
+        }
+
+        // If brackets are unbalanced, fall back to a simple comma-based count
+        if (invalidBrackets || bracketDepth != 0) {
+            return params.split(',')
+                .map { it.trim() }
+                .count { it.isNotEmpty() }
+        }
+
+        // Add 1 for the last parameter (no trailing comma)
+        return count + 1
     }
 
     /**
