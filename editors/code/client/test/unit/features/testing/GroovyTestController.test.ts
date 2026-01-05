@@ -61,6 +61,18 @@ describe('GroovyTestController', () => {
             window: {
                 showErrorMessage: sandbox.stub(),
             },
+            workspace: {
+                workspaceFolders: [{
+                    uri: { toString: () => 'file:///workspace' },
+                    name: 'test-workspace',
+                    index: 0,
+                }],
+            },
+            TestRunProfileKind: {
+                Run: 1,
+                Debug: 2,
+                Coverage: 3,
+            },
             Uri: {
                 parse: sandbox.stub().callsFake((uri: string) => ({
                     toString: () => uri,
