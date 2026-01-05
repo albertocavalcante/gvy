@@ -344,7 +344,8 @@ object CompletionProvider {
         ctx: CompletionContext,
         metadata: MergedJenkinsMetadata?,
     ): Boolean = when (completionContext) {
-        is ContextType.MemberAccess -> handleMemberAccessContext(completionContext, ctx, metadata)
+        // MemberAccess is handled via early return in buildCompletionsList
+        is ContextType.MemberAccess -> false
         is ContextType.TypeParameter -> {
             logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
             addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
