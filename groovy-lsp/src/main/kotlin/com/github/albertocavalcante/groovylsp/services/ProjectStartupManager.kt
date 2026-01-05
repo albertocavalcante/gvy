@@ -428,6 +428,19 @@ class ProjectStartupManager(
                 indexingProgressReporter.complete("✅ Indexed $total files")
                 logger.info("Workspace indexing complete: $total files")
 
+                // Trigger workspace compilation for cross-file semantic resolution
+                logger.info("Starting workspace compilation for cross-file resolution")
+                onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null)
+                val workspaceCompiler = compilationService.getWorkspaceCompiler()
+                val compilationResult = workspaceCompiler.compileWorkspace()
+                logger.info(
+                    "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
+                        "${compilationResult.errors.size} errors",
+                )
+                if (!compilationResult.success) {
+                    logger.warn("Workspace compilation had errors, but proceeding with partial results")
+                }
+
                 // Ensure Jenkins initialization is also complete before signaling ready
                 jenkinsInitJob?.join()
 

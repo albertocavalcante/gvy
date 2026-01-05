@@ -1,0 +1,315 @@
+package com.github.albertocavalcante.groovylsp.compilation
+
+import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
+import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import kotlinx.coroutines.test.runTest
+import java.net.URI
+import java.nio.file.Files
+import kotlin.io.path.writeText
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class WorkspaceCompilerTest {
+    private lateinit var parser: GroovyParserFacade
+    private lateinit var workerSessionManager: WorkerSessionManager
+    private lateinit var workspaceManager: WorkspaceManager
+    private lateinit var workspaceCompiler: WorkspaceCompiler
+    private lateinit var tempDir: java.nio.file.Path
+
+    @BeforeTest
+    fun setup() {
+        tempDir = Files.createTempDirectory("workspace-compiler-test")
+        parser = GroovyParserFacade()
+        workerSessionManager = WorkerSessionManager(
+            defaultSession = InProcessWorkerSession(parser),
+            sessionFactory = { InProcessWorkerSession(parser) },
+        )
+        workspaceManager = WorkspaceManager()
+        workspaceCompiler = WorkspaceCompiler(
+            workerSessionManager = workerSessionManager,
+            workspaceManager = workspaceManager,
+        )
+    }
+
+    @AfterTest
+    fun cleanup() {
+        tempDir.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `compileWorkspace compiles multiple files together`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create two Groovy files
+        val file1 = srcDir.resolve("File1.groovy")
+        val file2 = srcDir.resolve("File2.groovy")
+
+        file1.writeText("class File1 { String name }")
+        file2.writeText("class File2 { File1 ref }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Compile workspace
+        val result = workspaceCompiler.compileWorkspace()
+
+        // Verify both files were compiled
+        assertTrue(result.success, "Workspace compilation should succeed")
+        assertEquals(2, result.modules.size, "Should have compiled 2 modules")
+        assertTrue(result.modules.containsKey(file1.toUri()), "Should contain File1 module")
+        assertTrue(result.modules.containsKey(file2.toUri()), "Should contain File2 module")
+    }
+
+    @Test
+    fun `compileWorkspace resolves cross-file class references`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create test files with cross-file references
+        val baseClass = srcDir.resolve("BaseClass.groovy")
+        val derivedClass = srcDir.resolve("DerivedClass.groovy")
+
+        baseClass.writeText(
+            """
+            class BaseClass {
+                String baseField
+                void baseMethod() {}
+            }
+            """.trimIndent(),
+        )
+
+        derivedClass.writeText(
+            """
+            class DerivedClass extends BaseClass {
+                void test() {
+                    baseField = "test"  // Should resolve to BaseClass.baseField
+                }
+            }
+            """.trimIndent(),
+        )
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Compile workspace
+        val result = workspaceCompiler.compileWorkspace()
+
+        // Verify compilation succeeded with cross-file resolution
+        assertTrue(result.success, "Workspace compilation should succeed")
+        assertEquals(2, result.modules.size)
+
+        // Verify we can retrieve the resolved module
+        val derivedModule = workspaceCompiler.getResolvedModule(derivedClass.toUri())
+        assertNotNull(derivedModule, "Should have DerivedClass module")
+
+        // Verify the class structure
+        val derivedClassNode = derivedModule.classes.find { it.name == "DerivedClass" }
+        assertNotNull(derivedClassNode, "Should find DerivedClass node")
+        assertEquals("BaseClass", derivedClassNode.superClass.name, "Should extend BaseClass")
+    }
+
+    @Test
+    fun `compileWorkspace resolves cross-file method calls`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create files with cross-file method calls
+        val service = srcDir.resolve("Service.groovy")
+        val client = srcDir.resolve("Client.groovy")
+
+        service.writeText(
+            """
+            class Service {
+                String getData() { return "data" }
+            }
+            """.trimIndent(),
+        )
+
+        client.writeText(
+            """
+            class Client {
+                void useService() {
+                    def svc = new Service()
+                    def result = svc.getData()  // Cross-file method call
+                }
+            }
+            """.trimIndent(),
+        )
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Compile workspace
+        val result = workspaceCompiler.compileWorkspace()
+
+        // Should compile successfully with cross-file method resolution
+        assertTrue(result.success, "Workspace compilation should succeed")
+        assertTrue(result.errors.isEmpty(), "Should have no errors")
+    }
+
+    @Test
+    fun `compileWorkspace handles syntax errors gracefully`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create one valid file and one with syntax error
+        val validFile = srcDir.resolve("Valid.groovy")
+        val invalidFile = srcDir.resolve("Invalid.groovy")
+
+        validFile.writeText("class Valid { String field }")
+        invalidFile.writeText("class Invalid { this is not valid groovy }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Compile workspace
+        val result = workspaceCompiler.compileWorkspace()
+
+        // Compilation should report failure and errors
+        assertFalse(result.success, "Workspace compilation should fail due to syntax error")
+        assertTrue(result.errors.isNotEmpty(), "Should have compilation errors")
+
+        // At least one error should be for the invalid file
+        val invalidFileErrors = result.errors.filter { it.uri == invalidFile.toUri() }
+        assertTrue(invalidFileErrors.isNotEmpty(), "Should have errors for invalid file")
+    }
+
+    @Test
+    fun `compileWorkspace uses SEMANTIC_ANALYSIS phase for full resolution`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create files that require semantic analysis
+        val file = srcDir.resolve("Test.groovy")
+        file.writeText(
+            """
+            class Test {
+                String name = "test"
+                void method() {
+                    println name  // Requires type resolution
+                }
+            }
+            """.trimIndent(),
+        )
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Compile workspace
+        val result = workspaceCompiler.compileWorkspace()
+
+        // Should compile to SEMANTIC_ANALYSIS phase
+        assertTrue(result.success)
+        val module = result.modules[file.toUri()]
+        assertNotNull(module, "Should have compiled module")
+
+        // Verify the module has resolved types (semantic analysis complete)
+        val testClass = module.classes.find { it.name == "Test" }
+        assertNotNull(testClass, "Should find Test class")
+        val nameField = testClass.fields.find { it.name == "name" }
+        assertNotNull(nameField, "Should find name field")
+        assertEquals("java.lang.String", nameField.type.name, "Field type should be resolved")
+    }
+
+    @Test
+    fun `getResolvedModule returns null for unknown URI`() = runTest {
+        val unknownUri = URI.create("file:///unknown.groovy")
+
+        val module = workspaceCompiler.getResolvedModule(unknownUri)
+
+        assertNull(module, "Should return null for unknown URI")
+    }
+
+    @Test
+    fun `compileWorkspace returns empty result for empty workspace`() = runTest {
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val result = workspaceCompiler.compileWorkspace()
+
+        assertTrue(result.success, "Empty workspace should compile successfully")
+        assertTrue(result.modules.isEmpty(), "Should have no modules")
+        assertTrue(result.errors.isEmpty(), "Should have no errors")
+    }
+
+    @Test
+    fun `incrementalCompile updates only changed files`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create initial workspace
+        val file1 = srcDir.resolve("File1.groovy")
+        val file2 = srcDir.resolve("File2.groovy")
+
+        file1.writeText("class File1 { String field1 }")
+        file2.writeText("class File2 { String field2 }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Initial compilation
+        val initialResult = workspaceCompiler.compileWorkspace()
+        assertTrue(initialResult.success)
+
+        // Modify only file1
+        file1.writeText("class File1 { String field1\nString newField }")
+
+        // Incremental compile
+        val incrementalResult = workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+
+        // Should successfully recompile
+        assertTrue(incrementalResult.success)
+        assertTrue(incrementalResult.modules.containsKey(file1.toUri()))
+
+        // Verify the module was updated
+        val module1 = incrementalResult.modules[file1.toUri()]
+        assertNotNull(module1)
+        val file1Class = module1.classes.find { it.name == "File1" }
+        assertNotNull(file1Class)
+        assertEquals(2, file1Class.fields.size, "Should have 2 fields after update")
+    }
+
+    @Test
+    fun `compileWorkspace handles nested package structure`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create nested package structure
+        val packageDir = srcDir.resolve("com/example")
+        Files.createDirectories(packageDir)
+
+        val file1 = packageDir.resolve("Class1.groovy")
+        val file2 = packageDir.resolve("Class2.groovy")
+
+        file1.writeText(
+            """
+            package com.example
+            class Class1 { String name }
+            """.trimIndent(),
+        )
+
+        file2.writeText(
+            """
+            package com.example
+            class Class2 {
+                Class1 ref  // Same package reference
+            }
+            """.trimIndent(),
+        )
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val result = workspaceCompiler.compileWorkspace()
+
+        assertTrue(result.success)
+        assertEquals(2, result.modules.size)
+    }
+}

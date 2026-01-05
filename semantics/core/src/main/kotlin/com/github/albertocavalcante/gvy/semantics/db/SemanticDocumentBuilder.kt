@@ -1,0 +1,450 @@
+package com.github.albertocavalcante.gvy.semantics.db
+
+import org.codehaus.groovy.ast.ClassCodeVisitorSupport
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.control.SourceUnit
+import java.net.URI
+
+/**
+ * AST visitor that extracts semantic information from a compiled ModuleNode.
+ * Builds a SemanticDocument containing all symbols and their occurrences.
+ *
+ * Following Metals/SemanticDB conventions for symbol IDs and occurrence tracking.
+ */
+class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val uri: URI) {
+    private val symbols = mutableListOf<SymbolInfo>()
+    private val occurrences = mutableListOf<SymbolOccurrence>()
+
+    /**
+     * Build the semantic document by walking the entire AST
+     */
+    fun build(): SemanticDocument {
+        // Extract imports
+        moduleNode.imports.forEach { extractImport(it) }
+        moduleNode.starImports.forEach { extractImport(it) }
+        moduleNode.staticImports.forEach { (_, importNode) -> extractStaticImport(importNode) }
+        moduleNode.staticStarImports.forEach { (_, importNode) -> extractStaticImport(importNode) }
+
+        // Extract classes and their members
+        moduleNode.classes.forEach { classNode ->
+            extractClass(classNode)
+        }
+
+        // Extract script methods (top-level methods in scripts)
+        moduleNode.methods.forEach { methodNode ->
+            extractMethod(methodNode, null)
+        }
+
+        return SemanticDocument(uri, symbols, occurrences)
+    }
+
+    /**
+     * Extract import symbol
+     */
+    private fun extractImport(importNode: ImportNode) {
+        val range = nodeToRange(importNode) ?: return
+        val symbolId = createImportSymbolId(importNode)
+        val name = importNode.alias ?: importNode.className ?: importNode.packageName
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = SymbolKind.IMPORT,
+                range = range,
+                name = name,
+                owner = null,
+            ),
+        )
+
+        // Add occurrence for the import itself
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.IMPORT,
+            ),
+        )
+    }
+
+    /**
+     * Extract static import symbol
+     */
+    private fun extractStaticImport(importNode: ImportNode) {
+        val range = nodeToRange(importNode) ?: return
+        val symbolId = createStaticImportSymbolId(importNode)
+        val name = importNode.fieldName ?: importNode.alias ?: importNode.className
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = SymbolKind.IMPORT,
+                range = range,
+                name = name,
+                owner = null,
+            ),
+        )
+
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.IMPORT,
+            ),
+        )
+    }
+
+    /**
+     * Extract class symbol and all its members
+     */
+    private fun extractClass(classNode: ClassNode) {
+        // Skip synthetic/generated classes
+        if (classNode.isSynthetic || classNode.name.contains("$")) {
+            return
+        }
+
+        val range = nodeToRange(classNode) ?: return
+        val symbolId = createClassSymbolId(classNode)
+
+        val kind = when {
+            classNode.isInterface -> SymbolKind.INTERFACE
+            classNode.isEnum -> SymbolKind.ENUM
+            else -> SymbolKind.CLASS
+        }
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = kind,
+                range = range,
+                name = classNode.nameWithoutPackage,
+                owner = null,
+            ),
+        )
+
+        // Add definition occurrence
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.DEFINITION,
+            ),
+        )
+
+        // Extract fields
+        classNode.fields.forEach { fieldNode ->
+            extractField(fieldNode, classNode)
+        }
+
+        // Extract properties
+        classNode.properties.forEach { propertyNode ->
+            extractProperty(propertyNode, classNode)
+        }
+
+        // Extract methods
+        classNode.methods.forEach { methodNode ->
+            extractMethod(methodNode, classNode)
+        }
+
+        // Visit the class body to extract occurrences (method calls, field accesses, etc.)
+        val visitor = OccurrenceVisitor(classNode)
+        classNode.visitContents(visitor)
+    }
+
+    /**
+     * Extract field symbol
+     */
+    private fun extractField(fieldNode: FieldNode, owner: ClassNode) {
+        val range = nodeToRange(fieldNode) ?: return
+        val ownerSymbolId = createClassSymbolId(owner)
+        val symbolId = createFieldSymbolId(owner, fieldNode)
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = SymbolKind.FIELD,
+                range = range,
+                name = fieldNode.name,
+                owner = ownerSymbolId,
+            ),
+        )
+
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.DEFINITION,
+            ),
+        )
+    }
+
+    /**
+     * Extract property symbol
+     */
+    private fun extractProperty(propertyNode: PropertyNode, owner: ClassNode) {
+        val range = nodeToRange(propertyNode) ?: return
+        val ownerSymbolId = createClassSymbolId(owner)
+        val symbolId = createPropertySymbolId(owner, propertyNode)
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = SymbolKind.PROPERTY,
+                range = range,
+                name = propertyNode.name,
+                owner = ownerSymbolId,
+            ),
+        )
+
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.DEFINITION,
+            ),
+        )
+    }
+
+    /**
+     * Extract method symbol
+     */
+    private fun extractMethod(methodNode: MethodNode, owner: ClassNode?) {
+        val range = nodeToRange(methodNode) ?: return
+        val ownerSymbolId = owner?.let { createClassSymbolId(it) }
+        val symbolId = createMethodSymbolId(owner, methodNode)
+
+        val kind = when {
+            methodNode is ConstructorNode -> SymbolKind.CONSTRUCTOR
+            else -> SymbolKind.METHOD
+        }
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = kind,
+                range = range,
+                name = methodNode.name,
+                owner = ownerSymbolId,
+            ),
+        )
+
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.DEFINITION,
+            ),
+        )
+
+        // Extract parameters
+        methodNode.parameters.forEach { parameter ->
+            extractParameter(parameter, methodNode, owner)
+        }
+    }
+
+    /**
+     * Extract parameter symbol
+     */
+    private fun extractParameter(parameter: Parameter, method: MethodNode, owner: ClassNode?) {
+        val range = nodeToRange(parameter) ?: return
+        val ownerSymbolId = createMethodSymbolId(owner, method)
+        val symbolId = createParameterSymbolId(owner, method, parameter)
+
+        symbols.add(
+            SymbolInfo(
+                symbol = symbolId,
+                kind = SymbolKind.PARAMETER,
+                range = range,
+                name = parameter.name,
+                owner = ownerSymbolId,
+            ),
+        )
+
+        occurrences.add(
+            SymbolOccurrence(
+                symbol = symbolId,
+                range = range,
+                role = OccurrenceRole.DEFINITION,
+            ),
+        )
+    }
+
+    /**
+     * Visitor for extracting occurrences (references, calls, etc.)
+     */
+    private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
+
+        override fun getSourceUnit(): SourceUnit? = null
+
+        override fun visitMethodCallExpression(call: MethodCallExpression) {
+            val range = nodeToRange(call) ?: return super.visitMethodCallExpression(call)
+
+            // For now, create a simple symbol ID for the method call
+            // In a more sophisticated implementation, we'd resolve the actual method
+            val methodName = call.methodAsString
+            val symbolId = "${currentClass.name}#$methodName()."
+
+            occurrences.add(
+                SymbolOccurrence(
+                    symbol = symbolId,
+                    range = range,
+                    role = OccurrenceRole.CALL,
+                ),
+            )
+
+            super.visitMethodCallExpression(call)
+        }
+
+        override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
+            val range = nodeToRange(call) ?: return super.visitConstructorCallExpression(call)
+
+            // Create symbol ID for constructor call
+            val symbolId = "${call.type.name}#<init>()."
+
+            occurrences.add(
+                SymbolOccurrence(
+                    symbol = symbolId,
+                    range = range,
+                    role = OccurrenceRole.CALL,
+                ),
+            )
+
+            super.visitConstructorCallExpression(call)
+        }
+
+        override fun visitVariableExpression(expression: VariableExpression) {
+            val range = nodeToRange(expression) ?: return super.visitVariableExpression(expression)
+
+            // Variable reference
+            val symbolId = "${currentClass.name}#${expression.name}"
+
+            occurrences.add(
+                SymbolOccurrence(
+                    symbol = symbolId,
+                    range = range,
+                    role = OccurrenceRole.REFERENCE,
+                ),
+            )
+
+            super.visitVariableExpression(expression)
+        }
+
+        override fun visitPropertyExpression(expression: PropertyExpression) {
+            val range = nodeToRange(expression) ?: return super.visitPropertyExpression(expression)
+
+            // Property/field access
+            val propertyName = expression.propertyAsString
+            val symbolId = "${currentClass.name}#$propertyName."
+
+            occurrences.add(
+                SymbolOccurrence(
+                    symbol = symbolId,
+                    range = range,
+                    role = OccurrenceRole.REFERENCE,
+                ),
+            )
+
+            super.visitPropertyExpression(expression)
+        }
+    }
+
+    /**
+     * Convert AST node to Range (0-indexed)
+     */
+    private fun nodeToRange(node: Any): Range? {
+        return try {
+            // Use reflection to get line and column info from ASTNode
+            val lineStart = node.javaClass.getMethod("getLineNumber").invoke(node) as? Int ?: return null
+            val columnStart = node.javaClass.getMethod("getColumnNumber").invoke(node) as? Int ?: return null
+            val lineEnd = node.javaClass.getMethod("getLastLineNumber").invoke(node) as? Int ?: lineStart
+            val columnEnd = node.javaClass.getMethod("getLastColumnNumber").invoke(node) as? Int ?: columnStart
+
+            // Convert to 0-indexed (Groovy uses 1-indexed)
+            if (lineStart <= 0 || columnStart <= 0) return null
+
+            Range(
+                startLine = lineStart - 1,
+                startColumn = columnStart - 1,
+                endLine = lineEnd - 1,
+                endColumn = columnEnd,
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    companion object {
+        /**
+         * Create unique symbol ID for a class following SemanticDB convention.
+         * Format: "com/example/MyClass#"
+         */
+        fun createClassSymbolId(classNode: ClassNode): String = "${classNode.name.replace('.', '/')}#"
+
+        /**
+         * Create unique symbol ID for a field.
+         * Format: "com/example/MyClass#myField."
+         */
+        fun createFieldSymbolId(owner: ClassNode, field: FieldNode): String =
+            "${createClassSymbolId(owner)}${field.name}."
+
+        /**
+         * Create unique symbol ID for a property.
+         * Format: "com/example/MyClass#myProperty."
+         */
+        fun createPropertySymbolId(owner: ClassNode, property: PropertyNode): String =
+            "${createClassSymbolId(owner)}${property.name}."
+
+        /**
+         * Create unique symbol ID for a method.
+         * Format: "com/example/MyClass#myMethod()." for no-param methods
+         * Format: "com/example/MyClass#myMethod(int,String)." for parameterized methods
+         */
+        fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String {
+            val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
+            val params = method.parameters.joinToString(",") { it.type.nameWithoutPackage }
+            return if (params.isEmpty()) {
+                "${ownerPrefix}${method.name}()."
+            } else {
+                "${ownerPrefix}${method.name}($params)."
+            }
+        }
+
+        /**
+         * Create unique symbol ID for a parameter.
+         * Format: "com/example/MyClass#myMethod(int,String).param"
+         */
+        fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): String {
+            val methodId = createMethodSymbolId(owner, method)
+            return "${methodId}${parameter.name}"
+        }
+
+        /**
+         * Create symbol ID for import.
+         * Format: "import#com/example/MyClass"
+         */
+        fun createImportSymbolId(importNode: ImportNode): String {
+            val className = importNode.className ?: importNode.packageName
+            return "import#${className.replace('.', '/')}"
+        }
+
+        /**
+         * Create symbol ID for static import.
+         * Format: "import#com/example/MyClass.staticMethod"
+         */
+        fun createStaticImportSymbolId(importNode: ImportNode): String {
+            val className = importNode.className ?: ""
+            val fieldName = importNode.fieldName ?: ""
+            return "import#${className.replace('.', '/')}.$fieldName"
+        }
+    }
+}

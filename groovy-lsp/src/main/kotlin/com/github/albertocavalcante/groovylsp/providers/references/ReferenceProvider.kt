@@ -4,8 +4,10 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
+import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -30,12 +32,25 @@ import java.net.URI
 
 /**
  * Provider for finding references to symbols in Groovy code.
+ *
+ * Supports both same-file (AST-based) and workspace-wide (SemanticDB-based) reference finding.
+ * When a [WorkspaceSymbolIndex] is provided, searches across all files in the workspace.
+ * Falls back to same-file AST analysis when workspace index is unavailable.
+ *
+ * @property compilationService Service for accessing compiled AST and symbol tables
+ * @property workspaceSymbolIndex Optional workspace-wide symbol index for cross-file references
  */
-class ReferenceProvider(private val compilationService: GroovyCompilationService) {
+class ReferenceProvider(
+    private val compilationService: GroovyCompilationService,
+    private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
+) {
     private val logger = LoggerFactory.getLogger(ReferenceProvider::class.java)
 
     /**
      * Find all references to the symbol at the given position.
+     *
+     * Searches both same-file (using AST) and workspace-wide (using SemanticDB) if available.
+     * Results are deduplicated to avoid returning the same location twice.
      *
      * @param uri The URI of the document
      * @param position The position in the document
@@ -46,12 +61,29 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     fun provideReferences(uri: String, position: Position, includeDeclaration: Boolean): Flow<Location> = channelFlow {
         logger.debug("Finding references for $uri at ${position.line}:${position.character}")
 
-        try {
-            val context = createReferenceContext(uri, position.toGroovyPosition()) ?: return@channelFlow
-            val definition = resolveTargetDefinition(context) ?: return@channelFlow
+        val emittedLocations = mutableSetOf<String>()
 
-            logger.debug("Found definition: ${definition.javaClass.simpleName}")
-            findReferences(definition, context.visitor, context.symbolTable, includeDeclaration)
+        try {
+            // First, try same-file AST-based reference finding
+            val context = createReferenceContext(uri, position.toGroovyPosition())
+            if (context != null) {
+                val definition = resolveTargetDefinition(context)
+                if (definition != null) {
+                    logger.debug("Found definition via AST: ${definition.javaClass.simpleName}")
+                    findReferences(
+                        definition,
+                        context.visitor,
+                        context.symbolTable,
+                        includeDeclaration,
+                        emittedLocations,
+                    )
+                }
+            }
+
+            // Second, search workspace-wide using SemanticDB
+            workspaceSymbolIndex?.let { index ->
+                findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations)
+            }
         } catch (e: GroovyLspException) {
             logger.error("LSP error finding references", e)
         } catch (e: IllegalArgumentException) {
@@ -60,6 +92,74 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
             logger.error("Invalid state while finding references", e)
         } catch (e: Exception) {
             logger.error("Unexpected error finding references", e)
+        }
+    }
+
+    /**
+     * Find references across the workspace using the SemanticDB index.
+     *
+     * @param uri The document URI
+     * @param position The cursor position
+     * @param includeDeclaration Whether to include declaration occurrences
+     * @param index The workspace symbol index
+     * @param emittedLocations Set of already emitted location keys for deduplication
+     */
+    private suspend fun ProducerScope<Location>.findWorkspaceReferences(
+        uri: String,
+        position: Position,
+        includeDeclaration: Boolean,
+        index: WorkspaceSymbolIndex,
+        emittedLocations: MutableSet<String>,
+    ) {
+        try {
+            // Get SemanticDocument for current file
+            val doc = index.getDocument(URI.create(uri))
+            if (doc == null) {
+                logger.debug("No semantic document found for $uri")
+                return
+            }
+
+            // Find occurrence at cursor position (LSP uses 0-indexed positions)
+            val occurrence = doc.occurrences.find { occ ->
+                occ.range.contains(position.line, position.character)
+            }
+
+            if (occurrence == null) {
+                logger.debug("No occurrence found at ${position.line}:${position.character}")
+                return
+            }
+
+            logger.debug("Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}")
+
+            // Find all references across workspace
+            val locations = index.findReferences(occurrence.symbol)
+            logger.debug("Found ${locations.size} workspace references for ${occurrence.symbol}")
+
+            locations.forEach { location ->
+                // Filter out definitions if includeDeclaration is false
+                if (!includeDeclaration) {
+                    // Check if this location is a definition
+                    val targetDoc = index.getDocument(URI.create(location.uri))
+                    val targetOccurrence = targetDoc?.occurrences?.find { occ ->
+                        occ.symbol == occurrence.symbol &&
+                            occ.range.startLine == location.range.start.line &&
+                            occ.range.startColumn == location.range.start.character
+                    }
+
+                    if (targetOccurrence?.role == OccurrenceRole.DEFINITION) {
+                        logger.debug("Skipping definition occurrence at ${location.uri}:${location.range.start.line}")
+                        return@forEach
+                    }
+                }
+
+                // Emit with deduplication
+                val key = "${location.uri}:${location.range.start.line}:${location.range.start.character}"
+                if (emittedLocations.add(key)) {
+                    send(location)
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("Error finding workspace references", e)
         }
     }
 
@@ -167,16 +267,21 @@ class ReferenceProvider(private val compilationService: GroovyCompilationService
     }
 
     /**
-     * Find all references to the given definition node.
+     * Find all references to the given definition node using AST analysis.
+     *
+     * @param definition The definition node to find references for
+     * @param visitor The AST model
+     * @param symbolTable The symbol table
+     * @param includeDeclaration Whether to include the declaration
+     * @param emittedLocations Set of already emitted location keys for deduplication
      */
     private suspend fun ProducerScope<Location>.findReferences(
         definition: ASTNode,
         visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         includeDeclaration: Boolean,
+        emittedLocations: MutableSet<String>,
     ) {
-        val emittedLocations = mutableSetOf<String>()
-
         visitor.getAllNodes()
             .filter { it.hasValidPosition() }
             .forEach { node ->
