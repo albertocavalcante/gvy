@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
@@ -86,6 +88,12 @@ class WorkspaceCompiler(
     private val initialCompilationDone = AtomicBoolean(false)
 
     /**
+     * Mutex to ensure only one thread performs initial compilation.
+     * Other threads will wait for the initial compilation to complete.
+     */
+    private val initialCompilationMutex = Mutex()
+
+    /**
      * Compiles all workspace files together for full cross-file semantic resolution.
      *
      * This method:
@@ -138,11 +146,16 @@ class WorkspaceCompiler(
         logger.info("Incremental compile requested for ${changedUris.size} files")
 
         // On first incremental compile, do initial compilation to build dependency graph
-        // Use compareAndSet to atomically check and set the flag
-        if (initialCompilationDone.compareAndSet(false, true)) {
-            logger.info("First incremental compile - performing initial compilation")
-            val result = incrementalCompiler.initialCompile()
-            return result
+        // Use mutex to ensure only one thread performs initial compilation while others wait
+        if (!initialCompilationDone.get()) {
+            initialCompilationMutex.withLock {
+                // Double-check inside the lock to avoid redundant compilation
+                if (initialCompilationDone.compareAndSet(false, true)) {
+                    logger.info("First incremental compile - performing initial compilation")
+                    val result = incrementalCompiler.initialCompile()
+                    return result
+                }
+            }
         }
 
         // Perform incremental compilation using dependency tracking
