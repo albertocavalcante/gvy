@@ -5,11 +5,6 @@ import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JRightPadded
-import org.openrewrite.java.tree.Space
-import org.openrewrite.java.tree.Statement
-import org.openrewrite.marker.Markers
-import java.util.UUID
 
 /**
  * Recipe to add braces to while loops that don't have them.
@@ -32,31 +27,10 @@ class AddBracesToWhileLoop : Recipe() {
 
                 val body = w.body
                 if (body !is J.Block) {
-                    w = w.withBody(wrapInBlock(body))
+                    w = w.withBody(BraceUtils.wrapInBlock(body))
                 }
 
                 return w
-            }
-
-            private fun wrapInBlock(statement: Statement): J.Block {
-                val indentedStatement: Statement = statement.withPrefix<Statement>(
-                    Space.format("\n    "),
-                )
-
-                val paddedStatement: JRightPadded<Statement> = JRightPadded(
-                    indentedStatement,
-                    Space.EMPTY,
-                    Markers.EMPTY,
-                )
-
-                return J.Block(
-                    UUID.randomUUID(),
-                    Space.SINGLE_SPACE,
-                    Markers.EMPTY,
-                    JRightPadded(false, Space.EMPTY, Markers.EMPTY),
-                    listOf(paddedStatement),
-                    Space.format("\n"),
-                )
             }
         }
     }

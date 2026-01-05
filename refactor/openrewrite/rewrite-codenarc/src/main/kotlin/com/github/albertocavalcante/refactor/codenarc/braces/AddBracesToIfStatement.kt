@@ -5,11 +5,6 @@ import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JRightPadded
-import org.openrewrite.java.tree.Space
-import org.openrewrite.java.tree.Statement
-import org.openrewrite.marker.Markers
-import java.util.UUID
 
 /**
  * Recipe to add braces to if statements that don't have them.
@@ -37,7 +32,7 @@ class AddBracesToIfStatement : Recipe() {
                 // Check if the then part needs braces
                 val thenPart = i.thenPart
                 if (thenPart !is J.Block) {
-                    i = i.withThenPart(wrapInBlock(thenPart))
+                    i = i.withThenPart(BraceUtils.wrapInBlock(thenPart))
                 }
 
                 // Check if the else part needs braces
@@ -46,38 +41,11 @@ class AddBracesToIfStatement : Recipe() {
                     val elseBody = elsePart.body
                     // Don't wrap if it's already a block or another if (else-if chain)
                     if (elseBody !is J.Block && elseBody !is J.If) {
-                        i = i.withElsePart(elsePart.withBody(wrapInBlock(elseBody)))
+                        i = i.withElsePart(elsePart.withBody(BraceUtils.wrapInBlock(elseBody)))
                     }
                 }
 
                 return i
-            }
-
-            /**
-             * Wrap a statement in a block with proper formatting.
-             */
-            private fun wrapInBlock(statement: Statement): J.Block {
-                // Create the statement list with proper indentation
-                val indentedStatement: Statement = statement.withPrefix<Statement>(
-                    Space.format("\n    "),
-                )
-
-                val paddedStatement: JRightPadded<Statement> = JRightPadded(
-                    indentedStatement,
-                    Space.EMPTY,
-                    Markers.EMPTY,
-                )
-
-                val statements: List<JRightPadded<Statement>> = listOf(paddedStatement)
-
-                return J.Block(
-                    UUID.randomUUID(),
-                    Space.SINGLE_SPACE,
-                    Markers.EMPTY,
-                    JRightPadded(false, Space.EMPTY, Markers.EMPTY),
-                    statements,
-                    Space.format("\n"),
-                )
             }
         }
     }
