@@ -167,6 +167,7 @@ object CompletionProvider {
     }
 
     private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
+        ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
         val symbolContext = SymbolExtractor.extractCompletionSymbols(
             ctx.ast,
             ctx.line,

@@ -225,6 +225,7 @@ class SymbolExtractionTest {
         val classNode = testClass.astNode as org.codehaus.groovy.ast.ClassNode
         val methodNode = classNode.methods.first()
 
+        classNode.module?.let { semanticResolver.semantics.inject(it) }
         val variables = SymbolExtractor.extractVariableSymbols(methodNode, semanticResolver.semantics)
 
         assertEquals(3, variables.size)
