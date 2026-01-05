@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovyparser.internal
 
-import com.github.albertocavalcante.groovyparser.api.ParserDiagnostic
-import com.github.albertocavalcante.groovyparser.api.ParserRange
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import org.codehaus.groovy.control.ErrorCollector
 import org.codehaus.groovy.control.messages.Message
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage

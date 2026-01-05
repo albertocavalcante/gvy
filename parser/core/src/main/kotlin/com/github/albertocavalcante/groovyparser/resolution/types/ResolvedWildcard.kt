@@ -30,10 +30,6 @@ class ResolvedWildcard private constructor(val boundType: BoundType, val bound: 
         BoundType.SUPER -> "? super ${bound?.describe()}"
     }
 
-    override fun isWildcard(): Boolean = true
-
-    override fun asWildcard(): ResolvedWildcard = this
-
     /**
      * Returns true if this is an unbounded wildcard (?).
      */

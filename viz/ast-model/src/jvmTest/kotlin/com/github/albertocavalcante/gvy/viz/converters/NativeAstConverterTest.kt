@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.gvy.viz.model.NativeAstNodeDto
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.net.URI

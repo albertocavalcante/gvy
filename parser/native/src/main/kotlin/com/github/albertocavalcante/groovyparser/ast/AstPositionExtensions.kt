@@ -70,6 +70,7 @@ import org.codehaus.groovy.ast.stmt.SynchronizedStatement
 import org.codehaus.groovy.ast.stmt.ThrowStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
+
 /**
  * Kotlin-idiomatic extension functions for position-based AST operations.
  * Provides clean APIs for finding AST nodes at specific positions.
@@ -118,6 +119,7 @@ fun ASTNode.getDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable): AS
         // First try to get the accessed variable directly
         (accessedVariable as? ASTNode) ?: (symbolTable.resolveSymbol(this, visitor) as? ASTNode)
     }
+
     is Parameter -> symbolTable.resolveSymbol(this, visitor) as? ASTNode
     is MethodCallExpression -> {
         // Try to resolve the method call to its definition
@@ -126,10 +128,12 @@ fun ASTNode.getDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable): AS
             symbolTable.registry.findMethodDeclarations(uri, method.text).firstOrNull()
         }
     }
+
     is DeclarationExpression -> {
         // For declaration expressions, return the variable being declared
         leftExpression as? VariableExpression
     }
+
     else -> null
 }
 
@@ -204,7 +208,7 @@ private fun resolveDeclarationDefinition(expr: DeclarationExpression): ASTNode? 
  * Resolve a property expression to its field/property definition.
  */
 private fun resolvePropertyExpression(
-    propertyExpr: org.codehaus.groovy.ast.expr.PropertyExpression,
+    propertyExpr: PropertyExpression,
     visitor: GroovyAstModel,
     symbolTable: SymbolTable,
 ): ASTNode? {
@@ -222,14 +226,15 @@ private fun resolvePropertyExpression(
  * Resolve the target class from an object expression.
  */
 private fun resolveTargetClass(
-    objectExpr: org.codehaus.groovy.ast.expr.Expression,
+    objectExpr: Expression,
     visitor: GroovyAstModel,
     symbolTable: SymbolTable,
     context: ASTNode,
-): org.codehaus.groovy.ast.ClassNode? = when (objectExpr) {
-    is org.codehaus.groovy.ast.expr.VariableExpression ->
+): ClassNode? = when (objectExpr) {
+    is VariableExpression ->
         resolveVariableType(objectExpr, visitor, symbolTable, context)
-    is org.codehaus.groovy.ast.expr.MethodCallExpression ->
+
+    is MethodCallExpression ->
         null // Would require type inference
     else -> null
 }
@@ -238,11 +243,11 @@ private fun resolveTargetClass(
  * Resolve the type of a variable expression.
  */
 private fun resolveVariableType(
-    varExpr: org.codehaus.groovy.ast.expr.VariableExpression,
+    varExpr: VariableExpression,
     visitor: GroovyAstModel,
     symbolTable: SymbolTable,
     context: ASTNode,
-): org.codehaus.groovy.ast.ClassNode? = when (varExpr.name) {
+): ClassNode? = when (varExpr.name) {
     "this" -> findEnclosingClass(context, visitor)
     "super" -> findEnclosingClass(context, visitor)?.superClass
     else -> getVariableTypeFromSymbol(varExpr, symbolTable, visitor)
@@ -251,13 +256,13 @@ private fun resolveVariableType(
 /**
  * Find the enclosing class of a given node.
  */
-private fun findEnclosingClass(node: ASTNode, visitor: GroovyAstModel): org.codehaus.groovy.ast.ClassNode? {
+private fun findEnclosingClass(node: ASTNode, visitor: GroovyAstModel): ClassNode? {
     var current = visitor.getParent(node)
     var depth = 0
-    while (current != null && current !is org.codehaus.groovy.ast.ClassNode) {
+    while (current != null && current !is ClassNode) {
         // WORKAROUND: If we hit a MethodNode, check if it has a declaringClass
         // This handles cases where parent-child relationships don't include ClassNode -> MethodNode
-        if (current is org.codehaus.groovy.ast.MethodNode) {
+        if (current is MethodNode) {
             val declaringClass = current.declaringClass
             if (declaringClass != null && !declaringClass.isScript) {
                 return declaringClass
@@ -268,7 +273,7 @@ private fun findEnclosingClass(node: ASTNode, visitor: GroovyAstModel): org.code
         depth++
         if (depth > MAX_PARENT_SEARCH_DEPTH) break // Safety check
     }
-    return current as? org.codehaus.groovy.ast.ClassNode
+    return current as? ClassNode
 }
 
 private const val MAX_PARENT_SEARCH_DEPTH = 10
@@ -277,15 +282,15 @@ private const val MAX_PARENT_SEARCH_DEPTH = 10
  * Get the type of a variable from the symbol table.
  */
 private fun getVariableTypeFromSymbol(
-    varExpr: org.codehaus.groovy.ast.expr.VariableExpression,
+    varExpr: VariableExpression,
     symbolTable: SymbolTable,
     visitor: GroovyAstModel,
-): org.codehaus.groovy.ast.ClassNode? {
+): ClassNode? {
     val resolvedVar = symbolTable.resolveSymbol(varExpr, visitor)
     return when (resolvedVar) {
-        is org.codehaus.groovy.ast.Variable -> resolvedVar.type
-        is org.codehaus.groovy.ast.FieldNode -> resolvedVar.type
-        is org.codehaus.groovy.ast.PropertyNode -> resolvedVar.type
+        is Variable -> resolvedVar.type
+        is FieldNode -> resolvedVar.type
+        is PropertyNode -> resolvedVar.type
         else -> null
     }
 }
@@ -293,13 +298,10 @@ private fun getVariableTypeFromSymbol(
 /**
  * Find a property in a class.
  */
-private fun findPropertyInClass(
-    classNode: org.codehaus.groovy.ast.ClassNode,
-    propertyName: String,
-    symbolTable: SymbolTable,
-): ASTNode? = symbolTable.registry.findFieldDeclaration(classNode, propertyName)
-    ?: classNode.getField(propertyName)
-    ?: classNode.getProperty(propertyName)
+private fun findPropertyInClass(classNode: ClassNode, propertyName: String, symbolTable: SymbolTable): ASTNode? =
+    symbolTable.registry.findFieldDeclaration(classNode, propertyName)
+        ?: classNode.getField(propertyName)
+        ?: classNode.getProperty(propertyName)
 
 /**
  * Types that can provide hover information.

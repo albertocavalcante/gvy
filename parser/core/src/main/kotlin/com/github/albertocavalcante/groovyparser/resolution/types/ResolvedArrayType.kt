@@ -9,12 +9,6 @@ class ResolvedArrayType(val componentType: ResolvedType) : ResolvedType {
 
     override fun describe(): String = "${componentType.describe()}[]"
 
-    override fun isArray(): Boolean = true
-
-    override fun asArrayType(): ResolvedArrayType = this
-
-    override fun arrayLevel(): Int = 1 + componentType.arrayLevel()
-
     override fun isAssignableBy(other: ResolvedType): Boolean = when {
         !other.isArray() -> false
         else -> {

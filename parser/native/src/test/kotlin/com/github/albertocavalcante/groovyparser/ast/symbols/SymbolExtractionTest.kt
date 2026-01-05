@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast.symbols
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.collections.immutable.persistentListOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotSame

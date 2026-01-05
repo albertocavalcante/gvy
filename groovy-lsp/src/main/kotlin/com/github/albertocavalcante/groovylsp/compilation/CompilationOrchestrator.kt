@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope

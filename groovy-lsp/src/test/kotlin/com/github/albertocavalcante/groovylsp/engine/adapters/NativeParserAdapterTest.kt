@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp.engine.adapters
 
-import com.github.albertocavalcante.groovyparser.api.ParseResult
-import com.github.albertocavalcante.groovyparser.api.ParserDiagnostic
-import com.github.albertocavalcante.groovyparser.api.ParserPosition
-import com.github.albertocavalcante.groovyparser.api.ParserRange
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.nativeapi.ParseResult
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserPosition
+import com.github.albertocavalcante.nativeapi.ParserRange
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode

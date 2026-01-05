@@ -58,19 +58,27 @@ class ClassContext(
         }
 
         // Check superclass
-        if (resolvedClass.isClass()) {
-            val classDecl = resolvedClass.asClass()
-            classDecl.superClass?.let { superClass ->
-                for (method in superClass.declaration.getDeclaredMethods()) {
-                    if (method.name == name && isMethodApplicable(method, argumentTypes)) {
-                        return SymbolReference.solved(method)
-                    }
-                }
-            }
-        }
+        findMethodInSuperClass(name, argumentTypes)?.let { return it }
 
         // Delegate to parent
         return parent.solveMethod(name, argumentTypes)
+    }
+
+    private fun findMethodInSuperClass(
+        name: String,
+        argumentTypes: List<ResolvedType>,
+    ): SymbolReference<ResolvedMethodDeclaration>? {
+        if (!resolvedClass.isClass()) return null
+
+        val classDecl = resolvedClass.asClass()
+        val superClass = classDecl.superClass ?: return null
+
+        for (method in superClass.declaration.getDeclaredMethods()) {
+            if (method.name == name && isMethodApplicable(method, argumentTypes)) {
+                return SymbolReference.solved(method)
+            }
+        }
+        return null
     }
 
     private fun isMethodApplicable(method: ResolvedMethodDeclaration, argumentTypes: List<ResolvedType>): Boolean {

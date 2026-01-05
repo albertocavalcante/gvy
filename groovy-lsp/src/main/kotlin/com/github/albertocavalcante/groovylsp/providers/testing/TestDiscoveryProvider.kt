@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.nativeapi.ParseResult
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI

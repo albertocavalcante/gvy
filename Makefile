@@ -101,10 +101,10 @@ e2e-single:
 
 # Run the language server
 run-stdio: jar
-	java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar
+	java -jar build/libs/gls-*-all.jar
 
 run-socket: jar
-	java -jar build/libs/groovy-lsp-*-SNAPSHOT.jar socket 8080
+	java -jar build/libs/gls-*-all.jar socket 8080
 
 # Version information
 version:

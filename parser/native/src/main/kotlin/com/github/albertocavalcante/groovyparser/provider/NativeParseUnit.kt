@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovyparser.provider
 
 import com.github.albertocavalcante.groovyparser.api.ParseUnit
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
 import com.github.albertocavalcante.groovyparser.api.model.Diagnostic
 import com.github.albertocavalcante.groovyparser.api.model.NodeInfo
 import com.github.albertocavalcante.groovyparser.api.model.NodeKind
@@ -11,6 +10,7 @@ import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolInfo
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import com.github.albertocavalcante.groovyparser.api.model.TypeInfo
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -27,8 +27,8 @@ import org.codehaus.groovy.ast.stmt.ReturnStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
 import java.net.URI
 import java.nio.file.Path
-import com.github.albertocavalcante.groovyparser.api.ParseResult as NativeParseResult
 import com.github.albertocavalcante.groovyparser.ast.types.Position as NativePosition
+import com.github.albertocavalcante.nativeapi.ParseResult as NativeParseResult
 
 class NativeParseUnit(override val source: String, override val path: Path?, private val result: NativeParseResult) :
     ParseUnit {

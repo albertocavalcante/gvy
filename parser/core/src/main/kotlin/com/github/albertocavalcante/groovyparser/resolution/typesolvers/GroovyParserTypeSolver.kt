@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.groovymodel.GroovyParserClassDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -27,36 +28,24 @@ class GroovyParserTypeSolver(private val sourceRoot: Path, private val parser: G
     private val parsedUnits = ConcurrentHashMap<Path, CompilationUnit>()
     private val resolvedTypes = ConcurrentHashMap<String, SymbolReference<ResolvedTypeDeclaration>>()
 
-    override fun tryToSolveType(name: String): SymbolReference<ResolvedTypeDeclaration> {
-        // Check cache first
-        resolvedTypes[name]?.let { return it }
+    override fun tryToSolveType(name: String): SymbolReference<ResolvedTypeDeclaration> = resolvedTypes.getOrPut(name) {
+        findSourcePath(name)?.let { path ->
+            resolveFromFile(name, path)
+        } ?: SymbolReference.unsolved()
+    }
 
-        // Convert qualified name to file path
+    private fun findSourcePath(name: String): Path? {
         val relativePath = name.replace('.', '/') + ".groovy"
         val sourcePath = sourceRoot.resolve(relativePath)
+        if (Files.exists(sourcePath)) return sourcePath
 
-        if (!Files.exists(sourcePath)) {
-            // Also try with simple name in root
-            val simpleNamePath = sourceRoot.resolve(name.substringAfterLast('.') + ".groovy")
-            if (Files.exists(simpleNamePath)) {
-                return resolveFromFile(name, simpleNamePath)
-            }
-            val unsolved = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-            resolvedTypes[name] = unsolved
-            return unsolved
-        }
-
-        return resolveFromFile(name, sourcePath)
+        val simpleNamePath = sourceRoot.resolve(name.substringAfterLast('.') + ".groovy")
+        return if (Files.exists(simpleNamePath)) simpleNamePath else null
     }
 
     private fun resolveFromFile(name: String, path: Path): SymbolReference<ResolvedTypeDeclaration> {
-        val cu = parsedUnits.getOrPut(path) {
-            val code = Files.readString(path)
-            val result = parser.parse(code)
-            result.result.orElse(null) ?: return cacheAndReturn(name, SymbolReference.unsolved())
-        }
+        val cu = getOrParse(path) ?: return SymbolReference.unsolved()
 
-        // Find the class in the compilation unit
         val simpleName = name.substringAfterLast('.')
         val classDecl = cu.types
             .filterIsInstance<ClassDeclaration>()
@@ -64,18 +53,27 @@ class GroovyParserTypeSolver(private val sourceRoot: Path, private val parser: G
 
         return if (classDecl != null) {
             val declaration = GroovyParserClassDeclaration(classDecl, cu, this)
-            cacheAndReturn(name, SymbolReference.solved(declaration))
+            SymbolReference.solved(declaration)
         } else {
-            cacheAndReturn(name, SymbolReference.unsolved())
+            SymbolReference.unsolved()
         }
     }
 
-    private fun cacheAndReturn(
-        name: String,
-        ref: SymbolReference<ResolvedTypeDeclaration>,
-    ): SymbolReference<ResolvedTypeDeclaration> {
-        resolvedTypes[name] = ref
-        return ref
+    private fun getOrParse(path: Path): CompilationUnit? {
+        parsedUnits[path]?.let { return it }
+
+        return try {
+            val code = Files.readString(path)
+            val result = parser.parse(code)
+            val cu = result.result.orElse(null)
+            if (cu != null) {
+                parsedUnits.putIfAbsent(path, cu) ?: cu
+            } else {
+                null
+            }
+        } catch (ignored: IOException) {
+            null
+        }
     }
 
     /**

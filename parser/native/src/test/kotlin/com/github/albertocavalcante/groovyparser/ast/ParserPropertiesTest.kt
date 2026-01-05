@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import net.jqwik.api.ForAll
 import net.jqwik.api.Property
 import net.jqwik.api.constraints.StringLength

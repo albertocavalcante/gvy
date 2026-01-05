@@ -145,9 +145,7 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
         val params = InitializeParams().apply {
             processId = ProcessHandle.current().pid().toInt()
             val finalRootUri = step.rootUri ?: context.workspace.rootUri
-            if (finalRootUri != null) {
-                workspaceFolders = listOf(WorkspaceFolder(finalRootUri, context.workspace.rootDir.name))
-            }
+            workspaceFolders = listOf(WorkspaceFolder(finalRootUri, context.workspace.rootDir.name))
             initializationOptions = interpolatedOptions?.let {
                 // Convert to Java Map/Object for LSP4J
                 it.toJavaObject()

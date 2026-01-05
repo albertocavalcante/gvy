@@ -17,11 +17,13 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * @param jreOnly If true, only resolve types in java.* and javax.* packages
  */
-class ReflectionTypeSolver(private val jreOnly: Boolean = true) : TypeSolver {
+class ReflectionTypeSolver(
+    private val jreOnly: Boolean = true,
+    private val classLoader: ClassLoader = ReflectionTypeSolver::class.java.classLoader,
+) : TypeSolver {
 
     override var parent: TypeSolver? = null
 
-    private val classLoader: ClassLoader = ReflectionTypeSolver::class.java.classLoader
     private val cache = ConcurrentHashMap<String, SymbolReference<ResolvedTypeDeclaration>>()
 
     override fun tryToSolveType(name: String): SymbolReference<ResolvedTypeDeclaration> {
@@ -37,6 +39,7 @@ class ReflectionTypeSolver(private val jreOnly: Boolean = true) : TypeSolver {
         name.startsWith("javax.") ||
         name.startsWith("groovy.")
 
+    @Suppress("SwallowedException")
     private fun resolveFromReflection(name: String): SymbolReference<ResolvedTypeDeclaration> = try {
         val clazz = classLoader.loadClass(name)
         val declaration = createDeclaration(clazz)

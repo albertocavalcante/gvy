@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovyparser.resolution.declarations
 
 import com.github.albertocavalcante.groovyparser.resolution.types.ResolvedType
+import com.github.albertocavalcante.groovyparser.resolution.types.asReferenceType
+import com.github.albertocavalcante.groovyparser.resolution.types.isReferenceType
 
 /**
  * Represents a resolved type parameter declaration (generic type parameter).

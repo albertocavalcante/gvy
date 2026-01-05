@@ -231,7 +231,7 @@ class RulesetResolverTest {
 
         // Then: Should find properties file
         assertNotNull(config.propertiesFile)
-        assertTrue(config.propertiesFile!!.contains("codenarc.properties"))
+        assertTrue(config.propertiesFile.contains("codenarc.properties"))
     }
 
     @Test
@@ -278,9 +278,11 @@ class RulesetResolverTest {
         // Verify the ruleset includes the bundled Jenkins rules
         assertTrue(
             config.rulesetContent.contains("rulesets/jenkins.xml"),
-            "Jenkins ruleset should include rulesets/jenkins.xml for CPS rules. Content: ${config.rulesetContent.take(
-                300,
-            )}",
+            "Jenkins ruleset should include rulesets/jenkins.xml for CPS rules. Content: ${
+                config.rulesetContent.take(
+                    300,
+                )
+            }",
         )
         // Verify source indicates Jenkins framework
         assertTrue(
