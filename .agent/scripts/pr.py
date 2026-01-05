@@ -426,7 +426,7 @@ class ParserRegistry:
             compact: If True, collapse analysis sections to save tokens.
                      If False (default), show full content with markers.
         """
-        author = comment_data.get("author", {}).get("login", "unknown")
+        author = (comment_data.get("author") or {}).get("login", "unknown")
         body = comment_data.get("body", "")
 
         parser = self.get_parser(author, body)

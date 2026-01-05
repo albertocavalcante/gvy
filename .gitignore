@@ -63,3 +63,6 @@ Thumbs.db
 # GitHub Actions Runner Cache
 .github/.cache/
 .kiro/
+
+# Python
+__pycache__/
