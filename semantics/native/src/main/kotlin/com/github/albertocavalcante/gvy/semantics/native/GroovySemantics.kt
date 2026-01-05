@@ -6,7 +6,11 @@ import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.codehaus.groovy.ast.stmt.Statement
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -45,17 +49,58 @@ class GroovySemantics(
 
             // Populate script variables from top-level declarations
             module.statementBlock?.statements?.forEach { stmt ->
-                if (stmt is org.codehaus.groovy.ast.stmt.ExpressionStatement &&
-                    stmt.expression is org.codehaus.groovy.ast.expr.DeclarationExpression
+                if (stmt is ExpressionStatement &&
+                    stmt.expression is DeclarationExpression
                 ) {
-                    val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+                    val decl = stmt.expression as DeclarationExpression
                     val name = decl.variableExpression.name
                     val type = calculatorRegistry.calculate(decl, context)
                     scope.defineVariable(name, type)
                 }
             }
 
+            // Populate method parameters and local variables
+            for (classNode in module.classes) {
+                for (method in classNode.methods) {
+                    // Register method parameters
+                    for (param in method.parameters) {
+                        val paramType = NativeTypeContext.fromClassNode(param.type)
+                        scope.defineVariable(param.name, paramType)
+                    }
+
+                    // Traverse method body and register declarations
+                    val code = method.code
+                    if (code is BlockStatement) {
+                        populateScopeFromBlock(code, scope, context)
+                    }
+                }
+            }
+
             contextCache[module] = context
+        }
+    }
+
+    /**
+     * Populates scope with variables from a BlockStatement.
+     * Traverses DeclarationExpressions and registers their types.
+     */
+    private fun populateScopeFromBlock(block: BlockStatement, scope: NativeScope, context: NativeTypeContext) {
+        for (stmt in block.statements) {
+            when (stmt) {
+                is ExpressionStatement -> {
+                    val expr = stmt.expression
+                    if (expr is DeclarationExpression) {
+                        val name = expr.variableExpression.name
+                        val type = calculatorRegistry.calculate(expr, context)
+                        scope.defineVariable(name, type)
+                    }
+                }
+
+                is BlockStatement -> {
+                    // Recurse into nested blocks
+                    populateScopeFromBlock(stmt, scope, context)
+                }
+            }
         }
     }
 
@@ -119,7 +164,7 @@ class GroovySemantics(
         var scope = NativeScope.empty()
 
         for (classNode in module.classes) {
-            // For now we just use the first class found as the root scope basis
+            // Use the first class found as the root scope basis
             // (common for scripts where it's the script class)
             scope = NativeScope.fromClass(classNode)
             break
