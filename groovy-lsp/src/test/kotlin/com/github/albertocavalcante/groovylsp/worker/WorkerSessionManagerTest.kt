@@ -2,8 +2,8 @@ package com.github.albertocavalcante.groovylsp.worker
 
 import com.github.albertocavalcante.groovylsp.test.parseGroovyVersion
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionRange
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParseResult
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.mockk
 import org.junit.jupiter.api.Test
 import java.net.URI

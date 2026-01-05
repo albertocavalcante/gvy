@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -43,6 +44,7 @@ class JenkinsDeclarativeCompletionTest {
             line = 2,
             character = 12,
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -70,6 +72,7 @@ class JenkinsDeclarativeCompletionTest {
             line = 2,
             character = 12,
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -101,6 +104,7 @@ class JenkinsDeclarativeCompletionTest {
             line = 4,
             character = 16,
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -135,6 +139,7 @@ class JenkinsDeclarativeCompletionTest {
             line = 10,
             character = 8,
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 
@@ -172,6 +177,7 @@ class JenkinsDeclarativeCompletionTest {
             line = 7,
             character = 20,
             compilationService = compilationService,
+            semanticResolver = mockk(relaxed = true),
             content = content,
         )
 

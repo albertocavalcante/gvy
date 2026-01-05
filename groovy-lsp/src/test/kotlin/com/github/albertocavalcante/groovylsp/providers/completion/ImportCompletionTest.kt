@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.test.LspTestFixture
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionItem
 import org.junit.jupiter.api.BeforeEach
@@ -24,6 +26,7 @@ class ImportCompletionTest {
             line,
             character,
             fixture.compilationService,
+            SemanticTypeResolver(ReflectionTypeSolver()),
             content,
         )
     }

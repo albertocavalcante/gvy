@@ -8,13 +8,13 @@ import androidx.compose.runtime.setValue
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.ParserConfiguration
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.printer.DotPrinter
 import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json

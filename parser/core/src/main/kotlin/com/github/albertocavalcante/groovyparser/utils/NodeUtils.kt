@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
  *
  * Similar to JavaParser's Navigator class.
  */
+@Suppress("TooManyFunctions")
 object NodeUtils {
 
     /**

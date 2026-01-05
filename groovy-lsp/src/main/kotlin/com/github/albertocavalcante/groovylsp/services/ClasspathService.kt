@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.net.URLClassLoader
@@ -180,6 +183,13 @@ class ClasspathService(
      * Tries to load a class by name.
      */
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
+
+    /**
+     * Returns a TypeSolver backed by the current classloader.
+     */
+    fun getTypeSolver(): TypeSolver = CombinedTypeSolver(
+        ReflectionTypeSolver(classLoader = currentClassLoader, jreOnly = false),
+    )
 
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()

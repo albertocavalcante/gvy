@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionService
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
+import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
@@ -11,7 +12,10 @@ import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 
-class NativeCompletionService(private val compilationService: GroovyCompilationService) : CompletionService {
+class NativeCompletionService(
+    private val compilationService: GroovyCompilationService,
+    private val semanticResolver: SemanticTypeResolver,
+) : CompletionService {
 
     override suspend fun getCompletions(
         params: CompletionParams,
@@ -28,6 +32,7 @@ class NativeCompletionService(private val compilationService: GroovyCompilationS
                     line = position.line,
                     character = position.character,
                     compilationService = compilationService,
+                    semanticResolver = semanticResolver,
                     content = content,
                 )
             }

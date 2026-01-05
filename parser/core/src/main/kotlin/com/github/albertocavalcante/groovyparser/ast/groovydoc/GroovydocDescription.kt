@@ -44,33 +44,46 @@ class GroovydocDescription(
             var i = 0
 
             while (i < text.length) {
-                if (i + 1 < text.length && text[i] == '{' && text[i + 1] == '@') {
-                    // Found start of inline tag
-                    val tagStart = i
-                    val tagEnd = text.indexOf('}', tagStart)
-                    if (tagEnd != -1) {
-                        val tagContent = text.substring(tagStart + 2, tagEnd)
-                        val spaceIndex = tagContent.indexOf(' ')
-                        val tagName = if (spaceIndex != -1) tagContent.substring(0, spaceIndex) else tagContent
-                        val tagValue = if (spaceIndex != -1) tagContent.substring(spaceIndex + 1).trim() else ""
-
-                        inlineTags.add(
-                            GroovydocInlineTag(
-                                type = GroovydocInlineTag.Type.fromName(tagName),
-                                tagName = tagName,
-                                content = tagValue,
-                            ),
-                        )
-                        processedText.append(text.substring(tagStart, tagEnd + 1))
-                        i = tagEnd + 1
-                        continue
-                    }
+                val nextIndex = tryParseInlineTag(text, i, inlineTags, processedText)
+                if (nextIndex > i) {
+                    i = nextIndex
+                    continue
                 }
+
                 processedText.append(text[i])
                 i++
             }
 
             return GroovydocDescription(processedText.toString().trim(), inlineTags)
+        }
+
+        private fun tryParseInlineTag(
+            text: String,
+            startIndex: Int,
+            inlineTags: MutableList<GroovydocInlineTag>,
+            processedText: StringBuilder,
+        ): Int {
+            if (startIndex + 1 < text.length && text[startIndex] == '{' && text[startIndex + 1] == '@') {
+                // Found start of inline tag
+                val tagEnd = text.indexOf('}', startIndex)
+                if (tagEnd != -1) {
+                    val tagContent = text.substring(startIndex + 2, tagEnd)
+                    val spaceIndex = tagContent.indexOf(' ')
+                    val tagName = if (spaceIndex != -1) tagContent.substring(0, spaceIndex) else tagContent
+                    val tagValue = if (spaceIndex != -1) tagContent.substring(spaceIndex + 1).trim() else ""
+
+                    inlineTags.add(
+                        GroovydocInlineTag(
+                            type = GroovydocInlineTag.Type.fromName(tagName),
+                            tagName = tagName,
+                            content = tagValue,
+                        ),
+                    )
+                    processedText.append(text.substring(startIndex, tagEnd + 1))
+                    return tagEnd + 1
+                }
+            }
+            return startIndex
         }
     }
 }

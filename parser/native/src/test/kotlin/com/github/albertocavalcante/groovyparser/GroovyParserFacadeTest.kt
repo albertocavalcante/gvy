@@ -1,8 +1,10 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.api.ParseRequest
-import com.github.albertocavalcante.groovyparser.api.ParserSeverity
+import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
+import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParserSeverity
+import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
@@ -113,7 +115,7 @@ class GroovyParserFacadeTest {
         assertTrue(result.astModel is RecursiveAstVisitor, "AST model should be RecursiveAstVisitor")
         val recursiveNodes = result.astModel.getAllNodes()
         assertTrue(recursiveNodes.isNotEmpty(), "AST model should collect nodes")
-        val classCount = recursiveNodes.count { it is org.codehaus.groovy.ast.ClassNode }
+        val classCount = recursiveNodes.count { it is ClassNode }
         assertTrue(classCount >= 1, "Recursive visitor should track class nodes")
     }
 
@@ -138,11 +140,11 @@ class GroovyParserFacadeTest {
         )
 
         val positions = listOf(
-            com.github.albertocavalcante.groovyparser.ast.types.Position(0, 6) to "class name",
-            com.github.albertocavalcante.groovyparser.ast.types.Position(1, 6) to "method name",
-            com.github.albertocavalcante.groovyparser.ast.types.Position(1, 17) to "parameter",
-            com.github.albertocavalcante.groovyparser.ast.types.Position(2, 8) to "if condition variable",
-            com.github.albertocavalcante.groovyparser.ast.types.Position(3, 14) to "println argument",
+            Position(0, 6) to "class name",
+            Position(1, 6) to "method name",
+            Position(1, 17) to "parameter",
+            Position(2, 8) to "if condition variable",
+            Position(3, 14) to "println argument",
         )
 
         positions.forEach { (pos, label) ->

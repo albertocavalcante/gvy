@@ -24,56 +24,62 @@ object GroovyParserTypeResolver {
     fun resolveType(typeName: String, typeSolver: TypeSolver): ResolvedType {
         val trimmed = typeName.trim()
 
-        // Check for void
-        if (trimmed == "void" || trimmed == "Void") {
-            return ResolvedVoidType
-        }
+        return sequenceOf(
+            { resolveVoid(trimmed) },
+            { resolveArray(trimmed, typeSolver) },
+            { resolvePrimitive(trimmed) },
+            { resolveDefOrObject(trimmed, typeSolver) },
+            { resolveReference(trimmed, typeSolver) },
+            { resolveCommonPackage(trimmed, typeSolver) },
+        )
+            .map { it() }
+            .firstOrNull { it != null }
+            ?: resolveFallback(typeSolver)
+    }
 
-        // Check for array types
-        if (trimmed.endsWith("[]")) {
-            val componentTypeName = trimmed.dropLast(2)
+    private fun resolveVoid(name: String): ResolvedType? =
+        if (name == "void" || name == "Void") ResolvedVoidType else null
+
+    private fun resolveArray(name: String, typeSolver: TypeSolver): ResolvedType? {
+        if (name.endsWith("[]")) {
+            val componentTypeName = name.dropLast(2)
             val componentType = resolveType(componentTypeName, typeSolver)
             return ResolvedArrayType(componentType)
         }
+        return null
+    }
 
-        // Check for primitive types
-        ResolvedPrimitiveType.byName(trimmed)?.let { return it }
+    private fun resolvePrimitive(name: String): ResolvedType? = ResolvedPrimitiveType.byName(name)
 
-        // Handle def/Object as Object
-        if (trimmed == "def" || trimmed == "Object") {
+    private fun resolveDefOrObject(name: String, typeSolver: TypeSolver): ResolvedType? {
+        if (name == "def" || name == "Object") {
             val ref = typeSolver.tryToSolveType("java.lang.Object")
             if (ref.isSolved) return ResolvedReferenceType(ref.getDeclaration())
         }
+        return null
+    }
 
-        // Try to resolve as reference type
-        val ref = typeSolver.tryToSolveType(trimmed)
-        if (ref.isSolved) {
-            return ResolvedReferenceType(ref.getDeclaration())
-        }
+    private fun resolveReference(name: String, typeSolver: TypeSolver): ResolvedType? {
+        val ref = typeSolver.tryToSolveType(name)
+        return if (ref.isSolved) ResolvedReferenceType(ref.getDeclaration()) else null
+    }
 
-        // Try common imports
+    private fun resolveCommonPackage(name: String, typeSolver: TypeSolver): ResolvedType? {
         for (commonPackage in COMMON_PACKAGES) {
-            val fqn = "$commonPackage.$trimmed"
+            val fqn = "$commonPackage.$name"
             val commonRef = typeSolver.tryToSolveType(fqn)
             if (commonRef.isSolved) {
                 return ResolvedReferenceType(commonRef.getDeclaration())
             }
         }
+        return null
+    }
 
-        // [HEURISTIC NOTE]
-        // Fallback to Object for unresolved types.
-        // Groovy is a dynamic language, so unknown types are often effectively `Object` / `def`.
-        // This allows the IDE to provide basic completion on "Object" rather than showing nothing.
-        //
-        // Trade-offs:
-        // - PRO: Robustness. Partial code can still be navigated.
-        // - CON: False negatives. A typo "Stirng" becomes "Object", suppressing potential errors.
+    private fun resolveFallback(typeSolver: TypeSolver): ResolvedType {
         val objectRef = typeSolver.tryToSolveType("java.lang.Object")
         return if (objectRef.isSolved) {
             ResolvedReferenceType(objectRef.getDeclaration())
         } else {
-            // Last resort: return primitive integer if Object isn't found (e.g. no JDK configured).
-            // This is a "Sentinel" fallback to prevent crashes.
             ResolvedPrimitiveType.INT
         }
     }

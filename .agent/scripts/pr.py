@@ -10,21 +10,665 @@ Agent only needs: thread_id, file, line, message.
 """
 
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 import tempfile
 import hashlib
+from abc import ABC, abstractmethod
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 import typer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.table import Table
+from rich.text import Text
+
+
+# =============================================================================
+# ENUMS
+# =============================================================================
+
+
+class OutputMode(str, Enum):
+    """Output mode for thread display."""
+
+    HUMAN = "human"
+    LLM = "llm"
+    JSON = "json"
+
+
+class Severity(str, Enum):
+    """Thread severity levels, ordered from highest to lowest."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MAJOR = "major"
+    MEDIUM = "medium"
+    MINOR = "minor"
+    LOW = "low"
+    NITPICK = "nitpick"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def priority(cls, sev: "Severity") -> int:
+        """Return sort priority (lower = more severe)."""
+        order = [
+            cls.CRITICAL,
+            cls.HIGH,
+            cls.MAJOR,
+            cls.MEDIUM,
+            cls.MINOR,
+            cls.LOW,
+            cls.NITPICK,
+            cls.UNKNOWN,
+        ]
+        try:
+            return order.index(sev)
+        except ValueError:
+            return 999
+
+
+class Reviewer(str, Enum):
+    """Known AI reviewers."""
+
+    CODERABBIT = "coderabbit"
+    GEMINI = "gemini"
+    COPILOT = "copilot"
+    CURSOR = "cursor"
+    HUMAN = "human"
+
+
+# =============================================================================
+# PYDANTIC MODELS
+# =============================================================================
+
+
+class ReviewerMetadata(BaseModel):
+    """Extracted metadata from reviewer-specific formatting."""
+
+    severity: Severity = Severity.UNKNOWN
+    raw_severity_marker: Optional[str] = None
+    has_analysis_chain: bool = False
+    analysis_lines: int = 0
+
+
+class ParsedComment(BaseModel):
+    """A comment with extracted metadata and cleaned content."""
+
+    id: str
+    author: str
+    reviewer: Reviewer
+    body_raw: str
+    body_clean: str  # Human-readable
+    body_llm: str  # Token-efficient but complete
+    metadata: ReviewerMetadata
+
+
+class ReviewThread(BaseModel):
+    """A review thread with parsed first comment."""
+
+    thread_id: str
+    comment_id: str
+    path: str
+    line: Optional[int] = None
+    comment: ParsedComment
+    primary_severity: Severity = Severity.UNKNOWN
+
+
+class PRReviewSummary(BaseModel):
+    """Complete review state for a PR."""
+
+    pr_number: int
+    pr_id: str
+    total_threads: int
+    threads: list[ReviewThread] = Field(default_factory=list)
+    by_severity: dict[str, int] = Field(default_factory=dict)
+
+
+# =============================================================================
+# REVIEWER PARSERS
+# =============================================================================
+
+
+class ReviewerParser(ABC):
+    """Base class for reviewer-specific parsing."""
+
+    @abstractmethod
+    def matches(self, author: str, body: str) -> bool:
+        """Check if this parser handles the given content."""
+        pass
+
+    @abstractmethod
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        """Extract severity, type, and other metadata."""
+        pass
+
+    @abstractmethod
+    def clean_for_human(self, body: str) -> str:
+        """Clean body for human display (preserve key formatting)."""
+        pass
+
+    @abstractmethod
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        """Clean body for LLM consumption.
+
+        Args:
+            body: Raw comment body
+            compact: If True, collapse analysis sections to save tokens.
+                     If False (default), show full content with markers.
+        """
+        pass
+
+
+class CodeRabbitParser(ReviewerParser):
+    """Parser for CodeRabbit review comments."""
+
+    # _⚠️ Potential issue_ | _🟠 Major_
+    SEVERITY_PATTERN = re.compile(
+        r"_[⚠️⛔✅💡]*\s*(?:Potential issue|Bug|Critical|Suggestion)?_?\s*\|\s*_([🔴🟠🟡🟢⚪])\s*(\w+)_",
+        re.IGNORECASE,
+    )
+    DETAILS_PATTERN = re.compile(
+        r"<details>\s*<summary>(.*?)</summary>(.*?)</details>",
+        re.DOTALL,
+    )
+    ANALYSIS_CHAIN_PATTERN = re.compile(r"🧩\s*Analysis chain")
+    SCRIPT_EXECUTED_PATTERN = re.compile(r"🏁\s*Script executed:")
+    NITPICK_PATTERN = re.compile(r"\[nitpick\]", re.IGNORECASE)
+
+    SEVERITY_MAP = {
+        "🔴": Severity.CRITICAL,
+        "🟠": Severity.MAJOR,
+        "🟡": Severity.MINOR,
+        "🟢": Severity.NITPICK,
+        "⚪": Severity.UNKNOWN,
+    }
+
+    def matches(self, author: str, body: str) -> bool:
+        return "coderabbit" in author.lower()
+
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        metadata = ReviewerMetadata()
+
+        # Extract severity from emoji pattern
+        match = self.SEVERITY_PATTERN.search(body)
+        if match:
+            emoji, text = match.groups()
+            metadata.severity = self.SEVERITY_MAP.get(emoji, Severity.UNKNOWN)
+            metadata.raw_severity_marker = f"{emoji} {text}"
+
+        # Check for nitpick
+        if self.NITPICK_PATTERN.search(body):
+            metadata.severity = Severity.NITPICK
+
+        # Check for analysis chain
+        if self.ANALYSIS_CHAIN_PATTERN.search(body):
+            metadata.has_analysis_chain = True
+            # Count lines in details sections
+            details_matches = self.DETAILS_PATTERN.findall(body)
+            metadata.analysis_lines = sum(
+                len(content.split("\n")) for _, content in details_matches
+            )
+
+        return metadata
+
+    def clean_for_human(self, body: str) -> str:
+        # Replace details with collapsible indicator
+        def replace_details(m):
+            summary = m.group(1).strip()
+            return f"\n[{summary}] (expandable)\n"
+
+        body = self.DETAILS_PATTERN.sub(replace_details, body)
+        return body.strip()
+
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        if compact:
+            # Compact mode: collapse analysis sections to save tokens
+            def replace_with_collapsed(m):
+                content = m.group(2)
+                lines = len(content.strip().split("\n"))
+                return f"\n[analysis: {lines} lines]\n"
+
+            body = self.DETAILS_PATTERN.sub(replace_with_collapsed, body)
+        else:
+            # Default: expand with clear markers for LLM parsing
+            def replace_with_markers(m):
+                summary = m.group(1).strip()
+                content = m.group(2).strip()
+                return f"\n[analysis:start:{summary}]\n{content}\n[analysis:end]\n"
+
+            body = self.DETAILS_PATTERN.sub(replace_with_markers, body)
+
+        # Remove severity header line (already extracted to metadata)
+        body = self.SEVERITY_PATTERN.sub("", body)
+
+        # Clean up whitespace
+        body = re.sub(r"\n{3,}", "\n\n", body)
+        return body.strip()
+
+
+class GeminiParser(ReviewerParser):
+    """Parser for Gemini Code Assist comments."""
+
+    # ![high](https://www.gstatic.com/codereviewagent/high-priority.svg)
+    PRIORITY_BADGE_PATTERN = re.compile(
+        r"!\[(high|medium|low|critical)\]\(https://www\.gstatic\.com/codereviewagent/\w+-priority\.svg\)",
+        re.IGNORECASE,
+    )
+
+    SEVERITY_MAP = {
+        "critical": Severity.CRITICAL,
+        "high": Severity.HIGH,
+        "medium": Severity.MEDIUM,
+        "low": Severity.LOW,
+    }
+
+    def matches(self, author: str, body: str) -> bool:
+        return "gemini" in author.lower() or "gstatic.com/codereviewagent" in body
+
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        metadata = ReviewerMetadata()
+
+        match = self.PRIORITY_BADGE_PATTERN.search(body)
+        if match:
+            priority = match.group(1).lower()
+            metadata.severity = self.SEVERITY_MAP.get(priority, Severity.UNKNOWN)
+            metadata.raw_severity_marker = f"[{priority}]"
+
+        return metadata
+
+    def clean_for_human(self, body: str) -> str:
+        # Replace badge with readable text
+        body = self.PRIORITY_BADGE_PATTERN.sub(r"[\1 priority] ", body)
+        return body.strip()
+
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        # Remove badge (severity is in structured metadata)
+        body = self.PRIORITY_BADGE_PATTERN.sub("", body)
+        return body.strip()
+
+
+class CursorParser(ReviewerParser):
+    """Parser for Cursor AI comments."""
+
+    # <!-- **Low Severity** -->
+    SEVERITY_COMMENT_PATTERN = re.compile(
+        r"<!--\s*\*\*(\w+)\s*Severity\*\*\s*-->",
+        re.IGNORECASE,
+    )
+    HEADER_PATTERN = re.compile(r"^###\s+(.+)$", re.MULTILINE)
+
+    SEVERITY_MAP = {
+        "critical": Severity.CRITICAL,
+        "high": Severity.HIGH,
+        "medium": Severity.MEDIUM,
+        "low": Severity.LOW,
+    }
+
+    def matches(self, author: str, body: str) -> bool:
+        return "cursor" in author.lower()
+
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        metadata = ReviewerMetadata()
+
+        match = self.SEVERITY_COMMENT_PATTERN.search(body)
+        if match:
+            severity_text = match.group(1).lower()
+            metadata.severity = self.SEVERITY_MAP.get(severity_text, Severity.UNKNOWN)
+            metadata.raw_severity_marker = f"[{severity_text}]"
+
+        return metadata
+
+    def clean_for_human(self, body: str) -> str:
+        # Remove HTML comments but keep headers
+        body = self.SEVERITY_COMMENT_PATTERN.sub("", body)
+        return body.strip()
+
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        # Remove HTML severity comments (severity is in structured metadata)
+        body = self.SEVERITY_COMMENT_PATTERN.sub("", body)
+        if compact:
+            # Simplify headers in compact mode
+            body = self.HEADER_PATTERN.sub(r"\1:", body)
+        return body.strip()
+
+
+class CopilotParser(ReviewerParser):
+    """Parser for GitHub Copilot comments."""
+
+    def matches(self, author: str, body: str) -> bool:
+        return "copilot" in author.lower()
+
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        # Copilot doesn't have explicit severity markers - infer from keywords
+        metadata = ReviewerMetadata()
+        body_lower = body.lower()
+
+        if any(
+            w in body_lower for w in ["bug", "error", "crash", "breaking", "security"]
+        ):
+            metadata.severity = Severity.HIGH
+        elif any(w in body_lower for w in ["issue", "problem", "incorrect"]):
+            metadata.severity = Severity.MEDIUM
+        elif any(w in body_lower for w in ["suggest", "consider", "might", "could"]):
+            metadata.severity = Severity.LOW
+        else:
+            metadata.severity = Severity.MEDIUM
+
+        return metadata
+
+    def clean_for_human(self, body: str) -> str:
+        return body.strip()
+
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        return body.strip()
+
+
+class HumanReviewerParser(ReviewerParser):
+    """Fallback parser for human reviewers."""
+
+    def matches(self, author: str, body: str) -> bool:
+        return True  # Fallback
+
+    def extract_metadata(self, body: str) -> ReviewerMetadata:
+        return ReviewerMetadata(severity=Severity.MEDIUM)
+
+    def clean_for_human(self, body: str) -> str:
+        return body.strip()
+
+    def clean_for_llm(self, body: str, compact: bool = False) -> str:
+        return body.strip()
+
+
+class ParserRegistry:
+    """Registry of reviewer parsers."""
+
+    def __init__(self):
+        self.parsers: list[ReviewerParser] = [
+            CodeRabbitParser(),
+            GeminiParser(),
+            CursorParser(),
+            CopilotParser(),
+            HumanReviewerParser(),  # Fallback
+        ]
+
+    def get_parser(self, author: str, body: str) -> ReviewerParser:
+        for parser in self.parsers:
+            if parser.matches(author, body):
+                return parser
+        return self.parsers[-1]  # Default to human parser
+
+    def classify_reviewer(self, author: str) -> Reviewer:
+        author_lower = author.lower()
+        if "coderabbit" in author_lower:
+            return Reviewer.CODERABBIT
+        elif "gemini" in author_lower:
+            return Reviewer.GEMINI
+        elif "copilot" in author_lower:
+            return Reviewer.COPILOT
+        elif "cursor" in author_lower:
+            return Reviewer.CURSOR
+        return Reviewer.HUMAN
+
+    def parse_comment(self, comment_data: dict, compact: bool = False) -> ParsedComment:
+        """Parse a comment with reviewer-specific handling.
+
+        Args:
+            comment_data: Raw comment data from GitHub API
+            compact: If True, collapse analysis sections to save tokens.
+                     If False (default), show full content with markers.
+        """
+        author = (comment_data.get("author") or {}).get("login", "unknown")
+        body = comment_data.get("body", "")
+
+        parser = self.get_parser(author, body)
+        metadata = parser.extract_metadata(body)
+
+        return ParsedComment(
+            id=comment_data.get("id", ""),
+            author=author,
+            reviewer=self.classify_reviewer(author),
+            body_raw=body,
+            body_clean=parser.clean_for_human(body),
+            body_llm=parser.clean_for_llm(body, compact=compact),
+            metadata=metadata,
+        )
+
+
+# Global parser registry
+parser_registry = ParserRegistry()
+
+
+# =============================================================================
+# FORMATTERS
+# =============================================================================
+
+
+class HumanFormatter:
+    """Rich-based formatter for human-readable output."""
+
+    SEVERITY_STYLES = {
+        Severity.CRITICAL: ("bold red", "CRIT"),
+        Severity.HIGH: ("bold orange1", "HIGH"),
+        Severity.MAJOR: ("bold yellow", "MAJR"),
+        Severity.MEDIUM: ("yellow", "MED"),
+        Severity.MINOR: ("cyan", "MINR"),
+        Severity.LOW: ("dim", "LOW"),
+        Severity.NITPICK: ("dim italic", "NIT"),
+        Severity.UNKNOWN: ("white", "???"),
+    }
+
+    REVIEWER_STYLES = {
+        Reviewer.CODERABBIT: ("magenta", "🐰"),
+        Reviewer.GEMINI: ("blue", "💎"),
+        Reviewer.COPILOT: ("green", "🤖"),
+        Reviewer.CURSOR: ("cyan", "📍"),
+        Reviewer.HUMAN: ("white", "👤"),
+    }
+
+    def __init__(self, console: Console):
+        self.console = console
+
+    def render_summary(self, summary: PRReviewSummary):
+        """Render PR review summary with severity breakdown."""
+        self.console.print()
+        self.console.print(
+            Panel(
+                f"PR #{summary.pr_number} - {summary.total_threads} open threads",
+                title="[bold cyan]Review Summary[/bold cyan]",
+                border_style="cyan",
+            )
+        )
+
+        if not summary.threads:
+            self.console.print("\n✨ [bold green]All threads resolved![/bold green]")
+            return
+
+        # Severity breakdown table
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column("Severity", style="bold")
+        table.add_column("Count", justify="right")
+
+        row_items = []
+        for severity in [
+            Severity.CRITICAL,
+            Severity.HIGH,
+            Severity.MAJOR,
+            Severity.MEDIUM,
+            Severity.MINOR,
+            Severity.LOW,
+            Severity.NITPICK,
+        ]:
+            count = summary.by_severity.get(severity.value, 0)
+            if count > 0:
+                style, label = self.SEVERITY_STYLES[severity]
+                row_items.append(f"[{style}]{label}={count}[/{style}]")
+
+        if row_items:
+            self.console.print("  " + "  ".join(row_items))
+        self.console.print()
+
+    def render_thread(self, thread: ReviewThread):
+        """Render a single thread with reviewer styling."""
+        comment = thread.comment
+        severity_style, severity_label = self.SEVERITY_STYLES[thread.primary_severity]
+        reviewer_style, reviewer_emoji = self.REVIEWER_STYLES[comment.reviewer]
+
+        # Build title with metadata
+        title = Text()
+        title.append(f"[{severity_label}] ", style=severity_style)
+        title.append(f"{reviewer_emoji} @{comment.author}", style=reviewer_style)
+        title.append(" at ", style="dim")
+        title.append(f"{thread.path}:{thread.line or '?'}", style="bold white")
+
+        # Subtitle with thread ID for copying
+        subtitle = f"T={thread.thread_id}"
+
+        self.console.print(
+            Panel(
+                Markdown(comment.body_clean),
+                title=title,
+                subtitle=f"[dim]{subtitle}[/dim]",
+                border_style=severity_style.split()[0]
+                if " " in severity_style
+                else severity_style,
+            )
+        )
+
+    def render_all(self, summary: PRReviewSummary):
+        """Render complete PR review."""
+        self.render_summary(summary)
+        for thread in summary.threads:
+            self.render_thread(thread)
+
+
+class LLMFormatter:
+    """Token-efficient formatter for LLM consumption."""
+
+    def render_summary(self, summary: PRReviewSummary) -> str:
+        """Render compact summary header."""
+        lines = [
+            f"PR={summary.pr_number} PR_ID={summary.pr_id} THREADS={summary.total_threads}",
+            "",
+        ]
+
+        # Severity breakdown
+        sev_parts = []
+        for sev in [
+            Severity.CRITICAL,
+            Severity.HIGH,
+            Severity.MAJOR,
+            Severity.MEDIUM,
+            Severity.MINOR,
+            Severity.LOW,
+            Severity.NITPICK,
+        ]:
+            count = summary.by_severity.get(sev.value, 0)
+            if count > 0:
+                sev_parts.append(f"{sev.value.upper()}={count}")
+
+        if sev_parts:
+            lines.append("SEVERITY: " + " ".join(sev_parts))
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def render_thread(self, thread: ReviewThread) -> str:
+        """Render thread in structured, parseable format."""
+        comment = thread.comment
+
+        lines = [
+            "---",
+            f"T={thread.thread_id}",
+            f"FILE={thread.path}",
+            f"LINE={thread.line or 'N/A'}",
+            f"SEVERITY={thread.primary_severity.value.upper()}",
+            f"REVIEWER={comment.reviewer.value}",
+            f"AUTHOR=@{comment.author}",
+            "",
+            "BODY:",
+            comment.body_llm,  # Full content, no truncation
+            "---",
+        ]
+
+        return "\n".join(lines)
+
+    def render_system_reminder(self) -> str:
+        """Render action instructions using <system_reminder> tags."""
+        return """
+<system_reminder>
+ACTION: FIX|DEFER|REJECT
+CODE: Use imports, avoid FQNs
+COMMIT: Use multiple -m flags
+FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'
+DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'
+REJECT: Reply with technical reasoning. Thread stays open.
+RESOLVE: pr.py resolve <T> '<reply with SHA or #issue>'
+REMINDER: Loop until all threads are resolved.
+</system_reminder>
+"""
+
+    def render_all(self, summary: PRReviewSummary) -> str:
+        """Render complete PR review."""
+        parts = [self.render_summary(summary)]
+
+        if not summary.threads:
+            parts.append("All threads resolved!")
+            return "\n".join(parts)
+
+        for thread in summary.threads:
+            parts.append(self.render_thread(thread))
+
+        parts.append(self.render_system_reminder())
+        return "\n".join(parts)
+
+
+class JSONFormatter:
+    """JSON formatter for programmatic parsing."""
+
+    def render(self, summary: PRReviewSummary) -> str:
+        """Render complete PR review as JSON."""
+        return summary.model_dump_json(indent=2)
+
+
+# =============================================================================
+# MODE DETECTION
+# =============================================================================
+
+
+def detect_output_mode(explicit_mode: Optional[OutputMode] = None) -> OutputMode:
+    """
+    Detect output mode with precedence:
+    1. Explicit --mode flag (highest priority)
+    2. CLAUDE_CODE environment variable -> LLM mode
+    3. CI environment variable -> LLM mode
+    4. Piped output (not isatty) -> LLM mode
+    5. TTY -> Human mode (default)
+    """
+    if explicit_mode:
+        return explicit_mode
+
+    # Environment-based detection
+    if os.environ.get("CLAUDE_CODE"):
+        return OutputMode.LLM
+
+    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+        return OutputMode.LLM
+
+    # Terminal detection
+    if not sys.stdout.isatty():
+        return OutputMode.LLM
+
+    return OutputMode.HUMAN
+
 
 console = Console()
 app = typer.Typer(help="PR Review CLI", add_completion=False)
@@ -52,19 +696,6 @@ def get_repo_info() -> tuple[str, str]:
     )
     data = json.loads(result.stdout)
     return data["owner"]["login"], data["name"]
-
-
-def clean_body(text: str) -> str:
-    """Aggressively clean text to save tokens."""
-    text = re.sub(r"<!--[\s\S]*?-->", "", text)  # HTML comments
-    text = re.sub(r"\[!\[(.*?)\]\(.*?\)\]\(.*?\)", "", text)  # Linked images
-    text = re.sub(r"!\[(.*?)\]\(.*?\)", "", text)  # Images
-    text = re.sub(r"\[(.*?)\]\(.*?\)", r"\1", text)  # Links -> text only
-    text = re.sub(r"<[^>]+>", "", text)  # HTML tags
-    text = re.sub(r"```[\s\S]*?```", "[CODE]", text)  # Code blocks -> [CODE]
-    text = re.sub(r"`[^`]+`", "[code]", text)  # Inline code -> [code]
-    text = re.sub(r"\s+", " ", text).strip()  # Whitespace
-    return text
 
 
 def rprint(*args, **kwargs):
@@ -116,15 +747,6 @@ def validate_reply(body: str):
             err=True,
         )
         raise typer.Exit(1)
-
-
-class Thread(BaseModel):
-    thread_id: str
-    comment_id: str
-    path: str
-    line: Optional[int]
-    author: str
-    body: str
 
 
 def get_thread_inventory(
@@ -189,10 +811,85 @@ def get_thread_inventory(
     return pr_id, filtered_threads
 
 
+def build_review_summary(
+    pr_number: int,
+    pr_id: str,
+    raw_threads: list,
+    compact: bool = False,
+) -> PRReviewSummary:
+    """Build a structured review summary from raw thread data.
+
+    Args:
+        pr_number: PR number
+        pr_id: PR ID from GitHub
+        raw_threads: Raw thread data from GitHub API
+        compact: If True, collapse analysis sections to save tokens.
+                 If False (default), show full content with markers.
+    """
+    parsed_threads: list[ReviewThread] = []
+
+    for t in raw_threads:
+        t_id = t["id"]
+        comments = t.get("comments", {}).get("nodes", [])
+        if not comments:
+            continue
+
+        first_comment = comments[0]
+        parsed_comment = parser_registry.parse_comment(first_comment, compact=compact)
+
+        path = t.get("path", "unknown")
+        line = t.get("line")
+
+        thread = ReviewThread(
+            thread_id=t_id,
+            comment_id=first_comment.get("id", ""),
+            path=path,
+            line=line,
+            comment=parsed_comment,
+            primary_severity=parsed_comment.metadata.severity,
+        )
+        parsed_threads.append(thread)
+
+    # Sort by severity (most severe first)
+    parsed_threads.sort(key=lambda t: Severity.priority(t.primary_severity))
+
+    # Build severity counts
+    by_severity: dict[str, int] = {}
+    for thread in parsed_threads:
+        sev = thread.primary_severity.value
+        by_severity[sev] = by_severity.get(sev, 0) + 1
+
+    return PRReviewSummary(
+        pr_number=pr_number,
+        pr_id=pr_id,
+        total_threads=len(parsed_threads),
+        threads=parsed_threads,
+        by_severity=by_severity,
+    )
+
+
 @app.command()
 def threads(
     pr_number: int = typer.Argument(None, help="PR number (auto-detected if omitted)"),
     refetch: bool = typer.Option(False, "--refetch", help="Force refetch from GitHub"),
+    mode: Optional[str] = typer.Option(
+        None,
+        "--mode",
+        "-m",
+        help="Output mode: human (rich), llm (structured), json",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Shorthand for --mode json",
+    ),
+    compact: bool = typer.Option(
+        False,
+        "--compact",
+        "-c",
+        help="Collapse analysis sections to save tokens (default: expanded with markers)",
+    ),
 ):
     """Inventory open threads and display summary."""
     if pr_number is None:
@@ -203,58 +900,37 @@ def threads(
             )
             raise typer.Exit(1)
 
+    # Determine output mode
+    explicit_mode = None
+    if json_output:
+        explicit_mode = OutputMode.JSON
+    elif mode:
+        try:
+            explicit_mode = OutputMode(mode.lower())
+        except ValueError:
+            rprint(
+                f"[bold red]Error: Invalid mode '{mode}'. Use: human, llm, json[/bold red]"
+            )
+            raise typer.Exit(1)
+
+    output_mode = detect_output_mode(explicit_mode)
+
     try:
-        pr_id, threads = get_thread_inventory(pr_number, force_refetch=refetch)
+        pr_id, raw_threads = get_thread_inventory(pr_number, force_refetch=refetch)
 
-        # Output summary for LLM parse
-        typer.echo(f"PR={pr_number} PR_ID={pr_id} COUNT={len(threads)}")
+        # Build structured summary
+        summary = build_review_summary(pr_number, pr_id, raw_threads, compact=compact)
 
-        if not threads:
-            rprint("\n✨ [bold green]All threads resolved![/bold green]")
-            return
-
-        for t in threads:
-            t_id = t["id"]
-            comments = t.get("comments", {}).get("nodes", [])
-            first = comments[0] if comments else {}
-            body = first.get("body", "No body")
-            author = first.get("author", {}).get("login", "unknown")
-            # Thread path/line are on the thread node itself, not the comment
-            path = t.get("path", "unknown")
-            line = t.get("line", "?")
-
-            # Machine readable for agent
-            typer.echo(f"\nT={t_id}")
-            typer.echo(f"C={comments[0]['id'] if comments else '?'}")
-
-            # Human readable rich panel
-            if console.is_terminal:
-                rprint(
-                    Panel(
-                        clean_body(body),
-                        title=f"[bold yellow]Thread {t_id}[/bold yellow]",
-                        subtitle=f"[bold cyan]@{author}[/bold cyan] at [bold white]{path}:{line}[/bold white]",
-                        border_style="yellow",
-                    )
-                )
-            else:
-                typer.echo(f"@{author} L={path}:{line}")
-                typer.echo(f">{body[:100]}...")
-
-        # System Reminder
-        reminder = """
-<agent_rules>
-ACTION: FIX|DEFER|REJECT
-CODE: Use imports, avoid FQNs
-COMMIT: Use multiple -m flags. Don't use multiline strings.
-FIX: Make change, test, commit. Reply: 'Fixed in <SHA>.'
-DEFER: Create issue via /defer. Reply: 'Created #<N>. Out of scope.'
-REJECT: Reply with technical reasoning. Do NOT resolve.
-RESOLVE: pr resolve <T> '<reply>'
-REMINDER: Loop until all threads are resolved. Do not merge with open threads.
-</agent_rules>
-"""
-        typer.echo(reminder)
+        # Render based on mode
+        if output_mode == OutputMode.JSON:
+            formatter = JSONFormatter()
+            typer.echo(formatter.render(summary))
+        elif output_mode == OutputMode.LLM:
+            formatter = LLMFormatter()
+            typer.echo(formatter.render_all(summary))
+        else:  # HUMAN mode
+            formatter = HumanFormatter(console)
+            formatter.render_all(summary)
 
     except Exception as e:
         rprint(f"[bold red]Error checking threads: {e}[/bold red]")
@@ -338,6 +1014,37 @@ def resolve(
             text=True,
         )
         print(f"✅ {thread_id}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ {e.stderr}", file=sys.stderr)
+        raise typer.Exit(1)
+
+
+@app.command()
+def reject(
+    thread_id: str = typer.Argument(..., help="Thread ID (T=...)"),
+    rationale: str = typer.Argument(..., help="Technical reasoning for rejection"),
+):
+    """Reply to reject a thread (false positive). Does NOT resolve - lets reviewer respond."""
+    try:
+        q_reply = load_query("reply-to-thread.graphql")
+
+        subprocess.run(
+            [
+                "gh",
+                "api",
+                "graphql",
+                "-F",
+                f"threadId={thread_id}",
+                "-F",
+                f"body={rationale}",
+                "-f",
+                f"query={q_reply}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print(f"💬 {thread_id} (replied, not resolved)")
     except subprocess.CalledProcessError as e:
         print(f"❌ {e.stderr}", file=sys.stderr)
         raise typer.Exit(1)

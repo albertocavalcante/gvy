@@ -10,7 +10,5 @@ object ResolvedNullType : ResolvedType {
 
     override fun describe(): String = "null"
 
-    override fun isNull(): Boolean = true
-
     override fun isAssignableBy(other: ResolvedType): Boolean = other.isNull()
 }

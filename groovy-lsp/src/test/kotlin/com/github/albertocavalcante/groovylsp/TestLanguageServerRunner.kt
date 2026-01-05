@@ -15,6 +15,7 @@ import java.net.Socket
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 /**
@@ -146,7 +147,7 @@ data class TestLanguageServerHandle(
     val server: GroovyLanguageServer,
     val client: SynchronizingTestLanguageClient,
     val launcher: Launcher<LanguageClient>,
-    val listening: java.util.concurrent.Future<Void>,
+    val listening: Future<Void>,
 ) {
     private val logger = LoggerFactory.getLogger(TestLanguageServerHandle::class.java)
 
