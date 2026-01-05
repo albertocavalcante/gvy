@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cache
 
+import com.github.albertocavalcante.groovycommon.hash.sha256
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range
@@ -15,7 +16,6 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
-import java.security.MessageDigest
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -122,11 +122,11 @@ class SemanticCache(private val cacheDir: Path) {
      * @param sourceHash Hash of current source content
      * @return true if cache exists and hash matches
      */
-    fun isValid(uri: URI, sourceHash: String): Boolean {
-        return try {
+    suspend fun isValid(uri: URI, sourceHash: String): Boolean = withContext(Dispatchers.IO) {
+        try {
             val cacheFile = getCacheFile(uri)
             if (!cacheFile.exists()) {
-                return false
+                return@withContext false
             }
 
             val jsonString = cacheFile.readText()
@@ -143,7 +143,7 @@ class SemanticCache(private val cacheDir: Path) {
      *
      * @param uri The file URI
      */
-    fun invalidate(uri: URI) {
+    suspend fun invalidate(uri: URI) = withContext(Dispatchers.IO) {
         try {
             val cacheFile = getCacheFile(uri)
             if (cacheFile.deleteIfExists()) {
@@ -157,7 +157,7 @@ class SemanticCache(private val cacheDir: Path) {
     /**
      * Clear all cache files.
      */
-    fun clear() {
+    suspend fun clear() = withContext(Dispatchers.IO) {
         try {
             cacheDir.toFile().listFiles()?.forEach { file ->
                 if (file.extension == "json") {
@@ -175,28 +175,15 @@ class SemanticCache(private val cacheDir: Path) {
      */
     private fun getCacheFile(uri: URI): Path {
         // Create a safe filename from URI
-        val hash = hashString(uri.toString())
+        val hash = sha256(uri.toString())
         return cacheDir.resolve("$hash.json")
-    }
-
-    /**
-     * Hash a string using SHA-256.
-     */
-    private fun hashString(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(input.toByteArray())
-        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
     companion object {
         /**
          * Hash source content to detect changes.
          */
-        fun hashSource(content: String): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hashBytes = digest.digest(content.toByteArray())
-            return hashBytes.joinToString("") { "%02x".format(it) }
-        }
+        fun hashSource(content: String): String = sha256(content)
     }
 }
 

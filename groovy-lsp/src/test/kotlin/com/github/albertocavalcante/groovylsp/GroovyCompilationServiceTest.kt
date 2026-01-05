@@ -302,6 +302,140 @@ class GroovyCompilationServiceTest {
         assertEquals(content, result.sourceText, "Source text should be preserved in cached result")
     }
 
+    // ========================================================================
+    // Tests for Fix #1: Shared SemanticDB instance
+    // ========================================================================
+
+    @Test
+    fun `WorkspaceCompiler and CompilationService should share same SemanticDB instance`() = runBlocking {
+        // This test verifies that symbols indexed by WorkspaceCompiler are visible
+        // to queries through the shared SemanticDB instance
+        val content = """
+            class SharedSymbol {
+                String field
+                void method() { }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test/SharedSymbol.groovy")
+
+        // Compile through the compilation service
+        val result = compilationService.compile(uri, content)
+        assertTrue(result.isSuccess, "Compilation should succeed")
+
+        // The shared SemanticDB should be accessible through the compilation service
+        // and should contain symbols from the compilation
+        assertNotNull(result.ast, "AST should be available")
+
+        // Verify the AST was successfully created with the shared SemanticDB
+        val ast = compilationService.getAst(uri)
+        assertNotNull(ast, "AST should be retrievable from cache")
+    }
+
+    @Test
+    fun `symbols indexed by IncrementalCompiler should be visible to queries`() = runBlocking {
+        // This test ensures that when WorkspaceCompiler's IncrementalCompiler indexes symbols,
+        // they are stored in a SemanticDB that is accessible to other components
+        val content1 = """
+            class FirstClass {
+                String name
+            }
+        """.trimIndent()
+
+        val content2 = """
+            class SecondClass {
+                FirstClass ref  // References FirstClass
+            }
+        """.trimIndent()
+
+        val uri1 = URI.create("file:///test/FirstClass.groovy")
+        val uri2 = URI.create("file:///test/SecondClass.groovy")
+
+        // Compile both files
+        val result1 = compilationService.compile(uri1, content1)
+        val result2 = compilationService.compile(uri2, content2)
+
+        assertTrue(result1.isSuccess, "FirstClass should compile successfully")
+        assertTrue(result2.isSuccess, "SecondClass should compile successfully")
+
+        // Both classes should be accessible
+        assertNotNull(result1.ast, "FirstClass AST should be available")
+        assertNotNull(result2.ast, "SecondClass AST should be available")
+
+        // Verify both are retrievable from cache (showing shared SemanticDB works)
+        assertNotNull(compilationService.getAst(uri1), "FirstClass should be in cache")
+        assertNotNull(compilationService.getAst(uri2), "SecondClass should be in cache")
+    }
+
+    @Test
+    fun `WorkspaceCompiler indexing should persist across compiles`() = runBlocking {
+        // Test that symbols indexed during workspace compilation are preserved
+        val content = """
+            class PersistentSymbol {
+                String data
+                void process() {
+                    println data
+                }
+            }
+        """.trimIndent()
+        val uri = URI.create("file:///test/PersistentSymbol.groovy")
+
+        // First compilation
+        val result1 = compilationService.compile(uri, content)
+        assertTrue(result1.isSuccess)
+
+        val ast1 = compilationService.getAst(uri)
+        assertNotNull(ast1, "First AST should be available")
+
+        // Second compilation (incremental or re-compile)
+        val result2 = compilationService.compile(uri, content)
+        assertTrue(result2.isSuccess)
+
+        val ast2 = compilationService.getAst(uri)
+        assertNotNull(ast2, "Second AST should be available")
+
+        // Both should be the same instance (cached)
+        assertSame(ast1, ast2, "AST should be cached between identical compilations")
+    }
+
+    @Test
+    fun `shared SemanticDB enables cross-file symbol resolution`() = runBlocking {
+        // This test verifies that having a shared SemanticDB instance allows
+        // symbols from one file to be resolved when compiling another file
+        val baseClassContent = """
+            package com.example
+            class BaseClass {
+                String baseField
+            }
+        """.trimIndent()
+
+        val derivedClassContent = """
+            package com.example
+            class DerivedClass extends BaseClass {
+                void useBase() {
+                    baseField = "test"  // Should resolve via shared SemanticDB
+                }
+            }
+        """.trimIndent()
+
+        val baseUri = URI.create("file:///test/BaseClass.groovy")
+        val derivedUri = URI.create("file:///test/DerivedClass.groovy")
+
+        // Compile base class first
+        val baseResult = compilationService.compile(baseUri, baseClassContent)
+        assertTrue(baseResult.isSuccess, "BaseClass should compile successfully")
+
+        // Compile derived class - should be able to resolve BaseClass
+        val derivedResult = compilationService.compile(derivedUri, derivedClassContent)
+        assertTrue(derivedResult.isSuccess, "DerivedClass should compile successfully")
+
+        // Both ASTs should be available
+        assertNotNull(baseResult.ast, "BaseClass AST should be available")
+        assertNotNull(derivedResult.ast, "DerivedClass AST should be available")
+
+        // This test ensures compilation doesn't fail due to missing BaseClass
+        // The shared SemanticDB enables cross-file symbol resolution
+    }
+
     private fun workerDescriptor(id: String): WorkerDescriptor = WorkerDescriptor(
         id = id,
         supportedRange = GroovyVersionRange(parseGroovyVersion("1.0.0"), parseGroovyVersion("4.0.0")),

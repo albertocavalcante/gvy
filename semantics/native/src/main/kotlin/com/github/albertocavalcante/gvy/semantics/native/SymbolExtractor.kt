@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
+import com.github.albertocavalcante.groovycommon.fqn.packageName
+import com.github.albertocavalcante.groovycommon.text.simpleClassName
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -191,16 +193,10 @@ object SymbolExtractor {
 
     private fun processRegularImports(ast: ModuleNode): List<ImportSymbol> = ast.imports.map { importNode ->
         val className = importNode.className
-        val packageName = if (className.contains('.')) {
-            className.substringBeforeLast('.')
-        } else {
-            ""
-        }
-        val simpleClassName = className.substringAfterLast('.')
 
         ImportSymbol(
-            packageName = packageName,
-            className = simpleClassName,
+            packageName = packageName(className),
+            className = className.simpleClassName(),
             isStarImport = false,
             isStatic = false,
             line = importNode.lineNumber - 1,
@@ -219,15 +215,10 @@ object SymbolExtractor {
 
     private fun processStaticImports(ast: ModuleNode): List<ImportSymbol> = ast.staticImports.map { (_, importNode) ->
         val className = importNode.className
-        val packageName = if (className.contains('.')) {
-            className.substringBeforeLast('.')
-        } else {
-            ""
-        }
 
         ImportSymbol(
-            packageName = packageName,
-            className = className.substringAfterLast('.'),
+            packageName = packageName(className),
+            className = className.simpleClassName(),
             isStarImport = false,
             isStatic = true,
             line = importNode.lineNumber - 1,
