@@ -19,7 +19,9 @@ class ConstructorCallExpressionCalculator : TypeCalculator<Any> {
     override fun calculate(node: Any, context: TypeContext): SemanticType? {
         // Check if this is a ConstructorCallExpression by class name
         // (avoiding direct dependency on Groovy AST classes)
-        if (!node::class.java.simpleName.contains("ConstructorCallExpression")) {
+        // Using endsWith() to match any variant (e.g., GroovyConstructorCallExpression)
+        // while avoiding false matches on unrelated wrapper classes.
+        if (!node::class.java.simpleName.endsWith("ConstructorCallExpression")) {
             return null
         }
 

@@ -207,7 +207,7 @@ class HoverProvider(
         // If it's a declaration, return the DeclarationExpression for richer hover info
         val parent = visitor.getParent(node)
         if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
-            return parent // Return parent so TypeInferencer can infer the type
+            return parent // Return parent so SemanticTypeResolver can resolve the type
         }
 
         // Otherwise resolve to definition

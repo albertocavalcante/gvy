@@ -206,6 +206,76 @@ class InlayHintsProviderTest {
                 )
             }
         }
+
+        @Test
+        fun `should not show type hint when type resolves to unresolved`() {
+            // Given: def x where type resolver returns "unresolved"
+            val varExpr = VariableExpression("x").apply {
+                lineNumber = 1
+                columnNumber = 5
+                type = ClassHelper.dynamicType()
+            }
+            val constExpr = ConstantExpression("test")
+            val declExpr = DeclarationExpression(
+                varExpr,
+                Token.newSymbol(Types.ASSIGN, 1, 10),
+                constExpr,
+            ).apply {
+                lineNumber = 1
+                columnNumber = 1
+            }
+
+            setupCompilationWithNodes(listOf(declExpr))
+            every { semanticResolver.resolveType(any(), any()) } returns SemanticType.Unknown("unresolved")
+            every { semanticResolver.formatSemanticType(any()) } returns "unresolved"
+
+            provider =
+                InlayHintsProvider(compilationService, semanticResolver, InlayHintsConfiguration(typeHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+
+            // When
+            val hints = provider.provideInlayHints(params)
+
+            // Then - no hint for "unresolved" (not useful)
+            val typeHints = hints.filter { it.kind == InlayHintKind.Type }
+            assertTrue(typeHints.isEmpty(), "Should not show type hint for 'unresolved' type")
+        }
+
+        @Test
+        fun `should not show type hint when type resolves to null`() {
+            // Given: def x where type resolver returns "null"
+            val varExpr = VariableExpression("x").apply {
+                lineNumber = 1
+                columnNumber = 5
+                type = ClassHelper.dynamicType()
+            }
+            val constExpr = ConstantExpression("test")
+            val declExpr = DeclarationExpression(
+                varExpr,
+                Token.newSymbol(Types.ASSIGN, 1, 10),
+                constExpr,
+            ).apply {
+                lineNumber = 1
+                columnNumber = 1
+            }
+
+            setupCompilationWithNodes(listOf(declExpr))
+            every { semanticResolver.resolveType(any(), any()) } returns SemanticType.Unknown("null")
+            every { semanticResolver.formatSemanticType(any()) } returns "null"
+
+            provider =
+                InlayHintsProvider(compilationService, semanticResolver, InlayHintsConfiguration(typeHints = true))
+
+            val params = createParams(0, 0, 10, 100)
+
+            // When
+            val hints = provider.provideInlayHints(params)
+
+            // Then - no hint for "null" (not useful)
+            val typeHints = hints.filter { it.kind == InlayHintKind.Type }
+            assertTrue(typeHints.isEmpty(), "Should not show type hint for 'null' type")
+        }
     }
 
     @Nested
