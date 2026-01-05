@@ -2,6 +2,9 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
+import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.mockk.every
 import io.mockk.mockk
@@ -179,12 +182,9 @@ class CompletionProviderTest {
     @Test
     fun `should suggest map methods for map literal variable - unmocked`() = runTest {
         // Arrange - use real SemanticTypeResolver with a stub TypeSolver
-        val stubTypeSolver = object : com.github.albertocavalcante.groovyparser.resolution.TypeSolver {
-            override var parent: com.github.albertocavalcante.groovyparser.resolution.TypeSolver? = null
-            override fun tryToSolveType(name: String) =
-                com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference.unsolved<
-                    com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration,
-                    >()
+        val stubTypeSolver = object : TypeSolver {
+            override var parent: TypeSolver? = null
+            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
         }
         val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
         val content = """
