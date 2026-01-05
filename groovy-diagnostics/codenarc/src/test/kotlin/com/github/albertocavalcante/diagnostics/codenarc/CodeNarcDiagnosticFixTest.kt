@@ -52,6 +52,7 @@ class CodeNarcDiagnosticFixTest {
         every { duplicatedViolation.rule } returns trailingWhitespaceRule
         every { duplicatedViolation.lineNumber } returns 2
         every { duplicatedViolation.message } returns "Line ends with whitespace characters"
+        every { duplicatedViolation.sourceLine } returns null // Stub sourceLine to avoid strict mock failure
 
         val leafResults = mockk<Results>()
         every { leafResults.children } returns mutableListOf()
@@ -149,5 +150,159 @@ class CodeNarcDiagnosticFixTest {
         val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(cleanGroovyCode, "CleanClass.groovy")
 
         assertTrue(diagnostics.isEmpty(), "Clean code should produce no diagnostics")
+    }
+
+    // ==========================================
+    // Range Calculation Tests
+    // ==========================================
+
+    @Test
+    fun `should use violation sourceLine to find precise column for UnnecessarySemicolon`() {
+        // sourceLine: "def x = 1;"
+        // The semicolon is at column 10 (0-based: character 9)
+        val sourceCode = "class Test {\n    def x = 1;\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessarySemicolon"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "Semicolon at end of line"
+        every { violation.sourceLine } returns "    def x = 1;"
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Semicolon is at index 13 in "    def x = 1;" (0-based)
+        // Range should highlight just the semicolon
+        assertEquals(13, diag.range.start.character, "Start should be at semicolon position")
+        assertEquals(14, diag.range.end.character, "End should be after semicolon (exclusive)")
+    }
+
+    @Test
+    fun `should use violation sourceLine to find precise range for TrailingWhitespace`() {
+        // sourceLine: "def x = 1   " (3 trailing spaces)
+        val sourceCode = "class Test {\n    def x = 1   \n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "TrailingWhitespace"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "Line ends with whitespace characters"
+        every { violation.sourceLine } returns "    def x = 1   "
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // "    def x = 1" is 13 chars, then 3 spaces = total 16
+        // Trailing whitespace starts at index 13
+        assertEquals(13, diag.range.start.character, "Start should be at beginning of trailing whitespace")
+        assertEquals(16, diag.range.end.character, "End should be at end of line (exclusive)")
+    }
+
+    @Test
+    fun `should extract variable name from UnusedVariable message and find in sourceLine`() {
+        // Message: "The variable [unusedVar] in class Test is not used"
+        // sourceLine: "def unusedVar = 123"
+        val sourceCode = "class Test {\n    def unusedVar = 123\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnusedVariable"
+        every { rule.priority } returns 2
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The variable [unusedVar] in class Test is not used"
+        every { violation.sourceLine } returns "    def unusedVar = 123"
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // "unusedVar" starts at index 8 in "    def unusedVar = 123"
+        assertEquals(8, diag.range.start.character, "Start should be at variable name")
+        assertEquals(17, diag.range.end.character, "End should be after variable name (exclusive)")
+    }
+
+    @Test
+    fun `should handle null sourceLine gracefully and fall back to heuristics`() {
+        val sourceCode = "class Test {\n    def x = 1\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "SomeRule"
+        every { rule.priority } returns 2
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "Some violation"
+        every { violation.sourceLine } returns null // sourceLine is null
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Should fall back to highlighting the full line or default heuristic
+        // RuleRangeCalculator default range skips leading whitespace (indentation is 4 spaces)
+        assertEquals(4, diag.range.start.character, "Should start at column 4 (skipping whitespace)")
+        // Smart fallback highlights the first word ("def") instead of the whole line
+        assertEquals(7, diag.range.end.character, "End should be at end of first word")
+    }
+
+    private fun createTestWorkspaceContext(): WorkspaceContext = object : WorkspaceContext {
+        override val root: Path? = Paths.get(".")
+        override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {
+            override val isEnabled: Boolean = true
+            override val propertiesFile: String? = null
+            override val autoDetectConfig: Boolean = false
+        }
     }
 }
