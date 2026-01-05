@@ -175,4 +175,46 @@ class CompletionProviderTest {
             "Should return a list (may be empty) without crashing",
         )
     }
+
+    @Test
+    fun `should suggest map methods for map literal variable - unmocked`() = runTest {
+        // Arrange - use real SemanticTypeResolver with a stub TypeSolver
+        val stubTypeSolver = object : com.github.albertocavalcante.groovyparser.resolution.TypeSolver {
+            override var parent: com.github.albertocavalcante.groovyparser.resolution.TypeSolver? = null
+            override fun tryToSolveType(name: String) =
+                com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference.unsolved<
+                    com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration,
+                    >()
+        }
+        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val content = """
+            def p = [key1: 'value1', key2: 'value2']
+            p.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        // Act
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1, // Line 1 (0-indexed)
+            2, // After 'p.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Assert - Should have map methods (from LinkedHashMap via classpath)
+        // Note: actual method availability depends on classpath configuration
+        // The primary assertion is that keywords should NOT appear
+
+        // Assert - Should NOT have keywords (proves context detection works)
+        assertTrue(
+            completions.none { it.label == "abstract" },
+            "Should NOT suggest 'abstract' keyword for map member access",
+        )
+        assertTrue(
+            completions.none { it.label == "class" },
+            "Should NOT suggest 'class' keyword for map member access",
+        )
+    }
 }

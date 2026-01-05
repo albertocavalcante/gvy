@@ -193,6 +193,7 @@ object CompletionProvider {
             ctx.line,
             ctx.character,
         )
+
         val completionContext =
             CompletionContextDetector.detectCompletionContext(
                 nodeAtCursor,
@@ -206,6 +207,14 @@ object CompletionProvider {
 
         return completions {
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
+
+            // For member access context (e.g., "p."), only add member completions
+            // Skip local symbols, keywords, etc. as they are not relevant for member completion
+            if (completionContext is ContextType.MemberAccess) {
+                handleMemberAccessContext(completionContext, ctx, metadata)
+                return@completions
+            }
+
             addLocalSymbolsIfApplicable(symbolContext, jenkinsContext.isStrictDeclarative)
 
             addJenkinsCompletionsIfApplicable(
