@@ -23,7 +23,7 @@ import java.util.concurrent.CompletableFuture
 class TypeDefinitionProvider(
     private val coroutineScope: CoroutineScope,
     private val semanticResolver: SemanticTypeResolver,
-    private val sourceNavigator: SourceNavigator,
+    private val sourceNavigator: SourceNavigator, // TODO: Will be used for external class resolution (see issue #615).
     private val contextProvider: (URI) -> CompilationContext?,
 ) {
 
