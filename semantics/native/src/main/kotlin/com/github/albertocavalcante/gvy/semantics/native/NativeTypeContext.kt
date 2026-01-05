@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -13,12 +14,25 @@ import org.codehaus.groovy.ast.MethodNode
 /**
  * TypeContext implementation for native Groovy AST.
  * Bridges between TypeSolver (from parser/core) and SemanticType.
+ *
+ * Supports cross-file type resolution through [workspaceMemberLookup] when available.
+ * Resolution strategies (in order of precedence):
+ * 1. Native AST (same module) - fast, direct access
+ * 2. Workspace Index (cross-file) - uses workspace-wide symbol index
+ * 3. TypeSolver (classpath) - falls back to external dependencies
+ *
+ * @property typeSolver Resolves types from classpath
+ * @property calculatorRegistry Registry for calculating types from AST nodes
+ * @property scope Current scope for variable lookup
+ * @property isStaticCompilation Whether static compilation is enabled
+ * @property workspaceMemberLookup Optional workspace-wide member lookup for cross-file resolution
  */
 class NativeTypeContext(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry,
     private val scope: NativeScope,
     override val isStaticCompilation: Boolean = false,
+    private val workspaceMemberLookup: MemberLookup? = null,
 ) : TypeContext {
 
     override fun resolveType(fqn: String): SemanticType = runCatching {
@@ -42,14 +56,32 @@ class NativeTypeContext(
         argumentTypes: List<SemanticType>,
     ): SemanticType? = when (receiverType) {
         is SemanticType.Known -> {
-            // Strategy 1: Native AST (same module)
+            // Strategy 1: Native AST (same module) - fast path
             val method = findMethodInModule(receiverType.fqn, methodName, argumentTypes)
             if (method != null) {
                 return fromClassNode(method.returnType)
             }
 
-            // Strategy 2: TypeSolver (classpath) - future enhancement
-            // For now, return Unknown if not found in same module
+            // Strategy 2: Workspace Index (cross-file)
+            workspaceMemberLookup?.let { workspace ->
+                val memberInfo = workspace.findMethod(receiverType.fqn, methodName, argumentTypes.size)
+                if (memberInfo != null) {
+                    return memberInfo.type ?: SemanticType.Unknown("Method return type not indexed for $methodName")
+                }
+
+                // Check inherited members if direct lookup fails
+                val allMembers = workspace.getAllMembers(receiverType.fqn, includeInherited = true)
+                val inheritedMethod = allMembers.find {
+                    it.name == methodName && it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD
+                }
+                if (inheritedMethod != null) {
+                    return inheritedMethod.type
+                        ?: SemanticType.Unknown("Inherited method return type not indexed for $methodName")
+                }
+            }
+
+            // Strategy 3: TypeSolver (classpath) - future enhancement
+            // For now, return Unknown if not found in same module or workspace
             SemanticType.Unknown("Method $methodName not found on ${receiverType.fqn}")
         }
 
@@ -75,14 +107,32 @@ class NativeTypeContext(
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
         is SemanticType.Known -> {
-            // Strategy 1: Native AST (same module)
+            // Strategy 1: Native AST (same module) - fast path
             val field = findFieldInModule(receiverType.fqn, fieldName)
             if (field != null) {
                 return fromClassNode(field.type)
             }
 
-            // Strategy 2: TypeSolver (classpath) - future enhancement
-            // For now, return Unknown if not found in same module
+            // Strategy 2: Workspace Index (cross-file)
+            workspaceMemberLookup?.let { workspace ->
+                val memberInfo = workspace.findField(receiverType.fqn, fieldName)
+                if (memberInfo != null) {
+                    return memberInfo.type ?: SemanticType.Unknown("Field type not indexed for $fieldName")
+                }
+
+                // Check inherited members if direct lookup fails
+                val allMembers = workspace.getAllMembers(receiverType.fqn, includeInherited = true)
+                val inheritedField = allMembers.find {
+                    it.name == fieldName && it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.FIELD
+                }
+                if (inheritedField != null) {
+                    return inheritedField.type
+                        ?: SemanticType.Unknown("Inherited field type not indexed for $fieldName")
+                }
+            }
+
+            // Strategy 3: TypeSolver (classpath) - future enhancement
+            // For now, return Unknown if not found in same module or workspace
             SemanticType.Unknown("Field $fieldName not found on ${receiverType.fqn}")
         }
 

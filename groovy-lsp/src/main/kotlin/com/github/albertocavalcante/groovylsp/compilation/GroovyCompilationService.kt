@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.engine.api.LanguageSession
 import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
+import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
@@ -11,6 +12,7 @@ import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,11 @@ class GroovyCompilationService(
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)
+    private val workspaceCompiler = WorkspaceCompiler(workerSessionManager, workspaceManager)
+
+    // Semantic database and workspace symbol index for cross-file resolution
+    private val semanticDb = GroovySemanticDB()
+    private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
 
     // Managers that handle complex lifecycle and orchestration
     private val engineManager = LanguageEngineManager(
@@ -117,6 +124,24 @@ class GroovyCompilationService(
     fun getSelectedWorker(): WorkerDescriptor? = engineManager.getSelectedWorker()
 
     fun invalidateClassLoader() = engineManager.invalidateClassLoader()
+
+    // ==========================================================================
+    // Workspace Compilation API
+    // ==========================================================================
+
+    /**
+     * Gets the workspace compiler for multi-file compilation.
+     * Enables full cross-file semantic resolution.
+     */
+    fun getWorkspaceCompiler(): WorkspaceCompiler = workspaceCompiler
+
+    /**
+     * Gets the workspace symbol index for cross-file member resolution.
+     * Provides fast lookup for symbols, references, and class members across the workspace.
+     *
+     * @return The workspace symbol index, or null if not available
+     */
+    fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
 
     fun findClasspathClass(className: String): URI? {
         val classLoader = engineManager.getOrCreateClassLoader()
