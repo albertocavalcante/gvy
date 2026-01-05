@@ -1,0 +1,34 @@
+#
+# OpenRewrite CodeNarc Recipe Catalog
+#
+# Auto-fix recipes for CodeNarc violations in Groovy code.
+# Each recipe maps to a specific CodeNarc rule.
+#
+# Usage with Gradle:
+#   ./gradlew rewriteRun -Drewrite.activeRecipe=com.github.albertocavalcante.refactor.FixAllCodeNarcIssues
+#
+# Usage with specific recipe:
+#   ./gradlew rewriteRun -Drewrite.activeRecipe=com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
+#
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.FixAllCodeNarcIssues
+displayName: Fix All CodeNarc Issues
+description: >
+  Composite recipe that applies all available CodeNarc auto-fix recipes.
+  This is the recommended recipe for fixing all auto-fixable CodeNarc violations.
+tags:
+  - codenarc
+  - groovy
+  - style
+recipeList:
+  # Phase 1: Formatting and Unnecessary Code
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
+  - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAfterComma
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGString
+  # Phase 2: Structural - Braces
+  - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToIfStatement
+  - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToForLoop
+  - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToWhileLoop
+  # Future recipes will be added here
