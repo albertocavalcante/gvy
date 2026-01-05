@@ -167,19 +167,24 @@ export class GroovyTestController {
 
 
   // Unified command handler
-  private async runTestCommand(args: { suite: string; test: string }, debug: boolean) {
-    const item = await this.findTestItem(args.suite, args.test);
+  private async runTestCommand(args: { suite: string; test: string; uri?: string }, debug: boolean) {
+    let item = await this.findTestItem(args.suite, args.test);
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
       // Try discovery first.
       await this.discoverTests();
       const retryItem = await this.findTestItem(args.suite, args.test);
       if (!retryItem) {
-        vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
-        return;
+        // If still not found and we have a URI (e.g., external file), create on-the-fly test item
+        if (args.uri) {
+          item = this.createOnTheFlyTestItem(args.uri, args.suite, args.test);
+        } else {
+          vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
+          return;
+        }
+      } else {
+        item = retryItem;
       }
-      await this.runTestItem(retryItem, debug);
-      return;
     }
     await this.runTestItem(item, debug);
   }
@@ -208,5 +213,35 @@ export class GroovyTestController {
     // ID format in createTestItem is `${parentId}.${test.test}`
     const testId = `${suiteName}.${testName}`;
     return suiteItem.children.get(testId);
+  }
+
+  /**
+   * Create a test item on-the-fly for external files that are not in the workspace.
+   * This allows running tests from CodeLens on files opened from outside the workspace.
+   */
+  private createOnTheFlyTestItem(uriString: string, suiteName: string, testName: string): vscode.TestItem {
+    const uri = vscode.Uri.parse(uriString);
+
+    // Check if suite item already exists, if not create it
+    let suiteItem = this.ctrl.items.get(suiteName);
+    if (!suiteItem) {
+      suiteItem = this.ctrl.createTestItem(
+        suiteName,
+        this.getClassName(suiteName),
+        uri,
+      );
+      this.ctrl.items.add(suiteItem);
+    }
+
+    // Check if test item already exists under the suite
+    const testId = `${suiteName}.${testName}`;
+    let testItem = suiteItem.children.get(testId);
+    if (!testItem) {
+      testItem = this.ctrl.createTestItem(testId, testName, uri);
+      // We don't have line information for on-the-fly items, so skip setting range
+      suiteItem.children.add(testItem);
+    }
+
+    return testItem;
   }
 }
