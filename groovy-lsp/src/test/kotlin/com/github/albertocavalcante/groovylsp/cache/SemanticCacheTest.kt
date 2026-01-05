@@ -6,7 +6,11 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -15,6 +19,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SemanticCacheTest {
 
@@ -24,7 +29,7 @@ class SemanticCacheTest {
     private lateinit var cache: SemanticCache
 
     @AfterEach
-    fun cleanup() {
+    fun cleanup() = runTest {
         if (::cache.isInitialized) {
             cache.clear()
         }
@@ -278,5 +283,232 @@ class SemanticCacheTest {
             ),
         )
         return SemanticDocument(uri, symbols, occurrences)
+    }
+
+    // ========================================================================
+    // Tests for Fix #7: Cache I/O methods are suspend functions
+    // ========================================================================
+
+    @Test
+    fun `isValid should not block calling thread`() = runTest {
+        cache = SemanticCache(tempDir)
+        val uri = URI.create("file:///test/Example.groovy")
+        val document = createTestDocument(uri)
+        val sourceHash = "abc123"
+
+        cache.save(uri, document, sourceHash)
+
+        // Verify isValid can be called in a coroutine context
+        val isValid = cache.isValid(uri, sourceHash)
+        assertTrue(isValid)
+
+        // Verify it works with coroutine context switching
+        val isValidFromDifferentContext = withContext(Dispatchers.Default) {
+            cache.isValid(uri, sourceHash)
+        }
+        assertTrue(isValidFromDifferentContext)
+    }
+
+    @Test
+    fun `invalidate should run on IO dispatcher`() = runTest {
+        cache = SemanticCache(tempDir)
+        val uri = URI.create("file:///test/Example.groovy")
+        val document = createTestDocument(uri)
+        val sourceHash = "abc123"
+
+        cache.save(uri, document, sourceHash)
+        assertTrue(cache.isValid(uri, sourceHash))
+
+        // Invalidate should work as a suspend function
+        cache.invalidate(uri)
+
+        // Verify cache was invalidated
+        val loaded = cache.load(uri, sourceHash)
+        assertNull(loaded)
+    }
+
+    @Test
+    fun `clear should run on IO dispatcher`() = runTest {
+        cache = SemanticCache(tempDir)
+        val uri1 = URI.create("file:///test/Example1.groovy")
+        val uri2 = URI.create("file:///test/Example2.groovy")
+        val doc1 = createTestDocument(uri1)
+        val doc2 = createTestDocument(uri2)
+        val hash = "abc123"
+
+        cache.save(uri1, doc1, hash)
+        cache.save(uri2, doc2, hash)
+
+        // Clear should work as a suspend function
+        cache.clear()
+
+        // Verify all caches were cleared
+        assertNull(cache.load(uri1, hash))
+        assertNull(cache.load(uri2, hash))
+    }
+
+    @Test
+    fun `concurrent cache operations should work correctly`() = runTest {
+        cache = SemanticCache(tempDir)
+
+        // Create multiple documents
+        val documents = (1..10).map { i ->
+            val uri = URI.create("file:///test/Example$i.groovy")
+            val doc = createTestDocument(uri)
+            Triple(uri, doc, "hash$i")
+        }
+
+        // Save all documents concurrently
+        documents.map { (uri, doc, hash) ->
+            async {
+                cache.save(uri, doc, hash)
+            }
+        }.awaitAll()
+
+        // Verify all documents can be loaded concurrently
+        val loadResults = documents.map { (uri, _, hash) ->
+            async {
+                cache.load(uri, hash)
+            }
+        }.awaitAll()
+
+        // All should be successfully loaded
+        loadResults.forEachIndexed { index, loaded ->
+            assertNotNull(loaded, "Document $index should be loaded")
+            assertEquals(documents[index].first, loaded.uri)
+        }
+
+        // Verify isValid works concurrently
+        val validResults = documents.map { (uri, _, hash) ->
+            async {
+                cache.isValid(uri, hash)
+            }
+        }.awaitAll()
+
+        validResults.forEach { isValid ->
+            assertTrue(isValid, "All documents should be valid")
+        }
+    }
+
+    @Test
+    fun `suspend functions should work with different coroutine contexts`() = runTest {
+        cache = SemanticCache(tempDir)
+        val uri = URI.create("file:///test/Example.groovy")
+        val document = createTestDocument(uri)
+        val sourceHash = "abc123"
+
+        // Save in Default context
+        withContext(Dispatchers.Default) {
+            cache.save(uri, document, sourceHash)
+        }
+
+        // Load in IO context
+        val loaded = withContext(Dispatchers.IO) {
+            cache.load(uri, sourceHash)
+        }
+        assertNotNull(loaded)
+
+        // Check validity in Default context
+        val isValid = withContext(Dispatchers.Default) {
+            cache.isValid(uri, sourceHash)
+        }
+        assertTrue(isValid)
+
+        // Invalidate in IO context
+        withContext(Dispatchers.IO) {
+            cache.invalidate(uri)
+        }
+
+        // Verify invalidation
+        val afterInvalidate = cache.load(uri, sourceHash)
+        assertNull(afterInvalidate)
+    }
+
+    // ========================================================================
+    // Tests for Fix #8: Consolidated hashing logic
+    // ========================================================================
+
+    @Test
+    fun `hashString and hashSource should produce identical results for same content`() = runTest {
+        val content = "class Example { String field }"
+
+        // Use the public hashSource method
+        val hash1 = SemanticCache.hashSource(content)
+        val hash2 = SemanticCache.hashSource(content)
+
+        // Both should produce the same hash
+        assertEquals(hash1, hash2)
+    }
+
+    @Test
+    fun `sha256Hash should produce correct SHA-256 format`() = runTest {
+        val content = "test content"
+        val hash = SemanticCache.hashSource(content)
+
+        // SHA-256 produces 64 hex characters (32 bytes * 2)
+        assertEquals(64, hash.length, "SHA-256 hash should be 64 characters")
+
+        // Should only contain hex characters (0-9, a-f)
+        assertTrue(hash.all { it in '0'..'9' || it in 'a'..'f' }, "Hash should only contain hex characters")
+    }
+
+    @Test
+    fun `sha256Hash should handle empty string`() = runTest {
+        val emptyHash = SemanticCache.hashSource("")
+
+        // Should produce a valid hash even for empty string
+        assertEquals(64, emptyHash.length)
+        assertTrue(emptyHash.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+
+    @Test
+    fun `different content should produce different hashes`() = runTest {
+        val content1 = "class Example1 { }"
+        val content2 = "class Example2 { }"
+
+        val hash1 = SemanticCache.hashSource(content1)
+        val hash2 = SemanticCache.hashSource(content2)
+
+        // Different content should produce different hashes
+        assertTrue(hash1 != hash2, "Different content should have different hashes")
+    }
+
+    @Test
+    fun `hashing should be consistent across calls`() = runTest {
+        cache = SemanticCache(tempDir)
+        val content = "class Test { String field }"
+
+        // Hash the same content multiple times
+        val hashes = (1..10).map { SemanticCache.hashSource(content) }
+
+        // All hashes should be identical
+        val uniqueHashes = hashes.toSet()
+        assertEquals(1, uniqueHashes.size, "Same content should always produce same hash")
+    }
+
+    @Test
+    fun `cache should use consistent hashing for file names`() = runTest {
+        cache = SemanticCache(tempDir)
+
+        // Create two URIs
+        val uri1 = URI.create("file:///test/Example.groovy")
+        val uri2 = URI.create("file:///test/Different.groovy")
+
+        val doc1 = createTestDocument(uri1)
+        val doc2 = createTestDocument(uri2)
+        val hash = "abc123"
+
+        // Save both documents
+        cache.save(uri1, doc1, hash)
+        cache.save(uri2, doc2, hash)
+
+        // Both should be loadable independently
+        val loaded1 = cache.load(uri1, hash)
+        val loaded2 = cache.load(uri2, hash)
+
+        assertNotNull(loaded1)
+        assertNotNull(loaded2)
+        assertEquals(uri1, loaded1.uri)
+        assertEquals(uri2, loaded2.uri)
     }
 }

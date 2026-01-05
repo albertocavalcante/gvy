@@ -777,4 +777,228 @@ class WorkspaceSymbolIndexTest {
             assertNotNull(found)
         }
     }
+
+    @Nested
+    @DisplayName("Fix #10: extractParameterCount with Generics")
+    inner class ExtractParameterCountTests {
+
+        @Test
+        fun `extractParameterCount handles empty parameters`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method().",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 20),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Find method with arity 0
+            val method = index.findMethod("com/example/MyClass", "method", 0)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+        }
+
+        @Test
+        fun `extractParameterCount handles Map with generic types`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            // Method with Map<String,String> should count as 1 parameter
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method(Map<String,String>).",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 40),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Should find method with arity 1 (one parameter, even though it contains commas inside generics)
+            val method = index.findMethod("com/example/MyClass", "method", 1)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+
+            // Should NOT find with arity 2
+            val method2 = index.findMethod("com/example/MyClass", "method", 2)
+            assertNull(method2)
+        }
+
+        @Test
+        fun `extractParameterCount handles Map with generics plus int`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            // Method with Map<String,String> and int should count as 2 parameters
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method(Map<String,String>,int).",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 50),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Should find method with arity 2
+            val method = index.findMethod("com/example/MyClass", "method", 2)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+
+            // Should NOT find with arity 1 or 3
+            assertNull(index.findMethod("com/example/MyClass", "method", 1))
+            assertNull(index.findMethod("com/example/MyClass", "method", 3))
+        }
+
+        @Test
+        fun `extractParameterCount handles nested generics`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            // Method with Map<String,List<Integer>> should count as 1 parameter
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method(Map<String,List<Integer>>).",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 50),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Should find method with arity 1
+            val method = index.findMethod("com/example/MyClass", "method", 1)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+
+            // Should NOT find with other arities
+            assertNull(index.findMethod("com/example/MyClass", "method", 0))
+            assertNull(index.findMethod("com/example/MyClass", "method", 2))
+        }
+
+        @Test
+        fun `extractParameterCount handles multiple simple parameters`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method(String,int,boolean).",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 40),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Should find method with arity 3
+            val method = index.findMethod("com/example/MyClass", "method", 3)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+        }
+
+        @Test
+        fun `extractParameterCount handles complex generic combinations`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            // Method with multiple generic types: List<String>, Map<Integer,String>, int
+            val methodSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#method(List<String>,Map<Integer,String>,int).",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 60),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(testUri1, listOf(classSymbol, methodSymbol), emptyList())
+            index.updateDocument(testUri1, doc)
+
+            // Should find method with arity 3
+            val method = index.findMethod("com/example/MyClass", "method", 3)
+            assertNotNull(method)
+            assertEquals("method", method?.name)
+        }
+
+        @Test
+        fun `extractParameterCount differentiates overloaded methods by arity`() {
+            val classSymbol = SymbolInfo(
+                symbol = "com/example/MyClass#",
+                kind = SymbolKind.CLASS,
+                range = Range(0, 0, 10, 1),
+                name = "MyClass",
+                owner = null,
+            )
+            val method0 = SymbolInfo(
+                symbol = "com/example/MyClass#method().",
+                kind = SymbolKind.METHOD,
+                range = Range(2, 4, 2, 20),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val method1 = SymbolInfo(
+                symbol = "com/example/MyClass#method(String).",
+                kind = SymbolKind.METHOD,
+                range = Range(4, 4, 4, 30),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val method2 = SymbolInfo(
+                symbol = "com/example/MyClass#method(Map<String,String>).",
+                kind = SymbolKind.METHOD,
+                range = Range(6, 4, 6, 50),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val method3 = SymbolInfo(
+                symbol = "com/example/MyClass#method(String,int,boolean).",
+                kind = SymbolKind.METHOD,
+                range = Range(8, 4, 8, 60),
+                name = "method",
+                owner = "com/example/MyClass#",
+            )
+            val doc = SemanticDocument(
+                testUri1,
+                listOf(classSymbol, method0, method1, method2, method3),
+                emptyList(),
+            )
+            index.updateDocument(testUri1, doc)
+
+            // Each overload should be findable by its correct arity
+            assertNotNull(index.findMethod("com/example/MyClass", "method", 0))
+            assertNotNull(index.findMethod("com/example/MyClass", "method", 1))
+            assertNotNull(index.findMethod("com/example/MyClass", "method", 3))
+
+            // Arity 2 doesn't exist (Map<String,String> is one parameter)
+            assertNull(index.findMethod("com/example/MyClass", "method", 2))
+        }
+    }
 }

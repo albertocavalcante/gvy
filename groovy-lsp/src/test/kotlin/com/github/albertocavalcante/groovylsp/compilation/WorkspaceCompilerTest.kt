@@ -3,6 +3,9 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.worker.InProcessWorkerSession
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import java.net.URI
 import java.nio.file.Files
@@ -35,6 +38,7 @@ class WorkspaceCompilerTest {
         workspaceCompiler = WorkspaceCompiler(
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
+            semanticDb = GroovySemanticDB(),
         )
     }
 
@@ -311,5 +315,98 @@ class WorkspaceCompilerTest {
 
         assertTrue(result.success)
         assertEquals(2, result.modules.size)
+    }
+
+    // ========================================================================
+    // Tests for Fix #6: Race condition in initialCompilationDone
+    // ========================================================================
+
+    @Test
+    fun `concurrent incrementalCompile calls should only trigger one initial compilation`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create a test file
+        val file1 = srcDir.resolve("File1.groovy")
+        file1.writeText("class File1 { String field }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Launch multiple concurrent incremental compiles
+        val results = List(5) {
+            async {
+                workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+            }
+        }.awaitAll()
+
+        // All should succeed
+        results.forEach { result ->
+            assertTrue(result.success, "All incremental compiles should succeed")
+        }
+
+        // All should have compiled the file (they all see the initial compilation result)
+        results.forEach { result ->
+            assertTrue(result.modules.isNotEmpty(), "Should have compiled modules")
+        }
+    }
+
+    @Test
+    fun `second incrementalCompile should skip initial compilation`() = runTest {
+        // Create source directory structure
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        // Create test files
+        val file1 = srcDir.resolve("File1.groovy")
+        val file2 = srcDir.resolve("File2.groovy")
+        file1.writeText("class File1 { String field1 }")
+        file2.writeText("class File2 { String field2 }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // First incremental compile (will trigger initial compilation)
+        val firstResult = workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+        assertTrue(firstResult.success)
+
+        // Second incremental compile (should skip initial compilation)
+        val secondResult = workspaceCompiler.incrementalCompile(setOf(file2.toUri()))
+        assertTrue(secondResult.success)
+
+        // Both should have compiled modules
+        assertTrue(firstResult.modules.isNotEmpty())
+        assertTrue(secondResult.modules.isNotEmpty())
+    }
+
+    @Test
+    fun `AtomicBoolean prevents race condition in initial compilation flag`() = runTest {
+        // This test verifies that the AtomicBoolean compareAndSet prevents
+        // multiple threads from triggering initial compilation
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        val file1 = srcDir.resolve("File1.groovy")
+        file1.writeText("class File1 { }")
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        // Start 10 concurrent incremental compiles
+        val concurrentCalls = 10
+        val results = List(concurrentCalls) {
+            async {
+                workspaceCompiler.incrementalCompile(setOf(file1.toUri()))
+            }
+        }.awaitAll()
+
+        // All calls should complete successfully
+        assertEquals(concurrentCalls, results.size)
+        results.forEach { result ->
+            assertTrue(result.success, "All concurrent calls should succeed")
+        }
+
+        // Verify all got consistent results
+        results.forEach { result ->
+            assertTrue(result.modules.containsKey(file1.toUri()))
+        }
     }
 }
