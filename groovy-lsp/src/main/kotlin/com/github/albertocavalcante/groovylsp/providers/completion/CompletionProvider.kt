@@ -445,6 +445,7 @@ object CompletionProvider {
         val result = mutableListOf<String>()
         val currentParam = StringBuilder()
         var bracketDepth = 0
+        var invalidBrackets = false
 
         fun addCurrentParam() {
             result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
@@ -459,6 +460,10 @@ object CompletionProvider {
                 }
                 '>' -> {
                     bracketDepth--
+                    if (bracketDepth < 0) {
+                        invalidBrackets = true
+                        break
+                    }
                     currentParam.append(char)
                 }
                 ',' -> {
@@ -470,6 +475,13 @@ object CompletionProvider {
                 }
                 else -> currentParam.append(char)
             }
+        }
+
+        // If brackets are unbalanced, fall back to simple comma-based parsing
+        if (invalidBrackets || bracketDepth != 0) {
+            return params.split(',')
+                .map { it.trim().substringAfterLast('/').substringAfterLast('.') }
+                .filter { it.isNotEmpty() }
         }
 
         // Add the last parameter

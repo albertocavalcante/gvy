@@ -349,13 +349,28 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         // Split by comma while respecting angle brackets for generics
         var count = 0
         var bracketDepth = 0
+        var invalidBrackets = false
         for (char in params) {
             when (char) {
                 '<' -> bracketDepth++
-                '>' -> bracketDepth--
+                '>' -> {
+                    bracketDepth--
+                    if (bracketDepth < 0) {
+                        invalidBrackets = true
+                        break
+                    }
+                }
                 ',' -> if (bracketDepth == 0) count++
             }
         }
+
+        // If brackets are unbalanced, fall back to a simple comma-based count
+        if (invalidBrackets || bracketDepth != 0) {
+            return params.split(',')
+                .map { it.trim() }
+                .count { it.isNotEmpty() }
+        }
+
         // Add 1 for the last parameter (no trailing comma)
         return count + 1
     }
