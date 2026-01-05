@@ -308,6 +308,7 @@ object CompletionProvider {
                         ?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true
 
             if (allowSteps) {
+                // TODO(#657): Refactor to use a determined JenkinsCompletionStrategy.
                 addJenkinsStepCompletions(metadata)
             }
 
@@ -360,6 +361,7 @@ object CompletionProvider {
         ctx: CompletionContext,
         metadata: MergedJenkinsMetadata?,
     ): Boolean {
+        System.err.println("[DEBUG-MEMBER] qualifierType=${completionContext.qualifierType}")
         val rawType = completionContext.qualifierType.substringBefore('<')
         val qualifierName = completionContext.qualifierName
 

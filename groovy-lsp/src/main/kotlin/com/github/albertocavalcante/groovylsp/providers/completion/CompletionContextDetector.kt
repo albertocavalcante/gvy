@@ -113,6 +113,10 @@ internal object CompletionContextDetector {
     ): CompletionProvider.ContextType? {
         val node = nodeAtCursor ?: return null
         val parent = astModel.getParent(node)
+        java.io.File("/tmp/groovy-lsp-debug.log")
+            .appendText(
+                "DETECT: node=${node.javaClass.simpleName}, parent=${parent?.javaClass?.simpleName}, text=${node.text}\n",
+            )
 
         return when (node) {
             is PropertyExpression -> memberAccessFromExpression(node.objectExpression, semanticResolver, moduleNode)
@@ -202,6 +206,11 @@ private fun completionFromVariableExpression(
     moduleNode: ModuleNode?,
 ): CompletionProvider.ContextType? {
     if (parent is PropertyExpression) {
+        // If it's an implicit 'this' (e.g. just a variable name), we want standard completion (locals + members),
+        // not strict member completion that filters out locals.
+        if (parent.isImplicitThis) {
+            return null
+        }
         val qualifierName = expression.name
 
         // Resolve type using semantic resolver (with safe fallback)
@@ -234,6 +243,28 @@ private fun completionFromConstantExpression(
     moduleNode: ModuleNode?,
 ): CompletionProvider.ContextType.MemberAccess? {
     if (parent !is PropertyExpression) {
+        return null
+    }
+
+    // If it's an implicit 'this' (e.g. just a variable name), we want standard completion (locals + members),
+    // not strict member completion that filters out locals.
+    if (parent.isImplicitThis) {
+        return null
+    }
+    // Double check for explicit 'this' if implicit flag is missing but name implies it
+    if (parent.objectExpression is VariableExpression &&
+        (parent.objectExpression as VariableExpression).name == "this"
+    ) {
+        return null
+    }
+
+    // TODO(#657): Refactor to use robust AST-based detection instead of text/regex heuristics.
+    // Special handling for Jenkins 'script' blocks:
+    // The parser may treat the block content as a property access on the 'script' method call result.
+    // In this case, we want standard scope completion, not member completion on the script return value.
+    if (parent.objectExpression is MethodCallExpression &&
+        (parent.objectExpression as MethodCallExpression).methodAsString == "script"
+    ) {
         return null
     }
     val objectExpr = parent.objectExpression
