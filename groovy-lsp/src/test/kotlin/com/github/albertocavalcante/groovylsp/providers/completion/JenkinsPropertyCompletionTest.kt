@@ -160,7 +160,7 @@ class JenkinsPropertyCompletionTest {
             line = 1,
             character = 4, // After "env."
             compilationService = compilationService,
-            semanticResolver = mockk(relaxed = true),
+            semanticResolver = SemanticTypeResolver(ReflectionTypeSolver()),
             content = content,
         )
 
@@ -190,7 +190,7 @@ class JenkinsPropertyCompletionTest {
             line = 1,
             character = 13, // After "currentBuild."
             compilationService = compilationService,
-            semanticResolver = mockk(relaxed = true),
+            semanticResolver = SemanticTypeResolver(ReflectionTypeSolver()),
             content = content,
         )
 
