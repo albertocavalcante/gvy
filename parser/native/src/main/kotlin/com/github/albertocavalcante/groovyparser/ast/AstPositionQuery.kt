@@ -110,7 +110,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         val hasConstructorCall = candidatesWithoutStatements.any { it is ConstructorCallExpression }
         val candidates = if (hasConstructorCall) {
             val filtered = candidatesWithoutStatements.filterNot { node ->
-                if (node is ClassNode && node.lineNumber != 1) {
+                if (node is ClassNode) {
                     val isDecl = isClassDeclaration(node, matchingNodes)
                     if (logger.isDebugEnabled) {
                         logger.debug(
