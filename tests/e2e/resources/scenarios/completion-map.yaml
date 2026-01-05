@@ -1,0 +1,138 @@
+name: completion-map
+description: Request completion for map variables with strict assertions - expects LinkedHashMap methods.
+workspace:
+  fixture: completion-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  # Wait for server to be ready before making requests
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 180000
+
+  # Test map member access completion
+  - openDocument:
+      path: src/MapTest.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        def p = [key1: 'value1', key2: 'value2', key3: 'value3']
+        p.
+
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/MapTest.groovy"
+        position:
+          line: 1
+          character: 2
+      saveAs: completion_map
+      extract:
+        - variable: completion_map.items
+          jsonPath: $.items
+
+  # Strict: completions must not be empty
+  - assert:
+      source: completion_map
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: NOT_EMPTY
+            message: Map variable should have completion items
+
+  # Strict: Map methods must be present (from LinkedHashMap)
+  - assert:
+      source: completion_map
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: get
+            message: Should suggest 'get' method for Map
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: put
+            message: Should suggest 'put' method for Map
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: containsKey
+            message: Should suggest 'containsKey' method for Map
+
+  # Strict: GDK methods for maps should be present
+  - assert:
+      source: completion_map
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: each
+            message: Should suggest GDK 'each' method
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: collect
+            message: Should suggest GDK 'collect' method
+
+  # Strict: Should NOT contain keywords (proves type is resolved)
+  - assert:
+      source: completion_map
+      checks:
+        - jsonPath: "$.items[?(@.label == 'abstract')]"
+          expect:
+            type: SIZE
+            value: 0
+            message: Should NOT suggest 'abstract' keyword for map variable
+        - jsonPath: "$.items[?(@.label == 'synchronized')]"
+          expect:
+            type: SIZE
+            value: 0
+            message: Should NOT suggest 'synchronized' keyword for map variable
+
+  # Test explicit LinkedHashMap type declaration
+  - openDocument:
+      path: src/MapTyped.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        LinkedHashMap<String, String> myMap = [a: 'b']
+        myMap.
+
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/MapTyped.groovy"
+        position:
+          line: 1
+          character: 6
+      saveAs: completion_typed_map
+
+  # Strict: Typed map should also have methods
+  - assert:
+      source: completion_typed_map
+      checks:
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: keySet
+            message: Should suggest 'keySet' for typed LinkedHashMap
+        - jsonPath: $.items[*].label
+          expect:
+            type: CONTAINS
+            value: entrySet
+            message: Should suggest 'entrySet' for typed LinkedHashMap
+
+  - shutdown: {}
+  - exit: {}
