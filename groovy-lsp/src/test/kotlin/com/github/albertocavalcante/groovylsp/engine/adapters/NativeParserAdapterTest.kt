@@ -148,6 +148,28 @@ class NativeParserAdapterTest {
         assertEquals(5, methodSymbol.range.end.character, "End character should be 5 (0-based, exclusive)")
     }
 
+    @Test
+    fun `toRange uses single character fallback when lastColumnNumber is invalid`() {
+        val moduleNode = createModuleWithClass("MyClass")
+        val classNode = moduleNode.classes[0]
+        classNode.lineNumber = 1
+        classNode.columnNumber = 1
+        classNode.lastLineNumber = 1
+        classNode.lastColumnNumber = -1 // Invalid
+
+        val parseResult = createParseResult(moduleNode)
+        val adapter = NativeParserAdapter(parseResult, "file:///Test.groovy")
+        val symbols = adapter.allSymbols()
+
+        val classRange = symbols[0].range
+        assertEquals(0, classRange.start.character)
+        assertEquals(
+            1,
+            classRange.end.character,
+            "End character should be start + 1 (1 character width) for invalid lastColumn",
+        )
+    }
+
     // Helper methods
 
     private fun createModuleWithClass(className: String): ModuleNode {
