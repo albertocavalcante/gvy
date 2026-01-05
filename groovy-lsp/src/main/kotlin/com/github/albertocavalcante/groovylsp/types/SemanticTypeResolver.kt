@@ -16,7 +16,7 @@ import org.codehaus.groovy.ast.ModuleNode
  * backward compatibility with existing code that expects ClassNode.
  */
 class SemanticTypeResolver(private val typeSolver: TypeSolver) {
-    private val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry())
+    val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry())
 
     /**
      * Resolve the type of an AST node using GroovySemantics.
