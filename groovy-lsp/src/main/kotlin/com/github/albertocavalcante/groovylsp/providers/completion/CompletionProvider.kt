@@ -446,6 +446,11 @@ object CompletionProvider {
         val currentParam = StringBuilder()
         var bracketDepth = 0
 
+        fun addCurrentParam() {
+            result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
+            currentParam.clear()
+        }
+
         for (char in params) {
             when (char) {
                 '<' -> {
@@ -458,8 +463,7 @@ object CompletionProvider {
                 }
                 ',' -> {
                     if (bracketDepth == 0) {
-                        result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
-                        currentParam.clear()
+                        addCurrentParam()
                     } else {
                         currentParam.append(char)
                     }
@@ -470,7 +474,7 @@ object CompletionProvider {
 
         // Add the last parameter
         if (currentParam.isNotEmpty()) {
-            result.add(currentParam.toString().trim().substringAfterLast('/').substringAfterLast('.'))
+            addCurrentParam()
         }
 
         return result
