@@ -122,11 +122,11 @@ class SemanticCache(private val cacheDir: Path) {
      * @param sourceHash Hash of current source content
      * @return true if cache exists and hash matches
      */
-    fun isValid(uri: URI, sourceHash: String): Boolean {
-        return try {
+    suspend fun isValid(uri: URI, sourceHash: String): Boolean = withContext(Dispatchers.IO) {
+        try {
             val cacheFile = getCacheFile(uri)
             if (!cacheFile.exists()) {
-                return false
+                return@withContext false
             }
 
             val jsonString = cacheFile.readText()
@@ -143,7 +143,7 @@ class SemanticCache(private val cacheDir: Path) {
      *
      * @param uri The file URI
      */
-    fun invalidate(uri: URI) {
+    suspend fun invalidate(uri: URI) = withContext(Dispatchers.IO) {
         try {
             val cacheFile = getCacheFile(uri)
             if (cacheFile.deleteIfExists()) {
@@ -157,7 +157,7 @@ class SemanticCache(private val cacheDir: Path) {
     /**
      * Clear all cache files.
      */
-    fun clear() {
+    suspend fun clear() = withContext(Dispatchers.IO) {
         try {
             cacheDir.toFile().listFiles()?.forEach { file ->
                 if (file.extension == "json") {
