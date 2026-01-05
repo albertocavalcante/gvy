@@ -34,11 +34,12 @@ class IncrementalCompilerTest {
             sessionFactory = { InProcessWorkerSession(parser) },
         )
         workspaceManager = WorkspaceManager()
+        semanticDb = GroovySemanticDB()
         workspaceCompiler = WorkspaceCompiler(
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
+            semanticDb = semanticDb,
         )
-        semanticDb = GroovySemanticDB()
         dependencyGraph = DependencyGraph()
         incrementalCompiler = IncrementalCompiler(
             workspaceCompiler = workspaceCompiler,
