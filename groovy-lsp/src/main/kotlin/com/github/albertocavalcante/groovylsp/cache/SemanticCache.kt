@@ -182,19 +182,20 @@ class SemanticCache(private val cacheDir: Path) {
     /**
      * Hash a string using SHA-256.
      */
-    private fun hashString(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(input.toByteArray())
-        return hashBytes.joinToString("") { "%02x".format(it) }
-    }
+    private fun hashString(input: String): String = sha256Hash(input)
 
     companion object {
         /**
          * Hash source content to detect changes.
          */
-        fun hashSource(content: String): String {
+        fun hashSource(content: String): String = sha256Hash(content)
+
+        /**
+         * Compute SHA-256 hash of a string.
+         */
+        private fun sha256Hash(input: String): String {
             val digest = MessageDigest.getInstance("SHA-256")
-            val hashBytes = digest.digest(content.toByteArray())
+            val hashBytes = digest.digest(input.toByteArray())
             return hashBytes.joinToString("") { "%02x".format(it) }
         }
     }
