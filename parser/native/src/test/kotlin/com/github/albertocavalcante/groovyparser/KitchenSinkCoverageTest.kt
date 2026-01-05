@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovyparser
 
-import com.github.albertocavalcante.groovyparser.ast.SymbolExtractor
 import com.github.albertocavalcante.groovyparser.ast.toHoverString
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -34,7 +33,7 @@ class KitchenSinkCoverageTest {
 
         assertParseOk(result)
         val mainClass = assertAstModel(result)
-        assertSymbols(result, mainClass)
+        // assertSymbols(result, mainClass) - moved to semantics module
         assertHoverFormatting(mainClass)
     }
 
@@ -89,22 +88,6 @@ class KitchenSinkCoverageTest {
         )
 
         return mainClass
-    }
-
-    private fun assertSymbols(result: ParseResult, mainClass: ClassNode) {
-        val classSymbols = SymbolExtractor.extractClassSymbols(result.ast!!)
-        assertTrue(classSymbols.isNotEmpty(), "Should extract class symbols")
-
-        val methodSymbols = SymbolExtractor.extractMethodSymbols(mainClass)
-        assertTrue(methodSymbols.isNotEmpty(), "Should extract method symbols")
-        assertTrue(methodSymbols.any { it.name == "doSomething" }, "Should find doSomething method")
-
-        val fieldSymbols = SymbolExtractor.extractFieldSymbols(mainClass)
-        assertTrue(fieldSymbols.isNotEmpty(), "Should extract field symbols")
-        assertTrue(fieldSymbols.any { it.name == "secret" }, "Should find secret field")
-
-        val completionSymbols = SymbolExtractor.extractCompletionSymbols(result.ast!!, 10, 0)
-        assertNotNull(completionSymbols, "Should get completion context")
     }
 
     private fun assertHoverFormatting(mainClass: ClassNode) {
