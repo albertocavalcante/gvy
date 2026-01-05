@@ -395,6 +395,7 @@ class HoverProvider(
         }
 
         // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
+        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
         val hoverRange = Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
             Position(node.lastLineNumber - 1, node.lastColumnNumber),
