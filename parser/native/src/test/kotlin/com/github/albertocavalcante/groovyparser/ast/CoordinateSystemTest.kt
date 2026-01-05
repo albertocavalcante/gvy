@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.api.ParseRequest
 import com.github.albertocavalcante.groovyparser.ast.types.Position
-import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -154,13 +154,13 @@ class CoordinateSystemTest {
 
             // Test position within the field declaration
             val range = CoordinateSystem.getNodeLspRange(fieldNode)
-            if (range != null) {
-                // Test position within range
-                assertTrue(CoordinateSystem.nodeContainsPosition(fieldNode, range.start.line, range.start.character))
+            assertNotNull(range)
 
-                // Test position outside range
-                assertFalse(CoordinateSystem.nodeContainsPosition(fieldNode, range.end.line + 1, 0))
-            }
+            // Test position within range
+            assertTrue(CoordinateSystem.nodeContainsPosition(fieldNode, range.start.line, range.start.character))
+
+            // Test position outside range
+            assertFalse(CoordinateSystem.nodeContainsPosition(fieldNode, range.end.line + 1, 0))
         }
     }
 
@@ -186,9 +186,8 @@ class CoordinateSystemTest {
 
         // Test position on last line (if we can determine it)
         val range = CoordinateSystem.getNodeLspRange(classNode)
-        if (range != null) {
-            assertTrue(CoordinateSystem.nodeContainsPosition(classNode, range.end.line, range.end.character))
-        }
+        assertNotNull(range)
+        assertFalse(CoordinateSystem.nodeContainsPosition(classNode, range.end.line, range.end.character))
     }
 
     @Test
@@ -265,21 +264,20 @@ class CoordinateSystemTest {
         if (scriptClass.fields.isNotEmpty()) {
             val fieldNode = scriptClass.fields.first()
             val range = CoordinateSystem.getNodeLspRange(fieldNode)
+            assertNotNull(range)
 
-            if (range != null) {
-                // The end character should equal lastColumnNumber (no -1)
-                // because LSP end is exclusive and Groovy end is 1-based inclusive
-                // Example: Groovy lastColumnNumber=10 (1-based, inclusive, meaning char at col 10 is last)
-                // LSP end.character=10 (0-based, exclusive, meaning "up to but not including pos 10")
-                // These represent the same boundary!
+            // The end character should equal lastColumnNumber (no -1)
+            // because LSP end is exclusive and Groovy end is 1-based inclusive
+            // Example: Groovy lastColumnNumber=10 (1-based, inclusive, meaning char at col 10 is last)
+            // LSP end.character=10 (0-based, exclusive, meaning "up to but not including pos 10")
+            // These represent the same boundary!
 
-                // Verify end character equals the Groovy lastColumnNumber (not lastColumnNumber - 1)
-                assertEquals(
-                    fieldNode.lastColumnNumber,
-                    range.end.character,
-                    "LSP end character should equal Groovy lastColumnNumber (exclusive boundary)",
-                )
-            }
+            // Verify end character equals the Groovy lastColumnNumber (not lastColumnNumber - 1)
+            assertEquals(
+                fieldNode.lastColumnNumber,
+                range.end.character,
+                "LSP end character should equal Groovy lastColumnNumber (exclusive boundary)",
+            )
         }
     }
 }

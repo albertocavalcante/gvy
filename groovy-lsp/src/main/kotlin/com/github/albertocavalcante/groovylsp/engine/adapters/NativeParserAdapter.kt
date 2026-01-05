@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.engine.adapters
 
 import com.github.albertocavalcante.groovylsp.compilation.toLspDiagnostic
+import com.github.albertocavalcante.groovyparser.api.ParseResult
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
-import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
@@ -106,7 +106,7 @@ private fun ASTNode.toRange(): Range? {
     val endLine = if (lastLineNumber >= 1) lastLineNumber - 1 else startLine
     // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
     // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed)
-    val endCol = if (lastColumnNumber >= 1) lastColumnNumber else startCol + 1
+    val endCol = if (lastColumnNumber >= 1) lastColumnNumber else startCol + 2
     return Range(Position(startLine, startCol), Position(endLine, endCol))
 }
 

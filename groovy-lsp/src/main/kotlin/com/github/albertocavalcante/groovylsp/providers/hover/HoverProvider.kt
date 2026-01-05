@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.documentation.DocFormatter
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
+import com.github.albertocavalcante.groovylsp.dsl.hover.createHoverFor
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
@@ -44,7 +45,6 @@ import java.net.URI
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
-    private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
 ) {
     private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
@@ -257,9 +257,7 @@ class HoverProvider(
         // Check if this is a Jenkins step and we have metadata for it
         tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
 
-        val module = compilationService.getAst(documentUri) as? ModuleNode
-        val baseHoverResult = contentGenerator.generateHover(node, module)
-        val baseHover = baseHoverResult.getOrNull() ?: return null
+        val baseHover = createHoverFor(node).getOrNull() ?: return null
 
         logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
 
