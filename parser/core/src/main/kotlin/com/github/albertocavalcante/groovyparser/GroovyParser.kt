@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.internal.GroovyAstConverter
 import groovy.lang.GroovyClassLoader
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.ErrorCollector
@@ -60,10 +61,8 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
          * @param source optional source code for comment extraction
          * @return the converted CompilationUnit
          */
-        fun convertFromNative(
-            moduleNode: org.codehaus.groovy.ast.ModuleNode,
-            source: String? = null,
-        ): CompilationUnit = GroovyAstConverter().convert(moduleNode, source)
+        fun convertFromNative(moduleNode: ModuleNode, source: String? = null): CompilationUnit =
+            GroovyAstConverter().convert(moduleNode, source)
     }
 
     /**
@@ -133,7 +132,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
 
     @Suppress("TooGenericExceptionCaught")
     private fun convertModuleNode(
-        moduleNode: org.codehaus.groovy.ast.ModuleNode,
+        moduleNode: ModuleNode,
         code: String,
         problems: MutableList<Problem>,
     ): ParseResult<CompilationUnit> = try {

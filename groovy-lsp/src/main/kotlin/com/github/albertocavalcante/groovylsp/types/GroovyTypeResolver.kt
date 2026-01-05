@@ -21,6 +21,8 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.slf4j.LoggerFactory
 
+// TODO(#652): Remove this class after migrating all usages to SemanticTypeResolver.
+//   See: https://github.com/albertocavalcante/gvy/issues/652
 /**
  * Concrete implementation of TypeResolver for Groovy code.
  * Combines patterns from IntelliJ, kotlin-lsp, and fork-groovy-language-server.

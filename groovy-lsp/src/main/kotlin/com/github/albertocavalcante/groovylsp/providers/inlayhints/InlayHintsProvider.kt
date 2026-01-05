@@ -413,6 +413,10 @@ class InlayHintsProvider(
     }
 }
 
+// TODO(#651): Consolidate InlayHintsCandidates and InlayHintsTypes into single helper.
+//   See: https://github.com/albertocavalcante/gvy/issues/651
+// TODO(#650): resolveReceiverType() overlaps with SignatureHelpProvider - extract shared utility.
+//   See: https://github.com/albertocavalcante/gvy/issues/650
 private object InlayHintsCandidates {
     fun resolveFromCandidates(
         argumentTypes: List<String?>,
@@ -518,8 +522,10 @@ private object InlayHintsCandidates {
         semanticResolver: SemanticTypeResolver,
         moduleNode: ModuleNode?,
     ): List<String?> = arguments.map { arg ->
-        val semanticType = semanticResolver.resolveType(arg, moduleNode)
-        semanticResolver.formatSemanticType(semanticType)
+        runCatching {
+            val semanticType = semanticResolver.resolveType(arg, moduleNode)
+            semanticResolver.formatSemanticType(semanticType)
+        }.getOrNull()
     }
 
     fun resolveExpressionTypeSafely(

@@ -9,16 +9,21 @@ import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
+import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.safePosition
+import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import groovy.lang.Script
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
@@ -184,6 +189,8 @@ class SignatureHelpProvider(
         return signatures
     }
 
+    // TODO(#650): Consolidate with InlayHintsCandidates.resolveReceiverType() - similar logic.
+    //   See: https://github.com/albertocavalcante/gvy/issues/650
     private fun resolveReceiverType(
         documentUri: URI,
         methodCall: MethodCallExpression,
@@ -195,25 +202,75 @@ class SignatureHelpProvider(
         }
 
         val objExpr = methodCall.objectExpression
-        val moduleNode = compilationService.getAst(documentUri) as? org.codehaus.groovy.ast.ModuleNode
-            ?: return "java.lang.Object"
+        val moduleNode = compilationService.getAst(documentUri) as? ModuleNode
 
-        // Use SemanticTypeResolver for type resolution
+        // Check static type first (like HoverContentGenerator:114-117)
+        // For explicitly typed variables (String text, ArrayList list), use static type
+        val staticType = objExpr.type
+        if (!staticType.isDynamic()) {
+            val fqn = staticType.name
+            if (fqn != "java.lang.Object") {
+                return fqn
+            }
+        }
+
+        // Only use SemanticTypeResolver for dynamic types that need inference
+        if (moduleNode == null) {
+            return "java.lang.Object"
+        }
+
         val semanticType = semanticResolver.resolveType(objExpr, moduleNode)
         var type = formatSemanticTypeToFqn(semanticType)
 
         // Refine type from initializer for def/Object variables
         val canRefine = (type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression
         if (canRefine) {
-            val resolvedVar = symbolTable.resolveSymbol(objExpr as VariableExpression, astVisitor)
-            val init = resolvedVar?.initialExpression
-            if (init != null) {
-                val refinedType = semanticResolver.resolveType(init, moduleNode)
-                val refinedFqn = formatSemanticTypeToFqn(refinedType)
-                type = refinedFqn.takeUnless { it == "java.lang.Object" } ?: type
+            val initExpr = findInitializerExpression(objExpr as VariableExpression, astVisitor, symbolTable)
+            if (initExpr != null) {
+                // Handle ConstructorCallExpression specially - use .type directly
+                // (no semantic calculator exists for constructor calls)
+                val refinedFqn = if (initExpr is ConstructorCallExpression) {
+                    initExpr.type.name
+                } else {
+                    val refinedType = runCatching { semanticResolver.resolveType(initExpr, moduleNode) }
+                        .getOrNull()
+                    refinedType?.let { formatSemanticTypeToFqn(it) }
+                }
+                if (refinedFqn != null && refinedFqn != "java.lang.Object") {
+                    type = refinedFqn
+                }
             }
         }
         return type
+    }
+
+    /**
+     * Find the initializer expression for a variable by checking:
+     * 1. The Variable interface's initialExpression (for Parameters, FieldNodes)
+     * 2. The parent DeclarationExpression's rightExpression (for local variables)
+     */
+    private fun findInitializerExpression(
+        varExpr: VariableExpression,
+        astVisitor: GroovyAstModel,
+        symbolTable: SymbolTable,
+    ): Expression? {
+        // First, try symbol table lookup (works for fields and parameters)
+        val resolvedVar = symbolTable.resolveSymbol(varExpr, astVisitor)
+        if (resolvedVar != null && resolvedVar.hasInitialExpression()) {
+            return resolvedVar.initialExpression
+        }
+
+        // For local variables, find the DeclarationExpression in AST
+        // Look for DeclarationExpression where left side matches our variable name
+        val varName = varExpr.name
+        val declarations = astVisitor.getNodes(astVisitor.getUri(varExpr) ?: return null)
+            .filterIsInstance<DeclarationExpression>()
+            .filter { decl ->
+                val left = decl.leftExpression
+                left is VariableExpression && left.name == varName
+            }
+
+        return declarations.firstOrNull()?.rightExpression
     }
 
     /**
@@ -222,15 +279,15 @@ class SignatureHelpProvider(
     private fun formatSemanticTypeToFqn(type: SemanticType): String = when (type) {
         is SemanticType.Known -> type.fqn
         is SemanticType.Primitive -> when (type.kind) {
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.INT -> "int"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.LONG -> "long"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.DOUBLE -> "double"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.FLOAT -> "float"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.BOOLEAN -> "boolean"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.BYTE -> "byte"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.CHAR -> "char"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.SHORT -> "short"
-            com.github.albertocavalcante.gvy.semantics.PrimitiveKind.VOID -> "void"
+            PrimitiveKind.INT -> "int"
+            PrimitiveKind.LONG -> "long"
+            PrimitiveKind.DOUBLE -> "double"
+            PrimitiveKind.FLOAT -> "float"
+            PrimitiveKind.BOOLEAN -> "boolean"
+            PrimitiveKind.BYTE -> "byte"
+            PrimitiveKind.CHAR -> "char"
+            PrimitiveKind.SHORT -> "short"
+            PrimitiveKind.VOID -> "void"
         }
 
         is SemanticType.Dynamic -> "java.lang.Object"

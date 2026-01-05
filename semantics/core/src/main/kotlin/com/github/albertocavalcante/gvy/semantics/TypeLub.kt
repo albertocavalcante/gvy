@@ -4,6 +4,8 @@ package com.github.albertocavalcante.gvy.semantics
  * Logic for computing Least Upper Bound (LUB) of SemanticTypes.
  * Ported from LeastUpperBoundLogic.kt but adapted for SemanticType (no TypeSolver dependency).
  */
+import java.util.concurrent.ConcurrentHashMap
+
 object TypeLub {
 
     /**
@@ -194,7 +196,7 @@ object TypeLub {
         "java.lang.Number" to setOf("java.io.Serializable"),
     )
 
-    private val ANCESTOR_CACHE = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+    private val ANCESTOR_CACHE = ConcurrentHashMap<String, Set<String>>()
 
     private fun getAllAncestors(fqn: String): Set<String> {
         return ANCESTOR_CACHE.computeIfAbsent(fqn) { key ->

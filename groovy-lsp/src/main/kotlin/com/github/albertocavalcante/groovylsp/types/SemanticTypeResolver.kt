@@ -20,19 +20,42 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
 
     /**
      * Resolve the type of an AST node using GroovySemantics.
-     * Automatically injects the module if not already injected.
+     * Uses the module-aware API for proper multi-document support.
      */
-    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType {
-        // Inject module if available
-        moduleNode?.let { semantics.inject(it) }
-        return semantics.resolveType(node)
+    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType = if (moduleNode != null) {
+        // Use the new module-aware API for multi-document safety
+        semantics.resolveType(node, moduleNode)
+    } else {
+        // Fallback for cases where module is not available
+        @Suppress("DEPRECATION")
+        semantics.resolveType(node)
     }
 
     /**
      * Convert a ClassNode directly to a SemanticType.
-     * Useful for static type references where we don't need full resolution context.
+     * This is a direct conversion for static type references - it doesn't require
+     * semantic resolution context and doesn't go through the GroovySemantics machinery.
      */
-    fun toSemanticType(classNode: ClassNode): SemanticType = resolveType(classNode, null)
+    fun toSemanticType(classNode: ClassNode): SemanticType = when {
+        ClassHelper.isPrimitiveType(classNode) -> classNodeToPrimitive(classNode)
+        classNode.isArray -> SemanticType.Array(toSemanticType(classNode.componentType))
+        classNode == ClassHelper.DYNAMIC_TYPE -> SemanticType.Dynamic()
+        classNode == ClassHelper.OBJECT_TYPE && classNode.name == "java.lang.Object" -> SemanticType.Dynamic()
+        else -> SemanticType.Known(classNode.name)
+    }
+
+    private fun classNodeToPrimitive(classNode: ClassNode): SemanticType = when (classNode) {
+        ClassHelper.boolean_TYPE -> SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+        ClassHelper.byte_TYPE -> SemanticType.Primitive(PrimitiveKind.BYTE)
+        ClassHelper.char_TYPE -> SemanticType.Primitive(PrimitiveKind.CHAR)
+        ClassHelper.short_TYPE -> SemanticType.Primitive(PrimitiveKind.SHORT)
+        ClassHelper.int_TYPE -> SemanticType.Primitive(PrimitiveKind.INT)
+        ClassHelper.long_TYPE -> SemanticType.Primitive(PrimitiveKind.LONG)
+        ClassHelper.float_TYPE -> SemanticType.Primitive(PrimitiveKind.FLOAT)
+        ClassHelper.double_TYPE -> SemanticType.Primitive(PrimitiveKind.DOUBLE)
+        ClassHelper.VOID_TYPE -> SemanticType.Primitive(PrimitiveKind.VOID)
+        else -> SemanticType.Unknown("Unknown primitive: ${classNode.name}")
+    }
 
     /**
      * Convert SemanticType to ClassNode for backward compatibility.
@@ -65,9 +88,10 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
         is SemanticType.Primitive -> type.kind.name.lowercase()
         is SemanticType.Dynamic -> type.hint ?: "def"
         is SemanticType.Unknown -> "unresolved"
-        is SemanticType.Union -> type.types.sortedBy {
-            formatSemanticType(it)
-        }.joinToString(" | ") { formatSemanticType(it) }
+        is SemanticType.Union -> {
+            val formatted = type.types.map { formatSemanticType(it) }.sorted()
+            formatted.joinToString(" | ")
+        }
         is SemanticType.Null -> "null"
         is SemanticType.Array -> "${formatSemanticType(type.componentType)}[]"
     }
