@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.MethodNode
 
 /**
  * TypeContext implementation for native Groovy AST.
@@ -38,17 +40,68 @@ class NativeTypeContext(
         receiverType: SemanticType,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): SemanticType? {
-        // Use TypeSolver to find method and return type
-        // This is the integration point with parser/core's resolution
-        // TODO: Implement using GroovySymbolResolver #641
-        return null
+    ): SemanticType? = when (receiverType) {
+        is SemanticType.Known -> {
+            // Strategy 1: Native AST (same module)
+            val method = findMethodInModule(receiverType.fqn, methodName, argumentTypes)
+            if (method != null) {
+                return fromClassNode(method.returnType)
+            }
+
+            // Strategy 2: TypeSolver (classpath) - future enhancement
+            // For now, return Unknown if not found in same module
+            SemanticType.Unknown("Method $methodName not found on ${receiverType.fqn}")
+        }
+
+        else -> null // Dynamic, Null, Primitive, Array, Union types don't have methods
     }
 
-    override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? {
-        // TODO: Implement field lookup #641
-        return null
+    /**
+     * Find a method in the current module by class, method name, and argument count.
+     * Argument matching is simple (count-based) for now.
+     * Returns null if not found.
+     */
+    private fun findMethodInModule(
+        classFqn: String,
+        methodName: String,
+        argumentTypes: List<SemanticType>,
+    ): MethodNode? = scope.currentModule?.classes
+        ?.find { it.name == classFqn }
+        ?.methods
+        ?.find { method ->
+            method.name == methodName &&
+                method.parameters.size == argumentTypes.size
+        }
+
+    override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
+        is SemanticType.Known -> {
+            // Strategy 1: Native AST (same module)
+            val field = findFieldInModule(receiverType.fqn, fieldName)
+            if (field != null) {
+                return fromClassNode(field.type)
+            }
+
+            // Strategy 2: TypeSolver (classpath) - future enhancement
+            // For now, return Unknown if not found in same module
+            SemanticType.Unknown("Field $fieldName not found on ${receiverType.fqn}")
+        }
+
+        is SemanticType.Array -> {
+            // Special handling: arrays have 'length' property
+            if (fieldName == "length") TypeConstants.INT else null
+        }
+
+        else -> null // Dynamic, Null, Primitive, Union types don't have fields
     }
+
+    /**
+     * Find a field in the current module by class and field name.
+     * Returns null if not found.
+     */
+    private fun findFieldInModule(classFqn: String, fieldName: String): FieldNode? = scope.currentModule?.classes
+        ?.find { it.name == classFqn }
+        ?.fields
+        ?.find { it.name == fieldName }
 
     companion object {
         /**
@@ -60,12 +113,24 @@ class NativeTypeContext(
                 SemanticType.Array(fromClassNode(classNode.componentType))
             }
 
+            // Check if it's a primitive by name first
+            isPrimitiveName(classNode.name) -> {
+                resolvePrimitiveOrKnown(classNode.name)
+            }
+
             classNode.isPrimaryClassNode || classNode.redirect() != classNode -> {
                 resolvePrimitiveOrKnown(classNode.name)
             }
 
             else -> SemanticType.Known(classNode.name)
         }
+
+        /**
+         * Check if a class name represents a Java/Groovy primitive type.
+         */
+        private fun isPrimitiveName(name: String): Boolean = name in setOf(
+            "int", "long", "double", "float", "boolean", "byte", "char", "short", "void",
+        )
 
         private fun resolvePrimitiveOrKnown(fqn: String): SemanticType = when (fqn) {
             "int" -> TypeConstants.INT

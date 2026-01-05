@@ -56,15 +56,24 @@ class TypeDefinitionProvider(
     private suspend fun findTypeDefinition(uri: URI, position: Position): Location? {
         val context = contextProvider(uri) ?: return null
 
+        // Inject module node for semantic analysis
+        context.moduleNode?.let { semanticResolver.semantics.inject(it) }
+
         // Find the AST node at the given position
-        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: return null
-        logger.debug("Found AST node: ${node.javaClass.simpleName}")
+        val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
+            logger.debug("No AST node found at position $position")
+            return null
+        }
+        logger.debug("Found AST node: ${node.javaClass.simpleName} at position $position")
 
         // Resolve semantic type
         val semanticType = semanticResolver.resolveType(node, context.moduleNode)
+        logger.debug("Resolved semantic type: $semanticType")
 
         // Convert to location
-        return resolveTypeLocation(semanticType, context)
+        val location = resolveTypeLocation(semanticType, context)
+        logger.debug("Resolved location: $location")
+        return location
     }
 
     private suspend fun resolveTypeLocation(type: SemanticType, context: CompilationContext): Location? = when (type) {
@@ -78,11 +87,19 @@ class TypeDefinitionProvider(
     }
 
     private suspend fun findClassLocation(fqn: String, context: CompilationContext): Location? {
+        logger.debug("Looking for class location for FQN: '$fqn'")
+        logger.debug("Available classes in module: ${context.moduleNode.classes.map { it.name }}")
+
         // 1. Check if defined in current file/module
         // This handles classes defined in the same file we are currently editing.
         context.moduleNode.classes.find { it.name == fqn }?.let { classNode ->
-            return classNode.toLspLocation(context.astModel)
+            logger.debug("Found class in module: ${classNode.name}")
+            val location = classNode.toLspLocation(context.astModel)
+            logger.debug("Converted to LSP location: $location")
+            return location
         }
+
+        logger.debug("Class not found in module, would need external resolution")
 
         // 2. External Class Resolution
         // TODO(#615): Implement Go-To-Type-Definition for external classes (JARs, JDK).
