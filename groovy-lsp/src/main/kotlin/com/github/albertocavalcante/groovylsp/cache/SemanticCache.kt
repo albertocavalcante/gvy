@@ -175,14 +175,9 @@ class SemanticCache(private val cacheDir: Path) {
      */
     private fun getCacheFile(uri: URI): Path {
         // Create a safe filename from URI
-        val hash = hashString(uri.toString())
+        val hash = sha256Hash(uri.toString())
         return cacheDir.resolve("$hash.json")
     }
-
-    /**
-     * Hash a string using SHA-256.
-     */
-    private fun hashString(input: String): String = sha256Hash(input)
 
     companion object {
         /**
