@@ -250,6 +250,15 @@ export class GroovyTestController {
         uri,
       );
       this.ctrl.items.add(suiteItem);
+    } else if (suiteItem.uri && suiteItem.uri.toString() !== uri.toString()) {
+      // Suite exists but from a different file (workspace vs external)
+      // Update URI to match the file we're creating tests for
+      suiteItem = this.ctrl.createTestItem(
+        suiteName,
+        this.getClassName(suiteName),
+        uri,
+      );
+      this.ctrl.items.replace([suiteItem]);
     }
 
     // Check if test item already exists under the suite

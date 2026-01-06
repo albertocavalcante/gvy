@@ -21,15 +21,18 @@ describe('GroovyTestController', () => {
         // Mock TestController
         testControllerMock = {
             createTestItem: sandbox.stub().callsFake((id: string, label: string, uri?: any) => {
+                const childrenMap = new Map();
                 return {
                     id,
                     label,
                     uri,
                     range: undefined,
                     children: {
-                        add: sandbox.stub(),
-                        get: sandbox.stub(),
-                        replace: sandbox.stub(),
+                        add: sandbox.stub().callsFake((item: any) => {
+                            childrenMap.set(item.id, item);
+                        }),
+                        get: sandbox.stub().callsFake((childId: string) => childrenMap.get(childId)),
+                        replace: sandbox.stub().callsFake(() => childrenMap.clear()),
                     },
                 };
             }),
