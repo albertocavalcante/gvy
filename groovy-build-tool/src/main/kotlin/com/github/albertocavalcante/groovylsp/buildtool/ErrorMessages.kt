@@ -11,15 +11,15 @@ object ErrorMessages {
     private const val COMPATIBILITY_DOCS = "https://docs.gradle.org/current/userguide/compatibility.html"
 
     /**
-     * Message for toolchain provisioning failure.
+     * Message when Gradle cannot find the required Java toolchain.
      */
     fun toolchainNotFound(version: Int, platform: String?): String = """
-        |Gradle cannot find Java $version${platform?.let { " for $it" } ?: ""}.
+        |Gradle cannot find Java $version${if (platform != null) " for $platform" else ""}.
         |
         |You may have it installed but Gradle can't find it. Options:
         |1. Set groovy.gradle.javaHome in VS Code settings
         |2. Add foojay-resolver plugin to settings.gradle for auto-download
-        |3. Set -Dorg.gradle.java.installations.paths=/path/to/jdk$version
+        |3. Set -Dorg.gradle.java.installations.paths=/path/to/jdk (e.g., /usr/lib/jvm/java-$version-openjdk)
         |
         |See: $TOOLCHAIN_DOCS
         |
@@ -77,11 +77,14 @@ object ErrorMessages {
 
     /**
      * Suggestion for version manager-specific JDK installation.
+     * Note: Commands guide users to list available versions since full semantic versions are required.
      */
     fun versionManagerSuggestion(versionManager: VersionManagerType, version: Int): String = when (versionManager) {
-        VersionManagerType.SDKMAN -> "sdk install java $version-tem"
-        VersionManagerType.MISE -> "mise install java@$version"
-        VersionManagerType.ASDF -> "asdf install java temurin-$version"
+        VersionManagerType.SDKMAN ->
+            "sdk list java  # then: sdk install java <version>-tem (e.g., $version.0.14-tem)"
+        VersionManagerType.MISE -> "mise install java@temurin-$version"
+        VersionManagerType.ASDF ->
+            "asdf list all java  # then: asdf install java temurin-<version> (e.g., temurin-$version.0.9+9)"
     }
 
     /**

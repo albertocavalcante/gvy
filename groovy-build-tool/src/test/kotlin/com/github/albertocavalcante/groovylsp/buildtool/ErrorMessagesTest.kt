@@ -85,4 +85,12 @@ class ErrorMessagesTest {
         val message = ErrorMessages.versionManagerSuggestion(VersionManagerType.ASDF, 17)
         assertContains(message, "asdf install")
     }
+
+    @Test
+    fun `genericJdkInstallSuggestion includes version and download links`() {
+        val message = ErrorMessages.genericJdkInstallSuggestion(17)
+        assertContains(message, "17")
+        assertContains(message, "https://adoptium.net/temurin/releases/?version=17")
+        assertContains(message, "https://www.oracle.com/java/technologies/downloads/")
+    }
 }
