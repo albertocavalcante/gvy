@@ -1,25 +1,27 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
 /**
- * Represents the result of a dependency resolution operation.
+ * Represents the outcome of a workspace dependency resolution operation.
  */
 sealed interface ResolutionStatus {
-    /**
-     * Represents a successful resolution.
-     */
-    data class Success(val message: String = "Resolution succeeded") : ResolutionStatus
+    /** Resolution completed successfully. */
+    data object Success : ResolutionStatus
 
-    /**
-     * Represents a failed resolution with error details.
-     */
+    /** Resolution completed with warnings (e.g., 0 JARs for project with declared deps). */
+    data class Warning(val code: String, val message: String) : ResolutionStatus
+
+    /** Resolution failed with an error. */
     data class Failed(val code: String, val message: String, val cause: Throwable? = null, val details: Any? = null) :
         ResolutionStatus
 }
 
 /**
- * Standard resolution error codes.
+ * Well-known resolution status codes for structured error handling.
  */
 object ResolutionCodes {
+    /** Project has zero dependencies resolved (warning state). */
+    const val ZERO_DEPENDENCIES = "ZERO_DEPENDENCIES"
+
     /** Gradle toolchain provisioning failed (cannot find required JDK). */
     const val TOOLCHAIN_PROVISIONING_FAILED = "TOOLCHAIN_PROVISIONING_FAILED"
 
@@ -32,3 +34,9 @@ object ResolutionCodes {
     /** Generic dependency resolution failure. */
     const val DEPENDENCY_RESOLUTION_FAILED = "DEPENDENCY_RESOLUTION_FAILED"
 }
+
+/**
+ * Extension function to check if a status is usable (Success or Warning).
+ */
+val ResolutionStatus.isUsable: Boolean
+    get() = this is ResolutionStatus.Success || this is ResolutionStatus.Warning
