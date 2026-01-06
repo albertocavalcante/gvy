@@ -30,6 +30,8 @@ class AddBracesToIfStatement : Recipe() {
                 var i = super.visitIf(iff, ctx)
 
                 // Check if the then part needs braces
+                // CodeNarc requires braces for all control structures, even single-line ones,
+                // to prevent errors when adding statements later.
                 val thenPart = i.thenPart
                 if (thenPart !is J.Block) {
                     i = i.withThenPart(BraceUtils.wrapInBlock(thenPart))
@@ -39,7 +41,9 @@ class AddBracesToIfStatement : Recipe() {
                 val elsePart = i.elsePart
                 if (elsePart != null) {
                     val elseBody = elsePart.body
-                    // Don't wrap if it's already a block or another if (else-if chain)
+
+                    // Don't wrap if it's already a block or another if (else-if chain).
+                    // Wrapping an 'else if' in braces { if(...) } breaks the conventional else-if chain style.
                     if (elseBody !is J.Block && elseBody !is J.If) {
                         i = i.withElsePart(elsePart.withBody(BraceUtils.wrapInBlock(elseBody)))
                     }
