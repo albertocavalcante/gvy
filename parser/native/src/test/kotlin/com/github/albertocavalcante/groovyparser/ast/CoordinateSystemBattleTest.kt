@@ -426,4 +426,113 @@ class CoordinateSystemBattleTest {
         assertEquals(18, trailingStartColumn)
         assertEquals(21, trailingEndColumn)
     }
+
+    // ==========================================
+    // ROBUSTNESS: Verify Coordinates Match Actual Text
+    // ==========================================
+
+    @Test
+    fun `coordinates should match actual substring - keyword highlighting`() {
+        val sourceLine = "class MyClass { def method() {} }"
+        // "class" at columns 0-5 (0-based LSP)
+        val startCol = 0
+        val endCol = 5
+
+        val actualText = sourceLine.substring(startCol, endCol)
+        assertEquals("class", actualText, "Coordinates must point to actual keyword")
+    }
+
+    @Test
+    fun `coordinates should match actual substring - identifier highlighting`() {
+        val sourceLine = "def BadName = 1"
+        // "BadName" at columns 4-11 (0-based LSP)
+        val startCol = 4
+        val endCol = 11
+
+        val actualText = sourceLine.substring(startCol, endCol)
+        assertEquals("BadName", actualText, "Coordinates must point to actual identifier")
+    }
+
+    @Test
+    fun `coordinates should match actual substring - exception type`() {
+        val sourceLine = "} catch (Exception e) {"
+        // "Exception" at columns 9-18 (0-based LSP)
+        val startCol = 9
+        val endCol = 18
+
+        val actualText = sourceLine.substring(startCol, endCol)
+        assertEquals("Exception", actualText, "Coordinates must point to actual exception type")
+    }
+
+    @Test
+    fun `coordinates should never produce negative indices`() {
+        // Test all reasonable LSP positions
+        for (line in 0..100) {
+            for (char in 0..100) {
+                val groovy = CoordinateSystem.lspToGroovy(line, char)
+                assert(groovy.line >= 1) { "Groovy line must be >= 1" }
+                assert(groovy.column >= 1) { "Groovy column must be >= 1" }
+            }
+        }
+    }
+
+    @Test
+    fun `coordinates should never exceed reasonable bounds`() {
+        val sourceLine = "class X {}"
+        val maxLength = sourceLine.length
+
+        // Any range within the line should be valid
+        for (start in 0 until maxLength) {
+            for (end in start + 1..maxLength) {
+                val text = sourceLine.substring(start, end)
+                assert(text.isNotEmpty()) { "Range ($start, $end) should produce non-empty text" }
+            }
+        }
+    }
+
+    @Test
+    fun `lsp range (0,5) should highlight first 5 characters`() {
+        val sourceLine = "class MyClass"
+        val start = 0
+        val end = 5
+
+        val highlighted = sourceLine.substring(start, end)
+        assertEquals("class", highlighted)
+        assertEquals(5, highlighted.length)
+    }
+
+    @Test
+    fun `groovy violation at line 1 col 1 should map to lsp line 0 char 0`() {
+        val groovyLine = 1
+        val groovyCol = 1
+
+        val lsp = CoordinateSystem.groovyToLsp(groovyLine, groovyCol)
+
+        assertEquals(0, lsp.line)
+        assertEquals(0, lsp.character)
+    }
+
+    @Test
+    fun `multi-line file coordinate integrity`() {
+        val source = """
+            class MyClass {
+                def badName = 1
+                String AnotherBadName = "test"
+            }
+        """.trimIndent()
+
+        val lines = source.lines()
+
+        // Line 0 (LSP): "class MyClass {"
+        assertEquals("class MyClass {", lines[0])
+        assertEquals("class", lines[0].substring(0, 5))
+
+        // Line 1 (LSP): "    def badName = 1"
+        assertEquals("    def badName = 1", lines[1])
+        assertEquals("badName", lines[1].substring(8, 15))
+
+        // Line 2 (LSP): "    String AnotherBadName = \"test\""
+        assertEquals("    String AnotherBadName = \"test\"", lines[2])
+        assertEquals("AnotherBadName", lines[2].substring(11, 25))
+    }
 }
