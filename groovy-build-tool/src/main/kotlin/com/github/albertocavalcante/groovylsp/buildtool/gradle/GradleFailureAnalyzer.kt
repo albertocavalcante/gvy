@@ -76,9 +76,9 @@ class GradleFailureAnalyzer {
             val message = current.message ?: ""
 
             // Parse: "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: {languageVersion=17, vendor=any vendor}"
-            val versionMatch = Regex("""languageVersion=(\d+)""").find(message)
-            val vendorMatch = Regex("""vendor=([^,}]+)""").find(message)
-            val platformMatch = Regex("""\(([^)]+)\)""").find(message)
+            val versionMatch = VERSION_REGEX.find(message)
+            val vendorMatch = VENDOR_REGEX.find(message)
+            val platformMatch = PLATFORM_REGEX.find(message)
 
             if (versionMatch != null) {
                 val version = versionMatch.groupValues[1].toIntOrNull()
@@ -156,5 +156,11 @@ class GradleFailureAnalyzer {
             current = current.cause
         }
         return false
+    }
+
+    private companion object {
+        private val VERSION_REGEX = Regex("""languageVersion=(\d+)""")
+        private val VENDOR_REGEX = Regex("""vendor=([^,}]+)""")
+        private val PLATFORM_REGEX = Regex("""\(([^)]+)\)""")
     }
 }
