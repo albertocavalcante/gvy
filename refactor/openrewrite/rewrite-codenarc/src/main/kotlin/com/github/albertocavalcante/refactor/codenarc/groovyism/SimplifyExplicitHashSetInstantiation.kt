@@ -86,8 +86,7 @@ class SimplifyExplicitHashSetInstantiation : Recipe() {
                 null,
             )
 
-            // Wrap in ControlParentheses (required structure for J.TypeCast)
-            // GroovyPrinter uses the 'after' space of the tree element for the space before "as"
+            // Wrap in ControlParentheses for "as" style cast
             val controlParens = J.ControlParentheses<TypeTree>(
                 Tree.randomId(),
                 Space.EMPTY,
@@ -95,18 +94,7 @@ class SimplifyExplicitHashSetInstantiation : Recipe() {
                 JRightPadded.build(setType as TypeTree).withAfter(Space.format(" ")),
             )
 
-            // Create TypeCast with AsStyleTypeCast marker
-            // Structure: expression as clazz
-            // listLiteral as Set
-            // Note: The "as" keyword is implied by the marker
-            // The space around "as" is handled by the printer or needs prefix on clazz?
-            // GroovyPrinter: p.append("as"); visit(t.getClazz().getTree(), p);
-            // It uses Space.Location.CONTROL_PARENTHESES_PREFIX for space before "as"?
-            // visitSpace(t.getClazz().getPadding().getTree().getAfter(), Space.Location.CONTROL_PARENTHESES_PREFIX, p);
-            // Wait, getAfter() of tree padding?
-            // Let's use default spacing and see. Ideally, we want " [] as Set".
-            // The " as " spacing might need adjustment.
-
+            // Create TypeCast with AsStyleTypeCast marker to represent "[] as Set"
             return J.TypeCast(
                 Tree.randomId(),
                 Space.EMPTY, // Prefix handled by listLiteral (transferred from newClass)

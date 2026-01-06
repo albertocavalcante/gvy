@@ -67,11 +67,6 @@ class SimplifyExplicitHashMapInstantiation : Recipe() {
             }
 
             // Create [:] literal
-            // In Groovy AST (OpenRewrite), [:] is represented as a G.MapLiteral
-            // To effectively represent "empty map", it technically contains a single G.MapEntry
-            // where both the key and value are J.Empty.
-            // This structure tells the printer to output '[:]'.
-
             val emptyKey = J.Empty(Tree.randomId(), Space.EMPTY, Markers.EMPTY)
             val emptyValue = J.Empty(Tree.randomId(), Space.EMPTY, Markers.EMPTY)
 

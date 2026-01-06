@@ -63,9 +63,7 @@ class SimplifyExplicitArrayListInstantiation : Recipe() {
                 return nc
             }
 
-            // Create [] literal
-            // G.ListLiteral matches [ elements ]
-            // We use JContainer for the elements list, explicitly typed for JRightPadded elements
+            // Replace explicit ArrayList instantiation with empty list literal []
             return G.ListLiteral(
                 Tree.randomId(),
                 nc.prefix,
