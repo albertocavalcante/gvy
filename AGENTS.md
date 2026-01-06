@@ -11,9 +11,7 @@ make lint    # Check quality
 make format  # Fix lint
 ```
 
-> [!IMPORTANT]
-> **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
-
+> [!IMPORTANT] **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
 
 ## Rules (ALWAYS APPLY)
 

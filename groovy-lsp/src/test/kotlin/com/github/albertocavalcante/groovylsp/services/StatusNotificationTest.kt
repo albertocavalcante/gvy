@@ -206,4 +206,29 @@ class StatusNotificationTest {
         assertTrue(json.contains("\"type\":\"TOOLCHAIN_PROVISIONING_FAILED\""))
         assertTrue(json.contains("\"requiredVersion\":21"))
     }
+
+    @Test
+    fun `ToolchainProvisioningError interpolates version into SDKMAN suggestion`() {
+        val errorWithVersion = ToolchainProvisioningError(
+            requiredVersion = 17,
+            vendor = null,
+            platform = null,
+        )
+
+        assertTrue(
+            errorWithVersion.suggestions.any { it.contains("sdk install java 17-tem") },
+            "Should interpolate version 17 into SDKMAN command",
+        )
+
+        val errorWithoutVersion = ToolchainProvisioningError(
+            requiredVersion = null,
+            vendor = null,
+            platform = null,
+        )
+
+        assertTrue(
+            errorWithoutVersion.suggestions.any { it.contains("<version>-tem") },
+            "Should use placeholder when version is null",
+        )
+    }
 }
