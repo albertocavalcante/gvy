@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.refactor.codenarc.convention
 
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.openrewrite.groovy.Assertions.groovy
 import org.openrewrite.test.RecipeSpec
@@ -10,6 +11,7 @@ class ConvertIfToElvisTest : RewriteTest {
         spec.recipe(ConvertIfToElvis())
     }
 
+    @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
     fun `converts if not x then assign y`() = rewriteRun(
         groovy(
@@ -32,6 +34,7 @@ class ConvertIfToElvisTest : RewriteTest {
         ),
     )
 
+    @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
     fun `converts if x is null then assign default`() = rewriteRun(
         groovy(
@@ -56,6 +59,7 @@ class ConvertIfToElvisTest : RewriteTest {
         ),
     )
 
+    @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
     @Test
     fun `converts property assignment`() = rewriteRun(
         groovy(
