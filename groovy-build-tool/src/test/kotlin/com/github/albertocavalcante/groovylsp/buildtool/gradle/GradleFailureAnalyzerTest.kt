@@ -1,7 +1,11 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import org.gradle.tooling.BuildException
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -102,5 +106,66 @@ class GradleFailureAnalyzerTest {
             analyzer.isTransient(error),
             "Toolchain error should NOT be treated as transient (no point retrying)",
         )
+    }
+
+    // Test extractToolchainErrorInfo
+    @Test
+    fun `extractToolchainErrorInfo parses version and platform from nested exception`() {
+        val error = RuntimeException(
+            "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: " +
+                "{languageVersion=17, vendor=any vendor, implementation=vendor-specific}",
+        )
+        val info = analyzer.extractToolchainErrorInfo(error)
+        assertNotNull(info)
+        assertEquals(17, info!!.requiredVersion)
+        assertEquals("Mac OS X 15.6 aarch64", info.platform)
+        assertNull(info.vendor) // "any vendor" should normalize to null
+        assertTrue(info.suggestions.isNotEmpty())
+    }
+
+    @Test
+    fun `extractToolchainErrorInfo returns null for non-toolchain errors`() {
+        val error = RuntimeException("Some other error")
+        val info = analyzer.extractToolchainErrorInfo(error)
+        assertNull(info)
+    }
+
+    @Test
+    fun `extractToolchainErrorInfo walks exception chain`() {
+        val rootCause = RuntimeException("Cannot find a Java installation matching: {languageVersion=21}")
+        val wrapper = IllegalStateException("Failed to query", rootCause)
+        val info = analyzer.extractToolchainErrorInfo(wrapper)
+        assertNotNull(info)
+        assertEquals(21, info!!.requiredVersion)
+    }
+
+    // Test classifyException
+    @Test
+    fun `classifyException returns TOOLCHAIN_PROVISIONING_FAILED for toolchain errors`() {
+        val error = RuntimeException("Cannot find a Java installation matching: {languageVersion=17}")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, status.code)
+        assertTrue(status.message.contains("Java 17"))
+    }
+
+    @Test
+    fun `classifyException returns GRADLE_JDK_INCOMPATIBLE for JDK mismatch`() {
+        val error = RuntimeException("Unsupported class file major version 65")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.GRADLE_JDK_INCOMPATIBLE, status.code)
+    }
+
+    @Test
+    fun `classifyException returns INIT_SCRIPT_ERROR for init script failures`() {
+        val error = RuntimeException("Could not open cp_init generic class cache")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.INIT_SCRIPT_ERROR, status.code)
+    }
+
+    @Test
+    fun `classifyException returns DEPENDENCY_RESOLUTION_FAILED for unknown errors`() {
+        val error = RuntimeException("Something went wrong")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED, status.code)
     }
 }
