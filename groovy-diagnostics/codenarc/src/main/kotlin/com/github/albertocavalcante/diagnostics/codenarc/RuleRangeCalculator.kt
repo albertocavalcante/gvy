@@ -325,8 +325,8 @@ object RuleRangeCalculator {
         return if (firstNonWhitespace > 0) {
             Pair(0, firstNonWhitespace)
         } else if (firstNonWhitespace == 0) {
-            // No indentation at all
-            Pair(0, 0)
+            // No indentation at all – highlight at least the first character
+            Pair(0, 1)
         } else {
             // Line is all whitespace
             Pair(0, sourceLine.length)
@@ -520,12 +520,29 @@ object RuleRangeCalculator {
 
     /**
      * Find the last identifier in the line (for field/property names).
+     *
+     * This skips identifiers that are followed (optionally after whitespace) by '(',
+     * so that constructor/method calls like "new String()" do not get selected
+     * instead of the field name (e.g. in "String field = new String()").
      */
     private fun findLastIdentifier(sourceLine: String): Pair<Int, Int> {
         val identifierMatches = Regex("""\b[a-zA-Z_]\w*\b""").findAll(sourceLine).toList()
         if (identifierMatches.isNotEmpty()) {
-            val lastMatch = identifierMatches.last()
-            return Pair(lastMatch.range.first, lastMatch.range.last + 1)
+            // Iterate from the end to find the last identifier that is not a method/constructor call
+            for (i in identifierMatches.indices.reversed()) {
+                val match = identifierMatches[i]
+                var nextIndex = match.range.last + 1
+                // Skip whitespace after the identifier
+                while (nextIndex < sourceLine.length && sourceLine[nextIndex].isWhitespace()) {
+                    nextIndex++
+                }
+                // If the next non-whitespace character is '(', this is likely a call, so skip it
+                if (nextIndex < sourceLine.length && sourceLine[nextIndex] == '(') {
+                    continue
+                }
+                // Otherwise, treat this identifier as the field/property name
+                return Pair(match.range.first, match.range.last + 1)
+            }
         }
         return calculateDefaultRange(sourceLine)
     }
