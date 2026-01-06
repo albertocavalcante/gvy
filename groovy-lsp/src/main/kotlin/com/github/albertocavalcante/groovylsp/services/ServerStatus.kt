@@ -125,6 +125,36 @@ data class JavaNotFoundError(
 }
 
 /**
+ * Error: Gradle toolchain provisioning failed.
+ *
+ * This occurs when Gradle uses Java Toolchains but cannot find or download
+ * a JDK matching the project requirements.
+ *
+ * Common causes:
+ * - Required JDK version not installed locally
+ * - Toolchain download repositories not configured (foojay plugin missing)
+ * - org.gradle.java.installations.paths not pointing to JDK locations
+ */
+data class ToolchainProvisioningError(val requiredVersion: Int?, val vendor: String?, val platform: String?) :
+    ErrorDetails {
+    override val type: String = "TOOLCHAIN_PROVISIONING_FAILED"
+    override val suggestions: List<String>
+        get() {
+            val installSuggestion = if (requiredVersion != null) {
+                "Install the required JDK: sdk install java $requiredVersion-tem"
+            } else {
+                "Install the required JDK: sdk install java <version>-tem"
+            }
+            return listOf(
+                installSuggestion,
+                "Add to settings.gradle: id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'",
+                "Or set GRADLE_OPTS: -Dorg.gradle.java.installations.paths=/path/to/jdk",
+                "Or add to gradle.properties: org.gradle.java.installations.auto-download=true",
+            )
+        }
+}
+
+/**
  * Generic error details for unclassified errors.
  *
  * Use this when a more specific error type doesn't exist yet.

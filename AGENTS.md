@@ -11,6 +11,10 @@ make lint    # Check quality
 make format  # Fix lint
 ```
 
+> [!IMPORTANT]
+> **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
+
+
 ## Rules (ALWAYS APPLY)
 
 1. **Worktrees**: Use `git worktree add` for new work. **Do not edit files in the main worktree.**

@@ -76,7 +76,7 @@ When a new stable LSP version is released:
 
 3. Test fallback behavior:
    ```bash
-   GLS_USE_PINNED=true npm run prepare-server
+   GLS_USE_PINNED=true pnpm run prepare-server
    ```
 
 Note: Users get the **latest release by default**. The pinned version serves as:
@@ -115,8 +115,8 @@ We enforce code quality through automated checks:
 Run quality checks:
 
 ```bash
-npm run lint
-npm run check-types
+pnpm run lint
+pnpm run check-types
 ```
 
 ## Making Changes
@@ -155,9 +155,9 @@ git commit -m "docs: update configuration examples"
 
 3. **Test locally**
    ```bash
-   npm run compile
-   npm run lint
-   npm run check-types
+   pnpm run compile
+   pnpm run lint
+   pnpm run check-types
    ```
 
 4. **Create a pull request**
@@ -204,7 +204,7 @@ We use automated tests to ensure the quality of the extension.
 **Running All Tests** To run both unit and integration tests:
 
 ```bash
-npm run test:all
+pnpm run test:all
 ```
 
 _Note: Integration tests on Linux require `xvfb`. Using the CI environment or a Docker container is recommended for
@@ -213,13 +213,13 @@ headless testing._
 **Running Unit Tests** Unit tests cover individual components in isolation:
 
 ```bash
-npm test
+pnpm test
 ```
 
 **Running Integration Tests** Integration tests run within a VS Code Extension Host instance:
 
 ```bash
-npm run test:integration
+pnpm run test:integration
 ```
 
 **Debugging Tests** You can debug tests directly in VS Code:
@@ -267,8 +267,8 @@ Verify functionality on:
 
 ### Build Issues
 
-1. Clean build: `rm -rf node_modules client/node_modules && npm install`
-2. Reset server: `rm server/*.jar && npm run prepare-server`
+1. Clean build: `rm -rf node_modules client/node_modules && pnpm install`
+2. Reset server: `rm server/*.jar && pnpm run prepare-server`
 3. Check Node.js version: `node --version` (should be 20+)
 
 ### Language Server Issues
