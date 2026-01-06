@@ -23,12 +23,367 @@ tags:
   - groovy
   - style
 recipeList:
-  # Phase 1: Formatting and Unnecessary Code
-  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
+  # Phase 1: Formatting
   - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAfterComma
+  - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAroundOperator
+  
+  # Phase 2: Unnecessary Code
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
   - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGString
-  # Phase 2: Structural - Braces
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDotClass
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGetter
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryTernaryExpression
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryPublicModifier
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDefInFieldDeclaration
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDefInMethodDeclaration
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryReturnKeyword
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryToString
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryNullCheckBeforeInstanceOf
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryElseStatement
+  
+  # Phase 3: Bug Fixes
+  - com.github.albertocavalcante.refactor.codenarc.unnecessary.FixBrokenNullCheck
+  
+  # Phase 4: Braces
   - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToIfStatement
   - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToForLoop
   - com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToWhileLoop
-  # Future recipes will be added here
+  
+  # Phase 5: Groovyisms
+  - com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitArrayListInstantiation
+  - com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitHashMapInstantiation
+  - com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitHashSetInstantiation
+  - com.github.albertocavalcante.refactor.codenarc.groovyism.MoveClosureAsLastMethodParameter
+  - com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyTernaryToElvis
+  
+  # Phase 6: Conventions
+  - com.github.albertocavalcante.refactor.codenarc.convention.ConvertIfToElvis
+  - com.github.albertocavalcante.refactor.codenarc.convention.UninvertIfElse
+
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAfterComma
+displayName: Add space after comma
+description: >
+  Adds a space after commas in method calls, lists, and maps.
+  CodeNarc Rule: SpaceAfterComma
+  https://codenarc.org/codenarc-rules-formatting.html#spaceaftercomma
+tags:
+  - codenarc
+  - formatting
+  - SpaceAfterComma
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAroundOperator
+displayName: Add space around operators
+description: >
+  Adds spaces around operators like =, +, -, *, etc.
+  CodeNarc Rule: SpaceAroundOperator
+  https://codenarc.org/codenarc-rules-formatting.html#spacearoundoperator
+tags:
+  - codenarc
+  - formatting
+  - SpaceAroundOperator
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
+displayName: Remove unnecessary semicolons
+description: >
+  Removes unnecessary semicolons at the end of statements.
+  CodeNarc Rule: UnnecessarySemicolon
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarysemicolon
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessarySemicolon
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGString
+displayName: Remove unnecessary GString
+description: >
+  Converts GStrings without interpolation to regular strings (e.g., "foo" → 'foo').
+  CodeNarc Rule: UnnecessaryGString
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarygstring
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryGString
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDotClass
+displayName: Remove unnecessary .class
+description: >
+  Removes unnecessary .class references (e.g., String.class → String).
+  CodeNarc Rule: UnnecessaryDotClass
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydotclass
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryDotClass
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGetter
+displayName: Remove unnecessary getter calls
+description: >
+  Replaces getter method calls with property access (e.g., x.getName() → x.name).
+  CodeNarc Rule: UnnecessaryGetter
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarygetter
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryGetter
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryTernaryExpression
+displayName: Remove unnecessary ternary expressions
+description: >
+  Simplifies ternary expressions that return boolean literals (e.g., x ? true : false → x).
+  CodeNarc Rule: UnnecessaryTernaryExpression
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessaryternaryexpression
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryTernaryExpression
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryPublicModifier
+displayName: Remove unnecessary public modifier
+description: >
+  Removes redundant public modifiers from classes and methods.
+  CodeNarc Rule: UnnecessaryPublicModifier
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarypublicmodifier
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryPublicModifier
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDefInFieldDeclaration
+displayName: Remove unnecessary def in field declarations
+description: >
+  Removes redundant def keyword from field declarations (e.g., def static x → static x).
+  CodeNarc Rule: UnnecessaryDefInFieldDeclaration
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefinfielddeclaration
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryDefInFieldDeclaration
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryDefInMethodDeclaration
+displayName: Remove unnecessary def in method declarations
+description: >
+  Removes redundant def keyword from method declarations (e.g., def private m() → private m()).
+  CodeNarc Rule: UnnecessaryDefInMethodDeclaration
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefinmethoddeclaration
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryDefInMethodDeclaration
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryReturnKeyword
+displayName: Remove unnecessary return keyword
+description: >
+  Removes unnecessary return keyword from the last statement in methods.
+  CodeNarc Rule: UnnecessaryReturnKeyword
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessaryreturnkeyword
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryReturnKeyword
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryToString
+displayName: Remove unnecessary toString() calls
+description: >
+  Removes redundant toString() calls on String expressions and in GString interpolation.
+  CodeNarc Rule: UnnecessaryToString
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarytostring
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryToString
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryNullCheckBeforeInstanceOf
+displayName: Remove unnecessary null check before instanceof
+description: >
+  Removes redundant null checks before instanceof (e.g., x != null && x instanceof Foo → x instanceof Foo).
+  CodeNarc Rule: UnnecessaryNullCheckBeforeInstanceOf
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarynullcheckbeforeinstanceof
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryNullCheckBeforeInstanceOf
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryElseStatement
+displayName: Remove unnecessary else statement
+description: >
+  Removes unnecessary else blocks when the if block ends with a return statement.
+  CodeNarc Rule: UnnecessaryElseStatement
+  https://codenarc.org/codenarc-rules-unnecessary.html#unnecessaryelsestatement
+tags:
+  - codenarc
+  - unnecessary
+  - UnnecessaryElseStatement
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.unnecessary.FixBrokenNullCheck
+displayName: Fix broken null checks
+description: >
+  Fixes broken null checks that use || instead of && (e.g., x != null || x.prop → x != null && x.prop).
+  CodeNarc Rule: BrokenNullCheck
+  https://codenarc.org/codenarc-rules-basic.html#brokennullcheck
+tags:
+  - codenarc
+  - bug-fix
+  - BrokenNullCheck
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToIfStatement
+displayName: Add braces to if statements
+description: >
+  Adds braces to if statements that don't have them.
+  CodeNarc Rule: IfStatementBraces
+  https://codenarc.org/codenarc-rules-braces.html#ifstatementbraces
+tags:
+  - codenarc
+  - braces
+  - IfStatementBraces
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToForLoop
+displayName: Add braces to for loops
+description: >
+  Adds braces to for loops that don't have them.
+  CodeNarc Rule: ForStatementBraces
+  https://codenarc.org/codenarc-rules-braces.html#forstatementbraces
+tags:
+  - codenarc
+  - braces
+  - ForStatementBraces
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.braces.AddBracesToWhileLoop
+displayName: Add braces to while loops
+description: >
+  Adds braces to while loops that don't have them.
+  CodeNarc Rule: WhileStatementBraces
+  https://codenarc.org/codenarc-rules-braces.html#whilestatementbraces
+tags:
+  - codenarc
+  - braces
+  - WhileStatementBraces
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitArrayListInstantiation
+displayName: Simplify explicit ArrayList instantiation
+description: >
+  Replaces explicit ArrayList instantiation with Groovy list literal (e.g., new ArrayList() → []).
+  CodeNarc Rule: ExplicitArrayListInstantiation
+  https://codenarc.org/codenarc-rules-groovyism.html#explicitarraylistinstantiation
+tags:
+  - codenarc
+  - groovyism
+  - ExplicitArrayListInstantiation
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitHashMapInstantiation
+displayName: Simplify explicit HashMap instantiation
+description: >
+  Replaces explicit HashMap instantiation with Groovy map literal (e.g., new HashMap() → [:]).
+  CodeNarc Rule: ExplicitHashMapInstantiation
+  https://codenarc.org/codenarc-rules-groovyism.html#explicithashmapinstantiation
+tags:
+  - codenarc
+  - groovyism
+  - ExplicitHashMapInstantiation
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyExplicitHashSetInstantiation
+displayName: Simplify explicit HashSet instantiation
+description: >
+  Replaces explicit HashSet instantiation with Groovy set literal (e.g., new HashSet() → [] as Set).
+  CodeNarc Rule: ExplicitHashSetInstantiation
+  https://codenarc.org/codenarc-rules-groovyism.html#explicithashsetinstantiation
+tags:
+  - codenarc
+  - groovyism
+  - ExplicitHashSetInstantiation
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.groovyism.MoveClosureAsLastMethodParameter
+displayName: Move closure as last method parameter
+description: >
+  Moves closures outside parentheses when they are the last parameter (e.g., each({ }) → each { }).
+  CodeNarc Rule: ClosureAsLastMethodParameter
+  https://codenarc.org/codenarc-rules-groovyism.html#closureaslastmethodparameter
+tags:
+  - codenarc
+  - groovyism
+  - ClosureAsLastMethodParameter
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.groovyism.SimplifyTernaryToElvis
+displayName: Simplify ternary to Elvis operator
+description: >
+  Simplifies ternary expressions to Elvis operator (e.g., x ? x : y → x ?: y).
+  CodeNarc Rule: TernaryCouldBeElvis
+  https://codenarc.org/codenarc-rules-groovyism.html#ternarycouldbeelvis
+tags:
+  - codenarc
+  - groovyism
+  - TernaryCouldBeElvis
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.convention.UninvertIfElse
+displayName: Uninvert if-else
+description: >
+  Inverts if-else statements with negated conditions (e.g., if (!x) a else b → if (x) b else a).
+  CodeNarc Rule: InvertedIfElse
+  https://codenarc.org/codenarc-rules-convention.html#invertedifelse
+tags:
+  - codenarc
+  - convention
+  - InvertedIfElse
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.convention.ConvertIfToElvis
+displayName: Convert if to Elvis operator
+description: >
+  Converts if statements to Elvis operator assignments (e.g., if (!x) x = y → x = x ?: y).
+  Note: Known formatting issue - output may have missing space after ?: operator.
+  Upstream issue: https://github.com/openrewrite/rewrite/issues/6482
+  CodeNarc Rule: CouldBeElvis
+  https://codenarc.org/codenarc-rules-convention.html#couldbeelvis
+tags:
+  - codenarc
+  - convention
+  - CouldBeElvis
+
