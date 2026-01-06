@@ -423,10 +423,11 @@ object RuleRangeCalculator {
     }
 
     /**
-     * Calculate range for loop keyword violations (for, while).
+     * Calculate range for loop keyword violations (for, while, do-while).
      */
     private fun calculateLoopKeywordRange(sourceLine: String): Pair<Int, Int> = findKeywordInLine(sourceLine, "for")
         ?: findKeywordInLine(sourceLine, "while")
+        ?: findKeywordInLine(sourceLine, "do")
         ?: calculateDefaultRange(sourceLine)
 
     /**

@@ -230,7 +230,8 @@ export class GroovyTestController {
    * This allows running tests from CodeLens on files opened from outside the workspace.
    */
   private createOnTheFlyTestItem(uriString: string, suiteName: string, testName: string): vscode.TestItem {
-    // Validate inputs
+    // Validate inputs (defensive programming - caller should validate, but guard here too)
+    // This protects against future refactoring and ensures method contract is explicit
     if (!suiteName || suiteName.trim() === '') {
       throw new Error('Suite name cannot be empty for on-the-fly test creation');
     }
