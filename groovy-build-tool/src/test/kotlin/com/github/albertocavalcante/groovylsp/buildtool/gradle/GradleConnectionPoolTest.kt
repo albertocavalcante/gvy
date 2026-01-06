@@ -16,11 +16,13 @@ class GradleConnectionPoolTest {
     @TempDir
     lateinit var tempDir: Path
 
+    // Defensive: Ensure start with empty pool even if previous tests failed to cleanup
     @BeforeEach
     fun setup() {
         GradleConnectionPool.shutdown()
     }
 
+    // Good Citizenship: Release file handles immediately after test
     @AfterEach
     fun cleanup() {
         GradleConnectionPool.shutdown()
