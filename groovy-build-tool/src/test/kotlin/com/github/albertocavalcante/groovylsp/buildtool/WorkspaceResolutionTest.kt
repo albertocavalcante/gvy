@@ -24,14 +24,14 @@ class WorkspaceResolutionTest {
             message = "Failed to provision toolchain",
         )
 
-        assertTrue(resolution.status is ResolutionStatus.Failed)
         assertFalse(resolution.isUsable)
         assertTrue(resolution.dependencies.isEmpty())
         assertTrue(resolution.sourceDirectories.isEmpty())
 
-        val failedStatus = resolution.status
-        assertEquals("TOOLCHAIN_PROVISIONING_FAILED", failedStatus.code)
-        assertEquals("Failed to provision toolchain", failedStatus.message)
+        val status = resolution.status
+        assertTrue(status is ResolutionStatus.Failed)
+        assertEquals("TOOLCHAIN_PROVISIONING_FAILED", status.code)
+        assertEquals("Failed to provision toolchain", status.message)
     }
 
     @Test
@@ -43,11 +43,11 @@ class WorkspaceResolutionTest {
             cause = cause,
         )
 
-        assertTrue(resolution.status is ResolutionStatus.Failed)
         assertFalse(resolution.isUsable)
 
-        val failedStatus = resolution.status
-        assertEquals(cause, failedStatus.cause)
+        val status = resolution.status
+        assertTrue(status is ResolutionStatus.Failed)
+        assertEquals(cause, status.cause)
     }
 
     @Test
