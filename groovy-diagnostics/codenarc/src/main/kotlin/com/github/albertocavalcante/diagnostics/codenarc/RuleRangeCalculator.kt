@@ -57,9 +57,9 @@ object RuleRangeCalculator {
             "BlockStartsWithBlankLine" -> calculateEmptyLineRange(sourceLine)
             "ClassEndsWithBlankLine" -> calculateEmptyLineRange(sourceLine)
             "ClassStartsWithBlankLine" -> calculateEmptyLineRange(sourceLine)
-            "BracesForClass" -> findKeywordInLine(sourceLine, "class") ?: calculateDefaultRange(sourceLine)
-            "BracesForMethod" -> findKeywordInLine(sourceLine, "def") ?: calculateDefaultRange(sourceLine)
-            "BracesForIfElse" -> findKeywordInLine(sourceLine, "if") ?: calculateDefaultRange(sourceLine)
+            "BracesForClass" -> findKeywordOrDefault(sourceLine, "class")
+            "BracesForMethod" -> findKeywordOrDefault(sourceLine, "def")
+            "BracesForIfElse" -> findKeywordOrDefault(sourceLine, "if")
             "BracesForLoop" -> calculateLoopKeywordRange(sourceLine)
             "BracesForTryCatchFinally" -> calculateTryCatchFinallyKeywordRange(sourceLine, message)
             "ClosureStatementOnOpeningLineOfMultipleLineClosure" -> calculateClosureArrowRange(sourceLine)
@@ -77,18 +77,17 @@ object RuleRangeCalculator {
             "PackageName" -> calculatePackageNameRange(sourceLine, message)
 
             // Basic rules
-            "EmptyClass" -> findKeywordInLine(sourceLine, "class") ?: calculateDefaultRange(sourceLine)
-            "EmptyMethod" -> findKeywordInLine(sourceLine, "def") ?: calculateDefaultRange(sourceLine)
-            "EmptyIfStatement" -> findKeywordInLine(sourceLine, "if") ?: calculateDefaultRange(sourceLine)
-            "EmptyElseBlock" -> findKeywordInLine(sourceLine, "else") ?: calculateDefaultRange(sourceLine)
-            "EmptyTryBlock" -> findKeywordInLine(sourceLine, "try") ?: calculateDefaultRange(sourceLine)
-            "EmptyCatchBlock" -> findKeywordInLine(sourceLine, "catch") ?: calculateDefaultRange(sourceLine)
-            "EmptyFinallyBlock" -> findKeywordInLine(sourceLine, "finally") ?: calculateDefaultRange(sourceLine)
-            "EmptyForStatement" -> findKeywordInLine(sourceLine, "for") ?: calculateDefaultRange(sourceLine)
-            "EmptyWhileStatement" -> findKeywordInLine(sourceLine, "while") ?: calculateDefaultRange(sourceLine)
-            "EmptySwitchStatement" -> findKeywordInLine(sourceLine, "switch") ?: calculateDefaultRange(sourceLine)
-            "EmptySynchronizedStatement" -> findKeywordInLine(sourceLine, "synchronized")
-                ?: calculateDefaultRange(sourceLine)
+            "EmptyClass" -> findKeywordOrDefault(sourceLine, "class")
+            "EmptyMethod" -> findKeywordOrDefault(sourceLine, "def")
+            "EmptyIfStatement" -> findKeywordOrDefault(sourceLine, "if")
+            "EmptyElseBlock" -> findKeywordOrDefault(sourceLine, "else")
+            "EmptyTryBlock" -> findKeywordOrDefault(sourceLine, "try")
+            "EmptyCatchBlock" -> findKeywordOrDefault(sourceLine, "catch")
+            "EmptyFinallyBlock" -> findKeywordOrDefault(sourceLine, "finally")
+            "EmptyForStatement" -> findKeywordOrDefault(sourceLine, "for")
+            "EmptyWhileStatement" -> findKeywordOrDefault(sourceLine, "while")
+            "EmptySwitchStatement" -> findKeywordOrDefault(sourceLine, "switch")
+            "EmptySynchronizedStatement" -> findKeywordOrDefault(sourceLine, "synchronized")
 
             // Groovyism rules
             "GStringExpressionWithinString" -> calculateGStringRange(sourceLine, message)
@@ -99,8 +98,8 @@ object RuleRangeCalculator {
             // Exception rules
             "CatchException" -> calculateExceptionTypeRange(sourceLine, "Exception")
             "CatchThrowable" -> calculateExceptionTypeRange(sourceLine, "Throwable")
-            "ThrowException" -> findKeywordInLine(sourceLine, "throw") ?: calculateDefaultRange(sourceLine)
-            "ThrowRuntimeException" -> findKeywordInLine(sourceLine, "throw") ?: calculateDefaultRange(sourceLine)
+            "ThrowException" -> findKeywordOrDefault(sourceLine, "throw")
+            "ThrowRuntimeException" -> findKeywordOrDefault(sourceLine, "throw")
             "CatchNullPointerException" -> calculateExceptionTypeRange(sourceLine, "NullPointerException")
 
             else -> calculateDefaultRange(sourceLine)
@@ -184,13 +183,12 @@ object RuleRangeCalculator {
      * Find "public" keyword in the line.
      */
     private fun calculatePublicModifierRange(sourceLine: String): Pair<Int, Int> =
-        findKeywordInLine(sourceLine, "public") ?: calculateDefaultRange(sourceLine)
+        findKeywordOrDefault(sourceLine, "public")
 
     /**
      * Find "def" keyword in the line.
      */
-    private fun calculateDefRange(sourceLine: String): Pair<Int, Int> =
-        findKeywordInLine(sourceLine, "def") ?: calculateDefaultRange(sourceLine)
+    private fun calculateDefRange(sourceLine: String): Pair<Int, Int> = findKeywordOrDefault(sourceLine, "def")
 
     /**
      * Find GString (double-quoted string) in the line.
@@ -306,6 +304,13 @@ object RuleRangeCalculator {
             null
         }
     }
+
+    /**
+     * Find a keyword or fall back to default range.
+     * This helper reduces duplication and centralizes fallback logic.
+     */
+    private fun findKeywordOrDefault(sourceLine: String, keyword: String): Pair<Int, Int> =
+        findKeywordInLine(sourceLine, keyword) ?: calculateDefaultRange(sourceLine)
 
     // ==========================================
     // FORMATTING RULES HELPERS
