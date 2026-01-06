@@ -153,7 +153,7 @@ class SemanticTypeResolverTest {
         val type = SemanticType.Unknown("test reason")
         val formatted = resolver.formatSemanticType(type)
 
-        assertThat(formatted).isEqualTo("unresolved")
+        assertThat(formatted).isEqualTo("def") // Groovy's dynamic type keyword
     }
 
     @Test

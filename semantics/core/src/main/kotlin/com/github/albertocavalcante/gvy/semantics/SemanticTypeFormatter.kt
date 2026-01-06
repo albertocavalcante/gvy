@@ -19,7 +19,7 @@ object SemanticTypeFormatter {
         is SemanticType.Known -> formatKnownType(type, options)
         is SemanticType.Primitive -> formatPrimitiveType(type.kind)
         is SemanticType.Dynamic -> formatDynamicType(type)
-        is SemanticType.Unknown -> "unresolved"
+        is SemanticType.Unknown -> "def" // Groovy's dynamic type keyword
         is SemanticType.Union -> formatUnionType(type, options)
         is SemanticType.Null -> "null"
         is SemanticType.Array -> formatArrayType(type, options)
