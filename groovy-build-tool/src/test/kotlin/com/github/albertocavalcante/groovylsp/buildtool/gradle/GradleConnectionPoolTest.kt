@@ -15,6 +15,11 @@ class GradleConnectionPoolTest {
     @TempDir
     lateinit var tempDir: Path
 
+    @org.junit.jupiter.api.BeforeEach
+    fun setup() {
+        GradleConnectionPool.shutdown()
+    }
+
     @AfterEach
     fun cleanup() {
         GradleConnectionPool.shutdown()
