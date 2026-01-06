@@ -20,7 +20,7 @@ import org.openrewrite.java.tree.Statement
  *
  * Checks that the if body contains ONLY the assignment to the same variable being checked.
  *
- * TODO: Known issue - output has missing space after ?: operator (produces "x = x ?:y" instead of "x = x ?: y")
+ * Note: Known issue - output has missing space after ?: operator (produces "x = x ?:y" instead of "x = x ?: y")
  *       The transformation logic is correct, but GroovyPrinter spacing needs investigation.
  *       Upstream issue: https://github.com/openrewrite/rewrite/issues/6482
  *
