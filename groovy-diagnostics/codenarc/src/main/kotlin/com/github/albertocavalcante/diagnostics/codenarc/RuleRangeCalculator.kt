@@ -8,6 +8,11 @@ import org.codenarc.rule.Violation
  *
  * This is inspired by npm-groovy-lint's approach of defining rule-specific
  * variable extractors and range calculators.
+ *
+ * TODO(#674): Replace heuristic-based positioning with AST-aware positioning.
+ *   Current implementation uses string matching/regex which is brittle and approximate.
+ *   We should leverage our parsed AST (GroovyParser) for deterministic positioning.
+ *   See: https://github.com/albertocavalcante/gvy/issues/674
  */
 object RuleRangeCalculator {
 
