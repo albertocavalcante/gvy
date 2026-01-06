@@ -67,6 +67,7 @@ class SimplifyExplicitHashMapInstantiation : Recipe() {
             }
 
             // Create [:] literal
+            // Represented as G.MapLiteral with a single G.MapEntry containing J.Empty for both key and value.
             val emptyKey = J.Empty(Tree.randomId(), Space.EMPTY, Markers.EMPTY)
             val emptyValue = J.Empty(Tree.randomId(), Space.EMPTY, Markers.EMPTY)
 

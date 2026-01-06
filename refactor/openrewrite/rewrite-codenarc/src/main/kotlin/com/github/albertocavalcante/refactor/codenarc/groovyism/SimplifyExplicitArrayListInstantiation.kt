@@ -64,6 +64,7 @@ class SimplifyExplicitArrayListInstantiation : Recipe() {
             }
 
             // Replace explicit ArrayList instantiation with empty list literal []
+            // Represented as G.ListLiteral with no elements.
             return G.ListLiteral(
                 Tree.randomId(),
                 nc.prefix,

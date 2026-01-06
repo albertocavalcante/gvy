@@ -87,6 +87,7 @@ class SimplifyExplicitHashSetInstantiation : Recipe() {
             )
 
             // Wrap in ControlParentheses for "as" style cast
+            // Space before "as" is handled via padding on the clazz within parenthetical structure.
             val controlParens = J.ControlParentheses<TypeTree>(
                 Tree.randomId(),
                 Space.EMPTY,
@@ -95,6 +96,7 @@ class SimplifyExplicitHashSetInstantiation : Recipe() {
             )
 
             // Create TypeCast with AsStyleTypeCast marker to represent "[] as Set"
+            // The marker tells the printer to use "as" syntax instead of Java-style "(Type) expr".
             return J.TypeCast(
                 Tree.randomId(),
                 Space.EMPTY, // Prefix handled by listLiteral (transferred from newClass)
