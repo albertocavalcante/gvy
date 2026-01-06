@@ -135,18 +135,23 @@ data class JavaNotFoundError(
  * - Toolchain download repositories not configured (foojay plugin missing)
  * - org.gradle.java.installations.paths not pointing to JDK locations
  */
-data class ToolchainProvisioningError(
-    val requiredVersion: Int?,
-    val vendor: String?,
-    val platform: String?,
-    override val suggestions: List<String> = listOf(
-        "Install the required JDK: sdk install java <version>-tem",
-        "Add to settings.gradle: id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'",
-        "Or set GRADLE_OPTS: -Dorg.gradle.java.installations.paths=/path/to/jdk",
-        "Or add to gradle.properties: org.gradle.java.installations.auto-download=true",
-    ),
-) : ErrorDetails {
+data class ToolchainProvisioningError(val requiredVersion: Int?, val vendor: String?, val platform: String?) :
+    ErrorDetails {
     override val type: String = "TOOLCHAIN_PROVISIONING_FAILED"
+    override val suggestions: List<String>
+        get() {
+            val installSuggestion = if (requiredVersion != null) {
+                "Install the required JDK: sdk install java $requiredVersion-tem"
+            } else {
+                "Install the required JDK: sdk install java <version>-tem"
+            }
+            return listOf(
+                installSuggestion,
+                "Add to settings.gradle: id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'",
+                "Or set GRADLE_OPTS: -Dorg.gradle.java.installations.paths=/path/to/jdk",
+                "Or add to gradle.properties: org.gradle.java.installations.auto-download=true",
+            )
+        }
 }
 
 /**
