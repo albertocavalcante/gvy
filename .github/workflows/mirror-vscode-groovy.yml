@@ -6,6 +6,15 @@ on:
     paths:
       - 'editors/code/**'
   workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force sync (overwrite history)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run (preview changes)'
+        type: boolean
+        default: false
 
 jobs:
   mirror:
@@ -33,5 +42,5 @@ jobs:
         with:
           ssh_key: ${{ secrets.COPYBARA_SSH_KEY }}
           workflow: push-to-vscode-groovy
-          copybara_options: "--force"
+          copybara_options: ${{ inputs.force_sync && '--force' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
           custom_config: infra/copybara/vscode-groovy.bara.sky
