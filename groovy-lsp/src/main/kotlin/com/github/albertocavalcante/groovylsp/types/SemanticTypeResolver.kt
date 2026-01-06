@@ -1,14 +1,20 @@
 package com.github.albertocavalcante.groovylsp.types
 
+import arrow.core.Either
+import arrow.core.getOrElse
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import com.github.albertocavalcante.gvy.semantics.native.GroovySemantics
 import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.slf4j.LoggerFactory
 
 /**
  * Bridge between GroovySemantics and LSP providers.
@@ -18,18 +24,50 @@ import org.codehaus.groovy.ast.ModuleNode
 class SemanticTypeResolver(private val typeSolver: TypeSolver) {
     val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry())
 
+    companion object {
+        private val logger = LoggerFactory.getLogger(SemanticTypeResolver::class.java)
+    }
+
     /**
      * Resolve the type of an AST node using GroovySemantics.
      * Uses the module-aware API for proper multi-document support.
+     *
+     * This is a legacy method that returns SemanticType directly.
+     * For new code that needs error handling, prefer resolveTypeResult().
+     *
+     * @param node The AST node to resolve type for
+     * @param moduleNode The module context (optional)
+     * @return The resolved SemanticType, or Unknown if resolution fails
      */
-    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType = if (moduleNode != null) {
-        // Use the new module-aware API for multi-document safety
-        semantics.resolveType(node, moduleNode)
-    } else {
-        // Fallback for cases where module is not available
-        @Suppress("DEPRECATION")
-        semantics.resolveType(node)
+    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType = (
+        if (moduleNode != null) {
+            resolveTypeResult(node, moduleNode)
+        } else {
+            resolveTypeResult(node)
+        }
+        ).getOrElse { error ->
+        logger.debug("Type resolution failed, returning Unknown: {}", error.reason)
+        SemanticType.Unknown(error.reason)
     }
+
+    /**
+     * Resolve the type of an AST node, returning Either for error handling.
+     * This method enables callers to get detailed error information.
+     *
+     * @param node The AST node to resolve type for
+     * @return Either a TypeInferenceError (left) or the resolved SemanticType (right)
+     */
+    fun resolveTypeResult(node: ASTNode): TypeResult = semantics.resolveTypeResult(node)
+
+    /**
+     * Resolve the type of an AST node with explicit module, returning Either for error handling.
+     * This is the preferred method for multi-document support with detailed error handling.
+     *
+     * @param node The AST node to resolve type for
+     * @param module The module context for resolution
+     * @return Either a TypeInferenceError (left) or the resolved SemanticType (right)
+     */
+    fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult = semantics.resolveTypeResult(node, module)
 
     /**
      * Convert a ClassNode directly to a SemanticType.
@@ -82,19 +120,9 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
 
     /**
      * Format SemanticType for display in hover, inlay hints, etc.
+     * Delegates to SemanticTypeFormatter for consistent formatting across all providers.
      */
-    fun formatSemanticType(type: SemanticType): String = when (type) {
-        is SemanticType.Known -> type.fqn.substringAfterLast('.')
-        is SemanticType.Primitive -> type.kind.name.lowercase()
-        is SemanticType.Dynamic -> type.hint ?: "def"
-        is SemanticType.Unknown -> "unresolved"
-        is SemanticType.Union -> {
-            val formatted = type.types.map { formatSemanticType(it) }.sorted()
-            formatted.joinToString(" | ")
-        }
-        is SemanticType.Null -> "null"
-        is SemanticType.Array -> "${formatSemanticType(type.componentType)}[]"
-    }
+    fun formatSemanticType(type: SemanticType): String = SemanticTypeFormatter.format(type)
 
     private fun getPrimitiveClassNode(kind: PrimitiveKind): ClassNode = when (kind) {
         PrimitiveKind.VOID -> ClassHelper.VOID_TYPE

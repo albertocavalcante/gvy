@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.calculator
 
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 
 /**
@@ -61,4 +63,59 @@ interface TypeContext {
      * Affects how strictly types are resolved.
      */
     val isStaticCompilation: Boolean
+
+    /**
+     * Resolve a type by FQN, returning Either for explicit error handling.
+     *
+     * Default implementation bridges to [resolveType].
+     */
+    fun resolveTypeResult(fqn: String): TypeResult = resolveType(fqn).let { type ->
+        if (type is SemanticType.Unknown) {
+            TypeInferenceError.TypeNotResolved(fqn, type.reason).left()
+        } else {
+            type.right()
+        }
+    }
+
+    /**
+     * Calculate type of a node, returning Either for explicit error handling.
+     *
+     * Default implementation bridges to [calculateType].
+     */
+    fun calculateTypeResult(node: Any): TypeResult = calculateType(node).let { type ->
+        if (type is SemanticType.Unknown) {
+            TypeInferenceError.UnsupportedNode(node::class.simpleName ?: "unknown").left()
+        } else {
+            type.right()
+        }
+    }
+
+    /**
+     * Look up a symbol by name, returning Either for explicit error handling.
+     *
+     * Default implementation bridges to [lookupSymbol].
+     */
+    fun lookupSymbolResult(name: String): TypeResult = lookupSymbol(name)?.right()
+        ?: TypeInferenceError.SymbolNotFound(name).left()
+
+    /**
+     * Get method return type, returning Either for explicit error handling.
+     *
+     * Default implementation bridges to [getMethodReturnType].
+     */
+    fun getMethodReturnTypeResult(
+        receiverType: SemanticType,
+        methodName: String,
+        argumentTypes: List<SemanticType>,
+    ): TypeResult = getMethodReturnType(receiverType, methodName, argumentTypes)?.right()
+        ?: TypeInferenceError.MethodNotFound(receiverType, methodName, argumentTypes).left()
+
+    /**
+     * Get field type, returning Either for explicit error handling.
+     *
+     * Default implementation bridges to [getFieldType].
+     */
+    fun getFieldTypeResult(receiverType: SemanticType, fieldName: String): TypeResult =
+        getFieldType(receiverType, fieldName)?.right()
+            ?: TypeInferenceError.FieldNotFound(receiverType, fieldName).left()
 }

@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.safePosition
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import groovy.lang.Script
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -275,40 +276,9 @@ class SignatureHelpProvider(
 
     /**
      * Format SemanticType to fully qualified name for classpath lookups.
+     * Delegates to SemanticTypeFormatter for consistent formatting.
      */
-    private fun formatSemanticTypeToFqn(type: SemanticType): String = when (type) {
-        is SemanticType.Known -> type.fqn
-        is SemanticType.Primitive -> when (type.kind) {
-            PrimitiveKind.INT -> "int"
-            PrimitiveKind.LONG -> "long"
-            PrimitiveKind.DOUBLE -> "double"
-            PrimitiveKind.FLOAT -> "float"
-            PrimitiveKind.BOOLEAN -> "boolean"
-            PrimitiveKind.BYTE -> "byte"
-            PrimitiveKind.CHAR -> "char"
-            PrimitiveKind.SHORT -> "short"
-            PrimitiveKind.VOID -> "void"
-        }
-
-        is SemanticType.Dynamic -> "java.lang.Object"
-        is SemanticType.Unknown -> "java.lang.Object"
-        is SemanticType.Null -> "java.lang.Object"
-        is SemanticType.Union -> {
-            // Return first known type, or Object as fallback
-            type.types.firstNotNullOfOrNull {
-                when (it) {
-                    is SemanticType.Known -> it.fqn
-                    else -> null
-                }
-            } ?: "java.lang.Object"
-        }
-
-        is SemanticType.Array -> {
-            val componentFqn = formatSemanticTypeToFqn(type.componentType)
-            // Array types in reflection use format like "java.lang.String[]"
-            "$componentFqn[]"
-        }
-    }
+    private fun formatSemanticTypeToFqn(type: SemanticType): String = SemanticTypeFormatter.formatToFqn(type)
 
     private fun resolveImplicitThisReceiverType(methodCall: MethodCallExpression, astVisitor: GroovyAstModel): String {
         var current: ASTNode? = methodCall

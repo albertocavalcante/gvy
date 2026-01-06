@@ -1,6 +1,11 @@
 package com.github.albertocavalcante.gvy.semantics.calculator
 
+import arrow.core.fold
+import arrow.core.getOrElse
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
 /**
@@ -11,6 +16,41 @@ import kotlin.reflect.KClass
  */
 class TypeCalculatorRegistry private constructor(private val calculators: Map<KClass<*>, List<TypeCalculator<*>>>) {
 
+    private val calculatorCache = ConcurrentHashMap<KClass<*>, List<TypeCalculator<*>>>()
+
+    /**
+     * Calculate the type of a node, returning Either for explicit error handling.
+     *
+     * Tries each applicable calculator in priority order until one succeeds.
+     *
+     * @param node The AST node to calculate type for
+     * @param context Resolution context
+     * @return Either an error or the calculated type
+     */
+    fun calculateResult(node: Any, context: TypeContext): TypeResult {
+        val nodeClass = node::class
+        val applicableCalculators = findApplicableCalculators(nodeClass)
+
+        if (applicableCalculators.isEmpty()) {
+            return TypeInferenceError.NoCalculatorFound(nodeClass.simpleName ?: "unknown").left()
+        }
+
+        var lastError: TypeInferenceError = TypeInferenceError.NoCalculatorFound(nodeClass.simpleName ?: "unknown")
+
+        for (calc in applicableCalculators) {
+            @Suppress("UNCHECKED_CAST")
+            val calculator = calc as TypeCalculator<Any>
+            val result = calculator.calculateResult(node, context)
+
+            result.fold(
+                ifLeft = { lastError = it },
+                ifRight = { return it.right() },
+            )
+        }
+
+        return lastError.left()
+    }
+
     /**
      * Calculate the type of a node.
      * Tries calculators in priority order until one succeeds.
@@ -19,34 +59,21 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
      * @param context The type context
      * @return The calculated type, or [SemanticType.Unknown] if no calculator could handle it
      */
-    fun calculate(node: Any, context: TypeContext): SemanticType {
-        val nodeClass = node::class
+    fun calculate(node: Any, context: TypeContext): SemanticType = calculateResult(node, context).getOrElse { error ->
+        SemanticType.Unknown(error.reason)
+    }
 
-        // Find calculators for this node type (including superclasses)
-        val applicableCalculators = findApplicableCalculators(nodeClass)
+    private fun findApplicableCalculators(nodeClass: KClass<*>): List<TypeCalculator<*>> =
+        calculatorCache.getOrPut(nodeClass) {
+            // Check exact match first
+            calculators[nodeClass]?.let { return@getOrPut it }
 
-        val result = applicableCalculators.firstNotNullOfOrNull {
-            @Suppress("UNCHECKED_CAST")
-            val calc = it as TypeCalculator<Any>
-            calc.calculate(node, context)
+            // Check superclasses and interfaces
+            calculators.entries
+                .filter { (key, _) -> key.java.isAssignableFrom(nodeClass.java) }
+                .flatMap { it.value }
+                .sortedByDescending { it.priority }
         }
-
-        return result ?: SemanticType.Unknown("No calculator found for ${nodeClass.simpleName}")
-    }
-
-    private fun findApplicableCalculators(nodeClass: KClass<*>): List<TypeCalculator<*>> {
-        // Check exact match first
-        calculators[nodeClass]?.let { return it }
-
-        // TODO(#639): Cache resolved calculator lists per runtime node class.
-        //   See: https://github.com/albertocavalcante/gvy/issues/639
-
-        // Check superclasses and interfaces
-        return calculators.entries
-            .filter { (key, _) -> key.java.isAssignableFrom(nodeClass.java) }
-            .flatMap { it.value }
-            .sortedByDescending { it.priority }
-    }
 
     /**
      * Builder for creating a registry.
