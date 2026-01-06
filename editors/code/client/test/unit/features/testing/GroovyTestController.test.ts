@@ -41,6 +41,9 @@ describe('GroovyTestController', () => {
                     testItemsMock.set(item.id, item);
                 }),
                 get: sandbox.stub().callsFake((id: string) => testItemsMock.get(id)),
+                delete: sandbox.stub().callsFake((id: string) => {
+                    testItemsMock.delete(id);
+                }),
                 replace: sandbox.stub().callsFake(() => {
                     testItemsMock.clear();
                 }),
@@ -262,6 +265,87 @@ describe('GroovyTestController', () => {
             assert.ok(
                 executionServiceMock.runTests.notCalled,
                 'Should not attempt to run tests with empty suite name'
+            );
+        });
+
+        it('should preserve other test suites when updating suite with different URI', async () => {
+            // Regression test for bug where ctrl.items.replace([suiteItem]) wiped all test suites
+            // Arrange
+            controller = new GroovyTestController(
+                contextMock,
+                executionServiceMock,
+                testServiceMock
+            );
+
+            const workspaceUri = 'file:///workspace/TestA.groovy';
+            const externalUri = 'file:///external/TestA.groovy';
+            const suiteAName = 'com.example.TestA';
+            const suiteBName = 'com.example.TestB';
+            const workspaceTestName = 'workspace test method';
+            const externalTestName = 'external test method';
+
+            // Pre-populate test tree with two workspace suites
+            // Note: external test is NOT in discovery results (it's external to workspace)
+            testServiceMock.discoverTestsInWorkspace.resolves([
+                {
+                    uri: workspaceUri,
+                    suite: suiteAName,
+                    tests: [{ test: workspaceTestName, line: 10 }],
+                },
+                {
+                    uri: 'file:///workspace/TestB.groovy',
+                    suite: suiteBName,
+                    tests: [{ test: 'other test', line: 20 }],
+                },
+            ]);
+
+            // Trigger discovery to populate both suites
+            if (testControllerMock.resolveHandler) {
+                await testControllerMock.resolveHandler(undefined);
+            }
+
+            // Verify both suites exist before running external test
+            const suiteABefore = testControllerMock.items.get(suiteAName);
+            const suiteBBefore = testControllerMock.items.get(suiteBName);
+            assert.ok(suiteABefore, 'Suite A should exist before external test run');
+            assert.ok(suiteBBefore, 'Suite B should exist before external test run');
+            assert.strictEqual(suiteABefore.uri.toString(), workspaceUri, 'Suite A should have workspace URI initially');
+
+            // Run test from external file with same suite name but different test name
+            // This simulates clicking "Run Test" on an external file that wasn't discovered
+            const args = {
+                uri: externalUri,
+                suite: suiteAName,
+                test: externalTestName, // Different test, so won't be found
+            };
+
+            const registerCommandCalls = vscodeMock.commands.registerCommand.getCalls();
+            const runTestCall = registerCommandCalls.find((call: any) => call.args[0] === 'groovy.test.run');
+            const runTestHandler = runTestCall.args[1];
+
+            // Act
+            await runTestHandler(args);
+
+            // Assert - Suite B should still exist (regression check for the bug)
+            const suiteBAfter = testControllerMock.items.get(suiteBName);
+            assert.ok(
+                suiteBAfter,
+                'Suite B should still exist after running external test for Suite A (bug would have wiped this)'
+            );
+
+            // Suite A should have updated URI
+            const suiteAAfter = testControllerMock.items.get(suiteAName);
+            assert.ok(suiteAAfter, 'Suite A should still exist');
+            assert.strictEqual(
+                suiteAAfter.uri.toString(),
+                externalUri,
+                'Suite A URI should be updated to external file'
+            );
+
+            // Execution should have succeeded
+            assert.ok(
+                executionServiceMock.runTests.calledOnce,
+                'Should have executed the external test'
             );
         });
     });
