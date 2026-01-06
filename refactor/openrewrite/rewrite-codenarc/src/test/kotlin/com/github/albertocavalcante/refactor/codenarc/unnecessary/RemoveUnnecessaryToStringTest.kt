@@ -72,6 +72,32 @@ class RemoveUnnecessaryToStringTest : RewriteTest {
     )
 
     @Test
+    fun `preserves length call on String literal`() = rewriteRun(
+        groovy(
+            """
+            class Example {
+                def foo() {
+                    def len = "hello".length()
+                }
+            }
+            """,
+        ),
+    )
+
+    @Test
+    fun `preserves getBytes call on String literal`() = rewriteRun(
+        groovy(
+            """
+            class Example {
+                def foo() {
+                    def b = "hello".getBytes()
+                }
+            }
+            """,
+        ),
+    )
+
+    @Test
     fun `preserves toString with arguments`() = rewriteRun(
         groovy(
             """

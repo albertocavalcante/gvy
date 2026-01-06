@@ -5,7 +5,6 @@ import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.Space
 import org.openrewrite.java.tree.Statement
 
 /**
@@ -84,16 +83,12 @@ class RemoveUnnecessaryElseStatement : Recipe() {
             val ifPrefix = ifStmt.prefix
 
             val extractedStatements = when (elseBody) {
-                is J.Block -> elseBody.statements.mapIndexed { idx, stmt ->
-                    if (idx == 0) {
-                        // Use the if statement's prefix for proper indentation
-                        stmt.withPrefix(ifPrefix)
-                    } else {
-                        stmt
-                    }
+                is J.Block -> elseBody.statements.map { stmt ->
+                    // Use the if statement's prefix for proper indentation
+                    stmt.withPrefix<Statement>(ifPrefix)
                 }
 
-                else -> listOf(elseBody.withPrefix(ifPrefix))
+                else -> listOf((elseBody as Statement).withPrefix<Statement>(ifPrefix))
             }
 
             // Remove the else part from the if

@@ -11,7 +11,6 @@ import org.openrewrite.java.tree.Expression
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.JContainer
 import org.openrewrite.java.tree.JRightPadded
-import org.openrewrite.java.tree.JavaType
 import org.openrewrite.java.tree.Space
 import org.openrewrite.java.tree.TypeTree
 import org.openrewrite.marker.Markers

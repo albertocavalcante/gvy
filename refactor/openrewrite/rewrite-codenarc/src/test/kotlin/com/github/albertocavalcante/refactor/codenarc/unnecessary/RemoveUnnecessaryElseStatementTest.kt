@@ -61,18 +61,30 @@ class RemoveUnnecessaryElseStatementTest : RewriteTest {
     )
 
     @Test
-    fun `preserves else-if chain`() = rewriteRun(
+    fun `corrects indentation for multi-statement else`() = rewriteRun(
         groovy(
             """
             class Example {
                 def foo(x) {
-                    if (x == 1) {
-                        return "one"
-                    } else if (x == 2) {
-                        return "two"
+                    if (x) {
+                        return 1
                     } else {
-                        return "other"
+                        def a = 1
+                        def b = 2
+                        println a + b
                     }
+                }
+            }
+            """,
+            """
+            class Example {
+                def foo(x) {
+                    if (x) {
+                        return 1
+                    }
+                    def a = 1
+                    def b = 2
+                    println a + b
                 }
             }
             """,

@@ -18,8 +18,6 @@ dependencies {
 
     testRuntimeOnly(libs.junit.platform.launcher)
     testRuntimeOnly(libs.logback.classic)
-    testRuntimeOnly("org.openrewrite:rewrite-java-17:8.40.1") // Version matching rewrite-groovy or recent stable?
-    // Wait, grep showed rewrite-core:8.70.4. I should use 8.70.4.
     testRuntimeOnly("org.openrewrite:rewrite-java-17:8.70.4")
 }
 

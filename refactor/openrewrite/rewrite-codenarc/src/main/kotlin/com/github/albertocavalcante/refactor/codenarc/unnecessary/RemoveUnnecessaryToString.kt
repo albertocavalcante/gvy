@@ -34,11 +34,8 @@ class RemoveUnnecessaryToString : Recipe() {
             val m = super.visitMethodInvocation(method, ctx) as J.MethodInvocation
 
             // Only target toString() with no arguments
-            if (m.simpleName != "toString" || m.arguments.isNotEmpty()) {
-                // Check if single J.Empty (no-arg call)
-                if (m.arguments.size != 1 || m.arguments[0] !is J.Empty) {
-                    return m
-                }
+            if (!isNoArgToString(m)) {
+                return m
             }
 
             val receiver = m.select ?: return m
