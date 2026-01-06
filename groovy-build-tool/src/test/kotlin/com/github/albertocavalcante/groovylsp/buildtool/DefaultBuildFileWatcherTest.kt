@@ -9,7 +9,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -110,9 +109,6 @@ class DefaultBuildFileWatcherTest {
         buildFile.writeText("// initial") // This might trigger create, wait a bit
         delay(1000)
         events.clear() // Clear any initial create events
-
-        // Reset latch if needed, or create a new one.
-        // Ideally we just check events size after delay.
 
         // Trigger rapid changes
         repeat(5) {
