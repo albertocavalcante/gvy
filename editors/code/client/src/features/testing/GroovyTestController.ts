@@ -258,7 +258,9 @@ export class GroovyTestController {
         this.getClassName(suiteName),
         uri,
       );
-      this.ctrl.items.replace([suiteItem]);
+      // Delete old suite and add updated one, preserving other test items
+      this.ctrl.items.delete(suiteName);
+      this.ctrl.items.add(suiteItem);
     }
 
     // Check if test item already exists under the suite

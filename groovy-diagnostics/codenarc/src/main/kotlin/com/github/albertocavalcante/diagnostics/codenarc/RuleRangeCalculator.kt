@@ -301,7 +301,7 @@ object RuleRangeCalculator {
      * Find a keyword in the source line and return its range, or null if not found.
      */
     private fun findKeywordInLine(sourceLine: String, keyword: String): Pair<Int, Int>? {
-        val regex = Regex("""\b$keyword\b""")
+        val regex = Regex("""\b${Regex.escape(keyword)}\b""")
         val match = regex.find(sourceLine)
         return if (match != null) {
             Pair(match.range.first, match.range.last + 1)
