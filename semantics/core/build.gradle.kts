@@ -7,6 +7,12 @@ tasks.jar {
 }
 
 dependencies {
+    // Functional Programming - Arrow-kt core types (Either, Option, etc.)
+    api(libs.arrow.core)
+
+    // Common functional utilities (DomainError, etc.)
+    implementation(project(":groovy-common"))
+
     // Groovy AST for SemanticDocumentBuilder
     implementation(libs.groovy.core)
 

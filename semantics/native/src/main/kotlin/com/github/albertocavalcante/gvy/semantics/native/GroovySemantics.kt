@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
+import arrow.core.left
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -32,11 +35,15 @@ class GroovySemantics(
     // Thread-safe cache of contexts per module
     private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
 
+    // Current module for single-parameter API compatibility
+    private var currentModule: ModuleNode? = null
+
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
+        currentModule = module
         if (!contextCache.containsKey(module)) {
             val scope = buildRootScope(module)
             val context = NativeTypeContext(
@@ -137,6 +144,30 @@ class GroovySemantics(
         ReplaceWith("resolveType(expression, module)"),
     )
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
+
+    /**
+     * Resolve the type of an AST node, returning Either for explicit error handling.
+     *
+     * @param node The AST node to resolve type for
+     * @return Either a TypeInferenceError or the resolved SemanticType
+     */
+    fun resolveTypeResult(node: ASTNode): TypeResult {
+        val module = currentModule
+            ?: return TypeInferenceError.InternalError("No module injected").left()
+
+        val context = contextCache[module]
+            ?: return TypeInferenceError.InternalError("Module not in context cache").left()
+
+        return calculatorRegistry.calculateResult(node, context)
+    }
+
+    /**
+     * Resolve the type of an AST node with explicit module, returning Either.
+     */
+    fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
+        inject(module)
+        return resolveTypeResult(node)
+    }
 
     /**
      * Check if a type is assignable to another.

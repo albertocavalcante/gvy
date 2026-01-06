@@ -12,6 +12,7 @@ import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
+import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
 import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
 import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
@@ -394,30 +395,13 @@ object CompletionProvider {
 
     /**
      * Formats a SemanticType into a human-readable string for display.
+     * Delegates to SemanticTypeFormatter for consistent formatting.
      *
      * @param type The semantic type to format
      * @return A formatted type string
      */
-    private fun formatType(type: com.github.albertocavalcante.gvy.semantics.SemanticType): String = when (type) {
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Known -> {
-            val baseName = type.fqn.substringAfterLast('.')
-            if (type.typeArgs.isEmpty()) {
-                baseName
-            } else {
-                val params = type.typeArgs.joinToString(", ") { formatType(it) }
-                "$baseName<$params>"
-            }
-        }
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Primitive -> type.kind.name.lowercase()
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Array -> "${formatType(type.componentType)}[]"
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Unknown -> "def"
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Dynamic -> "def"
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Union -> {
-            // For union types, just show the first type
-            type.types.firstOrNull()?.let { formatType(it) } ?: "def"
-        }
-        is com.github.albertocavalcante.gvy.semantics.SemanticType.Null -> "null"
-    }
+    private fun formatType(type: com.github.albertocavalcante.gvy.semantics.SemanticType): String =
+        SemanticTypeFormatter.formatForCompletion(type)
 
     /**
      * Parses a method signature into parameter strings for display.

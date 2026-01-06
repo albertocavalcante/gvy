@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.calculator
 
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import kotlin.reflect.KClass
 
@@ -35,4 +37,17 @@ interface TypeCalculator<T : Any> {
      * @return The calculated type, or null if this calculator cannot handle it
      */
     fun calculate(node: T, context: TypeContext): SemanticType?
+
+    /**
+     * Calculate the type of the given node, returning an Either for explicit error handling.
+     *
+     * Default implementation bridges to [calculate] for backward compatibility.
+     * Override this method to provide explicit error types.
+     *
+     * @param node The AST node to calculate type for
+     * @param context Resolution context (scope, type solver, etc.)
+     * @return Either an error or the calculated type
+     */
+    fun calculateResult(node: T, context: TypeContext): TypeResult = calculate(node, context)?.right()
+        ?: TypeInferenceError.UnsupportedNode(node::class.simpleName ?: "unknown").left()
 }
