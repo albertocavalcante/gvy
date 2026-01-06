@@ -656,6 +656,146 @@ class RuleRangeCalculatorTest {
     }
 
     // ==========================================
+    // ROBUSTNESS TESTS - Verify Actual Substrings
+    // ==========================================
+
+    @Test
+    fun `keyword highlighting should match exact substring - class`() {
+        val sourceLine = "class MyBadClass {}"
+        val violation = createViolation("EmptyClass", "Class has no methods", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact keyword is highlighted
+        assertRangeHighlights(sourceLine, range, "class")
+    }
+
+    @Test
+    fun `keyword highlighting should match exact substring - def`() {
+        val sourceLine = "def myMethod() {}"
+        val violation = createViolation("EmptyMethod", "Method is empty", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact keyword is highlighted
+        assertRangeHighlights(sourceLine, range, "def")
+    }
+
+    @Test
+    fun `identifier highlighting should match exact substring - variable name`() {
+        val sourceLine = "def BadName = 1"
+        val violation = createViolation(
+            "VariableName",
+            "The variable name [BadName] in class X does not match [a-z][a-zA-Z0-9]*",
+            sourceLine,
+        )
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact identifier is highlighted
+        assertRangeHighlights(sourceLine, range, "BadName")
+    }
+
+    @Test
+    fun `identifier highlighting should match exact substring - method name`() {
+        val sourceLine = "def BadMethodName() {}"
+        val violation = createViolation(
+            "MethodName",
+            "The method name [BadMethodName] in class X does not match [a-z][a-zA-Z0-9]*",
+            sourceLine,
+        )
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact identifier is highlighted
+        assertRangeHighlights(sourceLine, range, "BadMethodName")
+    }
+
+    @Test
+    fun `exception type highlighting should match exact substring`() {
+        val sourceLine = "} catch (Exception e) {"
+        val violation = createViolation("CatchException", "Catching Exception is too broad", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact exception type is highlighted
+        assertRangeHighlights(sourceLine, range, "Exception")
+    }
+
+    @Test
+    fun `comma highlighting should match exact character`() {
+        val sourceLine = "def list = [1,2, 3]"
+        val violation = createViolation("SpaceAfterComma", "Missing space after comma", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact comma is highlighted
+        assertRangeHighlights(sourceLine, range, ",")
+    }
+
+    @Test
+    fun `indentation highlighting should match whitespace prefix`() {
+        val sourceLine = "   def x = 1"
+        val violation = createViolation("Indentation", "Incorrect indentation", sourceLine)
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify the exact whitespace is highlighted
+        assertRangeHighlights(sourceLine, range, "   ")
+    }
+
+    @Test
+    fun `range must be within source line bounds`() {
+        val sourceLine = "class X {}"
+        val violation = createViolation("EmptyClass", "Empty class", sourceLine)
+
+        val (start, end) = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Verify bounds
+        assert(start >= 0) { "Start must be non-negative" }
+        assert(end <= sourceLine.length) { "End must not exceed line length" }
+        assert(start < end) { "Range must be non-empty" }
+    }
+
+    @Test
+    fun `typed variable declaration should highlight variable name not type`() {
+        val sourceLine = "String badName = 'test'"
+        val violation = createViolation(
+            "VariableName",
+            "The variable name [badName] does not match [A-Z][a-zA-Z0-9]*",
+            sourceLine,
+        )
+
+        val range = RuleRangeCalculator.calculateRange(violation, sourceLine)
+
+        // Should highlight 'badName', not 'String'
+        assertRangeHighlights(sourceLine, range, "badName")
+    }
+
+    @Test
+    fun `try-catch-finally should highlight correct keyword based on message`() {
+        // Test try
+        val tryLine = "try { } catch (Exception e) { println e }"
+        val tryViolation = createViolation("BracesForTryCatchFinally", "The try block should have braces", tryLine)
+        val tryRange = RuleRangeCalculator.calculateRange(tryViolation, tryLine)
+        assertRangeHighlights(tryLine, tryRange, "try")
+
+        // Test catch
+        val catchLine = "try { } catch (Exception e) println e"
+        val catchViolation =
+            createViolation("BracesForTryCatchFinally", "The catch clause should have braces", catchLine)
+        val catchRange = RuleRangeCalculator.calculateRange(catchViolation, catchLine)
+        assertRangeHighlights(catchLine, catchRange, "catch")
+
+        // Test finally
+        val finallyLine = "try { } catch (Exception e) { } finally println 'done'"
+        val finallyViolation =
+            createViolation("BracesForTryCatchFinally", "The finally block should have braces", finallyLine)
+        val finallyRange = RuleRangeCalculator.calculateRange(finallyViolation, finallyLine)
+        assertRangeHighlights(finallyLine, finallyRange, "finally")
+    }
+
+    // ==========================================
     // Helper Methods
     // ==========================================
 
@@ -671,5 +811,42 @@ class RuleRangeCalculatorTest {
         every { violation.lineNumber } returns 1
 
         return violation
+    }
+
+    /**
+     * Assert that the calculated range highlights the expected text.
+     * This ensures the squiggle line appears on the correct code.
+     *
+     * @param sourceLine The source code line
+     * @param range The calculated (start, end) range
+     * @param expectedText The exact text that should be highlighted
+     */
+    private fun assertRangeHighlights(sourceLine: String, range: Pair<Int, Int>, expectedText: String) {
+        val (start, end) = range
+
+        // Verify range is within bounds
+        assert(start >= 0) { "Start position $start is negative" }
+        assert(end <= sourceLine.length) { "End position $end exceeds source line length ${sourceLine.length}" }
+        assert(start < end) { "Start position $start must be less than end position $end" }
+
+        // Extract and verify the actual highlighted text
+        val actualText = sourceLine.substring(start, end)
+        assertEquals(
+            expectedText,
+            actualText,
+            "Range ($start, $end) should highlight '$expectedText' but got '$actualText'\nSource: $sourceLine",
+        )
+    }
+
+    /**
+     * Assert that the calculated range contains the expected text (case-insensitive).
+     * Useful when the exact text might have variations.
+     */
+    private fun assertRangeContains(sourceLine: String, range: Pair<Int, Int>, expectedSubstring: String) {
+        val (start, end) = range
+        val actualText = sourceLine.substring(start, end)
+        assert(actualText.contains(expectedSubstring, ignoreCase = true)) {
+            "Range ($start, $end) highlighting '$actualText' should contain '$expectedSubstring'\nSource: $sourceLine"
+        }
     }
 }
