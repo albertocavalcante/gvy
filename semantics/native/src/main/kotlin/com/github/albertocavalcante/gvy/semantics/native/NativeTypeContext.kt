@@ -205,14 +205,16 @@ class NativeTypeContext(
     ): TypeResult = when (receiverType) {
         is SemanticType.Known -> {
             // Strategy 1: Native AST (same module) - fast path
-            nativeFinder(receiverType.fqn)
-                ?.let { converter(it).right() }
-                // Strategy 2: Workspace Index (cross-file)
-                ?: workspaceMemberLookup?.let { workspace -> workspaceDirect(workspace, receiverType.fqn) }?.right()
-                // Strategy 3: Check inherited members
-                ?: workspaceMemberLookup?.let { workspace -> workspaceInherited(workspace, receiverType.fqn) }?.right()
-                // Finally return error
-                ?: errorFactory(receiverType).left()
+            nativeFinder(receiverType.fqn)?.let { return converter(it).right() }
+
+            // Strategy 2 & 3: Workspace Index (cross-file)
+            workspaceMemberLookup?.let { workspace ->
+                workspaceDirect(workspace, receiverType.fqn)?.let { return it.right() }
+                workspaceInherited(workspace, receiverType.fqn)?.let { return it.right() }
+            }
+
+            // Not found, return error
+            errorFactory(receiverType).left()
         }
         else -> errorFactory(receiverType).left()
     }
