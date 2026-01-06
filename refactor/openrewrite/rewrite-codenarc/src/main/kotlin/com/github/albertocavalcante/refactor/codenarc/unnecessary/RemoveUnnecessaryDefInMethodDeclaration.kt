@@ -13,7 +13,7 @@ import org.openrewrite.java.tree.J
  *
  * This aligns with CodeNarc rule: UnnecessaryDefInMethodDeclaration
  *
- * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefInmethoddeclaration">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefinmethoddeclaration">CodeNarc Rule</a>
  */
 class RemoveUnnecessaryDefInMethodDeclaration : Recipe() {
 
