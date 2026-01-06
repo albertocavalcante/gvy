@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 import kotlin.test.Test

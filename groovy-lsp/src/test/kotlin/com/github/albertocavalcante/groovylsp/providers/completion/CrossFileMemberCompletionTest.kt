@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import java.net.URI
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.div
 import kotlin.io.path.writeText
