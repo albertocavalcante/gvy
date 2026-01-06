@@ -88,11 +88,18 @@ class RemoveUnnecessaryReturnKeywordTest : RewriteTest {
     )
 
     @Test
-    fun `preserves return with no expression`() = rewriteRun(
+    fun `removes return with complex expression`() = rewriteRun(
         groovy(
             """
-            def foo() {
-                return
+            def foo(a, b) {
+                println "calculating"
+                return a + b * 2
+            }
+            """,
+            """
+            def foo(a, b) {
+                println "calculating"
+                a + b * 2
             }
             """,
         ),

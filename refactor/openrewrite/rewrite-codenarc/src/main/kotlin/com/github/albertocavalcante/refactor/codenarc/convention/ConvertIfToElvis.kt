@@ -58,9 +58,7 @@ class ConvertIfToElvis : Recipe() {
                 .build()
 
             // We need a J.Identifier for the variable to pass to the template.
-            val targetIdentifier = (iff.thenPart as J.Block).statements[0].let {
-                (it as J.Assignment).variable
-            }
+            val targetIdentifier = getAssignmentIdentifier(iff.thenPart) ?: return super.visitIf(iff, ctx)
 
             // Explicitly force a single space on the assignment value to ensure " ?: value" spacing
             val singleSpace = Space.build(" ", emptyList())
@@ -70,7 +68,7 @@ class ConvertIfToElvis : Recipe() {
                 iff.coordinates.replace(),
                 targetIdentifier.withPrefix(Space.EMPTY),
                 targetIdentifier.withPrefix(Space.EMPTY),
-                (assignmentValue as J).withPrefix(singleSpace),
+                assignmentValue.withPrefix(singleSpace),
             )
         }
 
@@ -92,7 +90,7 @@ class ConvertIfToElvis : Recipe() {
             return null
         }
 
-        private fun getAssignment(stmt: Statement): Pair<String, J>? {
+        private fun getAssignmentIdentifier(stmt: Statement): J.Identifier? {
             val bodyStmt = if (stmt is J.Block) {
                 if (stmt.statements.size != 1) return null
                 stmt.statements[0]
@@ -103,11 +101,16 @@ class ConvertIfToElvis : Recipe() {
             if (bodyStmt is J.Assignment) {
                 val variable = bodyStmt.variable
                 if (variable is J.Identifier) {
-                    return variable.simpleName to bodyStmt.assignment
+                    return variable
                 }
             }
-
             return null
+        }
+
+        private fun getAssignment(stmt: Statement): Pair<String, J>? {
+            val identifier = getAssignmentIdentifier(stmt) ?: return null
+            val bodyStmt = if (stmt is J.Block) stmt.statements[0] as J.Assignment else stmt as J.Assignment
+            return identifier.simpleName to bodyStmt.assignment
         }
     }
 }

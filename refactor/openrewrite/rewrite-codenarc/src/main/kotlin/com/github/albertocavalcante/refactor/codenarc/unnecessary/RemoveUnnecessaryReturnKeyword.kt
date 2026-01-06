@@ -8,7 +8,6 @@ import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.marker.ImplicitReturn
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
-import org.openrewrite.java.tree.Statement
 
 /**
  * Recipe to remove unnecessary return keyword from the last statement of a method or closure.
@@ -79,10 +78,7 @@ class RemoveUnnecessaryReturnKeyword : Recipe() {
                 var markers = lastStat.markers
                 markers = markers.addIfAbsent(ImplicitReturn(Tree.randomId()))
 
-                // We replace the J.Return statement with the expression itself, wrapped with the marker.
-                // Note: structure-wise, we might change the type of statement in the block list.
-                // Wait, typically J.Return is a Statement. The expression inside is an Expression.
-                // In Groovy AST, a standalone expression can be a Statement.
+                // Replace the return statement so it keeps the expression and uses the implicit-return marker.
                 val newLastStat = lastStat.withMarkers(markers).withExpression(newExpression)
 
                 val newStatements = statements.toMutableList()

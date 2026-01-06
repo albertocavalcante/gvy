@@ -53,7 +53,8 @@ class FixBrokenNullCheck : Recipe() {
                 }
             }
 
-            // Note: CodeNarc also checks strict equality/inequality but basic logic is mostly != null
+            // Match direct dereferences (field access, method call, instanceof) of the given variable.
+            // This implementation handles the common `!= null` pattern; it does not cover all variants checked by CodeNarc.
             return b
         }
 
@@ -71,31 +72,26 @@ class FixBrokenNullCheck : Recipe() {
             }
         }
 
-        private fun isDereferenceOf(expr: J, varName: String): Boolean {
-            // Check for direct property access, method call, etc.
-            // This is a simplification; a full implementation would traverse the expression tree
-
-            return when (expr) {
-                is J.FieldAccess -> {
-                    // x.prop
-                    val target = expr.target
-                    target is J.Identifier && target.simpleName == varName
-                }
-
-                is J.MethodInvocation -> {
-                    // x.method()
-                    val select = expr.select
-                    select is J.Identifier && select.simpleName == varName
-                }
-
-                is J.InstanceOf -> {
-                    // x instanceof Type
-                    val expression = expr.expression
-                    expression is J.Identifier && expression.simpleName == varName
-                }
-
-                else -> false
+        private fun isDereferenceOf(expr: J, varName: String): Boolean = when (expr) {
+            is J.FieldAccess -> {
+                // x.prop
+                val target = expr.target
+                target is J.Identifier && target.simpleName == varName
             }
+
+            is J.MethodInvocation -> {
+                // x.method()
+                val select = expr.select
+                select is J.Identifier && select.simpleName == varName
+            }
+
+            is J.InstanceOf -> {
+                // x instanceof Type
+                val expression = expr.expression
+                expression is J.Identifier && expression.simpleName == varName
+            }
+
+            else -> false
         }
     }
 }

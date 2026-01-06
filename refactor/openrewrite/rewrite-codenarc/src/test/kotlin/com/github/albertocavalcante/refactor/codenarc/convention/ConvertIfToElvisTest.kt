@@ -49,6 +49,8 @@ class ConvertIfToElvisTest : RewriteTest {
             }
             """,
             """
+
+            
             class Example {
                 def foo() {
                     def x
@@ -114,6 +116,19 @@ class ConvertIfToElvisTest : RewriteTest {
                 x = y
                 println x
             }
+            """,
+        ),
+    )
+
+    @Disabled("Upstream OpenRewrite bug: https://github.com/openrewrite/rewrite/issues/6482")
+    @Test
+    fun `converts non-braced if body`() = rewriteRun(
+        groovy(
+            """
+            if (!x) x = y
+            """,
+            """
+            x = x ?: y
             """,
         ),
     )
