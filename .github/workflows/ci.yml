@@ -137,6 +137,8 @@ jobs:
               - 'viz/*/*.gradle.kts'
               # Multi-project parser modules
               - 'parser/**'
+              # OpenRewrite recipes
+              - 'refactor/openrewrite/**'
               # Root-level files
               - 'tests/**'
               - '*.gradle'

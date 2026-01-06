@@ -18,6 +18,7 @@ dependencies {
 
     testRuntimeOnly(libs.junit.platform.launcher)
     testRuntimeOnly(libs.logback.classic)
+    testRuntimeOnly("org.openrewrite:rewrite-java-17:8.70.4")
 }
 
 tasks.test {
