@@ -146,6 +146,8 @@ class GradleFailureAnalyzerTest {
         val status = analyzer.classifyException(error)
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, status.code)
         assertTrue(status.message.contains("Java 17"))
+        assertNotNull(status.details, "Should contain structured details")
+        assertTrue(status.details is GradleFailureAnalyzer.ToolchainErrorInfo)
     }
 
     @Test

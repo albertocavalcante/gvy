@@ -118,7 +118,7 @@ class GradleFailureAnalyzer {
                 append(". ")
                 info?.suggestions?.firstOrNull()?.let { append(it) }
             }
-            ResolutionStatus.Failed(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, message, t)
+            ResolutionStatus.Failed(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, message, t, details = info)
         }
 
         isJdkMismatch(t) -> {

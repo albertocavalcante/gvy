@@ -12,7 +12,8 @@ sealed interface ResolutionStatus {
     /**
      * Represents a failed resolution with error details.
      */
-    data class Failed(val code: String, val message: String, val cause: Throwable? = null) : ResolutionStatus
+    data class Failed(val code: String, val message: String, val cause: Throwable? = null, val details: Any? = null) :
+        ResolutionStatus
 }
 
 /**
