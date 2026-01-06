@@ -15,6 +15,8 @@ import org.openrewrite.java.tree.Space
  * This aligns with CodeNarc rule: UnnecessaryReturnKeyword
  *
  * e.g. return "foo" -> "foo"
+ *
+ * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessaryreturnkeyword">CodeNarc Rule</a>
  */
 class RemoveUnnecessaryReturnKeyword : Recipe() {
 

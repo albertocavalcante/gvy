@@ -13,6 +13,9 @@ import org.openrewrite.java.tree.J
  *
  * In Groovy, referencing the class name directly is equivalent to .class
  *
+ * TODO: Support fully qualified type names (e.g. java.lang.String.class).
+ * Currently only matches simple identifiers.
+ *
  * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydotclass">CodeNarc Rule</a>
  */
 class RemoveUnnecessaryDotClass : Recipe() {

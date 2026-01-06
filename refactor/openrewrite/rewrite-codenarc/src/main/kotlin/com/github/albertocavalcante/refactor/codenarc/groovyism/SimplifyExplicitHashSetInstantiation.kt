@@ -19,9 +19,10 @@ import java.util.Collections
 /**
  * Recipe to simplify explicit HashSet instantiation to `[] as Set`.
  *
- * This aligns with CodeNarc rule: ExplicitHashSetInstantiation
  *
  * e.g. new HashSet() -> [] as Set
+ *
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashsetinstantiation">CodeNarc Rule</a>
  */
 class SimplifyExplicitHashSetInstantiation : Recipe() {
 

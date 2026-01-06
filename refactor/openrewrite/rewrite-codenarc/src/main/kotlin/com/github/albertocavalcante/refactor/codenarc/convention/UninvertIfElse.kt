@@ -6,6 +6,15 @@ import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyVisitor
 import org.openrewrite.java.tree.J
 
+/**
+ * Recipe to uninvert if-else statements when the condition is negated.
+ *
+ * This aligns with CodeNarc rule: UninvertIfElse
+ *
+ * e.g. if (!x) { a } else { b } -> if (x) { b } else { a }
+ *
+ * @see <a href="https://codenarc.org/codenarc-rules-convention.html#uninvertifelse">CodeNarc Rule</a>
+ */
 class UninvertIfElse : Recipe() {
     override fun getDisplayName() = "Uninvert if-else"
     override fun getDescription() = "Inverts if control flow when the condition is negated."

@@ -13,6 +13,8 @@ import org.openrewrite.java.tree.J
  * This aligns with CodeNarc rule: SimplifyTernaryToElvis
  *
  * e.g. x ? x : y -> x ?: y
+ *
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#simplifyternarytoelvis">CodeNarc Rule</a>
  */
 class SimplifyTernaryToElvis : Recipe() {
 

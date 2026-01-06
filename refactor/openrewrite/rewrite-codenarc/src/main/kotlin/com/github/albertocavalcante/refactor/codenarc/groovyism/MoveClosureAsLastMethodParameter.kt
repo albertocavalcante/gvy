@@ -14,6 +14,8 @@ import org.openrewrite.java.tree.J
  * This aligns with CodeNarc rule: ClosureAsLastMethodParameter
  *
  * e.g. list.each({ println it }) -> list.each { println it }
+ *
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#closureaslastmethodparameter">CodeNarc Rule</a>
  */
 class MoveClosureAsLastMethodParameter : Recipe() {
 

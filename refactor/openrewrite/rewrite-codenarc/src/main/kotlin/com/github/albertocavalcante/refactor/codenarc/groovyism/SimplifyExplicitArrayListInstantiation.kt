@@ -16,9 +16,10 @@ import java.util.Collections
 /**
  * Recipe to simplify explicit ArrayList instantiation to Groovy list literal.
  *
- * This aligns with CodeNarc rule: ExplicitArrayListInstantiation
  *
  * e.g. new ArrayList() -> []
+ *
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicitarraylistinstantiation">CodeNarc Rule</a>
  */
 class SimplifyExplicitArrayListInstantiation : Recipe() {
 

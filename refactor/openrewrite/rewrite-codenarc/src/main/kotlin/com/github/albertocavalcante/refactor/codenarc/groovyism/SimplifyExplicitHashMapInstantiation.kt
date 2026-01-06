@@ -16,10 +16,11 @@ import java.util.Collections
 /**
  * Recipe to simplify explicit HashMap/LinkedHashMap instantiation to Groovy map literal.
  *
- * This aligns with CodeNarc rule: ExplicitHashMapInstantiation
  *
  * e.g. new HashMap() -> [:]
  *      new LinkedHashMap() -> [:]
+ *
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashmapinstantiation">CodeNarc Rule</a>
  */
 class SimplifyExplicitHashMapInstantiation : Recipe() {
 

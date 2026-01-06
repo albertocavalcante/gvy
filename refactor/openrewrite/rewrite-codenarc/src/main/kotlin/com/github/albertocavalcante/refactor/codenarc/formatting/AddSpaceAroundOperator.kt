@@ -12,6 +12,8 @@ import org.openrewrite.java.tree.J
  * This aligns with CodeNarc rule: SpaceAroundOperator
  *
  * e.g. x=1 -> x = 1
+ *
+ * @see <a href="https://codenarc.org/codenarc-rules-formatting.html#spacearoundoperator">CodeNarc Rule</a>
  */
 class AddSpaceAroundOperator : Recipe() {
 
