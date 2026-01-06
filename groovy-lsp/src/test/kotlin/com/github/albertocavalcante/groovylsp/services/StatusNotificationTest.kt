@@ -161,6 +161,7 @@ class StatusNotificationTest {
             NoBuildToolError(),
             DependencyResolutionError("Maven", null),
             JavaNotFoundError(null),
+            ToolchainProvisioningError(17, null, null),
             GenericError("CUSTOM_ERROR"),
         )
 
@@ -169,5 +170,40 @@ class StatusNotificationTest {
             assertTrue(error.type.isNotEmpty(), "Error type should not be empty")
             assertNotNull(error.suggestions, "Suggestions should not be null")
         }
+    }
+
+    @Test
+    fun `ToolchainProvisioningError contains actionable suggestions`() {
+        val error = ToolchainProvisioningError(
+            requiredVersion = 17,
+            vendor = "Temurin",
+            platform = "Mac OS X aarch64",
+        )
+
+        assertEquals("TOOLCHAIN_PROVISIONING_FAILED", error.type)
+        assertEquals(17, error.requiredVersion)
+        assertTrue(error.suggestions.isNotEmpty(), "Should have default suggestions")
+        assertTrue(
+            error.suggestions.any { it.contains("foojay") },
+            "Should suggest foojay plugin",
+        )
+        assertTrue(
+            error.suggestions.any { it.contains("sdk install") },
+            "Should suggest SDKMAN installation",
+        )
+    }
+
+    @Test
+    fun `ToolchainProvisioningError serializes with correct type`() {
+        val error = ToolchainProvisioningError(
+            requiredVersion = 21,
+            vendor = null,
+            platform = null,
+        )
+
+        val json = gson.toJson(error)
+
+        assertTrue(json.contains("\"type\":\"TOOLCHAIN_PROVISIONING_FAILED\""))
+        assertTrue(json.contains("\"requiredVersion\":21"))
     }
 }

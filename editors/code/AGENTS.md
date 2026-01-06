@@ -50,15 +50,15 @@ New features should primarily go to **groovy-lsp**. Only add to this extension i
 
 Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
-- Install deps: `npm ci`
-- Build (dev): `npm run compile`
-- Build (prod): `npm run package-build`
-- Package VSIX: `npm run package`
-- Prepare LSP: `npm run prepare-server` (pinned by default)
-- Lint: `npm run lint`
-- Type-check: `npm run check-types`
-- Tests: `npm test`
-- Clean: `npm run clean`
+- Install deps: `pnpm install`
+- Build (dev): `pnpm run compile`
+- Build (prod): `pnpm run package-build`
+- Package VSIX: `pnpm run package`
+- Prepare LSP: `pnpm run prepare-server` (pinned by default)
+- Lint: `pnpm run lint`
+- Type-check: `pnpm run check-types`
+- Tests: `pnpm test`
+- Clean: `pnpm run clean`
 
 ## Stack & key paths
 
@@ -103,7 +103,7 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 - Conventional commits (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
 - **CRITICAL**: NEVER ever run `git add .`. This is 100% forbidden. Always stage specific files by name (e.g.,
   `git add file1.ts file2.ts`) to keep commits atomic and avoid staging unrelated formatting or accidental changes.
-- Before PR: `npm run lint && npm run check-types && npm run compile`.
+- Before PR: `pnpm run lint && pnpm run check-types && pnpm run compile`.
 
 ## Boundaries (do not)
 
@@ -126,9 +126,9 @@ tools/           # Build/setup utilities
 
 - Safe LSP refresh (latest, optional):
   ```bash
-  npm run clean
-  USE_LATEST_GROOVY_LSP=true npm run prepare-server
-  npm run compile
+  pnpm run clean
+  USE_LATEST_GROOVY_LSP=true pnpm run prepare-server
+  pnpm run compile
   ```
 - Fetch PR review summaries (keeps payload small):
   ```bash
@@ -138,7 +138,7 @@ tools/           # Build/setup utilities
   Prefer `--jq` to drop unused fields and preserve context budget.
 - Pinned update (maintainers only):
   - Update `PINNED_RELEASE_TAG`, `PINNED_JAR_ASSET`, and checksum in `tools/prepare-server.js`.
-  - Run `npm run clean && npm run prepare-server`.
+  - Run `pnpm run clean && pnpm run prepare-server`.
   - Commit with conventional message.
 
 ## Style nudge

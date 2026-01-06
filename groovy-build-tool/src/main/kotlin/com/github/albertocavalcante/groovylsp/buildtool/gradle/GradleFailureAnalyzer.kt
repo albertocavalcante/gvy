@@ -11,12 +11,28 @@ class GradleFailureAnalyzer {
     }
 
     /**
+     * Detects Java toolchain provisioning failures when Gradle cannot find or download
+     * a matching JDK for the configured toolchain.
+     *
+     * Common causes:
+     * - Required JDK version not installed locally
+     * - Toolchain download repositories not configured (foojay plugin missing)
+     * - org.gradle.java.installations.paths not set
+     */
+    fun isToolchainProvisioningError(t: Throwable): Boolean = searchExceptionChain(t) { message ->
+        message.contains("Cannot find a Java installation", ignoreCase = true) ||
+            message.contains("Toolchain download repositories have not been configured", ignoreCase = true) ||
+            message.contains("ToolchainProvisioningException", ignoreCase = true)
+    }
+
+    /**
      * Detects errors related to init scripts (init.d, cp_init, etc).
      */
     fun isInitScriptError(t: Throwable): Boolean {
-        // IMPORTANT: We MUST NOT classify JDK mismatch as init script error,
-        // because we don't want to retry with isolated Gradle User Home for JDK issues.
+        // IMPORTANT: We MUST NOT classify JDK/toolchain errors as init script errors,
+        // because we don't want to retry with isolated Gradle User Home for these issues.
         if (isJdkMismatch(t)) return false
+        if (isToolchainProvisioningError(t)) return false
 
         return searchExceptionChain(t) { message ->
             message.contains("init.d", ignoreCase = true) ||

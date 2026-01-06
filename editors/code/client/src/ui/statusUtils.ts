@@ -23,6 +23,7 @@ export type ErrorType =
     | 'NO_BUILD_TOOL'
     | 'DEPENDENCY_RESOLUTION_FAILED'
     | 'JAVA_NOT_FOUND'
+    | 'TOOLCHAIN_PROVISIONING_FAILED'
     | string; // Allow custom error codes via GenericError
 
 /**
@@ -69,6 +70,19 @@ export interface JavaNotFoundError extends ErrorDetails {
     type: 'JAVA_NOT_FOUND';
     configuredPath: string | null;
     searchedLocations: string[];
+}
+
+/**
+ * Gradle toolchain provisioning error - JDK not found/downloadable.
+ *
+ * Occurs when the project requires a specific JDK via toolchain configuration,
+ * but Gradle cannot find or download a matching JDK.
+ */
+export interface ToolchainProvisioningError extends ErrorDetails {
+    type: 'TOOLCHAIN_PROVISIONING_FAILED';
+    requiredVersion: number | null;
+    vendor: string | null;
+    platform: string | null;
 }
 
 /**

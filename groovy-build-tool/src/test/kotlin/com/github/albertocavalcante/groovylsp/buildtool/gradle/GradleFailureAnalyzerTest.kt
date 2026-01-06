@@ -43,4 +43,64 @@ class GradleFailureAnalyzerTest {
         val error = RuntimeException("Timeout waiting for lock")
         assertTrue(analyzer.isTransient(error))
     }
+
+    @Test
+    fun `should detect toolchain provisioning error from direct message`() {
+        val error = RuntimeException(
+            "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: " +
+                "{languageVersion=17, vendor=any vendor, implementation=vendor-specific}. " +
+                "Toolchain download repositories have not been configured.",
+        )
+        assertTrue(
+            analyzer.isToolchainProvisioningError(error),
+            "Should detect toolchain provisioning error from message",
+        )
+    }
+
+    @Test
+    fun `should detect toolchain provisioning error from nested cause`() {
+        // Simulating real stack trace: BuildException -> LocationAwareException -> ... -> ToolchainProvisioningException
+        val rootCause = RuntimeException(
+            "Cannot find a Java installation on your machine matching: {languageVersion=17}",
+        )
+        val wrappingException = IllegalStateException(
+            "Failed to query the value of task ':compileGroovy' property 'javaLauncher'.",
+            rootCause,
+        )
+        val buildException = RuntimeException("A problem occurred configuring root project", wrappingException)
+
+        assertTrue(
+            analyzer.isToolchainProvisioningError(buildException),
+            "Should detect toolchain provisioning error from nested cause",
+        )
+    }
+
+    @Test
+    fun `should detect 'Toolchain download repositories have not been configured' message`() {
+        val error = RuntimeException("Toolchain download repositories have not been configured")
+        assertTrue(analyzer.isToolchainProvisioningError(error))
+    }
+
+    @Test
+    fun `should NOT classify toolchain error as init script error`() {
+        val error = RuntimeException(
+            "Cannot find a Java installation on your machine matching: {languageVersion=17}. " +
+                "Toolchain download repositories have not been configured.",
+        )
+        assertFalse(
+            analyzer.isInitScriptError(error),
+            "Toolchain error should NOT be treated as init script error",
+        )
+    }
+
+    @Test
+    fun `should NOT classify toolchain error as transient`() {
+        val error = RuntimeException(
+            "Cannot find a Java installation on your machine matching: {languageVersion=17}",
+        )
+        assertFalse(
+            analyzer.isTransient(error),
+            "Toolchain error should NOT be treated as transient (no point retrying)",
+        )
+    }
 }
