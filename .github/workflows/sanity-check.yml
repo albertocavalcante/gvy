@@ -1,0 +1,46 @@
+name: Sanity Check
+
+on:
+  pull_request:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-file-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for large files (>700KB)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MAX_SIZE=716800 # 700KB
+          VIOLATIONS=""
+          
+          # Find added/modified files in this PR
+          git diff --name-only --diff-filter=AM "origin/${{ github.base_ref }}...HEAD" | while read -r file; do
+            if [ -f "$file" ]; then
+              size=$(wc -c < "$file" | tr -d ' ')
+              if [ "$size" -gt "$MAX_SIZE" ]; then
+                human_size=$(numfmt --to=iec-i --suffix=B "$size")
+                VIOLATIONS="$VIOLATIONS| \`$file\` | $human_size |\n"
+              fi
+            fi
+          done
+          
+          if [ -n "$VIOLATIONS" ]; then
+            MSG="### ⚠️ Large File Detected\n\nThe following files exceed the 700KB limit:\n\n| File | Size |\n|---|---|\n$VIOLATIONS\n\nPlease remove them, reduce their size, or use Git LFS."
+            
+            # Post comment to PR
+            gh pr comment ${{ github.event.pull_request.number }} --body "$(echo -e "$MSG")"
+            
+            # Fail the job
+            exit 1
+          fi
