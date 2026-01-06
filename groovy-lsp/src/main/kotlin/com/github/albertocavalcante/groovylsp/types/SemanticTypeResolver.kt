@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.types
 
 import arrow.core.Either
+import arrow.core.getOrElse
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -38,24 +39,15 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
      * @param moduleNode The module context (optional)
      * @return The resolved SemanticType, or Unknown if resolution fails
      */
-    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType = if (moduleNode != null) {
-        // Delegate to new Either-based API and fold the result
-        resolveTypeResult(node, moduleNode).fold(
-            ifLeft = { error ->
-                logger.debug("Type resolution failed, returning Unknown: {}", error.reason)
-                SemanticType.Unknown(error.reason)
-            },
-            ifRight = { type -> type },
-        )
-    } else {
-        // Fallback for cases where module is not available
-        resolveTypeResult(node).fold(
-            ifLeft = { error ->
-                logger.debug("Type resolution failed, returning Unknown: {}", error.reason)
-                SemanticType.Unknown(error.reason)
-            },
-            ifRight = { type -> type },
-        )
+    fun resolveType(node: ASTNode, moduleNode: ModuleNode?): SemanticType = (
+        if (moduleNode != null) {
+            resolveTypeResult(node, moduleNode)
+        } else {
+            resolveTypeResult(node)
+        }
+        ).getOrElse { error ->
+        logger.debug("Type resolution failed, returning Unknown: {}", error.reason)
+        SemanticType.Unknown(error.reason)
     }
 
     /**
