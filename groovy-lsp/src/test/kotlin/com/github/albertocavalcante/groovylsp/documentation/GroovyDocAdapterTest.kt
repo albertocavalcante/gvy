@@ -335,4 +335,20 @@ class GroovyDocAdapterTest {
         assertEquals("the second number", doc.params["y"])
         assertEquals("the sum of x and y", doc.returnDoc)
     }
+
+    @Test
+    fun `truncates long description without sentence ending to 100 characters`() {
+        // Create a description longer than 100 chars without sentence ending
+        val longText = "a".repeat(150)
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText(longText),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        // Summary should be truncated to 100 chars + "..."
+        assertEquals(103, doc.summary.length)
+        assertEquals("a".repeat(100) + "...", doc.summary)
+        assertEquals(longText, doc.description) // Full description preserved
+    }
 }

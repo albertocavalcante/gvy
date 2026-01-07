@@ -93,8 +93,13 @@ object GroovyDocAdapter {
             sentenceEndMatch != null -> trimmed.substring(0, sentenceEndMatch.range.first + 1).trim()
             // Only paragraph break found
             paragraphBreakIndex >= 0 -> trimmed.substring(0, paragraphBreakIndex).trim()
-            // Neither found - use entire description if short
-            else -> if (trimmed.length < SUMMARY_MAX_LENGTH) trimmed else trimmed
+            // Neither found - use entire description if short, otherwise truncate
+            else -> if (trimmed.length < SUMMARY_MAX_LENGTH) {
+                trimmed
+            } else {
+                // Truncate and return with ellipsis, don't trim it
+                return trimmed.take(SUMMARY_MAX_LENGTH) + "..."
+            }
         }
 
         // Remove trailing punctuation for consistency with regex parser
