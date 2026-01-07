@@ -8,12 +8,87 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 
+/**
+ * Result of attempting to match a Groovy AST node against a [DslAstMatcher].
+ *
+ * Implementations of [DslAstMatcher] must never throw to indicate that a node
+ * did not match; instead they return [NoMatch]. When the matcher succeeds, it
+ * returns [Match] with an optional set of named captures.
+ *
+ * ### Captures
+ *
+ * Many matcher implementations allow parts of the AST to be "captured" under
+ * a user-provided name (for example, the body of a closure or a string
+ * literal). These captures are collected into the [Match.captures] map so that
+ * callers can inspect the matched structure without re-traversing the AST.
+ *
+ * Captures are intentionally untyped (`Any`) because different matchers may
+ * store different kinds of values (AST nodes, primitive values, etc.). Callers
+ * are expected to down-cast as needed, based on the matcher configuration.
+ *
+ * ### Usage example
+ *
+ * ```kotlin
+ * val matcher: DslAstMatcher = StringLiteralMatcher(captureName = "value")
+ * when (val result = matcher.match(expression)) {
+ *     is DslMatchResult.Match -> {
+ *         val value = result.captures["value"] as? String
+ *         // handle matched string literal
+ *     }
+ *     DslMatchResult.NoMatch -> {
+ *         // expression is not a string literal
+ *     }
+ * }
+ * ```
+ */
 sealed interface DslMatchResult {
+    /**
+     * Successful match, optionally containing named [captures] produced while
+     * matching the AST.
+     */
     data class Match(val captures: Map<String, Any>) : DslMatchResult
+
+    /**
+     * Indicates that the given AST node did not satisfy the matcher.
+     *
+     * This is used instead of throwing exceptions for non-matching nodes so
+     * that matchers can be freely composed.
+     */
     data object NoMatch : DslMatchResult
 }
 
+/**
+ * Strategy interface for matching Groovy [Expression] nodes used in the
+ * semantics DSL.
+ *
+ * Concrete implementations (such as [MethodCallMatcher], [ClosureMatcher] or
+ * [StringLiteralMatcher]) encapsulate structural checks over the AST and can
+ * be combined to express higher-level patterns in the DSL.
+ *
+ * Implementations should:
+ *  * Return [DslMatchResult.NoMatch] when the given [node] does not satisfy the
+ *    matcher (for example, it is of an unexpected AST type).
+ *  * Return [DslMatchResult.Match] when the [node] matches, optionally
+ *    providing named captures for interesting sub-expressions.
+ *
+ * ### Usage example
+ *
+ * ```kotlin
+ * val matcher: DslAstMatcher =
+ *     MethodCallMatcher("foo", argumentMatchers = listOf(StringLiteralMatcher("arg")))
+ *
+ * val result = matcher.match(callExpression)
+ * if (result is DslMatchResult.Match) {
+ *     val arg = result.captures["arg"]
+ *     // work with the captured argument
+ * }
+ * ```
+ */
 interface DslAstMatcher {
+    /**
+     * Attempts to match the given [node] and returns a [DslMatchResult]
+     * describing the outcome.
+     */
     fun match(node: Expression): DslMatchResult
 }
 
