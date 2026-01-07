@@ -1,12 +1,10 @@
 package com.github.albertocavalcante.groovylsp.types
 
-import arrow.core.Either
 import arrow.core.getOrElse
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
-import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import com.github.albertocavalcante.gvy.semantics.native.GroovySemantics
 import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
+import com.github.albertocavalcante.groovylsp.documentation.SignatureFormatter
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
@@ -134,7 +135,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderMethodNode(node: MethodNode) {
         section("Method") {
-            code("groovy") { signature(node) }
+            code("groovy") { SignatureFormatter.formatMethod(node) }
             keyValue(
                 "Return Type" to (node.returnType?.nameWithoutPackage ?: "def"),
                 "Modifiers" to modifiersString(node),
@@ -150,7 +151,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderClassNode(node: ClassNode) {
         section("Class") {
-            code("groovy") { classSignature(node) }
+            code("groovy") { SignatureFormatter.formatClass(node) }
 
             if (node.methods.isNotEmpty()) {
                 section("Methods") {
@@ -198,7 +199,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderFieldNode(node: FieldNode) {
         section("Field") {
-            code("groovy") { "${node.type.nameWithoutPackage} ${node.name}" }
+            code("groovy") { SignatureFormatter.formatField(node) }
             keyValue(
                 "Type" to node.type.nameWithoutPackage,
                 "Modifiers" to modifiersString(node),
@@ -225,7 +226,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderParameter(node: Parameter) {
         section("Parameter") {
-            code("groovy") { "${node.type.nameWithoutPackage} ${node.name}" }
+            code("groovy") { SignatureFormatter.formatParameter(node) }
             node.initialExpression?.let {
                 keyValue("Default Value" to it.text)
             }
@@ -260,7 +261,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
             val methodTarget = node.nodeMetaData["targetMethod"] as? MethodNode
             if (methodTarget != null) {
                 markdown("**Resolved Target**")
-                code("groovy") { signature(methodTarget) }
+                code("groovy") { SignatureFormatter.formatMethod(methodTarget) }
                 keyValue("Owner" to (methodTarget.declaringClass?.nameWithoutPackage ?: "unknown"))
             }
         }

@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import com.github.albertocavalcante.groovyparser.ast.groovydoc.GroovydocInlineTag
+
 /**
  * Renders GroovyDoc/JavaDoc inline tags to markdown.
  *
@@ -12,7 +14,32 @@ package com.github.albertocavalcante.groovylsp.documentation
  */
 object InlineTagRenderer {
     /**
+     * Render pre-parsed inline tags from parser/core to markdown.
+     * This is the preferred method as it avoids re-parsing.
+     *
+     * @param tags The list of parsed inline tags
+     * @return Markdown-formatted text with tags rendered
+     */
+    fun renderTags(tags: List<GroovydocInlineTag>): String = tags.joinToString("") { renderTag(it) }
+
+    /**
+     * Render a single pre-parsed inline tag to markdown.
+     *
+     * @param tag The parsed inline tag
+     * @return Markdown-formatted text
+     */
+    fun renderTag(tag: GroovydocInlineTag): String = when (tag.type) {
+        GroovydocInlineTag.Type.CODE -> renderCode(tag.content)
+        GroovydocInlineTag.Type.LINK -> renderLink(tag.content)
+        GroovydocInlineTag.Type.LINKPLAIN -> renderLinkPlain(tag.content)
+        GroovydocInlineTag.Type.LITERAL -> renderLiteral(tag.content)
+        GroovydocInlineTag.Type.VALUE -> renderValue(tag.content)
+        else -> "{@${tag.tagName} ${tag.content}}" // Unknown tag, keep as-is
+    }
+
+    /**
      * Render all inline tags in the given text to markdown.
+     * This is a fallback method for cases where we don't have pre-parsed tags.
      *
      * @param text The text containing inline tags
      * @return Text with inline tags converted to markdown
