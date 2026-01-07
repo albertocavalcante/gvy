@@ -78,6 +78,7 @@ class GroovyCompilationService(
             resultMapper = resultMapper,
             ioDispatcher = ioDispatcher,
             errorHandler = errorHandler,
+            semanticDb = semanticDb,
         ),
     )
 

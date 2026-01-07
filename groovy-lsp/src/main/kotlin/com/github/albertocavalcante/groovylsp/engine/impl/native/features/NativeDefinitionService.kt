@@ -36,7 +36,13 @@ class NativeDefinitionService(
                 if (visitor == null || symbolTable == null) {
                     emptyList()
                 } else {
-                    val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
+                    val resolver = DefinitionResolver(
+                        visitor,
+                        symbolTable,
+                        compilationService,
+                        sourceNavigator,
+                        compilationService.getWorkspaceSymbolIndex(),
+                    )
                     val groovyPos = position.toGroovyPosition()
                     resolver.findDefinitionAt(uri, groovyPos)?.toUnifiedDefinition(visitor) ?: emptyList()
                 }

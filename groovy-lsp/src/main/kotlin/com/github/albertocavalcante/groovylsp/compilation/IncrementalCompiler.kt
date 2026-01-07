@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -61,6 +62,9 @@ class IncrementalCompiler(
         // Build dependency graph from compiled modules
         buildDependencyGraph(result.modules)
 
+        // Build semantic documents for cross-file symbol resolution
+        buildSemanticDocuments(result.modules)
+
         val elapsed = System.currentTimeMillis() - startTime
         logger.info(
             "Initial compilation completed in ${elapsed}ms: " +
@@ -106,6 +110,9 @@ class IncrementalCompiler(
 
         // Rebuild dependency graph from all modules
         buildDependencyGraph(result.modules)
+
+        // Rebuild semantic documents for cross-file symbol resolution
+        buildSemanticDocuments(result.modules)
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info(
@@ -172,5 +179,26 @@ class IncrementalCompiler(
 
         logger.trace("Built workspace index with ${index.size} class entries")
         return index
+    }
+
+    /**
+     * Builds semantic documents from compiled modules and populates SemanticDB.
+     * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
+     */
+    private fun buildSemanticDocuments(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>) {
+        logger.debug("Building semantic documents from ${modules.size} modules")
+
+        modules.forEach { (uri, moduleNode) ->
+            try {
+                val builder = SemanticDocumentBuilder(moduleNode, uri)
+                val semanticDoc = builder.build()
+                semanticDb.updateDocument(uri, semanticDoc)
+                logger.trace("Built semantic document for {} with {} symbols", uri, semanticDoc.symbols.size)
+            } catch (e: Exception) {
+                logger.warn("Failed to build semantic document for {}: {}", uri, e.message)
+            }
+        }
+
+        logger.info("Semantic documents built: {} files indexed", modules.size)
     }
 }

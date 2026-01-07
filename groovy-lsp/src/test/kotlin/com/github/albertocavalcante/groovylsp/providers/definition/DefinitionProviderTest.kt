@@ -191,4 +191,68 @@ class DefinitionProviderTest {
         // but should handle the request without error
         assertNotNull(definitions, "Definitions list should not be null")
     }
+
+    @Test
+    fun `test cross-file constructor call definition`() = runBlocking {
+        // Arrange - Calculator class in one file
+        val calculatorUri = URI.create("file:///Calculator.groovy")
+        val calculatorContent = """
+            package com.example
+
+            class Calculator {
+                int value = 0
+
+                int add(int a, int b) {
+                    return a + b
+                }
+
+                Calculator(int initial) {
+                    this.value = initial
+                }
+            }
+        """.trimIndent()
+
+        // Arrange - Main class in another file
+        val mainUri = URI.create("file:///Main.groovy")
+        val mainContent = """
+            package com.example
+
+            class Main {
+                void run() {
+                    Calculator calc = new Calculator(10)
+                }
+            }
+        """.trimIndent()
+
+        // Compile both files
+        // NOTE: Calculator compiles successfully
+        val calcResult = compilationService.compile(calculatorUri, calculatorContent)
+        assertTrue(calcResult.isSuccess, "Calculator compilation should succeed")
+
+        // NOTE: Main references Calculator which may not be on the classpath,
+        // but the AST is still parseable and usable for cross-file resolution
+        val mainResult = compilationService.compile(mainUri, mainContent)
+        assertNotNull(mainResult, "Main should compile (even with errors)")
+
+        // Act - Find definition of "Calculator" in "new Calculator(10)" at line 4, character 26
+        // Line 4: "        Calculator calc = new Calculator(10)"
+        //                                       ^-- char 26 is on 'C' of second Calculator
+        val definitions = definitionProvider.provideDefinitions(mainUri.toString(), Position(4, 26)).toList()
+
+        // Assert - Should find Calculator class definition in Calculator.groovy, NOT Main class
+        assertFalse(definitions.isEmpty(), "Should find definition for Calculator constructor")
+
+        val definition = definitions.first()
+        println("Definition URI: ${definition.uri}")
+        println("Definition range: ${definition.range}")
+
+        // CRITICAL: Should resolve to Calculator.groovy, NOT Main.groovy
+        assertTrue(
+            definition.uri.contains("Calculator.groovy"),
+            "Expected Calculator.groovy but got ${definition.uri}",
+        )
+
+        // Should point to Calculator class definition (line 2 in the file)
+        assertEquals(2, definition.range.start.line, "Should point to Calculator class definition")
+    }
 }
