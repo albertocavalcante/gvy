@@ -42,37 +42,37 @@ data class Documentation(
 
         val content = markdown {
             if (summary.isNotBlank()) {
-                text(summary)
+                text(InlineTagRenderer.render(summary))
             }
 
             if (description.isNotBlank() && description != summary) {
-                text(description)
+                text(InlineTagRenderer.render(description))
             }
 
             if (params.isNotEmpty()) {
                 text("**Parameters:**")
-                list(params.map { (name, desc) -> "`$name`: $desc" })
+                list(params.map { (name, desc) -> "`$name`: ${InlineTagRenderer.render(desc)}" })
             }
 
             if (returnDoc.isNotBlank()) {
-                text("**Returns:** $returnDoc")
+                text("**Returns:** ${InlineTagRenderer.render(returnDoc)}")
             }
 
             if (throws.isNotEmpty()) {
                 text("**Throws:**")
-                list(throws.map { (type, desc) -> "`$type`: $desc" })
+                list(throws.map { (type, desc) -> "`$type`: ${InlineTagRenderer.render(desc)}" })
             }
 
             if (deprecated.isNotBlank()) {
-                text("**@deprecated** $deprecated")
+                text("**@deprecated** ${InlineTagRenderer.render(deprecated)}")
             }
 
             if (since.isNotBlank()) {
-                text("**@since** $since")
+                text("**@since** ${InlineTagRenderer.render(since)}")
             }
 
             if (author.isNotBlank()) {
-                text("**@author** $author")
+                text("**@author** ${InlineTagRenderer.render(author)}")
             }
         }
 

@@ -23,44 +23,44 @@ object DocFormatter {
         return markdown {
             // Add summary and description
             if (doc.summary.isNotBlank()) {
-                text(doc.summary)
+                text(InlineTagRenderer.render(doc.summary))
             }
 
             if (doc.description.isNotBlank() && doc.description != doc.summary) {
-                text(doc.description)
+                text(InlineTagRenderer.render(doc.description))
             }
 
             // Add deprecated notice
             if (doc.deprecated.isNotBlank()) {
-                text("**Deprecated**: ${doc.deprecated}")
+                text("**Deprecated**: ${InlineTagRenderer.render(doc.deprecated)}")
             }
 
             // Add parameters
             if (includeParams && doc.params.isNotEmpty()) {
                 text("**Parameters:**")
-                list(doc.params.entries.map { (name, desc) -> "`$name`: $desc" })
+                list(doc.params.entries.map { (name, desc) -> "`$name`: ${InlineTagRenderer.render(desc)}" })
             }
 
             // Add return documentation
             if (includeReturn && doc.returnDoc.isNotBlank()) {
-                text("**Returns:** ${doc.returnDoc}")
+                text("**Returns:** ${InlineTagRenderer.render(doc.returnDoc)}")
             }
 
             // Add throws/exceptions
             if (doc.throws.isNotEmpty()) {
                 text("**Throws:**")
-                list(doc.throws.entries.map { (exception, desc) -> "`$exception`: $desc" })
+                list(doc.throws.entries.map { (exception, desc) -> "`$exception`: ${InlineTagRenderer.render(desc)}" })
             }
 
             // Add since
             if (doc.since.isNotBlank()) {
-                text("**Since:** ${doc.since}")
+                text("**Since:** ${InlineTagRenderer.render(doc.since)}")
             }
 
             // Add see references
             if (doc.see.isNotEmpty()) {
                 text("**See:**")
-                list(doc.see)
+                list(doc.see.map { InlineTagRenderer.render(it) })
             }
         }
     }
@@ -72,10 +72,11 @@ object DocFormatter {
      * @return Brief summary text
      */
     fun formatSummary(doc: Documentation): String = when {
-        doc.summary.isNotBlank() -> doc.summary
+        doc.summary.isNotBlank() -> InlineTagRenderer.render(doc.summary)
         doc.description.isNotBlank() -> {
             // Take first sentence of description
-            doc.description.split(Regex("""[.?!]\s+""")).firstOrNull()?.trim() ?: doc.description
+            val firstSentence = doc.description.split(Regex("""[.?!]\s+""")).firstOrNull()?.trim() ?: doc.description
+            InlineTagRenderer.render(firstSentence)
         }
 
         else -> ""
@@ -88,5 +89,8 @@ object DocFormatter {
      * @param paramName The parameter name
      * @return Parameter documentation or empty string
      */
-    fun getParamDoc(doc: Documentation, paramName: String): String = doc.params[paramName] ?: ""
+    fun getParamDoc(doc: Documentation, paramName: String): String {
+        val paramDoc = doc.params[paramName] ?: ""
+        return if (paramDoc.isNotBlank()) InlineTagRenderer.render(paramDoc) else ""
+    }
 }
