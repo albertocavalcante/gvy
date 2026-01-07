@@ -1,10 +1,12 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
-import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
-import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.testContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 
 class ClosureExpressionCalculatorTest {
@@ -17,7 +19,7 @@ class ClosureExpressionCalculatorTest {
     fun `returns Closure type for ClosureExpression`() {
         val calculator = ClosureExpressionCalculator()
 
-        val result = calculator.calculate(ClosureExpression(), mockContext())
+        val result = calculator.calculate(ClosureExpression(), testContext())
 
         assertEquals(TypeConstants.CLOSURE, result)
     }
@@ -26,22 +28,39 @@ class ClosureExpressionCalculatorTest {
     fun `returns null for non-closure nodes`() {
         val calculator = ClosureExpressionCalculator()
 
-        val result = calculator.calculate(NotAClosure(), mockContext())
+        val result = calculator.calculate(NotAClosure(), testContext())
 
         assertNull(result)
     }
 
-    private fun mockContext(): TypeContext = object : TypeContext {
-        override fun resolveType(fqn: String) = SemanticType.Unknown("Mock")
-        override fun calculateType(node: Any) = SemanticType.Unknown("Mock")
-        override fun lookupSymbol(name: String) = null
-        override fun getMethodReturnType(
-            receiverType: SemanticType,
-            methodName: String,
-            argumentTypes: List<SemanticType>,
-        ) = null
+    // Tests for Either-based calculateResult method
 
-        override fun getFieldType(receiverType: SemanticType, fieldName: String) = null
-        override val isStaticCompilation = false
+    @Test
+    fun `calculateResult should return Right with Closure type for ClosureExpression`() {
+        val calculator = ClosureExpressionCalculator()
+        val node = ClosureExpression()
+
+        val result = calculator.calculateResult(node, testContext())
+
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(TypeConstants.CLOSURE, type) },
+        )
+    }
+
+    @Test
+    fun `calculateResult should return Left with UnsupportedNode for non-closure nodes`() {
+        val calculator = ClosureExpressionCalculator()
+        val node = NotAClosure()
+
+        val result = calculator.calculateResult(node, testContext())
+
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.UnsupportedNode)
+                assertTrue(error.reason.contains("NotAClosure"))
+            },
+            ifRight = { fail("Expected Left but got Right($it)") },
+        )
     }
 }
