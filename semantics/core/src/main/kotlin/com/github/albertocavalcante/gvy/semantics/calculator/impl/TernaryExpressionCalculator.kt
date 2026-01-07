@@ -1,10 +1,15 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import kotlin.reflect.KClass
 
 /**
@@ -16,13 +21,27 @@ class TernaryExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        val trueExpr = ReflectionAccess.getProperty(node, "trueExpression") ?: return null
-        val falseExpr = ReflectionAccess.getProperty(node, "falseExpression") ?: return null
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
 
-        val trueType = context.calculateType(trueExpr)
-        val falseType = context.calculateType(falseExpr)
+    override fun calculateResult(node: Any, context: TypeContext): TypeResult {
+        val trueExpr = ReflectionAccess.getProperty(node, "trueExpression")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing trueExpression)",
+            ).left()
+        val falseExpr = ReflectionAccess.getProperty(node, "falseExpression")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing falseExpression)",
+            ).left()
 
-        return TypeLub.lub(trueType, falseType)
+        val trueType = when (val result = context.calculateTypeResult(trueExpr)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value
+        }
+        val falseType = when (val result = context.calculateTypeResult(falseExpr)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value
+        }
+
+        return TypeLub.lub(trueType, falseType).right()
     }
 }
