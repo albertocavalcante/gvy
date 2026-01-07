@@ -32,6 +32,8 @@ import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -188,13 +190,31 @@ class GroovyLanguageServer(
 
         savedInitParams = params
         clientCapabilities = params.capabilities
-        @Suppress("UNCHECKED_CAST")
-        savedInitOptionsMap = params.initializationOptions as? Map<String, Any>
+
+        savedInitOptionsMap = parseInitOptions(params.initializationOptions)
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult()
 
         logger.info("LSP initialized - ready for requests")
         return CompletableFuture.completedFuture(initializeResult)
+    }
+
+    private fun parseInitOptions(options: Any?): Map<String, Any> {
+        if (options == null) return emptyMap()
+        if (options is Map<*, *>) {
+            @Suppress("UNCHECKED_CAST")
+            return options as Map<String, Any>
+        }
+        if (options is JsonObject) {
+            return runCatching {
+                @Suppress("UNCHECKED_CAST")
+                Gson().fromJson(options, Map::class.java) as Map<String, Any>
+            }.onFailure {
+                logger.warn("Failed to parse JsonObject initialization options", it)
+            }.getOrDefault(emptyMap())
+        }
+        logger.warn("Unknown initialization options type: {}", options.javaClass.name)
+        return emptyMap()
     }
 
     override fun initialized(params: InitializedParams) {

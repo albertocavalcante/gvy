@@ -100,6 +100,8 @@ class WorkspaceManager {
             existingStandardDirs.forEach(sourceRoots::add)
         } else {
             // Jenkins Shared Library structure: bare src/ directory
+            // TODO(#701): Improve heuristics for detecting source roots in Light Mode
+            //   See: https://github.com/albertocavalcante/gvy/issues/701
             val bareSrcDir = rootPath.resolve("src")
             if (Files.exists(bareSrcDir) && Files.isDirectory(bareSrcDir)) {
                 sourceRoots.add(bareSrcDir)

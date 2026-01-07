@@ -62,7 +62,13 @@ class DefinitionProvider(
         val documentUri = parseUriOrReport(uri) ?: return@flow
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
-        val resolver = DefinitionResolver(context.visitor, context.symbolTable, compilationService, sourceNavigator)
+        val resolver = DefinitionResolver(
+            context.visitor,
+            context.symbolTable,
+            compilationService,
+            sourceNavigator,
+            compilationService.getWorkspaceSymbolIndex(),
+        )
 
         // Find the origin node at the position
         val originNode = context.visitor.getNodeAt(documentUri, position.toGroovyPosition())
@@ -143,7 +149,13 @@ class DefinitionProvider(
         val visitor = compilationService.getAstModel(documentUri) ?: return@flow
         val symbolTable = compilationService.getSymbolTable(documentUri) ?: return@flow
 
-        val resolver = DefinitionResolver(visitor, symbolTable, compilationService, sourceNavigator)
+        val resolver = DefinitionResolver(
+            visitor,
+            symbolTable,
+            compilationService,
+            sourceNavigator,
+            compilationService.getWorkspaceSymbolIndex(),
+        )
         val targets = resolver.findTargetsAt(documentUri, position.toGroovyPosition(), targetKinds)
 
         // Convert each target to Location and emit
@@ -202,8 +214,13 @@ class DefinitionProvider(
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
         context: DefinitionContext,
     ) {
-        val resolver =
-            DefinitionResolver(context.visitor, context.symbolTable, compilationService, sourceNavigator)
+        val resolver = DefinitionResolver(
+            context.visitor,
+            context.symbolTable,
+            compilationService,
+            sourceNavigator,
+            compilationService.getWorkspaceSymbolIndex(),
+        )
         var definitionFound = false
         try {
             val result = resolver.findDefinitionAt(documentUri, position)

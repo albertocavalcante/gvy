@@ -230,6 +230,8 @@ class ProjectStartupManager(
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
 
+        // TODO(#700): Decouple Jenkins support into a ProjectStrategy
+        //   See: https://github.com/albertocavalcante/gvy/issues/700
         // Setup Jenkins integration
         val jenkinsPluginManager = JenkinsPluginManager()
         val jenkinsMetadataService = JenkinsMetadataService(jenkinsPluginManager, config.jenkinsConfig)

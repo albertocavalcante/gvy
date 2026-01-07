@@ -314,4 +314,77 @@ class SemanticDBResolutionStrategyTest {
             },
         )
     }
+
+    @Test
+    fun `should resolve most specific occurrence when ranges overlap`() = runBlocking {
+        // Given: Target class (Calculator)
+        val targetDoc = SemanticDocument(
+            uri = targetUri,
+            symbols = listOf(
+                SymbolInfo(
+                    symbol = "test/Target#",
+                    kind = SymbolKind.CLASS,
+                    range = Range(0, 0, 0, 12),
+                    name = "Target",
+                    owner = null,
+                ),
+            ),
+            occurrences = listOf(
+                SymbolOccurrence(
+                    symbol = "test/Target#",
+                    range = Range(0, 0, 0, 12),
+                    role = OccurrenceRole.DEFINITION,
+                ),
+            ),
+        )
+        semanticDb.updateDocument(targetUri, targetDoc)
+
+        // And: Source file with overlapping occurrences (Class covers Method Call)
+        val sourceDoc = SemanticDocument(
+            uri = sourceUri,
+            symbols = listOf(
+                SymbolInfo(
+                    symbol = "test/Source#",
+                    kind = SymbolKind.CLASS,
+                    range = Range(0, 0, 10, 0),
+                    name = "Source",
+                    owner = null,
+                ),
+            ),
+            occurrences = listOf(
+                // 1. Broad occurrence (Class definition) - covers the whole file
+                SymbolOccurrence(
+                    symbol = "test/Source#",
+                    range = Range(0, 0, 10, 0),
+                    role = OccurrenceRole.DEFINITION,
+                ),
+                // 2. Specific occurrence (Constructor call) - nested inside
+                SymbolOccurrence(
+                    symbol = "test/Target#", // Constructor usually resolves to class symbol or <init>
+                    range = Range(5, 4, 5, 20),
+                    role = OccurrenceRole.CALL,
+                ),
+            ),
+        )
+        semanticDb.updateDocument(sourceUri, sourceDoc)
+
+        // When: Resolving at the call site (inside both ranges)
+        val context = ResolutionContext(
+            targetNode = createDummyClassNode(),
+            documentUri = sourceUri,
+            position = Position(5, 10),
+        )
+        val result = strategy.resolve(context)
+
+        // Then: Should resolve to the Target (specific), NOT Source (broad)
+        result.fold(
+            ifLeft = { error -> throw AssertionError("Expected Right, got Left: ${error.source} - ${error.reason}") },
+            ifRight = { definitionResult ->
+                assertInstanceOf(DefinitionResolver.DefinitionResult.Binary::class.java, definitionResult)
+                val binaryResult = definitionResult as DefinitionResolver.DefinitionResult.Binary
+                assertEquals(targetUri.toString(), binaryResult.uri.toString())
+                assertEquals("Target", binaryResult.name)
+            },
+        )
+    }
 }

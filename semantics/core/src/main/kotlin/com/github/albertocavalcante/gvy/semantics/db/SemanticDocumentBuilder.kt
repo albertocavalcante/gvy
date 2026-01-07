@@ -10,6 +10,8 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -281,18 +283,62 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
     /**
      * Visitor for extracting occurrences (references, calls, etc.)
+     * Tracks local variable types to correctly attribute method/property accesses to external types.
      */
     private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
 
+        // Track variable names to their declared types (e.g., "calc" -> Calculator ClassNode)
+        private val localVariableTypes = mutableMapOf<String, ClassNode>()
+
         override fun getSourceUnit(): SourceUnit? = null
+
+        override fun visitDeclarationExpression(expression: DeclarationExpression) {
+            // Track the declared type of local variables
+            // For "Calculator calc = new Calculator()", store "calc" -> Calculator type
+            val varExpr = expression.variableExpression
+            val declaredType = varExpr.type
+            // Only track if the declared type is meaningful (not Object)
+            if (declaredType.name != "java.lang.Object" && declaredType.name != "Object") {
+                localVariableTypes[varExpr.name] = declaredType
+            }
+            super.visitDeclarationExpression(expression)
+        }
+
+        private fun resolveTypeName(type: ClassNode): String {
+            // If already fully qualified (contains dots), just use it
+            if (type.name.contains(".")) {
+                return type.name.replace('.', '/')
+            }
+
+            // Try redirect (might point to FQN)
+            if (type.redirect() != type && type.redirect().name.contains(".")) {
+                return type.redirect().name.replace('.', '/')
+            }
+
+            // Fallback: prepend current package if available
+            // Fallback: prepend current package if available
+            val packageName = moduleNode.packageName
+            if (!packageName.isNullOrEmpty()) {
+                val pkgPath = packageName.replace('.', '/')
+                return if (pkgPath.endsWith("/")) {
+                    "${pkgPath}${type.name}"
+                } else {
+                    "$pkgPath/${type.name}"
+                }
+            }
+
+            return type.name
+        }
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             val range = nodeToRange(call) ?: return super.visitMethodCallExpression(call)
 
-            // For now, create a simple symbol ID for the method call
-            // In a more sophisticated implementation, we'd resolve the actual method
+            // Resolve the receiver type to get the correct owner class
+            // For "calc.add()", use Calculator (from localVariableTypes) not Main
+            val receiverType = resolveReceiverType(call.objectExpression)
             val methodName = call.methodAsString
-            val symbolId = "${currentClass.name}#$methodName()."
+            val ownerName = receiverType ?: currentClass.name
+            val symbolId = "${ownerName.replace('.', '/')}#$methodName()."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -309,7 +355,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(call) ?: return super.visitConstructorCallExpression(call)
 
             // Create symbol ID for constructor call
-            val symbolId = "${call.type.name}#<init>()."
+            val typeName = resolveTypeName(call.type)
+            // Use class symbol ID to resolve to the class definition
+            // TODO: Support precise constructor resolution with parameters
+            val symbolId = "$typeName#"
 
             occurrences.add(
                 SymbolOccurrence(
@@ -326,7 +375,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(expression) ?: return super.visitVariableExpression(expression)
 
             // Variable reference
-            val symbolId = "${currentClass.name}#${expression.name}"
+            // Use resolveTypeName for consistency, though currentClass.name is usually FQN
+            val className = resolveTypeName(currentClass)
+            val symbolId = "$className#${expression.name}."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -342,9 +393,12 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitPropertyExpression(expression: PropertyExpression) {
             val range = nodeToRange(expression) ?: return super.visitPropertyExpression(expression)
 
-            // Property/field access
+            // Resolve the receiver type for property access
+            // For "calc.value", use Calculator (from localVariableTypes) not Main
+            val receiverType = resolveReceiverType(expression.objectExpression)
             val propertyName = expression.propertyAsString
-            val symbolId = "${currentClass.name}#$propertyName."
+            val ownerName = receiverType ?: currentClass.name
+            val symbolId = "${ownerName.replace('.', '/')}#$propertyName."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -355,6 +409,30 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             )
 
             super.visitPropertyExpression(expression)
+        }
+
+        /**
+         * Resolve the type of the receiver expression.
+         * Uses local variable type tracking from DeclarationExpressions.
+         * Returns the class name, or null to use current class as fallback.
+         */
+        private fun resolveReceiverType(receiver: Expression): String? {
+            // Check if the receiver is a variable with a tracked declared type
+            if (receiver is VariableExpression) {
+                localVariableTypes[receiver.name]?.let { return it.name }
+            }
+
+            // Fallback to expression type (usually Object for unresolved)
+            val exprType = receiver.type
+            return when {
+                exprType == null -> null
+                exprType.name == "java.lang.Object" -> null
+                exprType.name == "Object" -> null
+                exprType.name.contains("$") -> null // Synthetic
+                exprType.name == currentClass.name -> null // Same class, use default
+                exprType.name.isNotEmpty() -> exprType.name
+                else -> null
+            }
         }
     }
 
