@@ -33,9 +33,16 @@ class ListExpressionCalculator : TypeCalculator<Any> {
             return SemanticType.Known("java.util.ArrayList", listOf(TypeConstants.OBJECT)).right()
         }
 
-        val elementTypes = expressions.map { context.calculateType(it) }
-        val lub = TypeLub.lub(elementTypes)
+        // Traverse pattern: collect all results, short-circuit on first error
+        val elementTypes = mutableListOf<SemanticType>()
+        for (expr in expressions) {
+            when (val result = context.calculateTypeResult(expr)) {
+                is arrow.core.Either.Left -> return result
+                is arrow.core.Either.Right -> elementTypes.add(result.value)
+            }
+        }
 
+        val lub = TypeLub.lub(elementTypes)
         return SemanticType.Known("java.util.ArrayList", listOf(lub)).right()
     }
 
