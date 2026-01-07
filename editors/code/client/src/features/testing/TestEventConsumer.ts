@@ -168,4 +168,28 @@ export class TestEventConsumer {
                 break;
         }
     }
+
+    // TODO(#715): These helpers are for hacky Maven support.
+    // Proper implementation should parse Surefire XML reports.
+
+    /**
+     * Get all registered test items.
+     */
+    public getAllRegisteredItems(): vscode.TestItem[] {
+        return Array.from(this.testItems.values());
+    }
+
+    /**
+     * Mark a test as passed.
+     */
+    public markPassed(item: vscode.TestItem): void {
+        this.run.passed(item);
+    }
+
+    /**
+     * Mark a test as failed with a message.
+     */
+    public markFailed(item: vscode.TestItem, message: string): void {
+        this.run.failed(item, new vscode.TestMessage(message));
+    }
 }

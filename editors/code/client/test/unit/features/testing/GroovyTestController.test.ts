@@ -66,6 +66,7 @@ describe('GroovyTestController', () => {
             },
             window: {
                 showErrorMessage: sandbox.stub(),
+                showWarningMessage: sandbox.stub(),
             },
             workspace: {
                 workspaceFolders: [{
@@ -73,6 +74,18 @@ describe('GroovyTestController', () => {
                     name: 'test-workspace',
                     index: 0,
                 }],
+                // Mock getWorkspaceFolder to return undefined for external URIs
+                getWorkspaceFolder: sandbox.stub().callsFake((uri: any) => {
+                    const uriStr = uri.toString();
+                    if (uriStr.startsWith('file:///workspace')) {
+                        return {
+                            uri: { toString: () => 'file:///workspace' },
+                            name: 'test-workspace',
+                            index: 0,
+                        };
+                    }
+                    return undefined; // External file
+                }),
             },
             TestRunProfileKind: {
                 Run: 1,
@@ -130,7 +143,7 @@ describe('GroovyTestController', () => {
     });
 
     describe('runTestCommand with external files', () => {
-        it('should create on-the-fly test item for external file when test is not found', async () => {
+        it('should show warning for external file and not run test', async () => {
             // Arrange
             controller = new GroovyTestController(
                 contextMock,
@@ -157,29 +170,17 @@ describe('GroovyTestController', () => {
             await runTestHandler(args);
 
             // Assert
-            // Should NOT show error message since we create the item on-the-fly
+            // Should show warning message for external file (TODO #714)
             assert.ok(
-                vscodeMock.window.showErrorMessage.notCalled,
-                'Should not show error message when external test is run'
+                vscodeMock.window.showWarningMessage.calledOnce,
+                'Should show warning message for external file'
             );
 
-            // Should have called runTests with the created test item
+            // Should NOT run tests for external files
             assert.ok(
-                executionServiceMock.runTests.calledOnce,
-                'Should call runTests once'
+                executionServiceMock.runTests.notCalled,
+                'Should not attempt to run tests for external file'
             );
-
-            const runTestsCall = executionServiceMock.runTests.firstCall;
-            const request = runTestsCall.args[0];
-
-            // Verify the request contains a test item
-            assert.ok(request.include, 'Request should have include array');
-            assert.strictEqual(request.include.length, 1, 'Should have one test item');
-
-            const testItem = request.include[0];
-            assert.ok(testItem, 'Test item should be created');
-            assert.strictEqual(testItem.label, testName, 'Test item label should match test name');
-            assert.strictEqual(testItem.uri.toString(), externalUri, 'Test item URI should match external file URI');
         });
 
         it('should use existing test item if found in workspace', async () => {
@@ -268,8 +269,8 @@ describe('GroovyTestController', () => {
             );
         });
 
-        it('should preserve other test suites when updating suite with different URI', async () => {
-            // Regression test for bug where ctrl.items.replace([suiteItem]) wiped all test suites
+        it('should preserve test suites when external file triggers warning', async () => {
+            // Ensure external file warning doesn't affect existing workspace test suites
             // Arrange
             controller = new GroovyTestController(
                 contextMock,
@@ -285,7 +286,6 @@ describe('GroovyTestController', () => {
             const externalTestName = 'external test method';
 
             // Pre-populate test tree with two workspace suites
-            // Note: external test is NOT in discovery results (it's external to workspace)
             testServiceMock.discoverTestsInWorkspace.resolves([
                 {
                     uri: workspaceUri,
@@ -304,19 +304,18 @@ describe('GroovyTestController', () => {
                 await testControllerMock.resolveHandler(undefined);
             }
 
-            // Verify both suites exist before running external test
+            // Verify both suites exist before attempting external test
             const suiteABefore = testControllerMock.items.get(suiteAName);
             const suiteBBefore = testControllerMock.items.get(suiteBName);
-            assert.ok(suiteABefore, 'Suite A should exist before external test run');
-            assert.ok(suiteBBefore, 'Suite B should exist before external test run');
-            assert.strictEqual(suiteABefore.uri.toString(), workspaceUri, 'Suite A should have workspace URI initially');
+            assert.ok(suiteABefore, 'Suite A should exist before external test attempt');
+            assert.ok(suiteBBefore, 'Suite B should exist before external test attempt');
+            assert.strictEqual(suiteABefore.uri.toString(), workspaceUri, 'Suite A should have workspace URI');
 
-            // Run test from external file with same suite name but different test name
-            // This simulates clicking "Run Test" on an external file that wasn't discovered
+            // Try to run test from external file
             const args = {
                 uri: externalUri,
                 suite: suiteAName,
-                test: externalTestName, // Different test, so won't be found
+                test: externalTestName,
             };
 
             const registerCommandCalls = vscodeMock.commands.registerCommand.getCalls();
@@ -326,26 +325,29 @@ describe('GroovyTestController', () => {
             // Act
             await runTestHandler(args);
 
-            // Assert - Suite B should still exist (regression check for the bug)
-            const suiteBAfter = testControllerMock.items.get(suiteBName);
+            // Assert - Should show warning for external file
             assert.ok(
-                suiteBAfter,
-                'Suite B should still exist after running external test for Suite A (bug would have wiped this)'
+                vscodeMock.window.showWarningMessage.calledOnce,
+                'Should show warning for external file'
             );
 
-            // Suite A should have updated URI
+            // Both suites should still exist (warning should not modify test tree)
             const suiteAAfter = testControllerMock.items.get(suiteAName);
-            assert.ok(suiteAAfter, 'Suite A should still exist');
+            const suiteBAfter = testControllerMock.items.get(suiteBName);
+            assert.ok(suiteAAfter, 'Suite A should still exist after external file warning');
+            assert.ok(suiteBAfter, 'Suite B should still exist after external file warning');
+
+            // Suite A should retain original workspace URI
             assert.strictEqual(
                 suiteAAfter.uri.toString(),
-                externalUri,
-                'Suite A URI should be updated to external file'
+                workspaceUri,
+                'Suite A URI should remain unchanged'
             );
 
-            // Execution should have succeeded
+            // Should NOT have run any tests
             assert.ok(
-                executionServiceMock.runTests.calledOnce,
-                'Should have executed the external test'
+                executionServiceMock.runTests.notCalled,
+                'Should not run tests for external file'
             );
         });
     });

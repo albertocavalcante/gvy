@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GradleExecutionService } from './GradleExecutionService';
+import { ITestExecutionService } from './ITestExecutionService';
 import { TestService, TestSuite, Test } from './TestService';
 import { CoverageService } from './CoverageService';
 
@@ -8,7 +8,8 @@ export class GroovyTestController {
 
   constructor(
     context: vscode.ExtensionContext,
-    private readonly executionService: GradleExecutionService,
+    // TODO(#715): Using interface for hacky Maven support
+    private readonly executionService: ITestExecutionService,
     private readonly testService?: TestService,
     private readonly coverageService?: CoverageService,
   ) {
@@ -46,13 +47,13 @@ export class GroovyTestController {
       false,
     );
 
-    // Coverage profile requires CoverageService
-    if (this.coverageService) {
+    // Coverage profile requires CoverageService and execution service support
+    if (this.coverageService && this.executionService.runTestsWithCoverage) {
       this.ctrl.createRunProfile(
         'Run with Coverage',
         vscode.TestRunProfileKind.Coverage,
         (request, token) =>
-          this.executionService.runTestsWithCoverage(
+          this.executionService.runTestsWithCoverage!(
             request,
             token,
             this.ctrl,
@@ -165,6 +166,13 @@ export class GroovyTestController {
     return parts[parts.length - 1];
   }
 
+  /**
+   * Check if a URI is within the current workspace.
+   */
+  private isInWorkspace(uriString: string): boolean {
+    const uri = vscode.Uri.parse(uriString);
+    return vscode.workspace.getWorkspaceFolder(uri) !== undefined;
+  }
 
   // Unified command handler
   private async runTestCommand(args: { suite: string; test: string; uri?: string }, debug: boolean) {
@@ -175,6 +183,16 @@ export class GroovyTestController {
     }
     if (!args.test || args.test.trim() === '') {
       vscode.window.showErrorMessage('Test name cannot be empty');
+      return;
+    }
+
+    // Check if file is outside workspace - cannot run tests from external projects
+    // TODO(#714): Support external file test execution by detecting their project root
+    if (args.uri && !this.isInWorkspace(args.uri)) {
+      vscode.window.showWarningMessage(
+        'Cannot run test: file is outside the current workspace. ' +
+        'Open the file\'s project folder to run its tests.'
+      );
       return;
     }
 
