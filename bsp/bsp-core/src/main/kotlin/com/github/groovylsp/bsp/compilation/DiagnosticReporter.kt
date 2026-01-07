@@ -67,9 +67,10 @@ class DiagnosticReporter {
      * @param params Diagnostic parameters including file URI and diagnostics
      */
     fun report(params: PublishDiagnosticsParams) {
-        // Update history
+        // Update history - handle null diagnostics from BSP4J
         val uri = params.textDocument.uri
-        history[uri] = params.diagnostics.toMutableList()
+        val diagnostics = params.diagnostics ?: emptyList()
+        history[uri] = diagnostics.toMutableList()
 
         // Broadcast to observers
         // NOTE: CopyOnWriteArrayList allows safe iteration even if
@@ -82,7 +83,7 @@ class DiagnosticReporter {
             }
         }
 
-        logger.debug("Reported ${params.diagnostics.size} diagnostics for $uri")
+        logger.debug("Reported ${diagnostics.size} diagnostics for $uri")
     }
 
     /**

@@ -11,6 +11,8 @@ import com.github.groovylsp.bsp.client.BspCapabilities
 import com.github.groovylsp.bsp.client.BuildServerConnection
 import com.github.groovylsp.bsp.client.ConnectionConfig
 import com.github.groovylsp.bsp.model.BuildTargetCache
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.slf4j.LoggerFactory
@@ -139,7 +141,14 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         // Give the server a moment to start up
         // NOTE: Small delay to ensure server is ready for initialization
         //   Most servers are ready immediately, but some need a brief moment
-        kotlinx.coroutines.delay(config.serverStartupDelayMs)
+        //   Ensure process cleanup if coroutine is cancelled during delay
+        try {
+            delay(config.serverStartupDelayMs)
+        } catch (e: CancellationException) {
+            logger.warn("BSP connection cancelled during startup delay, cleaning up process")
+            process.destroyForcibly()
+            throw e
+        }
 
         logger.info("BSP server process started (PID: ${process.pid()})")
 

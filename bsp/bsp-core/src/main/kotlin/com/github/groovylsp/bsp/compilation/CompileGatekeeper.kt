@@ -5,6 +5,7 @@ import ch.epfl.scala.bsp4j.CompileResult
 import kotlinx.coroutines.CompletableDeferred
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Prevents duplicate compilation requests using Bloop's deduplication pattern.
@@ -37,11 +38,11 @@ object CompileGatekeeper {
      * Active compilation state shared between subscribers.
      *
      * @property deferred Completes with the compilation result when done
-     * @property observers Callbacks invoked for each compilation event
+     * @property observers Thread-safe list of callbacks invoked for each compilation event
      */
     data class RunningCompilation(
         val deferred: CompletableDeferred<CompileResult>,
-        val observers: MutableList<(CompilationEvent) -> Unit>,
+        val observers: CopyOnWriteArrayList<(CompilationEvent) -> Unit>,
     )
 
     /**
@@ -68,30 +69,31 @@ object CompileGatekeeper {
         compile: suspend () -> CompileResult,
         onEvent: (CompilationEvent) -> Unit,
     ): CompileResult {
-        // Try to join existing compilation
-        val existing = runningCompilations[inputs]
-        if (existing != null) {
-            logger.debug("Joining existing compilation: $inputs")
-            existing.observers.add(onEvent)
-            return existing.deferred.await()
+        // Atomically check-and-register to prevent race condition
+        // computeIfAbsent ensures only one thread creates the RunningCompilation
+        val running = runningCompilations.computeIfAbsent(inputs) {
+            logger.debug("Starting new compilation: $inputs")
+            val deferred = CompletableDeferred<CompileResult>()
+            val observers = CopyOnWriteArrayList<(CompilationEvent) -> Unit>()
+            observers.add(onEvent)
+            RunningCompilation(deferred, observers)
         }
 
-        // Start new compilation
-        logger.debug("Starting new compilation: $inputs")
-        val deferred = CompletableDeferred<CompileResult>()
-        val observers = mutableListOf(onEvent)
-        val running = RunningCompilation(deferred, observers)
+        // If we joined an existing compilation, add our observer
+        if (!running.observers.contains(onEvent)) {
+            logger.debug("Joining existing compilation: $inputs")
+            running.observers.add(onEvent)
+            return running.deferred.await()
+        }
 
-        // Register before starting to catch early joiners
-        runningCompilations[inputs] = running
-
+        // We created the compilation, so we run it
         return try {
             // Broadcast wrapper that notifies all observers
             val result = compile()
-            deferred.complete(result)
+            running.deferred.complete(result)
             result
         } catch (e: Exception) {
-            deferred.completeExceptionally(e)
+            running.deferred.completeExceptionally(e)
             throw e
         } finally {
             // Clean up registration
@@ -112,9 +114,8 @@ object CompileGatekeeper {
      */
     fun broadcastEvent(inputs: UniqueCompileInputs, event: CompilationEvent) {
         val running = runningCompilations[inputs] ?: return
-        // NOTE: Using toList() to avoid ConcurrentModificationException
-        //   if an observer modifies the list during iteration
-        running.observers.toList().forEach { observer ->
+        // NOTE: CopyOnWriteArrayList allows safe concurrent iteration
+        running.observers.forEach { observer ->
             try {
                 observer(event)
             } catch (e: Exception) {

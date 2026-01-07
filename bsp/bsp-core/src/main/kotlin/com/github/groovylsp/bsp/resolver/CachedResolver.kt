@@ -42,19 +42,29 @@ class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolve
     private var cachedVersion: Long = -1L
 
     override val classpath: Set<ClassPathEntry>
-        get() = lock.read {
-            if (shouldInvalidateCache()) {
-                refreshCache()
+        get() {
+            // Fast path: check with read lock
+            lock.read {
+                if (!shouldInvalidateCache()) {
+                    return cachedClasspath!!
+                }
             }
-            cachedClasspath!!
+            // Slow path: refresh with write lock
+            refreshCache()
+            return lock.read { cachedClasspath!! }
         }
 
     override val buildScriptClasspath: Set<Path>
-        get() = lock.read {
-            if (shouldInvalidateCache()) {
-                refreshCache()
+        get() {
+            // Fast path: check with read lock
+            lock.read {
+                if (!shouldInvalidateCache()) {
+                    return cachedBuildScriptClasspath!!
+                }
             }
-            cachedBuildScriptClasspath!!
+            // Slow path: refresh with write lock
+            refreshCache()
+            return lock.read { cachedBuildScriptClasspath!! }
         }
 
     override val currentBuildFileVersion: Long
@@ -77,12 +87,12 @@ class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolve
     /**
      * Refreshes the cache by querying the delegate resolver.
      *
-     * This method upgrades from a read lock to a write lock, checks again
-     * if invalidation is needed (double-checked locking pattern), and
-     * updates the cached values.
+     * Uses double-checked locking pattern: checks if invalidation is needed
+     * after acquiring write lock (another thread may have refreshed between
+     * the read lock check and acquiring the write lock).
      *
-     * NOTE: Must be called within a read lock, which will be temporarily
-     * released to acquire a write lock.
+     * NOTE: This method acquires a write lock and should not be called
+     * from within any other lock.
      */
     private fun refreshCache() {
         lock.write {
