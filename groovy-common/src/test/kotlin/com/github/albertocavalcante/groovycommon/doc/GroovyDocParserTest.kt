@@ -1,10 +1,5 @@
 package com.github.albertocavalcante.groovycommon.doc
 
-import com.github.albertocavalcante.groovycommon.doc.GroovyDoc
-import com.github.albertocavalcante.groovycommon.doc.GroovyDocParser
-import com.github.albertocavalcante.groovycommon.doc.ParamTag
-import com.github.albertocavalcante.groovycommon.doc.SeeTag
-import com.github.albertocavalcante.groovycommon.doc.ThrowsTag
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull

@@ -123,11 +123,12 @@ object GroovyDocAdapter {
             // Only paragraph break found
             paragraphBreakIndex >= 0 -> trimmed.substring(0, paragraphBreakIndex).trim()
             // Neither found - use entire description if short, otherwise truncate
-            else -> if (trimmed.length < SUMMARY_MAX_LENGTH) {
+            else -> {
+                if (trimmed.length >= SUMMARY_MAX_LENGTH) {
+                    // Truncate and return with ellipsis, don't trim it
+                    return trimmed.take(SUMMARY_MAX_LENGTH) + "..."
+                }
                 trimmed
-            } else {
-                // Truncate and return with ellipsis, don't trim it
-                return trimmed.take(SUMMARY_MAX_LENGTH) + "..."
             }
         }
 

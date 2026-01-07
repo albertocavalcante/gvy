@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.GenericsType
@@ -39,21 +40,7 @@ object SignatureFormatter {
      */
     fun formatMethod(method: MethodNode, options: Options = Options()): String = buildString {
         // Annotations
-        if (options.showAnnotations && method.annotations.isNotEmpty()) {
-            method.annotations.forEach { annotation ->
-                append("@${annotation.classNode.nameWithoutPackage}")
-                if (annotation.members.isNotEmpty()) {
-                    append("(")
-                    append(
-                        annotation.members.entries.joinToString(", ") { (key, value) ->
-                            "$key = ${value.text}"
-                        },
-                    )
-                    append(")")
-                }
-                append("\n")
-            }
-        }
+        appendAnnotations(method.annotations, options, "\n")
 
         // Modifiers
         if (options.showModifiers) {
@@ -102,7 +89,7 @@ object SignatureFormatter {
         // Throws clause
         if (options.showThrows && method.exceptions != null && method.exceptions.isNotEmpty()) {
             append(" throws ")
-            append(method.exceptions.joinToString(", ") { it.nameWithoutPackage })
+            append(method.exceptions.joinToString(", ") { it.simpleNameWithoutPackage() })
         }
     }
 
@@ -115,21 +102,7 @@ object SignatureFormatter {
      */
     fun formatClass(classNode: ClassNode, options: Options = Options()): String = buildString {
         // Annotations
-        if (options.showAnnotations && classNode.annotations.isNotEmpty()) {
-            classNode.annotations.forEach { annotation ->
-                append("@${annotation.classNode.nameWithoutPackage}")
-                if (annotation.members.isNotEmpty()) {
-                    append("(")
-                    append(
-                        annotation.members.entries.joinToString(", ") { (key, value) ->
-                            "$key = ${value.text}"
-                        },
-                    )
-                    append(")")
-                }
-                append("\n")
-            }
-        }
+        appendAnnotations(classNode.annotations, options, "\n")
 
         // Modifiers
         if (options.showModifiers) {
@@ -150,7 +123,7 @@ object SignatureFormatter {
         }
 
         // Class name
-        append(classNode.nameWithoutPackage)
+        append(classNode.simpleNameWithoutPackage())
 
         // Generic type parameters
         if (classNode.genericsTypes != null && classNode.genericsTypes.isNotEmpty()) {
@@ -181,21 +154,7 @@ object SignatureFormatter {
      */
     fun formatField(field: FieldNode, options: Options = Options()): String = buildString {
         // Annotations
-        if (options.showAnnotations && field.annotations.isNotEmpty()) {
-            field.annotations.forEach { annotation ->
-                append("@${annotation.classNode.nameWithoutPackage}")
-                if (annotation.members.isNotEmpty()) {
-                    append("(")
-                    append(
-                        annotation.members.entries.joinToString(", ") { (key, value) ->
-                            "$key = ${value.text}"
-                        },
-                    )
-                    append(")")
-                }
-                append(" ")
-            }
-        }
+        appendAnnotations(field.annotations, options, " ")
 
         // Modifiers
         if (options.showModifiers) {
@@ -229,21 +188,7 @@ object SignatureFormatter {
      */
     fun formatParameter(param: Parameter, options: Options = Options()): String = buildString {
         // Annotations
-        if (options.showAnnotations && param.annotations.isNotEmpty()) {
-            param.annotations.forEach { annotation ->
-                append("@${annotation.classNode.nameWithoutPackage}")
-                if (annotation.members.isNotEmpty()) {
-                    append("(")
-                    append(
-                        annotation.members.entries.joinToString(", ") { (key, value) ->
-                            "$key = ${value.text}"
-                        },
-                    )
-                    append(")")
-                }
-                append(" ")
-            }
-        }
+        appendAnnotations(param.annotations, options, " ")
 
         // Type
         append(formatType(param.type))
@@ -318,7 +263,7 @@ object SignatureFormatter {
      * - Map<String, List<Integer>>
      */
     private fun formatType(type: ClassNode): String = buildString {
-        append(type.nameWithoutPackage)
+        append(type.simpleNameWithoutPackage())
 
         if (type.genericsTypes != null && type.genericsTypes.isNotEmpty()) {
             append("<")
@@ -343,10 +288,35 @@ object SignatureFormatter {
         if (Modifier.isTransient(modifiers)) parts += "transient"
         return parts.joinToString(" ")
     }
+
+    /**
+     * Helper function to append formatted annotations to a StringBuilder.
+     */
+    private fun StringBuilder.appendAnnotations(
+        annotations: List<AnnotationNode>,
+        options: Options,
+        trailing: String,
+    ) {
+        if (options.showAnnotations && annotations.isNotEmpty()) {
+            annotations.forEach { annotation ->
+                append("@${annotation.classNode.simpleNameWithoutPackage()}")
+                if (annotation.members.isNotEmpty()) {
+                    append("(")
+                    append(
+                        annotation.members.entries.joinToString(", ") { (key, value) ->
+                            "$key = ${value.text}"
+                        },
+                    )
+                    append(")")
+                }
+                append(trailing)
+            }
+        }
+    }
 }
 
 /**
- * Extension property to get class name without package.
+ * Extension function to get class name without package, correctly handling nested classes.
+ * This overrides the default ClassNode.nameWithoutPackage which doesn't handle nested classes with $.
  */
-private val ClassNode.nameWithoutPackage: String
-    get() = name.substringAfterLast('.')
+private fun ClassNode.simpleNameWithoutPackage(): String = name.substringAfterLast('.').substringAfterLast('$')

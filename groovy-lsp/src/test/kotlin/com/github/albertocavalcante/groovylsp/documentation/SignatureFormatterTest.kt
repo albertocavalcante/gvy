@@ -8,6 +8,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
@@ -172,7 +173,11 @@ class SignatureFormatterTest {
 
         val result = SignatureFormatter.formatMethod(method)
         // Should break to multiple lines
-        assertTrue(result.contains("\n    ") || result.contains("firstParameter, secondParameter"))
+        assertTrue(result.contains("\n    "), "Expected parameters to be on multiple lines")
+        assertFalse(
+            result.contains("firstParameter, secondParameter"),
+            "Expected parameters not to be on a single line",
+        )
     }
 
     @Test
@@ -368,7 +373,7 @@ class SignatureFormatterTest {
 
         val result = SignatureFormatter.formatClass(classNode)
         // Should show the simple name without package
-        assertTrue(result.contains("InnerClass"))
+        assertEquals("public class InnerClass", result)
     }
 
     @Test

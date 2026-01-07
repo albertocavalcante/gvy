@@ -83,7 +83,7 @@ object InlineTagRenderer {
                 "linkplain" -> renderLinkPlain(content)
                 "literal" -> renderLiteral(content)
                 "value" -> renderValue(content)
-                else -> "{@$tagName $content}" // Unknown tag, keep as-is
+                else -> if (content.isEmpty()) "{@$tagName}" else "{@$tagName $content}" // Unknown tag, keep as-is
             }
             result.append(rendered)
             pos = closingBrace + 1
