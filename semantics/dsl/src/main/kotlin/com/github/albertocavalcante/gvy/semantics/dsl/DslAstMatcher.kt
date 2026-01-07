@@ -34,38 +34,30 @@ class MethodCallMatcher(
             return DslMatchResult.NoMatch
         }
 
+        val allCaptures = mutableMapOf<String, Any>()
+
         // Check receiver if specified
         if (receiverMatcher != null) {
-            val receiverResult = receiverMatcher.match(node.objectExpression)
-            if (receiverResult is DslMatchResult.NoMatch) {
-                return DslMatchResult.NoMatch
+            when (val receiverResult = receiverMatcher.match(node.objectExpression)) {
+                is DslMatchResult.NoMatch -> return DslMatchResult.NoMatch
+                is DslMatchResult.Match -> allCaptures.putAll(receiverResult.captures)
             }
         }
 
-        // Check arguments if specified
-        if (argumentMatchers.isNotEmpty()) {
-            val args = node.arguments
-            if (args is ArgumentListExpression) {
-                val argExpressions = args.expressions
-                if (argExpressions.size != argumentMatchers.size) {
-                    return DslMatchResult.NoMatch
-                }
+        // Check arguments
+        val argExpressions = (node.arguments as? ArgumentListExpression)?.expressions ?: emptyList()
+        if (argumentMatchers.size != argExpressions.size) {
+            return DslMatchResult.NoMatch
+        }
 
-                val allCaptures = mutableMapOf<String, Any>()
-                for ((index, matcher) in argumentMatchers.withIndex()) {
-                    val argResult = matcher.match(argExpressions[index])
-                    if (argResult is DslMatchResult.NoMatch) {
-                        return DslMatchResult.NoMatch
-                    }
-                    if (argResult is DslMatchResult.Match) {
-                        allCaptures.putAll(argResult.captures)
-                    }
-                }
-                return DslMatchResult.Match(allCaptures)
+        for ((matcher, arg) in argumentMatchers.zip(argExpressions)) {
+            when (val argResult = matcher.match(arg)) {
+                is DslMatchResult.NoMatch -> return DslMatchResult.NoMatch
+                is DslMatchResult.Match -> allCaptures.putAll(argResult.captures)
             }
         }
 
-        return DslMatchResult.Match(emptyMap())
+        return DslMatchResult.Match(allCaptures)
     }
 }
 
@@ -84,21 +76,22 @@ class ClosureMatcher(val captureName: String? = null, val bodyMatcher: DslAstMat
 
         // Check body if matcher is specified
         if (bodyMatcher != null) {
-            val code = node.code
-            if (code is BlockStatement) {
-                // For simplicity, check first statement in block
-                val statements = code.statements
-                if (statements.isNotEmpty()) {
-                    val firstStmt = statements[0]
+            when (val code = node.code) {
+                is BlockStatement -> {
+                    val firstStmt = code.statements.firstOrNull()
                     if (firstStmt is ExpressionStatement) {
-                        val bodyResult = bodyMatcher.match(firstStmt.expression)
-                        if (bodyResult is DslMatchResult.NoMatch) {
-                            return DslMatchResult.NoMatch
+                        when (val bodyResult = bodyMatcher.match(firstStmt.expression)) {
+                            is DslMatchResult.NoMatch -> return DslMatchResult.NoMatch
+                            is DslMatchResult.Match -> captures.putAll(bodyResult.captures)
                         }
-                        if (bodyResult is DslMatchResult.Match) {
-                            captures.putAll(bodyResult.captures)
-                        }
+                    } else {
+                        // Body is empty or first statement is not an expression, but a matcher was provided.
+                        return DslMatchResult.NoMatch
                     }
+                }
+                else -> {
+                    // A body matcher was provided, but the closure code is not a block statement.
+                    return DslMatchResult.NoMatch
                 }
             }
         }
@@ -137,9 +130,7 @@ class AnyMatcher(val captureName: String? = null) : DslAstMatcher {
 
 class SequenceMatcher(val matchers: List<DslAstMatcher>) : DslAstMatcher {
     override fun match(node: Expression): DslMatchResult {
-        // This is a placeholder implementation
-        // In a real implementation, this would match a sequence of statements
-        // For now, we'll just try to match the first matcher
+        // TODO(#696): Implement full sequence matching for multiple statements
         if (matchers.isEmpty()) {
             return DslMatchResult.Match(emptyMap())
         }
