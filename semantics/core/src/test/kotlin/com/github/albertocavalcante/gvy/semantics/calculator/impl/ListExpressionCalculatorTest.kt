@@ -143,6 +143,24 @@ class ListExpressionCalculatorTest {
         )
     }
 
+    @Test
+    fun `calculateResult should propagate error from failing child element`() {
+        val calculator = ListExpressionCalculator()
+        val failingContext = testContext(failOnCalculateType = true)
+
+        // Create a list with at least one element
+        val node = MockListExpression(listOf(object {}))
+
+        val result = calculator.calculateResult(node, failingContext)
+
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.SymbolNotFound)
+            },
+            ifRight = { fail("Expected Left (error propagation) but got Right($it)") },
+        )
+    }
+
     private fun mockContext(types: Map<Any, SemanticType>) = object : TypeContext {
         override fun resolveType(fqn: String) = SemanticType.Unknown("Mock")
 

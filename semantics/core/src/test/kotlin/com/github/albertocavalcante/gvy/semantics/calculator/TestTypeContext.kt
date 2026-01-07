@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.calculator
 
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 
 /**
@@ -8,7 +10,10 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
  * Provides stub implementations that return Unknown/null for all lookups,
  * suitable for testing calculators in isolation.
  */
-class TestTypeContext(override val isStaticCompilation: Boolean = false) : TypeContext {
+class TestTypeContext(
+    override val isStaticCompilation: Boolean = false,
+    private val failOnCalculateType: Boolean = false,
+) : TypeContext {
     override fun resolveType(fqn: String): SemanticType = SemanticType.Unknown("Test context")
     override fun calculateType(node: Any): SemanticType = SemanticType.Unknown("Test context")
     override fun lookupSymbol(name: String): SemanticType? = null
@@ -18,6 +23,13 @@ class TestTypeContext(override val isStaticCompilation: Boolean = false) : TypeC
         argumentTypes: List<SemanticType>,
     ): SemanticType? = null
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = null
+
+    // Override to simulate failures
+    override fun calculateTypeResult(node: Any): TypeResult = if (failOnCalculateType) {
+        TypeInferenceError.SymbolNotFound("simulated-failure").left()
+    } else {
+        SemanticType.Unknown("Test context").right()
+    }
 }
 
 /**
@@ -29,4 +41,5 @@ class TestTypeContext(override val isStaticCompilation: Boolean = false) : TypeC
  * val result = calculator.calculateResult(node, context)
  * ```
  */
-fun testContext(isStaticCompilation: Boolean = false): TypeContext = TestTypeContext(isStaticCompilation)
+fun testContext(isStaticCompilation: Boolean = false, failOnCalculateType: Boolean = false): TypeContext =
+    TestTypeContext(isStaticCompilation, failOnCalculateType)

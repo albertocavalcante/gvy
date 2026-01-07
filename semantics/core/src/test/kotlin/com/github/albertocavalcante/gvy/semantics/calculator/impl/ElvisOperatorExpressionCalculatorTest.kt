@@ -73,6 +73,23 @@ class ElvisOperatorExpressionCalculatorTest {
         )
     }
 
+    @Test
+    fun `calculateResult should propagate error from failing left expression`() {
+        val calculator = ElvisOperatorExpressionCalculator()
+        val failingContext = testContext(failOnCalculateType = true)
+
+        val node = ElvisOperatorExpression(object {}, object {})
+
+        val result = calculator.calculateResult(node, failingContext)
+
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.SymbolNotFound)
+            },
+            ifRight = { fail("Expected Left (error propagation) but got Right($it)") },
+        )
+    }
+
     private fun mockContext(types: Map<Any, SemanticType>): TypeContext = object : TypeContext {
         override fun resolveType(fqn: String) = SemanticType.Unknown("Mock")
         override fun calculateType(node: Any) = types[node] ?: SemanticType.Unknown("Mock")

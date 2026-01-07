@@ -149,6 +149,25 @@ class MapExpressionCalculatorTest {
         )
     }
 
+    @Test
+    fun `calculateResult should propagate error from failing child key expression`() {
+        val calculator = MapExpressionCalculator()
+        val failingContext = testContext(failOnCalculateType = true)
+
+        // Create a map with at least one entry
+        val entry = MockMapEntry(object {}, object {})
+        val node = MockMapExpression(listOf(entry))
+
+        val result = calculator.calculateResult(node, failingContext)
+
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.SymbolNotFound)
+            },
+            ifRight = { fail("Expected Left (error propagation) but got Right($it)") },
+        )
+    }
+
     private fun mockContext(types: Map<Any, SemanticType>) = object : TypeContext {
         override fun resolveType(fqn: String) = SemanticType.Unknown("Mock")
         override fun calculateType(node: Any) = types[node] ?: SemanticType.Unknown("Mock")
