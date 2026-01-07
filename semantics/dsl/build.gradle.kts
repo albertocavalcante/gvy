@@ -13,9 +13,6 @@ dependencies {
     // Groovy AST for DSL matching
     implementation(libs.groovy.core)
 
-    // Arrow-kt for functional programming
-    implementation(libs.arrow.core)
-
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
