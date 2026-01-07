@@ -9,6 +9,7 @@ import ch.epfl.scala.bsp4j.TaskFinishParams
 import ch.epfl.scala.bsp4j.TaskProgressParams
 import ch.epfl.scala.bsp4j.TaskStartParams
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Implements BuildClient callbacks for BSP communication.
@@ -20,13 +21,13 @@ import org.slf4j.LoggerFactory
 class BspClientHandler : BuildClient {
     private val logger = LoggerFactory.getLogger(BspClientHandler::class.java)
 
-    private val diagnosticListeners = mutableListOf<(PublishDiagnosticsParams) -> Unit>()
-    private val showMessageListeners = mutableListOf<(ShowMessageParams) -> Unit>()
-    private val logMessageListeners = mutableListOf<(LogMessageParams) -> Unit>()
-    private val buildTargetChangeListeners = mutableListOf<(DidChangeBuildTarget) -> Unit>()
-    private val taskStartListeners = mutableListOf<(TaskStartParams) -> Unit>()
-    private val taskProgressListeners = mutableListOf<(TaskProgressParams) -> Unit>()
-    private val taskFinishListeners = mutableListOf<(TaskFinishParams) -> Unit>()
+    private val diagnosticListeners = CopyOnWriteArrayList<(PublishDiagnosticsParams) -> Unit>()
+    private val showMessageListeners = CopyOnWriteArrayList<(ShowMessageParams) -> Unit>()
+    private val logMessageListeners = CopyOnWriteArrayList<(LogMessageParams) -> Unit>()
+    private val buildTargetChangeListeners = CopyOnWriteArrayList<(DidChangeBuildTarget) -> Unit>()
+    private val taskStartListeners = CopyOnWriteArrayList<(TaskStartParams) -> Unit>()
+    private val taskProgressListeners = CopyOnWriteArrayList<(TaskProgressParams) -> Unit>()
+    private val taskFinishListeners = CopyOnWriteArrayList<(TaskFinishParams) -> Unit>()
 
     /**
      * Register a listener for diagnostics (errors, warnings, info).

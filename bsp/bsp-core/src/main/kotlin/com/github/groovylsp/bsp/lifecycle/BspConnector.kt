@@ -7,6 +7,11 @@ import arrow.core.right
 import ch.epfl.scala.bsp4j.BuildClientCapabilities
 import ch.epfl.scala.bsp4j.BuildServer
 import ch.epfl.scala.bsp4j.InitializeBuildParams
+import com.github.groovylsp.bsp.client.BspCapabilities
+import com.github.groovylsp.bsp.client.BuildServerConnection
+import com.github.groovylsp.bsp.client.ConnectionConfig
+import com.github.groovylsp.bsp.model.BuildTargetCache
+import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.slf4j.LoggerFactory
 import java.nio.file.Path
@@ -57,8 +62,9 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         logger.info("Selected BSP server: ${details.name} v${details.version}")
 
         return launchServer(details)
-            .flatMap { (connection, client) ->
-                initializeSession(connection, client, details)
+            .flatMap { (server, processClient) ->
+                val (process, client) = processClient
+                initializeSession(server, process, client, details)
             }
     }
 
@@ -78,11 +84,11 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
      * Launch a BSP server process and create a connection.
      *
      * @param details Connection details for the server
-     * @return Either an error or a pair of BuildServerConnection and BspClientHandler
+     * @return Either an error or a triple of BuildServer, Process, and BspClientHandler
      */
     private suspend fun launchServer(
         details: BspConnectionDetails,
-    ): Either<BspConnectionError, Pair<BuildServerConnection, BspClientHandler>> {
+    ): Either<BspConnectionError, Pair<BuildServer, Pair<Process, BspClientHandler>>> {
         logger.info("Launching BSP server: ${details.argv.joinToString(" ")}")
 
         val process = try {
@@ -136,7 +142,9 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         kotlinx.coroutines.delay(config.serverStartupDelayMs)
 
         logger.info("BSP server process started (PID: ${process.pid()})")
-        return (BuildServerConnection(server, process) to client).right()
+
+        // Note: BuildServerConnection will be created after initialization with capabilities
+        return (server to Pair(process, client)).right()
     }
 
     private fun selectServer(): BspConnectionDetails? {
@@ -157,7 +165,8 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
     }
 
     private suspend fun initializeSession(
-        connection: BuildServerConnection,
+        server: BuildServer,
+        process: Process,
         client: BspClientHandler,
         details: BspConnectionDetails,
     ): Either<BspConnectionError, BspSession> {
@@ -169,28 +178,32 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
             BuildClientCapabilities(config.supportedLanguages),
         )
 
-        return connection.initialize(params)
-            .mapLeft { error ->
-                connection.close()
-                BspConnectionError.InitializationFailed(details.name, error)
-            }
-            .flatMap { initResult ->
-                logger.info("BSP initialized: ${initResult.displayName} v${initResult.version}")
+        return try {
+            // Initialize the server
+            val initResult = server.buildInitialize(params).await()
+            server.onBuildInitialized()
+            logger.info("BSP initialized: ${initResult.displayName} v${initResult.version}")
 
-                val cache = BuildTargetCache()
-                val session = BspSession(connection, cache, client)
+            // Create capabilities wrapper and connection
+            val capabilities = BspCapabilities(initResult.capabilities)
+            val connection = BuildServerConnection(server, capabilities)
 
-                // Load initial build targets
-                session.reload()
-                    .mapLeft { error ->
-                        session.close()
-                        BspConnectionError.InitializationFailed(
-                            details.name,
-                            BuildServerConnection.BspError.RequestFailed(error.message),
-                        )
-                    }
-                    .map { session }
-            }
+            // Create session and load targets
+            val cache = BuildTargetCache()
+            val session = BspSession(connection, cache, client, process)
+
+            // Load initial build targets
+            session.reload()
+                .mapLeft { error ->
+                    session.close()
+                    BspConnectionError.InitializationFailed(details.name, error.message)
+                }
+                .map { session }
+        } catch (e: Exception) {
+            logger.error("Failed to initialize BSP server: ${e.message}", e)
+            process.destroyForcibly()
+            BspConnectionError.InitializationFailed(details.name, e.message ?: "Unknown error").left()
+        }
     }
 
     /**
@@ -215,8 +228,8 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         data class LaunchFailed(val serverName: String, val cause: Throwable) :
             BspConnectionError("Failed to launch BSP server '$serverName': ${cause.message}")
 
-        data class InitializationFailed(val serverName: String, val cause: BuildServerConnection.BspError) :
-            BspConnectionError("Failed to initialize BSP server '$serverName': ${cause.message}")
+        data class InitializationFailed(val serverName: String, val reason: String) :
+            BspConnectionError("Failed to initialize BSP server '$serverName': $reason")
 
         override fun toString(): String = "BspConnectionError: $message"
     }
