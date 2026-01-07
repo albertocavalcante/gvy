@@ -42,8 +42,10 @@ class GStringExpressionCalculatorTest {
 
         val result = calculator.calculateResult(GStringExpression(listOf("a"), listOf(1)), testContext())
 
-        assertTrue(result.isRight())
-        assertEquals(TypeConstants.GSTRING, result.getOrNull())
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(TypeConstants.GSTRING, type) },
+        )
     }
 
     @Test

@@ -81,8 +81,10 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(42)
         val result = calculator.calculateResult(node, testContext())
 
-        assertTrue(result.isRight())
-        assertEquals(TypeConstants.INT, result.getOrNull())
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(TypeConstants.INT, type) },
+        )
     }
 
     @Test
@@ -91,8 +93,10 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant("hello")
         val result = calculator.calculateResult(node, testContext())
 
-        assertTrue(result.isRight())
-        assertEquals(TypeConstants.STRING, result.getOrNull())
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(TypeConstants.STRING, type) },
+        )
     }
 
     @Test
@@ -101,8 +105,10 @@ class ConstantExpressionCalculatorTest {
         val node = TestConstant(null)
         val result = calculator.calculateResult(node, testContext())
 
-        assertTrue(result.isRight())
-        assertEquals(SemanticType.Null, result.getOrNull())
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(SemanticType.Null, type) },
+        )
     }
 
     @Test
