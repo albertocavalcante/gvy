@@ -3,8 +3,12 @@ package com.github.albertocavalcante.gvy.semantics.calculator.impl
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.testContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 
 class TernaryExpressionCalculatorTest {
@@ -31,9 +35,42 @@ class TernaryExpressionCalculatorTest {
     fun `returns null when false expression is missing`() {
         val calculator = TernaryExpressionCalculator()
 
-        val result = calculator.calculate(NotATernary(Any()), mockContext(emptyMap()))
+        val result = calculator.calculate(NotATernary(Any()), testContext())
 
         assertNull(result)
+    }
+
+    // Tests for Either-based calculateResult method
+
+    @Test
+    fun `calculateResult should return Right with LUB of branches`() {
+        val calculator = TernaryExpressionCalculator()
+        val t = Any()
+        val f = Any()
+
+        val context = mockContext(mapOf(t to TypeConstants.INT, f to TypeConstants.LONG))
+
+        val result = calculator.calculateResult(TernaryExpression(t, f), context)
+
+        result.fold(
+            ifLeft = { error -> fail("Expected Right but got Left($error)") },
+            ifRight = { type -> assertEquals(TypeConstants.LONG, type) },
+        )
+    }
+
+    @Test
+    fun `calculateResult should return Left when false expression is missing`() {
+        val calculator = TernaryExpressionCalculator()
+
+        val result = calculator.calculateResult(NotATernary(Any()), testContext())
+
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.UnsupportedNode)
+                assertTrue(error.reason.contains("falseExpression"))
+            },
+            ifRight = { fail("Expected Left but got Right($it)") },
+        )
     }
 
     private fun mockContext(types: Map<Any, SemanticType>): TypeContext = object : TypeContext {
