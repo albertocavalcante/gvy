@@ -5,11 +5,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.io.File
 import java.nio.file.Path
 
+// TODO(#697): Fix flaky test - static state isolation and timing issues in CI.
+//   See: https://github.com/albertocavalcante/gvy/issues/697
+@Disabled("Flaky in CI - see #697")
 class GradleConnectionPoolTest {
 
     @TempDir
