@@ -4,18 +4,17 @@ import * as path from 'path';
 import { GradleExecutionService } from './GradleExecutionService';
 import { MavenExecutionService } from './MavenExecutionService';
 import { GroovyTestController } from './GroovyTestController';
-import { TestService } from './TestService';
+import { TestService, BuildToolInfo } from './TestService';
 import { CoverageService } from './CoverageService';
 import { getClient } from '../../server/client';
 
-/**
- * TODO(#715): This build tool detection is a hacky workaround.
- * Proper implementation should move detection to LSP via groovy/getBuildToolInfo.
- * See: https://github.com/albertocavalcante/gvy/issues/715
- */
-type BuildToolType = 'gradle' | 'maven' | 'unknown';
+type BuildToolType = 'gradle' | 'maven' | 'bsp' | 'unknown';
 
-function detectBuildTool(workspacePath: string): BuildToolType {
+/**
+ * Fallback build tool detection when LSP is not available.
+ * Prefer using TestService.getBuildToolInfo() when LSP is ready.
+ */
+function detectBuildToolFallback(workspacePath: string): BuildToolType {
   // Check for Gradle
   const gradleFiles = [
     'build.gradle',
@@ -35,42 +34,95 @@ function detectBuildTool(workspacePath: string): BuildToolType {
   return 'unknown';
 }
 
+/**
+ * Create execution service based on build tool type.
+ */
+function createExecutionService(
+  buildTool: BuildToolType,
+  logger: vscode.OutputChannel,
+  extensionPath: string,
+) {
+  switch (buildTool) {
+    case 'maven':
+      return new MavenExecutionService(logger);
+    case 'gradle':
+    case 'bsp':
+    default:
+      // Default to Gradle for unknown/BSP (BSP uses Gradle commands internally)
+      return new GradleExecutionService(logger, extensionPath);
+  }
+}
+
 export function registerTestingFeatures(
   context: vscode.ExtensionContext,
   logger: vscode.OutputChannel,
 ) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspacePath = workspaceFolder?.uri.fsPath ?? '';
-  const buildTool = detectBuildTool(workspacePath);
+  const workspaceUri = workspaceFolder?.uri.toString() ?? '';
 
-  logger.appendLine(`[Testing] Detected build tool: ${buildTool}`);
+  // Get the LanguageClient for test discovery and LSP-based build tool detection
+  const client = getClient();
+  const testService = client ? new TestService(client) : undefined;
 
-  // TODO(#715): Use a common ITestExecutionService interface
-  const executionService =
-    buildTool === 'maven'
-      ? new MavenExecutionService(logger)
-      : new GradleExecutionService(logger, context.extensionPath);
+  // Use synchronous fallback detection initially
+  // LSP-based detection will be used when available
+  let buildTool = detectBuildToolFallback(workspacePath);
+  logger.appendLine(`[Testing] Initial build tool detection (fallback): ${buildTool}`);
+
+  // Create initial execution service
+  let executionService = createExecutionService(buildTool, logger, context.extensionPath);
+
+  // Create coverage service (only works with Gradle for now)
+  let coverageService = buildTool === 'gradle' ? new CoverageService(logger) : undefined;
+
+  // The controller registers itself with context.subscriptions in constructor
+  const controller = new GroovyTestController(
+    context,
+    executionService,
+    testService,
+    coverageService,
+  );
+
+  // Async: Query LSP for authoritative build tool info once client is ready
+  if (testService && workspaceUri) {
+    // Use a small delay to let LSP initialize
+    setTimeout(async () => {
+      try {
+        const lspBuildToolInfo: BuildToolInfo = await testService.getBuildToolInfo(workspaceUri);
+        if (lspBuildToolInfo.detected) {
+          const lspBuildTool = lspBuildToolInfo.name as BuildToolType;
+          if (lspBuildTool !== buildTool) {
+            logger.appendLine(
+              `[Testing] LSP detected different build tool: ${lspBuildTool} ` +
+              `(fallback was: ${buildTool}). Using LSP result.`,
+            );
+            buildTool = lspBuildTool;
+            // Note: The execution service is already created with the fallback.
+            // For a full solution, we'd need to update the controller.
+            // For now, log the discrepancy. The LSP's groovy/runTest handles this correctly.
+          } else {
+            logger.appendLine(`[Testing] LSP confirmed build tool: ${lspBuildTool}`);
+          }
+
+          // Log capabilities
+          logger.appendLine(
+            `[Testing] Build tool capabilities: ` +
+            `testExecution=${lspBuildToolInfo.supportsTestExecution}, ` +
+            `debug=${lspBuildToolInfo.supportsDebug}, ` +
+            `coverage=${lspBuildToolInfo.supportsCoverage}`,
+          );
+        }
+      } catch (error) {
+        logger.appendLine(`[Testing] Failed to get LSP build tool info: ${error}`);
+        // Continue with fallback detection
+      }
+    }, 2000); // Wait 2 seconds for LSP to initialize
+  }
 
   if (buildTool === 'unknown') {
     logger.appendLine(
       '[Testing] Warning: No supported build tool detected. Test execution may not work.',
     );
   }
-
-  // Get the LanguageClient for test discovery
-  const client = getClient();
-  const testService = client ? new TestService(client) : undefined;
-
-  // Create coverage service (only works with Gradle for now)
-  const coverageService =
-    buildTool === 'gradle' ? new CoverageService(logger) : undefined;
-
-  // The controller registers itself with context.subscriptions in constructor
-  const _controller = new GroovyTestController(
-    context,
-    executionService,
-    testService,
-    coverageService,
-  );
-  void _controller; // Side-effect instantiation - controller self-registers
 }

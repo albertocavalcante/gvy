@@ -14,7 +14,9 @@ import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.groovylsp.providers.testing.BuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
+import com.github.albertocavalcante.groovylsp.providers.testing.GetBuildToolInfoParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
@@ -287,6 +289,10 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/runTest")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> = testRequestDelegate.runTest(params)
+
+    @JsonRequest("groovy/getBuildToolInfo")
+    fun getBuildToolInfo(params: GetBuildToolInfoParams): CompletableFuture<BuildToolInfo> =
+        testRequestDelegate.getBuildToolInfo(params)
 
     @JsonRequest("groovy/exportIndex")
     fun exportIndex(params: ExportIndexParams): CompletableFuture<String> = CompletableFuture.supplyAsync({
