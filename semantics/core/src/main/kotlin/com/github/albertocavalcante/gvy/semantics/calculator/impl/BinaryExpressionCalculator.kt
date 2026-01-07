@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
@@ -7,6 +10,8 @@ import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import kotlin.reflect.KClass
 
 /**
@@ -19,35 +24,57 @@ class BinaryExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        val left = ReflectionAccess.getProperty(node, "leftExpression") ?: return null
-        val right = ReflectionAccess.getProperty(node, "rightExpression") ?: return null
-        val operation = ReflectionAccess.getProperty(node, "operation") ?: return null
-        val opText = getOperationText(operation) ?: return null
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
 
-        val leftType = context.calculateType(left)
-        val rightType = context.calculateType(right)
+    override fun calculateResult(node: Any, context: TypeContext): TypeResult {
+        val left = ReflectionAccess.getProperty(node, "leftExpression")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing leftExpression)",
+            ).left()
+        val right = ReflectionAccess.getProperty(node, "rightExpression")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing rightExpression)",
+            ).left()
+        val operation = ReflectionAccess.getProperty(node, "operation")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing operation)",
+            ).left()
+        val opText = getOperationText(operation)
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (missing operation text)",
+            ).left()
+
+        val leftType = when (val result = context.calculateTypeResult(left)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value
+        }
+        val rightType = when (val result = context.calculateTypeResult(right)) {
+            is Either.Left -> return result
+            is Either.Right -> result.value
+        }
 
         return when (opText) {
             // Boolean result operators
-            "==", "!=", "<", ">", "<=", ">=", "&&", "||" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+            "==", "!=", "<", ">", "<=", ">=", "&&", "||" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN).right()
 
             // Groovy boolean operators
-            "=~", "==~", "in" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN)
+            "=~", "==~", "in" -> SemanticType.Primitive(PrimitiveKind.BOOLEAN).right()
 
             // Groovy comparison
-            "<=>" -> TypeConstants.INT
+            "<=>" -> TypeConstants.INT.right()
 
             // Arithmetic operators
-            "+", "-", "*", "/", "%" -> calculateArithmetic(leftType, rightType, opText)
+            "+", "-", "*", "/", "%" -> calculateArithmetic(leftType, rightType, opText).right()
 
             // Groovy power
-            "**" -> TypeLub.lub(leftType, rightType)
+            "**" -> TypeLub.lub(leftType, rightType).right()
 
             // Assignment (not usually a type calculation subject but expression has type of RHS)
-            "=" -> rightType
+            "=" -> rightType.right()
 
-            else -> null
+            else -> TypeInferenceError.UnsupportedNode(
+                nodeType = "${node::class.simpleName ?: "unknown"} (unsupported operation: $opText)",
+            ).left()
         }
     }
 
