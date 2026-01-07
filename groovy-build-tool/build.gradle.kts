@@ -23,6 +23,9 @@ dependencies {
     // JSON parsing for BSP connection files
     implementation(libs.kotlin.serialization.json)
 
+    // BSP core module
+    implementation(project(":bsp:bsp-core"))
+
     // Maven Embedder (for programmatic dependency resolution)
     implementation(libs.maven.embedder)
     implementation(libs.maven.compat)
