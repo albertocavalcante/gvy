@@ -292,6 +292,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun getSourceUnit(): SourceUnit? = null
 
+        override fun visitMethod(node: MethodNode) {
+            // New scope for each method
+            localVariableTypes.clear()
+            // Track parameters as local variables
+            node.parameters?.forEach { param ->
+                if (param.type != null) {
+                    localVariableTypes[param.name] = param.type
+                }
+            }
+            super.visitMethod(node)
+        }
+
         override fun visitDeclarationExpression(expression: DeclarationExpression) {
             // Track the declared type of local variables
             // For "Calculator calc = new Calculator()", store "calc" -> Calculator type
