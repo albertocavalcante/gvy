@@ -1,0 +1,157 @@
+name: definition-crossfile
+description: Cross-file go-to-definition for classes, methods, fields, constructors
+
+workspace:
+  fixture: empty-workspace
+
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.server.logLevel: DEBUG
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  # File A: Define Calculator class
+  - openDocument:
+      path: src/com/example/Calculator.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        class Calculator {
+            int value = 0
+
+            int add(int a, int b) {
+                return a + b
+            }
+
+            Calculator(int initial) {
+                this.value = initial
+            }
+        }
+
+  # File B: Use Calculator from another file
+  - openDocument:
+      path: src/com/example/Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        class Main {
+            void run() {
+                Calculator calc = new Calculator(10)
+                int result = calc.add(5, 3)
+                int v = calc.value
+            }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # TEST 1: Cross-file constructor call (clicking on "Calculator" in "new Calculator()")
+  # Line 4: "        Calculator calc = new Calculator(10)"
+  #                                            ^-- char 30 is on 'C' of second Calculator
+  # (0-7: spaces, 8-17: Calculator, 18: space, 19-22: calc, 23: space, 24: =, 25: space,
+  #  26-28: new, 29: space, 30: C of Calculator)
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/com/example/Main.groovy"
+        position:
+          line: 4
+          character: 30
+      saveAs: ctorResult
+
+  - assert:
+      source: ctorResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "Calculator.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 2
+
+  # TEST 2: Cross-file method call
+  # Line 5: "        int result = calc.add(5, 3)"
+  #                                     ^-- char 26 is on 'a' of add
+  # (0-7: spaces, 8-10: int, 11: space, 12-17: result, 18: space, 19: =, 20: space,
+  #  21-24: calc, 25: ., 26: a of add)
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/com/example/Main.groovy"
+        position:
+          line: 5
+          character: 26
+      saveAs: methodResult
+
+  - assert:
+      source: methodResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "Calculator.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 5
+
+  # TEST 3: Cross-file field access
+  # Line 6: "        int v = calc.value"
+  #                               ^-- char 21 is on 'v' of value
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/com/example/Main.groovy"
+        position:
+          line: 6
+          character: 21
+      saveAs: fieldResult
+
+  - assert:
+      source: fieldResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "Calculator.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 3
+
+  - shutdown: {}
+  - exit: {}

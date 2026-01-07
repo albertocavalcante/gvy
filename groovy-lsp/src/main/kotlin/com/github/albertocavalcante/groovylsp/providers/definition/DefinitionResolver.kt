@@ -26,6 +26,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -165,7 +166,10 @@ class DefinitionResolver(
     private fun resolveEffectiveTarget(targetNode: ASTNode, trackedNode: ASTNode?): ASTNode {
         val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
         val effectiveTarget = methodCall ?: targetNode
-        logger.debug("Found target node: ${effectiveTarget.javaClass.simpleName}")
+        logger.info("=== Effective target node ===")
+        logger.info("Node type: ${effectiveTarget.javaClass.simpleName}")
+        logger.info("Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}")
+        logger.info("Node text: ${effectiveTarget.text}")
         return effectiveTarget
     }
 
@@ -183,7 +187,8 @@ class DefinitionResolver(
     private fun isBroadContainer(node: ASTNode): Boolean = node is ClassNode ||
         node is MethodNode ||
         node is BlockStatement ||
-        node is Statement
+        node is Statement ||
+        node is DeclarationExpression
 
     private fun findMethodCallWhereNodeIsMethodExpression(node: ASTNode): MethodCallExpression? {
         var current: ASTNode? = node

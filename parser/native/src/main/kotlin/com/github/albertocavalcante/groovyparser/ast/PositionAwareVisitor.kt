@@ -9,6 +9,7 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -97,16 +98,34 @@ internal class PositionAwareVisitor(private val targetLine: Int, private val tar
         }
     }
 
-    private fun shouldReplace(rangeSize: Int, node: ASTNode): Boolean = when {
-        smallestNode == null -> true
-        rangeSize < smallestRangeSize -> true
-        rangeSize == smallestRangeSize -> {
-            val currentPriority = node.priority().weight
-            val existingPriority = smallestNode!!.priority().weight
-            currentPriority > existingPriority
+    private fun shouldReplace(rangeSize: Int, node: ASTNode): Boolean {
+        val existingNode = smallestNode
+
+        // Special case: ConstructorCallExpression vs ClassNode
+        // CRITICAL: When both cover the position, prefer ConstructorCallExpression for cross-file resolution
+        if (existingNode is ClassNode &&
+            node is ConstructorCallExpression
+        ) {
+            // Replace ClassNode with ConstructorCallExpression regardless of size
+            return true
+        }
+        if (existingNode is ConstructorCallExpression &&
+            node is ClassNode
+        ) {
+            // Keep ConstructorCallExpression, don't replace with ClassNode
+            return false
         }
 
-        else -> false
+        return when {
+            existingNode == null -> true
+            rangeSize < smallestRangeSize -> true // Replace with smaller node
+            rangeSize == smallestRangeSize -> {
+                val currentPriority = node.priority().weight
+                val existingPriority = existingNode.priority().weight
+                currentPriority > existingPriority
+            }
+            else -> false // Don't replace with larger node
+        }
     }
 
     // Utility methods

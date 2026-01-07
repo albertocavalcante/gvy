@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
+import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
@@ -29,6 +31,7 @@ data class CompilationOrchestratorDependencies(
     val resultMapper: CompilationResultMapper,
     val ioDispatcher: CoroutineDispatcher,
     val errorHandler: CompilationErrorHandler,
+    val semanticDb: GroovySemanticDB? = null,
 )
 
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
@@ -40,6 +43,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val resultMapper = dependencies.resultMapper
     private val ioDispatcher = dependencies.ioDispatcher
     private val errorHandler = dependencies.errorHandler
+    private val semanticDb = dependencies.semanticDb
 
     private val logger = LoggerFactory.getLogger(CompilationOrchestrator::class.java)
 
@@ -106,6 +110,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
             // Index symbols
             symbolIndexer.getSymbolIndex(uri) { parseResult.astModel }
+
+            // Build semantic document for cross-file resolution
+            buildSemanticDocument(uri, ast)
         }
 
         return resultMapper.map(parseResult, content)
@@ -194,5 +201,22 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             candidates += path.toAbsolutePath().toString()
         }
         return candidates
+    }
+
+    /**
+     * Builds a semantic document from the AST and updates the SemanticDB.
+     * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun buildSemanticDocument(uri: URI, ast: org.codehaus.groovy.ast.ModuleNode) {
+        val db = semanticDb ?: return
+        try {
+            val builder = SemanticDocumentBuilder(ast, uri)
+            val semanticDoc = builder.build()
+            db.updateDocument(uri, semanticDoc)
+            logger.trace("Built semantic document for {} with {} symbols", uri, semanticDoc.symbols.size)
+        } catch (e: Exception) {
+            logger.warn("Failed to build semantic document for {}: {}", uri, e.message)
+        }
     }
 }

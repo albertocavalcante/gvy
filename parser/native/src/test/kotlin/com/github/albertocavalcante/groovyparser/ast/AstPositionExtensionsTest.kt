@@ -5,12 +5,14 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -193,7 +195,7 @@ class AstPositionExtensionsTest {
 
         // Should be a ConstantExpression representing the string literal
         assertFalse(nodeAtString.javaClass.simpleName.contains("ClassNode"))
-        assertFalse(nodeAtString.javaClass.simpleName == "MethodNode")
+        assertNotEquals("MethodNode", nodeAtString.javaClass.simpleName)
 
         // Verify this is actually the string literal we're looking for
         when (nodeAtString) {
@@ -201,6 +203,7 @@ class AstPositionExtensionsTest {
                 assertTrue(nodeAtString.value is String)
                 assertTrue((nodeAtString.value as String).contains("Hello, World"))
             }
+
             else -> {
                 // If it's not a ConstantExpression, it should still be an expression type
                 // This might happen if the AST structure is different than expected
@@ -230,17 +233,19 @@ class AstPositionExtensionsTest {
         // The node should be more specific than the containing method or class
         // It should represent the actual call to println, not the method that contains it
         assertFalse(nodeAtMethodCall.javaClass.simpleName.contains("ClassNode"))
-        assertFalse(nodeAtMethodCall.javaClass.simpleName == "MethodNode")
+        assertNotEquals("MethodNode", nodeAtMethodCall.javaClass.simpleName)
 
         // Verify this is actually related to the println call we're looking for
         when (nodeAtMethodCall) {
             is MethodCallExpression -> {
                 assertTrue(nodeAtMethodCall.method.text.contains("println"))
             }
+
             is VariableExpression -> {
                 // Println might be treated as a variable reference in some contexts
                 assertTrue(nodeAtMethodCall.name.contains("println"))
             }
+
             else -> {
                 // If we get a different expression type, ensure it's still more specific than method/class
                 assertTrue(nodeAtMethodCall.javaClass.simpleName.contains("Expression"))
@@ -305,5 +310,48 @@ class AstPositionExtensionsTest {
         assertTrue(methodNode.containsPosition(1, 4)) // Method declaration line
         assertTrue(methodNode.containsPosition(2, 8)) // Comment line
         assertTrue(methodNode.containsPosition(5, 8)) // Return statement
+    }
+
+    @Test
+    fun `findNodeAt returns ConstructorCallExpression not ClassNode for new expression`() = runTest {
+        val groovyCode = """
+            package com.example
+
+            class Main {
+                void run() {
+                    Calculator calc = new Calculator(10)
+                }
+            }
+
+            class Calculator {
+                int value
+                Calculator(int initial) { this.value = initial }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
+
+        // Position at "Calculator" in "new Calculator(10)" - line 4, character 26
+        // Line 4: "        Calculator calc = new Calculator(10)"
+        //                                       ^-- char 26 is on 'C' of second Calculator
+        val nodeAtConstructor = ast.findNodeAt(4, 26)
+        assertNotNull(nodeAtConstructor, "Should find node at constructor call")
+
+        // CRITICAL: This should be a ConstructorCallExpression
+
+        // The fix added ConstructorCallExpression visitor to PositionNodeVisitor
+        assertTrue(
+            nodeAtConstructor is ConstructorCallExpression,
+            "Expected ConstructorCallExpression but got ${nodeAtConstructor.javaClass.simpleName}",
+        )
+
+        // Verify it's constructing the Calculator class (can be simple or fully qualified)
+        // Verify it's constructing the Calculator class (can be simple or fully qualified)
+        val typeName = nodeAtConstructor.type.name
+        assertTrue(
+            typeName == "Calculator" || typeName == "com.example.Calculator",
+            "Expected Calculator or com.example.Calculator but got $typeName",
+        )
     }
 }

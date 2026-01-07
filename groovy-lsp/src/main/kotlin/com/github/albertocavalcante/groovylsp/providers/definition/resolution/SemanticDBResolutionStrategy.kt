@@ -35,10 +35,23 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
             return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
         }
 
-        // 2. Find SymbolOccurrence at cursor position
-        val occurrence = document.occurrences.find {
-            it.range.contains(context.position.line, context.position.character)
-        }
+        // 2. Find closest/smallest SymbolOccurrence at cursor position
+        // Multiple occurrences may overlap (e.g. Class contains Method contains Expression)
+        val line = context.position.line
+        val char = context.position.character
+
+        val occurrence = document.occurrences
+            .filter { it.range.contains(line, char) }
+            .minByOrNull {
+                // Calculate total characters roughly or use lexicographical comparison
+                val lineDiff = it.range.endLine - it.range.startLine
+                if (lineDiff == 0) {
+                    it.range.endColumn - it.range.startColumn
+                } else {
+                    // Prioritize line count for multi-lines, add large constant to differentiate from single line
+                    lineDiff * 10000 + (it.range.endColumn)
+                }
+            }
         if (occurrence == null) {
             logger.debug(
                 "No occurrence found at {}:{}:{}",

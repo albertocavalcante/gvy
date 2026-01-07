@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
@@ -144,12 +145,24 @@ internal class PositionNodeVisitor(private val visitor: PositionAwareVisitor) {
         }
     }
 
+    fun visitConstructorCallExpression(expr: ConstructorCallExpression) {
+        // Visit the type being constructed (e.g., the Calculator in "new Calculator()")
+        visitor.checkAndUpdateSmallest(expr.type)
+
+        // Visit constructor arguments
+        (expr.arguments as? ArgumentListExpression)?.expressions?.forEach {
+            visitExpression(it)
+        }
+    }
+
     companion object {
         private val expressionVisitors = mapOf<
             kotlin.reflect.KClass<out Expression>,
             PositionNodeVisitor.(Expression) -> Unit,
             >(
             MethodCallExpression::class to { expr -> visitMethodCallExpression(expr as MethodCallExpression) },
+            ConstructorCallExpression::class to
+                { expr -> visitConstructorCallExpression(expr as ConstructorCallExpression) },
             ArgumentListExpression::class to { expr -> visitArgumentListExpression(expr as ArgumentListExpression) },
             DeclarationExpression::class to { expr -> visitDeclarationExpression(expr as DeclarationExpression) },
             BinaryExpression::class to { expr -> visitBinaryExpression(expr as BinaryExpression) },

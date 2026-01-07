@@ -10,6 +10,8 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -281,18 +283,78 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
     /**
      * Visitor for extracting occurrences (references, calls, etc.)
+     * Tracks local variable types to correctly attribute method/property accesses to external types.
      */
     private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
 
+        // Track variable names to their declared types (e.g., "calc" -> Calculator ClassNode)
+        private val localVariableTypes = mutableMapOf<String, ClassNode>()
+
         override fun getSourceUnit(): SourceUnit? = null
+
+        override fun visitMethod(node: MethodNode) {
+            // New scope for each method
+            localVariableTypes.clear()
+            // Track parameters as local variables
+            node.parameters?.forEach { param ->
+                if (param.type != null) {
+                    localVariableTypes[param.name] = param.type
+                }
+            }
+            super.visitMethod(node)
+        }
+
+        override fun visitDeclarationExpression(expression: DeclarationExpression) {
+            // Track the declared type of local variables
+            // For "Calculator calc = new Calculator()", store "calc" -> Calculator type
+            val varExpr = expression.variableExpression
+            val declaredType = varExpr.type
+            // Only track if the declared type is meaningful (not Object)
+            if (declaredType.name != "java.lang.Object" && declaredType.name != "Object") {
+                localVariableTypes[varExpr.name] = declaredType
+            }
+            super.visitDeclarationExpression(expression)
+        }
+
+        private fun resolveTypeName(type: ClassNode): String {
+            // If already fully qualified (contains dots), just use it
+            if (type.name.contains(".")) {
+                return type.name.replace('.', '/')
+            }
+
+            // Try redirect (might point to FQN)
+            if (type.redirect() != type && type.redirect().name.contains(".")) {
+                return type.redirect().name.replace('.', '/')
+            }
+
+            // Fallback: prepend current package if available
+            val packageName = moduleNode.packageName
+            if (!packageName.isNullOrEmpty()) {
+                val pkgPath = packageName.replace('.', '/')
+                return if (pkgPath.endsWith("/")) {
+                    "${pkgPath}${type.name}"
+                } else {
+                    "$pkgPath/${type.name}"
+                }
+            }
+
+            return type.name
+        }
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             val range = nodeToRange(call) ?: return super.visitMethodCallExpression(call)
 
-            // For now, create a simple symbol ID for the method call
-            // In a more sophisticated implementation, we'd resolve the actual method
+            // Resolve the receiver type to get the correct owner class
+            // For "calc.add()", use Calculator (from localVariableTypes) not Main
+            val receiverType = resolveReceiverNode(call.objectExpression)
             val methodName = call.methodAsString
-            val symbolId = "${currentClass.name}#$methodName()."
+            val ownerName = if (receiverType != null) {
+                resolveTypeName(receiverType)
+            } else {
+                resolveTypeName(currentClass)
+            }
+            // Use just the method name + empty parens for now, matching indexing logic
+            val symbolId = "$ownerName#$methodName()."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -309,7 +371,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(call) ?: return super.visitConstructorCallExpression(call)
 
             // Create symbol ID for constructor call
-            val symbolId = "${call.type.name}#<init>()."
+            val typeName = resolveTypeName(call.type)
+            // Use class symbol ID to resolve to the class definition
+            // TODO: Support precise constructor resolution with parameters
+            val symbolId = "$typeName#"
 
             occurrences.add(
                 SymbolOccurrence(
@@ -326,7 +391,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(expression) ?: return super.visitVariableExpression(expression)
 
             // Variable reference
-            val symbolId = "${currentClass.name}#${expression.name}"
+            // Use resolveTypeName for consistency, though currentClass.name is usually FQN
+            val className = resolveTypeName(currentClass)
+            val symbolId = "$className#${expression.name}."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -342,9 +409,16 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitPropertyExpression(expression: PropertyExpression) {
             val range = nodeToRange(expression) ?: return super.visitPropertyExpression(expression)
 
-            // Property/field access
+            // Resolve the receiver type for property access
+            // For "calc.value", use Calculator (from localVariableTypes) not Main
+            val receiverType = resolveReceiverNode(expression.objectExpression)
             val propertyName = expression.propertyAsString
-            val symbolId = "${currentClass.name}#$propertyName."
+            val ownerName = if (receiverType != null) {
+                resolveTypeName(receiverType)
+            } else {
+                resolveTypeName(currentClass)
+            }
+            val symbolId = "$ownerName#$propertyName."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -355,6 +429,30 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             )
 
             super.visitPropertyExpression(expression)
+        }
+
+        /**
+         * Resolve the type of the receiver expression.
+         * Uses local variable type tracking from DeclarationExpressions.
+         * Returns the ClassNode, or null to use current class as fallback.
+         */
+        private fun resolveReceiverNode(receiver: Expression): ClassNode? {
+            // Check if the receiver is a variable with a tracked declared type
+            if (receiver is VariableExpression) {
+                localVariableTypes[receiver.name]?.let { return it }
+            }
+
+            // Fallback to expression type (usually Object for unresolved)
+            val exprType = receiver.type
+            return when {
+                exprType == null -> null
+                exprType.name == "java.lang.Object" -> null
+                exprType.name == "Object" -> null
+                exprType.name.contains("$") -> null // Synthetic
+                exprType.name == currentClass.name -> null // Same class, use default
+                exprType.name.isNotEmpty() -> exprType
+                else -> null
+            }
         }
     }
 
@@ -411,12 +509,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          */
         fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String {
             val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
-            val params = method.parameters.joinToString(",") { it.type.nameWithoutPackage }
-            return if (params.isEmpty()) {
-                "${ownerPrefix}${method.name}()."
-            } else {
-                "${ownerPrefix}${method.name}($params)."
-            }
+            // Simplify symbol ID by ignoring parameters to allow easier matching from call sites
+            // usage: Calculator#add().
+            // TODO(#703): Support precise method overloading resolution
+            //   See: https://github.com/albertocavalcante/gvy/issues/703
+            return "${ownerPrefix}${method.name}()."
         }
 
         /**

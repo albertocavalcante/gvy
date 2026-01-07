@@ -10,7 +10,9 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.slf4j.LoggerFactory
+import java.net.URI
 
 /**
  * Resolves symbols using local AST and symbol table.
@@ -33,11 +35,33 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
     private val logger = LoggerFactory.getLogger(LocalSymbolResolutionStrategy::class.java)
 
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
+        logger.info("=== LocalSymbolResolutionStrategy.resolve ===")
+        logger.info("Target node type: {}", context.targetNode.javaClass.simpleName)
+        logger.info("Target node position: {}:{}", context.targetNode.lineNumber, context.targetNode.columnNumber)
+        logger.info("Document URI: {}", context.documentUri)
+
         // ImportNode should be resolved by ClasspathResolutionStrategy, not locally
         // Import statements always reference external classes
         if (context.targetNode is ImportNode) {
             logger.debug("ImportNode detected, skipping local resolution")
             return SymbolResolutionStrategy.notFound("ImportNode - defer to classpath resolution", STRATEGY_NAME)
+        }
+
+        // Special handling for ConstructorCallExpression: check if the target class is defined locally
+        // CRITICAL: This must come BEFORE the general resolution to avoid incorrect resolution
+        if (context.targetNode is ConstructorCallExpression) {
+            val targetClass = context.targetNode.type
+            if (!isLocallyDefinedClass(targetClass, context.documentUri)) {
+                logger.debug(
+                    "ConstructorCallExpression for {} is not local, deferring to other strategies",
+                    targetClass.name,
+                )
+                return SymbolResolutionStrategy.notFound(
+                    "ConstructorCallExpression for external class ${targetClass.name}",
+                    STRATEGY_NAME,
+                )
+            }
+            // If the class IS locally defined, continue with normal resolution
         }
 
         // Special handling for ClassNode: check if it's defined locally
@@ -74,9 +98,30 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
                 // looks locally declared, otherwise fall back to our visitor-tracked class declarations.
                 // NOTE: ModuleNode-backed lookups are handled by GlobalClassResolutionStrategy; this strategy stays
                 // local-only and uses the visitor model for locally-defined classes.
-                // TODO: Prefer a deterministic AST-backed link for local classes (or improve visitor parent links)
-                // instead of selecting by earliest source position.
-                resolveLocalClassDefinition(definition)
+                // For cross-file resolution, if the class is NOT in the current document, return null
+                // so the pipeline continues to SemanticDB or GlobalClass strategies.
+                logger.debug(
+                    "Attempting to resolve ClassNode locally: {} (from {})",
+                    definition.name,
+                    context.targetNode.javaClass.simpleName,
+                )
+                logger.debug(
+                    "ClassNode URI: {}, Current document: {}",
+                    astVisitor.getUri(definition),
+                    context.documentUri,
+                )
+                logger.debug("ClassNode position: {}:{}", definition.lineNumber, definition.columnNumber)
+                if (!isLocallyDefinedClass(definition, context.documentUri)) {
+                    logger.debug(
+                        "ClassNode {} is not in current document {}, deferring to other strategies",
+                        definition.name,
+                        context.documentUri,
+                    )
+                    null
+                } else {
+                    logger.debug("ClassNode {} IS local, resolving locally", definition.name)
+                    resolveLocalClassDefinition(definition, context.documentUri)
+                }
             }
 
             else -> definition
@@ -110,8 +155,8 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
      * Handle ClassNode directly - only resolve if it's defined in the current document.
      */
     private fun resolveClassNode(classNode: ClassNode, context: ResolutionContext): ResolutionResult {
-        // Check if this class is defined locally (exists in the AST visitor's class list)
-        if (!isLocallyDefinedClass(classNode)) {
+        // Check if this class is defined locally (exists in the same file)
+        if (!isLocallyDefinedClass(classNode, context.documentUri)) {
             logger.debug("ClassNode {} is an external reference, skipping local resolution", classNode.name)
             return SymbolResolutionStrategy.notFound(
                 "ClassNode ${classNode.name} is an external reference",
@@ -119,7 +164,7 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
             )
         }
 
-        val localClass = resolveLocalClassDefinition(classNode)
+        val localClass = resolveLocalClassDefinition(classNode, context.documentUri)
         if (localClass == null || !hasValidPosition(localClass)) {
             return SymbolResolutionStrategy.notFound(
                 "Class ${classNode.name} not found in local AST",
@@ -141,27 +186,144 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
     /**
      * Check if a class is defined in the current document's AST.
      *
-     * External classes (from JARs, JRT, other files) won't be in getAllClassNodes().
+     * A class is "locally defined" only if its definition exists in the same file
+     * as the current document. External classes (from JARs, JRT, or other workspace files)
+     * should be resolved by SemanticDB or GlobalClass strategies.
      */
-    private fun isLocallyDefinedClass(classNode: ClassNode): Boolean {
-        val localClasses = astVisitor.getAllClassNodes()
-        // NOTE: ClassNode.name is the fully qualified name (when available), so matching on name avoids
-        // collisions with unrelated types that share the same simple name.
-        return localClasses.any { it.name == classNode.name }
+    private fun isLocallyDefinedClass(classNode: ClassNode, currentUri: URI): Boolean {
+        // Get the URI where this ClassNode is defined
+        val classUri = astVisitor.getUri(classNode)
+
+        logger.info("=== isLocallyDefinedClass check ===")
+        logger.info("ClassNode: {} at {}:{}", classNode.name, classNode.lineNumber, classNode.columnNumber)
+        logger.info("ClassNode URI from astVisitor: {}", classUri)
+        logger.info("Current document URI: {}", currentUri)
+        logger.info("ClassNode identity hash: {}", System.identityHashCode(classNode))
+
+        // CRITICAL: If we can't find the URI, it means this ClassNode is not tracked in our AST model,
+        // which means it's NOT locally defined. Don't proceed to fallback checks - just return false.
+        if (classUri == null) {
+            logger.debug(
+                "ClassNode {} has no URI in AST model, not local to {}",
+                classNode.name,
+                currentUri,
+            )
+            // ONLY proceed if classNode is a reference type (no source location)
+            // Check the final fallback: search by name in current document
+            // CRITICAL FIX: Only consider ClassNodes that are actual class DEFINITIONS (with valid position),
+            // not ClassNode references from constructor calls or variable declarations.
+            // Without this filter, we might find the ClassNode reference from `new Calculator(10)` which
+            // is tracked in Main.groovy's AST, causing us to incorrectly think Calculator is defined locally.
+            val localClasses = astVisitor.getAllClassNodes()
+            val foundLocally = localClasses.any { localClass ->
+                localClass.name == classNode.name &&
+                    astVisitor.getUri(localClass) == currentUri &&
+                    hasValidPosition(localClass) // Must be an actual class definition, not a reference
+            }
+            logger.debug(
+                "ClassNode {} foundLocally={} in {} (fallback search)",
+                classNode.name,
+                foundLocally,
+                currentUri,
+            )
+            return foundLocally
+        }
+
+        if (classUri != currentUri) {
+            // Class is defined in a different file - not local
+            logger.debug(
+                "ClassNode {} is defined in {} (current: {}), not local",
+                classNode.name,
+                classUri,
+                currentUri,
+            )
+            return false
+        }
+
+        // CRITICAL FIX: Even if the URI matches, we must verify this is an actual class DEFINITION
+        // (from ModuleNode.classes), not just a ClassNode reference from a constructor call or variable declaration.
+        // The RecursiveAstVisitor tracks ClassNode references (e.g., `new Calculator(10)`) with the current URI,
+        // but these are NOT class definitions. We must check if the class is in getAllClassNodes() which
+        // only returns actual class definitions from ModuleNode.classes.
+        val allClassNodes = astVisitor.getAllClassNodes()
+        logger.info("All class nodes in AST model: {}", allClassNodes.map { it.name })
+        val isActualDefinition = allClassNodes.any { localClass ->
+            val match = localClass === classNode || // Same instance
+                (localClass.name == classNode.name && astVisitor.getUri(localClass) == currentUri)
+            if (match) {
+                logger.info(
+                    "Found matching class definition: {} (identity match: {})",
+                    localClass.name,
+                    localClass === classNode,
+                )
+            }
+            match
+        }
+        logger.info("Is actual definition: {}", isActualDefinition)
+        if (!isActualDefinition) {
+            logger.info(
+                "ClassNode {} has URI {} but is not a class definition (just a tracked reference)",
+                classNode.name,
+                classUri,
+            )
+            return false
+        }
+
+        // Verify it has a valid position
+        if (!hasValidPosition(classNode)) {
+            logger.debug(
+                "ClassNode {} has URI {} but no valid position",
+                classNode.name,
+                classUri,
+            )
+            return false
+        }
+
+        // Also check the redirected class (canonical definition)
+        val redirected = classNode.redirect()
+        if (redirected !== classNode) {
+            val redirectedUri = astVisitor.getUri(redirected)
+            if (redirectedUri != null && redirectedUri != currentUri) {
+                logger.debug(
+                    "ClassNode {} redirects to {} in {} (current: {}), not local",
+                    classNode.name,
+                    redirected.name,
+                    redirectedUri,
+                    currentUri,
+                )
+                return false
+            }
+        }
+
+        // Class has URI matching current document AND valid position - it's local
+        logger.debug(
+            "ClassNode {} is local to {} with valid position",
+            classNode.name,
+            currentUri,
+        )
+        return true
     }
 
-    private fun resolveLocalClassDefinition(classNode: ClassNode): ClassNode? {
+    private fun resolveLocalClassDefinition(classNode: ClassNode, currentUri: URI): ClassNode? {
         val redirected = classNode.redirect()
-        if (redirected !== classNode && isLocallyDefinedClass(redirected) && hasValidPosition(redirected)) {
+        if (redirected !== classNode &&
+            isLocallyDefinedClass(redirected, currentUri) &&
+            hasValidPosition(redirected)
+        ) {
             return redirected
         }
-        return findLocalClassDeclaration(classNode.name)
+        return findLocalClassDeclaration(classNode.name, currentUri)
     }
 
-    private fun findLocalClassDeclaration(className: String): ClassNode? = astVisitor.getAllClassNodes()
-        .asSequence()
-        .filter { it.name == className && hasValidPosition(it) }
-        .minByOrNull { it.lineNumber }
+    private fun findLocalClassDeclaration(className: String, currentUri: URI): ClassNode? =
+        astVisitor.getAllClassNodes()
+            .asSequence()
+            .filter { cls ->
+                cls.name == className &&
+                    hasValidPosition(cls) &&
+                    astVisitor.getUri(cls) == currentUri
+            }
+            .minByOrNull { it.lineNumber }
 
     private fun hasValidPosition(node: ASTNode): Boolean =
         node.lineNumber > 0 && node.columnNumber > 0 && node.lastLineNumber > 0 && node.lastColumnNumber > 0

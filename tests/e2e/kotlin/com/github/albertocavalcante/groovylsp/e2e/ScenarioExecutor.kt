@@ -79,7 +79,16 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         val executor = stepExecutors[step::class] as? StepExecutor<T>
             ?: error("No executor found for step type: ${step::class.simpleName}")
 
+        val start = System.currentTimeMillis()
         executor.execute(step, context, nextStep)
+        val duration = System.currentTimeMillis() - start
+
+        logger.info(
+            "Step {} ({}) completed in {} ms",
+            context.currentStepIndex + 1,
+            step::class.simpleName,
+            duration,
+        )
     }
 
     private fun prepareWorkspace(definition: ScenarioDefinition): ScenarioWorkspace = ScenarioWorkspace(
