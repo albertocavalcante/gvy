@@ -1,9 +1,13 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import java.math.BigDecimal
 import java.math.BigInteger
 import kotlin.reflect.KClass
@@ -17,12 +21,17 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? =
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
+
+    override fun calculateResult(node: Any, context: TypeContext): TypeResult =
         when (val result = readValueProperty(node)) {
-            ValuePropertyResult.Missing -> null
-            is ValuePropertyResult.Present ->
-                result.value?.let(::typeForValue)
-                    ?: SemanticType.Null
+            ValuePropertyResult.Missing -> TypeInferenceError.UnsupportedNode(
+                nodeType = node::class.simpleName ?: "unknown (no value property)",
+            ).left()
+            is ValuePropertyResult.Present -> {
+                val type = result.value?.let(::typeForValue) ?: SemanticType.Null
+                type.right()
+            }
         }
 
     private fun typeForValue(value: Any): SemanticType = when (value) {
