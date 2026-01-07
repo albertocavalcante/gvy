@@ -4,6 +4,11 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import kotlinx.coroutines.test.runTest
+import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -60,7 +65,7 @@ class GlobalClassResolutionStrategyTest {
         val context = ResolutionContext(
             targetNode = findConstructorCall(mainAst),
             documentUri = mainUri,
-            position = Position(3, 8), // "new Calculator(10)"
+            position = Position(4, 13), // "Calculator" in "new Calculator(10)"
         )
 
         // Act: Resolve using GlobalClassResolutionStrategy
@@ -71,27 +76,28 @@ class GlobalClassResolutionStrategyTest {
         result.fold(
             ifLeft = { error -> throw AssertionError("Expected Right but got Left: ${error.reason}") },
             ifRight = { definitionResult ->
-                assertInstanceOf(DefinitionResolver.DefinitionResult.Source::class.java, definitionResult)
-                val sourceResult = definitionResult as DefinitionResolver.DefinitionResult.Source
+                val sourceResult =
+                    assertInstanceOf(DefinitionResolver.DefinitionResult.Source::class.java, definitionResult)
                 assertEquals(calculatorUri, sourceResult.uri, "Should resolve to Calculator.groovy")
-                assertEquals("com.example.Calculator", (sourceResult.node as org.codehaus.groovy.ast.ClassNode).name)
+                assertEquals("com.example.Calculator", (sourceResult.node as ClassNode).name)
             },
         )
     }
 
-    private fun findConstructorCall(node: org.codehaus.groovy.ast.ASTNode): org.codehaus.groovy.ast.ASTNode {
+    private fun findConstructorCall(node: ASTNode): ASTNode {
         if (node is ConstructorCallExpression) return node
-        if (node is org.codehaus.groovy.ast.ModuleNode) {
-            return node.classes.flatMap { it.methods }.flatMap { findConstructorCallsInMethod(it) }.first()
+        if (node is ModuleNode) {
+            return node.classes
+                .flatMap { it.methods }
+                .flatMap { findConstructorCallsInMethod(it) }
+                .first { it.type.nameWithoutPackage == "Calculator" }
         }
-        throw IllegalArgumentException("Could not find ConstructorCallExpression")
+        throw IllegalArgumentException("Could not find ConstructorCallExpression for 'Calculator'")
     }
 
-    private fun findConstructorCallsInMethod(
-        method: org.codehaus.groovy.ast.MethodNode,
-    ): List<ConstructorCallExpression> {
+    private fun findConstructorCallsInMethod(method: MethodNode): List<ConstructorCallExpression> {
         val result = mutableListOf<ConstructorCallExpression>()
-        val visitor = object : org.codehaus.groovy.ast.CodeVisitorSupport() {
+        val visitor = object : CodeVisitorSupport() {
             override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
                 result.add(call)
                 super.visitConstructorCallExpression(call)
