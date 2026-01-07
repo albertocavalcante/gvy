@@ -500,6 +500,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
             // Simplify symbol ID by ignoring parameters to allow easier matching from call sites
             // usage: Calculator#add().
+            // TODO(#703): Support precise method overloading resolution
+            //   See: https://github.com/albertocavalcante/gvy/issues/703
             return "${ownerPrefix}${method.name}()."
         }
 
