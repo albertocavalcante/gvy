@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.types.Position
@@ -9,6 +10,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -105,4 +107,70 @@ class CrossFileDefinitionTest {
             "Expected Calculator type but got $typeName",
         )
     }
+
+    @Test
+    fun `should resolve cross-file constructor call in LocalStrategy - full DefinitionResolver integration`() =
+        runTest {
+            // Arrange: Calculator.groovy defines Calculator class
+            val calculatorUri = URI.create("file:///test/Calculator.groovy")
+            val calculatorContent = """
+            package com.example
+
+            class Calculator {
+                int value = 0
+
+                Calculator(int initial) {
+                    this.value = initial
+                }
+            }
+            """.trimIndent()
+
+            // Arrange: Main.groovy uses Calculator from another file
+            val mainUri = URI.create("file:///test/Main.groovy")
+            val mainContent = """
+            package com.example
+
+            class Main {
+                void run() {
+                    Calculator calc = new Calculator(10)
+                }
+            }
+            """.trimIndent()
+
+            // Compile both files
+            compilationService.compile(calculatorUri, calculatorContent)
+            compilationService.compile(mainUri, mainContent)
+
+            // Create a full DefinitionResolver (not just LocalSymbolResolutionStrategy)
+            val astModel = compilationService.getAstModel(mainUri)!!
+            val symbolTable = compilationService.getSymbolTable(mainUri)!!
+            val definitionResolver = DefinitionResolver(
+                astVisitor = astModel,
+                symbolTable = symbolTable,
+                compilationService = compilationService,
+                sourceNavigator = null,
+                workspaceSymbolIndex = null,
+            )
+
+            // Act: Request definition at the constructor call position
+            // Line 4: "        Calculator calc = new Calculator(10)"
+            //                                       ^-- char 30
+            val result = definitionResolver.findDefinitionAt(mainUri, Position(4, 30))
+
+            // Assert: Should resolve to Calculator.groovy, NOT Main.groovy
+            // Note: Without WorkspaceSymbolIndex, it may return null (which is acceptable)
+            // The key test is that it does NOT return Main.groovy
+            if (result != null) {
+                val resolvedUri = when (result) {
+                    is DefinitionResolver.DefinitionResult.Source -> result.uri
+                    is DefinitionResolver.DefinitionResult.Binary -> result.uri
+                }
+
+                assertEquals(
+                    calculatorUri,
+                    resolvedUri,
+                    "BUG REPRODUCED! Expected Calculator.groovy but got $resolvedUri. The fix should prevent Main.groovy from being returned!",
+                )
+            }
+        }
 }

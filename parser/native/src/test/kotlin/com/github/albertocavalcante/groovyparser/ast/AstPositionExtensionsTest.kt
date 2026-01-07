@@ -12,11 +12,10 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.test.assertNotEquals
-
 
 /**
  * Tests for AST position-based extension functions.
@@ -198,7 +197,6 @@ class AstPositionExtensionsTest {
         assertFalse(nodeAtString.javaClass.simpleName.contains("ClassNode"))
         assertNotEquals("MethodNode", nodeAtString.javaClass.simpleName)
 
-
         // Verify this is actually the string literal we're looking for
         when (nodeAtString) {
             is ConstantExpression -> {
@@ -285,7 +283,7 @@ class AstPositionExtensionsTest {
         // Should be a constant expression for the number
         assertTrue(
             nodeAtNumber.javaClass.simpleName.contains("Constant") ||
-                    nodeAtNumber.javaClass.simpleName.contains("Expression"),
+                nodeAtNumber.javaClass.simpleName.contains("Expression"),
         )
     }
 
@@ -339,7 +337,6 @@ class AstPositionExtensionsTest {
         //                                       ^-- char 26 is on 'C' of second Calculator
         val nodeAtConstructor = ast.findNodeAt(4, 26)
         assertNotNull(nodeAtConstructor, "Should find node at constructor call")
-
 
         // CRITICAL: This should be a ConstructorCallExpression
 

@@ -51,13 +51,11 @@ class FindNodeAtCrossFileTest {
         val calculatorAst = parserFacade.parse(ParseRequest(calculatorUri, calculatorCode)).ast as ModuleNode
         val mainAst = parserFacade.parse(ParseRequest(mainUri, mainCode)).ast as ModuleNode
 
-
         // Position at "Calculator" in "new Calculator(10)" - line 4, character 26
         // Line 4: "        Calculator calc = new Calculator(10)"
         //                                       ^-- char 26 is on 'C' of second Calculator
         val nodeAtConstructor = mainAst.findNodeAt(4, 26)
         assertNotNull(nodeAtConstructor, "Should find node at constructor call")
-
 
         // CRITICAL: This should be a ConstructorCallExpression
         assertTrue(
@@ -73,6 +71,4 @@ class FindNodeAtCrossFileTest {
             "Expected Calculator or com.example.Calculator but got $typeName",
         )
     }
-
-
 }
