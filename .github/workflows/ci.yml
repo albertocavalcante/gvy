@@ -119,6 +119,8 @@ jobs:
               - 'gradle/**'
               # semantics module (multi-project: core, native, openrewrite, dsl)
               - 'semantics/**'
+              # BSP infrastructure modules
+              - 'bsp/**'
               # Single-level modules (e.g., groovy-lsp/src/)
               - 'groovy-*/src/**'
               - 'groovy-*/*.gradle.kts'

@@ -54,3 +54,7 @@ project(":semantics-openrewrite").projectDir = file("semantics/openrewrite")
 // OpenRewrite CodeNarc auto-fix recipes
 include("refactor:openrewrite:rewrite-codenarc")
 project(":refactor:openrewrite:rewrite-codenarc").projectDir = file("refactor/openrewrite/rewrite-codenarc")
+
+// BSP (Build Server Protocol) modules - reusable infrastructure
+include("bsp:bsp-core")
+project(":bsp:bsp-core").projectDir = file("bsp/bsp-core")
