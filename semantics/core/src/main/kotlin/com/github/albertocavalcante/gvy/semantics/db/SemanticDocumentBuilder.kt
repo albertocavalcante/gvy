@@ -335,10 +335,15 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
             // Resolve the receiver type to get the correct owner class
             // For "calc.add()", use Calculator (from localVariableTypes) not Main
-            val receiverType = resolveReceiverType(call.objectExpression)
+            val receiverType = resolveReceiverNode(call.objectExpression)
             val methodName = call.methodAsString
-            val ownerName = receiverType ?: currentClass.name
-            val symbolId = "${ownerName.replace('.', '/')}#$methodName()."
+            val ownerName = if (receiverType != null) {
+                resolveTypeName(receiverType)
+            } else {
+                resolveTypeName(currentClass)
+            }
+            // Use just the method name + empty parens for now, matching indexing logic
+            val symbolId = "$ownerName#$methodName()."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -395,10 +400,14 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
             // Resolve the receiver type for property access
             // For "calc.value", use Calculator (from localVariableTypes) not Main
-            val receiverType = resolveReceiverType(expression.objectExpression)
+            val receiverType = resolveReceiverNode(expression.objectExpression)
             val propertyName = expression.propertyAsString
-            val ownerName = receiverType ?: currentClass.name
-            val symbolId = "${ownerName.replace('.', '/')}#$propertyName."
+            val ownerName = if (receiverType != null) {
+                resolveTypeName(receiverType)
+            } else {
+                resolveTypeName(currentClass)
+            }
+            val symbolId = "$ownerName#$propertyName."
 
             occurrences.add(
                 SymbolOccurrence(
@@ -414,12 +423,12 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         /**
          * Resolve the type of the receiver expression.
          * Uses local variable type tracking from DeclarationExpressions.
-         * Returns the class name, or null to use current class as fallback.
+         * Returns the ClassNode, or null to use current class as fallback.
          */
-        private fun resolveReceiverType(receiver: Expression): String? {
+        private fun resolveReceiverNode(receiver: Expression): ClassNode? {
             // Check if the receiver is a variable with a tracked declared type
             if (receiver is VariableExpression) {
-                localVariableTypes[receiver.name]?.let { return it.name }
+                localVariableTypes[receiver.name]?.let { return it }
             }
 
             // Fallback to expression type (usually Object for unresolved)
@@ -430,7 +439,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 exprType.name == "Object" -> null
                 exprType.name.contains("$") -> null // Synthetic
                 exprType.name == currentClass.name -> null // Same class, use default
-                exprType.name.isNotEmpty() -> exprType.name
+                exprType.name.isNotEmpty() -> exprType
                 else -> null
             }
         }
@@ -489,12 +498,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
          */
         fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String {
             val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
-            val params = method.parameters.joinToString(",") { it.type.nameWithoutPackage }
-            return if (params.isEmpty()) {
-                "${ownerPrefix}${method.name}()."
-            } else {
-                "${ownerPrefix}${method.name}($params)."
-            }
+            // Simplify symbol ID by ignoring parameters to allow easier matching from call sites
+            // usage: Calculator#add().
+            return "${ownerPrefix}${method.name}()."
         }
 
         /**
