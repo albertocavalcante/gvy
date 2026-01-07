@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -36,12 +37,12 @@ class ElvisOperatorExpressionCalculator : TypeCalculator<Any> {
             ).left()
 
         val leftType = when (val result = context.calculateTypeResult(left)) {
-            is arrow.core.Either.Left -> return result
-            is arrow.core.Either.Right -> result.value
+            is Either.Left -> return result
+            is Either.Right -> result.value
         }
         val rightType = when (val result = context.calculateTypeResult(right)) {
-            is arrow.core.Either.Left -> return result
-            is arrow.core.Either.Right -> result.value
+            is Either.Left -> return result
+            is Either.Right -> result.value
         }
 
         return TypeLub.lub(leftType, rightType).right()

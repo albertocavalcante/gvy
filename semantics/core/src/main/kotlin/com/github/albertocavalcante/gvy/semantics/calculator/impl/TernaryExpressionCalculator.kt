@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -33,12 +34,12 @@ class TernaryExpressionCalculator : TypeCalculator<Any> {
             ).left()
 
         val trueType = when (val result = context.calculateTypeResult(trueExpr)) {
-            is arrow.core.Either.Left -> return result
-            is arrow.core.Either.Right -> result.value
+            is Either.Left -> return result
+            is Either.Right -> result.value
         }
         val falseType = when (val result = context.calculateTypeResult(falseExpr)) {
-            is arrow.core.Either.Left -> return result
-            is arrow.core.Either.Right -> result.value
+            is Either.Left -> return result
+            is Either.Right -> result.value
         }
 
         return TypeLub.lub(trueType, falseType).right()

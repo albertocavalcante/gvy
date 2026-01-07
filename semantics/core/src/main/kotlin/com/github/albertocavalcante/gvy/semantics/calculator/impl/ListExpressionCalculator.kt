@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -37,8 +38,8 @@ class ListExpressionCalculator : TypeCalculator<Any> {
         val elementTypes = mutableListOf<SemanticType>()
         for (expr in expressions) {
             when (val result = context.calculateTypeResult(expr)) {
-                is arrow.core.Either.Left -> return result
-                is arrow.core.Either.Right -> elementTypes.add(result.value)
+                is Either.Left -> return result
+                is Either.Right -> elementTypes.add(result.value)
             }
         }
 
