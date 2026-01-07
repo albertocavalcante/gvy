@@ -18,15 +18,7 @@ class GStringExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        // Prefer a structural check to avoid relying on Groovy AST types.
-        val hasStrings = ReflectionAccess.getProperty(node, "strings") is List<*>
-        val hasValues = ReflectionAccess.getProperty(node, "values") is List<*>
-
-        if (!hasStrings || !hasValues) return null
-
-        return TypeConstants.GSTRING
-    }
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
 
     override fun calculateResult(node: Any, context: TypeContext): TypeResult {
         // Prefer a structural check to avoid relying on Groovy AST types.

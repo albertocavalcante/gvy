@@ -21,13 +21,7 @@ class ConstantExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? =
-        when (val result = readValueProperty(node)) {
-            ValuePropertyResult.Missing -> null
-            is ValuePropertyResult.Present ->
-                result.value?.let(::typeForValue)
-                    ?: SemanticType.Null
-        }
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
 
     override fun calculateResult(node: Any, context: TypeContext): TypeResult =
         when (val result = readValueProperty(node)) {

@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.Test
 
 class GStringExpressionCalculatorTest {
@@ -52,11 +53,14 @@ class GStringExpressionCalculatorTest {
 
         val result = calculator.calculateResult(NotAGString(listOf("a")), mockContext())
 
-        assertTrue(result.isLeft())
-        val error = (result as Either.Left).value
-        assertTrue(error is TypeInferenceError.UnsupportedNode)
-        assertTrue(error.reason.contains("NotAGString"))
-        assertTrue(error.reason.contains("missing strings/values properties"))
+        result.fold(
+            ifLeft = { error ->
+                assertTrue(error is TypeInferenceError.UnsupportedNode)
+                assertTrue(error.reason.contains("NotAGString"))
+                assertTrue(error.reason.contains("missing strings/values properties"))
+            },
+            ifRight = { fail("Expected Left but got Right($it)") },
+        )
     }
 
     private fun mockContext(): TypeContext = object : TypeContext {
