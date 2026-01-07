@@ -84,11 +84,10 @@ class GlobalClassResolutionStrategyTest {
         )
     }
 
-    // TODO: Enable when we have test infrastructure to simulate persistent symbol index with cleared AST cache
-    // Currently blocked because clearCaches() clears BOTH symbol index AND AST cache
-    // The real bug occurs when symbol index persists but AST cache is empty (e.g., file never opened)
-    // See E2E test "definition-crossfile-lazy-compile" for end-to-end validation of the fix
-    @org.junit.jupiter.api.Disabled("Needs enhanced test infrastructure - see TODO comment")
+    // TODO: This test requires writing files to disk to pass with the new disk-fallback logic in ensureCompiled.
+    // Since GlobalClassResolutionStrategy now relies on CompilationOrchestrator checking the file system,
+    // this scenario is better covered by the "definition-crossfile-lazy-compile" E2E test.
+    @org.junit.jupiter.api.Disabled("Covered by E2E test; requires files on disk")
     @Test
     fun `should resolve cross-file class when target file not yet compiled`() = runTest {
         // Arrange: Calculator.groovy (will be in index but NOT compiled yet)

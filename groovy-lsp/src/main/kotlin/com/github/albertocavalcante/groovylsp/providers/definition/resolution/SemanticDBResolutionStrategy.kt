@@ -41,7 +41,7 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         val char = context.position.character
 
         val occurrence = document.occurrences
-            .filter { it.range.contains(line, char) }
+            .filter { it.range.contains(line, char) && it.range.startLine == it.range.endLine }
             .minByOrNull {
                 // Calculate total characters roughly or use lexicographical comparison
                 val lineDiff = it.range.endLine - it.range.startLine

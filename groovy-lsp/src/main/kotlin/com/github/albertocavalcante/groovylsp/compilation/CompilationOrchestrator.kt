@@ -11,9 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
 import org.slf4j.LoggerFactory
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 
 private const val RETRY_DELAY_MS = 50L
@@ -188,7 +190,23 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return resultMapper.mapFromCache(parseResult, content)
         }
 
-        logger.debug("No compilation found for $uri (not cached, not compiling)")
+        // Use on-demand compilation from disk if file exists
+        // This handles cases where file is in symbol index but not yet opened/compiled
+        val path = runCatching { Path.of(uri) }.getOrNull()
+        if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
+            logger.debug("Compiling from disk on-demand: $uri")
+            return try {
+                val content = kotlinx.coroutines.withContext(ioDispatcher) {
+                    Files.readString(path)
+                }
+                compile(uri, content)
+            } catch (e: Exception) {
+                logger.error("Failed to compile from disk for $uri: ${e.message}", e)
+                null
+            }
+        }
+
+        logger.debug("No compilation found for $uri (not cached, not compiling, not on disk)")
         return null
     }
 
