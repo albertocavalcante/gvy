@@ -6,7 +6,9 @@ import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
+import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.mordant.rendering.AnsiLevel
 import com.github.ajalt.mordant.rendering.TextColors.brightRed
@@ -14,6 +16,8 @@ import com.github.ajalt.mordant.rendering.TextColors.brightYellow
 import com.github.ajalt.mordant.rendering.TextColors.cyan
 import com.github.ajalt.mordant.rendering.TextColors.green
 import com.github.ajalt.mordant.terminal.Terminal
+import com.github.albertocavalcante.diagnostics.sarif.SarifRuleRegistry
+import com.github.albertocavalcante.diagnostics.sarif.SarifWriter
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
@@ -29,13 +33,24 @@ import java.io.File
 private val logger = LoggerFactory.getLogger(CheckCommand::class.java)
 
 /**
- * Runs diagnostics on Groovy source files with colored output.
+ * Runs diagnostics on Groovy source files.
+ *
+ * Supports multiple output formats:
+ * - TEXT: Human-readable colored output (default)
+ * - SARIF: SARIF 2.1.0 format for GitHub Code Scanning integration
  */
 class CheckCommand : CliktCommand(name = "check") {
     override fun help(context: Context) = "Run diagnostics on specified files"
 
     private val workspace by option("-w", "--workspace")
         .file(mustExist = true, canBeFile = false)
+
+    private val format by option("-f", "--format", help = "Output format: text (default) or sarif")
+        .enum<OutputFormat>()
+        .default(OutputFormat.TEXT)
+
+    private val output by option("-o", "--output", help = "Output file (default: stdout)")
+        .file(mustExist = false)
 
     private val files by argument()
         .file(mustExist = true, canBeDir = false)
@@ -64,16 +79,22 @@ class CheckCommand : CliktCommand(name = "check") {
         server.initialize(params).get()
         server.initialized(InitializedParams())
 
-        terminal.println(cyan("Resolving dependencies for ${ws.absolutePath}..."))
-        if (server.waitForDependencies()) {
-            terminal.println(green("Dependencies resolved successfully."))
+        // Only show progress messages for text output
+        if (format == OutputFormat.TEXT) {
+            terminal.println(cyan("Resolving dependencies for ${ws.absolutePath}..."))
+            if (server.waitForDependencies()) {
+                terminal.println(green("Dependencies resolved successfully."))
+            } else {
+                terminal.println(
+                    brightYellow(
+                        "Warning: Dependency resolution failed or timed out. " +
+                            "Checking with limited context.",
+                    ),
+                )
+            }
         } else {
-            terminal.println(
-                brightYellow(
-                    "Warning: Dependency resolution failed or timed out. " +
-                        "Checking with limited context.",
-                ),
-            )
+            // Still wait for dependencies, just don't print
+            server.waitForDependencies()
         }
     }
 
@@ -84,30 +105,42 @@ class CheckCommand : CliktCommand(name = "check") {
             throw ProgramResult(1)
         }
 
+        // Collect all diagnostics per file
+        val allDiagnostics = mutableMapOf<File, List<Diagnostic>>()
+        var hasErrors = false
+
         runBlocking {
             for (file in files) {
-                checkFile(file, service)
+                val diagnostics = checkFile(file, service)
+                if (diagnostics != null) {
+                    allDiagnostics[file] = diagnostics
+                    if (diagnostics.any { it.severity == DiagnosticSeverity.Error }) {
+                        hasErrors = true
+                    }
+                }
             }
+        }
+
+        // Output results based on format
+        when (format) {
+            OutputFormat.TEXT -> outputText(allDiagnostics)
+            OutputFormat.SARIF -> outputSarif(allDiagnostics)
+        }
+
+        // Exit with error code if there were errors
+        if (hasErrors) {
+            throw ProgramResult(1)
         }
     }
 
-    private suspend fun checkFile(file: File, service: GroovyTextDocumentService) {
+    private suspend fun checkFile(file: File, service: GroovyTextDocumentService): List<Diagnostic>? {
         val result = runCatching {
             val uri = file.toURI()
             val content = file.readText()
             service.diagnose(uri, content)
         }
 
-        result
-            .onSuccess { diagnostics ->
-                if (diagnostics.isEmpty()) {
-                    terminal.println(green("OK: ${file.path}"))
-                } else {
-                    diagnostics.forEach { diagnostic ->
-                        terminal.println(formatDiagnosticLine(file, diagnostic))
-                    }
-                }
-            }
+        return result
             .onFailure { e ->
                 @Suppress("TooGenericExceptionCaught")
                 if (e is Exception) {
@@ -116,7 +149,62 @@ class CheckCommand : CliktCommand(name = "check") {
                     throw e
                 }
             }
+            .getOrNull()
     }
+
+    private fun outputText(allDiagnostics: Map<File, List<Diagnostic>>) {
+        for ((file, diagnostics) in allDiagnostics) {
+            if (diagnostics.isEmpty()) {
+                terminal.println(green("OK: ${file.path}"))
+            } else {
+                diagnostics.forEach { diagnostic ->
+                    terminal.println(formatDiagnosticLine(file, diagnostic))
+                }
+            }
+        }
+    }
+
+    private fun outputSarif(allDiagnostics: Map<File, List<Diagnostic>>) {
+        val writer = SarifWriter(
+            toolName = "groovy-lsp",
+            toolVersion = getVersion(),
+            toolUri = "https://github.com/GroovyLanguageServer/groovy-language-server",
+        )
+
+        // Register known rules
+        SarifRuleRegistry.getAllRules().forEach { writer.registerRule(it) }
+
+        // Add all diagnostics
+        for ((file, diagnostics) in allDiagnostics) {
+            val relativePath = workspace?.let { ws ->
+                file.relativeTo(ws).path
+            } ?: file.path
+
+            writer.addDiagnostics(relativePath, diagnostics)
+        }
+
+        // Output SARIF JSON
+        val json = writer.toJson(prettyPrint = true)
+
+        if (output != null) {
+            output!!.writeText(json)
+            if (format == OutputFormat.SARIF) {
+                // Don't pollute SARIF output with extra messages
+                logger.info("SARIF output written to ${output!!.absolutePath}")
+            }
+        } else {
+            println(json)
+        }
+    }
+
+    private fun getVersion(): String? = javaClass.classLoader
+        .getResourceAsStream("version.properties")
+        ?.bufferedReader()
+        ?.use { reader ->
+            val props = java.util.Properties()
+            props.load(reader)
+            props.getProperty("version")
+        }
 
     private fun formatDiagnosticLine(file: File, diagnostic: Diagnostic): String {
         val severityString = formatDiagnosticSeverity(diagnostic.severity)
