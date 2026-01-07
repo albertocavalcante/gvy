@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovycommon.groovycommon.doc
+package com.github.albertocavalcante.groovycommon.doc
 
 import com.github.albertocavalcante.groovycommon.doc.GroovyDoc
 import com.github.albertocavalcante.groovycommon.doc.GroovyDocParser
@@ -387,5 +387,12 @@ class GroovyDocParserTest {
         assertEquals(1, result.throws.size)
         assertEquals("IOException", result.throws[0].exception)
         assertEquals("", result.throws[0].description)
+    }
+
+    @Test
+    fun `parse single line comment`() {
+        val comment = "/** This is a single line comment. */"
+        val result = GroovyDocParser.parse(comment)
+        assertEquals("This is a single line comment.", result.description)
     }
 }

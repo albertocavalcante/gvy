@@ -41,24 +41,28 @@ object GroovyDocParser {
     }
 
     /**
-     * Removes comment syntax (slash-star-star and star-slash, and leading *) from each line.
+     * Removes comment delimiters (/** and */) and leading asterisks (*) from each line.
      */
-    private fun stripCommentSyntax(comment: String): List<String> {
-        return comment
-            .lines()
-            .map { it.trim() }
-            .dropWhile { it.isEmpty() || it == "/**" }
-            .dropLastWhile { it.isEmpty() || it == "*/" || it == "*" }
-            .map { line ->
-                when {
-                    line.startsWith("/**") -> line.removePrefix("/**").trim()
-                    line.startsWith("*/") -> ""
-                    line.startsWith("*") -> line.removePrefix("*").trimStart()
-                    else -> line
-                }
+    private fun stripCommentSyntax(comment: String): List<String> = comment
+        .lines()
+        .map { it.trim() }
+        .dropWhile { it.isEmpty() || it == "/**" }
+        .dropLastWhile { it.isEmpty() || it == "*/" || it == "*" }
+        .map { line ->
+            var processed = line
+            if (processed.startsWith("/**")) {
+                processed = processed.removePrefix("/**").trim()
             }
-            .filter { it.isNotEmpty() || it.isBlank() } // Keep blank lines for multiline content
-    }
+            if (processed.endsWith("*/")) {
+                processed = processed.removeSuffix("*/").trim()
+            }
+
+            if (processed.startsWith("*")) {
+                processed.removePrefix("*").trimStart()
+            } else {
+                processed
+            }
+        }
 
     /**
      * Parses tag lines, handling multiline tag descriptions.
