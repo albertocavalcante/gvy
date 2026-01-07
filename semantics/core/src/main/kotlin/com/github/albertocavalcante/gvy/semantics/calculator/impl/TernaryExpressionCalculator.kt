@@ -32,8 +32,14 @@ class TernaryExpressionCalculator : TypeCalculator<Any> {
                 nodeType = "${node::class.simpleName ?: "unknown"} (missing falseExpression)",
             ).left()
 
-        val trueType = context.calculateType(trueExpr)
-        val falseType = context.calculateType(falseExpr)
+        val trueType = when (val result = context.calculateTypeResult(trueExpr)) {
+            is arrow.core.Either.Left -> return result
+            is arrow.core.Either.Right -> result.value
+        }
+        val falseType = when (val result = context.calculateTypeResult(falseExpr)) {
+            is arrow.core.Either.Left -> return result
+            is arrow.core.Either.Right -> result.value
+        }
 
         return TypeLub.lub(trueType, falseType).right()
     }

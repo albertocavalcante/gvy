@@ -35,6 +35,15 @@ class ElvisOperatorExpressionCalculator : TypeCalculator<Any> {
                 nodeType = "${node::class.simpleName ?: "unknown"} (missing falseExpression)",
             ).left()
 
-        return TypeLub.lub(context.calculateType(left), context.calculateType(right)).right()
+        val leftType = when (val result = context.calculateTypeResult(left)) {
+            is arrow.core.Either.Left -> return result
+            is arrow.core.Either.Right -> result.value
+        }
+        val rightType = when (val result = context.calculateTypeResult(right)) {
+            is arrow.core.Either.Left -> return result
+            is arrow.core.Either.Right -> result.value
+        }
+
+        return TypeLub.lub(leftType, rightType).right()
     }
 }
