@@ -165,6 +165,13 @@ export class GroovyTestController {
     return parts[parts.length - 1];
   }
 
+  /**
+   * Check if a URI is within the current workspace.
+   */
+  private isInWorkspace(uriString: string): boolean {
+    const uri = vscode.Uri.parse(uriString);
+    return vscode.workspace.getWorkspaceFolder(uri) !== undefined;
+  }
 
   // Unified command handler
   private async runTestCommand(args: { suite: string; test: string; uri?: string }, debug: boolean) {
@@ -175,6 +182,16 @@ export class GroovyTestController {
     }
     if (!args.test || args.test.trim() === '') {
       vscode.window.showErrorMessage('Test name cannot be empty');
+      return;
+    }
+
+    // Check if file is outside workspace - cannot run tests from external projects
+    // TODO(#714): Support external file test execution by detecting their project root
+    if (args.uri && !this.isInWorkspace(args.uri)) {
+      vscode.window.showWarningMessage(
+        'Cannot run test: file is outside the current workspace. ' +
+        'Open the file\'s project folder to run its tests.'
+      );
       return;
     }
 
