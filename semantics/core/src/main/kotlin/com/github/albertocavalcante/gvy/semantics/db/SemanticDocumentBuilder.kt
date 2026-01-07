@@ -328,7 +328,6 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             }
 
             // Fallback: prepend current package if available
-            // Fallback: prepend current package if available
             val packageName = moduleNode.packageName
             if (!packageName.isNullOrEmpty()) {
                 val pkgPath = packageName.replace('.', '/')
