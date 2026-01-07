@@ -3,7 +3,6 @@ package com.github.albertocavalcante.gvy.semantics.openrewrite
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
-import org.openrewrite.java.tree.Expression
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.JavaType
 import org.openrewrite.java.tree.TypedTree
@@ -47,21 +46,9 @@ class RewriteTypeContext(override val isStaticCompilation: Boolean = false) : Ty
      * Extracts type information from the LST node and converts to SemanticType.
      */
     override fun calculateType(node: Any): SemanticType = when (node) {
-        is TypedTree -> calculateTypedTree(node)
-        is Expression -> calculateExpression(node)
+        is TypedTree -> LstTypeMapper.toSemanticType(node.type)
+            ?: SemanticType.Unknown("No type information for ${node::class.simpleName}")
         else -> SemanticType.Unknown("Unsupported node type: ${node::class.simpleName}")
-    }
-
-    private fun calculateTypedTree(tree: TypedTree): SemanticType {
-        val javaType = tree.type
-        return LstTypeMapper.toSemanticType(javaType)
-            ?: SemanticType.Unknown("No type information for ${tree::class.simpleName}")
-    }
-
-    private fun calculateExpression(expr: Expression): SemanticType {
-        val javaType = expr.type
-        return LstTypeMapper.toSemanticType(javaType)
-            ?: SemanticType.Unknown("No type information for expression")
     }
 
     /**
