@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class GStringExpressionCalculatorTest {
@@ -29,6 +32,31 @@ class GStringExpressionCalculatorTest {
         val result = calculator.calculate(NotAGString(listOf("a")), mockContext())
 
         assertNull(result)
+    }
+
+    // Tests for Either-based calculateResult method
+
+    @Test
+    fun `calculateResult returns Right with GString type when strings and values are present`() {
+        val calculator = GStringExpressionCalculator()
+
+        val result = calculator.calculateResult(GStringExpression(listOf("a"), listOf(1)), mockContext())
+
+        assertTrue(result.isRight())
+        assertEquals(TypeConstants.GSTRING, result.getOrNull())
+    }
+
+    @Test
+    fun `calculateResult returns Left with UnsupportedNode when values are missing`() {
+        val calculator = GStringExpressionCalculator()
+
+        val result = calculator.calculateResult(NotAGString(listOf("a")), mockContext())
+
+        assertTrue(result.isLeft())
+        val error = (result as Either.Left).value
+        assertTrue(error is TypeInferenceError.UnsupportedNode)
+        assertTrue(error.reason.contains("NotAGString"))
+        assertTrue(error.reason.contains("missing strings/values properties"))
     }
 
     private fun mockContext(): TypeContext = object : TypeContext {

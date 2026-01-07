@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 
@@ -68,6 +71,51 @@ class ConstantExpressionCalculatorTest {
         val result = calculator.calculate(node, mockContext())
 
         assertNull(result)
+    }
+
+    // Tests for Either-based calculateResult method
+
+    @Test
+    fun `calculateResult should return Right with Integer type`() {
+        val calculator = ConstantExpressionCalculator()
+        val node = TestConstant(42)
+        val result = calculator.calculateResult(node, mockContext())
+
+        assertTrue(result.isRight())
+        assertEquals(TypeConstants.INT, result.getOrNull())
+    }
+
+    @Test
+    fun `calculateResult should return Right with String type`() {
+        val calculator = ConstantExpressionCalculator()
+        val node = TestConstant("hello")
+        val result = calculator.calculateResult(node, mockContext())
+
+        assertTrue(result.isRight())
+        assertEquals(TypeConstants.STRING, result.getOrNull())
+    }
+
+    @Test
+    fun `calculateResult should return Right with Null type for null value`() {
+        val calculator = ConstantExpressionCalculator()
+        val node = TestConstant(null)
+        val result = calculator.calculateResult(node, mockContext())
+
+        assertTrue(result.isRight())
+        assertEquals(SemanticType.Null, result.getOrNull())
+    }
+
+    @Test
+    fun `calculateResult should return Left with UnsupportedNode when no value property`() {
+        val calculator = ConstantExpressionCalculator()
+        val node = NoValueProperty("x")
+
+        val result = calculator.calculateResult(node, mockContext())
+
+        assertTrue(result.isLeft())
+        val error = (result as Either.Left).value
+        assertTrue(error is TypeInferenceError.UnsupportedNode)
+        assertTrue(error.reason.contains("NoValueProperty"))
     }
 
     private fun mockContext() = object : TypeContext {
