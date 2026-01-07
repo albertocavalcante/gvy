@@ -39,7 +39,7 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             } ?: continue
 
             // Found it in the index, now load the actual ClassNode from AST
-            val classNode = loadClassNodeFromAst(uri, matchingSymbol.name)
+            val classNode = loadClassNodeFromAst(uri, matchingSymbol.fullyQualifiedName)
             if (classNode != null) {
                 logger.debug("Found global class definition for {} at {}", className, uri)
                 return SymbolResolutionStrategy.found(
