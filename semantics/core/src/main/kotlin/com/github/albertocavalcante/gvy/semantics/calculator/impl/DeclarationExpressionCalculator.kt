@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.left
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import kotlin.reflect.KClass
 
 /**
@@ -16,14 +19,21 @@ class DeclarationExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
-        if (node::class.java.simpleName != "DeclarationExpression") return null
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
 
-        val right =
-            ReflectionAccess.getProperty(node, "rightExpression")
-                ?: ReflectionAccess.getProperty(node, "right")
-                ?: return null
+    override fun calculateResult(node: Any, context: TypeContext): TypeResult {
+        if (node::class.java.simpleName != "DeclarationExpression") {
+            return TypeInferenceError.UnsupportedNode(
+                nodeType = node::class.simpleName ?: "unknown",
+            ).left()
+        }
 
-        return context.calculateType(right)
+        val right = ReflectionAccess.getProperty(node, "rightExpression")
+            ?: ReflectionAccess.getProperty(node, "right")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "DeclarationExpression (missing right expression)",
+            ).left()
+
+        return context.calculateTypeResult(right)
     }
 }

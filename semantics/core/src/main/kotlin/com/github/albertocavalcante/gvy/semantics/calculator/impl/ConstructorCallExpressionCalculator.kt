@@ -1,9 +1,13 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.left
+import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import kotlin.reflect.KClass
 
 /**
@@ -16,19 +20,29 @@ class ConstructorCallExpressionCalculator : TypeCalculator<Any> {
 
     override val nodeType: KClass<Any> = Any::class
 
-    override fun calculate(node: Any, context: TypeContext): SemanticType? {
+    override fun calculate(node: Any, context: TypeContext): SemanticType? = calculateResult(node, context).getOrNull()
+
+    override fun calculateResult(node: Any, context: TypeContext): TypeResult {
         // Check if this is a ConstructorCallExpression by class name
         // (avoiding direct dependency on Groovy AST classes)
         // Using endsWith() to match any variant (e.g., GroovyConstructorCallExpression)
         // while avoiding false matches on unrelated wrapper classes.
         if (!node::class.java.simpleName.endsWith("ConstructorCallExpression")) {
-            return null
+            return TypeInferenceError.UnsupportedNode(
+                nodeType = node::class.simpleName ?: "unknown",
+            ).left()
         }
 
         // Get the type being constructed via reflection
-        val typeNode = ReflectionAccess.getProperty(node, "type") ?: return null
-        val typeName = ReflectionAccess.getProperty(typeNode, "name") as? String ?: return null
+        val typeNode = ReflectionAccess.getProperty(node, "type")
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "ConstructorCallExpression (missing type)",
+            ).left()
+        val typeName = ReflectionAccess.getProperty(typeNode, "name") as? String
+            ?: return TypeInferenceError.UnsupportedNode(
+                nodeType = "ConstructorCallExpression (missing type name)",
+            ).left()
 
-        return SemanticType.Known(typeName)
+        return SemanticType.Known(typeName).right()
     }
 }
