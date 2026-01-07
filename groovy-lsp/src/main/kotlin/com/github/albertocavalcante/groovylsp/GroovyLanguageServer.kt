@@ -206,6 +206,8 @@ class GroovyLanguageServer(
             return options as Map<String, Any>
         }
         if (options is JsonObject) {
+            // TODO(#704): Migrate from Gson to kotlinx.serialization for better type safety
+            //   See: https://github.com/albertocavalcante/gvy/issues/704
             return runCatching {
                 @Suppress("UNCHECKED_CAST")
                 Gson().fromJson(options, Map::class.java) as Map<String, Any>
