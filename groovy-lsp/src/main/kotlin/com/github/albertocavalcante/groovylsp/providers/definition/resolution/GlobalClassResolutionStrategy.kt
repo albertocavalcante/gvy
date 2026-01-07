@@ -56,9 +56,50 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         )
     }
 
-    private fun loadClassNodeFromAst(uri: java.net.URI, className: String): ClassNode? {
-        val ast = compilationService.getAst(uri) ?: return null
-        return (ast as? ModuleNode)?.classes?.find { it.name == className }
+    private suspend fun loadClassNodeFromAst(uri: java.net.URI, className: String): ClassNode? {
+        // Ensure the file is compiled (handles case where file is in index but not yet compiled)
+        val compilationResult = compilationService.ensureCompiled(uri)
+        if (compilationResult == null) {
+            logger.warn(
+                "Cannot load AST for {} - file not compiled and no active compilation found. " +
+                    "This may indicate the file was deleted or is not accessible.",
+                uri,
+            )
+            return null
+        }
+
+        val ast = compilationService.getAst(uri)
+        if (ast == null) {
+            logger.warn(
+                "AST is null for {} after ensureCompiled returned successfully. " +
+                    "This indicates a cache inconsistency.",
+                uri,
+            )
+            return null
+        }
+
+        val moduleNode = ast as? ModuleNode
+        if (moduleNode == null) {
+            logger.warn(
+                "AST for {} is not a ModuleNode (actual type: {}). " +
+                    "This parser may not be supported for cross-file resolution.",
+                uri,
+                ast.javaClass.simpleName,
+            )
+            return null
+        }
+
+        val classNode = moduleNode.classes.find { it.name == className }
+        if (classNode == null) {
+            logger.debug(
+                "ClassNode {} not found in ModuleNode.classes for {}. Available classes: [{}]",
+                className,
+                uri,
+                moduleNode.classes.joinToString { it.name },
+            )
+        }
+
+        return classNode
     }
 
     companion object {

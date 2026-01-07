@@ -84,6 +84,68 @@ class GlobalClassResolutionStrategyTest {
         )
     }
 
+    // TODO: Enable when we have test infrastructure to simulate persistent symbol index with cleared AST cache
+    // Currently blocked because clearCaches() clears BOTH symbol index AND AST cache
+    // The real bug occurs when symbol index persists but AST cache is empty (e.g., file never opened)
+    // See E2E test "definition-crossfile-lazy-compile" for end-to-end validation of the fix
+    @org.junit.jupiter.api.Disabled("Needs enhanced test infrastructure - see TODO comment")
+    @Test
+    fun `should resolve cross-file class when target file not yet compiled`() = runTest {
+        // Arrange: Calculator.groovy (will be in index but NOT compiled yet)
+        val calculatorUri = URI.create("file:///test/com/example/Calculator.groovy")
+        val calculatorContent = """
+            package com.example
+            class Calculator {
+                Calculator(int x) {}
+            }
+        """.trimIndent()
+
+        // Arrange: Main.groovy uses Calculator
+        val mainUri = URI.create("file:///test/com/example/Main.groovy")
+        val mainContent = """
+            package com.example
+            class Main {
+                void run() {
+                    new Calculator(10)
+                }
+            }
+        """.trimIndent()
+
+        // CRITICAL: Compile Calculator first to populate the symbol index
+        compilationService.compile(calculatorUri, calculatorContent)
+
+        // Then clear the AST cache (simulating the file not being opened in this session)
+        // but the symbol index still knows about it
+        compilationService.clearCaches()
+
+        // Now compile only Main.groovy
+        compilationService.compile(mainUri, mainContent)
+
+        // Get the ConstructorCallExpression from Main.groovy
+        val mainAst = compilationService.getAst(mainUri)!!
+        val context = ResolutionContext(
+            targetNode = findConstructorCall(mainAst),
+            documentUri = mainUri,
+            position = Position(4, 13), // "Calculator" in "new Calculator(10)"
+        )
+
+        // Act: Resolve using GlobalClassResolutionStrategy
+        // BUG: This will fail because Calculator.groovy is not compiled (AST is null)
+        val result = strategy.resolve(context)
+
+        // Assert: Should still resolve to Calculator.groovy by compiling on-demand
+        assertTrue(result.isRight(), "Resolution should succeed even when target file not compiled")
+        result.fold(
+            ifLeft = { error -> throw AssertionError("Expected Right but got Left: ${error.reason}") },
+            ifRight = { definitionResult ->
+                val sourceResult =
+                    assertInstanceOf(DefinitionResolver.DefinitionResult.Source::class.java, definitionResult)
+                assertEquals(calculatorUri, sourceResult.uri, "Should resolve to Calculator.groovy")
+                assertEquals("com.example.Calculator", (sourceResult.node as ClassNode).name)
+            },
+        )
+    }
+
     private fun findConstructorCall(node: ASTNode): ASTNode {
         if (node is ConstructorCallExpression) return node
         if (node is ModuleNode) {
