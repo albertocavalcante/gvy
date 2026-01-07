@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
+import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -36,13 +37,27 @@ class MapExpressionCalculator : TypeCalculator<Any> {
             ).right()
         }
 
-        val keyTypes = entries
-            .mapNotNull { ReflectionAccess.getProperty(it, "keyExpression") }
-            .map { context.calculateType(it) }
+        val keyTypes = mutableListOf<SemanticType>()
+        val valueTypes = mutableListOf<SemanticType>()
 
-        val valueTypes = entries
-            .mapNotNull { ReflectionAccess.getProperty(it, "valueExpression") }
-            .map { context.calculateType(it) }
+        for (entry in entries) {
+            val keyExpr = ReflectionAccess.getProperty(entry, "keyExpression")
+            val valueExpr = ReflectionAccess.getProperty(entry, "valueExpression")
+
+            if (keyExpr != null) {
+                when (val result = context.calculateTypeResult(keyExpr)) {
+                    is Either.Left -> return result
+                    is Either.Right -> keyTypes.add(result.value)
+                }
+            }
+
+            if (valueExpr != null) {
+                when (val result = context.calculateTypeResult(valueExpr)) {
+                    is Either.Left -> return result
+                    is Either.Right -> valueTypes.add(result.value)
+                }
+            }
+        }
 
         val keyLub = if (keyTypes.isNotEmpty()) TypeLub.lub(keyTypes) else TypeConstants.OBJECT
         val valueLub = if (valueTypes.isNotEmpty()) TypeLub.lub(valueTypes) else TypeConstants.OBJECT
