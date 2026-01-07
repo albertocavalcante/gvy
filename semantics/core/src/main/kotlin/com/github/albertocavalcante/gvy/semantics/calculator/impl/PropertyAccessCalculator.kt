@@ -48,10 +48,7 @@ class PropertyAccessCalculator : TypeCalculator<Any> {
                 nodeType = "${node::class.simpleName ?: "unknown"} (missing property name)",
             ).left()
 
-        return when (val result = context.getFieldTypeResult(receiverType, propertyName)) {
-            is Either.Left -> result
-            is Either.Right -> result
-        }
+        return context.getFieldTypeResult(receiverType, propertyName)
     }
 
     private fun getPropertyName(property: Any): String? {

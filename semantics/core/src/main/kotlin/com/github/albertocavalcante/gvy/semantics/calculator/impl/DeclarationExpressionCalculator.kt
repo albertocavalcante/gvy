@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
-import arrow.core.Either
 import arrow.core.left
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
@@ -35,9 +34,6 @@ class DeclarationExpressionCalculator : TypeCalculator<Any> {
                 nodeType = "DeclarationExpression (missing right expression)",
             ).left()
 
-        return when (val result = context.calculateTypeResult(right)) {
-            is Either.Left -> result
-            is Either.Right -> result
-        }
+        return context.calculateTypeResult(right)
     }
 }

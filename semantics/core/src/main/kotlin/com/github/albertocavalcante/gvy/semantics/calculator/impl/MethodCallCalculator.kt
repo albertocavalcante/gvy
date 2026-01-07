@@ -52,10 +52,7 @@ class MethodCallCalculator : TypeCalculator<Any> {
             }
         }
 
-        return when (val result = context.getMethodReturnTypeResult(receiverType, methodName, argTypes)) {
-            is Either.Left -> result
-            is Either.Right -> result
-        }
+        return context.getMethodReturnTypeResult(receiverType, methodName, argTypes)
     }
 
     private fun getMethodAsString(node: Any): String? =

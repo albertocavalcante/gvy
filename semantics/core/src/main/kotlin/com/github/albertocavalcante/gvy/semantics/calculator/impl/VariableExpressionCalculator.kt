@@ -1,8 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
-import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.ReflectionAccess
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
@@ -28,9 +26,6 @@ class VariableExpressionCalculator : TypeCalculator<Any> {
                 nodeType = "${node::class.simpleName ?: "unknown"} (missing name property)",
             ).left()
 
-        return when (val result = context.lookupSymbolResult(name)) {
-            is Either.Left -> result
-            is Either.Right -> result.value.right()
-        }
+        return context.lookupSymbolResult(name)
     }
 }
