@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GradleExecutionService } from './GradleExecutionService';
+import { ITestExecutionService } from './ITestExecutionService';
 import { TestService, TestSuite, Test } from './TestService';
 import { CoverageService } from './CoverageService';
 
@@ -8,7 +8,8 @@ export class GroovyTestController {
 
   constructor(
     context: vscode.ExtensionContext,
-    private readonly executionService: GradleExecutionService,
+    // TODO(#715): Using interface for hacky Maven support
+    private readonly executionService: ITestExecutionService,
     private readonly testService?: TestService,
     private readonly coverageService?: CoverageService,
   ) {
@@ -46,13 +47,13 @@ export class GroovyTestController {
       false,
     );
 
-    // Coverage profile requires CoverageService
-    if (this.coverageService) {
+    // Coverage profile requires CoverageService and execution service support
+    if (this.coverageService && this.executionService.runTestsWithCoverage) {
       this.ctrl.createRunProfile(
         'Run with Coverage',
         vscode.TestRunProfileKind.Coverage,
         (request, token) =>
-          this.executionService.runTestsWithCoverage(
+          this.executionService.runTestsWithCoverage!(
             request,
             token,
             this.ctrl,
