@@ -1,0 +1,130 @@
+name: definition-crossfile-spock
+description: Cross-file go-to-definition for Spock tests referencing classes
+
+workspace:
+  fixture: empty-workspace
+
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.server.logLevel: DEBUG
+        groovy.engine.type: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  # File A: Define the class being tested (in src/main)
+  - openDocument:
+      path: src/main/groovy/com/example/HelloService.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        class HelloService {
+            String name
+
+            HelloService(String name) {
+                this.name = name
+            }
+
+            String sayHello() {
+                return "Hello, ${name}!"
+            }
+        }
+
+  # File B: Spock test that uses HelloService (in src/test)
+  - openDocument:
+      path: src/test/groovy/com/example/HelloServiceSpec.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+        
+        import spock.lang.Specification
+
+        class HelloServiceSpec extends Specification {
+            def "sayHello returns greeting"() {
+                given:
+                    HelloService service = new HelloService("World")
+                when:
+                    String result = service.sayHello()
+                then:
+                    result == "Hello, World!"
+            }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # TEST: Click on HelloService in "new HelloService(...)"
+  # Line 7: "            HelloService service = new HelloService("World")"
+  #                                                ^-- char 40 is on 'H' of HelloService
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/test/groovy/com/example/HelloServiceSpec.groovy"
+        position:
+          line: 7
+          character: 40
+      saveAs: constructorResult
+
+  - assert:
+      source: constructorResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "HelloService.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 2
+
+  # TEST: Click on sayHello method call
+  # Line 9: "            String result = service.sayHello()"
+  #                                              ^-- char 44 is on 's' of sayHello
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/test/groovy/com/example/HelloServiceSpec.groovy"
+        position:
+          line: 9
+          character: 44
+      saveAs: methodResult
+
+  - assert:
+      source: methodResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "HelloService.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 9
+
+  - shutdown: {}
+  - exit: {}

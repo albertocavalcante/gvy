@@ -1,0 +1,102 @@
+name: definition-crossfile-lazy-compile
+description: Cross-file definition resolution when target file not opened yet (lazy compilation)
+
+workspace:
+  fixture: empty-workspace
+
+steps:
+  # CRITICAL: Create HelloService.groovy on disk BEFORE initialization
+  # This ensures it's found by the workspace scanner (indexed)
+  # but NOT opened (not in AST cache), testing lazy compilation from disk.
+  - cli:
+      command: /bin/sh
+      args:
+        - -c
+        - |
+          mkdir -p src/main/groovy/com/example
+          cat <<'EOF' > src/main/groovy/com/example/HelloService.groovy
+          package com.example
+
+          class HelloService {
+              String name
+
+              HelloService(String name) {
+                  this.name = name
+              }
+
+              String sayHello() {
+                  return "Hello, ${name}!"
+              }
+          }
+          EOF
+
+  - initialize:
+      initializationOptions:
+        groovy.server.logLevel: DEBUG
+        groovy.engine.type: core
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  # File B: Main.groovy (OPEN THIS FILE)
+  - openDocument:
+      path: src/test/groovy/com/example/Main.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        class Main {
+            void run() {
+                HelloService service = new HelloService("World")
+                service.sayHello()
+            }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # TEST: Click on HelloService in "new HelloService(...)"
+  # Line 4: "        HelloService service = new HelloService("World")"
+  #                                             ^-- char 36 is on 'H' of HelloService
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/test/groovy/com/example/Main.groovy"
+        position:
+          line: 4
+          character: 36
+      saveAs: constructorResult
+
+  # CRITICAL VALIDATION: Should resolve even though HelloService.groovy was NEVER opened
+  # The fix uses ensureCompiled() to compile it on-demand from disk
+  - assert:
+      source: constructorResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "HelloService.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 2
+
+  - shutdown: {}
+  - exit: {}

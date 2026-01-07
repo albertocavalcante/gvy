@@ -47,6 +47,12 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
             return SymbolResolutionStrategy.notFound("ImportNode - defer to classpath resolution", STRATEGY_NAME)
         }
 
+        // ConstantExpression (literals) should not resolve to symbols locally
+        if (context.targetNode is ConstantExpression) {
+            logger.debug("ConstantExpression detected, skipping local resolution")
+            return SymbolResolutionStrategy.notFound("ConstantExpression - ignoring literals", STRATEGY_NAME)
+        }
+
         // Special handling for ConstructorCallExpression: check if the target class is defined locally
         // CRITICAL: This must come BEFORE the general resolution to avoid incorrect resolution
         if (context.targetNode is ConstructorCallExpression) {
