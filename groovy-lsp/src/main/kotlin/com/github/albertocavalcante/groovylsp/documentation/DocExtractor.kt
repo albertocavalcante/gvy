@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
@@ -63,48 +64,8 @@ object DocExtractor {
         return null
     }
 
-    private fun findDocCommentBeforeLine(lines: List<String>, lineIndex: Int): String? {
-        if (lines.isEmpty()) return null
-
-        var i = (lineIndex - 1).coerceAtMost(lines.lastIndex)
-        if (i < 0) return null
-
-        while (i >= 0) {
-            val trimmed = lines[i].trim()
-            val isAnnotationLine = trimmed.startsWith("@") &&
-                trimmed.drop(1).firstOrNull()?.isJavaIdentifierStart() == true
-
-            // NOTE: Heuristic / tradeoff:
-            // When scanning upward for a preceding doc comment, we skip annotations and blank lines.
-            // This assumes conventional formatting where annotations immediately precede declarations.
-            if (trimmed.isBlank() || isAnnotationLine) {
-                i--
-                continue
-            }
-            break
-        }
-
-        if (i < 0) return null
-
-        val commentEndIndex = i
-        if (!lines[commentEndIndex].contains("*/")) return null
-
-        var startIndex: Int? = null
-        for (j in commentEndIndex downTo 0) {
-            val line = lines[j]
-            if (line.contains("/**")) {
-                startIndex = j
-                break
-            }
-            if (line.contains("/*") && !line.contains("/**")) {
-                // Non-doc block comment; do not treat it as documentation.
-                return null
-            }
-        }
-
-        val start = startIndex ?: return null
-        return lines.subList(start, commentEndIndex + 1).joinToString("\n")
-    }
+    private fun findDocCommentBeforeLine(lines: List<String>, lineIndex: Int): String? =
+        locateDocComment(lines, lineIndex)
 
     private fun findRawDocCommentWithGroovyDocParser(sourceText: String, node: ASTNode): String? = runCatching {
         val parser = GroovyDocParser(emptyList<LinkArgument>(), Properties())
@@ -156,13 +117,40 @@ object DocExtractor {
     private fun findPropertyDoc(classDoc: GroovyClassDoc, node: PropertyNode): GroovyProgramElementDoc? =
         classDoc.properties().find { it.name() == node.name }
 
-    // Reuse the existing parsing logic for the raw comment content,
-    // as it already handles @param, @return, etc. nicely.
-
     /**
      * Parse a doc comment string into a Documentation object.
+     *
+     * Uses the new GroovyDoc parser as primary method, with regex fallback
+     * for cases where the parser fails (e.g., malformed comments).
      */
     private fun parseDocComment(docComment: String): Documentation {
+        // Try new GroovyDoc parser first
+        return runCatching {
+            val cleanedForParser = cleanDocCommentForParser(docComment)
+            val groovydoc = Groovydoc.parse(cleanedForParser)
+            GroovyDocAdapter.toDocumentation(groovydoc)
+        }.onFailure { e ->
+            logger.debug("GroovyDoc parser failed; falling back to regex parsing", e)
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: parseDocCommentWithRegex(docComment)
+    }
+
+    /**
+     * Clean a doc comment for parsing by removing delimiters and asterisks.
+     */
+    private fun cleanDocCommentForParser(docComment: String): String = docComment
+        .replace(Regex("""/\*\*"""), "")
+        .replace(Regex("""\*/"""), "")
+        .lines()
+        .joinToString("\n") { line ->
+            line.trim().removePrefix("*").trim()
+        }
+        .trim()
+
+    /**
+     * Parse a doc comment using regex (legacy fallback method).
+     */
+    private fun parseDocCommentWithRegex(docComment: String): Documentation {
         // Remove comment delimiters and asterisks
         val cleanedComment = docComment
             .replace(Regex("""/\*\*"""), "")
@@ -247,4 +235,48 @@ object DocExtractor {
             see = see,
         )
     }
+}
+
+private fun locateDocComment(lines: List<String>, lineIndex: Int): String? {
+    if (lines.isEmpty()) return null
+    val commentEndIndex = findCommentEndIndex(lines, lineIndex) ?: return null
+    if (!lines[commentEndIndex].contains("*/")) return null
+
+    val startIndex = findCommentStartIndex(lines, commentEndIndex) ?: return null
+    return lines.subList(startIndex, commentEndIndex + 1).joinToString("\n")
+}
+
+private fun findCommentEndIndex(lines: List<String>, lineIndex: Int): Int? {
+    var i = (lineIndex - 1).coerceAtMost(lines.lastIndex)
+    if (i < 0) return null
+
+    while (i >= 0) {
+        val trimmed = lines[i].trim()
+        val isAnnotationLine = trimmed.startsWith("@") &&
+            trimmed.drop(1).firstOrNull()?.isJavaIdentifierStart() == true
+
+        // NOTE: Heuristic / tradeoff:
+        // When scanning upward for a preceding doc comment, we skip annotations and blank lines.
+        // This assumes conventional formatting where annotations immediately precede declarations.
+        if (trimmed.isBlank() || isAnnotationLine) {
+            i--
+            continue
+        }
+        return i
+    }
+    return null
+}
+
+private fun findCommentStartIndex(lines: List<String>, commentEndIndex: Int): Int? {
+    for (j in commentEndIndex downTo 0) {
+        val line = lines[j]
+        if (line.contains("/**")) {
+            return j
+        }
+        if (line.contains("/*") && !line.contains("/**")) {
+            // Non-doc block comment; do not treat it as documentation.
+            return null
+        }
+    }
+    return null
 }

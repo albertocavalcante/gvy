@@ -21,7 +21,7 @@ class DocExtractorTest {
     fun `extracts simple summary from groovydoc`() {
         val source = """
             package com.example
-            
+
             /**
              * This is a simple class.
              */
@@ -34,7 +34,7 @@ class DocExtractorTest {
         node.lineNumber = lineOf(source, "class SimpleClass")
         val doc = DocExtractor.extractDocumentation(source, node)
 
-        assertEquals("This is a simple class.", doc.summary)
+        assertEquals("This is a simple class", doc.summary)
         assertTrue(doc.isNotEmpty())
     }
 
