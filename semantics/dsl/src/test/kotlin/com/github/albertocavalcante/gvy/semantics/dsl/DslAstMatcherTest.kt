@@ -294,6 +294,7 @@ class DslAstMatcherTest {
 
     @Test
     fun `SequenceMatcher with empty matchers should return Match`() {
+        // TODO(#696): Define final semantics for empty SequenceMatcher and update implementation accordingly
         val expr = ConstantExpression("anything")
 
         val matcher = SequenceMatcher(emptyList())
