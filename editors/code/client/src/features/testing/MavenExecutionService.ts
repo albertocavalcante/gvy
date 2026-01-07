@@ -13,8 +13,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { TestEventConsumer } from './TestEventConsumer';
+import { ITestExecutionService } from './ITestExecutionService';
 
-export class MavenExecutionService {
+export class MavenExecutionService implements ITestExecutionService {
   constructor(private readonly logger: vscode.OutputChannel) {}
 
   public async runTests(
@@ -69,6 +70,7 @@ export class MavenExecutionService {
     _request: vscode.TestRunRequest,
     _token: vscode.CancellationToken,
     _testController: vscode.TestController,
+    _coverageService: unknown,
   ): Promise<void> {
     this.logger.appendLine(
       'MavenExecutionService: runTestsWithCoverage requested (not implemented)',
@@ -78,7 +80,7 @@ export class MavenExecutionService {
 
   /**
    * Build Maven Surefire test filter.
-   * Format: -Dtest="ClassName#methodName"
+   * Format: -Dtest="ClassName#methodName" for methods, "ClassName" for suites
    */
   private buildTestFilter(request: vscode.TestRunRequest): string[] {
     const testsToRun = request.include ?? [];
@@ -87,25 +89,21 @@ export class MavenExecutionService {
     }
 
     // Convert test IDs to Maven Surefire format
-    // Input: "com.example.MySpec.should add two numbers"
-    // Output: "com.example.MySpec#should add two numbers"
     const testPatterns = testsToRun.map((item) => {
+      // A suite (test class) has children; use FQCN directly
+      if (item.children.size > 0) {
+        return item.id;
+      }
+
+      // It's a single test method: "com.example.MySpec.test name" -> "com.example.MySpec#test name"
       const id = item.id;
-      // Find the last dot that separates class from method
-      // Class names use dots, method names can have spaces
       const lastDotIndex = id.lastIndexOf('.');
       if (lastDotIndex === -1) {
-        return id; // Just a class name
+        return id; // Fallback: no dot found
       }
 
       const className = id.substring(0, lastDotIndex);
       const methodName = id.substring(lastDotIndex + 1);
-
-      // If there's no method (it's a suite), just return class name
-      if (!methodName || className.includes(' ')) {
-        return id.replace(/\./g, '.'); // Keep as-is for class
-      }
-
       return `${className}#${methodName}`;
     });
 
@@ -136,8 +134,12 @@ export class MavenExecutionService {
         env: { ...process.env },
       });
 
+      // Track cancellation state
+      let wasCancelled = false;
+
       // Handle cancellation
       const cancelListener = token.onCancellationRequested(() => {
+        wasCancelled = true;
         proc.kill('SIGTERM');
         this.logger.appendLine('Test run cancelled');
       });
@@ -145,9 +147,7 @@ export class MavenExecutionService {
       // Process stdout line by line
       const rl = readline.createInterface({ input: proc.stdout });
       rl.on('line', (line) => {
-        // TODO(#715): Parse Maven Surefire output for test events
-        // For now, just log output
-        this.logger.appendLine(line);
+        // processLine handles logging for non-JSON lines
         consumer.processLine(line);
       });
 
@@ -159,6 +159,13 @@ export class MavenExecutionService {
       proc.on('close', (code) => {
         cancelListener.dispose();
         rl.close();
+
+        // Don't report results if cancelled - leave tests in enqueued state
+        if (wasCancelled) {
+          this.logger.appendLine('Test run was cancelled');
+          resolve();
+          return;
+        }
 
         // Mark tests as passed/failed based on exit code
         // TODO(#715): Parse actual test results from Surefire reports
