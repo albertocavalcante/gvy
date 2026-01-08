@@ -4,6 +4,8 @@ import com.github.albertocavalcante.groovyjenkins.GlobalVariable
 import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovyjenkins.JenkinsWorkspaceManager
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.net.URI
@@ -34,8 +36,33 @@ class WorkspaceManager {
     private val sourceRoots = mutableSetOf<Path>()
     private var workspaceSources: List<Path> = emptyList()
 
-    // Jenkins workspace management
+    // Jenkins workspace management (legacy - will be removed after migration)
     private var jenkinsWorkspaceManager: JenkinsWorkspaceManager? = null
+
+    // Project strategy registry (new - replaces jenkinsWorkspaceManager)
+    private var strategyRegistry: ProjectStrategyRegistry? = null
+
+    /**
+     * Sets the project strategy registry.
+     * The registry manages project-type-specific strategies (Jenkins, Gradle, etc.).
+     */
+    fun setStrategyRegistry(registry: ProjectStrategyRegistry) {
+        this.strategyRegistry = registry
+        logger.info("Strategy registry set with {} strategies", registry.activeStrategies.size)
+    }
+
+    /**
+     * Gets the project strategy registry.
+     */
+    fun getStrategyRegistry(): ProjectStrategyRegistry? = strategyRegistry
+
+    /**
+     * Gets Jenkins capabilities from the strategy registry.
+     * This is the preferred way to access Jenkins-specific functionality.
+     *
+     * @return JenkinsCapabilities if a Jenkins strategy is active, null otherwise
+     */
+    fun getJenkinsCapabilities(): JenkinsCapabilities? = strategyRegistry?.findCapability<JenkinsCapabilities>()
 
     fun initializeWorkspace(workspaceRoot: Path) {
         logger.info("Initializing workspace (non-blocking): $workspaceRoot")
@@ -108,11 +135,23 @@ class WorkspaceManager {
             }
         }
 
-        // Add Jenkins library source roots if available
-        jenkinsWorkspaceManager?.getLibrarySourceRoots()?.forEach { librarySourceRoot ->
-            if (Files.exists(librarySourceRoot) && Files.isDirectory(librarySourceRoot)) {
-                sourceRoots.add(librarySourceRoot)
-                logger.debug("Added Jenkins library source root: $librarySourceRoot")
+        // Add source roots from active strategies (preferred)
+        strategyRegistry?.activeStrategies?.forEach { strategy ->
+            strategy.getSourceRoots().forEach { sourceRoot ->
+                if (Files.exists(sourceRoot) && Files.isDirectory(sourceRoot)) {
+                    sourceRoots.add(sourceRoot)
+                    logger.debug("Added source root from strategy '{}': {}", strategy.id, sourceRoot)
+                }
+            }
+        }
+
+        // Add Jenkins library source roots if available (legacy fallback)
+        if (strategyRegistry == null) {
+            jenkinsWorkspaceManager?.getLibrarySourceRoots()?.forEach { librarySourceRoot ->
+                if (Files.exists(librarySourceRoot) && Files.isDirectory(librarySourceRoot)) {
+                    sourceRoots.add(librarySourceRoot)
+                    logger.debug("Added Jenkins library source root: $librarySourceRoot")
+                }
             }
         }
 
@@ -159,7 +198,13 @@ class WorkspaceManager {
 
     /**
      * Initializes Jenkins workspace manager with configuration.
+     *
+     * @deprecated Use [ProjectStrategyRegistry] with [JenkinsProjectStrategy] instead.
      */
+    @Deprecated(
+        message = "Use ProjectStrategyRegistry with JenkinsProjectStrategy instead",
+        replaceWith = ReplaceWith("setStrategyRegistry(registry)"),
+    )
     fun initializeJenkinsWorkspace(config: ServerConfiguration, pluginManager: JenkinsPluginManager? = null) {
         val root = workspaceRoot
         if (root != null) {
@@ -176,58 +221,123 @@ class WorkspaceManager {
     }
 
     /**
-     * Gets the classpath for a file, including Jenkins-specific classpath if applicable.
+     * Gets the classpath for a file, including strategy-specific classpath if applicable.
+     *
+     * First queries active strategies for file-specific classpath. If a strategy returns
+     * a non-null classpath, that is used. Otherwise falls back to the standard dependency
+     * classpath.
      */
     fun getClasspathForFile(uri: URI, content: String): List<Path> {
-        val jenkinsManager = jenkinsWorkspaceManager
-        if (jenkinsManager != null && jenkinsManager.isJenkinsFile(uri)) {
-            // Return Jenkins-specific classpath, but ALSO include project dependencies
-            return jenkinsManager.getClasspathForFile(uri, content, dependencyClasspath)
+        // Try strategies first (preferred)
+        strategyRegistry?.activeStrategies?.forEach { strategy ->
+            val classpath = strategy.getClasspathForFile(uri, content, dependencyClasspath)
+            if (classpath != null) {
+                return classpath
+            }
         }
-        // Return standard dependency classpath for non-Jenkins files
+
+        // Legacy fallback: Jenkins workspace manager
+        if (strategyRegistry == null) {
+            val jenkinsManager = jenkinsWorkspaceManager
+            if (jenkinsManager != null && jenkinsManager.isJenkinsFile(uri)) {
+                return jenkinsManager.getClasspathForFile(uri, content, dependencyClasspath)
+            }
+        }
+
+        // Return standard dependency classpath for non-handled files
         return dependencyClasspath.toList()
     }
 
     /**
      * Checks if the given URI is a Jenkins pipeline file.
+     *
+     * @deprecated Use [getJenkinsCapabilities]`?.isJenkinsFile(uri)` instead.
      */
-    fun isJenkinsFile(uri: URI): Boolean = jenkinsWorkspaceManager?.isJenkinsFile(uri) ?: false
+    @Deprecated(
+        message = "Use getJenkinsCapabilities()?.isJenkinsFile(uri) instead",
+        replaceWith = ReplaceWith("getJenkinsCapabilities()?.isJenkinsFile(uri) ?: false"),
+    )
+    fun isJenkinsFile(uri: URI): Boolean = getJenkinsCapabilities()?.isJenkinsFile(uri)
+        ?: jenkinsWorkspaceManager?.isJenkinsFile(uri)
+        ?: false
 
     /**
      * Checks if the given URI is a GDSL file.
+     *
+     * @deprecated Use [getJenkinsCapabilities]`?.isGdslFile(uri)` instead.
      */
-    fun isGdslFile(uri: URI): Boolean = jenkinsWorkspaceManager?.isGdslFile(uri) ?: false
+    @Deprecated(
+        message = "Use getJenkinsCapabilities()?.isGdslFile(uri) instead",
+        replaceWith = ReplaceWith("getJenkinsCapabilities()?.isGdslFile(uri) ?: false"),
+    )
+    fun isGdslFile(uri: URI): Boolean = getJenkinsCapabilities()?.isGdslFile(uri)
+        ?: jenkinsWorkspaceManager?.isGdslFile(uri)
+        ?: false
 
     /**
      * Updates Jenkins configuration and rebuilds Jenkins context.
+     *
+     * @deprecated Use [JenkinsProjectStrategy.updateConfiguration] instead.
      */
+    @Deprecated(
+        message = "Use JenkinsProjectStrategy.updateConfiguration instead",
+        replaceWith = ReplaceWith("strategyRegistry.findStrategy(\"jenkins\")?.updateConfiguration(config)"),
+    )
     fun updateJenkinsConfiguration(config: ServerConfiguration) {
-        val root = workspaceRoot
-        if (root != null) {
-            // If manager exists, update it (preserves pluginManager inside)
-            jenkinsWorkspaceManager = jenkinsWorkspaceManager?.updateConfiguration(config.jenkinsConfig)
-                ?: JenkinsWorkspaceManager(config.jenkinsConfig, root)
-            logger.info("Updated Jenkins workspace configuration")
+        // Update via strategy registry if available
+        strategyRegistry?.findStrategy("jenkins")?.updateConfiguration(config)
+
+        // Legacy fallback
+        if (strategyRegistry == null) {
+            val root = workspaceRoot
+            if (root != null) {
+                jenkinsWorkspaceManager = jenkinsWorkspaceManager?.updateConfiguration(config.jenkinsConfig)
+                    ?: JenkinsWorkspaceManager(config.jenkinsConfig, root)
+                logger.info("Updated Jenkins workspace configuration")
+            }
         }
     }
 
     /**
      * Reloads GDSL metadata for Jenkins workspace.
+     *
+     * @deprecated Use [getJenkinsCapabilities]`?.reloadGdsl()` instead.
      */
+    @Deprecated(
+        message = "Use getJenkinsCapabilities()?.reloadGdsl() instead",
+        replaceWith = ReplaceWith("getJenkinsCapabilities()?.reloadGdsl()"),
+    )
     fun reloadJenkinsGdsl() {
-        jenkinsWorkspaceManager?.let { manager ->
-            val results = manager.reloadGdslMetadata()
-            logger.info("Reloaded ${results.successful.size} Jenkins GDSL files")
-        }
+        // Prefer strategy registry
+        getJenkinsCapabilities()?.reloadGdsl()
+            ?: jenkinsWorkspaceManager?.let { manager ->
+                val results = manager.reloadGdslMetadata()
+                logger.info("Reloaded ${results.successful.size} Jenkins GDSL files")
+            }
     }
 
     /**
      * Gets global variables defined in Jenkins workspace (e.g. vars/ directory).
+     *
+     * @deprecated Use [getJenkinsCapabilities]`?.getGlobalVariables()` instead.
      */
-    fun getJenkinsGlobalVariables(): List<GlobalVariable> = jenkinsWorkspaceManager?.getGlobalVariables() ?: emptyList()
+    @Deprecated(
+        message = "Use getJenkinsCapabilities()?.getGlobalVariables() instead",
+        replaceWith = ReplaceWith("getJenkinsCapabilities()?.getGlobalVariables() ?: emptyList()"),
+    )
+    fun getJenkinsGlobalVariables(): List<GlobalVariable> = getJenkinsCapabilities()?.getGlobalVariables()
+        ?: jenkinsWorkspaceManager?.getGlobalVariables()
+        ?: emptyList()
 
     /**
      * Gets combined Jenkins metadata (steps, globals) including scanned plugins.
+     *
+     * @deprecated Use [getJenkinsCapabilities]`?.getAllMetadata()` instead.
      */
-    fun getAllJenkinsMetadata() = jenkinsWorkspaceManager?.getAllMetadata()
+    @Deprecated(
+        message = "Use getJenkinsCapabilities()?.getAllMetadata() instead",
+        replaceWith = ReplaceWith("getJenkinsCapabilities()?.getAllMetadata()"),
+    )
+    fun getAllJenkinsMetadata() = getJenkinsCapabilities()?.getAllMetadata()
+        ?: jenkinsWorkspaceManager?.getAllMetadata()
 }
