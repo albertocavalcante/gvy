@@ -14,12 +14,16 @@ import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClassDeclarationHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClosureHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ConstructorCallHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.DeclarationExpressionHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.FieldDeclarationHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.GenericHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ImportHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.LiteralHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodCallHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodDeclarationHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.PropertyExpressionHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.VariableExpressionHoverStrategy
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -74,6 +78,10 @@ class HoverProvider(
         DeclarationExpressionHoverStrategy(),
         VariableExpressionHoverStrategy(),
         MethodCallHoverStrategy(),
+        ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
+        PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
+        ClosureHoverStrategy(), // Phase 4: Closure expressions
+        LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
         GenericHoverStrategy(), // Fallback - must be last
     )
 

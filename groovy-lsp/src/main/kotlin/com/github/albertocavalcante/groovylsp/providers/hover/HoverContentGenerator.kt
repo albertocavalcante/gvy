@@ -22,12 +22,15 @@ import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapEntryExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
@@ -88,8 +91,12 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         is VariableExpression -> renderVariableExpression(node, moduleNode)
         is DeclarationExpression -> renderDeclarationExpression(node, moduleNode)
         is MethodCallExpression -> renderMethodCallExpression(node)
+        is ConstructorCallExpression -> renderConstructorCallExpression(node)
+        is PropertyExpression -> renderPropertyExpression(node, moduleNode)
         is BinaryExpression -> renderBinaryExpression(node)
         is ClosureExpression -> renderClosureExpression(node)
+        is ListExpression -> renderListExpression(node)
+        is MapExpression -> renderMapExpression(node)
         is ConstantExpression -> renderConstantExpression(node)
         is GStringExpression -> renderGStringExpression(node)
         else -> defaultRender(node)
@@ -267,6 +274,77 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }
     }
 
+    private fun MarkdownBuilder.renderConstructorCallExpression(node: ConstructorCallExpression) {
+        val className = node.type.nameWithoutPackage
+        val arguments = displayConstructorArguments(node)
+
+        val signature = buildString {
+            append("new ")
+            append(className)
+            append("(")
+            append(arguments)
+            append(")")
+        }
+
+        section("Constructor Call") {
+            code("groovy") { signature }
+            keyValue(
+                "Class" to className,
+                "Arguments" to arguments.ifBlank { "none" },
+            )
+
+            // Show if it's a special call (this() or super())
+            if (node.isSuperCall) {
+                keyValue("Type" to "super() call")
+            } else if (node.isThisCall) {
+                keyValue("Type" to "this() call")
+            }
+
+            // Show full class name if different from simple name
+            val fullClassName = node.type.name
+            if (fullClassName != className) {
+                keyValue("Full Name" to fullClassName)
+            }
+        }
+    }
+
+    private fun displayConstructorArguments(node: ConstructorCallExpression): String {
+        val arguments = node.arguments
+        return when (arguments) {
+            is ArgumentListExpression -> arguments.expressions.map { it.displayArgument() }
+            is TupleExpression -> arguments.expressions.map { it.displayArgument() }
+            is MapExpression -> arguments.mapEntryExpressions.map { it.displayNamedArgument() }
+            else -> listOf(arguments.text.takeIf { it.isNotBlank() } ?: "")
+        }.filter { it.isNotBlank() }.joinToString(", ")
+    }
+
+    private fun MarkdownBuilder.renderPropertyExpression(node: PropertyExpression, moduleNode: ModuleNode?) {
+        val propertyName = node.propertyAsString ?: node.property.text
+        val objectExpr = node.objectExpression
+        val objectType = objectExpr.type.nameWithoutPackage
+
+        val displayExpr = buildString {
+            append(objectExpr.text.takeIf { it.isNotBlank() } ?: "this")
+            append(if (node.isSafe) "?." else ".")
+            append(propertyName)
+        }
+
+        section("Property Access") {
+            code("groovy") { displayExpr }
+            keyValue(
+                "Property" to propertyName,
+                "Object Type" to objectType,
+                "Safe Navigation" to node.isSafe.toString(),
+            )
+
+            // Try to resolve the property type
+            val propertyType = node.type.nameWithoutPackage
+            if (propertyType != "java.lang.Object") {
+                keyValue("Property Type" to propertyType)
+            }
+        }
+    }
+
     private fun MarkdownBuilder.renderBinaryExpression(node: BinaryExpression) {
         section("Binary Expression") {
             code("groovy") { node.operation.text }
@@ -310,6 +388,74 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         section("GString") {
             code("groovy") { node.text }
             text("Interpolated string expression")
+        }
+    }
+
+    private fun MarkdownBuilder.renderListExpression(node: ListExpression) {
+        val elementCount = node.expressions.size
+        val listType = node.type.nameWithoutPackage
+
+        section("List Literal") {
+            code("groovy") {
+                if (elementCount <= 5) {
+                    "[${node.expressions.joinToString(", ") { it.text }}]"
+                } else {
+                    "[${node.expressions.take(3).joinToString(", ") { it.text }}, ...]"
+                }
+            }
+            keyValue(
+                "Type" to listType,
+                "Size" to elementCount.toString(),
+            )
+
+            if (elementCount > 0) {
+                val elementTypes = node.expressions
+                    .map { it.type.nameWithoutPackage }
+                    .distinct()
+                    .joinToString(", ")
+                keyValue("Element Types" to elementTypes)
+            }
+        }
+    }
+
+    private fun MarkdownBuilder.renderMapExpression(node: MapExpression) {
+        val entryCount = node.mapEntryExpressions.size
+        val mapType = node.type.nameWithoutPackage
+
+        section("Map Literal") {
+            code("groovy") {
+                if (entryCount == 0) {
+                    "[:]"
+                } else if (entryCount <= 3) {
+                    "[${node.mapEntryExpressions.joinToString(", ") {
+                        "${it.keyExpression.text}: ${it.valueExpression.text}"
+                    }}]"
+                } else {
+                    "[${node.mapEntryExpressions.take(2).joinToString(", ") {
+                        "${it.keyExpression.text}: ${it.valueExpression.text}"
+                    }}, ...]"
+                }
+            }
+            keyValue(
+                "Type" to mapType,
+                "Size" to entryCount.toString(),
+            )
+
+            if (entryCount > 0) {
+                val keyTypes = node.mapEntryExpressions
+                    .map { it.keyExpression.type.nameWithoutPackage }
+                    .distinct()
+                    .joinToString(", ")
+                val valueTypes = node.mapEntryExpressions
+                    .map { it.valueExpression.type.nameWithoutPackage }
+                    .distinct()
+                    .joinToString(", ")
+
+                keyValue(
+                    "Key Types" to keyTypes,
+                    "Value Types" to valueTypes,
+                )
+            }
         }
     }
 
@@ -451,8 +597,9 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         this is FieldNode || this is PropertyNode || this is Parameter
 
     private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
-        this is BinaryExpression || this is DeclarationExpression || this is ClosureExpression ||
-        this is ConstantExpression || this is GStringExpression
+        this is ConstructorCallExpression || this is PropertyExpression || this is BinaryExpression ||
+        this is DeclarationExpression || this is ClosureExpression || this is ListExpression ||
+        this is MapExpression || this is ConstantExpression || this is GStringExpression
 
     private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
 }
