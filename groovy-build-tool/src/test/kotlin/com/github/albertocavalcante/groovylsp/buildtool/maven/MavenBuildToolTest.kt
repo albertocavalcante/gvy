@@ -28,8 +28,17 @@ class MavenBuildToolTest {
 
         val command = tool.getCoverageCommand(project, "com.example.Test", "testMethod")
 
-        assertTrue(command.args.contains("jacoco:report"), "Command should include jacoco:report")
-        assertTrue(command.args.contains("-Dtest=com.example.Test#testMethod"), "Command should target specific test")
+        val args = command.args
+        assertTrue(args.contains("jacoco:report"), "Command should include jacoco:report")
+        assertTrue(args.contains("-Dtest=com.example.Test#testMethod"), "Command should target specific test")
+
+        // Verify order: test -> -Dtest -> jacoco:report
+        val testIndex = args.indexOf("test")
+        val propertyIndex = args.indexOfFirst { it.startsWith("-Dtest=") }
+        val reportIndex = args.indexOf("jacoco:report")
+
+        assertTrue(testIndex < propertyIndex, "Goal 'test' should come before properties")
+        assertTrue(propertyIndex < reportIndex, "Properties should come before 'jacoco:report'")
     }
 
     @Test
@@ -40,10 +49,17 @@ class MavenBuildToolTest {
         // when test is null, it means full suite
         val command = tool.getCoverageCommand(project, "com.example.Test", null)
 
-        assertTrue(command.args.contains("jacoco:report"), "Command should include jacoco:report")
-        // Should contain -Dtest=com.example.Test (without method name)
-        assertTrue(command.args.contains("-Dtest=com.example.Test"), "Command should target suite")
-        // Should NOT contain '#'
-        assertFalse(command.args.any { it.contains('#') }, "Command should not contain method separator")
+        val args = command.args
+        assertTrue(args.contains("jacoco:report"), "Command should include jacoco:report")
+        assertTrue(args.contains("-Dtest=com.example.Test"), "Command should target suite")
+        assertFalse(args.any { it.contains('#') }, "Command should not contain method separator")
+
+        // Verify order: test -> -Dtest -> jacoco:report
+        val testIndex = args.indexOf("test")
+        val propertyIndex = args.indexOfFirst { it.startsWith("-Dtest=") }
+        val reportIndex = args.indexOf("jacoco:report")
+
+        assertTrue(testIndex < propertyIndex, "Goal 'test' should come before properties")
+        assertTrue(propertyIndex < reportIndex, "Properties should come before 'jacoco:report'")
     }
 }
