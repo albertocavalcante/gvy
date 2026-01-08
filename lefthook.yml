@@ -12,7 +12,7 @@ pre-commit:
       run: ./gradlew spotlessCheck
     extension-lint:
       glob: 'editors/code/**/*.ts'
-      run: cd editors/code && pnpm run check-types && pnpm run lint
+      run: cd editors/code && pnpm run check-types && pnpm run lint && pnpm run format:check
     yaml-lint:
       glob: '**/*.{yml,yaml}'
       run: yq '.' {staged_files} > /dev/null # Requires mikefarah/yq v4+
