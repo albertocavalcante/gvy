@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { GradleExecutionService } from './GradleExecutionService';
 import { GroovyTestController } from './GroovyTestController';
-import { TestService, BuildToolInfo } from './TestService';
+import { TestService } from './TestService';
 import { CoverageService } from './CoverageService';
 import { TestCodeLensProvider } from './TestCodeLensProvider';
 import { getClient } from '../../server/client';
@@ -12,8 +12,7 @@ export function registerTestingFeatures(
   context: vscode.ExtensionContext,
   logger: vscode.OutputChannel,
 ) {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  const workspaceUri = workspaceFolder?.uri.toString() ?? '';
+
 
 
   // Get the LanguageClient
