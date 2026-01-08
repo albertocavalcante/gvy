@@ -123,9 +123,17 @@ class TestRequestDelegate(
                 debug = true,
             ) != null
 
+            // Probe for coverage support dynamically
+            val supportsCoverage = buildTool.getCoverageCommand(
+                workspaceRoot = workspaceRoot,
+                suite = "com.example.Test",
+                test = "test",
+            ) != null
+
             logger.info(
                 "Detected build tool: ${buildTool.name}, " +
-                    "supportsTestExecution: $supportsTestExecution, supportsDebug: $supportsDebug",
+                    "supportsTestExecution: $supportsTestExecution, supportsDebug: $supportsDebug, " +
+                    "supportsCoverage: $supportsCoverage",
             )
 
             BuildToolInfo(
@@ -133,8 +141,7 @@ class TestRequestDelegate(
                 detected = true,
                 supportsTestExecution = supportsTestExecution,
                 supportsDebug = supportsDebug,
-                // Coverage detection would require additional BuildTool interface changes
-                supportsCoverage = buildTool.name.lowercase() == "gradle",
+                supportsCoverage = supportsCoverage,
             )
         }
     }

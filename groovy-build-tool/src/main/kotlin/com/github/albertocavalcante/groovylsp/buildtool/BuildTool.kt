@@ -49,6 +49,16 @@ interface BuildTool {
         test: String? = null,
         debug: Boolean = false,
     ): TestCommand? = null
+
+    /**
+     * Returns a command to execute tests with coverage for this build tool.
+     *
+     * @param workspaceRoot The root directory of the workspace.
+     * @param suite Fully qualified name of the test class.
+     * @param test Optional specific test method name (null = run all tests in suite).
+     * @return A [TestCommand] that the client can execute, or null if coverage is not supported.
+     */
+    fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String? = null): TestCommand? = null
 }
 
 /**

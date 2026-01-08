@@ -202,4 +202,15 @@ class MavenBuildTool : BuildTool {
             cwd = workspaceRoot.toString(),
         )
     }
+
+    override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
+        val testArg = if (test != null) "$suite#$test" else suite
+        val args = listOf("test", "-Dtest=$testArg", "jacoco:report")
+
+        return TestCommand(
+            executable = BuildExecutableResolver.resolveMaven(workspaceRoot),
+            args = args,
+            cwd = workspaceRoot.toString(),
+        )
+    }
 }

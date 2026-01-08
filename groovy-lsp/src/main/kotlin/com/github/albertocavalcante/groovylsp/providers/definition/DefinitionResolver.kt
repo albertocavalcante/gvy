@@ -126,7 +126,7 @@ class DefinitionResolver(
         validatePosition(position, uri)
         val trackedNode = astVisitor.getNodeAt(uri, position)
         val targetNode = selectBestNode(uri, position, trackedNode)
-        return resolveEffectiveTarget(targetNode, trackedNode)
+        return resolveEffectiveTarget(targetNode, trackedNode, uri, position)
     }
 
     /**
@@ -165,7 +165,17 @@ class DefinitionResolver(
      * NOTE: Clicking on a method call can resolve to its ConstantExpression "method" node.
      * Prefer the enclosing MethodCallExpression to avoid false positives.
      */
-    private fun resolveEffectiveTarget(targetNode: ASTNode, trackedNode: ASTNode?): ASTNode {
+    private fun resolveEffectiveTarget(
+        targetNode: ASTNode,
+        trackedNode: ASTNode?,
+        uri: URI,
+        position: Position,
+    ): ASTNode {
+        // Reject string literals - they're not navigable symbols
+        if (targetNode is ConstantExpression && targetNode.value is String) {
+            throw uri.nodeNotFoundAtPosition(position.line, position.character)
+        }
+
         val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
         val effectiveTarget = methodCall ?: targetNode
         logger.info("=== Effective target node ===")
