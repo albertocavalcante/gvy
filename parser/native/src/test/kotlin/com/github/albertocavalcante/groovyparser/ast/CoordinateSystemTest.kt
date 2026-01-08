@@ -280,4 +280,112 @@ class CoordinateSystemTest {
             )
         }
     }
+
+    /**
+     * Feedback from PR #741: Exclusive end column breaks last-character position containment.
+     * Groovy's lastColumnNumber is inclusive, so we must use `<=` comparison.
+     */
+    @Test
+    fun `nodeContainsPosition should include end column because Groovy is inclusive`() = runTest {
+        val groovyCode = "class Test { int x }"
+        val uri = URI.create("file:///test.groovy")
+        val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
+
+        // Find a node with valid position info
+        val classNode = ast.classes.first()
+        val fieldNode = classNode.fields.first()
+        val range = CoordinateSystem.getNodeLspRange(fieldNode)
+        assertNotNull(range)
+
+        // The issue reported is that nodeContainsPosition uses exclusive end column '<'
+        // But Groovy lastColumnNumber is inclusive, so it should be '<='
+        // Or more precisely, since we convert to Groovy coordinates, we should match inclusive.
+
+        // Let's test the boundary condition:
+        // If checking containment using Groovy coordinates directly via helper,
+        // we expect the last column to be INCLUDED.
+
+        // Let's use the LSP coordinate that corresponds to the last character.
+        // LSP range is [start, end), where end is exclusive.
+        // So end.character - 1 should be the last character inside the node.
+        val lastCharCol = range.end.character - 1
+        val lastCharLine = range.end.line
+
+        // This should be true
+        assertTrue(
+            CoordinateSystem.nodeContainsPosition(fieldNode, lastCharLine, lastCharCol),
+            "Position at current node end char should be contained",
+        )
+    }
+
+    @Test
+    fun `nodeContainsPosition should return false for synthetic or invalid nodes`() = runTest {
+        val node = VariableExpression("synthetic")
+        // Synthetic nodes often have -1 or 0 for positions
+        node.setLineNumber(0)
+        node.setColumnNumber(0)
+        node.setLastLineNumber(0)
+        node.setLastColumnNumber(0)
+
+        assertFalse(CoordinateSystem.nodeContainsPosition(node, 0, 0), "Should not contain position for 0,0 node")
+        assertFalse(CoordinateSystem.isValidNodePosition(node), "Node with 0,0 should be invalid")
+
+        node.setLineNumber(-1)
+        assertFalse(CoordinateSystem.isValidNodePosition(node), "Node with -1 line should be invalid")
+    }
+
+    @Test
+    fun `coordinate conversion should handle negative inputs gracefully`() {
+        // While we don't expect negative inputs, the system should be robust
+        val groovyPos = CoordinateSystem.lspToGroovy(-1, -1)
+        assertEquals(0, groovyPos.line)
+        assertEquals(0, groovyPos.column)
+
+        val lspPos = CoordinateSystem.groovyToLsp(0, 0)
+        assertEquals(-1, lspPos.line)
+        assertEquals(-1, lspPos.character)
+    }
+
+    @Test
+    fun `nodeContainsPosition should handle single-character nodes`() = runTest {
+        val node = VariableExpression("a")
+        node.setLineNumber(10)
+        node.setColumnNumber(5)
+        node.setLastLineNumber(10)
+        node.setLastColumnNumber(5) // Single character
+
+        assertTrue(CoordinateSystem.nodeContainsPosition(node, 9, 4), "Should contain its only character")
+        assertFalse(CoordinateSystem.nodeContainsPosition(node, 9, 3), "Should not contain character before")
+        assertFalse(CoordinateSystem.nodeContainsPosition(node, 9, 5), "Should not contain character after")
+    }
+
+    @Test
+    fun `nodeContainsPosition should handle multi-line boundary conditions`() = runTest {
+        val node = VariableExpression("multi")
+        node.setLineNumber(10)
+        node.setColumnNumber(5)
+        node.setLastLineNumber(12)
+        node.setLastColumnNumber(10)
+
+        // Middle line boundary conditions
+        assertTrue(
+            CoordinateSystem.nodeContainsPosition(node, 10, 0),
+            "Line 11 (LSP 10) starts at beginning of line because it's a middle line",
+        )
+        assertTrue(
+            CoordinateSystem.nodeContainsPosition(node, 10, 100),
+            "Line 11 (LSP 10) ends at end of line because it's a middle line",
+        )
+
+        // Start line boundary
+        assertFalse(CoordinateSystem.nodeContainsPosition(node, 9, 3), "Line 10 (LSP 9) starts at column 5 (LSP 4)")
+        assertTrue(CoordinateSystem.nodeContainsPosition(node, 9, 4), "Line 10 (LSP 9) contains column 5 (LSP 4)")
+
+        // End line boundary
+        assertTrue(CoordinateSystem.nodeContainsPosition(node, 11, 9), "Line 12 (LSP 11) ends at column 10 (LSP 9)")
+        assertFalse(
+            CoordinateSystem.nodeContainsPosition(node, 11, 10),
+            "Line 12 (LSP 11) does not contain column 11 (LSP 10)",
+        )
+    }
 }
