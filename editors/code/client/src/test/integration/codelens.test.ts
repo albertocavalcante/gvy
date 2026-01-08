@@ -12,4 +12,14 @@ suite('CodeLens Command Test Suite', () => {
         const commands = await vscode.commands.getCommands(true);
         assert.ok(commands.includes('groovy.test.debug'), 'groovy.test.debug command should be registered');
     });
+
+    test('Should register groovy.test.runAll command', async () => {
+        const commands = await vscode.commands.getCommands(true);
+        assert.ok(commands.includes('groovy.test.runAll'), 'groovy.test.runAll command should be registered');
+    });
+
+    test('Should register groovy.test.runCurrentFile command', async () => {
+        const commands = await vscode.commands.getCommands(true);
+        assert.ok(commands.includes('groovy.test.runCurrentFile'), 'groovy.test.runCurrentFile command should be registered');
+    });
 });

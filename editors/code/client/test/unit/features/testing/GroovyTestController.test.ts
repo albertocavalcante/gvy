@@ -58,6 +58,9 @@ describe('GroovyTestController', () => {
             tests: {
                 createTestController: sandbox.stub().returns(testControllerMock),
             },
+            TestTag: class TestTag {
+                constructor(public id: string) { }
+            },
             commands: {
                 registerCommand: sandbox.stub().callsFake((command: string, handler: any) => {
                     // Store the handler for testing
@@ -67,6 +70,7 @@ describe('GroovyTestController', () => {
             window: {
                 showErrorMessage: sandbox.stub(),
                 showWarningMessage: sandbox.stub(),
+                visibleTextEditors: [],
             },
             workspace: {
                 workspaceFolders: [{
@@ -86,6 +90,14 @@ describe('GroovyTestController', () => {
                     }
                     return undefined; // External file
                 }),
+                createFileSystemWatcher: sandbox.stub().returns({
+                    onDidCreate: sandbox.stub().returns({ dispose: sandbox.stub() }),
+                    onDidChange: sandbox.stub().returns({ dispose: sandbox.stub() }),
+                    onDidDelete: sandbox.stub().returns({ dispose: sandbox.stub() }),
+                    dispose: sandbox.stub(),
+                }),
+                onDidOpenTextDocument: sandbox.stub().returns({ dispose: sandbox.stub() }),
+                onDidSaveTextDocument: sandbox.stub().returns({ dispose: sandbox.stub() }),
             },
             TestRunProfileKind: {
                 Run: 1,
@@ -348,6 +360,99 @@ describe('GroovyTestController', () => {
             assert.ok(
                 executionServiceMock.runTests.notCalled,
                 'Should not run tests for external file'
+            );
+        });
+    });
+
+    describe('runTestCommand with wildcard', () => {
+        it('should run entire suite when test is "*" (wildcard)', async () => {
+            // Arrange: Set up a suite with tests discovered
+            const suiteUri = 'file:///workspace/MySpec.groovy';
+            const suiteName = 'com.example.MySpec';
+            testServiceMock.discoverTestsInWorkspace.resolves([{
+                uri: suiteUri,
+                suite: suiteName,
+                tests: [
+                    { test: 'test one', line: 10 },
+                    { test: 'test two', line: 20 }
+                ]
+            }]);
+
+            controller = new GroovyTestController(
+                contextMock,
+                executionServiceMock,
+                testServiceMock
+            );
+
+            // Trigger discovery
+            await testControllerMock.resolveHandler(undefined);
+
+            // Reset the mock to track only the run call
+            executionServiceMock.runTests.resetHistory();
+
+            // Act: Run with wildcard (simulating CodeLens "Run All Tests" click)
+            const runCommand = vscodeMock.commands.registerCommand.args.find(
+                (args: any[]) => args[0] === 'groovy.test.run'
+            );
+            assert.ok(runCommand, 'groovy.test.run command should be registered');
+
+            if (runCommand && runCommand[1]) {
+                await runCommand[1]({ suite: suiteName, test: '*', uri: suiteUri });
+            }
+
+            // Assert: Should run without errors
+            assert.ok(
+                !vscodeMock.window.showErrorMessage.called,
+                'Should not show error for wildcard test'
+            );
+
+            // STRICT ASSERTION: Should run the SUITE item, not a wildcard item
+            assert.ok(executionServiceMock.runTests.calledOnce, 'Should call runTests');
+
+            const runRequest = executionServiceMock.runTests.firstCall.args[0];
+            const runItem = runRequest.include[0];
+
+            // This assertion ensures we are running the actual suite item found in the tree
+            // and NOT creating a new on-the-fly item with id "suite.*"
+            assert.strictEqual(
+                runItem.id,
+                suiteName,
+                `Should run the suite item (id=${suiteName}), but ran item with id=${runItem.id}`
+            );
+        });
+
+        it('should not show error message for valid test names', async () => {
+            // Arrange
+            const suiteUri = 'file:///workspace/MySpec.groovy';
+            const suiteName = 'com.example.MySpec';
+            const testName = 'test one';
+            testServiceMock.discoverTestsInWorkspace.resolves([{
+                uri: suiteUri,
+                suite: suiteName,
+                tests: [{ test: testName, line: 10 }]
+            }]);
+
+            controller = new GroovyTestController(
+                contextMock,
+                executionServiceMock,
+                testServiceMock
+            );
+
+            // Trigger discovery
+            await testControllerMock.resolveHandler(undefined);
+
+            // Act: Run specific test
+            const runCommand = vscodeMock.commands.registerCommand.args.find(
+                (args: any[]) => args[0] === 'groovy.test.run'
+            );
+            if (runCommand && runCommand[1]) {
+                await runCommand[1]({ suite: suiteName, test: testName, uri: suiteUri });
+            }
+
+            // Assert
+            assert.ok(
+                !vscodeMock.window.showErrorMessage.called,
+                'Should not show error for valid test name'
             );
         });
     });

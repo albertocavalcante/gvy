@@ -64,7 +64,8 @@ export async function activate(context: vscode.ExtensionContext) {
         // Register testing features
         const testOutputChannel = vscode.window.createOutputChannel("Groovy Tests");
         context.subscriptions.push(testOutputChannel);
-        registerTestingFeatures(context, testOutputChannel);
+        // registerTestingFeatures(context, testOutputChannel); // Removed: called after startClient
+
 
         // Register AST Visualization
         registerAstFeatures(context);

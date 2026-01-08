@@ -16,16 +16,19 @@ import { TestEventConsumer } from './TestEventConsumer';
 import { ITestExecutionService } from './ITestExecutionService';
 
 export class MavenExecutionService implements ITestExecutionService {
-  constructor(private readonly logger: vscode.OutputChannel) {}
+  constructor(private readonly logger: vscode.OutputChannel) { }
 
   public async runTests(
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
     testController: vscode.TestController,
   ): Promise<void> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
-      vscode.window.showErrorMessage('No workspace folder open');
+    // Determine the project root from test item URI or fall back to workspace
+    const testsToRun = request.include ?? [];
+    const projectRoot = this.findProjectRoot(testsToRun);
+
+    if (!projectRoot) {
+      vscode.window.showErrorMessage('No Maven project found (pom.xml not detected)');
       return;
     }
 
@@ -36,7 +39,6 @@ export class MavenExecutionService implements ITestExecutionService {
     const testFilter = this.buildTestFilter(request);
 
     // Register all requested tests with the consumer
-    const testsToRun = request.include ?? [];
     for (const item of testsToRun) {
       consumer.registerTestItem(item.id, item);
       run.enqueued(item);
@@ -44,16 +46,66 @@ export class MavenExecutionService implements ITestExecutionService {
 
     try {
       await this.spawnMaven(
-        workspaceFolder.uri.fsPath,
+        projectRoot,
         testFilter,
         consumer,
         token,
       );
     } catch (error) {
+      console.log(`DEBUG: Maven execution error: ${error}`);
       this.logger.appendLine(`Maven execution error: ${error}`);
     } finally {
       run.end();
     }
+  }
+
+  /**
+   * Find the Maven project root by looking for pom.xml in parent directories.
+   */
+  private findProjectRoot(testItems: readonly vscode.TestItem[]): string | undefined {
+    // Try to get URI from first test item
+    const firstItem = testItems[0];
+    if (firstItem?.uri) {
+      const projectRoot = this.findPomDirectory(firstItem.uri.fsPath);
+      if (projectRoot) {
+        return projectRoot;
+      }
+    }
+
+    // Fall back to first workspace folder
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (workspaceFolder) {
+      const projectRoot = this.findPomDirectory(workspaceFolder.uri.fsPath);
+      if (projectRoot) {
+        return projectRoot;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Walk up the directory tree to find pom.xml
+   */
+  private findPomDirectory(startPath: string): string | undefined {
+    let current = startPath;
+
+    // Handle file paths - start from directory
+    if (fs.existsSync(current) && fs.statSync(current).isFile()) {
+      current = path.dirname(current);
+    }
+
+    // Walk up looking for pom.xml
+    while (current !== path.dirname(current)) { // Stop at filesystem root
+      const pomPath = path.join(current, 'pom.xml');
+      if (fs.existsSync(pomPath)) {
+        this.logger.appendLine(`[Testing] Found Maven project root: ${current}`);
+        return current;
+      }
+      current = path.dirname(current);
+    }
+
+    return undefined;
   }
 
   public async debugTests(
@@ -107,7 +159,9 @@ export class MavenExecutionService implements ITestExecutionService {
       return `${className}#${methodName}`;
     });
 
-    return ['-Dtest=' + testPatterns.join(',')];
+    // Quote the pattern to handle spaces in test names (e.g., "single-argument capture")
+    // Without quotes, shell interprets spaces as arg separators, causing Maven errors
+    return [`-Dtest="${testPatterns.join(',')}"`];
   }
 
   private async spawnMaven(
@@ -120,7 +174,9 @@ export class MavenExecutionService implements ITestExecutionService {
       // Look for Maven wrapper first, fall back to mvn
       const mvnWrapper = process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw';
       const mvnWrapperPath = path.join(cwd, mvnWrapper);
+      console.log('DEBUG: spawnMaven called');
       const hasMvnWrapper = fs.existsSync(mvnWrapperPath);
+      console.log(`DEBUG: hasMvnWrapper=${hasMvnWrapper}`);
 
       const mvnCmd = hasMvnWrapper ? mvnWrapperPath : 'mvn';
 
@@ -128,6 +184,7 @@ export class MavenExecutionService implements ITestExecutionService {
 
       this.logger.appendLine(`Running: ${mvnCmd} ${args.join(' ')}`);
 
+      console.log('DEBUG: calling cp.spawn');
       const proc = cp.spawn(mvnCmd, args, {
         cwd,
         shell: !hasMvnWrapper, // Use shell for global mvn, not for wrapper
@@ -136,6 +193,8 @@ export class MavenExecutionService implements ITestExecutionService {
 
       // Track cancellation state
       let wasCancelled = false;
+      let foundHttpBlocker = false;
+      const httpBlockerPattern = /maven-default-http-blocker|Blocked mirror for repositories/i;
 
       // Handle cancellation
       const cancelListener = token.onCancellationRequested(() => {
@@ -149,11 +208,20 @@ export class MavenExecutionService implements ITestExecutionService {
       rl.on('line', (line) => {
         // processLine handles logging for non-JSON lines
         consumer.processLine(line);
+        if (httpBlockerPattern.test(line)) {
+          foundHttpBlocker = true;
+        }
       });
 
-      // Log stderr
+      // Log and capture stderr
+      let collectedStderr = '';
       proc.stderr.on('data', (data) => {
-        this.logger.appendLine(`[STDERR] ${data.toString()}`);
+        const str = data.toString();
+        collectedStderr += str;
+        this.logger.appendLine(`[STDERR] ${str}`);
+        if (httpBlockerPattern.test(str)) {
+          foundHttpBlocker = true;
+        }
       });
 
       proc.on('close', (code) => {
@@ -165,6 +233,26 @@ export class MavenExecutionService implements ITestExecutionService {
           this.logger.appendLine('Test run was cancelled');
           resolve();
           return;
+        }
+
+        // Check for specific Maven errors like blocked HTTP repositories (Maven 3.8.1+)
+        if (code !== 0 && (foundHttpBlocker || httpBlockerPattern.test(collectedStderr))) {
+          vscode.window.showErrorMessage(
+            'Maven Blocked HTTP Repository',
+            {
+              modal: true,
+              detail: 'Maven 3.8.1+ blocks insecure HTTP repositories by default.\n\n' +
+                'Reference: https://maven.apache.org/docs/3.8.1/release-notes.html#cve-2021-26291'
+            },
+            'Open pom.xml'
+          ).then(selection => {
+            if (selection === 'Open pom.xml') {
+              const pomPath = path.join(cwd, 'pom.xml');
+              if (fs.existsSync(pomPath)) {
+                vscode.workspace.openTextDocument(pomPath).then(doc => vscode.window.showTextDocument(doc));
+              }
+            }
+          });
         }
 
         // Mark tests as passed/failed based on exit code
