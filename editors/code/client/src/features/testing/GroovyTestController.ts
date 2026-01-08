@@ -1,10 +1,35 @@
-import * as vscode from 'vscode';
-import { ITestExecutionService } from './ITestExecutionService';
-import { TestService, TestSuite, Test } from './TestService';
-import { CoverageService } from './CoverageService';
+import * as vscode from "vscode";
+import { ITestExecutionService } from "./ITestExecutionService";
+import { TestService, TestSuite, Test } from "./TestService";
+import { CoverageService } from "./CoverageService";
+
+/**
+ * Tag for runnable test items - enables native Test Explorer play buttons.
+ */
+export const runnableTag = new vscode.TestTag("runnable");
+
+/**
+ * Codicon labels for test items in Test Explorer.
+ */
+function getCodiconLabel(kind: "suite" | "test"): string {
+  return kind === "suite" ? "$(symbol-class)" : "$(symbol-method)";
+}
+
+/**
+ * Metadata for test items stored in cache.
+ */
+interface TestItemMetadata {
+  kind: "suite" | "test";
+  suiteName: string;
+  line?: number;
+}
+
+/** Cache for test item metadata. */
+const dataCache = new WeakMap<vscode.TestItem, TestItemMetadata>();
 
 export class GroovyTestController {
   private readonly ctrl: vscode.TestController;
+  private readonly subscriptions: vscode.Disposable[] = [];
 
   constructor(
     context: vscode.ExtensionContext,
@@ -14,26 +39,184 @@ export class GroovyTestController {
     private readonly coverageService?: CoverageService,
   ) {
     this.ctrl = vscode.tests.createTestController(
-      'groovy-test-controller',
-      'Groovy Tests',
+      "groovy-test-controller",
+      "Groovy Tests",
     );
     context.subscriptions.push(this.ctrl);
 
     this.setupRunProfiles();
     this.setupResolveHandler();
+    this.setupFileWatchers();
+    this.setupDocumentHandlers();
+    this.processVisibleEditors();
     this.registerCommands(context);
+
+    // Initial discovery if LSP is ready
+    if (this.testService) {
+      this.refreshTests();
+    }
+
+    // Cleanup subscriptions on dispose
+    context.subscriptions.push({ dispose: () => this.dispose() });
+  }
+
+  /**
+   * Dispose of subscriptions and watchers.
+   */
+  dispose(): void {
+    if (this.refreshTimeout) {
+      clearTimeout(this.refreshTimeout);
+    }
+    this.subscriptions.forEach((s) => s.dispose());
+    this.subscriptions.length = 0;
+  }
+
+  /**
+   * Setup file system watchers for test files.
+   * Triggers LSP discovery when test files are created/changed/deleted.
+   */
+  private setupFileWatchers(): void {
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      "**/*{Spec,Test}.groovy",
+    );
+    this.subscriptions.push(watcher);
+
+    this.subscriptions.push(
+      watcher.onDidCreate(() => this.refreshTests()),
+      watcher.onDidChange(() => this.refreshTests()),
+      watcher.onDidDelete(() => this.refreshTests()),
+    );
+  }
+
+  /**
+   * Setup document event handlers for live test discovery.
+   */
+  private setupDocumentHandlers(): void {
+    this.subscriptions.push(
+      vscode.workspace.onDidOpenTextDocument((doc) => {
+        if (this.isTestFile(doc.uri)) {
+          this.refreshTests();
+        }
+      }),
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (this.isTestFile(doc.uri)) {
+          this.refreshTests();
+        }
+      }),
+    );
+  }
+
+  /**
+   * Process visible editors on startup to discover tests immediately.
+   */
+  private processVisibleEditors(): void {
+    vscode.window.visibleTextEditors.forEach((editor) => {
+      if (this.isTestFile(editor.document.uri)) {
+        this.refreshTests();
+      }
+    });
+  }
+
+  /**
+   * Check if a URI is a test file based on naming convention.
+   */
+  private isTestFile(uri: vscode.Uri): boolean {
+    const path = uri.fsPath;
+    return path.endsWith("Spec.groovy") || path.endsWith("Test.groovy");
+  }
+
+  /**
+   * Refresh tests with debouncing to avoid excessive LSP calls.
+   */
+  private refreshTimeout: ReturnType<typeof setTimeout> | undefined;
+  private refreshTests(): void {
+    if (this.refreshTimeout) {
+      clearTimeout(this.refreshTimeout);
+    }
+    this.refreshTimeout = setTimeout(() => {
+      this.discoverTests();
+    }, 300);
   }
 
   private registerCommands(context: vscode.ExtensionContext) {
     context.subscriptions.push(
-      vscode.commands.registerCommand('groovy.test.run', (args) => this.runTestCommand(args, false)),
-      vscode.commands.registerCommand('groovy.test.debug', (args) => this.runTestCommand(args, true))
+      vscode.commands.registerCommand("groovy.test.run", (args) =>
+        this.runTestCommand(args, false),
+      ),
+      vscode.commands.registerCommand("groovy.test.debug", (args) =>
+        this.runTestCommand(args, true),
+      ),
+      vscode.commands.registerCommand("groovy.test.runAll", () =>
+        this.runAllTests(),
+      ),
+      vscode.commands.registerCommand("groovy.test.runCurrentFile", () =>
+        this.runCurrentFileTests(),
+      ),
     );
+  }
+
+  private async runAllTests(): Promise<void> {
+    await this.discoverTests();
+    const items: vscode.TestItem[] = [];
+    this.ctrl.items.forEach((item) => items.push(item));
+    if (items.length === 0) {
+      vscode.window.showInformationMessage("No tests found in workspace");
+      return;
+    }
+    const request = new vscode.TestRunRequest(items);
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      await this.executionService.runTests(
+        request,
+        tokenSource.token,
+        this.ctrl,
+      );
+    } finally {
+      tokenSource.dispose();
+    }
+  }
+
+  private async runCurrentFileTests(): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !this.isTestFile(editor.document.uri)) {
+      vscode.window.showWarningMessage("No test file is currently open");
+      return;
+    }
+
+    // Ensure tests are discovered for this file
+    await this.discoverTests();
+
+    const fileUri = editor.document.uri.toString();
+    const items: vscode.TestItem[] = [];
+    this.ctrl.items.forEach((item) => {
+      // Check if the item's URI matches the current file
+      // Note: item.uri might be undefined for some items, handle safely
+      if (item.uri?.toString() === fileUri) {
+        items.push(item);
+      }
+    });
+
+    if (items.length === 0) {
+      vscode.window.showWarningMessage("No tests found in current file");
+      return;
+    }
+
+    const request = new vscode.TestRunRequest(items);
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      await this.executionService.runTests(
+        request,
+        tokenSource.token,
+        this.ctrl,
+      );
+    } finally {
+      tokenSource.dispose();
+    }
   }
 
   private setupRunProfiles() {
     this.ctrl.createRunProfile(
-      'Run',
+      "Run",
       vscode.TestRunProfileKind.Run,
       (request, token) =>
         this.executionService.runTests(request, token, this.ctrl),
@@ -41,7 +224,7 @@ export class GroovyTestController {
     );
 
     this.ctrl.createRunProfile(
-      'Debug',
+      "Debug",
       vscode.TestRunProfileKind.Debug,
       (request, token) => this.executionService.debugTests(request, token),
       false,
@@ -50,7 +233,7 @@ export class GroovyTestController {
     // Coverage profile requires CoverageService and execution service support
     if (this.coverageService && this.executionService.runTestsWithCoverage) {
       this.ctrl.createRunProfile(
-        'Run with Coverage',
+        "Run with Coverage",
         vscode.TestRunProfileKind.Coverage,
         (request, token) =>
           this.executionService.runTestsWithCoverage!(
@@ -113,7 +296,7 @@ export class GroovyTestController {
         this.ctrl.items.add(suiteItem);
       }
     } catch (error) {
-      console.error('Failed to discover tests:', error);
+      console.error("Failed to discover tests:", error);
     }
   }
 
@@ -122,11 +305,19 @@ export class GroovyTestController {
    */
   private createSuiteItem(suite: TestSuite): vscode.TestItem {
     const uri = vscode.Uri.parse(suite.uri);
+    const label = `${getCodiconLabel("suite")} ${this.getClassName(suite.suite)}`;
     const suiteItem = this.ctrl.createTestItem(
       suite.suite, // id = fully qualified class name
-      this.getClassName(suite.suite), // label = simple class name
+      label,
       uri,
     );
+
+    // Enable native play buttons and lazy loading
+    suiteItem.tags = [runnableTag];
+    suiteItem.canResolveChildren = true;
+
+    // Store metadata
+    dataCache.set(suiteItem, { kind: "suite", suiteName: suite.suite });
 
     // Add child test items
     for (const test of suite.tests) {
@@ -146,7 +337,12 @@ export class GroovyTestController {
     uri: vscode.Uri,
   ): vscode.TestItem {
     const testId = `${parentId}.${test.test}`;
-    const testItem = this.ctrl.createTestItem(testId, test.test, uri);
+    const label = `${getCodiconLabel("test")} ${test.test}`;
+    const testItem = this.ctrl.createTestItem(testId, label, uri);
+
+    // Enable native play buttons
+    testItem.tags = [runnableTag];
+    testItem.canResolveChildren = false; // Test methods are leaves
 
     // Set the line range for CodeLens and navigation
     const line = test.line >= 1 ? test.line - 1 : 0;
@@ -155,6 +351,16 @@ export class GroovyTestController {
       new vscode.Position(line, 100), // approximate end
     );
 
+    // Preserve source order with sortText
+    testItem.sortText = String(test.line).padStart(6, "0");
+
+    // Store metadata
+    dataCache.set(testItem, {
+      kind: "test",
+      suiteName: parentId,
+      line: test.line,
+    });
+
     return testItem;
   }
 
@@ -162,7 +368,7 @@ export class GroovyTestController {
    * Extract simple class name from fully qualified name.
    */
   private getClassName(fqn: string): string {
-    const parts = fqn.split('.');
+    const parts = fqn.split(".");
     return parts[parts.length - 1];
   }
 
@@ -175,14 +381,20 @@ export class GroovyTestController {
   }
 
   // Unified command handler
-  private async runTestCommand(args: { suite: string; test: string; uri?: string }, debug: boolean) {
-    // Validate suite and test names
-    if (!args.suite || args.suite.trim() === '') {
-      vscode.window.showErrorMessage('Test suite name cannot be empty');
+  private async runTestCommand(
+    args: { suite: string; test: string; uri?: string },
+    debug: boolean,
+  ) {
+    // Validate suite name
+    if (!args.suite || args.suite.trim() === "") {
+      vscode.window.showErrorMessage("Test suite name cannot be empty");
       return;
     }
-    if (!args.test || args.test.trim() === '') {
-      vscode.window.showErrorMessage('Test name cannot be empty');
+
+    // Handle wildcard: run entire suite
+    const isWildcard = args.test === "*";
+    if (!isWildcard && (!args.test || args.test.trim() === "")) {
+      vscode.window.showErrorMessage("Test name cannot be empty");
       return;
     }
 
@@ -190,31 +402,74 @@ export class GroovyTestController {
     // TODO(#714): Support external file test execution by detecting their project root
     if (args.uri && !this.isInWorkspace(args.uri)) {
       vscode.window.showWarningMessage(
-        'Cannot run test: file is outside the current workspace. ' +
-        'Open the file\'s project folder to run its tests.'
+        "Cannot run test: file is outside the current workspace. " +
+          "Open the file's project folder to run its tests.",
       );
       return;
     }
 
-    let item = await this.findTestItem(args.suite, args.test);
+    // If wildcard, try to find and run the suite item directly first
+    if (isWildcard) {
+      const suiteItem = this.ctrl.items.get(args.suite);
+      if (suiteItem) {
+        await this.runTestItem(suiteItem, debug);
+        return;
+      }
+      // If suite not found, discovery might be needed
+    }
+
+    let item = isWildcard
+      ? undefined
+      : await this.findTestItem(args.suite, args.test);
+
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
       // Try discovery first.
       await this.discoverTests();
-      const retryItem = await this.findTestItem(args.suite, args.test);
-      if (!retryItem) {
+
+      if (isWildcard) {
+        // Retry finding suite
+        const retrySuiteItem = this.ctrl.items.get(args.suite);
+        if (retrySuiteItem) {
+          await this.runTestItem(retrySuiteItem, debug);
+          return;
+        }
+      } else {
+        const retryItem = await this.findTestItem(args.suite, args.test);
+        if (retryItem) {
+          item = retryItem;
+        }
+      }
+
+      if (!item && !isWildcard) {
         // If still not found and we have a URI (e.g., external file), create on-the-fly test item
         if (args.uri) {
           item = this.createOnTheFlyTestItem(args.uri, args.suite, args.test);
         } else {
-          vscode.window.showErrorMessage(`Test not found: ${args.suite}.${args.test}`);
+          vscode.window.showErrorMessage(
+            `Test not found: ${args.suite}.${args.test}`,
+          );
           return;
         }
-      } else {
-        item = retryItem;
+      } else if (!item && isWildcard) {
+        // If wildcard and still no suite found... handle on-the-fly suite?
+        // For now, if we can't find the suite after discovery, we can't run "all tests" reliably via controller without a suite item.
+        // But we could potentially create an on-the-fly SUITE item.
+        if (args.uri) {
+          // Create on-the-fly SUITE item (TODO: extract method)
+          // simplified logic for now
+          vscode.window.showErrorMessage(
+            `Test suite not found for wildcard run: ${args.suite}`,
+          );
+          return;
+        }
+        return;
       }
     }
-    await this.runTestItem(item, debug);
+
+    if (item) {
+      await this.runTestItem(item, debug);
+    }
   }
 
   private async runTestItem(item: vscode.TestItem, debug: boolean) {
@@ -224,14 +479,21 @@ export class GroovyTestController {
       if (debug) {
         await this.executionService.debugTests(request, tokenSource.token);
       } else {
-        await this.executionService.runTests(request, tokenSource.token, this.ctrl);
+        await this.executionService.runTests(
+          request,
+          tokenSource.token,
+          this.ctrl,
+        );
       }
     } finally {
       tokenSource.dispose();
     }
   }
 
-  private async findTestItem(suiteName: string, testName: string): Promise<vscode.TestItem | undefined> {
+  private async findTestItem(
+    suiteName: string,
+    testName: string,
+  ): Promise<vscode.TestItem | undefined> {
     // First find suite
     const suiteItem = this.ctrl.items.get(suiteName);
     if (!suiteItem) {
@@ -247,14 +509,20 @@ export class GroovyTestController {
    * Create a test item on-the-fly for external files that are not in the workspace.
    * This allows running tests from CodeLens on files opened from outside the workspace.
    */
-  private createOnTheFlyTestItem(uriString: string, suiteName: string, testName: string): vscode.TestItem {
+  private createOnTheFlyTestItem(
+    uriString: string,
+    suiteName: string,
+    testName: string,
+  ): vscode.TestItem {
     // Validate inputs (defensive programming - caller should validate, but guard here too)
     // This protects against future refactoring and ensures method contract is explicit
-    if (!suiteName || suiteName.trim() === '') {
-      throw new Error('Suite name cannot be empty for on-the-fly test creation');
+    if (!suiteName || suiteName.trim() === "") {
+      throw new Error(
+        "Suite name cannot be empty for on-the-fly test creation",
+      );
     }
-    if (!testName || testName.trim() === '') {
-      throw new Error('Test name cannot be empty for on-the-fly test creation');
+    if (!testName || testName.trim() === "") {
+      throw new Error("Test name cannot be empty for on-the-fly test creation");
     }
 
     const uri = vscode.Uri.parse(uriString);

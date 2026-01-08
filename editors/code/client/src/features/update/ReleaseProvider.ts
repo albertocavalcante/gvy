@@ -1,4 +1,4 @@
-import { ReleaseInfo } from './VersionChecker';
+import { ReleaseInfo } from "./VersionChecker";
 
 /**
  * Abstraction for fetching the latest release information.
@@ -10,11 +10,11 @@ import { ReleaseInfo } from './VersionChecker';
  * UpdateChecker handles both gracefully with try-catch wrappers.
  */
 export interface ReleaseProvider {
-	/**
-	 * Fetches the latest release information from the configured source.
-	 *
-	 * @returns The latest release info, or `null` if unavailable.
-	 * @throws May throw on unexpected errors (will be caught by UpdateChecker).
-	 */
-	fetchLatestRelease(): Promise<ReleaseInfo | null>;
+  /**
+   * Fetches the latest release information from the configured source.
+   *
+   * @returns The latest release info, or `null` if unavailable.
+   * @throws May throw on unexpected errors (will be caught by UpdateChecker).
+   */
+  fetchLatestRelease(): Promise<ReleaseInfo | null>;
 }

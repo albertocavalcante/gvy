@@ -2,14 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
   "name": "Groovy",
   "scopeName": "source.groovy",
-  "fileTypes": [
-    "groovy",
-    "gvy",
-    "gy",
-    "gsh",
-    "gradle",
-    "Jenkinsfile"
-  ],
+  "fileTypes": ["groovy", "gvy", "gy", "gsh", "gradle", "Jenkinsfile"],
   "patterns": [
     {
       "include": "#comments"

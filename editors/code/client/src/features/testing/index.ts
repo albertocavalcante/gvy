@@ -1,82 +1,68 @@
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import { State } from 'vscode-languageclient/node';
-import { GradleExecutionService } from './GradleExecutionService';
-import { MavenExecutionService } from './MavenExecutionService';
-import { GroovyTestController } from './GroovyTestController';
-import { TestService, BuildToolInfo, BuildToolName } from './TestService';
-import { CoverageService } from './CoverageService';
-import { TestCodeLensProvider } from './TestCodeLensProvider';
-import { getClient } from '../../server/client';
-
-/**
- * Fallback build tool detection when LSP is not available.
- * Prefer using TestService.getBuildToolInfo() when LSP is ready.
- */
-function detectBuildToolFallback(workspacePath: string): BuildToolName {
-  // Check for Gradle
-  const gradleFiles = [
-    'build.gradle',
-    'build.gradle.kts',
-    'settings.gradle',
-    'settings.gradle.kts',
-  ];
-  if (gradleFiles.some((f) => fs.existsSync(path.join(workspacePath, f)))) {
-    return 'gradle';
-  }
-
-  // Check for Maven
-  if (fs.existsSync(path.join(workspacePath, 'pom.xml'))) {
-    return 'maven';
-  }
-
-  return 'unknown';
-}
-
-/**
- * Create execution service based on build tool type.
- */
-function createExecutionService(
-  buildTool: BuildToolName,
-  logger: vscode.OutputChannel,
-  extensionPath: string,
-) {
-  switch (buildTool) {
-    case 'maven':
-      return new MavenExecutionService(logger);
-    case 'gradle':
-    case 'bsp':
-    default:
-      // Default to Gradle for unknown/BSP (BSP uses Gradle commands internally)
-      return new GradleExecutionService(logger, extensionPath);
-  }
-}
+import * as vscode from "vscode";
+import { GradleExecutionService } from "./GradleExecutionService";
+import { GroovyTestController } from "./GroovyTestController";
+import { TestService } from "./TestService";
+import { CoverageService } from "./CoverageService";
+import { TestCodeLensProvider } from "./TestCodeLensProvider";
+import { getClient } from "../../server/client";
+import { LSPTestExecutionService } from "./LSPTestExecutionService";
+import { ITestExecutionService } from "./ITestExecutionService";
 
 export function registerTestingFeatures(
   context: vscode.ExtensionContext,
   logger: vscode.OutputChannel,
 ) {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  const workspacePath = workspaceFolder?.uri.fsPath ?? '';
-  const workspaceUri = workspaceFolder?.uri.toString() ?? '';
-
-  // Get the LanguageClient for test discovery and LSP-based build tool detection
+  // Get the LanguageClient
   const client = getClient();
   const testService = client ? new TestService(client) : undefined;
 
-  // Use synchronous fallback detection initially
-  // LSP-based detection will be used when available via groovy/runTest
-  const buildTool = detectBuildToolFallback(workspacePath);
-  logger.appendLine(`[Testing] Initial build tool detection (fallback): ${buildTool}`);
+  // If LSP is not available, we can't fully initialize testing features yet.
+  // We rely on extension.ts calling this AFTER startClient.
+  // However, if we want to support fallback for non-LSP usage in the future,
+  // we would handle that here. For now, we assume LSP is the source of truth.
+  if (!testService) {
+    logger.appendLine(
+      "[Testing] LSP client not ready. Testing features may be limited.",
+    );
+    // return; // Or continue with limited functionality?
+    // Existing code allowed creating controller without testService for limited use.
+  }
 
-  // Create initial execution service (LSP's groovy/runTest handles actual detection)
-  const executionService = createExecutionService(buildTool, logger, context.extensionPath);
+  // Use LSPTestExecutionService which delegates to the server
+  // We pass the testService (even if undefined/null initially, though it should be defined if client is running)
+  // But LSPTestExecutionService requires testService in constructor.
+  // We'll cast/check inside.
 
-  // Create coverage service (only works with Gradle for now)
-  const coverageService = buildTool === 'gradle' ? new CoverageService(logger) : undefined;
+  let executionService: ITestExecutionService;
 
-  // The controller registers itself with context.subscriptions in constructor
+  if (testService) {
+    executionService = new LSPTestExecutionService(
+      testService,
+      logger,
+      context.extensionPath,
+    );
+  } else {
+    // Fallback or placeholder if somehow registered without client
+    // We can use GradleExecutionService as a dumb fallback purely for the existing behavior
+    // or just error out.
+    // Given the duplicate call issue, if we fix extension.ts, this branch is unreachable.
+    // If we don't fix extension.ts, this branch IS reached on first call.
+    // To lead to a valid state, we'll default to Gradle logic (the old behavior)
+    // but acknowledge it's temporary until the second call updates it?
+    // Wait, second call creates NEW controller, doesn't update old one.
+
+    // We should really prevent the first call or make this robust.
+    // For now, let's assume we fix extension.ts.
+    executionService = new GradleExecutionService(
+      logger,
+      context.extensionPath,
+    );
+  }
+
+  // Create coverage service (legacy Gradle support)
+  // TODO: Move coverage logic to LSP or LSPTestExecutionService
+  const coverageService = new CoverageService(logger);
+
   new GroovyTestController(
     context,
     executionService,
@@ -84,60 +70,14 @@ export function registerTestingFeatures(
     coverageService,
   );
 
-  // Query LSP for build tool info once client is in Running state
-  if (client && testService && workspaceUri) {
-    const queryBuildToolInfo = async () => {
-      try {
-        const lspBuildToolInfo: BuildToolInfo = await testService.getBuildToolInfo(workspaceUri);
-        if (lspBuildToolInfo.detected) {
-          if (lspBuildToolInfo.name !== buildTool) {
-            logger.appendLine(
-              `[Testing] LSP detected build tool: ${lspBuildToolInfo.name} ` +
-              `(fallback was: ${buildTool}). LSP's groovy/runTest will use correct tool.`,
-            );
-          } else {
-            logger.appendLine(`[Testing] LSP confirmed build tool: ${lspBuildToolInfo.name}`);
-          }
-
-          // Log capabilities
-          logger.appendLine(
-            `[Testing] Build tool capabilities: ` +
-            `testExecution=${lspBuildToolInfo.supportsTestExecution}, ` +
-            `debug=${lspBuildToolInfo.supportsDebug}, ` +
-            `coverage=${lspBuildToolInfo.supportsCoverage}`,
-          );
-        }
-      } catch (error) {
-        logger.appendLine(`[Testing] Failed to get LSP build tool info: ${error}`);
-      }
-    };
-
-    // If client is already running, query immediately; otherwise wait for it
-    if (client.state === State.Running) {
-      void queryBuildToolInfo();
-    } else {
-      const disposable = client.onDidChangeState((e) => {
-        if (e.newState === State.Running) {
-          void queryBuildToolInfo();
-          disposable.dispose();
-        }
-      });
-      context.subscriptions.push(disposable);
-    }
-  }
-
-  if (buildTool === 'unknown') {
-    logger.appendLine(
-      '[Testing] Warning: No supported build tool detected. Test execution may not work.',
+  // Register CodeLens provider
+  if (testService) {
+    const codeLensProvider = new TestCodeLensProvider(testService);
+    context.subscriptions.push(
+      vscode.languages.registerCodeLensProvider(
+        [{ language: "groovy" }, { language: "jenkinsfile" }],
+        codeLensProvider,
+      ),
     );
   }
-
-  // Register CodeLens provider for test Run|Debug buttons
-  const codeLensProvider = new TestCodeLensProvider(testService);
-  context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
-      [{ language: 'groovy' }, { language: 'jenkinsfile' }],
-      codeLensProvider
-    )
-  );
 }

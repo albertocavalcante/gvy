@@ -3,10 +3,7 @@
     "module": "commonjs",
     "target": "ES2020",
     "outDir": "out",
-    "lib": [
-      "ES2021",
-      "DOM"
-    ],
+    "lib": ["ES2021", "DOM"],
     "sourceMap": true,
     "rootDir": "src",
     "strict": true,
@@ -16,12 +13,6 @@
     "forceConsistentCasingInFileNames": true,
     "composite": true
   },
-  "include": [
-    "src",
-    "src/test"
-  ],
-  "exclude": [
-    "node_modules",
-    ".vscode-test"
-  ]
+  "include": ["src", "src/test"],
+  "exclude": ["node_modules", ".vscode-test"]
 }

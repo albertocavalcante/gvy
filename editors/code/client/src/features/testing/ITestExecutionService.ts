@@ -2,7 +2,7 @@
  * TODO(#715): This interface is part of the hacky Maven workaround.
  * See: https://github.com/albertocavalcante/gvy/issues/715
  */
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 
 /**
  * Common interface for test execution services (Gradle, Maven, etc).

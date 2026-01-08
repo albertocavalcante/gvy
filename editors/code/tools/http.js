@@ -35,7 +35,8 @@ class HttpError extends Error {
     const remaining = headerValue(this.headers, "x-ratelimit-remaining");
     const reset = headerValue(this.headers, "x-ratelimit-reset");
     const limit = headerValue(this.headers, "x-ratelimit-limit");
-    this.rateLimit = remaining || reset || limit ? { remaining, reset, limit } : null;
+    this.rateLimit =
+      remaining || reset || limit ? { remaining, reset, limit } : null;
     this.isGitHubRateLimit =
       statusCode === 403 &&
       (remaining === "0" ||
@@ -103,26 +104,31 @@ async function requestWithRedirects(
     userAgent = DEFAULT_USER_AGENT,
   } = {},
 ) {
-  return await followRedirects(url, maxRedirects, "requesting", async (urlObj) => {
-    const requestHeaders = {
-      ...buildHeadersForUrl(urlObj, { userAgent, authToken }),
-      ...headers,
-    };
-
-    const response = await requestOnce(urlObj, requestHeaders, timeoutMs);
-
-    if (
-      response.statusCode >= 300 &&
-      response.statusCode < 400 &&
-      response.headers.location
-    ) {
-      return {
-        redirectUrl: new URL(response.headers.location, urlObj).toString(),
+  return await followRedirects(
+    url,
+    maxRedirects,
+    "requesting",
+    async (urlObj) => {
+      const requestHeaders = {
+        ...buildHeadersForUrl(urlObj, { userAgent, authToken }),
+        ...headers,
       };
-    }
 
-    return response;
-  });
+      const response = await requestOnce(urlObj, requestHeaders, timeoutMs);
+
+      if (
+        response.statusCode >= 300 &&
+        response.statusCode < 400 &&
+        response.headers.location
+      ) {
+        return {
+          redirectUrl: new URL(response.headers.location, urlObj).toString(),
+        };
+      }
+
+      return response;
+    },
+  );
 }
 
 function requestOnce(urlObj, headers, timeoutMs) {
@@ -178,7 +184,9 @@ async function fetchText(url, options = {}) {
       statusCode: response.statusCode,
       statusMessage: response.statusMessage,
       headers: response.headers,
-      bodySnippet: response.body.slice(0, MAX_ERROR_BODY_BYTES).toString("utf8"),
+      bodySnippet: response.body
+        .slice(0, MAX_ERROR_BODY_BYTES)
+        .toString("utf8"),
     });
   }
   return response.body.toString("utf8");
@@ -235,7 +243,10 @@ function downloadOnce(urlObj, filePath, headers, timeoutMs) {
         response.statusCode < 400 &&
         response.headers.location
       ) {
-        const redirectUrl = new URL(response.headers.location, urlObj).toString();
+        const redirectUrl = new URL(
+          response.headers.location,
+          urlObj,
+        ).toString();
         response.resume();
         resolve({ redirectUrl });
         return;

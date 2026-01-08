@@ -14,17 +14,20 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 ### Getting Started
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/albertocavalcante/gvy.git
    cd gvy
    ```
 
 2. **Install dependencies**
+
    ```bash
    pnpm install
    ```
 
 3. **Prepare the Groovy Language Server**
+
    ```bash
    pnpm run prepare-server
    ```
@@ -88,6 +91,7 @@ Note: Users get the **latest release by default**. The pinned version serves as:
 ### Testing the Extension
 
 1. **Open in VS Code**
+
    ```bash
    code .
    ```
@@ -144,6 +148,7 @@ git commit -m "docs: update configuration examples"
 ### Pull Request Process
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -154,6 +159,7 @@ git commit -m "docs: update configuration examples"
    - Update documentation if needed
 
 3. **Test locally**
+
    ```bash
    pnpm run compile
    pnpm run lint

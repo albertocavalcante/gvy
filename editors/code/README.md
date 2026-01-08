@@ -117,7 +117,10 @@ For Jenkins shared libraries:
 
   // Optional: Jenkins plugin discovery overrides
   "groovy.jenkins.pluginsTxtPath": "/path/to/plugins.txt",
-  "groovy.jenkins.plugins": ["workflow-basic-steps", "pipeline-model-definition"],
+  "groovy.jenkins.plugins": [
+    "workflow-basic-steps",
+    "pipeline-model-definition"
+  ],
   "groovy.jenkins.includeDefaultPlugins": true
 }
 ```
