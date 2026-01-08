@@ -6,7 +6,7 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsWorkspaceManager
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.services.JenkinsMetadataService
-import kotlinx.coroutines.CancellationException
+import com.github.albertocavalcante.groovylsp.utils.rethrowIfCancellationOrError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,7 +90,7 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
         // Load GDSL metadata synchronously (fast operation)
         runCatching { wm.loadGdslMetadata() }
             .onFailure { e ->
-                if (e is CancellationException || e is Error) throw e
+                rethrowIfCancellationOrError(e)
                 logger.warn("Failed to load GDSL metadata: {}", e.message)
             }
 
@@ -99,7 +99,7 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
         initJob = coroutineScope.launch(Dispatchers.IO) {
             runCatching { metadataService.initialize() }
                 .onFailure { e ->
-                    if (e is CancellationException || e is Error) throw e
+                    rethrowIfCancellationOrError(e)
                     logger.warn("Failed to initialize Jenkins metadata: {}", e.message)
                 }
         }
