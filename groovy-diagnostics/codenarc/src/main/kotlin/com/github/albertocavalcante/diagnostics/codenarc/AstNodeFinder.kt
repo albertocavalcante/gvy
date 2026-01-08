@@ -106,6 +106,7 @@ class AstNodeFinder(private val moduleNode: ModuleNode) {
      * Find a variable declaration at the given line (for UnusedVariable rule).
      *
      * Uses a visitor to traverse method bodies and find DeclarationExpressions.
+     * Searches all classes in the module, including nested/inner classes.
      *
      * @param groovyLine 1-based line number from CodeNarc violation
      * @param variableName The variable name from the violation message
@@ -113,12 +114,23 @@ class AstNodeFinder(private val moduleNode: ModuleNode) {
      */
     fun findVariableAtLine(groovyLine: Int, variableName: String): Variable? {
         val visitor = VariableAtLineFinder(groovyLine, variableName)
-        for (classNode in moduleNode.classes) {
+        return findVariableAtLineRecursive(moduleNode.classes, visitor)
+    }
+
+    private fun findVariableAtLineRecursive(classes: List<ClassNode>, visitor: VariableAtLineFinder): Variable? {
+        for (classNode in classes) {
+            // Search methods in this class
             for (method in classNode.methods) {
                 method.code?.visit(visitor)
                 if (visitor.result != null) {
                     return visitor.result
                 }
+            }
+            // Search in inner classes
+            val innerClasses = classNode.innerClasses?.asSequence()?.toList() ?: emptyList()
+            val found = findVariableAtLineRecursive(innerClasses, visitor)
+            if (found != null) {
+                return found
             }
         }
         return null
@@ -143,6 +155,7 @@ class AstNodeFinder(private val moduleNode: ModuleNode) {
 
 /**
  * AST visitor that finds a variable declaration at a specific line with a specific name.
+ * Supports both simple declarations (def x = 1) and tuple declarations (def (x, y) = [1, 2]).
  */
 private class VariableAtLineFinder(private val targetLine: Int, private val targetName: String) :
     org.codehaus.groovy.ast.CodeVisitorSupport() {
@@ -152,11 +165,21 @@ private class VariableAtLineFinder(private val targetLine: Int, private val targ
 
     override fun visitDeclarationExpression(expression: org.codehaus.groovy.ast.expr.DeclarationExpression) {
         if (expression.lineNumber == targetLine) {
-            // variableExpression can be null for tuple declarations like "def (x, y) = [1, 2]"
-            val variable = expression.variableExpression
-            if (variable != null && variable.name == targetName) {
-                result = variable
-                return
+            when (val left = expression.leftExpression) {
+                is org.codehaus.groovy.ast.expr.VariableExpression -> {
+                    if (left.name == targetName) {
+                        result = left
+                        return
+                    }
+                }
+                is org.codehaus.groovy.ast.expr.TupleExpression -> {
+                    for (expr in left.expressions) {
+                        if (expr is org.codehaus.groovy.ast.expr.VariableExpression && expr.name == targetName) {
+                            result = expr
+                            return
+                        }
+                    }
+                }
             }
         }
         super.visitDeclarationExpression(expression)

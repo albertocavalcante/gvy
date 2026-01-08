@@ -1,7 +1,5 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
-import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
-import org.codehaus.groovy.ast.ASTNode
 import org.codenarc.rule.Violation
 
 /**
