@@ -34,7 +34,9 @@ object InlineTagRenderer {
         GroovydocInlineTag.Type.LINKPLAIN -> renderLinkPlain(tag.content)
         GroovydocInlineTag.Type.LITERAL -> renderLiteral(tag.content)
         GroovydocInlineTag.Type.VALUE -> renderValue(tag.content)
-        else -> "{@${tag.tagName} ${tag.content}}" // Unknown tag, keep as-is
+        GroovydocInlineTag.Type.INHERIT_DOC -> "`inheritDoc`" // Can't resolve parent doc, show as placeholder
+        GroovydocInlineTag.Type.DOC_ROOT -> "" // Document root path, not meaningful in hover
+        GroovydocInlineTag.Type.UNKNOWN -> renderUnknownTag(tag)
     }
 
     /**
@@ -168,6 +170,14 @@ object InlineTagRenderer {
         val reference = content.removePrefix("#")
         return "`$reference`"
     }
+
+    /**
+     * Render unknown inline tags.
+     *
+     * Keeps the original tag syntax for unknown tags to preserve information.
+     */
+    private fun renderUnknownTag(tag: GroovydocInlineTag): String =
+        if (tag.content.isEmpty()) "{@${tag.tagName}}" else "{@${tag.tagName} ${tag.content}}"
 
     /**
      * Format a reference (class, method, field) for display.

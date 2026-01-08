@@ -78,8 +78,15 @@ object GroovyDocAdapter {
 
         // Replace each inline tag with its rendered version
         for (tag in description.inlineTags) {
-            val originalTag = tag.toText() // e.g., "{@code foo}"
-            val renderedTag = InlineTagRenderer.renderTag(tag) // e.g., "`foo`"
+            // Build original tag string to match what's in the text.
+            // Note: tag.toText() always adds a space ("{@name content}"), but the original
+            // text may have no space for empty-content tags like "{@inheritDoc}".
+            val originalTag = if (tag.content.isEmpty()) {
+                "{@${tag.tagName}}"
+            } else {
+                "{@${tag.tagName} ${tag.content}}"
+            }
+            val renderedTag = InlineTagRenderer.renderTag(tag)
             result = result.replace(originalTag, renderedTag)
         }
 
