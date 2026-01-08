@@ -126,7 +126,7 @@ class DefinitionResolver(
         validatePosition(position, uri)
         val trackedNode = astVisitor.getNodeAt(uri, position)
         val targetNode = selectBestNode(uri, position, trackedNode)
-        return resolveEffectiveTarget(targetNode, trackedNode)
+        return resolveEffectiveTarget(targetNode, trackedNode, uri, position)
     }
 
     /**
@@ -165,9 +165,22 @@ class DefinitionResolver(
      * NOTE: Clicking on a method call can resolve to its ConstantExpression "method" node.
      * Prefer the enclosing MethodCallExpression to avoid false positives.
      */
-    private fun resolveEffectiveTarget(targetNode: ASTNode, trackedNode: ASTNode?): ASTNode {
+    private fun resolveEffectiveTarget(
+        targetNode: ASTNode,
+        trackedNode: ASTNode?,
+        uri: URI,
+        position: Position,
+    ): ASTNode {
         val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
         val effectiveTarget = methodCall ?: targetNode
+
+        // Reject string literals - they're not navigable symbols
+        // NOTE: We check this AFTER extractMethodCallIfApplicable because method names
+        // in Groovy AST are often ConstantExpressions with String values.
+        if (effectiveTarget is ConstantExpression && effectiveTarget.value is String) {
+            throw uri.nodeNotFoundAtPosition(position.line, position.character)
+        }
+
         logger.info("=== Effective target node ===")
         logger.info("Node type: ${effectiveTarget.javaClass.simpleName}")
         logger.info("Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}")

@@ -202,4 +202,41 @@ class MavenBuildTool : BuildTool {
             cwd = workspaceRoot.toString(),
         )
     }
+
+    override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
+        val testArg = if (test != null) "$suite#$test" else suite
+
+        // Verify JaCoCo configuration to provide helpful feedback
+        val pomPath = workspaceRoot.resolve("pom.xml")
+        if (Files.exists(pomPath)) {
+            runCatching { Files.readString(pomPath) }
+                .onSuccess { pomContents ->
+                    if (!pomContents.contains("jacoco-maven-plugin")) {
+                        logger.warn(
+                            "JaCoCo Maven plugin not detected in pom.xml at {}. " +
+                                "Coverage command may not generate coverage data. " +
+                                "Ensure the jacoco-maven-plugin is configured with the prepare-agent goal.",
+                            pomPath.toAbsolutePath(),
+                        )
+                    }
+                }
+                .onFailure { throwable ->
+                    logger.warn("Failed to read pom.xml at $pomPath to verify JaCoCo configuration", throwable)
+                }
+        } else {
+            logger.warn(
+                "No pom.xml found at {}. JaCoCo configuration cannot be verified; " +
+                    "coverage command may not generate coverage data.",
+                pomPath.toAbsolutePath(),
+            )
+        }
+
+        val args = listOf("test", "-Dtest=$testArg", "jacoco:report")
+
+        return TestCommand(
+            executable = BuildExecutableResolver.resolveMaven(workspaceRoot),
+            args = args,
+            cwd = workspaceRoot.toString(),
+        )
+    }
 }

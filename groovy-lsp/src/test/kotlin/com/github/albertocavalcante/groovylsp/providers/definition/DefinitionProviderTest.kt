@@ -82,15 +82,36 @@ class DefinitionProviderTest {
         val result = compilationService.compile(uri, content)
         assertTrue(result.isSuccess, "Compilation should succeed")
 
-        // FIXME: Position-sensitive test - adjusted to point at method name specifically
-        // Act - try to find definition of 'testMethod' at position where it's called (line 4, column 4)
+        // Act - try to find definition of 'testMethod' at position where it's called
         val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(4, 4)).toList()
 
-        // FIXME: Current implementation may not resolve method calls consistently
-        // This test verifies the service handles method lookup gracefully
-        // Assert - Due to current AST resolution limitations, this may not find definitions
-        // but should handle the request without error
-        assertNotNull(definitions, "Definitions list should not be null")
+        // Assert
+        assertFalse(definitions.isEmpty(), "Should find definition for method call")
+        val definition = definitions.first()
+        assertEquals(uri.toString(), definition.uri)
+        assertEquals(0, definition.range.start.line) // Should point to the def testMethod() line
+    }
+
+    @Test
+    fun `test method name navigation specifically`() = runBlocking {
+        // Feedback from Cursor/PR: String literal check breaks method name navigation
+        // In foo.bar(), 'bar' is a ConstantExpression with string "bar"
+
+        val content = """
+            class A {
+                def target() {}
+            }
+            def a = new A()
+            a.target()
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        // a.target() is on line 4. 'target' starts at char 2.
+        val definitions = definitionProvider.provideDefinitions(uri.toString(), Position(4, 2)).toList()
+
+        assertFalse(definitions.isEmpty(), "Should find definition for method name 'target'")
     }
 
     @Test

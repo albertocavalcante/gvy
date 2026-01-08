@@ -91,4 +91,15 @@ class GradleBuildTool(
             cwd = workspaceRoot.toString(),
         )
     }
+
+    override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
+        val testFilter = if (test != null) "$suite.$test" else suite
+        val args = listOf("test", "--tests", testFilter, "jacocoTestReport")
+
+        return TestCommand(
+            executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
+            args = args,
+            cwd = workspaceRoot.toString(),
+        )
+    }
 }
