@@ -175,8 +175,6 @@ class GroovyCompilationService(
 
     fun getCacheStatistics() = cacheService.getStatistics()
 
-    fun getJenkinsGlobalVariables() = workspaceManager.getJenkinsGlobalVariables()
-
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
         if (changed) {
