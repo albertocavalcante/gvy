@@ -239,14 +239,17 @@ export class LSPTestExecutionService implements ITestExecutionService {
                     // TODO: Implement Surefire report parsing or finer Maven output parsing.
                 }
 
-                if (code === 0) resolve();
-                else resolve(); // Resolve to finish the run despite failure
+                if (code !== 0) {
+                    this.logger.appendLine(`Test execution process exited with code ${code}`);
+                }
+                resolve();
             });
 
             proc.on('error', (err) => {
                 cancelDis.dispose();
                 rl.close();
                 this.logger.appendLine(`Process error: ${err}`);
+                // Caller handles failure via test item state, not promise rejection
                 resolve();
             });
         });
