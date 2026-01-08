@@ -3,9 +3,9 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.completion
+import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
@@ -43,7 +43,7 @@ internal object JenkinsCompletionProvider {
 
     fun CompletionsBuilder.addJenkinsGlobalVariables(
         metadata: MergedJenkinsMetadata,
-        compilationService: GroovyCompilationService,
+        jenkinsCapabilities: JenkinsCapabilities?,
     ) {
         // 1. Add global variables from bundled plugin metadata
         val bundledCompletions = JenkinsStepCompletionProvider.getGlobalVariableCompletions(metadata)
@@ -63,7 +63,7 @@ internal object JenkinsCompletionProvider {
 
         // 2. Add global variables from workspace vars/ directory
         // TODO: Consider caching these completions if performance becomes an issue
-        val varsGlobals = compilationService.workspaceManager.getJenkinsGlobalVariables()
+        val varsGlobals = jenkinsCapabilities?.getGlobalVariables() ?: emptyList()
         varsGlobals.forEach { globalVar ->
             // Use function() to insert as method call with parens: buildPlugin($1)
             function(

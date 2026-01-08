@@ -316,7 +316,7 @@ object CompletionProvider {
                 addJenkinsStepCompletions(metadata)
             }
 
-            addJenkinsGlobalVariables(metadata, ctx.compilationService)
+            addJenkinsGlobalVariables(metadata, ctx.compilationService.workspaceManager.getJenkinsCapabilities())
 
             jenkinsContext.blockCategories?.let { categories ->
                 if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE)) {
