@@ -13,10 +13,15 @@ export interface TestSuite {
 }
 
 /**
+ * Build tool name type for type-safe build tool detection.
+ */
+export type BuildToolName = 'gradle' | 'maven' | 'bsp' | 'unknown';
+
+/**
  * Build tool information from the LSP.
  */
 export interface BuildToolInfo {
-    name: string;           // "gradle" | "maven" | "bsp" | "unknown"
+    name: BuildToolName;
     detected: boolean;
     supportsTestExecution: boolean;
     supportsDebug: boolean;

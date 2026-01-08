@@ -94,47 +94,46 @@ class TestRequestDelegate(
 
         return CompletableFuture.supplyAsync {
             val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
-            if (workspaceRoot == null) {
-                logger.info("No workspace root found, returning unknown build tool")
-                return@supplyAsync BuildToolInfo(
-                    name = "unknown",
-                    detected = false,
-                )
-            }
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("No workspace root found, returning unknown build tool")
+                }
 
             val buildToolManager = buildToolManagerProvider()
-            if (buildToolManager == null) {
-                logger.info("Build tool manager not initialized, returning unknown")
-                return@supplyAsync BuildToolInfo(
-                    name = "unknown",
-                    detected = false,
-                )
-            }
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("Build tool manager not initialized, returning unknown")
+                }
 
             val buildTool = buildToolManager.detectBuildTool(workspaceRoot)
-            if (buildTool == null) {
-                logger.info("No build tool detected for workspace: $workspaceRoot")
-                return@supplyAsync BuildToolInfo(
-                    name = "unknown",
-                    detected = false,
-                )
-            }
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("No build tool detected for workspace: $workspaceRoot")
+                }
 
-            // Check if build tool supports test execution
+            // Check capabilities by probing with test commands
             val supportsTestExecution = buildTool.getTestCommand(
                 workspaceRoot = workspaceRoot,
                 suite = "com.example.Test",
                 test = "test",
+                debug = false,
             ) != null
 
-            logger.info("Detected build tool: ${buildTool.name}, supportsTestExecution: $supportsTestExecution")
+            val supportsDebug = buildTool.getTestCommand(
+                workspaceRoot = workspaceRoot,
+                suite = "com.example.Test",
+                test = "test",
+                debug = true,
+            ) != null
+
+            logger.info(
+                "Detected build tool: ${buildTool.name}, " +
+                    "supportsTestExecution: $supportsTestExecution, supportsDebug: $supportsDebug",
+            )
 
             BuildToolInfo(
                 name = buildTool.name.lowercase(),
                 detected = true,
                 supportsTestExecution = supportsTestExecution,
-                // TODO: Add proper capability detection for debug and coverage
-                supportsDebug = buildTool.name.lowercase() == "gradle",
+                supportsDebug = supportsDebug,
+                // Coverage detection would require additional BuildTool interface changes
                 supportsCoverage = buildTool.name.lowercase() == "gradle",
             )
         }

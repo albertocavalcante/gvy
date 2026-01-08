@@ -1,20 +1,19 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { State } from 'vscode-languageclient/node';
 import { GradleExecutionService } from './GradleExecutionService';
 import { MavenExecutionService } from './MavenExecutionService';
 import { GroovyTestController } from './GroovyTestController';
-import { TestService, BuildToolInfo } from './TestService';
+import { TestService, BuildToolInfo, BuildToolName } from './TestService';
 import { CoverageService } from './CoverageService';
 import { getClient } from '../../server/client';
-
-type BuildToolType = 'gradle' | 'maven' | 'bsp' | 'unknown';
 
 /**
  * Fallback build tool detection when LSP is not available.
  * Prefer using TestService.getBuildToolInfo() when LSP is ready.
  */
-function detectBuildToolFallback(workspacePath: string): BuildToolType {
+function detectBuildToolFallback(workspacePath: string): BuildToolName {
   // Check for Gradle
   const gradleFiles = [
     'build.gradle',
@@ -38,7 +37,7 @@ function detectBuildToolFallback(workspacePath: string): BuildToolType {
  * Create execution service based on build tool type.
  */
 function createExecutionService(
-  buildTool: BuildToolType,
+  buildTool: BuildToolName,
   logger: vscode.OutputChannel,
   extensionPath: string,
 ) {
@@ -66,43 +65,37 @@ export function registerTestingFeatures(
   const testService = client ? new TestService(client) : undefined;
 
   // Use synchronous fallback detection initially
-  // LSP-based detection will be used when available
-  let buildTool = detectBuildToolFallback(workspacePath);
+  // LSP-based detection will be used when available via groovy/runTest
+  const buildTool = detectBuildToolFallback(workspacePath);
   logger.appendLine(`[Testing] Initial build tool detection (fallback): ${buildTool}`);
 
-  // Create initial execution service
-  let executionService = createExecutionService(buildTool, logger, context.extensionPath);
+  // Create initial execution service (LSP's groovy/runTest handles actual detection)
+  const executionService = createExecutionService(buildTool, logger, context.extensionPath);
 
   // Create coverage service (only works with Gradle for now)
-  let coverageService = buildTool === 'gradle' ? new CoverageService(logger) : undefined;
+  const coverageService = buildTool === 'gradle' ? new CoverageService(logger) : undefined;
 
   // The controller registers itself with context.subscriptions in constructor
-  const controller = new GroovyTestController(
+  new GroovyTestController(
     context,
     executionService,
     testService,
     coverageService,
   );
 
-  // Async: Query LSP for authoritative build tool info once client is ready
-  if (testService && workspaceUri) {
-    // Use a small delay to let LSP initialize
-    setTimeout(async () => {
+  // Query LSP for build tool info once client is in Running state
+  if (client && testService && workspaceUri) {
+    const queryBuildToolInfo = async () => {
       try {
         const lspBuildToolInfo: BuildToolInfo = await testService.getBuildToolInfo(workspaceUri);
         if (lspBuildToolInfo.detected) {
-          const lspBuildTool = lspBuildToolInfo.name as BuildToolType;
-          if (lspBuildTool !== buildTool) {
+          if (lspBuildToolInfo.name !== buildTool) {
             logger.appendLine(
-              `[Testing] LSP detected different build tool: ${lspBuildTool} ` +
-              `(fallback was: ${buildTool}). Using LSP result.`,
+              `[Testing] LSP detected build tool: ${lspBuildToolInfo.name} ` +
+              `(fallback was: ${buildTool}). LSP's groovy/runTest will use correct tool.`,
             );
-            buildTool = lspBuildTool;
-            // Note: The execution service is already created with the fallback.
-            // For a full solution, we'd need to update the controller.
-            // For now, log the discrepancy. The LSP's groovy/runTest handles this correctly.
           } else {
-            logger.appendLine(`[Testing] LSP confirmed build tool: ${lspBuildTool}`);
+            logger.appendLine(`[Testing] LSP confirmed build tool: ${lspBuildToolInfo.name}`);
           }
 
           // Log capabilities
@@ -115,9 +108,21 @@ export function registerTestingFeatures(
         }
       } catch (error) {
         logger.appendLine(`[Testing] Failed to get LSP build tool info: ${error}`);
-        // Continue with fallback detection
       }
-    }, 2000); // Wait 2 seconds for LSP to initialize
+    };
+
+    // If client is already running, query immediately; otherwise wait for it
+    if (client.state === State.Running) {
+      void queryBuildToolInfo();
+    } else {
+      const disposable = client.onDidChangeState((e) => {
+        if (e.newState === State.Running) {
+          void queryBuildToolInfo();
+          disposable.dispose();
+        }
+      });
+      context.subscriptions.push(disposable);
+    }
   }
 
   if (buildTool === 'unknown') {
