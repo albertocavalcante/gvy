@@ -1,11 +1,15 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 
 /**
  * Finds AST nodes by line number for precise diagnostic positioning.
@@ -158,23 +162,23 @@ class AstNodeFinder(private val moduleNode: ModuleNode) {
  * Supports both simple declarations (def x = 1) and tuple declarations (def (x, y) = [1, 2]).
  */
 private class VariableAtLineFinder(private val targetLine: Int, private val targetName: String) :
-    org.codehaus.groovy.ast.CodeVisitorSupport() {
+    CodeVisitorSupport() {
 
     var result: Variable? = null
         private set
 
-    override fun visitDeclarationExpression(expression: org.codehaus.groovy.ast.expr.DeclarationExpression) {
+    override fun visitDeclarationExpression(expression: DeclarationExpression) {
         if (expression.lineNumber == targetLine) {
             when (val left = expression.leftExpression) {
-                is org.codehaus.groovy.ast.expr.VariableExpression -> {
+                is VariableExpression -> {
                     if (left.name == targetName) {
                         result = left
                         return
                     }
                 }
-                is org.codehaus.groovy.ast.expr.TupleExpression -> {
+                is TupleExpression -> {
                     for (expr in left.expressions) {
-                        if (expr is org.codehaus.groovy.ast.expr.VariableExpression && expr.name == targetName) {
+                        if (expr is VariableExpression && expr.name == targetName) {
                             result = expr
                             return
                         }
