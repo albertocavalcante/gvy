@@ -31,4 +31,19 @@ class MavenBuildToolTest {
         assertTrue(command.args.contains("jacoco:report"), "Command should include jacoco:report")
         assertTrue(command.args.contains("-Dtest=com.example.Test#testMethod"), "Command should target specific test")
     }
+
+    @Test
+    fun `should generate correct coverage command for full suite`() {
+        val tool = MavenBuildTool()
+        val project = Paths.get(".")
+
+        // when test is null, it means full suite
+        val command = tool.getCoverageCommand(project, "com.example.Test", null)
+
+        assertTrue(command.args.contains("jacoco:report"), "Command should include jacoco:report")
+        // Should contain -Dtest=com.example.Test (without method name)
+        assertTrue(command.args.contains("-Dtest=com.example.Test"), "Command should target suite")
+        // Should NOT contain '#'
+        assertFalse(command.args.any { it.contains('#') }, "Command should not contain method separator")
+    }
 }
