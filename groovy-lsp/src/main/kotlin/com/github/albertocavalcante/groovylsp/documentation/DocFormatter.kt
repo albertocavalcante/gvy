@@ -21,6 +21,11 @@ object DocFormatter {
         }
 
         return markdown {
+            // Phase 3: Deprecation warning at top with visual prominence
+            if (doc.deprecated.isNotBlank()) {
+                markdown("> ⚠️ **Deprecated**: ${InlineTagRenderer.render(doc.deprecated)}")
+            }
+
             // Add summary and description
             if (doc.summary.isNotBlank()) {
                 text(InlineTagRenderer.render(doc.summary))
@@ -30,37 +35,72 @@ object DocFormatter {
                 text(InlineTagRenderer.render(doc.description))
             }
 
-            // Add deprecated notice
-            if (doc.deprecated.isNotBlank()) {
-                text("**Deprecated**: ${InlineTagRenderer.render(doc.deprecated)}")
+            // Phase 3: Add visual separator before documentation sections if we have content above
+            val hasContentAbove =
+                doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
+            val hasDocSections = (includeParams && doc.params.isNotEmpty()) ||
+                (includeReturn && doc.returnDoc.isNotBlank()) ||
+                doc.throws.isNotEmpty() ||
+                doc.see.isNotEmpty()
+
+            if (hasContentAbove && hasDocSections) {
+                markdown("---")
             }
 
-            // Add parameters
+            // Phase 3: Parameters with section header and smart formatting
             if (includeParams && doc.params.isNotEmpty()) {
-                text("**Parameters:**")
-                list(doc.params.entries.map { (name, desc) -> "`$name`: ${InlineTagRenderer.render(desc)}" })
+                markdown("#### Parameters")
+
+                // Use table format for multiple parameters, inline for single parameter
+                if (doc.params.size > 1) {
+                    // Table format for multiple parameters
+                    val rows = doc.params.entries.map { (name, desc) ->
+                        listOf("`$name`", "", InlineTagRenderer.render(desc))
+                    }
+                    table(listOf("Name", "Type", "Description"), rows)
+                } else {
+                    // Inline format for single parameter
+                    val (name, desc) = doc.params.entries.first()
+                    text("**$name** — ${InlineTagRenderer.render(desc)}")
+                }
             }
 
-            // Add return documentation
+            // Phase 3: Return documentation with section header
             if (includeReturn && doc.returnDoc.isNotBlank()) {
-                text("**Returns:** ${InlineTagRenderer.render(doc.returnDoc)}")
+                markdown("#### Returns")
+                text(InlineTagRenderer.render(doc.returnDoc))
             }
 
-            // Add throws/exceptions
+            // Phase 3: Throws/exceptions with section header
             if (doc.throws.isNotEmpty()) {
-                text("**Throws:**")
-                list(doc.throws.entries.map { (exception, desc) -> "`$exception`: ${InlineTagRenderer.render(desc)}" })
+                markdown("#### Throws")
+                list(doc.throws.entries.map { (exception, desc) -> "`$exception` — ${InlineTagRenderer.render(desc)}" })
             }
 
-            // Add since
-            if (doc.since.isNotBlank()) {
-                text("**Since:** ${InlineTagRenderer.render(doc.since)}")
-            }
-
-            // Add see references
+            // Phase 3: See references with section header
             if (doc.see.isNotEmpty()) {
-                text("**See:**")
+                markdown("#### See Also")
                 list(doc.see.map { InlineTagRenderer.render(it) })
+            }
+
+            // Phase 3: Metadata footer with visual separator
+            val hasMetadata = doc.since.isNotBlank() || doc.author.isNotBlank()
+            if (hasMetadata) {
+                // Only add separator if there's content above the metadata footer
+                val hasContentAboveFooter = hasContentAbove || hasDocSections
+                if (hasContentAboveFooter) {
+                    markdown("---")
+                }
+
+                val metadataParts = mutableListOf<String>()
+                if (doc.since.isNotBlank()) {
+                    metadataParts.add("*@since ${InlineTagRenderer.render(doc.since)}*")
+                }
+                if (doc.author.isNotBlank()) {
+                    metadataParts.add("*@author ${InlineTagRenderer.render(doc.author)}*")
+                }
+
+                text(metadataParts.joinToString(" · "))
             }
         }
     }

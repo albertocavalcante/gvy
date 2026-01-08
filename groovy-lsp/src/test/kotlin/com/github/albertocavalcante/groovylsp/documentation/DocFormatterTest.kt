@@ -31,8 +31,11 @@ class DocFormatterTest {
 
         val result = DocFormatter.formatAsMarkdown(doc)
 
-        assertTrue(result.contains("`value`: The `String` value to process"))
-        assertTrue(result.contains("`list`: A `List` of items"))
+        // Phase 3: Now uses table format for multiple parameters
+        assertTrue(result.contains("`value`"))
+        assertTrue(result.contains("The `String` value to process"))
+        assertTrue(result.contains("`list`"))
+        assertTrue(result.contains("A `List` of items"))
     }
 
     @Test
@@ -44,7 +47,9 @@ class DocFormatterTest {
 
         val result = DocFormatter.formatAsMarkdown(doc)
 
-        assertTrue(result.contains("**Returns:** A `Map` containing `key-value` pairs"))
+        // Phase 3: Now uses section header
+        assertTrue(result.contains("#### Returns"))
+        assertTrue(result.contains("A `Map` containing `key-value` pairs"))
     }
 
     @Test
@@ -56,7 +61,9 @@ class DocFormatterTest {
 
         val result = DocFormatter.formatAsMarkdown(doc)
 
-        assertTrue(result.contains("**Deprecated**: Use `newMethod()` instead of `oldMethod()`"))
+        // Phase 3: Now uses blockquote with emoji
+        assertTrue(result.contains("⚠️ **Deprecated**"))
+        assertTrue(result.contains("Use `newMethod()` instead of `oldMethod()`"))
     }
 
     @Test
@@ -71,8 +78,12 @@ class DocFormatterTest {
 
         val result = DocFormatter.formatAsMarkdown(doc)
 
-        assertTrue(result.contains("`IOException`: If `file` cannot be read"))
-        assertTrue(result.contains("`IllegalArgumentException`: If `validate()` fails"))
+        // Phase 3: Now uses section header and em dash separator
+        assertTrue(result.contains("#### Throws"))
+        assertTrue(result.contains("`IOException`"))
+        assertTrue(result.contains("If `file` cannot be read"))
+        assertTrue(result.contains("`IllegalArgumentException`"))
+        assertTrue(result.contains("If `validate()` fails"))
     }
 
     @Test
@@ -174,7 +185,231 @@ class DocFormatterTest {
 
         assertTrue(result.contains("Simple method."))
         assertTrue(result.contains("Does something useful."))
-        assertTrue(result.contains("`arg`: An argument"))
-        assertTrue(result.contains("**Returns:** A result"))
+        // Phase 3: Single param uses inline format with em dash
+        assertTrue(result.contains("**arg** — An argument"))
+        // Phase 3: Returns uses section header
+        assertTrue(result.contains("#### Returns"))
+        assertTrue(result.contains("A result"))
+    }
+
+    // Phase 3: Visual Hierarchy Tests
+
+    @Test
+    fun `formatAsMarkdown with deprecation shows warning at top with visual prominence`() {
+        val doc = Documentation(
+            summary = "Old method that should not be used.",
+            description = "This method has been superseded.",
+            deprecated = "since 2.0: Use Calculator.add() instead.",
+            params = mapOf("x" to "first number"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Deprecation should appear at top as blockquote with warning emoji
+        val lines = result.lines()
+        val deprecationIndex = lines.indexOfFirst { it.contains("Deprecated") }
+        val summaryIndex = lines.indexOfFirst { it.contains("Old method") }
+
+        assertTrue(deprecationIndex >= 0, "Should contain deprecation warning")
+        assertTrue(summaryIndex >= 0, "Should contain summary")
+        assertTrue(deprecationIndex < summaryIndex, "Deprecation should appear before summary")
+
+        // Should use blockquote format with emoji
+        assertTrue(result.contains("> ⚠️ **Deprecated**"), "Should have prominent deprecation warning")
+        assertTrue(result.contains("since 2.0: Use Calculator.add() instead."))
+    }
+
+    @Test
+    fun `formatAsMarkdown with multiple params uses table format with section header`() {
+        val doc = Documentation(
+            summary = "Calculates sum.",
+            params = mapOf(
+                "x" to "the first number",
+                "y" to "the second number",
+                "z" to "the third number",
+            ),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have section header
+        assertTrue(result.contains("#### Parameters"), "Should have Parameters section header")
+
+        // Should have table format (with spaces in separator)
+        assertTrue(result.contains("| Name | Type | Description |"), "Should have table headers")
+        assertTrue(result.contains("| --- | --- | --- |"), "Should have table separator")
+        assertTrue(result.contains("| `x` |"), "Should have x parameter in table")
+        assertTrue(result.contains("| `y` |"), "Should have y parameter in table")
+        assertTrue(result.contains("| `z` |"), "Should have z parameter in table")
+    }
+
+    @Test
+    fun `formatAsMarkdown with single param uses inline format`() {
+        val doc = Documentation(
+            summary = "Validates input.",
+            params = mapOf("value" to "the value to validate"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should NOT have table format
+        assertTrue(!result.contains("| Name | Type |"), "Should NOT use table format for single param")
+
+        // Should use inline format with section header
+        assertTrue(result.contains("#### Parameters"), "Should have Parameters section header")
+        assertTrue(result.contains("**value** — the value to validate"), "Should have inline parameter format")
+    }
+
+    @Test
+    fun `formatAsMarkdown with return doc shows section header`() {
+        val doc = Documentation(
+            summary = "Gets value.",
+            returnDoc = "the calculated result",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertTrue(result.contains("#### Returns"), "Should have Returns section header")
+        assertTrue(result.contains("the calculated result"))
+    }
+
+    @Test
+    fun `formatAsMarkdown with throws shows section header`() {
+        val doc = Documentation(
+            summary = "Risky operation.",
+            throws = mapOf(
+                "IOException" to "if file cannot be read",
+                "IllegalArgumentException" to "if input is invalid",
+            ),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertTrue(result.contains("#### Throws"), "Should have Throws section header")
+        assertTrue(result.contains("`IOException`"))
+        assertTrue(result.contains("`IllegalArgumentException`"))
+    }
+
+    @Test
+    fun `formatAsMarkdown with metadata shows footer with separators`() {
+        val doc = Documentation(
+            summary = "Some method.",
+            since = "1.0",
+            author = "John Doe",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have horizontal rule before metadata
+        assertTrue(result.contains("---"), "Should have horizontal rule separator")
+
+        // Should show metadata in footer format with italic and separator
+        assertTrue(result.contains("*@since 1.0*"), "Should have italic since metadata")
+        assertTrue(result.contains("*@author John Doe*"), "Should have italic author metadata")
+        assertTrue(result.contains(" · "), "Should have bullet separator between metadata")
+    }
+
+    @Test
+    fun `formatAsMarkdown uses visual separators between major sections`() {
+        val doc = Documentation(
+            summary = "Complex method.",
+            description = "With detailed description.",
+            params = mapOf("x" to "first param", "y" to "second param"),
+            returnDoc = "the result",
+            throws = mapOf("Exception" to "on error"),
+            since = "1.0",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have separators between major sections
+        assertTrue(result.contains("---"), "Should have horizontal rule separators")
+
+        // Verify structure: description, params section, returns section, throws section, metadata
+        assertTrue(result.contains("#### Parameters"))
+        assertTrue(result.contains("#### Returns"))
+        assertTrue(result.contains("#### Throws"))
+        assertTrue(result.contains("*@since 1.0*"))
+    }
+
+    @Test
+    fun `formatAsMarkdown with see also shows section header`() {
+        val doc = Documentation(
+            summary = "Related method.",
+            see = listOf("Calculator.subtract()", "Math.abs()"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertTrue(result.contains("#### See Also"), "Should have See Also section header")
+        assertTrue(result.contains("Calculator.subtract()"))
+        assertTrue(result.contains("Math.abs()"))
+    }
+
+    @Test
+    fun `formatAsMarkdown without deprecated does not show warning`() {
+        val doc = Documentation(
+            summary = "Current method.",
+            params = mapOf("x" to "param"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        assertTrue(!result.contains("Deprecated"), "Should NOT show deprecation warning")
+        assertTrue(!result.contains("⚠️"), "Should NOT show warning emoji")
+    }
+
+    @Test
+    fun `formatAsMarkdown with summary and metadata shows separator before footer`() {
+        val doc = Documentation(
+            summary = "Simple method.",
+            since = "2.0",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have metadata with separator since there's content above
+        assertTrue(result.contains("*@since 2.0*"))
+        assertTrue(result.contains("---"))
+    }
+
+    @Test
+    fun `formatAsMarkdown with only metadata shows footer without leading separator`() {
+        val doc = Documentation(
+            since = "2.0",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have metadata but NO separator since there's no content above
+        assertTrue(result.contains("*@since 2.0*"))
+        assertTrue(!result.contains("---"), "Should NOT have separator when only metadata is present")
+    }
+
+    @Test
+    fun `formatAsMarkdown with only deprecated and params shows separator between sections`() {
+        val doc = Documentation(
+            deprecated = "Use newMethod() instead",
+            params = mapOf("x" to "first param"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have separator between deprecation and params since deprecation is "content above"
+        assertTrue(result.contains("⚠️ **Deprecated**"))
+        assertTrue(result.contains("#### Parameters"))
+
+        val lines = result.lines()
+        val deprecationIndex = lines.indexOfFirst { it.contains("Deprecated") }
+        val separatorIndex = lines.indexOfFirst { it.trim() == "---" }
+        val paramsIndex = lines.indexOfFirst { it.contains("#### Parameters") }
+
+        assertTrue(deprecationIndex >= 0, "Should have deprecation")
+        assertTrue(separatorIndex >= 0, "Should have separator")
+        assertTrue(paramsIndex >= 0, "Should have params section")
+        assertTrue(
+            deprecationIndex < separatorIndex && separatorIndex < paramsIndex,
+            "Separator should be between deprecation and params",
+        )
     }
 }
