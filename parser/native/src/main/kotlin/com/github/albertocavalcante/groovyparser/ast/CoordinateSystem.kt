@@ -270,7 +270,7 @@ private fun containsGroovyPositionInRange(
     nodeEnd: CoordinateSystem.GroovyPosition,
 ): Boolean = when {
     groovyPos.line < nodeStart.line || groovyPos.line > nodeEnd.line -> false
-    nodeStart.line == nodeEnd.line -> groovyPos.column >= nodeStart.column && groovyPos.column <= nodeEnd.column
+    nodeStart.line == nodeEnd.line -> groovyPos.column in nodeStart.column..nodeEnd.column
     groovyPos.line == nodeStart.line -> groovyPos.column >= nodeStart.column
     groovyPos.line == nodeEnd.line -> groovyPos.column <= nodeEnd.column
     else -> true

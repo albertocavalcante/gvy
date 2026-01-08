@@ -282,7 +282,7 @@ class CoordinateSystemTest {
     }
 
     /**
-     * Feedback from PR #741: Exclusive end column breaks last-character position containment.
+     * Regression test: Exclusive end column handling can break last-character position containment.
      * Groovy's lastColumnNumber is inclusive, so we must use `<=` comparison.
      */
     @Test
