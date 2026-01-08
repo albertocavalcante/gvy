@@ -171,13 +171,16 @@ class DefinitionResolver(
         uri: URI,
         position: Position,
     ): ASTNode {
+        val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
+        val effectiveTarget = methodCall ?: targetNode
+
         // Reject string literals - they're not navigable symbols
-        if (targetNode is ConstantExpression && targetNode.value is String) {
+        // NOTE: We check this AFTER extractMethodCallIfApplicable because method names
+        // in Groovy AST are often ConstantExpressions with String values.
+        if (effectiveTarget is ConstantExpression && effectiveTarget.value is String) {
             throw uri.nodeNotFoundAtPosition(position.line, position.character)
         }
 
-        val methodCall = extractMethodCallIfApplicable(targetNode, trackedNode)
-        val effectiveTarget = methodCall ?: targetNode
         logger.info("=== Effective target node ===")
         logger.info("Node type: ${effectiveTarget.javaClass.simpleName}")
         logger.info("Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}")

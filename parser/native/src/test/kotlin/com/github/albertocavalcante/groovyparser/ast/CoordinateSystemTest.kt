@@ -193,10 +193,10 @@ class CoordinateSystemTest {
     @Test
     fun `nodeContainsPositionRelaxed uses token length when end columns are missing`() {
         val node = VariableExpression("Example")
-        node.setLineNumber(2)
-        node.setColumnNumber(4)
-        node.setLastLineNumber(0)
-        node.setLastColumnNumber(0)
+        node.lineNumber = 2
+        node.columnNumber = 4
+        node.lastLineNumber = 0
+        node.lastColumnNumber = 0
 
         // LSP coordinates are 0-based (line 1, character 3 is Groovy 2:4).
         val inside = CoordinateSystem.nodeContainsPositionRelaxed(node, 1, 5) { node.name.length }
@@ -209,10 +209,10 @@ class CoordinateSystemTest {
     @Test
     fun `nodeContainsPositionRelaxed returns false for invalid node positions`() {
         val node = VariableExpression("Bad")
-        node.setLineNumber(0)
-        node.setColumnNumber(0)
-        node.setLastLineNumber(0)
-        node.setLastColumnNumber(0)
+        node.lineNumber = 0
+        node.columnNumber = 0
+        node.lastLineNumber = 0
+        node.lastColumnNumber = 0
 
         val result = CoordinateSystem.nodeContainsPositionRelaxed(node, 0, 0) { node.name.length }
 
@@ -322,15 +322,15 @@ class CoordinateSystemTest {
     fun `nodeContainsPosition should return false for synthetic or invalid nodes`() = runTest {
         val node = VariableExpression("synthetic")
         // Synthetic nodes often have -1 or 0 for positions
-        node.setLineNumber(0)
-        node.setColumnNumber(0)
-        node.setLastLineNumber(0)
-        node.setLastColumnNumber(0)
+        node.lineNumber = 0
+        node.columnNumber = 0
+        node.lastLineNumber = 0
+        node.lastColumnNumber = 0
 
         assertFalse(CoordinateSystem.nodeContainsPosition(node, 0, 0), "Should not contain position for 0,0 node")
         assertFalse(CoordinateSystem.isValidNodePosition(node), "Node with 0,0 should be invalid")
 
-        node.setLineNumber(-1)
+        node.lineNumber = -1
         assertFalse(CoordinateSystem.isValidNodePosition(node), "Node with -1 line should be invalid")
     }
 
@@ -349,10 +349,10 @@ class CoordinateSystemTest {
     @Test
     fun `nodeContainsPosition should handle single-character nodes`() = runTest {
         val node = VariableExpression("a")
-        node.setLineNumber(10)
-        node.setColumnNumber(5)
-        node.setLastLineNumber(10)
-        node.setLastColumnNumber(5) // Single character
+        node.lineNumber = 10
+        node.columnNumber = 5
+        node.lastLineNumber = 10
+        node.lastColumnNumber = 5 // Single character
 
         assertTrue(CoordinateSystem.nodeContainsPosition(node, 9, 4), "Should contain its only character")
         assertFalse(CoordinateSystem.nodeContainsPosition(node, 9, 3), "Should not contain character before")
@@ -362,10 +362,10 @@ class CoordinateSystemTest {
     @Test
     fun `nodeContainsPosition should handle multi-line boundary conditions`() = runTest {
         val node = VariableExpression("multi")
-        node.setLineNumber(10)
-        node.setColumnNumber(5)
-        node.setLastLineNumber(12)
-        node.setLastColumnNumber(10)
+        node.lineNumber = 10
+        node.columnNumber = 5
+        node.lastLineNumber = 12
+        node.lastColumnNumber = 10
 
         // Middle line boundary conditions
         assertTrue(
