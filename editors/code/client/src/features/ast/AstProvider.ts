@@ -1,210 +1,263 @@
-import * as vscode from 'vscode';
-import { getClient } from '../../server/client';
+import * as vscode from "vscode";
+import { getClient } from "../../server/client";
 
 export function registerAstFeatures(context: vscode.ExtensionContext) {
-    context.subscriptions.push(
-        vscode.commands.registerCommand('groovy.ast.show', () => {
-            AstProvider.createOrShow(context.extensionUri);
-        })
-    );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("groovy.ast.show", () => {
+      AstProvider.createOrShow(context.extensionUri);
+    }),
+  );
 }
 
 class AstProvider {
-    public static currentPanel: AstProvider | undefined;
-    public static readonly viewType = 'groovyAst';
+  public static currentPanel: AstProvider | undefined;
+  public static readonly viewType = "groovyAst";
 
-    private readonly _panel: vscode.WebviewPanel;
-    private readonly _extensionUri: vscode.Uri;
-    private _disposables: vscode.Disposable[] = [];
+  private readonly _panel: vscode.WebviewPanel;
+  private readonly _extensionUri: vscode.Uri;
+  private _disposables: vscode.Disposable[] = [];
 
-    public static createOrShow(extensionUri: vscode.Uri) {
-        const column = vscode.window.activeTextEditor
-            ? vscode.window.activeTextEditor.viewColumn
-            : undefined;
+  public static createOrShow(extensionUri: vscode.Uri) {
+    const column = vscode.window.activeTextEditor
+      ? vscode.window.activeTextEditor.viewColumn
+      : undefined;
 
-        // If we already have a panel, show it.
-        if (AstProvider.currentPanel) {
-            AstProvider.currentPanel._panel.reveal(column);
-            AstProvider.currentPanel.update();
-            return;
-        }
-
-        // Otherwise, create a new panel.
-        const panel = vscode.window.createWebviewPanel(
-            AstProvider.viewType,
-            'Groovy AST',
-            column || vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'resources')]
-            }
-        );
-
-        AstProvider.currentPanel = new AstProvider(panel, extensionUri);
+    // If we already have a panel, show it.
+    if (AstProvider.currentPanel) {
+      AstProvider.currentPanel._panel.reveal(column);
+      AstProvider.currentPanel.update();
+      return;
     }
 
-    private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
-        this._panel = panel;
-        this._extensionUri = extensionUri;
+    // Otherwise, create a new panel.
+    const panel = vscode.window.createWebviewPanel(
+      AstProvider.viewType,
+      "Groovy AST",
+      column || vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, "resources")],
+      },
+    );
 
-        // Initial HTML
-        this._panel.webview.html = this._getHtmlForWebview();
+    AstProvider.currentPanel = new AstProvider(panel, extensionUri);
+  }
 
-        // Listen for messages from the webview
-        this._panel.webview.onDidReceiveMessage(
-            message => {
-                switch (message.type) {
-                    case 'ready':
-                        this.update();
-                        break;
-                    case 'highlight':
-                        this.highlightRange(message.range);
-                        break;
-                    case 'refresh':
-                        this.update(message.parser); // Refresh with requested parser
-                        break;
-                }
-            },
-            null,
-            this._disposables
-        );
+  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    this._panel = panel;
+    this._extensionUri = extensionUri;
 
-        // Auto-sync on save
-        vscode.workspace.onDidSaveTextDocument(
-            document => {
-                if (this._panel.visible && vscode.window.activeTextEditor?.document === document) {
-                    this.update(this._parserOverride || undefined); // Refresh with current state
-                }
-            },
-            null,
-            this._disposables
-        );
+    // Initial HTML
+    this._panel.webview.html = this._getHtmlForWebview();
 
-        // Auto-update when switching active editor
-        vscode.window.onDidChangeActiveTextEditor(
-            editor => {
-                if (this._panel.visible && editor && editor.document.languageId === 'groovy') {
-                    this.update(this._parserOverride || undefined);
-                }
-            },
-            null,
-            this._disposables
-        );
-
-        // Listen for when the panel is disposed
-        // This happens when the user closes the panel or when the panel is closed programmatically
-        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-        // Update the content based on view state changes
-        this._panel.onDidChangeViewState(
-            _ => {
-                if (this._panel.visible) {
-                    this.update(this._parserOverride || undefined);
-                }
-            },
-            null,
-            this._disposables
-        );
-    }
-
-    private _parserOverride: 'core' | 'native' | null = null;
-    private _parserSelection: 'core' | 'native' = 'core';
-
-    public async update(parserOverride?: 'core' | 'native') {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            this._panel.webview.postMessage({ type: 'error', message: 'No active editor' });
-            return;
+    // Listen for messages from the webview
+    this._panel.webview.onDidReceiveMessage(
+      (message) => {
+        switch (message.type) {
+          case "ready":
+            this.update();
+            break;
+          case "highlight":
+            this.highlightRange(message.range);
+            break;
+          case "refresh":
+            this.update(message.parser); // Refresh with requested parser
+            break;
         }
+      },
+      null,
+      this._disposables,
+    );
 
-        if (editor.document.languageId !== 'groovy') {
-            this._panel.webview.postMessage({ type: 'error', message: 'Active editor is not a Groovy file' });
-            return;
-        }
-
-        if (parserOverride) {
-            this._parserOverride = parserOverride;
-            this._parserSelection = parserOverride;
-        }
-
-        const client = getClient();
-        if (!client) {
-            this._panel.webview.postMessage({ type: 'error', message: 'Language Server not available.' });
-            return;
-        }
-
-        try {
-            // Request AST from LSP
-            const parser = this._parserSelection;
-            const result = await client.sendRequest('groovy/ast', {
-                uri: editor.document.uri.toString(),
-                parser: parser
-            }) as { ast: string; parser: string };
-
-            if (!result || typeof result.ast !== 'string') {
-                throw new Error('Invalid LSP response');
-            }
-
-            const ast = JSON.parse(result.ast);
-            this._panel.webview.postMessage({
-                type: 'updateAst',
-                ast: ast,
-                parser: result.parser
-            });
-        } catch (_e: unknown) {
-            const error = _e as Error;
-            console.error('AST Request failed', error);
-            this._panel.webview.postMessage({ type: 'error', message: `AST Request failed: ${error.message}` });
-        }
-    }
-
-    private highlightRange(range: { startLine: number; startColumn: number; endLine: number; endColumn: number } | undefined) {
+    // Auto-sync on save
+    vscode.workspace.onDidSaveTextDocument(
+      (document) => {
         if (
-            !range ||
-            range.startLine < 1 ||
-            range.startColumn < 1 ||
-            range.endLine < 1 ||
-            range.endColumn < 1
-        ) return;
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) return;
+          this._panel.visible &&
+          vscode.window.activeTextEditor?.document === document
+        ) {
+          this.update(this._parserOverride || undefined); // Refresh with current state
+        }
+      },
+      null,
+      this._disposables,
+    );
 
-        const start = new vscode.Position(range.startLine - 1, range.startColumn - 1);
-        const end = new vscode.Position(range.endLine - 1, range.endColumn - 1);
-        const newSelection = new vscode.Selection(start, end);
+    // Auto-update when switching active editor
+    vscode.window.onDidChangeActiveTextEditor(
+      (editor) => {
+        if (
+          this._panel.visible &&
+          editor &&
+          editor.document.languageId === "groovy"
+        ) {
+          this.update(this._parserOverride || undefined);
+        }
+      },
+      null,
+      this._disposables,
+    );
 
-        editor.selection = newSelection;
-        editor.revealRange(newSelection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    // Listen for when the panel is disposed
+    // This happens when the user closes the panel or when the panel is closed programmatically
+    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+
+    // Update the content based on view state changes
+    this._panel.onDidChangeViewState(
+      (_) => {
+        if (this._panel.visible) {
+          this.update(this._parserOverride || undefined);
+        }
+      },
+      null,
+      this._disposables,
+    );
+  }
+
+  private _parserOverride: "core" | "native" | null = null;
+  private _parserSelection: "core" | "native" = "core";
+
+  public async update(parserOverride?: "core" | "native") {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      this._panel.webview.postMessage({
+        type: "error",
+        message: "No active editor",
+      });
+      return;
     }
 
-    public dispose() {
-        AstProvider.currentPanel = undefined;
-
-        // Clean up our resources
-        this._panel.dispose();
-
-        vscode.Disposable.from(...this._disposables).dispose();
-        this._disposables = [];
+    if (editor.document.languageId !== "groovy") {
+      this._panel.webview.postMessage({
+        type: "error",
+        message: "Active editor is not a Groovy file",
+      });
+      return;
     }
 
-    private _getHtmlForWebview(): string {
-        const webview = this._panel.webview;
+    if (parserOverride) {
+      this._parserOverride = parserOverride;
+      this._parserSelection = parserOverride;
+    }
 
-        // Local path to main script
-        const scriptPathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'resources', 'ast-view', 'main.js');
-        const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
+    const client = getClient();
+    if (!client) {
+      this._panel.webview.postMessage({
+        type: "error",
+        message: "Language Server not available.",
+      });
+      return;
+    }
 
-        // Local path to css styles
-        const stylePathOnDisk = vscode.Uri.joinPath(this._extensionUri, 'resources', 'ast-view', 'style.css');
-        const styleUri = webview.asWebviewUri(stylePathOnDisk);
+    try {
+      // Request AST from LSP
+      const parser = this._parserSelection;
+      const result = (await client.sendRequest("groovy/ast", {
+        uri: editor.document.uri.toString(),
+        parser: parser,
+      })) as { ast: string; parser: string };
 
-        // Codicons
-        const codiconsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode/codicons', 'dist', 'codicon.css'));
+      if (!result || typeof result.ast !== "string") {
+        throw new Error("Invalid LSP response");
+      }
 
-        // Use a nonce to whitelist which scripts can be run
-        const nonce = getNonce();
+      const ast = JSON.parse(result.ast);
+      this._panel.webview.postMessage({
+        type: "updateAst",
+        ast: ast,
+        parser: result.parser,
+      });
+    } catch (_e: unknown) {
+      const error = _e as Error;
+      console.error("AST Request failed", error);
+      this._panel.webview.postMessage({
+        type: "error",
+        message: `AST Request failed: ${error.message}`,
+      });
+    }
+  }
 
-        return `<!DOCTYPE html>
+  private highlightRange(
+    range:
+      | {
+          startLine: number;
+          startColumn: number;
+          endLine: number;
+          endColumn: number;
+        }
+      | undefined,
+  ) {
+    if (
+      !range ||
+      range.startLine < 1 ||
+      range.startColumn < 1 ||
+      range.endLine < 1 ||
+      range.endColumn < 1
+    )
+      return;
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const start = new vscode.Position(
+      range.startLine - 1,
+      range.startColumn - 1,
+    );
+    const end = new vscode.Position(range.endLine - 1, range.endColumn - 1);
+    const newSelection = new vscode.Selection(start, end);
+
+    editor.selection = newSelection;
+    editor.revealRange(
+      newSelection,
+      vscode.TextEditorRevealType.InCenterIfOutsideViewport,
+    );
+  }
+
+  public dispose() {
+    AstProvider.currentPanel = undefined;
+
+    // Clean up our resources
+    this._panel.dispose();
+
+    vscode.Disposable.from(...this._disposables).dispose();
+    this._disposables = [];
+  }
+
+  private _getHtmlForWebview(): string {
+    const webview = this._panel.webview;
+
+    // Local path to main script
+    const scriptPathOnDisk = vscode.Uri.joinPath(
+      this._extensionUri,
+      "resources",
+      "ast-view",
+      "main.js",
+    );
+    const scriptUri = webview.asWebviewUri(scriptPathOnDisk);
+
+    // Local path to css styles
+    const stylePathOnDisk = vscode.Uri.joinPath(
+      this._extensionUri,
+      "resources",
+      "ast-view",
+      "style.css",
+    );
+    const styleUri = webview.asWebviewUri(stylePathOnDisk);
+
+    // Codicons
+    const codiconsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(
+        this._extensionUri,
+        "node_modules",
+        "@vscode/codicons",
+        "dist",
+        "codicon.css",
+      ),
+    );
+
+    // Use a nonce to whitelist which scripts can be run
+    const nonce = getNonce();
+
+    return `<!DOCTYPE html>
             <html lang="en">
             <head>
                 <meta charset="UTF-8">
@@ -238,14 +291,15 @@ class AstProvider {
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>
             </html>`;
-    }
+  }
 }
 
 function getNonce() {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
+  let text = "";
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }

@@ -36,7 +36,11 @@ function resolveGhCliPath() {
     return null;
   }
 
-  const candidates = ["/usr/bin/gh", "/usr/local/bin/gh", "/opt/homebrew/bin/gh"];
+  const candidates = [
+    "/usr/bin/gh",
+    "/usr/local/bin/gh",
+    "/opt/homebrew/bin/gh",
+  ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
@@ -132,7 +136,11 @@ function resolveGitHubArtifactDownload(url) {
         return { downloadUrl: url, isArtifactZip: false, kind: null };
       }
 
-      return { downloadUrl: parsed.toString(), isArtifactZip: true, kind: "api" };
+      return {
+        downloadUrl: parsed.toString(),
+        isArtifactZip: true,
+        kind: "api",
+      };
     }
 
     return { downloadUrl: url, isArtifactZip: false, kind: null };

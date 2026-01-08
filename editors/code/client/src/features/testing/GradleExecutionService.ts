@@ -1,10 +1,10 @@
-import * as vscode from 'vscode';
-import * as cp from 'child_process';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as readline from 'readline';
-import { TestEventConsumer } from './TestEventConsumer';
-import { CoverageService } from './CoverageService';
+import * as vscode from "vscode";
+import * as cp from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import * as readline from "readline";
+import { TestEventConsumer } from "./TestEventConsumer";
+import { CoverageService } from "./CoverageService";
 
 export class GradleExecutionService {
   private readonly initScriptPath: string;
@@ -15,8 +15,8 @@ export class GradleExecutionService {
   ) {
     this.initScriptPath = path.join(
       extensionPath,
-      'resources',
-      'test-events.init.gradle',
+      "resources",
+      "test-events.init.gradle",
     );
   }
 
@@ -27,7 +27,7 @@ export class GradleExecutionService {
   ): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      vscode.window.showErrorMessage('No workspace folder open');
+      vscode.window.showErrorMessage("No workspace folder open");
       return;
     }
 
@@ -66,7 +66,7 @@ export class GradleExecutionService {
   ): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      vscode.window.showErrorMessage('No workspace folder open');
+      vscode.window.showErrorMessage("No workspace folder open");
       return;
     }
 
@@ -106,7 +106,7 @@ export class GradleExecutionService {
     _token: vscode.CancellationToken,
   ): Promise<void> {
     this.logger.appendLine(
-      'GradleExecutionService: debugTests requested (not implemented)',
+      "GradleExecutionService: debugTests requested (not implemented)",
     );
     // Future implementation will go here
   }
@@ -117,7 +117,7 @@ export class GradleExecutionService {
 
     for (const item of testsToRun) {
       // item.id could be "com.example.MySpec" (suite) or "com.example.MySpec.testMethod" (test)
-      filters.push('--tests', item.id);
+      filters.push("--tests", item.id);
     }
 
     return filters;
@@ -132,7 +132,7 @@ export class GradleExecutionService {
     return new Promise((resolve, reject) => {
       // Use absolute path to avoid shell execution
       const gradleWrapper =
-        process.platform === 'win32' ? 'gradlew.bat' : 'gradlew';
+        process.platform === "win32" ? "gradlew.bat" : "gradlew";
       const gradleCmd = path.join(cwd, gradleWrapper);
 
       // Verify gradlew exists
@@ -142,14 +142,14 @@ export class GradleExecutionService {
       }
 
       const args = [
-        '--init-script',
+        "--init-script",
         this.initScriptPath,
-        'test',
+        "test",
         ...testFilter,
-        '--console=plain',
+        "--console=plain",
       ];
 
-      this.logger.appendLine(`Running: ${gradleCmd} ${args.join(' ')}`);
+      this.logger.appendLine(`Running: ${gradleCmd} ${args.join(" ")}`);
 
       // Security: shell: false prevents command injection via test names
       const proc = cp.spawn(gradleCmd, args, {
@@ -160,24 +160,24 @@ export class GradleExecutionService {
 
       // Handle cancellation
       const cancelListener = token.onCancellationRequested(() => {
-        proc.kill('SIGTERM');
-        this.logger.appendLine('Test run cancelled');
+        proc.kill("SIGTERM");
+        this.logger.appendLine("Test run cancelled");
       });
 
       // Process stdout line by line
       const rl = readline.createInterface({ input: proc.stdout });
-      rl.on('line', (line) => consumer.processLine(line));
+      rl.on("line", (line) => consumer.processLine(line));
 
       // Log stderr
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on("data", (data) => {
         this.logger.appendLine(`[STDERR] ${data.toString()}`);
       });
 
-      proc.on('close', (code) => {
+      proc.on("close", (code) => {
         cancelListener.dispose();
         rl.close();
         if (code === 0) {
-          this.logger.appendLine('Gradle test run completed successfully');
+          this.logger.appendLine("Gradle test run completed successfully");
           resolve();
         } else {
           this.logger.appendLine(`Gradle exited with code ${code}`);
@@ -185,7 +185,7 @@ export class GradleExecutionService {
         }
       });
 
-      proc.on('error', (err) => {
+      proc.on("error", (err) => {
         cancelListener.dispose();
         rl.close();
         reject(err);
@@ -204,7 +204,7 @@ export class GradleExecutionService {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const gradleWrapper =
-        process.platform === 'win32' ? 'gradlew.bat' : 'gradlew';
+        process.platform === "win32" ? "gradlew.bat" : "gradlew";
       const gradleCmd = path.join(cwd, gradleWrapper);
 
       if (!fs.existsSync(gradleCmd)) {
@@ -214,15 +214,17 @@ export class GradleExecutionService {
 
       // Run both test and jacocoTestReport
       const args = [
-        '--init-script',
+        "--init-script",
         this.initScriptPath,
-        'test',
-        'jacocoTestReport',
+        "test",
+        "jacocoTestReport",
         ...testFilter,
-        '--console=plain',
+        "--console=plain",
       ];
 
-      this.logger.appendLine(`Running with coverage: ${gradleCmd} ${args.join(' ')}`);
+      this.logger.appendLine(
+        `Running with coverage: ${gradleCmd} ${args.join(" ")}`,
+      );
 
       const proc = cp.spawn(gradleCmd, args, {
         cwd,
@@ -231,22 +233,24 @@ export class GradleExecutionService {
       });
 
       const cancelListener = token.onCancellationRequested(() => {
-        proc.kill('SIGTERM');
-        this.logger.appendLine('Test run cancelled');
+        proc.kill("SIGTERM");
+        this.logger.appendLine("Test run cancelled");
       });
 
       const rl = readline.createInterface({ input: proc.stdout });
-      rl.on('line', (line) => consumer.processLine(line));
+      rl.on("line", (line) => consumer.processLine(line));
 
-      proc.stderr.on('data', (data) => {
+      proc.stderr.on("data", (data) => {
         this.logger.appendLine(`[STDERR] ${data.toString()}`);
       });
 
-      proc.on('close', (code) => {
+      proc.on("close", (code) => {
         cancelListener.dispose();
         rl.close();
         if (code === 0) {
-          this.logger.appendLine('Gradle test run with coverage completed successfully');
+          this.logger.appendLine(
+            "Gradle test run with coverage completed successfully",
+          );
           resolve();
         } else {
           this.logger.appendLine(`Gradle exited with code ${code}`);
@@ -254,7 +258,7 @@ export class GradleExecutionService {
         }
       });
 
-      proc.on('error', (err) => {
+      proc.on("error", (err) => {
         cancelListener.dispose();
         rl.close();
         reject(err);

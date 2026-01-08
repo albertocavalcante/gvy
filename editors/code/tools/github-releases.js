@@ -19,9 +19,12 @@ async function getLatestReleaseInfo({ authToken } = {}) {
  * Gets release info for a specific tag (includes prereleases/nightlies)
  */
 async function getReleaseByTag(tag, { authToken } = {}) {
-  return await fetchJson(`${GITHUB_RELEASE_TAG_API}/${encodeURIComponent(tag)}`, {
-    authToken,
-  });
+  return await fetchJson(
+    `${GITHUB_RELEASE_TAG_API}/${encodeURIComponent(tag)}`,
+    {
+      authToken,
+    },
+  );
 }
 
 /**
@@ -90,4 +93,3 @@ module.exports = {
   selectJarAsset,
   fetchChecksumForAsset,
 };
-

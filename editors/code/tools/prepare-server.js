@@ -180,7 +180,9 @@ function findLocalGroovyLspJar() {
     process.env.GLS_LOCAL_JAR,
 
     // 2. Monorepo sibling directory (most common for development)
-    monorepoRoot ? path.join(monorepoRoot, "groovy-lsp", "build", "libs") : null,
+    monorepoRoot
+      ? path.join(monorepoRoot, "groovy-lsp", "build", "libs")
+      : null,
 
     // 3. Common workspace patterns
     path.join(
@@ -212,9 +214,7 @@ function findLocalGroovyLspJar() {
       // If it's a direct file path (from env var), check if it exists
       if (searchPath === process.env.GLS_LOCAL_JAR) {
         if (fs.existsSync(searchPath) && searchPath.endsWith(".jar")) {
-          console.log(
-            `Found local JAR via GLS_LOCAL_JAR: ${searchPath}`,
-          );
+          console.log(`Found local JAR via GLS_LOCAL_JAR: ${searchPath}`);
           return searchPath;
         }
         continue;
@@ -309,7 +309,8 @@ function deriveSelection(cliOptions) {
     ""
   ).toLowerCase();
   const useNightly = cliOptions.nightly || channel === "nightly";
-  const usePinned = process.env.GLS_USE_PINNED === "true" || channel === "pinned";
+  const usePinned =
+    process.env.GLS_USE_PINNED === "true" || channel === "pinned";
 
   // Priority: tag > nightly > pinned > latest (default)
   if (explicitTag) {
@@ -686,20 +687,24 @@ async function prepareServer(runtimeOptions = {}) {
       process.env.GLS_USE_PINNED === "true" ||
       process.env.USE_LATEST_GLS === "true";
 
-    const autoPreferLocal = isMonorepo &&
-      !explicitUrl &&
-      !hasExplicitVersionSelection;
+    const autoPreferLocal =
+      isMonorepo && !explicitUrl && !hasExplicitVersionSelection;
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 
     // In monorepo, auto-build local JAR if not found
     // Disabled in CI environments (CI=true) and when BUILD_LOCAL=false
     const isCI = process.env.CI === "true";
-    const autoBuildLocal = autoPreferLocal && !isCI && process.env.BUILD_LOCAL !== "false";
+    const autoBuildLocal =
+      autoPreferLocal && !isCI && process.env.BUILD_LOCAL !== "false";
     const effectiveBuildLocal = buildLocal || autoBuildLocal;
 
     if (autoPreferLocal) {
-      const buildStatus = autoBuildLocal ? " (auto-build enabled)" : isCI ? " (auto-build disabled in CI)" : "";
+      const buildStatus = autoBuildLocal
+        ? " (auto-build enabled)"
+        : isCI
+          ? " (auto-build disabled in CI)"
+          : "";
       console.log(`📦 Monorepo detected - will use local build${buildStatus}`);
     }
 
@@ -757,9 +762,7 @@ async function prepareServer(runtimeOptions = {}) {
 
           if (jarFiles.length > 0) {
             jarToUse = path.join(resolvedLocal, jarFiles[0]);
-            console.log(
-              `Found JAR in directory: ${sanitizeForLog(jarToUse)}`,
-            );
+            console.log(`Found JAR in directory: ${sanitizeForLog(jarToUse)}`);
           } else {
             throw new Error(
               `No JAR files found in directory: ${resolvedLocal}`,
@@ -955,9 +958,14 @@ async function prepareServer(runtimeOptions = {}) {
       );
 
       // Offer pinned fallback as escape hatch
-      if (requestedSelection?.type === "latest" && process.env.GLS_ALLOW_PINNED_FALLBACK === "true") {
+      if (
+        requestedSelection?.type === "latest" &&
+        process.env.GLS_ALLOW_PINNED_FALLBACK === "true"
+      ) {
         console.warn("");
-        console.warn(`⚠️  Attempting fallback to pinned version (${PINNED_RELEASE_TAG})...`);
+        console.warn(
+          `⚠️  Attempting fallback to pinned version (${PINNED_RELEASE_TAG})...`,
+        );
         try {
           await downloadRelease({
             tag: PINNED_RELEASE_TAG,
@@ -985,9 +993,15 @@ async function prepareServer(runtimeOptions = {}) {
       console.error(`Requested selection: ${selectionLabel}`);
     }
     console.error(`Pinned fallback available: ${PINNED_RELEASE_TAG}`);
-    console.error(`Release page: https://github.com/albertocavalcante/gvy/releases/tag/${PINNED_RELEASE_TAG}`);
-    console.error("To use pinned version: GLS_USE_PINNED=true or GLS_CHANNEL=pinned");
-    console.error("To enable auto-fallback on network errors: GLS_ALLOW_PINNED_FALLBACK=true");
+    console.error(
+      `Release page: https://github.com/albertocavalcante/gvy/releases/tag/${PINNED_RELEASE_TAG}`,
+    );
+    console.error(
+      "To use pinned version: GLS_USE_PINNED=true or GLS_CHANNEL=pinned",
+    );
+    console.error(
+      "To enable auto-fallback on network errors: GLS_ALLOW_PINNED_FALLBACK=true",
+    );
     console.error(
       "To try the latest nightly: GLS_CHANNEL=nightly or pass --nightly",
     );
