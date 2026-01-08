@@ -7,6 +7,7 @@ import { MavenExecutionService } from './MavenExecutionService';
 import { GroovyTestController } from './GroovyTestController';
 import { TestService, BuildToolInfo, BuildToolName } from './TestService';
 import { CoverageService } from './CoverageService';
+import { TestCodeLensProvider } from './TestCodeLensProvider';
 import { getClient } from '../../server/client';
 
 /**
@@ -130,4 +131,13 @@ export function registerTestingFeatures(
       '[Testing] Warning: No supported build tool detected. Test execution may not work.',
     );
   }
+
+  // Register CodeLens provider for test Run|Debug buttons
+  const codeLensProvider = new TestCodeLensProvider(testService);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      [{ language: 'groovy' }, { language: 'jenkinsfile' }],
+      codeLensProvider
+    )
+  );
 }
