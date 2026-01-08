@@ -186,11 +186,12 @@ class CheckCommand : CliktCommand(name = "check") {
         // Output SARIF JSON
         val json = writer.toJson(prettyPrint = true)
 
-        if (output != null) {
-            output.writeText(json)
+        val outputFile = output
+        if (outputFile != null) {
+            outputFile.writeText(json)
             if (format == OutputFormat.SARIF) {
                 // Don't pollute SARIF output with extra messages
-                logger.info("SARIF output written to ${output.absolutePath}")
+                logger.info("SARIF output written to ${outputFile.absolutePath}")
             }
         } else {
             println(json)

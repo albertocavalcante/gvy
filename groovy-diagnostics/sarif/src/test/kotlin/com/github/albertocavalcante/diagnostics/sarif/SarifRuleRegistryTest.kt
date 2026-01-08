@@ -64,9 +64,10 @@ class SarifRuleRegistryTest {
         assertNotNull(rule.shortDescription)
         assertNotNull(rule.helpUri)
         assertNotNull(rule.defaultConfiguration)
-        assertNotNull(rule.properties)
-        assertNotNull(rule.properties?.priority)
-        assertNotNull(rule.properties?.category)
+        val properties = rule.properties
+        assertNotNull(properties)
+        assertNotNull(properties.priority)
+        assertNotNull(properties.category)
     }
 
     @Test
