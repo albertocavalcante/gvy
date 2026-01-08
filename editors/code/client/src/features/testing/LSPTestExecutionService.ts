@@ -171,10 +171,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
                 cwd,
                 env: { ...process.env, ...env },
                 // Shell usage:
-                // - Gradle wrapper (gradlew): shell: false (script is executable)
-                // - Maven wrapper (mvnw): shell: false
-                // - Global mvn: shell: true (often a batch/cmd shim on Windows)
-                // - Global gradle: shell: true? (safer to match mvn logic if uncertain, but usually false works for gradle)
+                // - Maven Wrapper (mvnw): shell: false (executable script)
+                // - Global Maven (mvn): shell: true (needed for Windows batch/cmd shims)
+                // - Gradle (all): shell: false (executable script or binary)
                 shell: isMaven && !isMavenWrapper
             });
 
