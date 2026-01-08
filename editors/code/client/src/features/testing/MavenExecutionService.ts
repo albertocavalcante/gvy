@@ -52,7 +52,6 @@ export class MavenExecutionService implements ITestExecutionService {
         token,
       );
     } catch (error) {
-      console.log(`DEBUG: Maven execution error: ${error}`);
       this.logger.appendLine(`Maven execution error: ${error}`);
     } finally {
       run.end();
@@ -174,17 +173,13 @@ export class MavenExecutionService implements ITestExecutionService {
       // Look for Maven wrapper first, fall back to mvn
       const mvnWrapper = process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw';
       const mvnWrapperPath = path.join(cwd, mvnWrapper);
-      console.log('DEBUG: spawnMaven called');
       const hasMvnWrapper = fs.existsSync(mvnWrapperPath);
-      console.log(`DEBUG: hasMvnWrapper=${hasMvnWrapper}`);
-
       const mvnCmd = hasMvnWrapper ? mvnWrapperPath : 'mvn';
 
       const args = ['test', ...testFilter, '-q'];
 
       this.logger.appendLine(`Running: ${mvnCmd} ${args.join(' ')}`);
 
-      console.log('DEBUG: calling cp.spawn');
       const proc = cp.spawn(mvnCmd, args, {
         cwd,
         shell: !hasMvnWrapper, // Use shell for global mvn, not for wrapper

@@ -126,8 +126,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
         _token: vscode.CancellationToken
     ): Promise<void> {
         // TODO: Implement debug using specific LSP command or debug adapter
-        // For now, similar loop to runTests but requesting debug command
         this.logger.appendLine("Debug not implemented in LSP service yet.");
+        vscode.window.showWarningMessage("Debug support is not yet implemented in the Language Server.");
     }
 
     private async executeCommand(
@@ -142,6 +142,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
         // Detect Build Tool by executable name
         const isGradle = executable.includes('gradle');
         const isMaven = executable.includes('mvn');
+        const isMavenWrapper = isMaven && executable.includes('mvnw');
 
         let finalArgs = [...args];
 
@@ -169,13 +170,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
             const proc = cp.spawn(executable, finalArgs, {
                 cwd,
                 env: { ...process.env, ...env },
-                shell: !isGradle // Gradle wrapper (bat/sh) usually needs strict execution, mvn often handled via shell if global
-                // Actually, if LSP provides absolute path to wrapper, shell: false is safer/better.
-                // If LSP provides 'mvn' (global), shell: true might be needed on Windows.
-                // Let's assume shell: false if absolute path, unless we need it.
-                // For safety/consistency with existing services:
-                // GradleExecutionService uses shell: false
-                // MavenExecutionService uses shell: !hasWrapper
+                // Shell usage:
+                // - Gradle wrapper (gradlew): shell: false (script is executable)
+                // - Maven wrapper (mvnw): shell: false
+                // - Global mvn: shell: true (often a batch/cmd shim on Windows)
+                // - Global gradle: shell: true? (safer to match mvn logic if uncertain, but usually false works for gradle)
+                shell: isMaven && !isMavenWrapper
             });
 
             // Cancellation

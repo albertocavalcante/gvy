@@ -64,6 +64,9 @@ export class GroovyTestController {
    * Dispose of subscriptions and watchers.
    */
   dispose(): void {
+    if (this.refreshTimeout) {
+      clearTimeout(this.refreshTimeout);
+    }
     this.subscriptions.forEach((s) => s.dispose());
     this.subscriptions.length = 0;
   }
