@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.test.parseGroovyVersion
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionRange
@@ -29,6 +30,7 @@ class ProjectStartupManagerWorkerSelectionTest {
             compilationService = compilationService,
             availableBuildTools = emptyList(),
             coroutineScope = CoroutineScope(Dispatchers.Unconfined),
+            strategyRegistry = ProjectStrategyRegistry(),
             workerRouter = WorkerRouter(listOf(worker)),
         )
 
@@ -48,6 +50,7 @@ class ProjectStartupManagerWorkerSelectionTest {
             compilationService = compilationService,
             availableBuildTools = emptyList(),
             coroutineScope = CoroutineScope(Dispatchers.Unconfined),
+            strategyRegistry = ProjectStrategyRegistry(),
             workerRouter = WorkerRouter(listOf(worker)),
         )
 

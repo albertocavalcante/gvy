@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
@@ -11,6 +10,7 @@ import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.engine.config.EngineConfiguration
 import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.progress.ProgressReporter
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionResolver
 import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
@@ -81,6 +81,7 @@ class ProjectStartupManager(
     private val compilationService: GroovyCompilationService,
     private val availableBuildTools: List<BuildTool>,
     private val coroutineScope: CoroutineScope,
+    private val strategyRegistry: ProjectStrategyRegistry,
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
@@ -93,7 +94,7 @@ class ProjectStartupManager(
     var dependencyManager: DependencyManager? = null
         private set
 
-    private var jenkinsInitJob: Job? = null
+    private var strategyInitJobs: List<Job> = emptyList()
 
     /**
      * Registers file watchers if the client supports it.
@@ -230,28 +231,27 @@ class ProjectStartupManager(
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
 
-        // TODO(#700): Decouple Jenkins support into a ProjectStrategy
-        //   See: https://github.com/albertocavalcante/gvy/issues/700
-        // Setup Jenkins integration
-        val jenkinsPluginManager = JenkinsPluginManager()
-        val jenkinsMetadataService = JenkinsMetadataService(jenkinsPluginManager, config.jenkinsConfig)
+        // Set strategy registry on workspace manager
+        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
 
-        // Initialize Jenkins workspace with the plugin manager
-        compilationService.workspaceManager.initializeJenkinsWorkspace(config, jenkinsPluginManager)
+        // Select project strategies
+        val activeStrategies = strategyRegistry.selectStrategies(workspaceRoot, config)
+        logger.info("Active project strategies: {}", activeStrategies.map { it.id })
 
-        // Asynchronously download and register plugins
-        jenkinsInitJob = coroutineScope.launch(Dispatchers.IO) {
-            runCatching {
-                logger.info("Starting Jenkins plugin metadata initialization")
-                jenkinsMetadataService.initialize()
-                logger.info("Jenkins plugin metadata initialization completed")
-                // Note: We might want to trigger a classpath refresh here if critical plugins were added,
-                // but JenkinsContext currently scans lazily or on demand. The jars are added to
-                // potential classpath candidates, so next time buildClasspath is called (e.g. file open),
-                // they will be picked up.
-            }.onFailure { throwable ->
-                rethrowIfCancellationOrError(throwable)
-                logger.error("Failed to initialize Jenkins plugin metadata", throwable)
+        // Initialize strategies synchronously on the calling thread.
+        // Strategy.initialize() performs synchronous setup (e.g., GDSL loading) and returns
+        // a Job for async work (e.g., plugin downloads).
+        // Using runBlocking here is intentional - we need the synchronous parts to complete
+        // before returning, while async jobs are collected for later awaiting.
+        strategyInitJobs = kotlinx.coroutines.runBlocking {
+            activeStrategies.mapNotNull { strategy ->
+                runCatching {
+                    logger.info("Initializing strategy: {} ({})", strategy.id, strategy.displayName)
+                    strategy.initialize(workspaceRoot, config)
+                }.onFailure { throwable ->
+                    rethrowIfCancellationOrError(throwable)
+                    logger.error("Failed to initialize strategy '{}': {}", strategy.id, throwable.message)
+                }.getOrNull()
             }
         }
     }
@@ -362,7 +362,7 @@ class ProjectStartupManager(
         )
         // Signal warning state but still quiescent (ready for requests, but degraded)
         coroutineScope.launch(indexingDispatcher) {
-            jenkinsInitJob?.join()
+            strategyInitJobs.forEach { it.join() }
             onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
         }
     }
@@ -394,9 +394,9 @@ class ProjectStartupManager(
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             logger.debug("No workspace sources to index")
-            // No files to index, signal ready after making sure Jenkins init is done
+            // No files to index, signal ready after making sure strategy init is done
             coroutineScope.launch(indexingDispatcher) {
-                jenkinsInitJob?.join()
+                strategyInitJobs.forEach { it.join() }
                 onStatusUpdate(Health.Ok, true, "Ready", null, null)
             }
             return
@@ -443,8 +443,8 @@ class ProjectStartupManager(
                     logger.warn("Workspace compilation had errors, but proceeding with partial results")
                 }
 
-                // Ensure Jenkins initialization is also complete before signaling ready
-                jenkinsInitJob?.join()
+                // Ensure strategy initialization is also complete before signaling ready
+                strategyInitJobs.forEach { it.join() }
 
                 // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total)
@@ -530,5 +530,6 @@ class ProjectStartupManager(
 
     fun shutdown() {
         dependencyManager?.cancel()
+        strategyRegistry.shutdown()
     }
 }

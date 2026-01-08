@@ -10,6 +10,9 @@ import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionP
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
+import com.github.albertocavalcante.groovylsp.project.DefaultProjectStrategy
+import com.github.albertocavalcante.groovylsp.project.JenkinsProjectStrategy
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
@@ -110,7 +113,18 @@ class GroovyLanguageServer(
         GradleBuildTool(),
         MavenBuildTool(),
     )
-    private val startupManager = ProjectStartupManager(compilationService, availableBuildTools, coroutineScope)
+    private val strategyRegistry = ProjectStrategyRegistry(
+        listOf(
+            JenkinsProjectStrategy(coroutineScope),
+            DefaultProjectStrategy(),
+        ),
+    )
+    private val startupManager = ProjectStartupManager(
+        compilationService,
+        availableBuildTools,
+        coroutineScope,
+        strategyRegistry,
+    )
     private val testRequestDelegate =
         TestRequestDelegate(
             coroutineScope,
