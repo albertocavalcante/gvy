@@ -122,19 +122,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
 
     async debugTests(
-        request: vscode.TestRunRequest,
-        token: vscode.CancellationToken
+        _request: vscode.TestRunRequest,
+        _token: vscode.CancellationToken
     ): Promise<void> {
         // TODO: Implement debug using specific LSP command or debug adapter
         // For now, similar loop to runTests but requesting debug command
-        const testsToRun = request.include ?? [];
-        if (testsToRun.length === 0) return;
-
-        const item = testsToRun[0]; // Debug usually one at a time for safety
-        if (!item.uri) return;
-
-        // ... logic similar to runTests but passing `debug: true` to getTestCommand
-        // Then using vscode.debug.startDebugging with the result
         this.logger.appendLine("Debug not implemented in LSP service yet.");
     }
 
@@ -142,7 +134,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
         cmd: TestCommand,
         consumer: TestEventConsumer,
         token: vscode.CancellationToken,
-        hint?: string
+        _hint?: string
     ): Promise<void> {
         const { executable, args, cwd, env } = cmd;
         this.logger.appendLine(`[LSP] Executing: ${executable} ${args.join(' ')} (in ${cwd})`);
@@ -173,7 +165,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
             }
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const proc = cp.spawn(executable, finalArgs, {
                 cwd,
                 env: { ...process.env, ...env },
@@ -197,7 +189,6 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
             // Maven specific state
             let foundHttpBlocker = false;
-            let collectedStderr = '';
             const httpBlockerPattern = /maven-default-http-blocker|Blocked mirror for repositories/i;
 
             rl.on('line', (line) => {
@@ -216,7 +207,6 @@ export class LSPTestExecutionService implements ITestExecutionService {
                 const str = data.toString();
                 this.logger.appendLine(`[STDERR] ${str}`);
                 if (isMaven) {
-                    collectedStderr += str;
                     if (httpBlockerPattern.test(str)) {
                         foundHttpBlocker = true;
                     }

@@ -1,59 +1,12 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as path from 'path';
-import { State } from 'vscode-languageclient/node';
 import { GradleExecutionService } from './GradleExecutionService';
-import { MavenExecutionService } from './MavenExecutionService';
 import { GroovyTestController } from './GroovyTestController';
-import { TestService, BuildToolInfo, BuildToolName } from './TestService';
+import { TestService, BuildToolInfo } from './TestService';
 import { CoverageService } from './CoverageService';
 import { TestCodeLensProvider } from './TestCodeLensProvider';
 import { getClient } from '../../server/client';
 import { LSPTestExecutionService } from './LSPTestExecutionService';
 import { ITestExecutionService } from './ITestExecutionService';
-
-/**
- * Fallback build tool detection when LSP is not available.
- * Prefer using TestService.getBuildToolInfo() when LSP is ready.
- */
-function detectBuildToolFallback(workspacePath: string): BuildToolName {
-  // Check for Gradle
-  const gradleFiles = [
-    'build.gradle',
-    'build.gradle.kts',
-    'settings.gradle',
-    'settings.gradle.kts',
-  ];
-  if (gradleFiles.some((f) => fs.existsSync(path.join(workspacePath, f)))) {
-    return 'gradle';
-  }
-
-  // Check for Maven
-  if (fs.existsSync(path.join(workspacePath, 'pom.xml'))) {
-    return 'maven';
-  }
-
-  return 'unknown';
-}
-
-/**
- * Create execution service based on build tool type.
- */
-function createExecutionService(
-  buildTool: BuildToolName,
-  logger: vscode.OutputChannel,
-  extensionPath: string,
-) {
-  switch (buildTool) {
-    case 'maven':
-      return new MavenExecutionService(logger);
-    case 'gradle':
-    case 'bsp':
-    default:
-      // Default to Gradle for unknown/BSP (BSP uses Gradle commands internally)
-      return new GradleExecutionService(logger, extensionPath);
-  }
-}
 
 export function registerTestingFeatures(
   context: vscode.ExtensionContext,
@@ -61,6 +14,7 @@ export function registerTestingFeatures(
 ) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspaceUri = workspaceFolder?.uri.toString() ?? '';
+
 
   // Get the LanguageClient
   const client = getClient();
