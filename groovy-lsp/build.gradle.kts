@@ -110,6 +110,7 @@ dependencies {
     implementation(project(":parser:core"))
     implementation(project(":groovy-diagnostics:api"))
     implementation(project(":groovy-diagnostics:codenarc"))
+    implementation(project(":groovy-diagnostics:sarif"))
     implementation(project(":groovy-jenkins"))
     implementation(project(":groovy-build-tool"))
     implementation(project(":groovy-spock"))
