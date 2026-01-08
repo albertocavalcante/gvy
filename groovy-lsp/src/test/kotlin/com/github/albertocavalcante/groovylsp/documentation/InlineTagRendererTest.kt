@@ -252,4 +252,39 @@ class InlineTagRendererTest {
 
         assertEquals(expected, InlineTagRenderer.render(input))
     }
+
+    @Test
+    fun `renders code tag with curly braces in closure`() {
+        val input = "Use {@code { x -> x * 2 }} for transformation."
+        val expected = "Use `{ x -> x * 2 }` for transformation."
+        assertEquals(expected, InlineTagRenderer.render(input))
+    }
+
+    @Test
+    fun `renders code tag with nested curly braces`() {
+        val input = "Map: {@code { key: { nested: value } }}"
+        val expected = "Map: `{ key: { nested: value } }`"
+        assertEquals(expected, InlineTagRenderer.render(input))
+    }
+
+    @Test
+    fun `renders code tag with complex closure syntax`() {
+        val input = "Example: {@code list.each { item -> println \"Value: \${'$'}{item}\" }}"
+        val expected = "Example: `list.each { item -> println \"Value: \${'$'}{item}\" }`"
+        assertEquals(expected, InlineTagRenderer.render(input))
+    }
+
+    @Test
+    fun `renders code tag with deeply nested braces`() {
+        val input = "{@code { a: { b: { c: { d: value } } } }}"
+        val expected = "`{ a: { b: { c: { d: value } } } }`"
+        assertEquals(expected, InlineTagRenderer.render(input))
+    }
+
+    @Test
+    fun `renders code tag with mixed brackets and braces`() {
+        val input = "Use {@code map.collect { [it.key, it.value] }} to transform."
+        val expected = "Use `map.collect { [it.key, it.value] }` to transform."
+        assertEquals(expected, InlineTagRenderer.render(input))
+    }
 }

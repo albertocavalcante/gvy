@@ -2,7 +2,19 @@ package com.github.albertocavalcante.groovycommon.doc
 
 /**
  * Parser for GroovyDoc comments.
+ *
+ * @deprecated Use `com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc` from parser/core instead.
+ * This parser is superseded by the parser in parser/core which provides richer functionality including pre-parsed
+ * inline tags. This version is maintained only for backward compatibility and will be removed in a future release.
  */
+@Deprecated(
+    message = "Use com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc from parser/core instead",
+    replaceWith = ReplaceWith(
+        "Groovydoc.parse(comment)",
+        "com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc",
+    ),
+    level = DeprecationLevel.WARNING,
+)
 object GroovyDocParser {
     private val TAG_PATTERN = Regex("""@(\w+)\s*(.*)""")
 

@@ -139,11 +139,13 @@ object DocExtractor {
      * Clean a doc comment for parsing by removing delimiters and asterisks.
      */
     private fun cleanDocCommentForParser(docComment: String): String = docComment
-        .replace(Regex("""/\*\*"""), "")
-        .replace(Regex("""\*/"""), "")
         .lines()
         .joinToString("\n") { line ->
-            line.trim().removePrefix("*").trim()
+            line.trim()
+                .replaceFirst(Regex("""^\s*/\*+"""), "")
+                .replaceFirst(Regex("""\*/\s*$"""), "")
+                .removePrefix("*")
+                .trim()
         }
         .trim()
 
@@ -152,14 +154,7 @@ object DocExtractor {
      */
     private fun parseDocCommentWithRegex(docComment: String): Documentation {
         // Remove comment delimiters and asterisks
-        val cleanedComment = docComment
-            .replace(Regex("""/\*\*"""), "")
-            .replace(Regex("""\*/"""), "")
-            .lines()
-            .joinToString("\n") { line ->
-                line.trim().removePrefix("*").trim()
-            }
-            .trim()
+        val cleanedComment = cleanDocCommentForParser(docComment)
 
         // Regex for whitespace normalization
         val whitespaceRegex = Regex("""\s+""")

@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import com.github.albertocavalcante.groovyparser.ast.groovydoc.GroovydocInlineTag
+
 /**
  * Renders GroovyDoc/JavaDoc inline tags to markdown.
  *
@@ -11,25 +13,106 @@ package com.github.albertocavalcante.groovylsp.documentation
  * - {@value ...} → constant value (best effort)
  */
 object InlineTagRenderer {
-    private val INLINE_TAG_PATTERN = """\{@(\w+)\s+([^}]+)\}""".toRegex()
+    /**
+     * Render pre-parsed inline tags from parser/core to markdown.
+     * This is the preferred method as it avoids re-parsing.
+     *
+     * @param tags The list of parsed inline tags
+     * @return Markdown-formatted text with tags rendered
+     */
+    fun renderTags(tags: List<GroovydocInlineTag>): String = tags.joinToString("") { renderTag(it) }
+
+    /**
+     * Render a single pre-parsed inline tag to markdown.
+     *
+     * @param tag The parsed inline tag
+     * @return Markdown-formatted text
+     */
+    fun renderTag(tag: GroovydocInlineTag): String = when (tag.type) {
+        GroovydocInlineTag.Type.CODE -> renderCode(tag.content)
+        GroovydocInlineTag.Type.LINK -> renderLink(tag.content)
+        GroovydocInlineTag.Type.LINKPLAIN -> renderLinkPlain(tag.content)
+        GroovydocInlineTag.Type.LITERAL -> renderLiteral(tag.content)
+        GroovydocInlineTag.Type.VALUE -> renderValue(tag.content)
+        GroovydocInlineTag.Type.INHERIT_DOC -> "`inheritDoc`" // Can't resolve parent doc, show as placeholder
+        GroovydocInlineTag.Type.DOC_ROOT -> "" // Document root path, not meaningful in hover
+        GroovydocInlineTag.Type.UNKNOWN -> renderUnknownTag(tag)
+    }
 
     /**
      * Render all inline tags in the given text to markdown.
+     * This is a fallback method for cases where we don't have pre-parsed tags.
      *
      * @param text The text containing inline tags
      * @return Text with inline tags converted to markdown
      */
-    fun render(text: String): String = INLINE_TAG_PATTERN.replace(text) { match ->
-        val tag = match.groupValues[1]
-        val content = match.groupValues[2].trim()
-        when (tag) {
-            "code" -> renderCode(content)
-            "link" -> renderLink(content)
-            "linkplain" -> renderLinkPlain(content)
-            "literal" -> renderLiteral(content)
-            "value" -> renderValue(content)
-            else -> match.value // Unknown tag, keep as-is
+    fun render(text: String): String {
+        val result = StringBuilder()
+        var pos = 0
+
+        while (pos < text.length) {
+            val tagStart = text.indexOf("{@", pos)
+            if (tagStart == -1) {
+                result.append(text.substring(pos))
+                break
+            }
+
+            // Append text before tag
+            result.append(text.substring(pos, tagStart))
+
+            // Extract tag name
+            val tagNameStart = tagStart + 2
+            val tagNameEnd = text.indexOfAny(charArrayOf(' ', '\t', '\n', '}'), tagNameStart)
+            if (tagNameEnd == -1) {
+                result.append(text.substring(tagStart))
+                break
+            }
+
+            val tagName = text.substring(tagNameStart, tagNameEnd)
+
+            // Find matching closing brace with proper balance
+            val contentStart = if (text[tagNameEnd] == '}') tagNameEnd else tagNameEnd + 1
+            val closingBrace = findClosingBrace(text, contentStart)
+            if (closingBrace == -1) {
+                result.append(text.substring(tagStart))
+                break
+            }
+
+            val content = text.substring(contentStart, closingBrace).trim()
+            val rendered = when (tagName) {
+                "code" -> renderCode(content)
+                "link" -> renderLink(content)
+                "linkplain" -> renderLinkPlain(content)
+                "literal" -> renderLiteral(content)
+                "value" -> renderValue(content)
+                else -> if (content.isEmpty()) "{@$tagName}" else "{@$tagName $content}" // Unknown tag, keep as-is
+            }
+            result.append(rendered)
+            pos = closingBrace + 1
         }
+
+        return result.toString()
+    }
+
+    /**
+     * Find the closing brace for an inline tag, handling nested braces.
+     */
+    private fun findClosingBrace(text: String, startPos: Int): Int {
+        var braceCount = 1
+        var pos = startPos
+
+        while (pos < text.length && braceCount > 0) {
+            when (text[pos]) {
+                '{' -> braceCount++
+                '}' -> {
+                    braceCount--
+                    if (braceCount == 0) return pos
+                }
+            }
+            pos++
+        }
+
+        return -1 // No matching closing brace found
     }
 
     /**
@@ -63,12 +146,18 @@ object InlineTagRenderer {
      *
      * Escapes special characters that might be interpreted as markdown.
      */
-    private fun renderLiteral(content: String): String = content
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
+    private fun renderLiteral(content: String): String = buildString(content.length) {
+        content.forEach { char ->
+            when (char) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#39;")
+                else -> append(char)
+            }
+        }
+    }
 
     /**
      * Render {@value ...} tag.
@@ -81,6 +170,14 @@ object InlineTagRenderer {
         val reference = content.removePrefix("#")
         return "`$reference`"
     }
+
+    /**
+     * Render unknown inline tags.
+     *
+     * Keeps the original tag syntax for unknown tags to preserve information.
+     */
+    private fun renderUnknownTag(tag: GroovydocInlineTag): String =
+        if (tag.content.isEmpty()) "{@${tag.tagName}}" else "{@${tag.tagName} ${tag.content}}"
 
     /**
      * Format a reference (class, method, field) for display.

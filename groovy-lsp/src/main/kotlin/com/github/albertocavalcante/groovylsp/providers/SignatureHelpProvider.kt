@@ -11,7 +11,6 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.safePosition
-import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import groovy.lang.Script

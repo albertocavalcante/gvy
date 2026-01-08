@@ -335,4 +335,72 @@ class GroovyDocAdapterTest {
         assertEquals("the second number", doc.params["y"])
         assertEquals("the sum of x and y", doc.returnDoc)
     }
+
+    @Test
+    fun `truncates long description without sentence ending to 100 characters`() {
+        // Create a description longer than 100 chars without sentence ending
+        val longText = "a".repeat(150)
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText(longText),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        // Summary should be truncated to 100 chars + "..."
+        assertEquals(103, doc.summary.length)
+        assertEquals("a".repeat(100) + "...", doc.summary)
+        assertEquals(longText, doc.description) // Full description preserved
+    }
+
+    @Test
+    fun `renders inline code tag in description`() {
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText("Use {@code String.valueOf()} to convert."),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        assertEquals("Use `String.valueOf()` to convert.", doc.description)
+    }
+
+    @Test
+    fun `renders empty-content inline tag without trailing space`() {
+        // Regression test: toText() always adds space between tagName and content,
+        // producing "{@inheritDoc }" for empty content, but original text is "{@inheritDoc}"
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText("See parent. {@inheritDoc}"),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        // Should render {@inheritDoc} as placeholder since we can't resolve parent docs
+        assertEquals("See parent. `inheritDoc`", doc.description)
+    }
+
+    @Test
+    fun `renders multiple inline tags in description`() {
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText(
+                "Use {@code foo} and {@link Bar} together.",
+            ),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        assertEquals("Use `foo` and `Bar` together.", doc.description)
+    }
+
+    @Test
+    fun `renders inline tags in param description`() {
+        val groovydoc = Groovydoc(
+            description = GroovydocDescription.parseText("A method."),
+            blockTags = listOf(
+                GroovydocBlockTag.param("value", "the {@code String} to process"),
+            ),
+        )
+
+        val doc = GroovyDocAdapter.toDocumentation(groovydoc)
+
+        assertEquals("the `String` to process", doc.params["value"])
+    }
 }

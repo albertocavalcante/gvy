@@ -12,6 +12,14 @@ import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClassDeclarationHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.DeclarationExpressionHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.FieldDeclarationHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.GenericHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ImportHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodCallHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodDeclarationHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.VariableExpressionHoverStrategy
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
@@ -40,6 +48,9 @@ import java.net.URI
 /**
  * Kotlin-idiomatic hover provider for Groovy symbols.
  * Uses coroutines, extension functions, and null safety for clean async processing.
+ *
+ * This provider uses a strategy pattern to handle different AST node types.
+ * Strategies are evaluated in order, and the first one that can handle the node is used.
  */
 class HoverProvider(
     private val compilationService: GroovyCompilationService,
@@ -52,6 +63,18 @@ class HoverProvider(
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
+
+    // Strategies for handling different node types (order matters - more specific first)
+    private val strategies: List<HoverStrategy> = listOf(
+        MethodDeclarationHoverStrategy(),
+        ClassDeclarationHoverStrategy(),
+        FieldDeclarationHoverStrategy(),
+        ImportHoverStrategy(),
+        DeclarationExpressionHoverStrategy(),
+        VariableExpressionHoverStrategy(),
+        MethodCallHoverStrategy(),
+        GenericHoverStrategy(), // Fallback - must be last
+    )
 
     /**
      * Provide hover information for the symbol at the given position.
@@ -251,15 +274,24 @@ class HoverProvider(
     }
 
     /**
-     * Create hover content using the DSL with documentation.
+     * Create hover content using the strategy pattern with documentation enhancement.
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
         // Check if this is a Jenkins step and we have metadata for it
         tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
 
         val module = compilationService.getAst(documentUri) as? ModuleNode
-        val baseHoverResult = contentGenerator.generateHover(node, module)
-        val baseHover = baseHoverResult.getOrNull() ?: return null
+        val context = HoverContext(
+            moduleNode = module,
+            contentGenerator = contentGenerator,
+            documentUri = documentUri,
+        )
+
+        // Use strategy pattern to generate base hover
+        val baseHover = strategies
+            .firstOrNull { it.canHandle(node) }
+            ?.generateHover(node, context)
+            ?: return null
 
         logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
 
