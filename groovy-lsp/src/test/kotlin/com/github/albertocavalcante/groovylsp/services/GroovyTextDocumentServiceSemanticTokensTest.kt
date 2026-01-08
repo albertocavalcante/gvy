@@ -1,9 +1,13 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.project.JenkinsProjectStrategy
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.SemanticTokensParams
@@ -21,19 +25,32 @@ class GroovyTextDocumentServiceSemanticTokensTest {
     private lateinit var service: GroovyTextDocumentService
     private lateinit var coroutineScope: CoroutineScope
     private lateinit var tempWorkspace: java.nio.file.Path
+    private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setup() {
+    fun setup() = runBlocking {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val compilationService = GroovyCompilationService()
 
         tempWorkspace = Files.createTempDirectory("groovy-lsp-test")
         compilationService.workspaceManager.initializeWorkspace(tempWorkspace)
 
-        // Initialize Jenkins workspace with default configuration
-        compilationService.workspaceManager.initializeJenkinsWorkspace(
-            com.github.albertocavalcante.groovylsp.config.ServerConfiguration(),
+        // Set up strategy registry with Jenkins support
+        val jenkinsStrategy = JenkinsProjectStrategy(coroutineScope)
+        strategyRegistry = ProjectStrategyRegistry()
+        strategyRegistry.register(jenkinsStrategy)
+        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
+
+        // Initialize Jenkins strategy with file patterns
+        val config = ServerConfiguration(
+            jenkinsConfig = com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration(
+                filePatterns = listOf("**/Jenkinsfile", "**/Jenkinsfile.*"),
+            ),
         )
+        // Select strategies to populate activeStrategies (required for findCapability)
+        strategyRegistry.selectStrategies(tempWorkspace, config)
+        jenkinsStrategy.initialize(tempWorkspace, config)
+        jenkinsStrategy.awaitInitialization()
 
         service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
@@ -46,6 +63,8 @@ class GroovyTextDocumentServiceSemanticTokensTest {
 
     @AfterEach
     fun teardown() {
+        strategyRegistry.shutdown()
+        coroutineScope.cancel()
         tempWorkspace.toFile().deleteRecursively()
     }
 

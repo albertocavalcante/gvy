@@ -1,7 +1,15 @@
 package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.project.JenkinsProjectStrategy
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -19,15 +27,37 @@ class JenkinsSemanticTokenProviderVarsTest {
 
     private lateinit var compilationService: GroovyCompilationService
     private lateinit var tempWorkspace: java.nio.file.Path
+    private lateinit var coroutineScope: CoroutineScope
+    private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setup() {
+    fun setup() = runBlocking {
+        coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         compilationService = GroovyCompilationService()
         tempWorkspace = Files.createTempDirectory("groovy-lsp-vars-test")
         compilationService.workspaceManager.initializeWorkspace(tempWorkspace)
-        compilationService.workspaceManager.initializeJenkinsWorkspace(
-            com.github.albertocavalcante.groovylsp.config.ServerConfiguration(),
+
+        // Set up strategy registry with Jenkins support
+        val jenkinsStrategy = JenkinsProjectStrategy(coroutineScope)
+        strategyRegistry = ProjectStrategyRegistry()
+        strategyRegistry.register(jenkinsStrategy)
+        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
+
+        // Initialize Jenkins strategy with file patterns
+        val config = ServerConfiguration(
+            jenkinsConfig = com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration(
+                filePatterns = listOf("**/Jenkinsfile", "**/Jenkinsfile.*"),
+            ),
         )
+        strategyRegistry.selectStrategies(tempWorkspace, config)
+        jenkinsStrategy.initialize(tempWorkspace, config)
+        jenkinsStrategy.awaitInitialization()
+    }
+
+    @AfterEach
+    fun tearDown() {
+        strategyRegistry.shutdown()
+        coroutineScope.cancel()
     }
 
     @Test

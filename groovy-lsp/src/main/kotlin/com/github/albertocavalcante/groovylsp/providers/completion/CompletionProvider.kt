@@ -178,7 +178,8 @@ object CompletionProvider {
             ctx.character,
             ctx.semanticResolver.semantics,
         )
-        val isJenkinsFile = ctx.compilationService.workspaceManager.isJenkinsFile(ctx.uri)
+        val isJenkinsFile =
+            ctx.compilationService.workspaceManager.getJenkinsCapabilities()?.isJenkinsFile(ctx.uri) ?: false
 
         val importContext = CompletionContextDetector.detectImportCompletionContext(
             content = ctx.content,
@@ -256,7 +257,7 @@ object CompletionProvider {
             ctx.line,
             ctx.character,
         )
-        val metadata = ctx.compilationService.workspaceManager.getAllJenkinsMetadata()
+        val metadata = ctx.compilationService.workspaceManager.getJenkinsCapabilities()?.getAllMetadata()
 
         val currentBlock = detected.currentBlock
         val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories)
@@ -316,7 +317,7 @@ object CompletionProvider {
                 addJenkinsStepCompletions(metadata)
             }
 
-            addJenkinsGlobalVariables(metadata, ctx.compilationService)
+            addJenkinsGlobalVariables(metadata, ctx.compilationService.workspaceManager.getJenkinsCapabilities())
 
             jenkinsContext.blockCategories?.let { categories ->
                 if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE)) {

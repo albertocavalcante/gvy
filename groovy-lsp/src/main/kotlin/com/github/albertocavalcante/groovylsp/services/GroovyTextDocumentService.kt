@@ -770,12 +770,14 @@ class GroovyTextDocumentService(
                 }
 
                 // Check if this is a Jenkins file
-                val isJenkinsFile = compilationService.workspaceManager.isJenkinsFile(uri)
+                val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+                val isJenkinsFile = jenkinsCapabilities?.isJenkinsFile(uri) ?: false
 
                 // Get vars/ global variable names for semantic highlighting
-                val varsNames = compilationService.workspaceManager.getJenkinsGlobalVariables()
-                    .map { it.name }
-                    .toSet()
+                val varsNames = jenkinsCapabilities?.getGlobalVariables()
+                    ?.map { it.name }
+                    ?.toSet()
+                    ?: emptySet()
 
                 // Get Jenkins-specific tokens (built-in blocks + vars/ globals)
                 val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(

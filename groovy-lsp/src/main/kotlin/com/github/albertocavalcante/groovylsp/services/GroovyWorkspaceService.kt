@@ -67,10 +67,12 @@ class GroovyWorkspaceService(
         if (settingsMap != null) {
             val newConfig = ServerConfiguration.fromMap(settingsMap)
 
-            // Update Jenkins workspace configuration
-            compilationService.workspaceManager.updateJenkinsConfiguration(newConfig)
+            // Update configuration on all active strategies
+            compilationService.workspaceManager.getStrategyRegistry()?.activeStrategies?.forEach { strategy ->
+                strategy.updateConfiguration(newConfig)
+            }
             updateGroovyVersion(newConfig)
-            logger.info("Jenkins configuration updated")
+            logger.info("Configuration updated for active strategies")
         }
     }
 
@@ -90,10 +92,11 @@ class GroovyWorkspaceService(
         }
 
         // Handle GDSL file changes
+        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
         val shouldReloadGdsl = params.changes.any { change ->
             try {
                 val uri = URI.create(change.uri)
-                compilationService.workspaceManager.isGdslFile(uri)
+                jenkinsCapabilities?.isGdslFile(uri) ?: false
             } catch (e: Exception) {
                 false
             }
@@ -101,7 +104,7 @@ class GroovyWorkspaceService(
 
         if (shouldReloadGdsl) {
             logger.info("GDSL file changed, reloading metadata")
-            compilationService.workspaceManager.reloadJenkinsGdsl()
+            jenkinsCapabilities?.reloadGdsl()
         }
 
         // Handle source file changes for incremental indexing

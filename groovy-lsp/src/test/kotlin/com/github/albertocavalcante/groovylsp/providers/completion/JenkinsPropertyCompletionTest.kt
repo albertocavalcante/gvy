@@ -2,10 +2,18 @@ package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.project.JenkinsProjectStrategy
+import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -27,14 +35,37 @@ class JenkinsPropertyCompletionTest {
     lateinit var tempDir: Path
 
     private lateinit var compilationService: GroovyCompilationService
+    private lateinit var coroutineScope: CoroutineScope
+    private lateinit var strategyRegistry: ProjectStrategyRegistry
 
     @BeforeEach
-    fun setUp() {
+    fun setUp() = runBlocking {
+        coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         compilationService = GroovyCompilationService()
-        // Initialize workspace with Jenkins file detection
         compilationService.workspaceManager.initializeWorkspace(tempDir)
-        // Initialize Jenkins context to load enrichment metadata
-        compilationService.workspaceManager.initializeJenkinsWorkspace(ServerConfiguration())
+
+        // Set up strategy registry with Jenkins support
+        val jenkinsStrategy = JenkinsProjectStrategy(coroutineScope)
+        strategyRegistry = ProjectStrategyRegistry()
+        strategyRegistry.register(jenkinsStrategy)
+        compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
+
+        // Initialize Jenkins strategy with file patterns
+        val config = ServerConfiguration(
+            jenkinsConfig = com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration(
+                filePatterns = listOf("**/Jenkinsfile", "**/Jenkinsfile.*"),
+            ),
+        )
+        // Select strategies to populate activeStrategies (required for findCapability)
+        strategyRegistry.selectStrategies(tempDir, config)
+        jenkinsStrategy.initialize(tempDir, config)
+        jenkinsStrategy.awaitInitialization()
+    }
+
+    @AfterEach
+    fun tearDown() {
+        strategyRegistry.shutdown()
+        coroutineScope.cancel()
     }
 
     @Test

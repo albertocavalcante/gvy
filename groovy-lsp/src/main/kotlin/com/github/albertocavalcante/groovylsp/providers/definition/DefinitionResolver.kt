@@ -60,7 +60,9 @@ class DefinitionResolver(
     private val resolutionPipeline: SymbolResolutionStrategy =
         run {
             val strategies = buildList {
-                compilationService?.let { add(JenkinsVarsResolutionStrategy(it)) }
+                compilationService?.workspaceManager?.getJenkinsCapabilities()?.let {
+                    add(JenkinsVarsResolutionStrategy(it))
+                }
                 add(LocalSymbolResolutionStrategy(astVisitor, symbolTable))
                 workspaceSymbolIndex?.let { index ->
                     add(SemanticDBResolutionStrategy(index))
