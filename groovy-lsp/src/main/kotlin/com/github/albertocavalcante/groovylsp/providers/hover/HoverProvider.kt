@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionExcep
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
+import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
@@ -304,7 +305,8 @@ class HoverProvider(
      */
     private fun tryCreateJenkinsStepHover(node: ASTNode, documentUri: URI): Hover? {
         // Only check for Jenkins files
-        if (!compilationService.workspaceManager.isJenkinsFile(documentUri)) {
+        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+        if (jenkinsCapabilities?.isJenkinsFile(documentUri) != true) {
             return null
         }
 
@@ -316,11 +318,11 @@ class HoverProvider(
         val stepName = node.methodAsString ?: return null
 
         // First, check if this is a vars/ global variable call
-        val varsHover = tryCreateVarsGlobalVariableHover(stepName, node)
+        val varsHover = tryCreateVarsGlobalVariableHover(stepName, node, jenkinsCapabilities)
         if (varsHover != null) {
             return varsHover
         }
-        val metadata = compilationService.workspaceManager.getAllJenkinsMetadata() ?: return null
+        val metadata = jenkinsCapabilities.getAllMetadata() ?: return null
         val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 
         // Build rich hover content for Jenkins step
@@ -372,8 +374,12 @@ class HoverProvider(
      * Try to create a hover for a vars/ global variable call.
      * Shows the documentation from the companion .txt file if available.
      */
-    private fun tryCreateVarsGlobalVariableHover(varName: String, node: MethodCallExpression): Hover? {
-        val globalVariables = compilationService.workspaceManager.getJenkinsGlobalVariables()
+    private fun tryCreateVarsGlobalVariableHover(
+        varName: String,
+        node: MethodCallExpression,
+        jenkinsCapabilities: JenkinsCapabilities,
+    ): Hover? {
+        val globalVariables = jenkinsCapabilities.getGlobalVariables()
         val globalVar = globalVariables.find { it.name == varName } ?: return null
 
         // Build hover content
