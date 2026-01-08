@@ -86,6 +86,59 @@ class TestRequestDelegate(
         )
     }
 
+    /**
+     * Returns information about the detected build tool.
+     */
+    fun getBuildToolInfo(params: GetBuildToolInfoParams): CompletableFuture<BuildToolInfo> {
+        logger.info("Received groovy/getBuildToolInfo request for: ${params.workspaceUri}")
+
+        return CompletableFuture.supplyAsync {
+            val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("No workspace root found, returning unknown build tool")
+                }
+
+            val buildToolManager = buildToolManagerProvider()
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("Build tool manager not initialized, returning unknown")
+                }
+
+            val buildTool = buildToolManager.detectBuildTool(workspaceRoot)
+                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                    logger.info("No build tool detected for workspace: $workspaceRoot")
+                }
+
+            // Check capabilities by probing with test commands
+            val supportsTestExecution = buildTool.getTestCommand(
+                workspaceRoot = workspaceRoot,
+                suite = "com.example.Test",
+                test = "test",
+                debug = false,
+            ) != null
+
+            val supportsDebug = buildTool.getTestCommand(
+                workspaceRoot = workspaceRoot,
+                suite = "com.example.Test",
+                test = "test",
+                debug = true,
+            ) != null
+
+            logger.info(
+                "Detected build tool: ${buildTool.name}, " +
+                    "supportsTestExecution: $supportsTestExecution, supportsDebug: $supportsDebug",
+            )
+
+            BuildToolInfo(
+                name = buildTool.name.lowercase(),
+                detected = true,
+                supportsTestExecution = supportsTestExecution,
+                supportsDebug = supportsDebug,
+                // Coverage detection would require additional BuildTool interface changes
+                supportsCoverage = buildTool.name.lowercase() == "gradle",
+            )
+        }
+    }
+
     private fun createError(code: ResponseErrorCode, message: String): ResponseErrorException =
         ResponseErrorException(ResponseError(code, message, null))
 }

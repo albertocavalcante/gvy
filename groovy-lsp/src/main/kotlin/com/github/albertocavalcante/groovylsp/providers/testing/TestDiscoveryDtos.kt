@@ -31,3 +31,25 @@ data class Test(val test: String, val line: Int)
  * @property debug Whether to return a debug command
  */
 data class RunTestParams(val uri: String, val suite: String, val test: String? = null, val debug: Boolean = false)
+
+/**
+ * Parameters for the `groovy/getBuildToolInfo` LSP request.
+ */
+data class GetBuildToolInfoParams(val workspaceUri: String)
+
+/**
+ * Build tool information returned by `groovy/getBuildToolInfo`.
+ *
+ * @property name Build tool name: "gradle", "maven", "bsp", or "unknown"
+ * @property detected Whether a build tool was detected
+ * @property supportsTestExecution Whether the build tool supports test execution via `groovy/runTest`
+ * @property supportsDebug Whether the build tool supports debug mode
+ * @property supportsCoverage Whether the build tool supports coverage
+ */
+data class BuildToolInfo(
+    val name: String,
+    val detected: Boolean,
+    val supportsTestExecution: Boolean = false,
+    val supportsDebug: Boolean = false,
+    val supportsCoverage: Boolean = false,
+)
