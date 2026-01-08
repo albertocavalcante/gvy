@@ -205,6 +205,8 @@ class MavenBuildTool : BuildTool {
 
     override fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String?): TestCommand {
         val testArg = if (test != null) "$suite#$test" else suite
+        // TODO(#733): Requires JaCoCo plugin to be configured in pom.xml with prepare-agent goal
+        // (e.g. in initialize phase) for coverage data to be generated.
         val args = listOf("test", "-Dtest=$testArg", "jacoco:report")
 
         return TestCommand(
