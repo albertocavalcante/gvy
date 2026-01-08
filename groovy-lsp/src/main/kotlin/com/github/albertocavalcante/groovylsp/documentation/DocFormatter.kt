@@ -36,7 +36,8 @@ object DocFormatter {
             }
 
             // Phase 3: Add visual separator before documentation sections if we have content above
-            val hasContentAbove = doc.summary.isNotBlank() || doc.description.isNotBlank()
+            val hasContentAbove =
+                doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
             val hasDocSections = (includeParams && doc.params.isNotEmpty()) ||
                 (includeReturn && doc.returnDoc.isNotBlank()) ||
                 doc.throws.isNotEmpty() ||
@@ -85,7 +86,11 @@ object DocFormatter {
             // Phase 3: Metadata footer with visual separator
             val hasMetadata = doc.since.isNotBlank() || doc.author.isNotBlank()
             if (hasMetadata) {
-                markdown("---")
+                // Only add separator if there's content above the metadata footer
+                val hasContentAboveFooter = hasContentAbove || hasDocSections
+                if (hasContentAboveFooter) {
+                    markdown("---")
+                }
 
                 val metadataParts = mutableListOf<String>()
                 if (doc.since.isNotBlank()) {

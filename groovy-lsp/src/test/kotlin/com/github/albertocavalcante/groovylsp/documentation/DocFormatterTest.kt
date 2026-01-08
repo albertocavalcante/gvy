@@ -360,7 +360,7 @@ class DocFormatterTest {
     }
 
     @Test
-    fun `formatAsMarkdown with only metadata shows footer without leading separator`() {
+    fun `formatAsMarkdown with summary and metadata shows separator before footer`() {
         val doc = Documentation(
             summary = "Simple method.",
             since = "2.0",
@@ -368,8 +368,48 @@ class DocFormatterTest {
 
         val result = DocFormatter.formatAsMarkdown(doc)
 
-        // Should have metadata but check separator placement
+        // Should have metadata with separator since there's content above
         assertTrue(result.contains("*@since 2.0*"))
         assertTrue(result.contains("---"))
+    }
+
+    @Test
+    fun `formatAsMarkdown with only metadata shows footer without leading separator`() {
+        val doc = Documentation(
+            since = "2.0",
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have metadata but NO separator since there's no content above
+        assertTrue(result.contains("*@since 2.0*"))
+        assertTrue(!result.contains("---"), "Should NOT have separator when only metadata is present")
+    }
+
+    @Test
+    fun `formatAsMarkdown with only deprecated and params shows separator between sections`() {
+        val doc = Documentation(
+            deprecated = "Use newMethod() instead",
+            params = mapOf("x" to "first param"),
+        )
+
+        val result = DocFormatter.formatAsMarkdown(doc)
+
+        // Should have separator between deprecation and params since deprecation is "content above"
+        assertTrue(result.contains("⚠️ **Deprecated**"))
+        assertTrue(result.contains("#### Parameters"))
+
+        val lines = result.lines()
+        val deprecationIndex = lines.indexOfFirst { it.contains("Deprecated") }
+        val separatorIndex = lines.indexOfFirst { it.trim() == "---" }
+        val paramsIndex = lines.indexOfFirst { it.contains("#### Parameters") }
+
+        assertTrue(deprecationIndex >= 0, "Should have deprecation")
+        assertTrue(separatorIndex >= 0, "Should have separator")
+        assertTrue(paramsIndex >= 0, "Should have params section")
+        assertTrue(
+            deprecationIndex < separatorIndex && separatorIndex < paramsIndex,
+            "Separator should be between deprecation and params",
+        )
     }
 }
