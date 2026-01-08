@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
 import com.github.albertocavalcante.groovyjenkins.GlobalVariable
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import io.mockk.every
@@ -25,8 +25,8 @@ class JenkinsVarsResolutionStrategyTest {
         val varsDir = Files.createTempDirectory("jenkins-vars-test")
         val varsFile = Files.createFile(varsDir.resolve("buildPlugin.groovy"))
 
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getJenkinsGlobalVariables() } returns listOf(
+        val jenkinsCapabilities = mockk<JenkinsCapabilities>()
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
             GlobalVariable(name = "buildPlugin", path = varsFile),
         )
 
@@ -36,7 +36,7 @@ class JenkinsVarsResolutionStrategyTest {
             ArgumentListExpression(),
         )
 
-        val strategy = JenkinsVarsResolutionStrategy(compilationService)
+        val strategy = JenkinsVarsResolutionStrategy(jenkinsCapabilities)
         val context = ResolutionContext(
             targetNode = methodCall,
             documentUri = URI.create("file:///workspace/Jenkinsfile"),
@@ -62,8 +62,8 @@ class JenkinsVarsResolutionStrategyTest {
 
     @Test
     fun `Jenkins vars strategy does not treat ConstantExpression as method name`() {
-        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
-        val strategy = JenkinsVarsResolutionStrategy(compilationService)
+        val jenkinsCapabilities = mockk<JenkinsCapabilities>(relaxed = true)
+        val strategy = JenkinsVarsResolutionStrategy(jenkinsCapabilities)
         val context = ResolutionContext(
             targetNode = ConstantExpression("buildPlugin"),
             documentUri = URI.create("file:///workspace/Jenkinsfile"),
@@ -100,8 +100,8 @@ class JenkinsVarsResolutionStrategyTest {
             """.trimIndent(),
         )
 
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getJenkinsGlobalVariables() } returns listOf(
+        val jenkinsCapabilities = mockk<JenkinsCapabilities>()
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
             GlobalVariable(name = "buildPlugin", path = varsFile, documentation = "", callLineNumber = 5),
         )
 
@@ -111,7 +111,7 @@ class JenkinsVarsResolutionStrategyTest {
             ArgumentListExpression(),
         )
 
-        val strategy = JenkinsVarsResolutionStrategy(compilationService)
+        val strategy = JenkinsVarsResolutionStrategy(jenkinsCapabilities)
         val context = ResolutionContext(
             targetNode = methodCall,
             documentUri = URI.create("file:///workspace/Jenkinsfile"),

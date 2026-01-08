@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
-import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -19,8 +19,7 @@ import org.slf4j.LoggerFactory
  * This strategy intentionally only triggers on [MethodCallExpression] to avoid false positives
  * when clicking on identifier-like string literals.
  */
-class JenkinsVarsResolutionStrategy(private val compilationService: GroovyCompilationService) :
-    SymbolResolutionStrategy {
+class JenkinsVarsResolutionStrategy(private val jenkinsCapabilities: JenkinsCapabilities) : SymbolResolutionStrategy {
 
     private val logger = LoggerFactory.getLogger(JenkinsVarsResolutionStrategy::class.java)
 
@@ -28,7 +27,7 @@ class JenkinsVarsResolutionStrategy(private val compilationService: GroovyCompil
         val methodName = extractMethodName(context.targetNode)
             ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
 
-        val globalVars = compilationService.getJenkinsGlobalVariables()
+        val globalVars = jenkinsCapabilities.getGlobalVariables()
         val matchingVar = globalVars.find { it.name == methodName }
             ?: return SymbolResolutionStrategy.notFound(
                 "No vars/$methodName.groovy found (${globalVars.size} vars available)",
