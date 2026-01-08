@@ -177,8 +177,8 @@ class CheckCommand : CliktCommand(name = "check") {
         // Add all diagnostics
         for ((file, diagnostics) in allDiagnostics) {
             val relativePath = workspace?.let { ws ->
-                file.relativeTo(ws).path
-            } ?: file.path
+                file.relativeToOrSelf(ws).invariantSeparatorsPath
+            } ?: file.invariantSeparatorsPath
 
             writer.addDiagnostics(relativePath, diagnostics)
         }
@@ -187,10 +187,10 @@ class CheckCommand : CliktCommand(name = "check") {
         val json = writer.toJson(prettyPrint = true)
 
         if (output != null) {
-            output!!.writeText(json)
+            output.writeText(json)
             if (format == OutputFormat.SARIF) {
                 // Don't pollute SARIF output with extra messages
-                logger.info("SARIF output written to ${output!!.absolutePath}")
+                logger.info("SARIF output written to ${output.absolutePath}")
             }
         } else {
             println(json)

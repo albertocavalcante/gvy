@@ -13,9 +13,4 @@ enum class OutputFormat {
      * SARIF 2.1.0 format for GitHub Code Scanning and other tooling.
      */
     SARIF,
-    ;
-
-    companion object {
-        fun fromString(value: String): OutputFormat? = entries.find { it.name.equals(value, ignoreCase = true) }
-    }
 }

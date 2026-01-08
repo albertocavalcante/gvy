@@ -56,7 +56,7 @@ class SarifWriterTest {
         assertEquals(SarifLevel.ERROR, DiagnosticSeverity.Error.toSarifLevel())
         assertEquals(SarifLevel.WARNING, DiagnosticSeverity.Warning.toSarifLevel())
         assertEquals(SarifLevel.NOTE, DiagnosticSeverity.Information.toSarifLevel())
-        assertEquals(SarifLevel.NONE, DiagnosticSeverity.Hint.toSarifLevel())
+        assertEquals(SarifLevel.NOTE, DiagnosticSeverity.Hint.toSarifLevel())
     }
 
     @Test

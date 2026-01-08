@@ -190,9 +190,7 @@ object SarifRuleRegistry {
             id = id,
             name = "${id}Rule",
             shortDescription = SarifMessage(text = description),
-            helpUri = "https://codenarc.org/codenarc-rules-${getCategoryUrlSuffix(
-                category,
-            )}.html#${id.lowercase()}-rule",
+            helpUri = "https://codenarc.org/codenarc-rules-${getCategoryUrlSuffix(category)}.html#$id",
             defaultConfiguration = SarifRuleConfiguration(level = level),
             properties = SarifRuleProperties(
                 priority = priority,

@@ -170,6 +170,6 @@ fun DiagnosticSeverity?.toSarifLevel(): SarifLevel = when (this) {
     DiagnosticSeverity.Error -> SarifLevel.ERROR
     DiagnosticSeverity.Warning -> SarifLevel.WARNING
     DiagnosticSeverity.Information -> SarifLevel.NOTE
-    DiagnosticSeverity.Hint -> SarifLevel.NONE
+    DiagnosticSeverity.Hint -> SarifLevel.NOTE
     null -> SarifLevel.WARNING
 }
