@@ -30,6 +30,11 @@ describe('TestCodeLensProvider', () => {
                     fsPath: uri.replace('file://', ''),
                 })),
             },
+            workspace: {
+                getConfiguration: sandbox.stub().callsFake((section: string) => ({
+                    get: sandbox.stub().callsFake((key: string, defaultValue: any) => defaultValue),
+                })),
+            },
         };
 
         // Mock TestService
@@ -244,6 +249,160 @@ describe('TestCodeLensProvider', () => {
             const codeLenses = await provider.provideCodeLenses(documentMock);
 
             assert.ok(codeLenses.length >= 2, 'Should work without TestService (offline mode)');
+        });
+
+        // Bug #1: Multiple class detection
+        it('should not show CodeLens on utility class in file with test class', async () => {
+            documentMock.getText.returns(
+                'class UtilityClass {\n' +
+                '    def helper() {}\n' +
+                '}\n' +
+                '\n' +
+                'class MyTest {\n' +
+                '    @Test\n' +
+                '    void testSomething() {}\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            // Should have CodeLenses (class is detected as test class because of @Test)
+            // But the CodeLens should be at line 4 (MyTest class), not line 0 (UtilityClass)
+            assert.ok(codeLenses.length > 0, 'Should have CodeLenses for test class');
+
+            // Check that CodeLens is on MyTest class line (line 4), not UtilityClass (line 0)
+            const classLens = codeLenses.find((lens: any) =>
+                lens.command?.title === 'Run All Tests' || lens.command?.title === 'Debug All Tests'
+            );
+            assert.ok(classLens, 'Should have class-level CodeLens');
+            assert.strictEqual(classLens.range.start.line, 4, 'CodeLens should be on MyTest class line, not UtilityClass');
+        });
+
+        // Bug #2: Incomplete @Test pattern
+        it('should detect @Test with parameters', async () => {
+            documentMock.getText.returns(
+                'import org.junit.Test\n' +
+                '\n' +
+                'class MyTest {\n' +
+                '    @Test(timeout = 1000)\n' +
+                '    void testWithTimeout() {}\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.ok(codeLenses.length >= 2, 'Should have CodeLenses for test with parameters');
+            const runTestLens = codeLenses.find((lens: any) => lens.command?.title === 'Run Test');
+            assert.ok(runTestLens, 'Should detect @Test with parameters');
+        });
+
+        it('should detect @Test on same line as method', async () => {
+            documentMock.getText.returns(
+                'import org.junit.Test\n' +
+                '\n' +
+                'class MyTest {\n' +
+                '    @Test void inlineTest() {}\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.ok(codeLenses.length >= 2, 'Should have CodeLenses for inline test');
+            const runTestLens = codeLenses.find((lens: any) => lens.command?.title === 'Run Test');
+            assert.ok(runTestLens, 'Should detect @Test on same line as method');
+        });
+
+        // Bug #3: False positives from comments/strings
+        it('should not detect @Test in comments', async () => {
+            documentMock.getText.returns(
+                'class MyClass {\n' +
+                '    // TODO: Add @Test later\n' +
+                '    def notATest() {}\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.strictEqual(codeLenses.length, 0, 'Should not detect @Test in comments');
+        });
+
+        it('should not detect @Test in strings', async () => {
+            documentMock.getText.returns(
+                'class MyClass {\n' +
+                '    def str = "@Test annotation"\n' +
+                '    def method() {}\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.strictEqual(codeLenses.length, 0, 'Should not detect @Test in strings');
+        });
+
+        // Bug #4: Configuration setting
+        it('should respect codelens.test.enabled config setting when disabled', async () => {
+            // Mock workspace configuration
+            const configMock = {
+                get: sandbox.stub().withArgs('codelens.test.enabled', true).returns(false),
+            };
+            vscodeMock.workspace = {
+                getConfiguration: sandbox.stub().withArgs('groovy').returns(configMock),
+            };
+
+            // Re-create provider with updated vscode mock
+            const module = (proxyquire as any).noCallThru()('../../../../src/features/testing/TestCodeLensProvider', {
+                'vscode': vscodeMock,
+            });
+            TestCodeLensProvider = module.TestCodeLensProvider;
+
+            documentMock.getText.returns(
+                'import spock.lang.Specification\n' +
+                'class MySpec extends Specification {\n' +
+                '  def "test method"() {\n' +
+                '    expect: true\n' +
+                '  }\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.strictEqual(codeLenses.length, 0, 'Should return no CodeLenses when setting is disabled');
+        });
+
+        it('should show CodeLens when codelens.test.enabled config setting is enabled', async () => {
+            // Mock workspace configuration
+            const configMock = {
+                get: sandbox.stub().withArgs('codelens.test.enabled', true).returns(true),
+            };
+            vscodeMock.workspace = {
+                getConfiguration: sandbox.stub().withArgs('groovy').returns(configMock),
+            };
+
+            // Re-create provider with updated vscode mock
+            const module = (proxyquire as any).noCallThru()('../../../../src/features/testing/TestCodeLensProvider', {
+                'vscode': vscodeMock,
+            });
+            TestCodeLensProvider = module.TestCodeLensProvider;
+
+            documentMock.getText.returns(
+                'import spock.lang.Specification\n' +
+                'class MySpec extends Specification {\n' +
+                '  def "test method"() {\n' +
+                '    expect: true\n' +
+                '  }\n' +
+                '}'
+            );
+
+            provider = new TestCodeLensProvider(testServiceMock);
+            const codeLenses = await provider.provideCodeLenses(documentMock);
+
+            assert.ok(codeLenses.length > 0, 'Should return CodeLenses when setting is enabled');
         });
     });
 });

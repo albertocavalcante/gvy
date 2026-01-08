@@ -481,6 +481,11 @@
           ],
           "default": "auto",
           "description": "Build tool strategy for dependency resolution."
+        },
+        "groovy.codelens.test.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable CodeLens for test Run/Debug buttons"
         }
       }
     },
