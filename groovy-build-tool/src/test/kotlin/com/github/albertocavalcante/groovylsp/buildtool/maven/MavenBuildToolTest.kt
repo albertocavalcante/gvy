@@ -29,6 +29,7 @@ class MavenBuildToolTest {
         val command = tool.getCoverageCommand(project, "com.example.Test", "testMethod")
 
         val args = command.args
+        assertTrue(args.contains("test"), "Command should include 'test' goal")
         assertTrue(args.contains("jacoco:report"), "Command should include jacoco:report")
         assertTrue(args.contains("-Dtest=com.example.Test#testMethod"), "Command should target specific test")
 
@@ -50,6 +51,7 @@ class MavenBuildToolTest {
         val command = tool.getCoverageCommand(project, "com.example.Test", null)
 
         val args = command.args
+        assertTrue(args.contains("test"), "Command should include 'test' goal")
         assertTrue(args.contains("jacoco:report"), "Command should include jacoco:report")
         assertTrue(args.contains("-Dtest=com.example.Test"), "Command should target suite")
         assertFalse(args.any { it.contains('#') }, "Command should not contain method separator")

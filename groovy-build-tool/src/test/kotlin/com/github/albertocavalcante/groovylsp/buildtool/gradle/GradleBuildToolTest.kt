@@ -87,4 +87,18 @@ class GradleBuildToolTest {
         assertTrue(command.args.contains("com.example.Test.testMethod"), "Command should target specific test")
         assertTrue(command.args.contains("jacocoTestReport"), "Command should include jacocoTestReport task")
     }
+
+    @Test
+    fun `should generate correct coverage command for full suite`() {
+        val tool = GradleBuildTool()
+        val project = Paths.get(".")
+
+        // when test is null, it means full suite
+        val command = tool.getCoverageCommand(project, "com.example.Test", null)
+
+        assertTrue(command.args.contains("test"), "Command should include test task")
+        assertTrue(command.args.contains("--tests"), "Command should include --tests flag")
+        assertTrue(command.args.contains("com.example.Test"), "Command should target suite")
+        assertTrue(command.args.contains("jacocoTestReport"), "Command should include jacocoTestReport task")
+    }
 }
