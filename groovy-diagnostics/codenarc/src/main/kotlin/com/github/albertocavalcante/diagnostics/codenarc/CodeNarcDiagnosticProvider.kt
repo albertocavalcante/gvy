@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
+import com.github.albertocavalcante.diagnostics.api.CompilationAccessor
 import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
 import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
@@ -24,6 +25,7 @@ import java.nio.file.Paths
 @Suppress("TooGenericExceptionCaught") // CodeNarc interop layer handles all analysis errors
 class CodeNarcDiagnosticProvider(
     private val workspaceContext: WorkspaceContext,
+    private val compilationAccessor: CompilationAccessor? = null,
     private val rulesetResolver: RulesetResolver = HierarchicalRulesetResolver(),
     private val codeAnalyzer: CodeAnalyzer = DefaultCodeAnalyzer(),
 ) : DiagnosticProvider {
@@ -41,7 +43,7 @@ class CodeNarcDiagnosticProvider(
             return emptyList()
         }
         val fileName = extractFileName(uri)
-        return analyzeAndGetDiagnostics(source, fileName)
+        return analyzeAndGetDiagnostics(source, fileName, uri)
     }
 
     /**
@@ -60,9 +62,10 @@ class CodeNarcDiagnosticProvider(
      *
      * @param sourceCode The Groovy source code to analyze
      * @param fileName The name of the file being analyzed
+     * @param uri The URI of the file (optional, used for AST-aware positioning)
      * @return List of LSP diagnostics representing violations found
      */
-    fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String): List<Diagnostic> = try {
+    fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String, uri: URI? = null): List<Diagnostic> = try {
         logger.debug("Starting CodeNarc analysis for: $fileName")
 
         // Resolve the appropriate ruleset configuration
@@ -78,7 +81,7 @@ class CodeNarcDiagnosticProvider(
         )
 
         // Convert results to LSP diagnostics with triplication fix
-        val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode)
+        val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri)
 
         logger.info("CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics")
         diagnostics
@@ -105,12 +108,16 @@ class CodeNarcDiagnosticProvider(
      * CodeNarc Results form a hierarchy (DirectoryResults > FileResults > violations).
      * The fix is to ONLY process violations from leaf nodes (nodes with no children).
      */
-    private fun convertResultsToDiagnosticsFixed(results: Results, sourceCode: String): List<Diagnostic> {
+    private fun convertResultsToDiagnosticsFixed(results: Results, sourceCode: String, uri: URI?): List<Diagnostic> {
         val diagnostics = mutableListOf<Diagnostic>()
         val sourceLines = sourceCode.lines()
 
+        // Get ModuleNode from compilation accessor if available (for AST-aware positioning)
+        val moduleNode = uri?.let { compilationAccessor?.getAst(it) }
+        val rangeCalculator = HybridRangeCalculator(moduleNode)
+
         // Collect violations only from leaf nodes to prevent triplication
-        collectViolationsFromLeafNodes(results, diagnostics, sourceLines)
+        collectViolationsFromLeafNodes(results, diagnostics, sourceLines, rangeCalculator)
 
         logger.debug("Total unique diagnostics generated: ${diagnostics.size}")
         return diagnostics
@@ -127,6 +134,7 @@ class CodeNarcDiagnosticProvider(
         results: Results,
         diagnostics: MutableList<Diagnostic>,
         sourceLines: List<String>,
+        rangeCalculator: HybridRangeCalculator,
     ) {
         logger.debug(
             "Processing ${results.javaClass.simpleName}: " +
@@ -135,7 +143,7 @@ class CodeNarcDiagnosticProvider(
         )
 
         if (results.children.isEmpty()) {
-            processLeafViolations(results.violations, diagnostics, sourceLines)
+            processLeafViolations(results.violations, diagnostics, sourceLines, rangeCalculator)
             return
         }
 
@@ -143,7 +151,7 @@ class CodeNarcDiagnosticProvider(
         results.children
             .filterIsInstance<Results>()
             .forEach { childResult ->
-                collectViolationsFromLeafNodes(childResult, diagnostics, sourceLines)
+                collectViolationsFromLeafNodes(childResult, diagnostics, sourceLines, rangeCalculator)
             }
     }
 
@@ -151,10 +159,11 @@ class CodeNarcDiagnosticProvider(
         violations: Collection<Violation>,
         diagnostics: MutableList<Diagnostic>,
         sourceLines: List<String>,
+        rangeCalculator: HybridRangeCalculator,
     ) {
         logger.debug("Processing leaf node with ${violations.size} violations")
         violations.forEach { violation ->
-            val diagnostic = convertViolationToDiagnostic(violation, sourceLines)
+            val diagnostic = convertViolationToDiagnostic(violation, sourceLines, rangeCalculator)
             if (diagnostic != null) {
                 diagnostics.add(diagnostic)
                 logger.debug("Added diagnostic for violation: ${violation.rule.name}")
@@ -164,8 +173,13 @@ class CodeNarcDiagnosticProvider(
 
     /**
      * Converts a single CodeNarc Violation to an LSP Diagnostic using our centralized coordinate system.
+     * Uses HybridRangeCalculator for AST-aware positioning when available.
      */
-    private fun convertViolationToDiagnostic(violation: Violation, sourceLines: List<String>): Diagnostic? {
+    private fun convertViolationToDiagnostic(
+        violation: Violation,
+        sourceLines: List<String>,
+        rangeCalculator: HybridRangeCalculator,
+    ): Diagnostic? {
         return try {
             // Use CodeNarc's line number (1-based) and convert to LSP (0-based)
             val groovyLineNumber = violation.lineNumber ?: 1
@@ -182,8 +196,8 @@ class CodeNarcDiagnosticProvider(
 
             val line = sourceLines[lspPosition.line]
 
-            // precise range calculation using rule-specific heuristics
-            val (startCol, endCol) = RuleRangeCalculator.calculateRange(violation, line)
+            // Precise range calculation using AST-aware hybrid approach
+            val (startCol, endCol) = rangeCalculator.calculateRange(violation, line)
 
             Diagnostic().apply {
                 range = Range(
