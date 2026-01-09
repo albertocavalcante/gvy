@@ -96,7 +96,7 @@ export interface GroovyJdkIncompatibleError extends ErrorDetails {
   type: "GROOVY_JDK_INCOMPATIBLE";
   groovyVersion: string | null;
   jdkVersion: number;
-  majorVersion: number;
+  classFileMajorVersion: number;
   minGroovyVersion: string | null;
 }
 

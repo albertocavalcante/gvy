@@ -72,7 +72,7 @@ describe("Error Notification Handler", () => {
         type: "GROOVY_JDK_INCOMPATIBLE",
         groovyVersion: "2.5.0",
         jdkVersion: 17,
-        majorVersion: 2,
+        classFileMajorVersion: 61,
         minGroovyVersion: "3.0.0",
         suggestions: ["Upgrade to Groovy 3.0.0 or higher", "Use JDK 8 or 11"],
       };

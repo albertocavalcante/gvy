@@ -165,6 +165,20 @@ async function handleActionClick(action: string): Promise<void> {
     return;
   }
 
+  // Check for URLs in the action and offer to open in browser
+  const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
+  if (urlMatch) {
+    const url = urlMatch[1];
+    vscode.window
+      .showInformationMessage(action, "Open in Browser")
+      .then((selected) => {
+        if (selected === "Open in Browser") {
+          vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+      });
+    return;
+  }
+
   // Default: just show the suggestion text
   vscode.window.showInformationMessage(action);
 }
