@@ -93,6 +93,34 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse returns ast for requested source when workspace sources are present`() {
+        val extraSource = tempDir.resolve("Aardvark.groovy").toFile()
+        extraSource.writeText(
+            """
+            class Aardvark {
+            }
+            """.trimIndent(),
+        )
+
+        val request = ParseRequest(
+            uri = URI.create("file:///Zebra.groovy"),
+            content = """
+                class Zebra {
+                }
+            """.trimIndent(),
+            workspaceSources = listOf(extraSource.toPath()),
+        )
+
+        val result = parser.parse(request)
+
+        assertTrue(result.isSuccessful)
+        val module = result.ast
+        assertNotNull(module)
+        assertEquals(request.sourceUnitName, module.context?.name)
+        assertTrue(module.classes.any { it.nameWithoutPackage == "Zebra" })
+    }
+
+    @Test
     fun `parse populates recursive ast model by default`() {
         val code = """
             class Sample {

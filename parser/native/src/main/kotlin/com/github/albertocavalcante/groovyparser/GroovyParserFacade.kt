@@ -356,6 +356,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     private fun extractAst(compilationUnit: CompilationUnit): ModuleNode? = try {
         val ast = compilationUnit.ast
         if (ast?.modules?.isNotEmpty() == true) {
+            // TODO(#743): Ensure module selection is deterministic for the requested source when workspace sources exist.
+            //   See: https://github.com/albertocavalcante/gvy/issues/743
             ast.modules.first()
         } else {
             logger.debug("No modules available in compilation unit")

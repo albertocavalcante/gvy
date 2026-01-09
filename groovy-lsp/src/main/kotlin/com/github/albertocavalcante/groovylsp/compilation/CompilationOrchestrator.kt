@@ -85,11 +85,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         uri: URI,
         content: String,
         compilePhase: Int = Phases.CANONICALIZATION,
+        workspaceSourcesOverride: List<Path>? = null,
     ): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath
         val classpath = workspaceManager.getClasspathForFile(uri, content)
+        val workspaceSources = workspaceSourcesOverride ?: workspaceManager.getWorkspaceSources()
 
         // Parse the source code
         val parseResult = workerSessionManager.parse(
@@ -98,7 +100,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 content = content,
                 classpath = classpath,
                 sourceRoots = workspaceManager.getSourceRoots(),
-                workspaceSources = workspaceManager.getWorkspaceSources(),
+                workspaceSources = workspaceSources,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
             ),
@@ -199,7 +201,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 val content = kotlinx.coroutines.withContext(ioDispatcher) {
                     Files.readString(path)
                 }
-                compile(uri, content)
+                // TODO(#743): Define explicit parse modes and cache authority to avoid cross-source divergence.
+                //   See: https://github.com/albertocavalcante/gvy/issues/743
+                // Skip workspace sources to avoid full-workspace recompiles on on-demand requests.
+                performCompilation(uri, content, workspaceSourcesOverride = emptyList())
             } catch (e: Exception) {
                 logger.error("Failed to compile from disk for $uri: ${e.message}", e)
                 null
