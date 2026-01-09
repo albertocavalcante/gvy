@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,10 +75,11 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
             onProgress?.invoke(0, "Starting dependency resolution...")
 
             resolutionJob = scope.launch(Dispatchers.IO) {
+                var detectedBuildTool: BuildTool? = null
                 try {
-                    val buildTool = buildToolManager.detectBuildTool(workspaceRoot)
+                    detectedBuildTool = buildToolManager.detectBuildTool(workspaceRoot)
 
-                    if (buildTool == null) {
+                    if (detectedBuildTool == null) {
                         logger.info("No supported build tool detected for: $workspaceRoot")
                         onProgress?.invoke(PROGRESS_COMPLETE, "No build tool detected")
 
@@ -93,13 +95,13 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                         return@launch
                     }
 
-                    currentBuildToolName = buildTool.name
-                    logger.info("Detected build tool: ${buildTool.name}")
+                    currentBuildToolName = detectedBuildTool.name
+                    logger.info("Detected build tool: ${detectedBuildTool.name}")
 
-                    onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${buildTool.name}...")
+                    onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${detectedBuildTool.name}...")
 
                     // Pass download progress through to resolver (e.g., Gradle distribution download)
-                    val resolution = buildTool.resolve(
+                    val resolution = detectedBuildTool.resolve(
                         workspaceRoot = workspaceRoot,
                         onProgress = { message ->
                             // Forward download progress to the onProgress callback
@@ -123,7 +125,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
 
                     // Start build file watching if enabled
                     if (enableFileWatching) {
-                        tryStartBuildFileWatching(buildTool, workspaceRoot, onProgress, onComplete, onError)
+                        tryStartBuildFileWatching(detectedBuildTool, workspaceRoot, onProgress, onComplete, onError)
                     }
 
                     logger.info(
@@ -135,8 +137,28 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                     state.set(State.FAILED)
 
                     withContext(Dispatchers.Default) {
-                        onError?.invoke(e) ?: run {
-                            logger.warn("No error handler provided for dependency resolution failure")
+                        // Only classify build tool errors. For truly unexpected errors (like NPE during detection),
+                        // use the error callback
+                        if (detectedBuildTool != null) {
+                            // Classify the exception using GradleFailureAnalyzer
+                            val failureAnalyzer = GradleFailureAnalyzer()
+                            val classifiedStatus = failureAnalyzer.classifyException(e)
+
+                            // Create a WorkspaceResolution with the failed status
+                            val failedResolution = WorkspaceResolution(
+                                dependencies = emptyList(),
+                                sourceDirectories = emptyList(),
+                                status = classifiedStatus,
+                            )
+
+                            // Call onComplete with the failed resolution for classified build tool errors
+                            onComplete(failedResolution)
+                        } else {
+                            // For truly unexpected errors (e.g., NPE during build tool detection),
+                            // call onError if provided, otherwise log warning
+                            onError?.invoke(e) ?: run {
+                                logger.warn("No error handler provided for dependency resolution failure")
+                            }
                         }
                     }
                 }

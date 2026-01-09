@@ -2,8 +2,11 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
+import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -69,9 +72,9 @@ private fun sleepAndCheckInterruption(pollingIntervalMs: Long): Boolean {
 
 /**
  * Callback type for status updates.
- * Parameters: health, quiescent, message, filesIndexed, filesTotal
+ * Parameters: health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails
  */
-typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?) -> Unit
+typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?, String?, ErrorDetails?) -> Unit
 
 /**
  * Manages project startup lifecycle: dependency resolution, file watching, and indexing.
@@ -159,7 +162,7 @@ class ProjectStartupManager(
         initParams: InitializeParams?,
         initOptionsMap: Map<String, Any>?,
         textDocumentServiceRefresh: () -> Unit,
-        onStatusUpdate: StatusUpdateCallback = { _, _, _, _, _ -> },
+        onStatusUpdate: StatusUpdateCallback = { _, _, _, _, _, _, _ -> },
     ) {
         val config = ServerConfiguration.fromMap(initOptionsMap)
 
@@ -173,14 +176,14 @@ class ProjectStartupManager(
         if (initParams == null) {
             logger.warn("No saved initialization parameters - skipping dependency resolution")
             updateGroovyVersion(config, emptyList())
-            onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null)
+            onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null, null, null)
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
             logger.info("No workspace root found - running in light mode without dependencies")
             updateGroovyVersion(config, emptyList())
-            onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null)
+            onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null, null, null)
             return
         }
 
@@ -190,7 +193,7 @@ class ProjectStartupManager(
         )
 
         // Send resolving deps status
-        onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null)
+        onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null, null, null)
 
         if (client != null) {
             logger.info("Sending 'Resolving build dependencies' notification to client")
@@ -290,7 +293,7 @@ class ProjectStartupManager(
     ): (Int, String) -> Unit = { percentage, message ->
         progressReporter.updateProgress(message, percentage)
         // Send status update for dependency resolution progress
-        onStatusUpdate(Health.Ok, false, message, null, null)
+        onStatusUpdate(Health.Ok, false, message, null, null, null, null)
         if (message.contains("Downloading Gradle distribution")) {
             client?.showMessage(
                 MessageParams().apply {
@@ -312,37 +315,46 @@ class ProjectStartupManager(
 
     private fun createCompletionCallback(context: CompletionCallbackContext): (WorkspaceResolution) -> Unit =
         { resolution ->
-            logger.info(
-                "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                    "${resolution.sourceDirectories.size} source directories",
-            )
+            // Check if resolution failed
+            when (resolution.status) {
+                is ResolutionStatus.Failed -> {
+                    handleFailedResolution(context, resolution.status as ResolutionStatus.Failed)
+                }
+                else -> {
+                    // Success or Warning - proceed with normal flow
+                    logger.info(
+                        "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
+                            "${resolution.sourceDirectories.size} source directories",
+                    )
 
-            updateGroovyVersion(context.config, resolution.dependencies)
+                    updateGroovyVersion(context.config, resolution.dependencies)
 
-            compilationService.updateWorkspaceModel(
-                workspaceRoot = context.workspaceRoot,
-                dependencies = resolution.dependencies,
-                sourceDirectories = resolution.sourceDirectories,
-            )
-            context.textDocumentServiceRefresh()
+                    compilationService.updateWorkspaceModel(
+                        workspaceRoot = context.workspaceRoot,
+                        dependencies = resolution.dependencies,
+                        sourceDirectories = resolution.sourceDirectories,
+                    )
+                    context.textDocumentServiceRefresh()
 
-            context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
+                    context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")
 
-            val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
-            if (context.client != null) {
-                val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-                logger.info("Sending completion notification to client: $msg")
-                context.client.showMessage(
-                    MessageParams().apply {
-                        type = MessageType.Info
-                        message = msg
-                    },
-                )
-            } else {
-                logger.warn("Cannot send completion showMessage - client is null")
+                    val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
+                    if (context.client != null) {
+                        val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
+                        logger.info("Sending completion notification to client: $msg")
+                        context.client.showMessage(
+                            MessageParams().apply {
+                                type = MessageType.Info
+                                message = msg
+                            },
+                        )
+                    } else {
+                        logger.warn("Cannot send completion showMessage - client is null")
+                    }
+
+                    startWorkspaceIndexing(context.client, context.onStatusUpdate)
+                }
             }
-
-            startWorkspaceIndexing(context.client, context.onStatusUpdate)
         }
 
     private fun createErrorCallback(
@@ -363,7 +375,69 @@ class ProjectStartupManager(
         // Signal warning state but still quiescent (ready for requests, but degraded)
         coroutineScope.launch(indexingDispatcher) {
             strategyInitJobs.forEach { it.join() }
-            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null)
+            onStatusUpdate(Health.Warning, true, "Dependencies failed: ${error.message}", null, null, null, null)
+        }
+    }
+
+    private fun handleFailedResolution(context: CompletionCallbackContext, status: ResolutionStatus.Failed) {
+        logger.error("Dependency resolution failed: ${status.code} - ${status.message}", status.cause)
+
+        // Update Groovy version with empty dependencies
+        updateGroovyVersion(context.config, emptyList())
+
+        // Complete progress with error
+        context.progressReporter.completeWithError(status.message)
+
+        // Convert to ErrorDetails
+        val errorDetails = convertToErrorDetails(status)
+
+        // Send status update with error code and details
+        coroutineScope.launch(indexingDispatcher) {
+            strategyInitJobs.forEach { it.join() }
+            context.onStatusUpdate(
+                Health.Warning,
+                true,
+                status.message,
+                null,
+                null,
+                status.code,
+                errorDetails,
+            )
+        }
+    }
+
+    /**
+     * Converts a ResolutionStatus.Failed to structured ErrorDetails.
+     */
+    internal fun convertToErrorDetails(status: ResolutionStatus.Failed): ErrorDetails? = when (status.code) {
+        ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED -> {
+            val info = status.details as? GradleFailureAnalyzer.ToolchainErrorInfo
+            ToolchainProvisioningError(
+                requiredVersion = info?.requiredVersion,
+                vendor = info?.vendor,
+                platform = info?.platform,
+            )
+        }
+        ResolutionCodes.GRADLE_JDK_INCOMPATIBLE -> {
+            // Extract version information from the error message or use defaults
+            // For now, we'll create a basic error - this can be enhanced later
+            GradleJdkIncompatibleError(
+                gradleVersion = "unknown",
+                jdkVersion = 0,
+                minGradleVersion = "unknown",
+                maxJdkVersion = null,
+                suggestions = listOf(
+                    "Update Gradle wrapper to a newer version",
+                    "Or configure groovy.gradle.javaHome to use a compatible JDK",
+                ),
+            )
+        }
+        else -> {
+            GenericError(
+                errorCode = status.code,
+                details = emptyMap(),
+                suggestions = emptyList(),
+            )
         }
     }
 
@@ -397,7 +471,7 @@ class ProjectStartupManager(
             // No files to index, signal ready after making sure strategy init is done
             coroutineScope.launch(indexingDispatcher) {
                 strategyInitJobs.forEach { it.join() }
-                onStatusUpdate(Health.Ok, true, "Ready", null, null)
+                onStatusUpdate(Health.Ok, true, "Ready", null, null, null, null)
             }
             return
         }
@@ -406,7 +480,7 @@ class ProjectStartupManager(
         logger.info("Starting workspace indexing: $total files")
 
         // Send initial indexing status with file counts
-        onStatusUpdate(Health.Ok, false, "Indexing $total files...", 0, total)
+        onStatusUpdate(Health.Ok, false, "Indexing $total files...", 0, total, null, null)
 
         val indexingProgressReporter = ProgressReporter(client)
         indexingProgressReporter.startDependencyResolution(
@@ -423,7 +497,15 @@ class ProjectStartupManager(
                     // Throttle status updates to avoid excessive notifications
                     val now = System.currentTimeMillis()
                     if (now - lastStatusUpdate >= STATUS_UPDATE_INTERVAL_MS || indexed == totalFiles) {
-                        onStatusUpdate(Health.Ok, false, "Indexing $indexed/$totalFiles files", indexed, totalFiles)
+                        onStatusUpdate(
+                            Health.Ok,
+                            false,
+                            "Indexing $indexed/$totalFiles files",
+                            indexed,
+                            totalFiles,
+                            null,
+                            null,
+                        )
                         lastStatusUpdate = now
                     }
                 }
@@ -432,7 +514,7 @@ class ProjectStartupManager(
 
                 // Trigger workspace compilation for cross-file semantic resolution
                 logger.info("Starting workspace compilation for cross-file resolution")
-                onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null)
+                onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
                 val workspaceCompiler = compilationService.getWorkspaceCompiler()
                 val compilationResult = workspaceCompiler.compileWorkspace()
                 logger.info(
@@ -447,13 +529,13 @@ class ProjectStartupManager(
                 strategyInitJobs.forEach { it.join() }
 
                 // Signal ready after indexing completes
-                onStatusUpdate(Health.Ok, true, "Ready", total, total)
+                onStatusUpdate(Health.Ok, true, "Ready", total, total, null, null)
             }.onFailure { throwable ->
                 rethrowIfCancellationOrError(throwable)
                 logger.error("Workspace indexing failed", throwable)
                 indexingProgressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
                 // Signal warning state but still quiescent
-                onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null)
+                onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null, null, null)
             }
         }
     }

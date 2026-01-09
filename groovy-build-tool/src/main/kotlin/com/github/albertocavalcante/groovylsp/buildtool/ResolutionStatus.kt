@@ -31,6 +31,15 @@ object ResolutionCodes {
     /** Gradle init script error. */
     const val INIT_SCRIPT_ERROR = "INIT_SCRIPT_ERROR"
 
+    /** Groovy version incompatible with JDK version. */
+    const val GROOVY_JDK_INCOMPATIBLE = "GROOVY_JDK_INCOMPATIBLE"
+
+    /** POM parsing failed. */
+    const val POM_PARSING_FAILED = "POM_PARSING_FAILED"
+
+    /** Network connectivity error during dependency resolution. */
+    const val CONNECTIVITY_ERROR = "CONNECTIVITY_ERROR"
+
     /** Generic dependency resolution failure. */
     const val DEPENDENCY_RESOLUTION_FAILED = "DEPENDENCY_RESOLUTION_FAILED"
 }
