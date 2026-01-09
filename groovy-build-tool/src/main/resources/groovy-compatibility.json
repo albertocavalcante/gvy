@@ -24,7 +24,7 @@
     {
       "groovy": "2.4",
       "jdkMin": 7,
-      "jdkMax": 9
+      "jdkMax": 8
     }
   ],
   "majorVersionMapping": {
