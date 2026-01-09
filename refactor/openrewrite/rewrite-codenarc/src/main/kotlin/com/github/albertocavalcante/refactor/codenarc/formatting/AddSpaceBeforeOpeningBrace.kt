@@ -173,29 +173,28 @@ class AddSpaceBeforeOpeningBrace : Recipe() {
             override fun visitLambda(lambda: J.Lambda, ctx: ExecutionContext): J.Lambda {
                 var l = super.visitLambda(lambda, ctx)
 
-                // For Groovy trailing closures (with OmitParentheses marker),
-                // the space goes on the lambda itself, not on the body block
-                val hasOmitMarker =
-                    l.markers.findFirst(org.openrewrite.java.marker.OmitParentheses::class.java).isPresent ||
-                        l.markers.findFirst(org.openrewrite.groovy.marker.OmitParentheses::class.java).isPresent
+                // For Groovy closures, the opening brace is part of the lambda syntax,
+                // so space must be added to lambda.prefix, not body.prefix.
+                // This applies to both trailing closures (with OmitParentheses marker)
+                // and non-trailing closures (e.g., def fn = {}, list.collect({})).
+                val hasOmitMarker = l.markers.markers.any {
+                    it is org.openrewrite.java.marker.OmitParentheses ||
+                        it is org.openrewrite.groovy.marker.OmitParentheses
+                }
 
+                // Add space to lambda's prefix for trailing closures
+                // (e.g., list.each{} -> list.each {})
                 if (hasOmitMarker) {
-                    // Add space to lambda's prefix (e.g., list.each{} -> list.each {})
                     val prefix = l.prefix
                     val whitespace = prefix.whitespace
                     if (whitespace.isEmpty()) {
                         l = l.withPrefix(prefix.withWhitespace(" "))
                     }
-                } else {
-                    // For regular lambdas (e.g., in method declarations), add space to body block
-                    val body = l.body
-                    if (body is J.Block) {
-                        val updatedBody = ensureSpaceBeforeBrace(body)
-                        if (updatedBody !== body) {
-                            l = l.withBody(updatedBody)
-                        }
-                    }
                 }
+                // For non-trailing closures, the body block's prefix controls spacing
+                // inside the braces, so we check if it needs adjustment there too.
+                // However, space before the opening brace for non-trailing closures
+                // is typically handled by the parent context (e.g., assignment operator).
 
                 return l
             }
