@@ -40,14 +40,17 @@ export async function showErrorNotification(
     if (outputChannel) basicActions.push("Show Details");
 
     if (basicActions.length > 0) {
-      vscode.window
-        .showErrorMessage(
-          `Groovy Language Server Error: ${errorCode}`,
-          ...basicActions,
-        )
-        .then((selected) => {
-          handleSpecialActions(selected, outputChannel, retryCommand);
-        });
+      void (async () => {
+        try {
+          const selected = await vscode.window.showErrorMessage(
+            `Groovy Language Server Error: ${errorCode}`,
+            ...basicActions,
+          );
+          await handleSpecialActions(selected, outputChannel, retryCommand);
+        } catch (err: unknown) {
+          console.error("Error showing notification:", err);
+        }
+      })();
     } else {
       vscode.window.showErrorMessage(
         `Groovy Language Server Error: ${errorCode}`,
@@ -69,22 +72,48 @@ export async function showErrorNotification(
     errorDetails.type === "GROOVY_JDK_INCOMPATIBLE" ||
     errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED"
   ) {
-    vscode.window.showErrorMessage(message, ...actions).then((selected) => {
-      if (selected) {
-        if (!handleSpecialActions(selected, outputChannel, retryCommand)) {
-          handleActionClick(selected);
+    void (async () => {
+      try {
+        const selected = await vscode.window.showErrorMessage(
+          message,
+          ...actions,
+        );
+        if (selected) {
+          const handled = await handleSpecialActions(
+            selected,
+            outputChannel,
+            retryCommand,
+          );
+          if (!handled) {
+            await handleActionClick(selected);
+          }
         }
+      } catch (err: unknown) {
+        console.error("Error showing error notification:", err);
       }
-    });
+    })();
   } else {
     // For less critical errors, use warning instead
-    vscode.window.showWarningMessage(message, ...actions).then((selected) => {
-      if (selected) {
-        if (!handleSpecialActions(selected, outputChannel, retryCommand)) {
-          handleActionClick(selected);
+    void (async () => {
+      try {
+        const selected = await vscode.window.showWarningMessage(
+          message,
+          ...actions,
+        );
+        if (selected) {
+          const handled = await handleSpecialActions(
+            selected,
+            outputChannel,
+            retryCommand,
+          );
+          if (!handled) {
+            await handleActionClick(selected);
+          }
         }
+      } catch (err: unknown) {
+        console.error("Error showing warning notification:", err);
       }
-    });
+    })();
   }
 }
 

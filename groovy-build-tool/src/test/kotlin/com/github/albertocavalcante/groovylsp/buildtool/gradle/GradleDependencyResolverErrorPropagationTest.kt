@@ -61,8 +61,7 @@ class GradleDependencyResolverErrorPropagationTest {
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Verify the status is Failed with correct error code
-        assertIs<ResolutionStatus.Failed>(result.status)
-        val failedStatus = result.status as ResolutionStatus.Failed
+        val failedStatus = assertIs<ResolutionStatus.Failed>(result.status)
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, failedStatus.code)
         assertTrue(
             failedStatus.message.contains("Java") || failedStatus.message.contains("toolchain"),
@@ -105,8 +104,7 @@ class GradleDependencyResolverErrorPropagationTest {
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Verify the status is Failed with correct error code
-        assertIs<ResolutionStatus.Failed>(result.status)
-        val failedStatus = result.status as ResolutionStatus.Failed
+        val failedStatus = assertIs<ResolutionStatus.Failed>(result.status)
         assertEquals(ResolutionCodes.GRADLE_JDK_INCOMPATIBLE, failedStatus.code)
     }
 
@@ -145,8 +143,7 @@ class GradleDependencyResolverErrorPropagationTest {
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Verify the status is Failed (with generic error code)
-        assertIs<ResolutionStatus.Failed>(result.status)
-        val failedStatus = result.status as ResolutionStatus.Failed
+        val failedStatus = assertIs<ResolutionStatus.Failed>(result.status)
         assertEquals(ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED, failedStatus.code)
     }
 
@@ -189,15 +186,12 @@ class GradleDependencyResolverErrorPropagationTest {
         val result = resolver.resolve(workspaceRoot = projectDir, onProgress = null)
 
         // Verify the status includes error details
-        assertIs<ResolutionStatus.Failed>(result.status)
-        val failedStatus = result.status as ResolutionStatus.Failed
+        val failedStatus = assertIs<ResolutionStatus.Failed>(result.status)
         assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, failedStatus.code)
 
-        // The details should contain toolchain error info
-        val details = failedStatus.details
-        if (details is GradleFailureAnalyzer.ToolchainErrorInfo) {
-            assertEquals(17, details.requiredVersion)
-            assertTrue(details.platform?.contains("Mac OS X") == true || details.platform?.contains("aarch64") == true)
-        }
+        // The details should contain toolchain error info - use assertIs to fail explicitly if type is wrong
+        val details = assertIs<GradleFailureAnalyzer.ToolchainErrorInfo>(failedStatus.details)
+        assertEquals(17, details.requiredVersion)
+        assertTrue(details.platform?.contains("Mac OS X") == true || details.platform?.contains("aarch64") == true)
     }
 }
