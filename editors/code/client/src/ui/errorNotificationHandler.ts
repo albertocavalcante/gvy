@@ -60,11 +60,24 @@ export async function showErrorNotification(
   }
 
   const message = buildErrorMessage(errorCode, errorDetails);
-  const actions = errorDetails.suggestions.slice(0, 2); // Take first 2 suggestions as actions
 
-  // Add special action buttons
-  if (retryCommand) actions.push("Retry Resolution");
-  if (outputChannel) actions.push("Show Details");
+  // Limit total buttons to 3 max (VS Code UX guideline)
+  // Priority: Retry Resolution > first suggestion > Show Details
+  const actions: string[] = [];
+
+  if (retryCommand) {
+    actions.push("Retry Resolution");
+  }
+
+  // Add first suggestion if room available (max 3 total)
+  if (actions.length < 3 && errorDetails.suggestions.length > 0) {
+    actions.push(errorDetails.suggestions[0]);
+  }
+
+  // Add Show Details if room available (max 3 total)
+  if (actions.length < 3 && outputChannel) {
+    actions.push("Show Details");
+  }
 
   // Show notification with action buttons
   if (

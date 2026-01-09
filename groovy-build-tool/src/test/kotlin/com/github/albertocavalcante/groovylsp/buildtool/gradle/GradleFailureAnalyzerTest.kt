@@ -170,4 +170,60 @@ class GradleFailureAnalyzerTest {
         val status = analyzer.classifyException(error)
         assertEquals(ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED, status.code)
     }
+
+    // Test fixtures from gradle-errors/*.txt files
+    @Test
+    fun `should detect connection refused error from fixture`() {
+        val errorTrace = loadFixture("connection-refused-error.txt")
+        val error = RuntimeException(errorTrace)
+        assertTrue(analyzer.isTransient(error), "Connection refused should be classified as transient")
+    }
+
+    @Test
+    fun `should detect init script error from fixture`() {
+        val errorTrace = loadFixture("init-script-error.txt")
+        val error = RuntimeException(errorTrace)
+        assertTrue(analyzer.isInitScriptError(error), "Init script error should be detected")
+        assertEquals(ResolutionCodes.INIT_SCRIPT_ERROR, analyzer.classifyException(error).code)
+    }
+
+    @Test
+    fun `should detect JDK mismatch from fixture`() {
+        val errorTrace = loadFixture("jdk-mismatch-error.txt")
+        val error = RuntimeException(errorTrace)
+        assertTrue(analyzer.isJdkMismatch(error), "JDK mismatch should be detected")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.GRADLE_JDK_INCOMPATIBLE, status.code)
+        assertNotNull(status.details)
+        assertTrue(status.details is GradleFailureAnalyzer.GradleJdkIncompatibleInfo)
+        val info = status.details as GradleFailureAnalyzer.GradleJdkIncompatibleInfo
+        assertEquals(21, info.jdkVersion, "Should detect JDK 21 from class file major version 65")
+    }
+
+    @Test
+    fun `should detect lock timeout error from fixture`() {
+        val errorTrace = loadFixture("lock-timeout-error.txt")
+        val error = RuntimeException(errorTrace)
+        assertTrue(analyzer.isTransient(error), "Lock timeout should be classified as transient")
+    }
+
+    @Test
+    fun `should detect toolchain provisioning error from fixture`() {
+        val errorTrace = loadFixture("toolchain-provisioning-error.txt")
+        val error = RuntimeException(errorTrace)
+        assertTrue(analyzer.isToolchainProvisioningError(error), "Toolchain provisioning error should be detected")
+        val status = analyzer.classifyException(error)
+        assertEquals(ResolutionCodes.TOOLCHAIN_PROVISIONING_FAILED, status.code)
+        assertNotNull(status.details)
+        assertTrue(status.details is GradleFailureAnalyzer.ToolchainErrorInfo)
+        val info = status.details as GradleFailureAnalyzer.ToolchainErrorInfo
+        assertEquals(17, info.requiredVersion, "Should detect required Java 17")
+        assertEquals("Mac OS X 15.6 aarch64", info.platform)
+    }
+
+    private fun loadFixture(filename: String): String {
+        val resource = javaClass.classLoader.getResourceAsStream("gradle-errors/$filename")
+            ?: error("Fixture file not found: $filename")
+        return resource.bufferedReader().use { it.readText() }
+    }
 }

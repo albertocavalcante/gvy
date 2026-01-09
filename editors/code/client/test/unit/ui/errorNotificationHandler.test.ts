@@ -96,8 +96,8 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Gradle 7.4"));
       assert.ok(call.args[0].includes("JDK 21"));
+      // With new priority logic (max 3 buttons), only first suggestion is shown
       assert.strictEqual(call.args[1], "Upgrade to Gradle 8.5 or higher");
-      assert.strictEqual(call.args[2], "Use JDK 17 or lower");
     });
 
     it("should show error message for GROOVY_JDK_INCOMPATIBLE with action buttons", async () => {
@@ -116,8 +116,8 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Groovy 2.5.0"));
       assert.ok(call.args[0].includes("JDK 17"));
+      // With new priority logic (max 3 buttons), only first suggestion is shown
       assert.strictEqual(call.args[1], "Upgrade to Groovy 3.0.0 or higher");
-      assert.strictEqual(call.args[2], "Use JDK 8 or 11");
     });
 
     it("should show error message for TOOLCHAIN_PROVISIONING_FAILED with action buttons", async () => {
@@ -141,13 +141,10 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Java 17"));
       assert.ok(call.args[0].includes("Mac OS X aarch64"));
+      // With new priority logic (max 3 buttons), only first suggestion is shown
       assert.strictEqual(
         call.args[1],
         "Set groovy.gradle.javaHome in VS Code settings",
-      );
-      assert.strictEqual(
-        call.args[2],
-        "Install JDK 17 from https://adoptium.net",
       );
     });
 
@@ -164,11 +161,11 @@ describe("Error Notification Handler", () => {
       assert.ok(showWarningMessageStub.calledOnce);
       const call = showWarningMessageStub.getCall(0);
       assert.ok(call.args[0].includes("CUSTOM_ERROR"));
+      // With new priority logic (max 3 buttons), only first suggestion is shown
       assert.strictEqual(call.args[1], "Try this fix");
-      assert.strictEqual(call.args[2], "Or try this other fix");
     });
 
-    it("should limit to 2 action buttons even with more suggestions", async () => {
+    it("should limit to 3 action buttons maximum (VS Code UX guideline)", async () => {
       const errorDetails: GenericError = {
         type: "GENERIC",
         errorCode: "MANY_SUGGESTIONS",
@@ -185,9 +182,10 @@ describe("Error Notification Handler", () => {
 
       assert.ok(showWarningMessageStub.calledOnce);
       const call = showWarningMessageStub.getCall(0);
-      // Should only have 2 action buttons (args[1] and args[2])
+      // With new priority logic: max 3 buttons, only first suggestion is shown
       assert.strictEqual(call.args[1], "First suggestion");
-      assert.strictEqual(call.args[2], "Second suggestion");
+      // No more than 3 total buttons
+      assert.strictEqual(call.args.length, 2); // message + 1 button
     });
   });
 

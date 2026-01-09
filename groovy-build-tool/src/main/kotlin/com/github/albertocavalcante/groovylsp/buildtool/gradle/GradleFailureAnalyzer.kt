@@ -114,7 +114,7 @@ class GradleFailureAnalyzer(
         val versionStr = version?.toString() ?: "<version>"
         return listOf(
             "Set groovy.gradle.javaHome in VS Code settings to point to JDK $versionStr",
-            "Install JDK $versionStr: sdk install java $versionStr-tem",
+            "Install JDK $versionStr (e.g., via SDKMAN: sdk install java $versionStr-tem)",
             "Add foojay-resolver plugin to settings.gradle for auto-download",
             "Set -Dorg.gradle.java.installations.paths=/path/to/jdk$versionStr",
         )
@@ -175,7 +175,7 @@ class GradleFailureAnalyzer(
     private fun buildGradleJdkSuggestions(jdkVersion: Int, minGradleVersion: String?): List<String> {
         val suggestions = mutableListOf<String>()
         if (minGradleVersion != null) {
-            suggestions.add("Update Gradle wrapper: ./gradlew wrapper --gradle-version=$minGradleVersion")
+            suggestions.add("Update Gradle wrapper: `./gradlew wrapper --gradle-version=$minGradleVersion`")
         } else {
             suggestions.add("Update Gradle wrapper to a newer version")
         }
