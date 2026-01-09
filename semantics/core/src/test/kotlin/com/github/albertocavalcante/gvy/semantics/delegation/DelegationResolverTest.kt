@@ -3,11 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.delegation
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
-import org.codehaus.groovy.control.CompilePhase
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull

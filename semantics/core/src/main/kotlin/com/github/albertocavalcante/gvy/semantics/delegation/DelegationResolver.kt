@@ -147,20 +147,11 @@ class DelegationResolver {
         // Find method matching parameter count and types
         return candidateMethods.firstOrNull { method ->
             val methodParams = method.parameters
-
-            // Check parameter count matches
-            if (methodParams.size != parameterTypes.size) {
-                return@firstOrNull false
-            }
-
-            // Check each parameter type matches
-            methodParams.indices.all { i ->
+            methodParams.size == parameterTypes.size && methodParams.indices.all { i ->
                 val paramType = methodParams[i].type
                 val expectedType = parameterTypes[i]
-
                 // Match by type name (handles both fully qualified and simple names)
-                paramType.name == expectedType ||
-                    paramType.nameWithoutPackage == expectedType
+                paramType.name == expectedType || paramType.nameWithoutPackage == expectedType
             }
         }
     }
