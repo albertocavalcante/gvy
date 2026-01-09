@@ -170,7 +170,7 @@ object GroovySemanticTokenProvider {
             modifiers = modifiers or TokenModifiers.STATIC
         }
 
-        addTokenForNode(classNode, classNode.name.length, tokenType, modifiers, tokens)
+        addTokenForNode(classNode, classNode.nameWithoutPackage.length, tokenType, modifiers, tokens)
     }
 
     /**
@@ -306,7 +306,7 @@ object GroovySemanticTokenProvider {
      */
     private fun visitPropertyDeclaration(property: PropertyNode, tokens: MutableList<SemanticToken>) {
         // Properties in Groovy are often backed by fields, skip if synthetic
-        if (property.lineNumber < 0) {
+        if (property.isSynthetic || property.lineNumber < 0) {
             return
         }
 
@@ -360,10 +360,11 @@ object GroovySemanticTokenProvider {
         }
 
         // Try to determine the token type based on the variable
+        // Check accessedVariable first for accurate type information
         val tokenType = when {
-            varExpr.name == "it" -> TokenTypes.PARAMETER // Implicit closure parameter
             varExpr.accessedVariable is Parameter -> TokenTypes.PARAMETER
             varExpr.accessedVariable is FieldNode -> TokenTypes.PROPERTY
+            varExpr.name == "it" -> TokenTypes.PARAMETER // Implicit closure parameter fallback
             else -> TokenTypes.VARIABLE
         }
 
