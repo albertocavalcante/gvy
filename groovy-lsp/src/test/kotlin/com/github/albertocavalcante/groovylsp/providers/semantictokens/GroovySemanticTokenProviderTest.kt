@@ -838,6 +838,66 @@ class GroovySemanticTokenProviderTest {
     }
 
     @Test
+    fun `should handle multi-parameter generic types without spaces`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                Map<String,Integer> getMap() { [:] }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri, code)
+
+        // Should have METHOD token for getMap
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val getMapToken = methodTokens.find { it.length == "getMap".length }
+        assertTrue(getMapToken != null, "Should have METHOD token for getMap")
+
+        // Line 1: "    Map<String,Integer> getMap() { [:] }"
+        // "getMap" starts at column 24 (after "    Map<String,Integer> ")
+        // 4 spaces + "Map<String,Integer>" (19) + 1 space = 24
+        assertEquals(1, getMapToken!!.line, "getMap should be on line 1")
+        assertEquals(24, getMapToken.startChar, "getMap should start at column 24")
+    }
+
+    @Test
+    fun `should handle multi-parameter generic types with spaces`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                Map<String, Integer> getMap() { [:] }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri, code)
+
+        // Should have METHOD token for getMap
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val getMapToken = methodTokens.find { it.length == "getMap".length }
+        assertTrue(getMapToken != null, "Should have METHOD token for getMap")
+
+        // Line 1: "    Map<String, Integer> getMap() { [:] }"
+        // "getMap" starts at column 25 (after "    Map<String, Integer> ")
+        // 4 spaces + "Map<String, Integer>" (20) + 1 space = 25
+        assertEquals(1, getMapToken!!.line, "getMap should be on line 1")
+        assertEquals(25, getMapToken.startChar, "getMap should start at column 25")
+    }
+
+    @Test
     fun `should handle annotated method declarations`(): Unit = runBlocking {
         val code = """
             class MyClass {

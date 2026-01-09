@@ -781,7 +781,11 @@ class GroovyTextDocumentService(
                     ?: emptySet()
 
                 // Get general Groovy semantic tokens for ALL files
-                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(
+                    astModel,
+                    uri,
+                    compilationResult.sourceText,
+                )
 
                 // Get Jenkins-specific tokens (built-in blocks + vars/ globals) only for Jenkins files
                 val jenkinsTokens = if (isJenkinsFile) {

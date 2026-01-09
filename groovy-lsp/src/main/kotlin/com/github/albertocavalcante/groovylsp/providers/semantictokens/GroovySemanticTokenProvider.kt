@@ -114,13 +114,22 @@ object GroovySemanticTokenProvider {
     }
 
     /**
+     * Source lines cache for offset calculation.
+     */
+    private var sourceLines: List<String> = emptyList()
+
+    /**
      * Generate semantic tokens for all Groovy constructs.
      *
      * @param astModel Parsed AST model
      * @param uri Document URI
+     * @param sourceText Optional source text for accurate offset calculation
      * @return List of semantic tokens
      */
-    fun getSemanticTokens(astModel: GroovyAstModel, uri: URI): List<SemanticToken> {
+    fun getSemanticTokens(astModel: GroovyAstModel, uri: URI, sourceText: String? = null): List<SemanticToken> {
+        // Cache source lines for offset calculation
+        sourceLines = sourceText?.lines() ?: emptyList()
+
         val tokens = mutableListOf<SemanticToken>()
 
         try {
@@ -544,11 +553,34 @@ object GroovySemanticTokenProvider {
      * but we need the position of "myMethod". This calculates the offset based on
      * the method's modifiers and return type.
      *
+     * If source text is available, it extracts the actual declaration line to find
+     * the method name position, avoiding issues with generic type formatting variations
+     * (e.g., "Map<String, Integer>" vs "Map<String,Integer>").
+     *
      * Note: We exclude 'public' from the calculation because Groovy methods are
      * implicitly public - the modifier is rarely written explicitly. If we included
      * it, the offset would be wrong for 99% of Groovy code.
      */
     private fun calculateMethodNameOffset(method: MethodNode): Int {
+        // Try to use actual source text if available
+        val (declLine, declCol) = getMethodDeclarationPosition(method)
+        if (sourceLines.isNotEmpty() && declLine > 0 && declLine <= sourceLines.size && declCol > 0) {
+            val sourceLine = sourceLines[declLine - 1] // Convert to 0-based
+            val methodName = method.name
+
+            // Find the method name in the source line
+            // We look for the method name followed by '(' to avoid false matches
+            val namePattern = Regex("""\b${Regex.escape(methodName)}\s*\(""")
+            val match = namePattern.find(sourceLine)
+            if (match != null) {
+                // Calculate offset from the declaration start column to the method name
+                // declCol is 1-based, match.range.first is 0-based
+                // So the offset is: match.range.first - (declCol - 1)
+                return match.range.first - (declCol - 1)
+            }
+        }
+
+        // Fallback to reconstruction-based calculation if source text unavailable
         var offset = 0
 
         // Add modifier lengths + spaces
