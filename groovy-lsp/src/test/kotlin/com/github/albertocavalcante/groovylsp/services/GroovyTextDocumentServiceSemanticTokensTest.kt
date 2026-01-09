@@ -117,7 +117,7 @@ class GroovyTextDocumentServiceSemanticTokensTest {
     }
 
     @Test
-    fun `should return empty tokens for non-Jenkins file`(): Unit = runBlocking {
+    fun `should return Groovy semantic tokens for non-Jenkins file`(): Unit = runBlocking {
         val groovyFile = """
             class Example {
                 def method() {
@@ -143,8 +143,15 @@ class GroovyTextDocumentServiceSemanticTokensTest {
             SemanticTokensParams(TextDocumentIdentifier(uri)),
         ).get()
 
-        // Should be empty (no Jenkins blocks in regular Groovy file)
-        assertTrue(result.data.isEmpty(), "Regular Groovy files should have no Jenkins tokens")
+        // Should have Groovy semantic tokens (class, method, etc.) but no Jenkins-specific tokens
+        assertTrue(result.data.isNotEmpty(), "Regular Groovy files should have Groovy semantic tokens")
+
+        // Data should be in groups of 5 integers
+        assertEquals(0, result.data.size % 5, "Token data should be groups of 5 integers")
+
+        // Should have at least tokens for class name and method name
+        val tokenCount = result.data.size / 5
+        assertTrue(tokenCount >= 2, "Should have at least 2 tokens (class and method)")
     }
 
     @Test
