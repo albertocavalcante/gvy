@@ -83,6 +83,10 @@ class TokenEditDistance private constructor(
         return (column.toDouble() / fromLine.length * toLine.length).toInt()
     }
 
+    // TODO: Enhance tokenization to handle operators and punctuation.
+    //   Current implementation only recognizes alphanumeric tokens. For better column mapping,
+    //   consider identifying operators (., [, ], +, etc.) and punctuation as separate tokens.
+    //   This would improve accuracy for expressions like "foo.bar" or "list[0]".
     private fun findTokenAt(line: String, column: Int): Pair<String, Int>? {
         if (column >= line.length) return null
 
@@ -96,6 +100,10 @@ class TokenEditDistance private constructor(
         return if (start < end) Pair(line.substring(start, end), start) else null
     }
 
+    // TODO: Optimize with binary search for O(log n) performance instead of O(n) linear scan.
+    //   The mapping keys are sorted (from LCS), so we could use binarySearch to find
+    //   the insertion point and compare adjacent keys. Current linear scan is acceptable
+    //   for typical file sizes but could be improved for very large documents.
     private fun findClosestMappedLine(line: Int, mapping: Map<Int, Int>, targetLines: List<String>): Int {
         if (mapping.isEmpty()) return line.coerceIn(0, (targetLines.size - 1).coerceAtLeast(0))
 
@@ -138,6 +146,11 @@ class TokenEditDistance private constructor(
         /**
          * Finds the longest common subsequence of lines between two documents.
          * Returns pairs of (originalIndex, revisedIndex) for matching lines.
+         *
+         * TODO: Consider space-optimized Hirschberg algorithm for O(m+n) space instead of O(m*n).
+         *   Current implementation uses full DP table which could consume significant memory for
+         *   very large documents. However, the added complexity may not be worth it for typical
+         *   file sizes. Revisit if profiling shows memory issues.
          */
         private fun longestCommonSubsequence(original: List<String>, revised: List<String>): List<Pair<Int, Int>> {
             val m = original.size
@@ -180,6 +193,14 @@ class TokenEditDistance private constructor(
 }
 
 /**
- * Represents a position in a document.
+ * Represents a position in a document using 0-based indexing.
+ *
+ * Note: This is intentionally separate from the existing 1-based Position classes
+ * (groovyparser.Position and groovyparser.api.model.Position) because TokenEditDistance
+ * works directly with List.lines() indices which are 0-based. Using 1-based Position
+ * would require constant +1/-1 conversions, introducing potential off-by-one errors.
+ *
+ * @property line 0-based line index
+ * @property column 0-based column index
  */
 data class Position(val line: Int, val column: Int)
