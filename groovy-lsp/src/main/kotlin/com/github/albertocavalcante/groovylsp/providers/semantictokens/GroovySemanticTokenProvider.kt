@@ -114,9 +114,10 @@ object GroovySemanticTokenProvider {
     }
 
     /**
-     * Source lines cache for offset calculation.
+     * Thread-local source lines for offset calculation.
+     * This avoids passing source lines through the entire call chain while maintaining thread safety.
      */
-    private var sourceLines: List<String> = emptyList()
+    private val sourceLines = ThreadLocal<List<String>>()
 
     /**
      * Generate semantic tokens for all Groovy constructs.
@@ -127,50 +128,55 @@ object GroovySemanticTokenProvider {
      * @return List of semantic tokens
      */
     fun getSemanticTokens(astModel: GroovyAstModel, uri: URI, sourceText: String? = null): List<SemanticToken> {
-        // Cache source lines for offset calculation
-        sourceLines = sourceText?.lines() ?: emptyList()
-
-        val tokens = mutableListOf<SemanticToken>()
-
         try {
-            val allNodes = astModel.getAllNodes()
-            val classNodes = astModel.getAllClassNodes()
+            // Set source lines for this thread
+            sourceLines.set(sourceText?.lines() ?: emptyList())
 
-            // Visit all class nodes to get declarations
-            classNodes.forEach { classNode ->
-                visitClassDeclaration(classNode, tokens)
-            }
+            val tokens = mutableListOf<SemanticToken>()
 
-            // Visit all nodes to find references and other constructs
-            allNodes.forEach { node ->
-                when (node) {
-                    is VariableExpression -> visitVariableExpression(node, tokens)
-                    is PropertyExpression -> visitPropertyExpression(node, tokens)
-                    is ClosureExpression -> visitClosureExpression(node, tokens)
-                    is MethodCallExpression -> visitMethodCallExpression(node, tokens)
-                    is StaticMethodCallExpression -> visitStaticMethodCallExpression(node, tokens)
+            try {
+                val allNodes = astModel.getAllNodes()
+                val classNodes = astModel.getAllClassNodes()
+
+                // Visit all class nodes to get declarations
+                classNodes.forEach { classNode ->
+                    visitClassDeclaration(classNode, tokens)
                 }
+
+                // Visit all nodes to find references and other constructs
+                allNodes.forEach { node ->
+                    when (node) {
+                        is VariableExpression -> visitVariableExpression(node, tokens)
+                        is PropertyExpression -> visitPropertyExpression(node, tokens)
+                        is ClosureExpression -> visitClosureExpression(node, tokens)
+                        is MethodCallExpression -> visitMethodCallExpression(node, tokens)
+                        is StaticMethodCallExpression -> visitStaticMethodCallExpression(node, tokens)
+                    }
+                }
+
+                logger.debug("Generated {} Groovy semantic tokens for {}", tokens.size, uri)
+            } catch (e: NullPointerException) {
+                logger.error("Null pointer encountered while generating semantic tokens for {}: {}", uri, e.message, e)
+            } catch (e: IndexOutOfBoundsException) {
+                logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
+            } catch (e: IllegalStateException) {
+                logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
+            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                // Catch remaining exceptions to prevent LSP crashes
+                logger.error(
+                    "Unexpected error generating semantic tokens for {}: {} - {}",
+                    uri,
+                    e.javaClass.simpleName,
+                    e.message,
+                    e,
+                )
             }
 
-            logger.debug("Generated {} Groovy semantic tokens for {}", tokens.size, uri)
-        } catch (e: NullPointerException) {
-            logger.error("Null pointer encountered while generating semantic tokens for {}: {}", uri, e.message, e)
-        } catch (e: IndexOutOfBoundsException) {
-            logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
-        } catch (e: IllegalStateException) {
-            logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
-        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            // Catch remaining exceptions to prevent LSP crashes
-            logger.error(
-                "Unexpected error generating semantic tokens for {}: {} - {}",
-                uri,
-                e.javaClass.simpleName,
-                e.message,
-                e,
-            )
+            return tokens
+        } finally {
+            // Clean up thread local to prevent memory leaks
+            sourceLines.remove()
         }
-
-        return tokens
     }
 
     /**
@@ -563,9 +569,10 @@ object GroovySemanticTokenProvider {
      */
     private fun calculateMethodNameOffset(method: MethodNode): Int {
         // Try to use actual source text if available
+        val lines = sourceLines.get() ?: emptyList()
         val (declLine, declCol) = getMethodDeclarationPosition(method)
-        if (sourceLines.isNotEmpty() && declLine > 0 && declLine <= sourceLines.size && declCol > 0) {
-            val sourceLine = sourceLines[declLine - 1] // Convert to 0-based
+        if (lines.isNotEmpty() && declLine > 0 && declLine <= lines.size && declCol > 0) {
+            val sourceLine = lines[declLine - 1] // Convert to 0-based
             val methodName = method.name
 
             // Find the method name in the source line
