@@ -159,6 +159,11 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
         ),
     )
 
+    // Note: do-while loops are not tested due to OpenRewrite parser limitation
+    // See: https://github.com/openrewrite/rewrite-groovy/issues
+    // The visitDoWhileLoop implementation is provided but cannot be tested
+    // until the parser issue is resolved
+
     // ========================================================================
     // Control Structures - try/catch/finally
     // ========================================================================

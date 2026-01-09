@@ -162,6 +162,30 @@ class FormattingFixHandlersTest {
     }
 
     @Test
+    fun `space before brace handler returns null when tab exists before brace`() {
+        val content = "def foo()\t{}"
+        val lines = content.lines()
+        val braceIndex = content.indexOf('{')
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "SpaceBeforeOpeningBrace",
+            message = "Missing space before brace",
+            line = 0,
+            startChar = braceIndex,
+            endChar = braceIndex + 1,
+        )
+
+        val handler = assertNotNull(
+            FixHandlerRegistry.getHandler("SpaceBeforeOpeningBrace"),
+            "SpaceBeforeOpeningBrace handler should be registered",
+        )
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler(context)
+
+        assertNull(textEdit, "Handler should return null when tab exists before brace")
+    }
+
+    @Test
     fun `space before brace handler returns null for out of bounds line`() {
         val content = "def foo(){}"
         val lines = content.lines()

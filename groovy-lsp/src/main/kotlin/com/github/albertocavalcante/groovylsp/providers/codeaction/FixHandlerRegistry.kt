@@ -331,8 +331,8 @@ private fun fixSpaceBeforeOpeningBrace(context: FixContext): TextEdit? {
         return null
     }
 
-    // Already has space - no-op
-    if (braceIndex > 0 && line[braceIndex - 1] == ' ') {
+    // Already has whitespace - no-op
+    if (braceIndex > 0 && line[braceIndex - 1].isWhitespace()) {
         return null
     }
 

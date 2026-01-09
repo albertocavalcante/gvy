@@ -130,6 +130,20 @@ class AddSpaceBeforeOpeningBrace : Recipe() {
                 return w
             }
 
+            override fun visitDoWhileLoop(doWhileLoop: J.DoWhileLoop, ctx: ExecutionContext): J.DoWhileLoop {
+                var d = super.visitDoWhileLoop(doWhileLoop, ctx)
+
+                val body = d.body
+                if (body is J.Block) {
+                    val updatedBody = ensureSpaceBeforeBrace(body)
+                    if (updatedBody !== body) {
+                        d = d.withBody(updatedBody)
+                    }
+                }
+
+                return d
+            }
+
             override fun visitTry(tryStmt: J.Try, ctx: ExecutionContext): J.Try {
                 var t = super.visitTry(tryStmt, ctx)
 
