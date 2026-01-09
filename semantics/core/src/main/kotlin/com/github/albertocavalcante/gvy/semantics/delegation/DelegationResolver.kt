@@ -33,33 +33,19 @@ class DelegationResolver {
         closure: ClosureExpression,
         strategy: DelegationStrategy = DelegationStrategy.DEFAULT,
     ): List<ReceiverCandidate> {
-        val thisType = getClosureType(closure)
-        val ownerType = getOwnerType(closure)
-        val delegateType = getDelegateType(closure)
+        val thisCandidate = getClosureType(closure)?.let { ReceiverCandidate(it, ReceiverKind.THIS) }
+        val ownerCandidate = getOwnerType(closure)?.let { ReceiverCandidate(it, ReceiverKind.OWNER) }
+        val delegateCandidate = getDelegateType(closure)?.let { ReceiverCandidate(it, ReceiverKind.DELEGATE) }
 
-        return when (strategy) {
-            DelegationStrategy.OWNER_FIRST -> listOfNotNull(
-                thisType?.let { ReceiverCandidate(it, ReceiverKind.THIS) },
-                ownerType?.let { ReceiverCandidate(it, ReceiverKind.OWNER) },
-                delegateType?.let { ReceiverCandidate(it, ReceiverKind.DELEGATE) },
-            )
-            DelegationStrategy.DELEGATE_FIRST -> listOfNotNull(
-                thisType?.let { ReceiverCandidate(it, ReceiverKind.THIS) },
-                delegateType?.let { ReceiverCandidate(it, ReceiverKind.DELEGATE) },
-                ownerType?.let { ReceiverCandidate(it, ReceiverKind.OWNER) },
-            )
-            DelegationStrategy.OWNER_ONLY -> listOfNotNull(
-                thisType?.let { ReceiverCandidate(it, ReceiverKind.THIS) },
-                ownerType?.let { ReceiverCandidate(it, ReceiverKind.OWNER) },
-            )
-            DelegationStrategy.DELEGATE_ONLY -> listOfNotNull(
-                thisType?.let { ReceiverCandidate(it, ReceiverKind.THIS) },
-                delegateType?.let { ReceiverCandidate(it, ReceiverKind.DELEGATE) },
-            )
-            DelegationStrategy.TO_SELF -> listOfNotNull(
-                thisType?.let { ReceiverCandidate(it, ReceiverKind.THIS) },
-            )
+        val remainingCandidates = when (strategy) {
+            DelegationStrategy.OWNER_FIRST -> listOfNotNull(ownerCandidate, delegateCandidate)
+            DelegationStrategy.DELEGATE_FIRST -> listOfNotNull(delegateCandidate, ownerCandidate)
+            DelegationStrategy.OWNER_ONLY -> listOfNotNull(ownerCandidate)
+            DelegationStrategy.DELEGATE_ONLY -> listOfNotNull(delegateCandidate)
+            DelegationStrategy.TO_SELF -> emptyList()
         }
+
+        return listOfNotNull(thisCandidate) + remainingCandidates
     }
 
     /**
@@ -74,25 +60,19 @@ class DelegationResolver {
         closure: ClosureExpression,
         methodName: String,
         strategy: DelegationStrategy = DelegationStrategy.DEFAULT,
-    ): ResolvedMethod? {
-        val candidates = resolveReceiverCandidates(closure, strategy)
-
-        for (candidate in candidates) {
-            val method = findMethod(candidate.type, methodName)
-            if (method != null) {
-                return ResolvedMethod(method, candidate)
-            }
+    ): ResolvedMethod? = resolveReceiverCandidates(closure, strategy)
+        .asSequence()
+        .mapNotNull { candidate ->
+            findMethod(candidate.type, methodName)?.let { ResolvedMethod(it, candidate) }
         }
-
-        return null
-    }
+        .firstOrNull()
 
     /**
-     * Gets the type of the closure itself (this).
+     * Gets the type of 'this' in the closure - the enclosing class.
      */
     private fun getClosureType(closure: ClosureExpression): ClassNode? {
-        // Closure's 'this' is the closure itself - usually Closure<V>
-        return closure.type
+        // In Groovy, 'this' in a closure refers to the enclosing class, not the closure object
+        return closure.declaringClass
     }
 
     /**
