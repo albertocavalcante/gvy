@@ -169,7 +169,7 @@ class GroovySemanticTokenProviderTest {
     }
 
     @Test
-    fun `should tokenize type references`(): Unit = runBlocking {
+    fun `should tokenize type references in extends clause`(): Unit = runBlocking {
         val code = """
             class MyClass extends ArrayList {
             }
@@ -184,10 +184,12 @@ class GroovySemanticTokenProviderTest {
 
         // Should have CLASS token for MyClass declaration
         val classTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS }
-        assertTrue(classTokens.size >= 1, "Should have CLASS token for MyClass")
+        assertEquals(1, classTokens.size, "Should have exactly one CLASS token for MyClass declaration")
+        assertEquals("MyClass".length, classTokens.first().length)
 
-        // Note: Type references in field declarations may not always have position info in the AST
-        // This is a known limitation of the Groovy AST - some type nodes don't have source positions
+        // Note: ArrayList (superclass reference) may not have position info in the AST.
+        // This is a known limitation - some type references from the standard library
+        // don't have source positions. We verify the declared class is tokenized correctly.
     }
 
     @Test
