@@ -8,7 +8,9 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
@@ -135,7 +137,8 @@ object GroovySemanticTokenProvider {
                     is VariableExpression -> visitVariableExpression(node, tokens)
                     is PropertyExpression -> visitPropertyExpression(node, tokens)
                     is ClosureExpression -> visitClosureExpression(node, tokens)
-                    // Other node types handled by class visitor
+                    is MethodCallExpression -> visitMethodCallExpression(node, tokens)
+                    is StaticMethodCallExpression -> visitStaticMethodCallExpression(node, tokens)
                 }
             }
 
@@ -146,8 +149,8 @@ object GroovySemanticTokenProvider {
             logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
         } catch (e: IllegalStateException) {
             logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
-        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
-            // Catch remaining runtime exceptions to prevent LSP crashes
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            // Catch remaining exceptions to prevent LSP crashes
             logger.error(
                 "Unexpected error generating semantic tokens for {}: {} - {}",
                 uri,
@@ -432,6 +435,41 @@ object GroovySemanticTokenProvider {
         closure.parameters?.forEach { param ->
             visitParameter(param, tokens)
         }
+    }
+
+    /**
+     * Visit a method call expression (e.g., obj.method() or method()).
+     */
+    private fun visitMethodCallExpression(methodCall: MethodCallExpression, tokens: MutableList<SemanticToken>) {
+        val method = methodCall.method
+        if (method.lineNumber < 0) {
+            return
+        }
+
+        val methodName = methodCall.methodAsString ?: return
+
+        addTokenForNode(method, methodName.length, TokenTypes.METHOD, 0, tokens)
+    }
+
+    /**
+     * Visit a static method call expression (e.g., ClassName.method()).
+     */
+    private fun visitStaticMethodCallExpression(
+        staticCall: StaticMethodCallExpression,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        if (staticCall.lineNumber < 0) {
+            return
+        }
+
+        val methodName = staticCall.method
+        if (methodName.isNullOrEmpty()) {
+            return
+        }
+
+        // Static method calls use the expression's position directly
+        // Column points to the method name in most cases
+        addTokenForNode(staticCall, methodName.length, TokenTypes.METHOD, TokenModifiers.STATIC, tokens)
     }
 
     /**

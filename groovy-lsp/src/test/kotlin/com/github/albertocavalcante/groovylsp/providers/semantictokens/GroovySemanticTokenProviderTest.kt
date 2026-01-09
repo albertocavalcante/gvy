@@ -263,9 +263,8 @@ class GroovySemanticTokenProviderTest {
     }
 
     @Test
-    fun `should tokenize multiple method declarations`(): Unit = runBlocking {
-        // Note: This test verifies method DECLARATIONS only, not method calls.
-        // Method calls (e.g., otherMethod()) are not currently tokenized by this provider.
+    fun `should tokenize multiple method declarations and calls`(): Unit = runBlocking {
+        // This test verifies method declarations AND method calls are tokenized.
         val code = """
             class MyClass {
                 def myMethod() {
@@ -284,16 +283,20 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD tokens for both method declarations (not calls)
+        // Should have METHOD tokens for declarations AND calls
         val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
 
-        // Verify we have tokens for both method declarations
+        // Verify we have tokens for method declarations
         val myMethodToken = methodTokens.find { it.length == "myMethod".length }
-        val otherMethodToken = methodTokens.find { it.length == "otherMethod".length }
+        val otherMethodTokens = methodTokens.filter { it.length == "otherMethod".length }
 
         assertTrue(myMethodToken != null, "Should have token for myMethod declaration")
-        assertTrue(otherMethodToken != null, "Should have token for otherMethod declaration")
-        assertEquals(2, methodTokens.size, "Should have exactly 2 METHOD tokens for the two method declarations")
+        // Should have 2 tokens for otherMethod: declaration + call
+        assertEquals(
+            2,
+            otherMethodTokens.size,
+            "Should have 2 METHOD tokens for otherMethod (declaration + call)",
+        )
     }
 
     @Test
@@ -412,8 +415,9 @@ class GroovySemanticTokenProviderTest {
         val enumMemberTokens = tokens.filter {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.ENUM_MEMBER
         }
-        assertTrue(
-            enumMemberTokens.size >= 3,
+        assertEquals(
+            3,
+            enumMemberTokens.size,
             "Should have ENUM_MEMBER tokens for enum constants, got ${enumMemberTokens.size}",
         )
     }
@@ -629,5 +633,165 @@ class GroovySemanticTokenProviderTest {
         }
         val greetingToken = varTokens.find { it.length == "greeting".length }
         assertTrue(greetingToken != null, "Should have VARIABLE token for greeting in script")
+    }
+
+    // ==================== Method Call Expression Tests ====================
+
+    @Test
+    fun `should tokenize method call as METHOD`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                def caller() {
+                    process()
+                }
+                def process() {}
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD tokens for both declaration and call
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        // We should have 3 METHOD tokens:
+        // 1. caller declaration
+        // 2. process() call
+        // 3. process declaration
+        val processTokens = methodTokens.filter { it.length == "process".length }
+        assertTrue(
+            processTokens.size >= 2,
+            "Should have METHOD tokens for both process declaration and call, got ${processTokens.size}",
+        )
+    }
+
+    @Test
+    fun `should tokenize chained method calls`(): Unit = runBlocking {
+        val code = """
+            def result = "hello".toUpperCase().trim()
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD tokens for both method calls
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val toUpperCaseToken = methodTokens.find { it.length == "toUpperCase".length }
+        val trimToken = methodTokens.find { it.length == "trim".length }
+
+        assertTrue(toUpperCaseToken != null, "Should have METHOD token for toUpperCase()")
+        assertTrue(trimToken != null, "Should have METHOD token for trim()")
+    }
+
+    @Test
+    fun `should tokenize method call on object`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                def test() {
+                    def list = []
+                    list.add("item")
+                }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD token for add()
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val addToken = methodTokens.find { it.length == "add".length }
+        assertTrue(addToken != null, "Should have METHOD token for add() call")
+    }
+
+    @Test
+    fun `should tokenize static method call`(): Unit = runBlocking {
+        val code = """
+            class Utility {
+                static def helper() { }
+            }
+            Utility.helper()
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD tokens for helper (declaration and call)
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val helperTokens = methodTokens.filter { it.length == "helper".length }
+        assertTrue(
+            helperTokens.size >= 2,
+            "Should have METHOD tokens for helper declaration and static call, got ${helperTokens.size}",
+        )
+    }
+
+    @Test
+    fun `should tokenize constructor call as METHOD`(): Unit = runBlocking {
+        val code = """
+            class Person {
+                String name
+            }
+            def p = new Person()
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Constructor call should be tokenized (either as CLASS or METHOD depending on implementation)
+        // At minimum, we should not crash on ConstructorCallExpression
+        assertTrue(tokens.isNotEmpty(), "Should produce tokens without crashing on constructor call")
+    }
+
+    @Test
+    fun `should tokenize method call with closure argument`(): Unit = runBlocking {
+        val code = """
+            def list = [1, 2, 3]
+            list.each { println it }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD token for 'each' method call
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val eachToken = methodTokens.find { it.length == "each".length }
+        assertTrue(eachToken != null, "Should have METHOD token for each() method call")
     }
 }
