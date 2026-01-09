@@ -182,7 +182,12 @@ class WorkspaceManager {
         if (boundedUris.isEmpty()) return emptyList()
 
         val boundedPaths = boundedUris.mapNotNull { uri ->
-            runCatching { Path.of(uri) }.getOrNull()
+            runCatching { Path.of(uri) }
+                .getOrElse { throwable ->
+                    rethrowIfCancellationOrError(throwable)
+                    logger.debug("Failed to convert bounded URI to Path: {}", uri, throwable)
+                    null
+                }
         }.toSet()
 
         return workspaceSources.filter { it in boundedPaths }
