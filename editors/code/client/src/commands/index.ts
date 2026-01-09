@@ -1,9 +1,20 @@
-import { ExtensionContext, commands, Disposable, window, Uri } from "vscode";
+import {
+  ExtensionContext,
+  commands,
+  Disposable,
+  window,
+  Uri,
+  ProgressLocation,
+} from "vscode";
 import { restartClient, stopClient, getClient } from "../server/client";
 import { ExecuteCommandRequest } from "vscode-languageclient";
 import { UpdateService } from "../features/update/UpdateService";
 import { showStatusMenu, getStatusBarManager } from "../ui/statusBar";
 import { toggleDebugLogs, selectLogLevel } from "./logLevel";
+import { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
+
+// Re-export command constants for backward compatibility
+export { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
 
 let updateService: UpdateService | null = null;
 let serverOutputChannel: import("vscode").OutputChannel | null = null;
@@ -179,6 +190,44 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
     },
   );
   disposables.push(setLogLevelCommand);
+
+  // Register retry dependency resolution command
+  const retryDependencyResolutionCommand = commands.registerCommand(
+    RETRY_DEPENDENCY_RESOLUTION,
+    async () => {
+      const client = getClient();
+      if (!client) {
+        window.showWarningMessage(
+          "Groovy Language Server is not running. Please restart the server.",
+        );
+        return;
+      }
+
+      // Use withProgress to show a proper progress notification that auto-dismisses
+      await window.withProgress(
+        {
+          location: ProgressLocation.Notification,
+          title: "Retrying dependency resolution...",
+          cancellable: false,
+        },
+        async () => {
+          try {
+            await client.sendRequest(ExecuteCommandRequest.type, {
+              command: "groovy.resolveDependencies",
+              arguments: [],
+            });
+            // Success - progress notification will auto-dismiss
+          } catch (error) {
+            console.error("Failed to retry dependency resolution:", error);
+            window.showErrorMessage(
+              `Failed to retry dependency resolution: ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+          }
+        },
+      );
+    },
+  );
+  disposables.push(retryDependencyResolutionCommand);
 
   // Add all disposables to context subscriptions
   context.subscriptions.push(...disposables);

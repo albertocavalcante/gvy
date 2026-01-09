@@ -10,6 +10,7 @@ import {
   WorkDoneProgressEnd,
 } from "vscode-languageserver-protocol";
 import { getLanguageStatusManager } from "./languageStatus";
+import { RETRY_DEPENDENCY_RESOLUTION } from "../commands/constants";
 
 import {
   ServerState,
@@ -268,7 +269,12 @@ export class StatusBarManager implements vscode.Disposable {
 
     // Show error notification if errorDetails is present
     if (params.errorCode && params.errorDetails) {
-      showErrorNotification(params.errorCode, params.errorDetails);
+      showErrorNotification(
+        params.errorCode,
+        params.errorDetails,
+        this.outputChannel,
+        RETRY_DEPENDENCY_RESOLUTION,
+      );
     }
 
     // Map health + quiescent to ServerState

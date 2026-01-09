@@ -1,0 +1,8 @@
+org.gradle.api.GradleException: A problem occurred evaluating init script '/Users/user/.gradle/init.d/enterprise.gradle'.
+Caused by: org.gradle.api.GradleScriptException: A problem occurred evaluating init script.
+    at org.gradle.groovy.scripts.internal.DefaultScriptRunnerFactory$ScriptRunnerImpl.run(DefaultScriptRunnerFactory.java:91)
+    at org.gradle.configuration.DefaultInitScriptProcessor.process(DefaultInitScriptProcessor.java:43)
+    at org.gradle.initialization.DefaultSettingsLoader.findSettingsAndBuildSrc(DefaultSettingsLoader.java:107)
+Caused by: org.codehaus.groovy.runtime.InvokerInvocationException: groovy.lang.MissingPropertyException: No such property: cp_init for class: Script1
+    at org.codehaus.groovy.reflection.CachedMethod.invoke(CachedMethod.java:107)
+    at groovy.lang.MetaMethod.doMethodInvoke(MetaMethod.java:324)

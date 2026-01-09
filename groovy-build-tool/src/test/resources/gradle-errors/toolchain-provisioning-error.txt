@@ -1,0 +1,10 @@
+org.gradle.jvm.toolchain.internal.install.exceptions.ToolchainProvisioningException: Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: {languageVersion=17, vendor=any vendor, implementation=vendor-specific, nativeImageCapable=false}. Toolchain download repositories have not been configured.
+    at org.gradle.jvm.toolchain.internal.install.DefaultJavaToolchainProvisioningService.tryInstall(DefaultJavaToolchainProvisioningService.java:103)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.downloadToolchain(JavaToolchainQueryService.java:229)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.lambda$query$2(JavaToolchainQueryService.java:199)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.query(JavaToolchainQueryService.java:199)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.lambda$resolveToolchain$1(JavaToolchainQueryService.java:166)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.resolveToolchain(JavaToolchainQueryService.java:164)
+    at org.gradle.jvm.toolchain.internal.JavaToolchainQueryService.lambda$findMatchingToolchain$0(JavaToolchainQueryService.java:142)
+    at org.gradle.api.internal.provider.DefaultProvider.calculateOwnValue(DefaultProvider.java:73)
+    at org.gradle.api.internal.provider.AbstractMinimalProvider.calculateValue(AbstractMinimalProvider.java:115)

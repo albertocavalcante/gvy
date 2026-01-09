@@ -1,0 +1,5 @@
+org.gradle.api.resources.ResourceException: Could not get resource 'https://plugins.gradle.org/m2/com/gradle/develocity/com.gradle.develocity.gradle.plugin/4.0.1/com.gradle.develocity.gradle.plugin-4.0.1.pom'.
+Caused by: org.gradle.internal.resource.transport.http.HttpErrorStatusCodeException: Could not HEAD 'https://plugins.gradle.org/m2/com/gradle/develocity/com.gradle.develocity.gradle.plugin/4.0.1/com.gradle.develocity.gradle.plugin-4.0.1.pom'. Received status code 503 from server: Service Unavailable
+    at org.gradle.internal.resource.transport.http.HttpClientHelper.processResponse(HttpClientHelper.java:159)
+Caused by: java.net.ConnectException: Connection refused
+    at java.net.PlainSocketImpl.socketConnect(Native Method)

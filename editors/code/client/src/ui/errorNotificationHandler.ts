@@ -1,3 +1,4 @@
+import type { OutputChannel } from "vscode";
 import {
   ErrorDetails,
   GradleJdkIncompatibleError,
@@ -15,28 +16,68 @@ import {
 
 /**
  * Shows a VS Code notification for the given error details.
- * Displays up to 2 suggestions as action buttons.
+ * Displays up to 2 suggestions as action buttons, plus optional
+ * "Show Details" and "Retry Resolution" buttons.
  *
  * @param errorCode The error code (e.g., "GRADLE_JDK_INCOMPATIBLE")
  * @param errorDetails The detailed error information with suggestions
+ * @param outputChannel Optional output channel to show when "Show Details" is clicked
+ * @param retryCommand Optional command to execute when "Retry Resolution" is clicked
  */
 export async function showErrorNotification(
   errorCode: string,
   errorDetails: ErrorDetails,
+  outputChannel?: OutputChannel,
+  retryCommand?: string,
 ): Promise<void> {
   // Lazy import vscode to avoid breaking unit tests
   const vscode = await import("vscode");
 
   if (!errorDetails.suggestions || errorDetails.suggestions.length === 0) {
-    // No suggestions - show basic error message
-    vscode.window.showErrorMessage(
-      `Groovy Language Server Error: ${errorCode}`,
-    );
+    // No suggestions - show basic error message with optional retry/details
+    const basicActions: string[] = [];
+    if (retryCommand) basicActions.push("Retry Resolution");
+    if (outputChannel) basicActions.push("Show Details");
+
+    if (basicActions.length > 0) {
+      void (async () => {
+        try {
+          const selected = await vscode.window.showErrorMessage(
+            `Groovy Language Server Error: ${errorCode}`,
+            ...basicActions,
+          );
+          await handleSpecialActions(selected, outputChannel, retryCommand);
+        } catch (err: unknown) {
+          console.error("Error showing notification:", err);
+        }
+      })();
+    } else {
+      vscode.window.showErrorMessage(
+        `Groovy Language Server Error: ${errorCode}`,
+      );
+    }
     return;
   }
 
   const message = buildErrorMessage(errorCode, errorDetails);
-  const actions = errorDetails.suggestions.slice(0, 2); // Take first 2 suggestions as actions
+
+  // Limit total buttons to 3 max (VS Code UX guideline)
+  // Priority: Retry Resolution > first suggestion > Show Details
+  const actions: string[] = [];
+
+  if (retryCommand) {
+    actions.push("Retry Resolution");
+  }
+
+  // Add first suggestion if room available (max 3 total)
+  if (actions.length < 3 && errorDetails.suggestions.length > 0) {
+    actions.push(errorDetails.suggestions[0]);
+  }
+
+  // Add Show Details if room available (max 3 total)
+  if (actions.length < 3 && outputChannel) {
+    actions.push("Show Details");
+  }
 
   // Show notification with action buttons
   if (
@@ -44,19 +85,74 @@ export async function showErrorNotification(
     errorDetails.type === "GROOVY_JDK_INCOMPATIBLE" ||
     errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED"
   ) {
-    vscode.window.showErrorMessage(message, ...actions).then((selected) => {
-      if (selected) {
-        handleActionClick(selected);
+    void (async () => {
+      try {
+        const selected = await vscode.window.showErrorMessage(
+          message,
+          ...actions,
+        );
+        if (selected) {
+          const handled = await handleSpecialActions(
+            selected,
+            outputChannel,
+            retryCommand,
+          );
+          if (!handled) {
+            await handleActionClick(selected);
+          }
+        }
+      } catch (err: unknown) {
+        console.error("Error showing error notification:", err);
       }
-    });
+    })();
   } else {
     // For less critical errors, use warning instead
-    vscode.window.showWarningMessage(message, ...actions).then((selected) => {
-      if (selected) {
-        handleActionClick(selected);
+    void (async () => {
+      try {
+        const selected = await vscode.window.showWarningMessage(
+          message,
+          ...actions,
+        );
+        if (selected) {
+          const handled = await handleSpecialActions(
+            selected,
+            outputChannel,
+            retryCommand,
+          );
+          if (!handled) {
+            await handleActionClick(selected);
+          }
+        }
+      } catch (err: unknown) {
+        console.error("Error showing warning notification:", err);
       }
-    });
+    })();
   }
+}
+
+/**
+ * Handles the special "Show Details" and "Retry Resolution" action buttons.
+ * Returns true if the action was handled, false otherwise.
+ */
+async function handleSpecialActions(
+  action: string | undefined,
+  outputChannel?: OutputChannel,
+  retryCommand?: string,
+): Promise<boolean> {
+  if (!action) return false;
+
+  if (action === "Show Details" && outputChannel) {
+    outputChannel.show(true);
+    return true;
+  }
+
+  if (action === "Retry Resolution" && retryCommand) {
+    const vscode = await import("vscode");
+    await vscode.commands.executeCommand(retryCommand);
+    return true;
+  }
+
+  return false;
 }
 
 /**
