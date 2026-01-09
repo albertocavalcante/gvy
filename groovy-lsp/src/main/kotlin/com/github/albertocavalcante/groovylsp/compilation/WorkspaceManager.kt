@@ -168,6 +168,27 @@ class WorkspaceManager {
         ConfigurationFingerprint.compute(dependencyClasspath.toList(), sourceRoots.toList())
 
     /**
+     * Gets bounded workspace sources filtered by the given URIs.
+     *
+     * This enables O(k) compilation instead of O(n) by only including relevant files
+     * based on dependency information from the DependencyGraph.
+     *
+     * Issue #743: Normalize parse modes and cache authority for cross-file resolution
+     *
+     * @param boundedUris Set of URIs to filter workspace sources by
+     * @return List of paths that match the bounded URIs
+     */
+    fun getBoundedWorkspaceSources(boundedUris: Set<URI>): List<Path> {
+        if (boundedUris.isEmpty()) return emptyList()
+
+        val boundedPaths = boundedUris.mapNotNull { uri ->
+            runCatching { Path.of(uri) }.getOrNull()
+        }.toSet()
+
+        return workspaceSources.filter { it in boundedPaths }
+    }
+
+    /**
      * Gets workspace source URIs for indexing.
      * Converts Path objects to URI objects for use in compilation service.
      */

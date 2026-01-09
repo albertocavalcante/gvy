@@ -128,6 +128,40 @@ class DependencyGraph {
     fun getDependencies(uri: URI): Set<URI> = dependencies[uri]?.toSet() ?: emptySet()
 
     /**
+     * Gets bounded compilation sources for a file - its direct dependencies and dependents.
+     *
+     * This provides a bounded set of workspace sources for compilation, avoiding
+     * the O(n²) behavior of including ALL workspace sources.
+     *
+     * Issue #743: Normalize parse modes and cache authority for cross-file resolution
+     *
+     * @param uri The file being compiled
+     * @return Set of URIs that should be included in compilation (direct deps + dependents)
+     */
+    fun getCompilationSources(uri: URI): Set<URI> {
+        val directDependencies = getDependencies(uri)
+        val directDependents = dependents[uri]?.toSet() ?: emptySet()
+
+        val result = directDependencies + directDependents
+
+        logger.debug(
+            "Bounded compilation sources for {}: {} dependencies + {} dependents = {} total",
+            uri,
+            directDependencies.size,
+            directDependents.size,
+            result.size,
+        )
+
+        return result
+    }
+
+    /**
+     * Checks if the dependency graph has any information about a file.
+     * Used to determine if bounded compilation is possible.
+     */
+    fun hasInfo(uri: URI): Boolean = dependencies.containsKey(uri) || dependents.containsKey(uri)
+
+    /**
      * Gets all files affected by changes to the given files.
      *
      * This includes:

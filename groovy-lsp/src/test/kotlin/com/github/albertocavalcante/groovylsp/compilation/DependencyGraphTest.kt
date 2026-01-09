@@ -319,4 +319,84 @@ class DependencyGraphTest {
         assertEquals(6, affected.size, "All files should be affected when F changes")
         assertTrue(affected.containsAll(setOf(a, b, c, d, e, f)))
     }
+
+    // Tests for getCompilationSources (Issue #743 - bounded workspace selection)
+
+    @Test
+    fun `getCompilationSources returns direct dependencies and dependents`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+        val fileB = URI.create("file:///FileB.groovy")
+        val fileC = URI.create("file:///FileC.groovy")
+
+        // A depends on B, C depends on A
+        // So A's compilation sources should be: B (dependency) + C (dependent)
+        graph.addDependency(fileA, fileB)
+        graph.addDependency(fileC, fileA)
+
+        val compilationSources = graph.getCompilationSources(fileA)
+
+        assertEquals(2, compilationSources.size)
+        assertTrue(compilationSources.contains(fileB), "Should include dependency B")
+        assertTrue(compilationSources.contains(fileC), "Should include dependent C")
+        assertFalse(compilationSources.contains(fileA), "Should not include the file itself")
+    }
+
+    @Test
+    fun `getCompilationSources returns empty set for file with no dependencies`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+
+        val compilationSources = graph.getCompilationSources(fileA)
+
+        assertTrue(compilationSources.isEmpty())
+    }
+
+    @Test
+    fun `getCompilationSources only returns direct dependents not transitive`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+        val fileB = URI.create("file:///FileB.groovy")
+        val fileC = URI.create("file:///FileC.groovy")
+
+        // B depends on A, C depends on B (transitive dependency on A)
+        graph.addDependency(fileB, fileA)
+        graph.addDependency(fileC, fileB)
+
+        val compilationSources = graph.getCompilationSources(fileA)
+
+        assertEquals(1, compilationSources.size)
+        assertTrue(compilationSources.contains(fileB), "Should include direct dependent B")
+        assertFalse(compilationSources.contains(fileC), "Should NOT include transitive dependent C")
+    }
+
+    @Test
+    fun `hasInfo returns true for file with dependencies`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+        val fileB = URI.create("file:///FileB.groovy")
+
+        graph.addDependency(fileA, fileB)
+
+        assertTrue(graph.hasInfo(fileA), "File with dependencies should have info")
+    }
+
+    @Test
+    fun `hasInfo returns true for file with dependents`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+        val fileB = URI.create("file:///FileB.groovy")
+
+        graph.addDependency(fileA, fileB)
+
+        assertTrue(graph.hasInfo(fileB), "File with dependents should have info")
+    }
+
+    @Test
+    fun `hasInfo returns false for unknown file`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///FileA.groovy")
+
+        assertFalse(graph.hasInfo(fileA), "Unknown file should have no info")
+    }
 }
