@@ -3,6 +3,12 @@
 # This workflow supports BIDIRECTIONAL sync between the gvy monorepo and the
 # standalone rewrite-codenarc repository.
 #
+# Authentication:
+#   Uses a GitHub deploy key (COPYBARA_REWRITE_CODENARC_SSH_KEY secret) configured
+#   on the rewrite-codenarc repository. Deploy keys are repo-specific - each
+#   destination repository requires its own deploy key. This key is separate from
+#   the vscode-groovy deploy key (COPYBARA_SSH_KEY).
+#
 # Standalone repo structure is assembled from:
 #   - refactor/openrewrite/rewrite-codenarc/** (module source code)
 #   - infra/copybara/rewrite-codenarc/** (standalone gradle config)

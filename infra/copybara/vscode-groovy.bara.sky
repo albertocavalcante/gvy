@@ -4,6 +4,11 @@
 # vscode-groovy repository. The mirror is read-only; all development happens
 # in the monorepo.
 #
+# Authentication:
+#   Uses a GitHub deploy key (COPYBARA_SSH_KEY secret) configured on the
+#   vscode-groovy repository. Deploy keys are repo-specific - this key only
+#   grants push access to vscode-groovy, not other repositories.
+#
 # Usage: copybara copy.bara.sky push-to-vscode-groovy
 #
 # URL Transformation Strategy:
