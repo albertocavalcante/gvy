@@ -1,0 +1,8 @@
+org.gradle.api.GradleException: Could not determine the dependencies of task ':compileGroovy'.
+Caused by: java.lang.IllegalArgumentException: Unsupported class file major version 65
+    at org.objectweb.asm.ClassReader.<init>(ClassReader.java:189)
+    at org.objectweb.asm.ClassReader.<init>(ClassReader.java:170)
+    at org.objectweb.asm.ClassReader.<init>(ClassReader.java:156)
+    at org.objectweb.asm.ClassReader.<init>(ClassReader.java:284)
+    at org.gradle.api.internal.DefaultClassPathProvider.findClasspathEntry(DefaultClassPathProvider.java:96)
+    at org.gradle.api.internal.DefaultClassPathProvider.getClasspath(DefaultClassPathProvider.java:65)

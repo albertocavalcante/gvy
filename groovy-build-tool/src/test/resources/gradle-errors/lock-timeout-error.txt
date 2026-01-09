@@ -1,0 +1,9 @@
+org.gradle.api.GradleException: Timeout waiting to lock daemon addresses registry. It is currently in use by another Gradle instance.
+Owner PID: 12345
+Our PID: 67890
+Owner Operation:
+Our operation: get daemon status
+Lock file: /Users/user/.gradle/daemon/8.5/registry.bin.lock
+    at org.gradle.launcher.daemon.registry.DaemonRegistry$TimeoutLock.lock(DaemonRegistry.java:102)
+    at org.gradle.launcher.daemon.registry.PersistentDaemonRegistry.readRegistry(PersistentDaemonRegistry.java:72)
+    at org.gradle.launcher.daemon.client.DaemonConnector.lookupDaemons(DaemonConnector.java:85)

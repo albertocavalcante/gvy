@@ -5,6 +5,12 @@ import { UpdateService } from "../features/update/UpdateService";
 import { showStatusMenu, getStatusBarManager } from "../ui/statusBar";
 import { toggleDebugLogs, selectLogLevel } from "./logLevel";
 
+/**
+ * Command ID for retrying dependency resolution.
+ * Exported for use by error notification handler.
+ */
+export const RETRY_DEPENDENCY_RESOLUTION = "groovy.retryDependencyResolution";
+
 let updateService: UpdateService | null = null;
 let serverOutputChannel: import("vscode").OutputChannel | null = null;
 
@@ -179,6 +185,34 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
     },
   );
   disposables.push(setLogLevelCommand);
+
+  // Register retry dependency resolution command
+  const retryDependencyResolutionCommand = commands.registerCommand(
+    RETRY_DEPENDENCY_RESOLUTION,
+    async () => {
+      const client = getClient();
+      if (!client) {
+        window.showWarningMessage(
+          "Groovy Language Server is not running. Please restart the server.",
+        );
+        return;
+      }
+
+      try {
+        window.showInformationMessage("Retrying dependency resolution...");
+        await client.sendRequest(ExecuteCommandRequest.type, {
+          command: "groovy.resolveDependencies",
+          arguments: [],
+        });
+      } catch (error) {
+        console.error("Failed to retry dependency resolution:", error);
+        window.showErrorMessage(
+          `Failed to retry dependency resolution: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      }
+    },
+  );
+  disposables.push(retryDependencyResolutionCommand);
 
   // Add all disposables to context subscriptions
   context.subscriptions.push(...disposables);

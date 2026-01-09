@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import com.github.albertocavalcante.groovylsp.buildtool.DependencyResolver
+import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
+import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.build.BuildEnvironment
@@ -95,7 +97,17 @@ class GradleDependencyResolver(
         }
 
         logger.error("Gradle dependency resolution failed: ${lastException?.message}", lastException)
-        return WorkspaceResolution(emptyList(), emptyList())
+
+        // Classify the error and return structured failure status so the client can show actionable messages
+        val failedStatus = if (lastException != null) {
+            failureAnalyzer.classifyException(lastException)
+        } else {
+            ResolutionStatus.Failed(
+                ResolutionCodes.DEPENDENCY_RESOLUTION_FAILED,
+                "Gradle resolution failed with unknown error",
+            )
+        }
+        return WorkspaceResolution(emptyList(), emptyList(), failedStatus)
     }
 
     /**
