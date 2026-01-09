@@ -1,8 +1,15 @@
 package com.github.albertocavalcante.gvy.semantics.delegation
 
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.Parameter
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
+import java.lang.reflect.Modifier
 
 /**
  * Tests for DelegationResolver - resolving implicit receivers in closures.
@@ -106,5 +113,143 @@ class DelegationResolverTest {
         // Given: pipeline { stage('Build') { sh 'make' } }
         // When: resolving 'sh' method
         // Then: should resolve to pipeline step
+    }
+
+    // ==================== Method Overload Resolution Tests ====================
+
+    @Test
+    fun `findMethod resolves overloaded method with no parameters`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val method = resolver.findMethodWithParams(classNode, "process", emptyList())
+
+        assertNotNull(method, "Should find method with no parameters")
+        assertEquals(0, method!!.parameters.size)
+    }
+
+    @Test
+    fun `findMethod resolves overloaded method with one String parameter`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val method = resolver.findMethodWithParams(classNode, "process", listOf("java.lang.String"))
+
+        assertNotNull(method, "Should find method with String parameter")
+        assertEquals(1, method!!.parameters.size)
+        assertEquals("java.lang.String", method.parameters[0].type.name)
+    }
+
+    @Test
+    fun `findMethod resolves overloaded method with two parameters`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val method = resolver.findMethodWithParams(classNode, "process", listOf("java.lang.String", "int"))
+
+        assertNotNull(method, "Should find method with String and int parameters")
+        assertEquals(2, method!!.parameters.size)
+        assertEquals("java.lang.String", method.parameters[0].type.name)
+        assertEquals("int", method.parameters[1].type.name)
+    }
+
+    @Test
+    fun `findMethod returns null when parameter count does not match any overload`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val method = resolver.findMethodWithParams(
+            classNode,
+            "process",
+            listOf("java.lang.String", "int", "boolean"),
+        )
+
+        assertNull(method, "Should return null when no matching overload exists")
+    }
+
+    @Test
+    fun `findMethod distinguishes between different parameter types`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val intMethod = resolver.findMethodWithParams(classNode, "process", listOf("int"))
+        val stringMethod = resolver.findMethodWithParams(classNode, "process", listOf("java.lang.String"))
+
+        assertNotNull(intMethod, "Should find method with int parameter")
+        assertNotNull(stringMethod, "Should find method with String parameter")
+        assertEquals("int", intMethod!!.parameters[0].type.name)
+        assertEquals("java.lang.String", stringMethod!!.parameters[0].type.name)
+    }
+
+    @Test
+    fun `findMethod without parameter types falls back to first match`() {
+        val classNode = createClassWithOverloadedMethods()
+        val resolver = DelegationResolver()
+
+        val method = resolver.findMethodWithParams(classNode, "process", null)
+
+        assertNotNull(method, "Should return first matching method when no params specified")
+    }
+
+    // Helper methods for tests
+
+    /**
+     * Creates a test class with overloaded methods for testing method resolution.
+     */
+    private fun createClassWithOverloadedMethods(): ClassNode {
+        val classNode = ClassNode("TestClass", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+
+        // process() - no parameters
+        classNode.addMethod(
+            MethodNode(
+                "process",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                emptyArray(),
+                emptyArray(),
+                null,
+            ),
+        )
+
+        // process(String) - one String parameter
+        classNode.addMethod(
+            MethodNode(
+                "process",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(Parameter(ClassHelper.STRING_TYPE, "name")),
+                emptyArray(),
+                null,
+            ),
+        )
+
+        // process(int) - one int parameter
+        classNode.addMethod(
+            MethodNode(
+                "process",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(Parameter(ClassHelper.int_TYPE, "count")),
+                emptyArray(),
+                null,
+            ),
+        )
+
+        // process(String, int) - two parameters
+        classNode.addMethod(
+            MethodNode(
+                "process",
+                Modifier.PUBLIC,
+                ClassHelper.VOID_TYPE,
+                arrayOf(
+                    Parameter(ClassHelper.STRING_TYPE, "name"),
+                    Parameter(ClassHelper.int_TYPE, "count"),
+                ),
+                emptyArray(),
+                null,
+            ),
+        )
+
+        return classNode
     }
 }
