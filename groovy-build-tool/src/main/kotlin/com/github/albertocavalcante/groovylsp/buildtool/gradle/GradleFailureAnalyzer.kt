@@ -3,7 +3,9 @@ package com.github.albertocavalcante.groovylsp.buildtool.gradle
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 
-class GradleFailureAnalyzer {
+class GradleFailureAnalyzer(
+    private val compatibilityService: GradleJdkCompatibilityService = GradleJdkCompatibilityService.instance,
+) {
 
     /**
      * Specifically detects the "Unsupported class file major version" error which indicates
@@ -156,60 +158,18 @@ class GradleFailureAnalyzer {
 
     /**
      * Maps class file major version to JDK version.
-     * See: https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html#jvms-4.1
+     * Data loaded from class-file-versions.json resource.
+     * @see GradleJdkCompatibilityService
      */
-    private fun majorVersionToJdk(majorVersion: Int): Int = when (majorVersion) {
-        45 -> 1 // JDK 1.1
-        46 -> 2 // JDK 1.2
-        47 -> 3 // JDK 1.3
-        48 -> 4 // JDK 1.4
-        49 -> 5 // JDK 5
-        50 -> 6 // JDK 6
-        51 -> 7 // JDK 7
-        52 -> 8 // JDK 8
-        53 -> 9 // JDK 9
-        54 -> 10 // JDK 10
-        55 -> 11 // JDK 11
-        56 -> 12 // JDK 12
-        57 -> 13 // JDK 13
-        58 -> 14 // JDK 14
-        59 -> 15 // JDK 15
-        60 -> 16 // JDK 16
-        61 -> 17 // JDK 17
-        62 -> 18 // JDK 18
-        63 -> 19 // JDK 19
-        64 -> 20 // JDK 20
-        65 -> 21 // JDK 21
-        66 -> 22 // JDK 22
-        67 -> 23 // JDK 23
-        68 -> 24 // JDK 24
-        69 -> 25 // JDK 25
-        else -> majorVersion - 44 // Formula for JDK 9+
-    }
+    private fun majorVersionToJdk(majorVersion: Int): Int = compatibilityService.majorVersionToJdk(majorVersion)
 
     /**
      * Determines the minimum Gradle version required for a given JDK version.
+     * Data loaded from gradle-jdk-compatibility.json resource.
+     * @see GradleJdkCompatibilityService
      */
-    private fun minGradleVersionForJdk(jdkVersion: Int): String? = when {
-        jdkVersion <= 8 -> null // Very old Gradle versions, not worth specifying
-        jdkVersion == 9 -> "4.3"
-        jdkVersion == 10 -> "4.7"
-        jdkVersion == 11 -> "5.0"
-        jdkVersion == 12 -> "5.4"
-        jdkVersion == 13 -> "6.0"
-        jdkVersion == 14 -> "6.3"
-        jdkVersion == 15 -> "6.7"
-        jdkVersion == 16 -> "7.0"
-        jdkVersion == 17 -> "7.3"
-        jdkVersion == 18 -> "7.5"
-        jdkVersion == 19 -> "7.6"
-        jdkVersion == 20 -> "8.3"
-        jdkVersion == 21 -> "8.5"
-        jdkVersion == 22 -> "8.8"
-        jdkVersion == 23 -> "8.10"
-        jdkVersion >= 24 -> "8.12" // Latest known mapping
-        else -> null
-    }
+    private fun minGradleVersionForJdk(jdkVersion: Int): String? =
+        compatibilityService.minGradleVersionForJdk(jdkVersion)
 
     private fun buildGradleJdkSuggestions(jdkVersion: Int, minGradleVersion: String?): List<String> {
         val suggestions = mutableListOf<String>()

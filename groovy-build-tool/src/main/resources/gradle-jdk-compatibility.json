@@ -1,0 +1,32 @@
+{
+  "_comment": "Gradle/JDK compatibility matrix. Source: https://docs.gradle.org/current/userguide/compatibility.html",
+  "compatibility": [
+    { "jdk": 8, "minGradle": null, "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 9, "minGradle": "4.3", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 10, "minGradle": "4.7", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 11, "minGradle": "5.0", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 12, "minGradle": "5.4", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 13, "minGradle": "6.0", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 14, "minGradle": "6.3", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 15, "minGradle": "6.7", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 16, "minGradle": "7.0", "maxGradle": "8.14", "notes": "Gradle 9+ requires JDK 17+" },
+    { "jdk": 17, "minGradle": "7.2", "maxGradle": null },
+    { "jdk": 18, "minGradle": "7.5", "maxGradle": null },
+    { "jdk": 19, "minGradle": "7.6", "maxGradle": null },
+    { "jdk": 20, "minGradle": "8.3", "maxGradle": null },
+    { "jdk": 21, "minGradle": "8.5", "maxGradle": null },
+    { "jdk": 22, "minGradle": "8.8", "maxGradle": null },
+    { "jdk": 23, "minGradle": "8.10", "maxGradle": null },
+    { "jdk": 24, "minGradle": "8.14", "maxGradle": null },
+    { "jdk": 25, "minGradle": "9.1", "maxGradle": null }
+  ],
+  "gradleRuntimeRequirements": {
+    "_comment": "Minimum JDK required to RUN Gradle itself (not for compiling project code)",
+    "9.0": 17,
+    "8.0": 8,
+    "7.0": 8,
+    "6.0": 8,
+    "5.0": 8,
+    "4.0": 7
+  }
+}

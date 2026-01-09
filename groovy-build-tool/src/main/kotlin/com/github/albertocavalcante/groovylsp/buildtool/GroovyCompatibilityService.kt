@@ -159,6 +159,7 @@ class GroovyCompatibilityService {
      * - "4.0.22" -> "4.0"
      * - "3.0.0-rc-1" -> "3.0"
      * - "2.5.8" -> "2.5"
+     * - "4" -> "4.0" (assumes .0 for single-part versions)
      */
     private fun parseGroovyMajorVersion(version: String): String? = runCatching {
         // Remove any suffix like -rc-1, -SNAPSHOT, etc.
@@ -166,7 +167,8 @@ class GroovyCompatibilityService {
         val parts = cleanVersion.split(".")
 
         when {
-            parts.size < 2 -> null
+            parts.isEmpty() -> null
+            parts.size == 1 -> "${parts[0]}.0" // Assume .0 for single-part versions
             // For 2.4.x and 2.5.x, keep both parts
             parts[0] == "2" && (parts[1] == "4" || parts[1] == "5") -> "${parts[0]}.${parts[1]}"
             // For all others (3.0.x, 4.0.x, 5.0.x), use major.minor

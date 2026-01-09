@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -72,7 +73,7 @@ class DependencyManagerTest {
     }
 
     @Test
-    fun `should call onComplete with failed status instead of onError for classified errors`() = runBlocking {
+    fun `should call onComplete with failed status instead of onError for classified errors`(): Unit = runBlocking {
         val jdkMismatchError = RuntimeException("Unsupported class file major version 65")
 
         val mockBuildTool = mockk<BuildTool> {

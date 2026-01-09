@@ -97,7 +97,6 @@ class GroovyVersionDetector {
             return null
         }
 
-        @Suppress("TooGenericExceptionCaught")
         return try {
             val content = Files.readString(buildFile)
             val source = buildFile.fileName.toString()
@@ -125,7 +124,7 @@ class GroovyVersionDetector {
             }
 
             null
-        } catch (e: Exception) {
+        } catch (e: java.io.IOException) {
             logger.error("Failed to read Gradle build file: $buildFile", e)
             null
         }
@@ -166,14 +165,14 @@ class GroovyVersionDetector {
      * Examples:
      * - "4.0.15" -> "4.0"
      * - "3.0.9-beta-1" -> "3.0"
-     * - "4" -> "4"
+     * - "4" -> "4.0" (assumes .0 for single-part versions)
      * - "4.0" -> "4.0"
      */
     private fun extractMajorMinor(version: String): String {
         val parts = version.split(".", "-", limit = 3)
         return when {
             parts.size >= 2 -> "${parts[0]}.${parts[1]}"
-            parts.isNotEmpty() -> parts[0]
+            parts.isNotEmpty() -> "${parts[0]}.0" // Assume .0 for single-part versions
             else -> version
         }
     }
@@ -211,20 +210,23 @@ class GroovyVersionDetector {
      * - implementation("org.apache.groovy:groovy:4.0.15")
      */
     private fun extractGroovyDependencyVersion(content: String): String? {
+        // Common prefix for dependency configurations
+        val configPrefix = """\b(?:implementation|api|compile|compileOnly|runtimeOnly)"""
+
         val patterns = listOf(
-            // Groovy DSL with single quotes
-            """['"]org\.apache\.groovy:groovy(?:-all)?:([^'"]+)['"]""".toRegex(),
-            """['"]org\.codehaus\.groovy:groovy(?:-all)?:([^'"]+)['"]""".toRegex(),
-            // Kotlin DSL with parentheses
-            """\("org\.apache\.groovy:groovy(?:-all)?:([^"]+)"\)""".toRegex(),
-            """\("org\.codehaus\.groovy:groovy(?:-all)?:([^"]+)"\)""".toRegex(),
+            // Groovy DSL with single quotes - anchored to dependency configuration
+            """$configPrefix\s+['"]org\.apache\.groovy:groovy(?:-all)?:([^'"]+)['"]""".toRegex(),
+            """$configPrefix\s+['"]org\.codehaus\.groovy:groovy(?:-all)?:([^'"]+)['"]""".toRegex(),
+            // Kotlin DSL with parentheses - anchored to dependency configuration
+            """$configPrefix\s*\(\s*"org\.apache\.groovy:groovy(?:-all)?:([^"]+)"\s*\)""".toRegex(),
+            """$configPrefix\s*\(\s*"org\.codehaus\.groovy:groovy(?:-all)?:([^"]+)"\s*\)""".toRegex(),
         )
 
         for (pattern in patterns) {
             val match = pattern.find(content)
             if (match != null) {
                 val version = match.groupValues[1]
-                // Skip if it's a property reference like $groovyVersion
+                // Skip if it's a property reference like $groovyVersion or ${groovyVersion}
                 if (!version.startsWith("$")) {
                     return version
                 }

@@ -225,7 +225,7 @@ class GroovyVersionDetectorTest {
 
         assertNotNull(result)
         assertEquals("4", result?.version)
-        assertEquals("4", result?.majorMinor)
+        assertEquals("4.0", result?.majorMinor)
     }
 
     @Test
