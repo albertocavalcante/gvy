@@ -37,6 +37,60 @@ class GroovySemanticTokenProviderTest {
         tempWorkspace.toFile().deleteRecursively()
     }
 
+    /**
+     * Finds the position of an identifier in the code string with word boundary matching.
+     * Returns a Pair of (0-based line, 0-based column) or null if not found.
+     *
+     * @param code The source code string
+     * @param identifier The identifier to find
+     * @param occurrence Which occurrence to find (1-based, default 1)
+     */
+    private fun findPosition(code: String, identifier: String, occurrence: Int = 1): Pair<Int, Int>? {
+        val lines = code.lines()
+        var found = 0
+        for ((lineIndex, line) in lines.withIndex()) {
+            var startIndex = 0
+            while (true) {
+                val col = line.indexOf(identifier, startIndex)
+                if (col < 0) break
+                // Check word boundaries to avoid matching substrings (e.g., "it" in "list")
+                val beforeOk = col == 0 || !line[col - 1].isLetterOrDigit()
+                val afterOk = col + identifier.length >= line.length ||
+                    !line[col + identifier.length].isLetterOrDigit()
+                if (beforeOk && afterOk) {
+                    found++
+                    if (found == occurrence) {
+                        return Pair(lineIndex, col)
+                    }
+                }
+                startIndex = col + 1
+            }
+        }
+        return null
+    }
+
+    /**
+     * Finds a token by its expected position and length.
+     */
+    private fun List<GroovySemanticTokenProvider.SemanticToken>.findByPosition(
+        line: Int,
+        startChar: Int,
+        length: Int,
+    ): GroovySemanticTokenProvider.SemanticToken? = find {
+        it.line == line && it.startChar == startChar && it.length == length
+    }
+
+    /**
+     * Finds a token by line and length, with flexible column matching.
+     * This is useful because AST positions may point to declaration start rather than identifier start.
+     */
+    private fun List<GroovySemanticTokenProvider.SemanticToken>.findByLineAndLength(
+        line: Int,
+        length: Int,
+    ): GroovySemanticTokenProvider.SemanticToken? = find {
+        it.line == line && it.length == length
+    }
+
     @Test
     fun `should tokenize class name declaration`(): Unit = runBlocking {
         val code = """
@@ -97,8 +151,9 @@ class GroovySemanticTokenProviderTest {
         val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
         assertTrue(methodTokens.isNotEmpty(), "Should have METHOD token for method declaration")
 
-        val myMethodToken = methodTokens.find { it.length == "myMethod".length }
-        assertTrue(myMethodToken != null, "Should have token for myMethod")
+        val (expectedLine, _) = findPosition(code, "myMethod")!!
+        val myMethodToken = methodTokens.findByLineAndLength(expectedLine, "myMethod".length)
+        assertTrue(myMethodToken != null, "Should have token for myMethod on line $expectedLine")
     }
 
     @Test
@@ -120,8 +175,9 @@ class GroovySemanticTokenProviderTest {
         val variableTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE }
         assertTrue(variableTokens.isNotEmpty(), "Should have VARIABLE token for local variable")
 
-        val localVarToken = variableTokens.find { it.length == "localVar".length }
-        assertTrue(localVarToken != null, "Should have token for localVar")
+        val (expectedLine, _) = findPosition(code, "localVar")!!
+        val localVarToken = variableTokens.findByLineAndLength(expectedLine, "localVar".length)
+        assertTrue(localVarToken != null, "Should have token for localVar on line $expectedLine")
     }
 
     @Test
@@ -286,16 +342,27 @@ class GroovySemanticTokenProviderTest {
         // Should have METHOD tokens for declarations AND calls
         val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
 
-        // Verify we have tokens for method declarations
-        val myMethodToken = methodTokens.find { it.length == "myMethod".length }
-        val otherMethodTokens = methodTokens.filter { it.length == "otherMethod".length }
+        // Verify we have tokens for method declarations using line-based matching
+        // Note: AST positions may point to declaration start (def) rather than method name,
+        // so we use line + length matching. See issue #769 for position accuracy fix.
+        val (myMethodLine, _) = findPosition(code, "myMethod")!!
+        val myMethodToken = methodTokens.findByLineAndLength(myMethodLine, "myMethod".length)
+        assertTrue(myMethodToken != null, "Should have token for myMethod declaration on line $myMethodLine")
 
-        assertTrue(myMethodToken != null, "Should have token for myMethod declaration")
-        // Should have 2 tokens for otherMethod: declaration + call
-        assertEquals(
-            2,
-            otherMethodTokens.size,
-            "Should have 2 METHOD tokens for otherMethod (declaration + call)",
+        // otherMethod should have 2 tokens: declaration + call
+        val (otherMethodCallLine, _) = findPosition(code, "otherMethod", 1)!! // call
+        val (otherMethodDeclLine, _) = findPosition(code, "otherMethod", 2)!! // declaration
+
+        val otherMethodCallToken = methodTokens.findByLineAndLength(otherMethodCallLine, "otherMethod".length)
+        val otherMethodDeclToken = methodTokens.findByLineAndLength(otherMethodDeclLine, "otherMethod".length)
+
+        assertTrue(
+            otherMethodCallToken != null,
+            "Should have METHOD token for otherMethod() call on line $otherMethodCallLine",
+        )
+        assertTrue(
+            otherMethodDeclToken != null,
+            "Should have METHOD token for otherMethod declaration on line $otherMethodDeclLine",
         )
     }
 
@@ -537,8 +604,9 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.PARAMETER ||
                 it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE
         }
-        val itToken = paramOrVarTokens.find { it.length == "it".length }
-        assertTrue(itToken != null, "Should have token for implicit 'it' parameter")
+        val (itLine, _) = findPosition(code, "it")!!
+        val itToken = paramOrVarTokens.findByLineAndLength(itLine, "it".length)
+        assertTrue(itToken != null, "Should have token for implicit 'it' parameter on line $itLine")
     }
 
     @Test
@@ -631,8 +699,9 @@ class GroovySemanticTokenProviderTest {
         val varTokens = tokens.filter {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE
         }
-        val greetingToken = varTokens.find { it.length == "greeting".length }
-        assertTrue(greetingToken != null, "Should have VARIABLE token for greeting in script")
+        val (greetingLine, _) = findPosition(code, "greeting")!!
+        val greetingToken = varTokens.findByLineAndLength(greetingLine, "greeting".length)
+        assertTrue(greetingToken != null, "Should have VARIABLE token for greeting on line $greetingLine")
     }
 
     // ==================== Method Call Expression Tests ====================
@@ -689,11 +758,13 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        val toUpperCaseToken = methodTokens.find { it.length == "toUpperCase".length }
-        val trimToken = methodTokens.find { it.length == "trim".length }
+        val (toUpperLine, _) = findPosition(code, "toUpperCase")!!
+        val (trimLine, _) = findPosition(code, "trim")!!
+        val toUpperCaseToken = methodTokens.findByLineAndLength(toUpperLine, "toUpperCase".length)
+        val trimToken = methodTokens.findByLineAndLength(trimLine, "trim".length)
 
-        assertTrue(toUpperCaseToken != null, "Should have METHOD token for toUpperCase()")
-        assertTrue(trimToken != null, "Should have METHOD token for trim()")
+        assertTrue(toUpperCaseToken != null, "Should have METHOD token for toUpperCase() on line $toUpperLine")
+        assertTrue(trimToken != null, "Should have METHOD token for trim() on line $trimLine")
     }
 
     @Test
@@ -719,8 +790,9 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        val addToken = methodTokens.find { it.length == "add".length }
-        assertTrue(addToken != null, "Should have METHOD token for add() call")
+        val (addLine, _) = findPosition(code, "add")!!
+        val addToken = methodTokens.findByLineAndLength(addLine, "add".length)
+        assertTrue(addToken != null, "Should have METHOD token for add() call on line $addLine")
     }
 
     @Test
@@ -791,7 +863,8 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        val eachToken = methodTokens.find { it.length == "each".length }
-        assertTrue(eachToken != null, "Should have METHOD token for each() method call")
+        val (eachLine, _) = findPosition(code, "each")!!
+        val eachToken = methodTokens.findByLineAndLength(eachLine, "each".length)
+        assertTrue(eachToken != null, "Should have METHOD token for each() on line $eachLine")
     }
 }
