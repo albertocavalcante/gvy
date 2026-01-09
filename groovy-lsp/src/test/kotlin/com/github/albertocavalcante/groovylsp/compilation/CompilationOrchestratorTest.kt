@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -15,6 +16,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class CompilationOrchestratorTest {
 
@@ -43,7 +45,7 @@ class CompilationOrchestratorTest {
         )
 
         val requestSlot = slot<ParseRequest>()
-        val workerSessionManager = mockk<com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager>()
+        val workerSessionManager = mockk<WorkerSessionManager>()
         val parseResult = ParseResult(
             ast = null,
             compilationUnit = mockk(relaxed = true),
@@ -89,7 +91,7 @@ class CompilationOrchestratorTest {
         val uri = URI.create("file:///Test.groovy")
 
         var parseCallCount = 0
-        val workerSessionManager = mockk<com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager>()
+        val workerSessionManager = mockk<WorkerSessionManager>()
         val parseResult = ParseResult(
             ast = mockk(relaxed = true),
             compilationUnit = mockk(relaxed = true),
@@ -140,5 +142,171 @@ class CompilationOrchestratorTest {
         // Third compile with different fingerprint - should re-parse (Issue #743)
         orchestrator.compile(uri, content)
         assertEquals(2, parseCallCount, "Changed fingerprint should invalidate cache and trigger re-parse")
+    }
+
+    @Test
+    fun `compile uses bounded workspace sources when dependency info exists`() = runBlocking {
+        val content = "class Test {}"
+        val uri = URI.create("file:///Test.groovy")
+        val depUri = URI.create("file:///Dep.groovy")
+
+        val requestSlot = slot<ParseRequest>()
+        val workerSessionManager = mockk<WorkerSessionManager>()
+        val parseResult = ParseResult(
+            ast = null,
+            compilationUnit = mockk(relaxed = true),
+            sourceUnit = mockk(relaxed = true),
+            diagnostics = emptyList(),
+            symbolTable = mockk(relaxed = true),
+            astModel = mockk(relaxed = true),
+            tokenIndex = null,
+        )
+        every { workerSessionManager.parse(capture(requestSlot)) } returns parseResult
+
+        val fullWorkspaceSources = listOf(
+            tempDir.resolve("A.groovy"),
+            tempDir.resolve("B.groovy"),
+            tempDir.resolve("C.groovy"),
+        )
+        val boundedSources = listOf(tempDir.resolve("A.groovy"))
+
+        val workspaceManager = mockk<WorkspaceManager>()
+        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
+        every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
+        every { workspaceManager.getBoundedWorkspaceSources(any()) } returns boundedSources
+        every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+
+        // DependencyGraph with info for this URI
+        val dependencyGraph = DependencyGraph()
+        dependencyGraph.addDependency(uri, depUri)
+
+        val orchestrator = CompilationOrchestrator(
+            CompilationOrchestratorDependencies(
+                cacheService = CompilationCacheService(),
+                workerSessionManager = workerSessionManager,
+                workspaceManager = workspaceManager,
+                symbolIndexer = mockk(relaxed = true),
+                parseAccessor = mockk(relaxed = true) {
+                    every { isSuspiciousScript(any(), any()) } returns false
+                },
+                resultMapper = CompilationResultMapper(),
+                ioDispatcher = Dispatchers.Unconfined,
+                errorHandler = CompilationErrorHandler(),
+                dependencyGraph = dependencyGraph,
+            ),
+        )
+
+        orchestrator.compile(uri, content)
+
+        // Should use bounded sources, not full workspace
+        assertEquals(boundedSources, requestSlot.captured.workspaceSources)
+    }
+
+    @Test
+    fun `compile falls back to full workspace when no dependency info exists`() = runBlocking {
+        val content = "class Test {}"
+        val uri = URI.create("file:///Test.groovy")
+
+        val requestSlot = slot<ParseRequest>()
+        val workerSessionManager = mockk<WorkerSessionManager>()
+        val parseResult = ParseResult(
+            ast = null,
+            compilationUnit = mockk(relaxed = true),
+            sourceUnit = mockk(relaxed = true),
+            diagnostics = emptyList(),
+            symbolTable = mockk(relaxed = true),
+            astModel = mockk(relaxed = true),
+            tokenIndex = null,
+        )
+        every { workerSessionManager.parse(capture(requestSlot)) } returns parseResult
+
+        val fullWorkspaceSources = listOf(
+            tempDir.resolve("A.groovy"),
+            tempDir.resolve("B.groovy"),
+            tempDir.resolve("C.groovy"),
+        )
+
+        val workspaceManager = mockk<WorkspaceManager>()
+        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
+        every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
+        every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+
+        // Empty DependencyGraph - no info for this URI
+        val dependencyGraph = DependencyGraph()
+
+        val orchestrator = CompilationOrchestrator(
+            CompilationOrchestratorDependencies(
+                cacheService = CompilationCacheService(),
+                workerSessionManager = workerSessionManager,
+                workspaceManager = workspaceManager,
+                symbolIndexer = mockk(relaxed = true),
+                parseAccessor = mockk(relaxed = true) {
+                    every { isSuspiciousScript(any(), any()) } returns false
+                },
+                resultMapper = CompilationResultMapper(),
+                ioDispatcher = Dispatchers.Unconfined,
+                errorHandler = CompilationErrorHandler(),
+                dependencyGraph = dependencyGraph,
+            ),
+        )
+
+        orchestrator.compile(uri, content)
+
+        // Should fall back to full workspace sources
+        assertEquals(fullWorkspaceSources, requestSlot.captured.workspaceSources)
+    }
+
+    @Test
+    fun `compile falls back to full workspace when dependencyGraph is null`() = runBlocking {
+        val content = "class Test {}"
+        val uri = URI.create("file:///Test.groovy")
+
+        val requestSlot = slot<ParseRequest>()
+        val workerSessionManager = mockk<WorkerSessionManager>()
+        val parseResult = ParseResult(
+            ast = null,
+            compilationUnit = mockk(relaxed = true),
+            sourceUnit = mockk(relaxed = true),
+            diagnostics = emptyList(),
+            symbolTable = mockk(relaxed = true),
+            astModel = mockk(relaxed = true),
+            tokenIndex = null,
+        )
+        every { workerSessionManager.parse(capture(requestSlot)) } returns parseResult
+
+        val fullWorkspaceSources = listOf(
+            tempDir.resolve("A.groovy"),
+            tempDir.resolve("B.groovy"),
+        )
+
+        val workspaceManager = mockk<WorkspaceManager>()
+        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
+        every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
+        every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+
+        // No dependency graph (null)
+        val orchestrator = CompilationOrchestrator(
+            CompilationOrchestratorDependencies(
+                cacheService = CompilationCacheService(),
+                workerSessionManager = workerSessionManager,
+                workspaceManager = workspaceManager,
+                symbolIndexer = mockk(relaxed = true),
+                parseAccessor = mockk(relaxed = true) {
+                    every { isSuspiciousScript(any(), any()) } returns false
+                },
+                resultMapper = CompilationResultMapper(),
+                ioDispatcher = Dispatchers.Unconfined,
+                errorHandler = CompilationErrorHandler(),
+                dependencyGraph = null,
+            ),
+        )
+
+        orchestrator.compile(uri, content)
+
+        // Should fall back to full workspace sources when dependencyGraph is null
+        assertEquals(fullWorkspaceSources, requestSlot.captured.workspaceSources)
     }
 }

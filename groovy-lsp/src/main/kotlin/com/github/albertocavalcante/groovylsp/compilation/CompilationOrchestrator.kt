@@ -35,6 +35,7 @@ data class CompilationOrchestratorDependencies(
     val ioDispatcher: CoroutineDispatcher,
     val errorHandler: CompilationErrorHandler,
     val semanticDb: GroovySemanticDB? = null,
+    val dependencyGraph: DependencyGraph? = null,
 )
 
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
@@ -47,6 +48,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val ioDispatcher = dependencies.ioDispatcher
     private val errorHandler = dependencies.errorHandler
     private val semanticDb = dependencies.semanticDb
+    private val dependencyGraph = dependencies.dependencyGraph
 
     private val logger = LoggerFactory.getLogger(CompilationOrchestrator::class.java)
 
@@ -96,8 +98,17 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Get file-specific classpath
         val classpath = workspaceManager.getClasspathForFile(uri, content)
-        // Workspace sources are still passed but ParseMode controls whether they're used
-        val workspaceSources = workspaceManager.getWorkspaceSources()
+
+        // Use bounded workspace selection when dependency info is available (Issue #743)
+        // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
+        val workspaceSources = if (dependencyGraph?.hasInfo(uri) == true) {
+            val boundedUris = dependencyGraph.getCompilationSources(uri)
+            logger.debug("Using bounded workspace sources for {}: {} files", uri, boundedUris.size)
+            workspaceManager.getBoundedWorkspaceSources(boundedUris)
+        } else {
+            // Fall back to full workspace sources for new/unknown files
+            workspaceManager.getWorkspaceSources()
+        }
 
         // Parse the source code
         val parseResult = workerSessionManager.parse(
@@ -138,13 +149,20 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
 
+        // Use bounded workspace selection when available (Issue #743)
+        val workspaceSources = if (dependencyGraph?.hasInfo(uri) == true) {
+            workspaceManager.getBoundedWorkspaceSources(dependencyGraph.getCompilationSources(uri))
+        } else {
+            workspaceManager.getWorkspaceSources()
+        }
+
         return workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
                 classpath = classpath,
                 sourceRoots = workspaceManager.getSourceRoots(),
-                workspaceSources = workspaceManager.getWorkspaceSources(),
+                workspaceSources = workspaceSources,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
             ),
