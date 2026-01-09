@@ -32,67 +32,62 @@ object GroovySemanticTokenProvider {
     private val logger = LoggerFactory.getLogger(GroovySemanticTokenProvider::class.java)
 
     /**
-     * Semantic token representation.
-     *
-     * @param line 0-based line number
-     * @param startChar 0-based character offset
-     * @param length Token length in characters
-     * @param tokenType Token type index (from legend)
-     * @param tokenModifiers Token modifiers as bitfield
+     * Type alias for semantic tokens.
+     * Uses the shared SemanticToken type from JenkinsSemanticTokenProvider.
      */
-    data class SemanticToken(
-        val line: Int,
-        val startChar: Int,
-        val length: Int,
-        val tokenType: Int,
-        val tokenModifiers: Int = 0,
-    )
+    typealias SemanticToken = JenkinsSemanticTokenProvider.SemanticToken
 
     /**
      * Token type indices matching LSP semantic token legend.
-     * These MUST match the order in JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES.
+     * Derived from JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES to ensure consistency.
      */
     object TokenTypes {
-        const val NAMESPACE = 0
-        const val TYPE = 1
-        const val CLASS = 2
-        const val ENUM = 3
-        const val INTERFACE = 4
-        const val STRUCT = 5
-        const val TYPE_PARAMETER = 6
-        const val PARAMETER = 7
-        const val VARIABLE = 8
-        const val PROPERTY = 9
-        const val ENUM_MEMBER = 10
-        const val EVENT = 11
-        const val FUNCTION = 12
-        const val METHOD = 13
-        const val MACRO = 14
-        const val KEYWORD = 15
-        const val MODIFIER = 16
-        const val COMMENT = 17
-        const val STRING = 18
-        const val NUMBER = 19
-        const val REGEXP = 20
-        const val OPERATOR = 21
-        const val DECORATOR = 22
+        // Derive indices from the shared legend to prevent misalignment
+        private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES
+
+        val NAMESPACE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Namespace)
+        val TYPE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Type)
+        val CLASS = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Class)
+        val ENUM = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Enum)
+        val INTERFACE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Interface)
+        val STRUCT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Struct)
+        val TYPE_PARAMETER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.TypeParameter)
+        val PARAMETER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Parameter)
+        val VARIABLE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Variable)
+        val PROPERTY = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Property)
+        val ENUM_MEMBER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.EnumMember)
+        val EVENT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Event)
+        val FUNCTION = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Function)
+        val METHOD = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Method)
+        val MACRO = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Macro)
+        val KEYWORD = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Keyword)
+        val MODIFIER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Modifier)
+        val COMMENT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Comment)
+        val STRING = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.String)
+        val NUMBER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Number)
+        val REGEXP = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Regexp)
+        val OPERATOR = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Operator)
+        val DECORATOR = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Decorator)
     }
 
     /**
      * Token modifier bit masks.
-     * Must align with JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS order.
+     * Derived from JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS to ensure consistency.
      */
     object TokenModifiers {
-        const val DECLARATION = 1 shl 0 // 0b0000000001
-        const val DEFINITION = 1 shl 1 // 0b0000000010
-        const val READONLY = 1 shl 2 // 0b0000000100
-        const val STATIC = 1 shl 3 // 0b0000001000
-        const val DEPRECATED = 1 shl 4 // 0b0000010000
-        const val ABSTRACT = 1 shl 5 // 0b0000100000
-        const val ASYNC = 1 shl 6 // 0b0001000000
-        const val MODIFICATION = 1 shl 7 // 0b0010000000
-        const val DOCUMENTATION = 1 shl 8 // 0b0100000000
-        const val DEFAULT_LIBRARY = 1 shl 9 // 0b1000000000
+        // Derive bit masks from the shared legend to prevent misalignment
+        private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS
+
+        val DECLARATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Declaration)
+        val DEFINITION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Definition)
+        val READONLY = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Readonly)
+        val STATIC = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Static)
+        val DEPRECATED = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Deprecated)
+        val ABSTRACT = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Abstract)
+        val ASYNC = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Async)
+        val MODIFICATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Modification)
+        val DOCUMENTATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Documentation)
+        val DEFAULT_LIBRARY = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary)
     }
 
     /**
