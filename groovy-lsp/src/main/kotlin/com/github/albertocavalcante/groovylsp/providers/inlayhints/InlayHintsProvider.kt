@@ -9,6 +9,8 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.semantics.TypeNames
+import com.github.albertocavalcante.gvy.semantics.TypeStringUtils
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -605,6 +607,12 @@ private object InlayHintsCandidates {
         compilationService: GroovyCompilationService,
     ): List<CallableSignature> {
         val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
+
+        // Guard: Skip classpath lookup for invalid type names (e.g., "unresolved variable: binding")
+        if (!TypeStringUtils.isValidClasspathTypeName(normalizedReceiverType)) {
+            return emptyList()
+        }
+
         // TODO(#581): Resolve synthetic parameter names via JDK source indexing for deterministic hints.
         //   See: https://github.com/albertocavalcante/gvy/issues/581
         return compilationService.classpathService.getMethods(normalizedReceiverType)
@@ -657,6 +665,12 @@ private object InlayHintsCandidates {
         compilationService: GroovyCompilationService,
     ): List<CallableSignature> {
         val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
+
+        // Guard: Skip classpath lookup for invalid type names
+        if (!TypeStringUtils.isValidClasspathTypeName(normalizedType)) {
+            return emptyList()
+        }
+
         val clazz = compilationService.classpathService.loadClass(normalizedType) ?: return emptyList()
         return clazz.constructors
             .filter { it.parameterCount == argCount }
@@ -760,17 +774,9 @@ private object InlayHintsTypes {
 
     fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')
 
-    private fun isUnknownType(typeName: String?): Boolean {
-        if (typeName == null) return true
-        val normalized = normalizeTypeName(typeName)
-        return normalized == "java.lang.Object" || normalized == "Object" || normalized == "def"
-    }
+    private fun isUnknownType(typeName: String?): Boolean = TypeStringUtils.isUnknownType(typeName)
 
-    fun isDynamicType(typeName: String): Boolean = typeName == "java.lang.Object" ||
-        typeName == "Object" ||
-        typeName == "def" ||
-        typeName == "unresolved" ||
-        typeName == "null"
+    fun isDynamicType(typeName: String): Boolean = TypeStringUtils.isDynamicType(typeName)
 
     fun toSignature(parameters: Iterable<Parameter>): CallableSignature = CallableSignature(
         parameterNames = parameters.map { it.name },

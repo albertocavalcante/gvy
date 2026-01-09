@@ -19,9 +19,9 @@ object SemanticTypeFormatter {
         is SemanticType.Known -> formatKnownType(type, options)
         is SemanticType.Primitive -> formatPrimitiveType(type.kind)
         is SemanticType.Dynamic -> formatDynamicType(type)
-        is SemanticType.Unknown -> "def" // Groovy's dynamic type keyword
+        is SemanticType.Unknown -> TypeNames.DEF // Groovy's dynamic type keyword
         is SemanticType.Union -> formatUnionType(type, options)
-        is SemanticType.Null -> "null"
+        is SemanticType.Null -> TypeNames.NULL
         is SemanticType.Array -> formatArrayType(type, options)
     }
 
@@ -60,9 +60,9 @@ object SemanticTypeFormatter {
     fun formatToFqn(type: SemanticType): String = when (type) {
         is SemanticType.Known -> type.fqn
         is SemanticType.Primitive -> formatPrimitiveType(type.kind)
-        is SemanticType.Dynamic -> "java.lang.Object"
-        is SemanticType.Unknown -> "java.lang.Object"
-        is SemanticType.Null -> "java.lang.Object"
+        is SemanticType.Dynamic -> TypeNames.JAVA_LANG_OBJECT
+        is SemanticType.Unknown -> TypeNames.JAVA_LANG_OBJECT
+        is SemanticType.Null -> TypeNames.JAVA_LANG_OBJECT
         is SemanticType.Union -> {
             // Return first known type, or Object as fallback
             type.types.firstNotNullOfOrNull {
@@ -70,7 +70,7 @@ object SemanticTypeFormatter {
                     is SemanticType.Known -> it.fqn
                     else -> null
                 }
-            } ?: "java.lang.Object"
+            } ?: TypeNames.JAVA_LANG_OBJECT
         }
         is SemanticType.Array -> {
             val componentFqn = formatToFqn(type.componentType)
@@ -95,7 +95,7 @@ object SemanticTypeFormatter {
 
     private fun formatPrimitiveType(kind: PrimitiveKind): String = kind.name.lowercase()
 
-    private fun formatDynamicType(type: SemanticType.Dynamic): String = type.hint ?: "def"
+    private fun formatDynamicType(type: SemanticType.Dynamic): String = type.hint ?: TypeNames.DEF
 
     private fun formatUnionType(type: SemanticType.Union, options: FormatOptions): String {
         val formatted = type.types.map { format(it, options) }.sorted()

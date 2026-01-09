@@ -859,6 +859,105 @@ class InlayHintsProviderTest {
         }
     }
 
+    @Nested
+    @DisplayName("Invalid Type Name Handling")
+    inner class InvalidTypeNameTests {
+
+        @Test
+        fun `should not pass unresolved variable type to classpath service`() {
+            // Given: a method call where receiver type resolves to "unresolved variable: binding"
+            val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+            val callExpr = MethodCallExpression(
+                VariableExpression("binding"),
+                "someMethod",
+                ArgumentListExpression(
+                    ConstantExpression("arg").apply {
+                        lineNumber = 1
+                        columnNumber = 25
+                    },
+                ),
+            ).apply {
+                lineNumber = 1
+                columnNumber = 1
+            }
+
+            setupCompilationWithNodes(listOf(callExpr), listOf(classNode))
+
+            // Mock type resolution to return "unresolved variable: binding"
+            every { semanticResolver.resolveType(any<VariableExpression>(), any()) } returns
+                SemanticType.Dynamic("unresolved variable: binding")
+            every { semanticResolver.formatSemanticType(any()) } returns "unresolved variable: binding"
+
+            val classpathService = mockk<ClasspathService>(relaxed = true)
+            every { compilationService.classpathService } returns classpathService
+
+            // ClasspathService.getMethods should NOT be called with invalid type names
+            every { classpathService.getMethods(any()) } answers {
+                val className = firstArg<String>()
+                if (className.contains(" ") || className.contains(":")) {
+                    throw AssertionError("getMethods called with invalid class name: $className")
+                }
+                emptyList()
+            }
+
+            provider = InlayHintsProvider(
+                compilationService,
+                semanticResolver,
+                InlayHintsConfiguration(parameterHints = true),
+            )
+
+            val params = createParams(0, 0, 10, 100)
+
+            // When / Then - should not crash or call getMethods with invalid type
+            val hints = provider.provideInlayHints(params)
+            assertNotNull(hints, "Should return a valid (possibly empty) hints list")
+        }
+
+        @Test
+        fun `should filter type names with spaces before classpath lookup`() {
+            // Given: type resolution returns something with spaces
+            val classNode = ClassNode("Test", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+            val callExpr = MethodCallExpression(
+                VariableExpression("obj"),
+                "doSomething",
+                ArgumentListExpression(
+                    ConstantExpression("test").apply {
+                        lineNumber = 1
+                        columnNumber = 20
+                    },
+                ),
+            ).apply {
+                lineNumber = 1
+                columnNumber = 1
+            }
+
+            setupCompilationWithNodes(listOf(callExpr), listOf(classNode))
+
+            // Mock type resolution to return a type with spaces (error-like)
+            every { semanticResolver.resolveType(any<VariableExpression>(), any()) } returns
+                SemanticType.Dynamic("error: unknown type")
+            every { semanticResolver.formatSemanticType(any()) } returns "error: unknown type"
+
+            val classpathService = mockk<ClasspathService>(relaxed = true)
+            every { compilationService.classpathService } returns classpathService
+            every { classpathService.getMethods(any()) } returns emptyList()
+
+            provider = InlayHintsProvider(
+                compilationService,
+                semanticResolver,
+                InlayHintsConfiguration(parameterHints = true),
+            )
+
+            val params = createParams(0, 0, 10, 100)
+
+            // When
+            val hints = provider.provideInlayHints(params)
+
+            // Then - should not crash
+            assertNotNull(hints)
+        }
+    }
+
     // Helper methods
 
     private fun createParams(startLine: Int, startChar: Int, endLine: Int, endChar: Int): InlayHintParams =
