@@ -20,14 +20,18 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
         spec.recipe(AddSpaceBeforeOpeningBrace())
     }
 
-    // Positive tests - should add space:
+    // ========================================================================
+    // Method Declarations
+    // ========================================================================
 
     @Test
     fun `adds space before brace in method declaration`() = rewriteRun(
         groovy(
+            // Before: no space between ) and {
             """
             def foo(){}
             """,
+            // After: space added
             """
             def foo() {}
             """,
@@ -35,16 +39,60 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in closure`() = rewriteRun(
+    fun `adds space before brace in method with parameters`() = rewriteRun(
         groovy(
             """
-            list.each{}
+            def bar(String name, int count){}
             """,
             """
-            list.each {}
+            def bar(String name, int count) {}
             """,
         ),
     )
+
+    // ========================================================================
+    // Class/Interface Declarations
+    // ========================================================================
+
+    @Test
+    fun `adds space before brace in class declaration`() = rewriteRun(
+        groovy(
+            """
+            class Foo{}
+            """,
+            """
+            class Foo {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `adds space before brace in interface declaration`() = rewriteRun(
+        groovy(
+            """
+            interface Foo{}
+            """,
+            """
+            interface Foo {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `adds space before brace in class with extends`() = rewriteRun(
+        groovy(
+            """
+            class Bar extends Foo{}
+            """,
+            """
+            class Bar extends Foo {}
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Control Structures - if/else
+    // ========================================================================
 
     @Test
     fun `adds space before brace in if statement`() = rewriteRun(
@@ -59,16 +107,33 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     )
 
     @Test
-    fun `adds space before brace in class declaration`() = rewriteRun(
+    fun `adds space before brace in else block`() = rewriteRun(
         groovy(
+            // Both if and else blocks need space
             """
-            class Foo{}
+            if (x){} else{}
             """,
             """
-            class Foo {}
+            if (x) {} else {}
             """,
         ),
     )
+
+    @Test
+    fun `adds space before brace in else-if chain`() = rewriteRun(
+        groovy(
+            """
+            if (a){} else if (b){} else{}
+            """,
+            """
+            if (a) {} else if (b) {} else {}
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Control Structures - loops
+    // ========================================================================
 
     @Test
     fun `adds space before brace in for loop`() = rewriteRun(
@@ -94,31 +159,141 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
         ),
     )
 
+    // ========================================================================
+    // Control Structures - try/catch/finally
+    // ========================================================================
+
     @Test
-    fun `adds space before brace in try-catch`() = rewriteRun(
+    fun `adds space before brace in try block`() = rewriteRun(
         groovy(
             """
-            try{}catch (Exception e){}
+            try{} catch (Exception e) {}
             """,
             """
-            try {}catch (Exception e) {}
+            try {} catch (Exception e) {}
             """,
         ),
     )
 
     @Test
-    fun `adds space before brace in interface declaration`() = rewriteRun(
+    fun `adds space before brace in catch block`() = rewriteRun(
         groovy(
             """
-            interface Foo{}
+            try {} catch (Exception e){}
             """,
             """
-            interface Foo {}
+            try {} catch (Exception e) {}
             """,
         ),
     )
 
-    // Negative tests - should NOT add space:
+    @Test
+    fun `adds space before brace in finally block`() = rewriteRun(
+        groovy(
+            """
+            try {} finally{}
+            """,
+            """
+            try {} finally {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `adds space in complete try-catch-finally`() = rewriteRun(
+        groovy(
+            // All three blocks missing space
+            """
+            try{} catch (Exception e){} finally{}
+            """,
+            """
+            try {} catch (Exception e) {} finally {}
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Closures - Trailing (with OmitParentheses marker)
+    // ========================================================================
+
+    @Test
+    fun `adds space before brace in trailing closure`() = rewriteRun(
+        groovy(
+            // Trailing closure: closure comes after method name without parens
+            // e.g., list.each{} instead of list.each({})
+            """
+            list.each{}
+            """,
+            """
+            list.each {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `adds space in chained trailing closures`() = rewriteRun(
+        groovy(
+            """
+            list.findAll{}.collect{}
+            """,
+            """
+            list.findAll {}.collect {}
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Closures - Non-trailing (spacing from parent context)
+    // NOTE: These rely on parent context (=, (, etc.) for spacing
+    // ========================================================================
+
+    @Test
+    fun `no change for closure assigned to variable - spacing from equals`() = rewriteRun(
+        groovy(
+            // The = operator provides spacing before {
+            // This is correct: "= {" has space from assignment
+            """
+            def fn = {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `no change for closure as method argument - spacing from paren`() = rewriteRun(
+        groovy(
+            // The ( provides the context, closure is inside parens
+            // OpenRewrite limitation: can't add space inside parens before closure
+            """
+            list.collect({})
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Multiple Issues - verifies all are fixed in single pass
+    // ========================================================================
+
+    @Test
+    fun `fixes multiple missing spaces in same file`() = rewriteRun(
+        groovy(
+            """
+            class Foo{
+                def bar(){}
+                def baz(){ if (true){} }
+            }
+            """,
+            """
+            class Foo {
+                def bar() {}
+                def baz() { if (true) {} }
+            }
+            """,
+        ),
+    )
+
+    // ========================================================================
+    // Negative Tests - should NOT modify
+    // ========================================================================
 
     @Test
     fun `no change when space already exists`() = rewriteRun(
@@ -134,6 +309,7 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     @Test
     fun `no change when newline before brace`() = rewriteRun(
         groovy(
+            // Allman/BSD style braces on new line - already has whitespace (newline)
             """
             class Foo
             {
@@ -145,8 +321,29 @@ class AddSpaceBeforeOpeningBraceTest : RewriteTest {
     @Test
     fun `no change when multiple spaces exist`() = rewriteRun(
         groovy(
+            // Already has whitespace (multiple spaces) - preserve as-is
             """
             def foo()  {}
+            """,
+        ),
+    )
+
+    @Test
+    fun `no change for empty map literal`() = rewriteRun(
+        groovy(
+            // [:] is a map literal, not a block - should not be modified
+            """
+            def map = [:]
+            """,
+        ),
+    )
+
+    @Test
+    fun `no change for braces in string`() = rewriteRun(
+        groovy(
+            // Braces inside strings should not be modified
+            """
+            def s = "hello{world}"
             """,
         ),
     )

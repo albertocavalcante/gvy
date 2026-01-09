@@ -5,6 +5,8 @@ import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.J
+import org.openrewrite.groovy.marker.OmitParentheses as GroovyOmitParentheses
+import org.openrewrite.java.marker.OmitParentheses as JavaOmitParentheses
 
 /**
  * Recipe to add a space before opening braces in Groovy code.
@@ -170,31 +172,37 @@ class AddSpaceBeforeOpeningBrace : Recipe() {
                 return t
             }
 
+            /**
+             * Handles Groovy closures/lambdas.
+             *
+             * In Groovy, the opening brace `{` is part of the lambda syntax itself,
+             * not the body block. Therefore, to add space before `{`, we must modify
+             * the lambda's prefix, not the body's prefix.
+             *
+             * **Trailing closures** (e.g., `list.each{}`) have an OmitParentheses marker
+             * and need space added to lambda.prefix: `list.each{}` → `list.each {}`
+             *
+             * **Non-trailing closures** (e.g., `def fn = {}`, `list.collect({})`) get
+             * their spacing from the parent context (assignment operator, opening paren).
+             *
+             * @see GroovyOmitParentheses marker used by OpenRewrite for trailing closures
+             */
             override fun visitLambda(lambda: J.Lambda, ctx: ExecutionContext): J.Lambda {
                 var l = super.visitLambda(lambda, ctx)
 
-                // For Groovy closures, the opening brace is part of the lambda syntax,
-                // so space must be added to lambda.prefix, not body.prefix.
-                // This applies to both trailing closures (with OmitParentheses marker)
-                // and non-trailing closures (e.g., def fn = {}, list.collect({})).
-                val hasOmitMarker = l.markers.markers.any {
-                    it is org.openrewrite.java.marker.OmitParentheses ||
-                        it is org.openrewrite.groovy.marker.OmitParentheses
+                // Check for OmitParentheses marker indicating a trailing closure
+                // OpenRewrite uses both Java and Groovy versions of this marker
+                val isTrailingClosure = l.markers.markers.any {
+                    it is JavaOmitParentheses || it is GroovyOmitParentheses
                 }
 
-                // Add space to lambda's prefix for trailing closures
-                // (e.g., list.each{} -> list.each {})
-                if (hasOmitMarker) {
+                if (isTrailingClosure) {
                     val prefix = l.prefix
-                    val whitespace = prefix.whitespace
-                    if (whitespace.isEmpty()) {
+                    if (prefix.whitespace.isEmpty()) {
                         l = l.withPrefix(prefix.withWhitespace(" "))
                     }
                 }
-                // For non-trailing closures, the body block's prefix controls spacing
-                // inside the braces, so we check if it needs adjustment there too.
-                // However, space before the opening brace for non-trailing closures
-                // is typically handled by the parent context (e.g., assignment operator).
+                // Non-trailing closures: spacing handled by parent context
 
                 return l
             }
