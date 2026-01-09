@@ -345,7 +345,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             }
             .forEach { path ->
                 runCatching {
-                    logger.info("Adding workspace source: $path")
+                    logger.debug("Adding workspace source: $path")
                     compilationUnit.addSource(path.toFile())
                 }.onFailure { throwable ->
                     logger.debug("Failed adding workspace source {}: {}", path, throwable.message)

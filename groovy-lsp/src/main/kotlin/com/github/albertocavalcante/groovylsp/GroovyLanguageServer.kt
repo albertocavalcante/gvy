@@ -24,6 +24,7 @@ import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import com.github.albertocavalcante.groovylsp.services.ErrorDetails
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentServiceOptions
@@ -176,6 +177,8 @@ class GroovyLanguageServer(
      * @param message Optional human-readable message
      * @param filesIndexed Current number of files indexed (for progress display)
      * @param filesTotal Total number of files to index (for progress display)
+     * @param errorCode Machine-readable error code for structured error handling
+     * @param errorDetails Structured error information for actionable error display
      */
     internal fun sendStatus(
         health: Health = Health.Ok,
@@ -183,6 +186,8 @@ class GroovyLanguageServer(
         message: String? = null,
         filesIndexed: Int? = null,
         filesTotal: Int? = null,
+        errorCode: String? = null,
+        errorDetails: ErrorDetails? = null,
     ) {
         val notification = StatusNotification(
             health = health,
@@ -190,6 +195,8 @@ class GroovyLanguageServer(
             message = message,
             filesIndexed = filesIndexed,
             filesTotal = filesTotal,
+            errorCode = errorCode,
+            errorDetails = errorDetails,
         )
         try {
             groovyClient?.groovyStatus(notification)
@@ -255,8 +262,8 @@ class GroovyLanguageServer(
             initParams = savedInitParams,
             initOptionsMap = savedInitOptionsMap,
             textDocumentServiceRefresh = { textDocumentService.refreshOpenDocuments() },
-            onStatusUpdate = { health, quiescent, message, filesIndexed, filesTotal ->
-                sendStatus(health, quiescent, message, filesIndexed, filesTotal)
+            onStatusUpdate = { health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails ->
+                sendStatus(health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails)
             },
         )
     }

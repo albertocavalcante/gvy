@@ -20,10 +20,12 @@ export type ServerHealth = "ok" | "warning" | "error";
  */
 export type ErrorType =
   | "GRADLE_JDK_INCOMPATIBLE"
+  | "GROOVY_JDK_INCOMPATIBLE"
   | "NO_BUILD_TOOL"
   | "DEPENDENCY_RESOLUTION_FAILED"
   | "JAVA_NOT_FOUND"
   | "TOOLCHAIN_PROVISIONING_FAILED"
+  | "GENERIC"
   | string; // Allow custom error codes via GenericError
 
 /**
@@ -83,6 +85,30 @@ export interface ToolchainProvisioningError extends ErrorDetails {
   requiredVersion: number | null;
   vendor: string | null;
   platform: string | null;
+}
+
+/**
+ * Groovy/JDK version incompatibility error.
+ *
+ * Occurs when the Groovy version is not compatible with the detected JDK version.
+ */
+export interface GroovyJdkIncompatibleError extends ErrorDetails {
+  type: "GROOVY_JDK_INCOMPATIBLE";
+  groovyVersion: string | null;
+  jdkVersion: number;
+  classFileMajorVersion: number;
+  minGroovyVersion: string | null;
+}
+
+/**
+ * Generic error with custom details.
+ *
+ * Used for errors that don't fit into specific error types.
+ */
+export interface GenericError extends ErrorDetails {
+  type: "GENERIC";
+  errorCode: string;
+  details: Record<string, unknown> | null;
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   determineStateFromStatus,
   inferStateFromMessage,
 } from "./statusUtils";
+import { showErrorNotification } from "./errorNotificationHandler";
 
 const TITLE = "Groovy";
 
@@ -263,6 +264,11 @@ export class StatusBarManager implements vscode.Disposable {
       this.currentProgressMessage = params.message;
     } else if (params.quiescent) {
       this.currentProgressMessage = undefined;
+    }
+
+    // Show error notification if errorDetails is present
+    if (params.errorCode && params.errorDetails) {
+      showErrorNotification(params.errorCode, params.errorDetails);
     }
 
     // Map health + quiescent to ServerState

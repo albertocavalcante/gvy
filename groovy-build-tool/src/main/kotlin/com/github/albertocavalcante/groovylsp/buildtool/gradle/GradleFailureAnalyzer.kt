@@ -3,7 +3,9 @@ package com.github.albertocavalcante.groovylsp.buildtool.gradle
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 
-class GradleFailureAnalyzer {
+class GradleFailureAnalyzer(
+    private val compatibilityService: GradleJdkCompatibilityService = GradleJdkCompatibilityService.instance,
+) {
 
     /**
      * Specifically detects the "Unsupported class file major version" error which indicates
@@ -65,6 +67,17 @@ class GradleFailureAnalyzer {
     )
 
     /**
+     * Parsed information from a Gradle/JDK incompatibility error.
+     */
+    data class GradleJdkIncompatibleInfo(
+        val gradleVersion: String?,
+        val jdkVersion: Int,
+        val minGradleVersion: String?,
+        val maxJdkVersion: String?,
+        val suggestions: List<String> = emptyList(),
+    )
+
+    /**
      * Extracts structured information from a toolchain provisioning exception.
      * Returns null if the exception is not a toolchain error.
      */
@@ -107,6 +120,69 @@ class GradleFailureAnalyzer {
     }
 
     /**
+     * Extracts structured information from a Gradle/JDK incompatibility error.
+     * Returns null if the exception is not a JDK mismatch error.
+     */
+    fun extractGradleJdkIncompatibleInfo(t: Throwable): GradleJdkIncompatibleInfo? {
+        if (!isJdkMismatch(t)) return null
+
+        var current: Throwable? = t
+        while (current != null) {
+            val message = current.message ?: ""
+
+            // Example message: "Unsupported class file major version 65"
+            // Class file major version 65 corresponds to JDK 21
+            val majorVersionMatch = MAJOR_VERSION_REGEX.find(message)
+            if (majorVersionMatch != null) {
+                val majorVersion = majorVersionMatch.groupValues[1].toIntOrNull() ?: return null
+                val jdkVersion = majorVersionToJdk(majorVersion)
+
+                // Determine minimum Gradle version for this JDK
+                val minGradleVersion = minGradleVersionForJdk(jdkVersion)
+                val maxJdkVersion = null // Gradle doesn't have a max JDK, only minimum Gradle versions
+
+                val suggestions = buildGradleJdkSuggestions(jdkVersion, minGradleVersion)
+
+                return GradleJdkIncompatibleInfo(
+                    gradleVersion = null, // Could parse from other parts of stack trace if needed
+                    jdkVersion = jdkVersion,
+                    minGradleVersion = minGradleVersion,
+                    maxJdkVersion = maxJdkVersion,
+                    suggestions = suggestions,
+                )
+            }
+            current = current.cause
+        }
+        return null
+    }
+
+    /**
+     * Maps class file major version to JDK version.
+     * Data loaded from class-file-versions.json resource.
+     * @see GradleJdkCompatibilityService
+     */
+    private fun majorVersionToJdk(majorVersion: Int): Int = compatibilityService.majorVersionToJdk(majorVersion)
+
+    /**
+     * Determines the minimum Gradle version required for a given JDK version.
+     * Data loaded from gradle-jdk-compatibility.json resource.
+     * @see GradleJdkCompatibilityService
+     */
+    private fun minGradleVersionForJdk(jdkVersion: Int): String? =
+        compatibilityService.minGradleVersionForJdk(jdkVersion)
+
+    private fun buildGradleJdkSuggestions(jdkVersion: Int, minGradleVersion: String?): List<String> {
+        val suggestions = mutableListOf<String>()
+        if (minGradleVersion != null) {
+            suggestions.add("Update Gradle wrapper to version $minGradleVersion or newer")
+        } else {
+            suggestions.add("Update Gradle wrapper to a newer version")
+        }
+        suggestions.add("Or configure groovy.gradle.javaHome to use JDK ${jdkVersion - 1} or earlier")
+        return suggestions
+    }
+
+    /**
      * Classifies an exception and returns a structured ResolutionStatus.Failed.
      */
     fun classifyException(t: Throwable): ResolutionStatus.Failed = when {
@@ -122,10 +198,16 @@ class GradleFailureAnalyzer {
         }
 
         isJdkMismatch(t) -> {
+            val info = extractGradleJdkIncompatibleInfo(t)
+            val message = buildString {
+                append("Gradle is incompatible with JDK ${info?.jdkVersion ?: "version"}. ")
+                info?.suggestions?.firstOrNull()?.let { append(it) }
+            }
             ResolutionStatus.Failed(
                 ResolutionCodes.GRADLE_JDK_INCOMPATIBLE,
-                "JDK version incompatible with Gradle. ${t.message}",
+                message,
                 t,
+                details = info,
             )
         }
 
@@ -162,5 +244,6 @@ class GradleFailureAnalyzer {
         private val VERSION_REGEX = Regex("""languageVersion=(\d+)""")
         private val VENDOR_REGEX = Regex("""vendor=([^,}]+)""")
         private val PLATFORM_REGEX = Regex("""\(([^)]+)\)""")
+        private val MAJOR_VERSION_REGEX = Regex("""major version (\d+)""", RegexOption.IGNORE_CASE)
     }
 }
