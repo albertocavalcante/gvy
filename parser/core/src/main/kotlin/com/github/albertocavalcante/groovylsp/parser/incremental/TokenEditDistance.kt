@@ -35,8 +35,9 @@ class TokenEditDistance private constructor(
         }
 
         // No direct mapping - find closest line
-        val closestLine = findClosestMappedLine(position.line, lineMapping)
-        return Position(closestLine, position.column)
+        val closestLine = findClosestMappedLine(position.line, lineMapping, revisedLines)
+        val maxColumn = revisedLines.getOrNull(closestLine)?.length ?: 0
+        return Position(closestLine, position.column.coerceAtMost(maxColumn))
     }
 
     /**
@@ -58,8 +59,9 @@ class TokenEditDistance private constructor(
             return Position(mappedLine, mappedColumn)
         }
 
-        val closestLine = findClosestMappedLine(position.line, reverseLineMapping)
-        return Position(closestLine, position.column)
+        val closestLine = findClosestMappedLine(position.line, reverseLineMapping, originalLines)
+        val maxColumn = originalLines.getOrNull(closestLine)?.length ?: 0
+        return Position(closestLine, position.column.coerceAtMost(maxColumn))
     }
 
     private fun mapColumn(fromLine: String, toLine: String, column: Int): Int {
@@ -67,24 +69,21 @@ class TokenEditDistance private constructor(
         if (column >= fromLine.length) return toLine.length.coerceAtLeast(0)
 
         // Find token at column in fromLine and locate it in toLine
-        val tokenAtColumn = findTokenAt(fromLine, column)
-        if (tokenAtColumn != null) {
-            val indexInToLine = toLine.indexOf(tokenAtColumn)
+        val tokenInfo = findTokenAt(fromLine, column)
+        if (tokenInfo != null) {
+            val (token, tokenStart) = tokenInfo
+            val indexInToLine = toLine.indexOf(token)
             if (indexInToLine >= 0) {
-                val offsetInToken = column - fromLine.indexOf(tokenAtColumn)
+                val offsetInToken = column - tokenStart
                 return indexInToLine + offsetInToken
             }
         }
 
         // Fallback: proportional mapping
-        return if (fromLine.isNotEmpty()) {
-            (column.toDouble() / fromLine.length * toLine.length).toInt()
-        } else {
-            0
-        }
+        return (column.toDouble() / fromLine.length * toLine.length).toInt()
     }
 
-    private fun findTokenAt(line: String, column: Int): String? {
+    private fun findTokenAt(line: String, column: Int): Pair<String, Int>? {
         if (column >= line.length) return null
 
         var start = column
@@ -94,11 +93,11 @@ class TokenEditDistance private constructor(
         while (start > 0 && line[start - 1].isLetterOrDigit()) start--
         while (end < line.length && line[end].isLetterOrDigit()) end++
 
-        return if (start < end) line.substring(start, end) else null
+        return if (start < end) Pair(line.substring(start, end), start) else null
     }
 
-    private fun findClosestMappedLine(line: Int, mapping: Map<Int, Int>): Int {
-        if (mapping.isEmpty()) return line.coerceIn(0, (revisedLines.size - 1).coerceAtLeast(0))
+    private fun findClosestMappedLine(line: Int, mapping: Map<Int, Int>, targetLines: List<String>): Int {
+        if (mapping.isEmpty()) return line.coerceIn(0, (targetLines.size - 1).coerceAtLeast(0))
 
         var closest = mapping.keys.first()
         var minDistance = kotlin.math.abs(line - closest)
@@ -165,7 +164,7 @@ class TokenEditDistance private constructor(
             while (i > 0 && j > 0) {
                 when {
                     original[i - 1] == revised[j - 1] -> {
-                        result.add(0, Pair(i - 1, j - 1))
+                        result.add(Pair(i - 1, j - 1))
                         i--
                         j--
                     }
@@ -174,6 +173,7 @@ class TokenEditDistance private constructor(
                 }
             }
 
+            result.reverse()
             return result
         }
     }
