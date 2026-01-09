@@ -57,21 +57,24 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         logger.debug("Compiling: $uri (phase=$compilePhase)")
 
         return runCatching {
-            // Check cache first
-            val cachedResult = cacheService.getCached(uri, content)
+            // Get configuration fingerprint for cache coherency (Issue #743)
+            val configFingerprint = workspaceManager.getConfigurationFingerprint()
+
+            // Check cache first - validates both content AND configuration fingerprint
+            val cachedResult = cacheService.getCached(uri, content, configFingerprint)
             if (cachedResult != null) {
                 // Check for suspicious Script node
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
 
                 if (isSuspiciousScriptNode) {
                     logger.info("Cached result has suspicious Script node for $uri, re-compiling")
-                    performCompilation(uri, content, compilePhase)
+                    performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
                 } else {
                     logger.debug("Using cached parse result for: $uri")
                     resultMapper.map(cachedResult, content)
                 }
             } else {
-                performCompilation(uri, content, compilePhase)
+                performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
             }
         }.getOrElse { throwable ->
             when (throwable) {
@@ -87,6 +90,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         content: String,
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
+        configFingerprint: String? = null,
     ): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
@@ -112,8 +116,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val ast = parseResult.ast
 
         if (ast != null) {
-            // Cache parse result
-            cacheService.putCached(uri, content, parseResult)
+            // Cache parse result with configuration fingerprint for coherency (Issue #743)
+            val fingerprint = configFingerprint ?: workspaceManager.getConfigurationFingerprint()
+            cacheService.putCached(uri, content, parseResult, fingerprint)
 
             // Index symbols
             symbolIndexer.getSymbolIndex(uri) { parseResult.astModel }
@@ -172,6 +177,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     /**
      * Ensures a file is compiled, either by awaiting active compilation or fetching from cache.
+     * Validates configuration fingerprint for cache coherency (Issue #743).
      */
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
         // Check for active compilation first
@@ -189,10 +195,18 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             }
         }
 
-        // Check cache
+        // Get current fingerprint for cache coherency validation
+        val configFingerprint = workspaceManager.getConfigurationFingerprint()
+
+        // Check cache with fingerprint validation
         cacheService.getCachedWithContent(uri)?.let { (content, parseResult) ->
-            logger.debug("Using cached result for: $uri")
-            return resultMapper.mapFromCache(parseResult, content)
+            // Validate by attempting to get with fingerprint - if it returns null, cache is stale
+            val validatedResult = cacheService.getCached(uri, content, configFingerprint)
+            if (validatedResult != null) {
+                logger.debug("Using cached result for: $uri")
+                return resultMapper.mapFromCache(parseResult, content)
+            }
+            logger.debug("Cache entry for $uri is stale (fingerprint mismatch), will recompile")
         }
 
         // Use on-demand compilation from disk if file exists
@@ -205,7 +219,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     Files.readString(path)
                 }
                 // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                performCompilation(uri, content, parseMode = ParseMode.MINIMAL)
+                performCompilation(uri, content, parseMode = ParseMode.MINIMAL, configFingerprint = configFingerprint)
             } catch (e: Exception) {
                 logger.error("Failed to compile from disk for $uri: ${e.message}", e)
                 null

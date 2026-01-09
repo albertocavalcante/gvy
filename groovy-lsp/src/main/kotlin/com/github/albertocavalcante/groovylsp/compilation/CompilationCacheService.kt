@@ -18,8 +18,21 @@ class CompilationCacheService {
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 
     /**
-     * Gets cached ParseResult if content matches.
-     * Returns null if not cached or content has changed.
+     * Gets cached ParseResult if content AND configuration fingerprint match.
+     * Returns null if not cached, content has changed, or configuration has changed.
+     * Issue #743: Cache coherency through configuration fingerprinting.
+     *
+     * @param uri The URI of the file
+     * @param content The current content of the file
+     * @param configFingerprint The current workspace configuration fingerprint
+     * @return ParseResult if cached and both content and fingerprint match, null otherwise
+     */
+    fun getCached(uri: URI, content: String, configFingerprint: String): ParseResult? =
+        cache.get(uri, content, configFingerprint)
+
+    /**
+     * Gets cached ParseResult if content matches (ignores configuration fingerprint).
+     * For backward compatibility with callers that don't have fingerprint context.
      *
      * @param uri The URI of the file
      * @param content The current content of the file
@@ -46,7 +59,20 @@ class CompilationCacheService {
     fun getCachedWithContent(uri: URI): Pair<String, ParseResult>? = cache.getWithContent(uri)
 
     /**
-     * Stores a ParseResult in the cache.
+     * Stores a ParseResult in the cache with configuration fingerprint.
+     * Issue #743: Cache coherency through configuration fingerprinting.
+     *
+     * @param uri The URI of the file
+     * @param content The content that was compiled
+     * @param parseResult The result of compilation
+     * @param configFingerprint The workspace configuration fingerprint at compilation time
+     */
+    fun putCached(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
+        cache.put(uri, content, parseResult, configFingerprint)
+    }
+
+    /**
+     * Stores a ParseResult in the cache (backward compatibility, no fingerprint).
      *
      * @param uri The URI of the file
      * @param content The content that was compiled
