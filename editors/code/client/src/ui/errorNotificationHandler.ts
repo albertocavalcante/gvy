@@ -1,4 +1,3 @@
-import * as vscode from "vscode";
 import {
   ErrorDetails,
   GradleJdkIncompatibleError,
@@ -21,10 +20,13 @@ import {
  * @param errorCode The error code (e.g., "GRADLE_JDK_INCOMPATIBLE")
  * @param errorDetails The detailed error information with suggestions
  */
-export function showErrorNotification(
+export async function showErrorNotification(
   errorCode: string,
   errorDetails: ErrorDetails,
-): void {
+): Promise<void> {
+  // Lazy import vscode to avoid breaking unit tests
+  const vscode = await import("vscode");
+
   if (!errorDetails.suggestions || errorDetails.suggestions.length === 0) {
     // No suggestions - show basic error message
     vscode.window.showErrorMessage(
@@ -99,7 +101,10 @@ function buildErrorMessage(
  * Handles action button clicks by interpreting the suggestion text
  * and executing the appropriate VS Code command.
  */
-function handleActionClick(action: string): void {
+async function handleActionClick(action: string): Promise<void> {
+  // Lazy import vscode to avoid breaking unit tests
+  const vscode = await import("vscode");
+
   const lowerAction = action.toLowerCase();
 
   // Check for settings-related actions
