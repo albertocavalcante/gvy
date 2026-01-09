@@ -293,4 +293,33 @@ class GroovySemanticTokenProviderTest {
         assertTrue(otherMethodToken != null, "Should have token for otherMethod")
         assertEquals(2, methodTokens.size, "Should have exactly 2 METHOD tokens for the two method declarations")
     }
+
+    @Test
+    fun `token types should match LSP spec indices`() {
+        // These indices MUST match the legend order derived from JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES
+        // This ensures consistency across both providers and prevents index misalignment
+        assertEquals(0, GroovySemanticTokenProvider.TokenTypes.NAMESPACE)
+        assertEquals(1, GroovySemanticTokenProvider.TokenTypes.TYPE)
+        assertEquals(2, GroovySemanticTokenProvider.TokenTypes.CLASS)
+        assertEquals(3, GroovySemanticTokenProvider.TokenTypes.ENUM)
+        assertEquals(4, GroovySemanticTokenProvider.TokenTypes.INTERFACE)
+        assertEquals(5, GroovySemanticTokenProvider.TokenTypes.STRUCT)
+        assertEquals(6, GroovySemanticTokenProvider.TokenTypes.TYPE_PARAMETER)
+        assertEquals(7, GroovySemanticTokenProvider.TokenTypes.PARAMETER)
+        assertEquals(8, GroovySemanticTokenProvider.TokenTypes.VARIABLE)
+        assertEquals(9, GroovySemanticTokenProvider.TokenTypes.PROPERTY)
+        assertEquals(10, GroovySemanticTokenProvider.TokenTypes.ENUM_MEMBER)
+        assertEquals(11, GroovySemanticTokenProvider.TokenTypes.EVENT)
+        assertEquals(12, GroovySemanticTokenProvider.TokenTypes.FUNCTION)
+        assertEquals(13, GroovySemanticTokenProvider.TokenTypes.METHOD)
+        assertEquals(14, GroovySemanticTokenProvider.TokenTypes.MACRO)
+        assertEquals(15, GroovySemanticTokenProvider.TokenTypes.KEYWORD)
+        assertEquals(16, GroovySemanticTokenProvider.TokenTypes.MODIFIER)
+        assertEquals(17, GroovySemanticTokenProvider.TokenTypes.COMMENT)
+        assertEquals(18, GroovySemanticTokenProvider.TokenTypes.STRING)
+        assertEquals(19, GroovySemanticTokenProvider.TokenTypes.NUMBER)
+        assertEquals(20, GroovySemanticTokenProvider.TokenTypes.REGEXP)
+        assertEquals(21, GroovySemanticTokenProvider.TokenTypes.OPERATOR)
+        assertEquals(22, GroovySemanticTokenProvider.TokenTypes.DECORATOR)
+    }
 }
