@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 
@@ -81,8 +82,8 @@ object AstCompletionContextDetector {
                 }
             }
             is MethodCallExpression -> {
-                val objectExpr = parent.objectExpression
-                if (!parent.isImplicitThis && objectExpr != null) {
+                if (!parent.isImplicitThis) {
+                    val objectExpr = parent.objectExpression
                     val receiverType = objectExpr.type
                     val receiverName = extractReceiverName(objectExpr)
                     return AstCompletionContext.MemberAccess(
@@ -100,7 +101,7 @@ object AstCompletionContextDetector {
     /**
      * Detects if we're inside a closure, and provides delegation info.
      */
-    fun detectClosureContext(node: ASTNode, astModel: GroovyAstModel): AstCompletionContext.ClosureBody? {
+    private fun detectClosureContext(node: ASTNode, astModel: GroovyAstModel): AstCompletionContext.ClosureBody? {
         val closureChain = buildClosureChain(node, astModel)
         val innermost = closureChain.innermost ?: return null
 
@@ -116,7 +117,7 @@ object AstCompletionContextDetector {
     /**
      * Builds the chain of enclosing closures for delegation resolution.
      */
-    fun buildClosureChain(node: ASTNode, astModel: GroovyAstModel): ClosureChain {
+    private fun buildClosureChain(node: ASTNode, astModel: GroovyAstModel): ClosureChain {
         val closures = mutableListOf<ClosureInfo>()
         var current: ASTNode? = node
 
@@ -155,18 +156,23 @@ object AstCompletionContextDetector {
 
     /**
      * Infers the delegate type from @DelegatesTo annotation or known DSL patterns.
+     *
+     * NOTE: Delegate type inference is currently not implemented. This method is intentionally
+     * stubbed and always returns null until the TODO is fully addressed (including DSL-based
+     * heuristics and @DelegatesTo extraction). The DSL pattern matching below is non-functional
+     * because [findClassByName] always returns null.
      */
     private fun inferDelegateType(
         closure: ClosureExpression,
         enclosingMethodCall: MethodCallExpression?,
         astModel: GroovyAstModel,
     ): ClassNode? {
-        // TODO(#657): Implement @DelegatesTo annotation extraction
-        // For now, use heuristics based on method name patterns
+        // TODO: Implement extraction of delegate type from @DelegatesTo annotations
+        // TODO: Implement actual class lookup in findClassByName to enable DSL pattern matching
 
         val methodName = enclosingMethodCall?.methodAsString ?: return null
 
-        // Known DSL patterns (Gradle, Jenkins, etc.)
+        // Known DSL patterns (Gradle, Jenkins, etc.) - currently non-functional
         return when {
             // Gradle patterns
             methodName == "dependencies" -> findClassByName("org.gradle.api.artifacts.dsl.DependencyHandler")
@@ -183,8 +189,7 @@ object AstCompletionContextDetector {
             methodName == "steps" -> findClassByName("org.jenkinsci.plugins.workflow.cps.CpsScript")
 
             // Spock patterns
-            methodName == "expect" || methodName == "when" || methodName == "then" ||
-                methodName == "given" || methodName == "cleanup" || methodName == "where" ->
+            methodName in setOf("expect", "when", "then", "given", "cleanup", "where") ->
                 findClassByName("spock.lang.Specification")
 
             else -> null
@@ -343,7 +348,7 @@ object AstCompletionContextDetector {
      * Extracts the receiver name from an expression.
      */
     private fun extractReceiverName(expr: org.codehaus.groovy.ast.expr.Expression): String? = when (expr) {
-        is org.codehaus.groovy.ast.expr.VariableExpression -> expr.name
+        is VariableExpression -> expr.name
         is PropertyExpression -> expr.propertyAsString
         else -> null
     }
@@ -359,24 +364,30 @@ object AstCompletionContextDetector {
     /**
      * Checks if a node is inside a builder pattern (chained method calls).
      */
-    fun isBuilderPattern(node: ASTNode, astModel: GroovyAstModel): Boolean {
+    private fun isBuilderPattern(node: ASTNode, astModel: GroovyAstModel): Boolean {
         var methodCallCount = 0
         var current: ASTNode? = node
 
         while (current != null) {
             if (current is MethodCallExpression) {
                 methodCallCount++
+                if (methodCallCount >= 2) {
+                    return true // At least 2 chained calls
+                }
                 // Check if this method call is the receiver of another method call
                 val parent = astModel.getParent(current)
                 if (parent is MethodCallExpression && parent.objectExpression == current) {
-                    continue // This is part of a chain
-                } else if (methodCallCount >= 2) {
-                    return true // At least 2 chained calls
+                    // Part of a chained call: move up to the parent call and continue counting
+                    current = parent
+                    continue
+                } else {
+                    // Chain ended; no need to traverse further for builder detection
+                    break
                 }
             }
             current = astModel.getParent(current)
         }
 
-        return false
+        return methodCallCount >= 2
     }
 }
