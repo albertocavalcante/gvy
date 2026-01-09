@@ -512,15 +512,28 @@ object GroovySemanticTokenProvider {
         if (Modifier.isSynchronized(method.modifiers)) modifierTexts.add("synchronized")
 
         // Calculate total modifier length including spaces
-        for (mod in modifierTexts) {
-            offset += mod.length + 1 // +1 for space after modifier
-        }
+        offset += modifierTexts.sumOf { it.length + 1 } // +1 for space after each modifier
 
         // Add return type length + space
         // In Groovy, "def" methods have Object as return type in AST
-        val returnTypeName = method.returnType?.nameWithoutPackage ?: "def"
-        // Use "def" (3 chars) as the source representation, not "Object" (6 chars)
-        val sourceTypeName = if (returnTypeName == "Object") "def" else returnTypeName
+        // Handle generic types like List<String> by reconstructing the full type text
+        val returnTypeNode = method.returnType
+        val sourceTypeName = if (returnTypeNode != null) {
+            fun getSourceText(node: ClassNode): String {
+                if (node.genericsTypes.isNullOrEmpty()) {
+                    return node.nameWithoutPackage
+                }
+                val generics = node.genericsTypes.joinToString(", ") { gt ->
+                    gt.type?.let { getSourceText(it) } ?: gt.name
+                }
+                return "${node.nameWithoutPackage}<$generics>"
+            }
+            val typeText = getSourceText(returnTypeNode)
+            // Use "def" (3 chars) as the source representation, not "Object" (6 chars)
+            if (typeText == "Object") "def" else typeText
+        } else {
+            "def"
+        }
         offset += sourceTypeName.length + 1 // +1 for space after type
 
         return offset

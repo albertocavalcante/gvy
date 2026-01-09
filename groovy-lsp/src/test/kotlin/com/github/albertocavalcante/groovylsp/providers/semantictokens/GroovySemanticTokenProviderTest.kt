@@ -806,4 +806,34 @@ class GroovySemanticTokenProviderTest {
         val eachToken = methodTokens.find { it.length == "each".length }
         assertTrue(eachToken != null, "Should have METHOD token for each() method call")
     }
+
+    @Test
+    fun `should handle generic return types in method declarations`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                List<String> getItems() { [] }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD token for getItems
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val getItemsToken = methodTokens.find { it.length == "getItems".length }
+        assertTrue(getItemsToken != null, "Should have METHOD token for getItems")
+
+        // Line 1: "    List<String> getItems() { [] }"
+        // "getItems" starts at column 17 (after "    List<String> ")
+        // 4 spaces + "List<String>" (12) + 1 space = 17
+        assertEquals(1, getItemsToken!!.line, "getItems should be on line 1")
+        assertEquals(17, getItemsToken.startChar, "getItems should start at column 17")
+    }
 }
