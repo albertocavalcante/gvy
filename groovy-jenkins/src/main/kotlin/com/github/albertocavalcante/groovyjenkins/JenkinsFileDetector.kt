@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins
 
+import com.github.albertocavalcante.groovycommon.UriPathConverter
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.FileSystems
@@ -16,18 +17,12 @@ class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfi
     /**
      * Checks if the given URI represents a Jenkins pipeline file.
      */
-    @Suppress("TooGenericExceptionCaught")
     fun isJenkinsFile(uri: URI): Boolean {
         if (patterns.isEmpty()) {
             return false
         }
 
-        val path = try {
-            Paths.get(uri)
-        } catch (e: Exception) {
-            logger.warn("Failed to convert URI to path: $uri", e)
-            return false
-        }
+        val path = UriPathConverter.toPath(uri) ?: return false
 
         return compiledPatterns.any { matcher ->
             matcher.matches(path)

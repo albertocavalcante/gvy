@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
+import com.github.albertocavalcante.groovycommon.UriPathConverter
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
@@ -8,8 +9,6 @@ import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
-import java.nio.file.InvalidPathException
-import java.nio.file.Path
 
 /**
  * Discovers test classes and methods across all registered test frameworks.
@@ -114,20 +113,17 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
         return compilationService.getValidParseResult(uri)
     }
 
-    private fun readFileContent(uri: URI): String? = try {
-        Files.readString(Path.of(uri))
-    } catch (e: InvalidPathException) {
-        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-        null
-    } catch (e: IllegalArgumentException) {
-        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-        null
-    } catch (e: SecurityException) {
-        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-        null
-    } catch (e: IOException) {
-        logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-        null
+    private fun readFileContent(uri: URI): String? {
+        val path = UriPathConverter.toPath(uri) ?: return null
+        return try {
+            Files.readString(path)
+        } catch (e: IOException) {
+            logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+            null
+        } catch (e: SecurityException) {
+            logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
+            null
+        }
     }
 
     companion object {
