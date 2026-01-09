@@ -277,10 +277,13 @@ object GroovySemanticTokenProvider {
             modifiers = modifiers or TokenModifiers.ABSTRACT
         }
 
+        // Calculate the actual method declaration line and offset
+        // MethodNode.lineNumber may point to annotations if present
+        val (declLine, declCol) = getMethodDeclarationPosition(method)
+
         // Calculate offset from declaration start to method name
-        // MethodNode.columnNumber points to the first token (usually a modifier or return type)
         val nameOffset = calculateMethodNameOffset(method)
-        addTokenWithOffset(method, nameOffset, method.name.length, TokenTypes.METHOD, modifiers, tokens)
+        addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
 
         // Visit parameters
         method.parameters.forEach { param ->
@@ -483,6 +486,55 @@ object GroovySemanticTokenProvider {
         classNode.isInterface -> TokenTypes.INTERFACE
         classNode.isEnum -> TokenTypes.ENUM
         else -> TokenTypes.CLASS
+    }
+
+    /**
+     * Get the actual method declaration position, accounting for annotations.
+     *
+     * MethodNode.lineNumber points to the first annotation if present, not the
+     * actual method declaration line. This function finds the line after all
+     * annotations where the actual modifiers/return type start.
+     *
+     * @return Pair of (line, column) in 1-based coordinates
+     */
+    private fun getMethodDeclarationPosition(method: MethodNode): Pair<Int, Int> {
+        val annotations = method.annotations
+        if (annotations.isNullOrEmpty()) {
+            // No annotations, use the method's reported position
+            return Pair(method.lineNumber, method.columnNumber)
+        }
+
+        // Find the last annotation's last line
+        val lastAnnotationLine = annotations.maxOfOrNull { it.lastLineNumber } ?: method.lineNumber
+
+        // The method declaration starts on the line after the last annotation
+        // Use the method's column number as a reasonable estimate for the declaration start
+        return Pair(lastAnnotationLine + 1, method.columnNumber)
+    }
+
+    /**
+     * Add a method token with explicit line/column position.
+     */
+    private fun addMethodToken(
+        line: Int,
+        column: Int,
+        columnOffset: Int,
+        length: Int,
+        modifiers: Int,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        if (length <= 0) return
+        if (line > 0 && column > 0) {
+            tokens.add(
+                SemanticToken(
+                    line = line - 1, // Convert to 0-based
+                    startChar = column - 1 + columnOffset, // Convert to 0-based + offset
+                    length = length,
+                    tokenType = TokenTypes.METHOD,
+                    tokenModifiers = modifiers,
+                ),
+            )
+        }
     }
 
     /**
