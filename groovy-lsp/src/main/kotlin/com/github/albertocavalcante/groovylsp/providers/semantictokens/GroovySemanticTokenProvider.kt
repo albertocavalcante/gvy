@@ -120,8 +120,21 @@ object GroovySemanticTokenProvider {
             }
 
             logger.debug("Generated {} Groovy semantic tokens for {}", tokens.size, uri)
-        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            logger.error("Failed to generate Groovy semantic tokens for {}", uri, e)
+        } catch (e: NullPointerException) {
+            logger.error("Null pointer encountered while generating semantic tokens for {}: {}", uri, e.message, e)
+        } catch (e: IndexOutOfBoundsException) {
+            logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
+        } catch (e: IllegalStateException) {
+            logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
+        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
+            // Catch remaining runtime exceptions to prevent LSP crashes
+            logger.error(
+                "Unexpected error generating semantic tokens for {}: {} - {}",
+                uri,
+                e.javaClass.simpleName,
+                e.message,
+                e,
+            )
         }
 
         return tokens
