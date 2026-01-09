@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
@@ -12,8 +13,8 @@ import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 
 class CompilationOrchestratorTest {
 
@@ -77,6 +78,7 @@ class CompilationOrchestratorTest {
         val result = orchestrator.ensureCompiled(URI.create(targetUri.toString()))
 
         assertNotNull(result)
-        assertTrue(requestSlot.captured.workspaceSources.isEmpty())
+        // ParseMode.MINIMAL ensures workspace sources are skipped during parsing (Issue #743)
+        assertEquals(ParseMode.MINIMAL, requestSlot.captured.parseMode)
     }
 }

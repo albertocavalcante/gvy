@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
@@ -215,7 +216,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         val tokenIndex = GroovyTokenIndex.build(request.content)
 
-        val ast = extractAst(compilationUnit)
+        val ast = extractAst(compilationUnit, request.sourceUnitName)
         val diagnostics =
             ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates).toMutableList()
 
@@ -337,6 +338,12 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     }
 
     private fun addWorkspaceSources(compilationUnit: CompilationUnit, request: ParseRequest) {
+        // In MINIMAL mode, skip workspace sources for fast, isolated parsing (Issue #743)
+        if (request.parseMode == ParseMode.MINIMAL) {
+            logger.trace("Skipping workspace sources in MINIMAL mode for {}", request.uri)
+            return
+        }
+
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
@@ -345,20 +352,39 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             }
             .forEach { path ->
                 runCatching {
-                    logger.debug("Adding workspace source: $path")
+                    logger.trace("Adding workspace source: $path")
                     compilationUnit.addSource(path.toFile())
                 }.onFailure { throwable ->
-                    logger.debug("Failed adding workspace source {}: {}", path, throwable.message)
+                    logger.trace("Failed adding workspace source {}: {}", path, throwable.message)
                 }
             }
     }
 
-    private fun extractAst(compilationUnit: CompilationUnit): ModuleNode? = try {
+    /**
+     * Extracts the AST module for the requested source file.
+     *
+     * When workspace sources are included, multiple modules may exist in the compilation unit.
+     * This method ensures deterministic selection by matching the requested source's name.
+     *
+     * @param compilationUnit The compiled unit containing all modules
+     * @param sourceUnitName The name of the requested source (from ParseRequest.sourceUnitName)
+     * @return The module matching the requested source, or first module as fallback
+     */
+    private fun extractAst(compilationUnit: CompilationUnit, sourceUnitName: String): ModuleNode? = try {
         val ast = compilationUnit.ast
         if (ast?.modules?.isNotEmpty() == true) {
-            // TODO(#743): Ensure module selection is deterministic for the requested source when workspace sources exist.
-            //   See: https://github.com/albertocavalcante/gvy/issues/743
-            ast.modules.first()
+            // Deterministic module selection: find the module matching the requested source
+            ast.modules.find { module ->
+                module.context?.name == sourceUnitName
+            } ?: run {
+                // Fallback to first module if no match (e.g., if source was parsed with different name)
+                logger.debug(
+                    "Requested source '{}' not found in {} modules, using first",
+                    sourceUnitName,
+                    ast.modules.size,
+                )
+                ast.modules.first()
+            }
         } else {
             logger.debug("No modules available in compilation unit")
             null

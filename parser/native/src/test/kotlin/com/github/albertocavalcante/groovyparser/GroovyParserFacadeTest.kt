@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import org.codehaus.groovy.ast.ClassNode
@@ -118,6 +119,79 @@ class GroovyParserFacadeTest {
         assertNotNull(module)
         assertEquals(request.sourceUnitName, module.context?.name)
         assertTrue(module.classes.any { it.nameWithoutPackage == "Zebra" })
+    }
+
+    @Test
+    fun `parse with MINIMAL mode skips workspace sources`() {
+        // Create an extra source that would normally be included in WORKSPACE mode
+        val extraSource = tempDir.resolve("Dependency.groovy").toFile()
+        extraSource.writeText(
+            """
+            class Dependency {
+                String value = "from dependency"
+            }
+            """.trimIndent(),
+        )
+
+        // Code that references the Dependency class
+        val code = """
+            class Consumer {
+                Dependency dep = new Dependency()
+            }
+        """.trimIndent()
+
+        // Parse in MINIMAL mode - workspace sources should be skipped
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Consumer.groovy"),
+                content = code,
+                workspaceSources = listOf(extraSource.toPath()),
+                parseMode = ParseMode.MINIMAL,
+            ),
+        )
+
+        // Parse succeeds but may have unresolved type error since Dependency is not included
+        assertNotNull(result.ast, "AST should be populated even in MINIMAL mode")
+
+        // Verify only Consumer class is in the AST (Dependency was not added)
+        val userClasses = result.ast!!.classes.filter { !it.name.contains("$") }
+        assertTrue(
+            userClasses.all { it.nameWithoutPackage == "Consumer" },
+            "Only Consumer class should be in AST when workspace sources are skipped",
+        )
+    }
+
+    @Test
+    fun `parse with WORKSPACE mode includes workspace sources`() {
+        // Create an extra source
+        val extraSource = tempDir.resolve("Helper.groovy").toFile()
+        extraSource.writeText(
+            """
+            class Helper {
+                static String help() { "helped" }
+            }
+            """.trimIndent(),
+        )
+
+        val code = """
+            class Main {
+                String result = Helper.help()
+            }
+        """.trimIndent()
+
+        // Parse in WORKSPACE mode (explicit) - workspace sources should be included
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Main.groovy"),
+                content = code,
+                workspaceSources = listOf(extraSource.toPath()),
+                parseMode = ParseMode.WORKSPACE,
+            ),
+        )
+
+        assertTrue(result.isSuccessful, "Parse should succeed with workspace sources included")
+        assertNotNull(result.ast)
+        assertEquals(0, result.diagnostics.size, "No diagnostics expected when Helper is available")
     }
 
     @Test
