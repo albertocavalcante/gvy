@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
+import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
@@ -85,13 +86,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         uri: URI,
         content: String,
         compilePhase: Int = Phases.CANONICALIZATION,
-        workspaceSourcesOverride: List<Path>? = null,
+        parseMode: ParseMode = ParseMode.WORKSPACE,
     ): CompilationResult {
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath
         val classpath = workspaceManager.getClasspathForFile(uri, content)
-        val workspaceSources = workspaceSourcesOverride ?: workspaceManager.getWorkspaceSources()
+        // Workspace sources are still passed but ParseMode controls whether they're used
+        val workspaceSources = workspaceManager.getWorkspaceSources()
 
         // Parse the source code
         val parseResult = workerSessionManager.parse(
@@ -103,6 +105,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 workspaceSources = workspaceSources,
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
+                parseMode = parseMode,
             ),
         )
 
@@ -198,13 +201,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
             logger.debug("Compiling from disk on-demand: $uri")
             return try {
-                val content = kotlinx.coroutines.withContext(ioDispatcher) {
+                val content = withContext(ioDispatcher) {
                     Files.readString(path)
                 }
-                // TODO(#743): Define explicit parse modes and cache authority to avoid cross-source divergence.
-                //   See: https://github.com/albertocavalcante/gvy/issues/743
-                // Skip workspace sources to avoid full-workspace recompiles on on-demand requests.
-                performCompilation(uri, content, workspaceSourcesOverride = emptyList())
+                // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                performCompilation(uri, content, parseMode = ParseMode.MINIMAL)
             } catch (e: Exception) {
                 logger.error("Failed to compile from disk for $uri: ${e.message}", e)
                 null

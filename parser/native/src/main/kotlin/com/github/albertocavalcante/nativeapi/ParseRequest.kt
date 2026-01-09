@@ -5,6 +5,34 @@ import java.net.URI
 import java.nio.file.Path
 
 /**
+ * Parsing mode controlling workspace source inclusion and caching behavior.
+ *
+ * @see <a href="https://github.com/albertocavalcante/gvy/issues/743">Issue #743</a>
+ */
+enum class ParseMode {
+    /**
+     * Minimal parsing without workspace sources.
+     *
+     * Use for on-demand compilation in navigation operations (go-to-definition, hover)
+     * where cross-file resolution is handled by SemanticDB or symbol index.
+     *
+     * Benefits:
+     * - Fast: no compilation of workspace sources
+     * - Isolated: no interference from other files
+     * - Deterministic: always produces same result for same input
+     */
+    MINIMAL,
+
+    /**
+     * Full workspace parsing with all workspace sources.
+     *
+     * Use for background indexing or full compilation where cross-file
+     * type resolution is required at compile time.
+     */
+    WORKSPACE,
+}
+
+/**
  * Input required to parse a Groovy document.
  */
 data class ParseRequest(
@@ -24,6 +52,14 @@ data class ParseRequest(
      * `SEMANTIC_ANALYSIS` transforms run.
      */
     val compilePhase: Int = Phases.CANONICALIZATION,
+    /**
+     * Parse mode controlling workspace source inclusion.
+     *
+     * Default is [ParseMode.WORKSPACE] for backward compatibility.
+     *
+     * @see ParseMode
+     */
+    val parseMode: ParseMode = ParseMode.WORKSPACE,
 ) {
     val sourceUnitName: String = uri.path ?: uri.toString()
 }
