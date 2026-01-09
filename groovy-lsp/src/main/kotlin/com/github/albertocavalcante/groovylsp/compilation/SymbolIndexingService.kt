@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import com.github.albertocavalcante.groovycommon.UriPathConverter
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
@@ -12,7 +13,6 @@ import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
-import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -184,12 +184,7 @@ class SymbolIndexingService(
 
     // Private helper methods
 
-    private fun parseUriToPath(uri: URI): Path? = try {
-        Path.of(uri)
-    } catch (e: InvalidPathException) {
-        logger.debug("Failed to convert URI to path: $uri", e)
-        null
-    }
+    private fun parseUriToPath(uri: URI): Path? = UriPathConverter.toPath(uri)
 
     /**
      * Performs the actual indexing of a file.

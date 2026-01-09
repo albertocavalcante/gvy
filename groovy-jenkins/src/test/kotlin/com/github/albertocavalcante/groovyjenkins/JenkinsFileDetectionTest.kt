@@ -55,4 +55,28 @@ class JenkinsFileDetectionTest {
         assertFalse(detector.isJenkinsFile(URI.create("file:///workspace/Jenkinsfile")))
         assertFalse(detector.isJenkinsFile(URI.create("file:///workspace/test.groovy")))
     }
+
+    @Test
+    fun `should return false for untitled URI scheme without crashing`() {
+        val detector = JenkinsFileDetector()
+
+        // VSCode sends untitled: URIs for unsaved documents
+        assertFalse(detector.isJenkinsFile(URI.create("untitled:Untitled-1")))
+        assertFalse(detector.isJenkinsFile(URI.create("untitled:Untitled-42")))
+    }
+
+    @Test
+    fun `should return false for vscode-notebook URI scheme without crashing`() {
+        val detector = JenkinsFileDetector()
+
+        assertFalse(detector.isJenkinsFile(URI.create("vscode-notebook-cell://path/notebook.ipynb")))
+    }
+
+    @Test
+    fun `should return false for http URI scheme without crashing`() {
+        val detector = JenkinsFileDetector()
+
+        assertFalse(detector.isJenkinsFile(URI.create("http://example.com/Jenkinsfile")))
+        assertFalse(detector.isJenkinsFile(URI.create("https://example.com/Jenkinsfile")))
+    }
 }

@@ -2,19 +2,12 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
-import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
-import com.github.albertocavalcante.groovylsp.gradle.DependencyManager
 import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
-import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
-import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import org.eclipse.lsp4j.InitializeParams
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue

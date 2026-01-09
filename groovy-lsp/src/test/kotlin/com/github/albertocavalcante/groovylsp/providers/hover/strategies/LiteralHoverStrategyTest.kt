@@ -12,7 +12,6 @@ import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import java.net.URI
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**

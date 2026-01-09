@@ -1,12 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.definition
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
-import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import kotlinx.coroutines.test.runTest
-import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.junit.jupiter.api.AfterEach
