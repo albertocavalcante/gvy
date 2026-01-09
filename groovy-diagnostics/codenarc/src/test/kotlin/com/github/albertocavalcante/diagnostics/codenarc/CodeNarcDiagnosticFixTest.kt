@@ -381,6 +381,405 @@ class CodeNarcDiagnosticFixTest {
         assertEquals(0, diag.range.end.character, "Range on empty line should be (0, 0)")
     }
 
+    // ==========================================
+    // UnnecessaryGString Range Calculation Tests
+    // These tests verify precise column positioning for the UnnecessaryGString rule.
+    // The CodeNarc message format uses single quotes: "The String 'content' can be wrapped..."
+    // ==========================================
+
+    @Test
+    fun `UnnecessaryGString should extract string content from single-quoted message and find in sourceLine`() {
+        // CodeNarc message format: "The String 'hello' can be wrapped in single quotes"
+        // sourceLine: '    def s = "hello"'
+        // Expected: Range should cover exactly "hello" (including quotes) at positions 12-19
+        val sourceCode = "class Test {\n    def s = \"hello\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String 'hello' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "    def s = \"hello\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script:
+        // '    def s = "hello"' -> "hello" is at indices 12-19
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(19, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle GString at start of line`() {
+        // sourceLine: '"hello"' (no indentation)
+        val sourceCode = "\"hello\""
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 1
+        every { violation.message } returns "The String 'hello' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "\"hello\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: start=0, end=7
+        assertEquals(0, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(7, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle long variable names like in screenshot`() {
+        // This reproduces the exact case from the user's screenshot
+        // sourceLine: '        return "myCustomDynamicPropertyValue"'
+        val sourceCode = "class Test {\n        return \"myCustomDynamicPropertyValue\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String 'myCustomDynamicPropertyValue' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "        return \"myCustomDynamicPropertyValue\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: start=15, end=45
+        assertEquals(15, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(45, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle deep indentation`() {
+        // sourceLine with 12-space indentation
+        val sourceCode = """
+            |class Test {
+            |    def m() {
+            |        if (true) {
+            |            return "value"
+            |        }
+            |    }
+            |}
+        """.trimMargin()
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 4
+        every { violation.message } returns "The String 'value' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "            return \"value\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: start=19, end=26
+        assertEquals(19, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(26, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle empty string`() {
+        // Empty string case: ""
+        val sourceCode = "class Test {\n    def s = \"\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String '' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "    def s = \"\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: start=12, end=14
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(14, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle multiple strings on same line and find the correct one`() {
+        // Multiple strings: "foo" and "bar", violation is for "foo"
+        val sourceCode = "if (x == \"foo\") return \"bar\""
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 1
+        every { violation.message } returns "The String 'foo' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "if (x == \"foo\") return \"bar\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: "foo" is at start=9, end=14
+        // NOT "bar" which is at 23-28
+        assertEquals(9, diag.range.start.character, "Start should be at 'foo' opening quote, not 'bar'")
+        assertEquals(14, diag.range.end.character, "End should be after 'foo' closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle string with special characters`() {
+        // String with newline escape sequence
+        val sourceCode = "class Test {\n    def s = \"hello\\nworld\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String 'hello\\nworld' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "    def s = \"hello\\nworld\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // '    def s = "hello\nworld"' -> start at 12
+        // Length of "hello\nworld" with quotes = 14 (2 quotes + 5 + 2 + 5)
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(26, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should fallback to first quote when message extraction fails`() {
+        // Message doesn't contain extractable string content (malformed message)
+        val sourceCode = "class Test {\n    def s = \"hello\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "Some malformed message without quotes"
+        every { violation.sourceLine } returns "    def s = \"hello\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Should fallback to finding first double-quoted string
+        assertEquals(12, diag.range.start.character, "Start should be at first opening quote")
+        assertEquals(19, diag.range.end.character, "End should be after first closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should handle message with double quotes for backward compatibility`() {
+        // Some versions might use double quotes in message
+        val sourceCode = "class Test {\n    def s = \"hello\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 2
+        every { violation.message } returns "The String \"hello\" can be a single quoted string"
+        every { violation.sourceLine } returns "    def s = \"hello\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(19, diag.range.end.character, "End should be after closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should find the SECOND string when it is the violation target`() {
+        // This test verifies that when the message specifies the second string,
+        // we correctly identify it instead of defaulting to the first string.
+        // Multiple strings: "foo" and "bar", violation is for "bar" (the SECOND one)
+        val sourceCode = "if (x == \"foo\") return \"bar\""
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 1
+        // Note: Message specifies 'bar' (with single quotes as CodeNarc does)
+        every { violation.message } returns "The String 'bar' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "if (x == \"foo\") return \"bar\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // Positions verified by Python script: "bar" is at start=23, end=28
+        // NOT "foo" which is at 9-14
+        assertEquals(23, diag.range.start.character, "Start should be at 'bar' opening quote, not 'foo'")
+        assertEquals(28, diag.range.end.character, "End should be after 'bar' closing quote")
+    }
+
+    @Test
+    fun `UnnecessaryGString should correctly extract content from single-quoted CodeNarc message`() {
+        // This is the critical test - verifying that we extract from single quotes
+        // when the message is: "The String 'content' can be wrapped..."
+        val sourceCode = "class Test {\n    def x = \"first\"\n    def y = \"second\"\n}"
+
+        val rule = mockk<Rule>()
+        every { rule.name } returns "UnnecessaryGString"
+        every { rule.priority } returns 3
+
+        val violation = mockk<Violation>()
+        every { violation.rule } returns rule
+        every { violation.lineNumber } returns 3
+        // Single-quoted message format from CodeNarc
+        every { violation.message } returns "The String 'second' can be wrapped in single quotes"
+        every { violation.sourceLine } returns "    def y = \"second\""
+
+        val leafResults = mockk<Results>()
+        every { leafResults.children } returns mutableListOf()
+        every { leafResults.violations } returns mutableListOf(violation)
+
+        val workspaceContext = createTestWorkspaceContext()
+        val diagnosticProvider = CodeNarcDiagnosticProvider(
+            workspaceContext = workspaceContext,
+            codeAnalyzer = createStubAnalyzer(leafResults),
+        )
+
+        val diagnostics = diagnosticProvider.analyzeAndGetDiagnostics(sourceCode, "Test.groovy")
+
+        assertEquals(1, diagnostics.size)
+        val diag = diagnostics[0]
+        // '    def y = "second"' -> start=12, end=20
+        assertEquals(12, diag.range.start.character, "Start should be at opening quote")
+        assertEquals(20, diag.range.end.character, "End should be after closing quote")
+    }
+
     private fun createTestWorkspaceContext(): WorkspaceContext = object : WorkspaceContext {
         override val root: Path? = Paths.get(".")
         override fun getConfiguration(): DiagnosticConfiguration = object : DiagnosticConfiguration {

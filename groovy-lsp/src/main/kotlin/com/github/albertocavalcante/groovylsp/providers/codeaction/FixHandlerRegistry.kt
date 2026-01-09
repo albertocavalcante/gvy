@@ -105,6 +105,10 @@ object FixHandlerRegistry {
             handler = ::fixUnnecessaryDotClass,
             title = "Remove '.class'",
         ),
+        "UnnecessaryGString" to FixRegistration(
+            handler = ::fixUnnecessaryGString,
+            title = "Use single-quoted string",
+        ),
     )
 
     /**
@@ -624,4 +628,74 @@ private fun fixUnnecessaryDotClass(context: FixContext): TextEdit? {
     }
 
     return TextEdit(range, className)
+}
+
+/**
+ * Fix handler for UnnecessaryGString rule.
+ * Converts GStrings (double-quoted strings without interpolation) to single-quoted strings.
+ *
+ * In Groovy, double-quoted strings (GStrings) support string interpolation, but when
+ * no interpolation is used, single-quoted strings are preferred for clarity and
+ * slight performance benefit.
+ *
+ * The handler:
+ * 1. Validates the text at the diagnostic range is a double-quoted string
+ * 2. Extracts the string content (without quotes)
+ * 3. Returns null if the content contains single quotes (would break syntax)
+ * 4. Returns a TextEdit replacing double quotes with single quotes
+ *
+ * Examples:
+ * - `"hello"` -> `'hello'`
+ * - `""` -> `''`
+ * - `"it's"` -> null (cannot convert, contains single quote)
+ *
+ * **Feature: codenarc-lint-fixes**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that converts to single-quoted string, or null if the fix cannot be applied
+ */
+private fun fixUnnecessaryGString(context: FixContext): TextEdit? {
+    val range = context.diagnostic.range
+    val lineNumber = range.start.line
+
+    // Validate line number is within bounds
+    if (lineNumber < 0 || lineNumber >= context.lines.size) {
+        return null
+    }
+
+    val line = context.lines[lineNumber]
+    val startIndex = range.start.character
+    val endIndex = range.end.character
+
+    // Validate that the diagnostic's range is within the line's bounds
+    if (startIndex < 0 || endIndex > line.length || startIndex >= endIndex) {
+        return null
+    }
+
+    // Extract the string from the line using the diagnostic range
+    val gstring = line.substring(startIndex, endIndex)
+
+    // Validate it's a double-quoted string
+    if (!gstring.startsWith("\"") || !gstring.endsWith("\"")) {
+        return null
+    }
+
+    // Need at least 2 characters for the quotes
+    if (gstring.length < 2) {
+        return null
+    }
+
+    // Extract the content (without the surrounding quotes)
+    val content = gstring.substring(1, gstring.length - 1)
+
+    // If the content contains single quotes, we cannot convert
+    // (it would break the syntax: 'it's' is invalid)
+    if (content.contains("'")) {
+        return null
+    }
+
+    // Create the single-quoted string
+    val singleQuotedString = "'$content'"
+
+    return TextEdit(range, singleQuotedString)
 }

@@ -807,4 +807,305 @@ class ConventionFixHandlersTest {
         assertNotNull(textEdit, "Handler should produce a TextEdit")
         assertEquals("Map.Entry", textEdit!!.newText, "Should remove .class suffix from inner class")
     }
+
+    // ========================================================================
+    // Property Tests for UnnecessaryGString
+    // ========================================================================
+
+    /**
+     * Property test: GString to Single-Quoted String
+     * **Feature: codenarc-lint-fixes**
+     *
+     * For any GString (double-quoted string) without interpolation and without
+     * embedded single quotes, applying the UnnecessaryGString fix should convert
+     * it to a single-quoted string.
+     */
+    @Property(tries = 100)
+    fun `property - gstring to single quote conversion produces correct result`(
+        @ForAll("gstringsWithoutSingleQuotes") gstringInfo: GStringInfo,
+    ): Boolean {
+        val content = gstringInfo.code
+        val lines = content.lines()
+
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String '${gstringInfo.stringContent}' can be wrapped in single quotes",
+            line = 0,
+            startChar = gstringInfo.startIndex,
+            endChar = gstringInfo.endIndex,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        return if (textEdit != null) {
+            // The fix should replace double quotes with single quotes
+            textEdit.newText == gstringInfo.expectedOutput &&
+                textEdit.range.start.character == gstringInfo.startIndex &&
+                textEdit.range.end.character == gstringInfo.endIndex
+        } else {
+            // Handler should produce a fix for valid GStrings without single quotes
+            false
+        }
+    }
+
+    /**
+     * Data class to hold GString test information.
+     */
+    data class GStringInfo(
+        val code: String,
+        val startIndex: Int,
+        val endIndex: Int,
+        val stringContent: String,
+        val expectedOutput: String,
+    )
+
+    @Provide
+    fun gstringsWithoutSingleQuotes(): Arbitrary<GStringInfo> = Arbitraries.of(
+        // Basic string conversions
+        GStringInfo("def s = \"hello\"", 8, 15, "hello", "'hello'"),
+        GStringInfo("def s = \"world\"", 8, 15, "world", "'world'"),
+        GStringInfo("def s = \"test\"", 8, 14, "test", "'test'"),
+        GStringInfo("def s = \"value\"", 8, 15, "value", "'value'"),
+        // Strings with numbers
+        GStringInfo("def s = \"test123\"", 8, 17, "test123", "'test123'"),
+        GStringInfo("def s = \"123\"", 8, 13, "123", "'123'"),
+        // Strings with special characters (but no single quotes)
+        GStringInfo("def s = \"hello-world\"", 8, 21, "hello-world", "'hello-world'"),
+        GStringInfo("def s = \"foo_bar\"", 8, 17, "foo_bar", "'foo_bar'"),
+        GStringInfo("def s = \"camelCase\"", 8, 19, "camelCase", "'camelCase'"),
+        // Empty string
+        GStringInfo("def s = \"\"", 8, 10, "", "''"),
+    )
+
+    // ========================================================================
+    // Unit Tests for UnnecessaryGString
+    // ========================================================================
+
+    @Test
+    fun `gstring handler converts double quotes to single quotes`() {
+        // Positions verified by Python: "hello" at 8-15
+        val content = "def s = \"hello\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'hello' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8, // Start of "hello"
+            endChar = 15, // End of "hello"
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'hello'", textEdit!!.newText, "Should convert to single-quoted string")
+        assertEquals(0, textEdit.range.start.line)
+        assertEquals(8, textEdit.range.start.character)
+        assertEquals(0, textEdit.range.end.line)
+        assertEquals(15, textEdit.range.end.character)
+    }
+
+    @Test
+    fun `gstring handler converts empty string`() {
+        // Positions verified by Python: "" at 8-10
+        val content = "def s = \"\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String '' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8, // Start of ""
+            endChar = 10, // End of ""
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("''", textEdit!!.newText, "Should convert empty string to single quotes")
+        assertEquals(8, textEdit.range.start.character)
+        assertEquals(10, textEdit.range.end.character)
+    }
+
+    @Test
+    fun `gstring handler handles indented string`() {
+        // Positions verified by Python: "world" at 12-19
+        val content = "    def s = \"world\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'world' can be wrapped in single quotes",
+            line = 0,
+            startChar = 12, // Start of "world"
+            endChar = 19, // End of "world"
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'world'", textEdit!!.newText, "Should convert to single-quoted string")
+        assertEquals(12, textEdit.range.start.character)
+        assertEquals(19, textEdit.range.end.character)
+    }
+
+    @Test
+    fun `gstring handler returns null for string containing single quote`() {
+        // Strings containing single quotes should NOT be converted
+        // Positions verified by Python: "it's" at 8-14
+        val content = "def s = \"it's\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'it's' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8,
+            endChar = 14,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        // Handler should return null because converting to single quotes would break syntax
+        assertEquals(null, textEdit, "Should return null for strings containing single quotes")
+    }
+
+    @Test
+    fun `gstring handler preserves escape sequences`() {
+        // Positions verified by Python: "hello\nworld" at 8-22
+        val content = "def s = \"hello\\nworld\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'hello\\nworld' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8,
+            endChar = 22,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'hello\\nworld'", textEdit!!.newText, "Should preserve escape sequences")
+    }
+
+    @Test
+    fun `gstring handler handles long variable names like in screenshot`() {
+        // This reproduces the exact case from the user's screenshot
+        // Positions verified by Python: "myCustomDynamicPropertyValue" at 15-45
+        val content = "        return \"myCustomDynamicPropertyValue\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'myCustomDynamicPropertyValue' can be wrapped in single quotes",
+            line = 0,
+            startChar = 15,
+            endChar = 45,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'myCustomDynamicPropertyValue'", textEdit!!.newText, "Should convert to single-quoted string")
+        assertEquals(15, textEdit.range.start.character)
+        assertEquals(45, textEdit.range.end.character)
+    }
+
+    @Test
+    fun `gstring handler returns null when text is not a double-quoted string`() {
+        // Edge case: diagnostic range points to something that's not a double-quoted string
+        val content = "def s = 'already single quoted'"
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'already single quoted' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8,
+            endChar = 31,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        // Handler should return null because the text doesn't start with double quote
+        assertEquals(null, textEdit, "Should return null when text is not double-quoted")
+    }
+
+    @Test
+    fun `gstring handler handles multiline content`() {
+        // Test with content spanning multiple lines, but the string is on one line
+        val content = "class Test {\n    def s = \"value\"\n}"
+        val lines = content.lines()
+        // The string is on line 1 (0-indexed), "value" is at position 12-19 on that line
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'value' can be wrapped in single quotes",
+            line = 1,
+            startChar = 12,
+            endChar = 19,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'value'", textEdit!!.newText, "Should convert to single-quoted string")
+        assertEquals(1, textEdit.range.start.line)
+        assertEquals(12, textEdit.range.start.character)
+        assertEquals(1, textEdit.range.end.line)
+        assertEquals(19, textEdit.range.end.character)
+    }
+
+    @Test
+    fun `gstring handler handles string with only whitespace`() {
+        // Whitespace-only string
+        val content = "def s = \"   \""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String '   ' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8,
+            endChar = 13,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        assertNotNull(textEdit, "Handler should produce a TextEdit")
+        assertEquals("'   '", textEdit!!.newText, "Should convert whitespace-only string")
+    }
 }
