@@ -122,6 +122,48 @@ class DelegationResolver {
      */
     private fun findMethod(classNode: ClassNode, methodName: String): MethodNode? =
         classNode.getMethods(methodName).firstOrNull()
+
+    /**
+     * Finds a method by name on a class, optionally matching parameter types.
+     *
+     * This method supports method overload resolution by matching parameter types.
+     * ClassNode.getMethods(name) searches the entire class hierarchy (superclasses and interfaces).
+     *
+     * @param classNode The class to search
+     * @param methodName The method name to find
+     * @param parameterTypes Optional list of parameter type names for overload resolution.
+     *                       If null, returns the first method matching the name (backward compatibility).
+     *                       If provided, finds the method with matching parameter count and types.
+     * @return The matching method, or null if not found
+     */
+    fun findMethodWithParams(classNode: ClassNode, methodName: String, parameterTypes: List<String>?): MethodNode? {
+        val candidateMethods = classNode.getMethods(methodName)
+
+        // If no parameter types specified, return first match (backward compatibility)
+        if (parameterTypes == null) {
+            return candidateMethods.firstOrNull()
+        }
+
+        // Find method matching parameter count and types
+        return candidateMethods.firstOrNull { method ->
+            val methodParams = method.parameters
+
+            // Check parameter count matches
+            if (methodParams.size != parameterTypes.size) {
+                return@firstOrNull false
+            }
+
+            // Check each parameter type matches
+            methodParams.indices.all { i ->
+                val paramType = methodParams[i].type
+                val expectedType = parameterTypes[i]
+
+                // Match by type name (handles both fully qualified and simple names)
+                paramType.name == expectedType ||
+                    paramType.nameWithoutPackage == expectedType
+            }
+        }
+    }
 }
 
 /**
