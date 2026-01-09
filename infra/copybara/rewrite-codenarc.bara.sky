@@ -1,0 +1,148 @@
+# Copybara configuration for syncing refactor/openrewrite/rewrite-codenarc/ to rewrite-codenarc
+#
+# This workflow supports BIDIRECTIONAL sync between the gvy monorepo and the
+# standalone rewrite-codenarc repository.
+#
+# Standalone repo structure is assembled from:
+#   - refactor/openrewrite/rewrite-codenarc/** (module source code)
+#   - infra/copybara/rewrite-codenarc/** (standalone gradle config)
+#   - gradlew, gradlew.bat, gradle/wrapper/** (gradle wrapper)
+#
+# Workflows:
+#   push-to-rewrite-codenarc  - Sync changes FROM monorepo TO standalone repo
+#   pull-from-rewrite-codenarc - Sync changes FROM standalone repo TO monorepo (creates PR)
+#
+# Usage:
+#   copybara rewrite-codenarc.bara.sky push-to-rewrite-codenarc
+#   copybara rewrite-codenarc.bara.sky pull-from-rewrite-codenarc
+
+sourceUrl = "https://github.com/albertocavalcante/gvy.git"
+destinationUrl = "git@github.com:albertocavalcante/rewrite-codenarc.git"
+
+# ============================================================================
+# Push: Monorepo → Standalone Repository
+# ============================================================================
+core.workflow(
+    name = "push-to-rewrite-codenarc",
+
+    origin = git.origin(
+        url = sourceUrl,
+        ref = "main",
+    ),
+
+    destination = git.github_destination(
+        url = destinationUrl,
+        push = "main",
+    ),
+
+    # Include files from multiple sources to assemble the standalone repo
+    origin_files = glob(
+        include = [
+            # Module source code
+            "refactor/openrewrite/rewrite-codenarc/**",
+            # Standalone gradle configuration
+            "infra/copybara/rewrite-codenarc/**",
+            # Gradle wrapper (from monorepo root)
+            "gradlew",
+            "gradlew.bat",
+            "gradle/wrapper/**",
+            # License from monorepo root
+            "LICENSE",
+        ],
+        exclude = [
+            # Build artifacts
+            "refactor/openrewrite/rewrite-codenarc/build/**",
+            "refactor/openrewrite/rewrite-codenarc/.gradle/**",
+        ]
+    ),
+
+    mode = "ITERATIVE",
+
+    # Preserve original author information
+    authoring = authoring.pass_thru("gvy-sync-bot <sync@cavalcante.uk>"),
+
+    transformations = [
+        # Move module source to root
+        core.move("refactor/openrewrite/rewrite-codenarc", ""),
+
+        # Move standalone gradle config to root (settings.gradle.kts, gradle.properties, gradle/libs.versions.toml)
+        core.move("infra/copybara/rewrite-codenarc", ""),
+
+        # Gradle wrapper files stay at root (no move needed for gradlew, gradlew.bat, gradle/wrapper/)
+
+        # Expose standard Git trailers to preserve them
+        metadata.expose_label("Co-authored-by"),
+        metadata.expose_label("Signed-off-by"),
+        metadata.expose_label("Closes"),
+        metadata.expose_label("Fixes"),
+
+        # Add origin tracking
+        metadata.add_header("Synced-From: gvy/refactor/openrewrite/rewrite-codenarc"),
+    ],
+)
+
+# ============================================================================
+# Pull: Standalone Repository → Monorepo (creates PR for review)
+# ============================================================================
+core.workflow(
+    name = "pull-from-rewrite-codenarc",
+
+    origin = git.origin(
+        url = "https://github.com/albertocavalcante/rewrite-codenarc.git",
+        ref = "main",
+    ),
+
+    destination = git.github_pr_destination(
+        url = sourceUrl,
+        destination_ref = "main",
+        pr_branch = "sync/rewrite-codenarc",
+        title = "sync: import changes from rewrite-codenarc",
+        body = "Automated sync of changes from standalone rewrite-codenarc repository.\n\nPlease review before merging.",
+    ),
+
+    # Sync source code only - exclude infrastructure (maintained in monorepo)
+    origin_files = glob(
+        include = ["**"],
+        exclude = [
+            # Build artifacts
+            "build/**",
+            ".gradle/**",
+            ".git/**",
+            # Gradle infrastructure (maintained in monorepo)
+            "settings.gradle.kts",
+            "gradle.properties",
+            "gradle/libs.versions.toml",
+            "gradlew",
+            "gradlew.bat",
+            "gradle/wrapper/**",
+            # License (maintained in monorepo)
+            "LICENSE",
+        ]
+    ),
+
+    # Files in destination that should be synced
+    destination_files = glob(
+        include = ["refactor/openrewrite/rewrite-codenarc/**"],
+        exclude = [
+            # Don't touch the build.gradle.kts - changes should come through
+            # but the monorepo version uses the shared version catalog
+        ]
+    ),
+
+    mode = "ITERATIVE",
+
+    authoring = authoring.pass_thru("gvy-sync-bot <sync@cavalcante.uk>"),
+
+    transformations = [
+        # Move files from root to refactor/openrewrite/rewrite-codenarc/
+        core.move("", "refactor/openrewrite/rewrite-codenarc"),
+
+        # Expose standard Git trailers
+        metadata.expose_label("Co-authored-by"),
+        metadata.expose_label("Signed-off-by"),
+        metadata.expose_label("Closes"),
+        metadata.expose_label("Fixes"),
+
+        metadata.add_header("Synced-From: rewrite-codenarc"),
+    ],
+)
