@@ -23,6 +23,7 @@ import com.github.albertocavalcante.groovylsp.providers.implementation.Implement
 import com.github.albertocavalcante.groovylsp.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
+import com.github.albertocavalcante.groovylsp.providers.semantictokens.GroovySemanticTokenProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
@@ -779,19 +780,23 @@ class GroovyTextDocumentService(
                     ?.toSet()
                     ?: emptySet()
 
-                // Get Jenkins-specific tokens (built-in blocks + vars/ globals)
-                val jenkinsTokens = JenkinsSemanticTokenProvider.getSemanticTokens(
-                    astModel,
-                    uri,
-                    isJenkinsFile,
-                    varsNames,
-                )
+                // Get general Groovy semantic tokens for ALL files
+                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-                // TODO: Add general Groovy syntax tokens (keywords, operators, literals)
-                // val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(...)
+                // Get Jenkins-specific tokens (built-in blocks + vars/ globals) only for Jenkins files
+                val jenkinsTokens = if (isJenkinsFile) {
+                    JenkinsSemanticTokenProvider.getSemanticTokens(
+                        astModel,
+                        uri,
+                        isJenkinsFile,
+                        varsNames,
+                    )
+                } else {
+                    emptyList()
+                }
 
                 // Combine all tokens and encode
-                val allTokens = jenkinsTokens // + groovyTokens
+                val allTokens = combineTokens(groovyTokens, jenkinsTokens)
                 val encodedData = encodeSemanticTokens(allTokens)
 
                 logger.debug("Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)")
@@ -801,6 +806,30 @@ class GroovyTextDocumentService(
                 SemanticTokens(emptyList())
             }
         }
+
+    /**
+     * Combine Groovy and Jenkins semantic tokens into a single unified list.
+     *
+     * Both token types use the same data structure, so we convert them to a common format
+     * and merge them together for encoding.
+     */
+    private fun combineTokens(
+        groovyTokens: List<GroovySemanticTokenProvider.SemanticToken>,
+        jenkinsTokens: List<JenkinsSemanticTokenProvider.SemanticToken>,
+    ): List<JenkinsSemanticTokenProvider.SemanticToken> {
+        // Convert GroovySemanticTokenProvider tokens to JenkinsSemanticTokenProvider tokens
+        val convertedGroovyTokens = groovyTokens.map { token ->
+            JenkinsSemanticTokenProvider.SemanticToken(
+                line = token.line,
+                startChar = token.startChar,
+                length = token.length,
+                tokenType = token.tokenType,
+                tokenModifiers = token.tokenModifiers,
+            )
+        }
+
+        return convertedGroovyTokens + jenkinsTokens
+    }
 
     /**
      * Encode semantic tokens using LSP relative encoding format.
