@@ -415,8 +415,9 @@ class GroovySemanticTokenProviderTest {
         val enumMemberTokens = tokens.filter {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.ENUM_MEMBER
         }
-        assertTrue(
-            enumMemberTokens.size >= 3,
+        assertEquals(
+            3,
+            enumMemberTokens.size,
             "Should have ENUM_MEMBER tokens for enum constants, got ${enumMemberTokens.size}",
         )
     }
@@ -656,11 +657,10 @@ class GroovySemanticTokenProviderTest {
 
         // Should have METHOD tokens for both declaration and call
         val methodTokens = tokens.filter {
-            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD ||
-                it.tokenType == GroovySemanticTokenProvider.TokenTypes.FUNCTION
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        // We should have 3 METHOD/FUNCTION tokens:
+        // We should have 3 METHOD tokens:
         // 1. caller declaration
         // 2. process() call
         // 3. process declaration
@@ -684,10 +684,9 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD/FUNCTION tokens for both method calls
+        // Should have METHOD tokens for both method calls
         val methodTokens = tokens.filter {
-            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD ||
-                it.tokenType == GroovySemanticTokenProvider.TokenTypes.FUNCTION
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
         val toUpperCaseToken = methodTokens.find { it.length == "toUpperCase".length }
@@ -715,10 +714,9 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD/FUNCTION token for add()
+        // Should have METHOD token for add()
         val methodTokens = tokens.filter {
-            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD ||
-                it.tokenType == GroovySemanticTokenProvider.TokenTypes.FUNCTION
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
         val addToken = methodTokens.find { it.length == "add".length }
@@ -741,10 +739,9 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD/FUNCTION tokens for helper (declaration and call)
+        // Should have METHOD tokens for helper (declaration and call)
         val methodTokens = tokens.filter {
-            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD ||
-                it.tokenType == GroovySemanticTokenProvider.TokenTypes.FUNCTION
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
         val helperTokens = methodTokens.filter { it.length == "helper".length }
@@ -789,10 +786,9 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD/FUNCTION token for 'each' method call
+        // Should have METHOD token for 'each' method call
         val methodTokens = tokens.filter {
-            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD ||
-                it.tokenType == GroovySemanticTokenProvider.TokenTypes.FUNCTION
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
         val eachToken = methodTokens.find { it.length == "each".length }

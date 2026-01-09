@@ -149,8 +149,8 @@ object GroovySemanticTokenProvider {
             logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
         } catch (e: IllegalStateException) {
             logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
-        } catch (@Suppress("TooGenericExceptionCaught") e: RuntimeException) {
-            // Catch remaining runtime exceptions to prevent LSP crashes
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            // Catch remaining exceptions to prevent LSP crashes
             logger.error(
                 "Unexpected error generating semantic tokens for {}: {} - {}",
                 uri,
