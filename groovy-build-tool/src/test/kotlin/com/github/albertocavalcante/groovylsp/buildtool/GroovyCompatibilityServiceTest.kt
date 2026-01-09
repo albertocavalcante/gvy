@@ -85,13 +85,13 @@ class GroovyCompatibilityServiceTest {
     }
 
     @Test
-    fun `should report Groovy 2dot5 compatible with JDK 11`() {
+    fun `should report Groovy 2_5 compatible with JDK 11`() {
         val result = service.checkCompatibility("2.5.0", 11)
         assertTrue(result.isFullyCompatible, "Groovy 2.5.0 should be compatible with JDK 11")
     }
 
     @Test
-    fun `should report Groovy 2dot4 compatible with JDK 7`() {
+    fun `should report Groovy 2_4 compatible with JDK 7`() {
         val result = service.checkCompatibility("2.4.0", 7)
         assertTrue(result.isFullyCompatible, "Groovy 2.4.0 should be compatible with JDK 7")
     }
