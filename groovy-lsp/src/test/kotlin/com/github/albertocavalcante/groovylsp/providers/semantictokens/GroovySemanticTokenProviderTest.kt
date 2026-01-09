@@ -749,6 +749,18 @@ class GroovySemanticTokenProviderTest {
             helperTokens.size >= 2,
             "Should have METHOD tokens for helper declaration and static call, got ${helperTokens.size}",
         )
+
+        // Verify static method call position points to method name, not class name
+        // Line 3: "Utility.helper()" - "helper" starts at column 8
+        val staticCallToken = helperTokens.find { it.line == 3 }
+        assertTrue(staticCallToken != null, "Should have METHOD token on line 3 for static call")
+        assertEquals(8, staticCallToken!!.startChar, "Static method call token should start at column 8 (method name)")
+
+        // Verify method declaration position points to method name
+        // Line 1: "    static def helper() { }" - "helper" starts at column 15
+        val declToken = helperTokens.find { it.line == 1 }
+        assertTrue(declToken != null, "Should have METHOD token on line 1 for declaration")
+        assertEquals(15, declToken!!.startChar, "Method declaration token should start at column 15 (method name)")
     }
 
     @Test

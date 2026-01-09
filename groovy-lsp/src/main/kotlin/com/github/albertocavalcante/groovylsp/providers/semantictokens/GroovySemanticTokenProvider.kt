@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Modifier
 import java.net.URI
 
 /**
@@ -276,7 +277,10 @@ object GroovySemanticTokenProvider {
             modifiers = modifiers or TokenModifiers.ABSTRACT
         }
 
-        addTokenForNode(method, method.name.length, TokenTypes.METHOD, modifiers, tokens)
+        // Calculate offset from declaration start to method name
+        // MethodNode.columnNumber points to the first token (usually a modifier or return type)
+        val nameOffset = calculateMethodNameOffset(method)
+        addTokenWithOffset(method, nameOffset, method.name.length, TokenTypes.METHOD, modifiers, tokens)
 
         // Visit parameters
         method.parameters.forEach { param ->
@@ -479,6 +483,72 @@ object GroovySemanticTokenProvider {
         classNode.isInterface -> TokenTypes.INTERFACE
         classNode.isEnum -> TokenTypes.ENUM
         else -> TokenTypes.CLASS
+    }
+
+    /**
+     * Calculate the column offset from the method declaration start to the method name.
+     *
+     * For a method like "static def myMethod()", the AST reports position at "static",
+     * but we need the position of "myMethod". This calculates the offset based on
+     * the method's modifiers and return type.
+     *
+     * Note: We exclude 'public' from the calculation because Groovy methods are
+     * implicitly public - the modifier is rarely written explicitly. If we included
+     * it, the offset would be wrong for 99% of Groovy code.
+     */
+    private fun calculateMethodNameOffset(method: MethodNode): Int {
+        var offset = 0
+
+        // Add modifier lengths + spaces
+        // Note: We deliberately SKIP public because it's implicit in Groovy.
+        // Methods are public by default and the keyword is almost never written.
+        val modifierTexts = mutableListOf<String>()
+        // Skip isPublic - it's implicit in Groovy
+        if (Modifier.isProtected(method.modifiers)) modifierTexts.add("protected")
+        if (Modifier.isPrivate(method.modifiers)) modifierTexts.add("private")
+        if (Modifier.isStatic(method.modifiers)) modifierTexts.add("static")
+        if (Modifier.isFinal(method.modifiers)) modifierTexts.add("final")
+        if (Modifier.isAbstract(method.modifiers)) modifierTexts.add("abstract")
+        if (Modifier.isSynchronized(method.modifiers)) modifierTexts.add("synchronized")
+
+        // Calculate total modifier length including spaces
+        for (mod in modifierTexts) {
+            offset += mod.length + 1 // +1 for space after modifier
+        }
+
+        // Add return type length + space
+        // In Groovy, "def" methods have Object as return type in AST
+        val returnTypeName = method.returnType?.nameWithoutPackage ?: "def"
+        // Use "def" (3 chars) as the source representation, not "Object" (6 chars)
+        val sourceTypeName = if (returnTypeName == "Object") "def" else returnTypeName
+        offset += sourceTypeName.length + 1 // +1 for space after type
+
+        return offset
+    }
+
+    /**
+     * Add a token for an AST node with a column offset applied.
+     */
+    private fun addTokenWithOffset(
+        node: ASTNode,
+        columnOffset: Int,
+        length: Int,
+        tokenType: Int,
+        modifiers: Int,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        if (length <= 0) return
+        if (node.lineNumber > 0 && node.columnNumber > 0) {
+            tokens.add(
+                SemanticToken(
+                    line = node.lineNumber - 1, // Convert to 0-based
+                    startChar = node.columnNumber - 1 + columnOffset, // Convert to 0-based + offset
+                    length = length,
+                    tokenType = tokenType,
+                    tokenModifiers = modifiers,
+                ),
+            )
+        }
     }
 
     /**
