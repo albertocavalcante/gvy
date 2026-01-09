@@ -47,29 +47,38 @@ object GroovySemanticTokenProvider {
         // Derive indices from the shared legend to prevent misalignment
         private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES
 
-        val NAMESPACE = LEGEND.indexOf(SemanticTokenTypes.Namespace)
-        val TYPE = LEGEND.indexOf(SemanticTokenTypes.Type)
-        val CLASS = LEGEND.indexOf(SemanticTokenTypes.Class)
-        val ENUM = LEGEND.indexOf(SemanticTokenTypes.Enum)
-        val INTERFACE = LEGEND.indexOf(SemanticTokenTypes.Interface)
-        val STRUCT = LEGEND.indexOf(SemanticTokenTypes.Struct)
-        val TYPE_PARAMETER = LEGEND.indexOf(SemanticTokenTypes.TypeParameter)
-        val PARAMETER = LEGEND.indexOf(SemanticTokenTypes.Parameter)
-        val VARIABLE = LEGEND.indexOf(SemanticTokenTypes.Variable)
-        val PROPERTY = LEGEND.indexOf(SemanticTokenTypes.Property)
-        val ENUM_MEMBER = LEGEND.indexOf(SemanticTokenTypes.EnumMember)
-        val EVENT = LEGEND.indexOf(SemanticTokenTypes.Event)
-        val FUNCTION = LEGEND.indexOf(SemanticTokenTypes.Function)
-        val METHOD = LEGEND.indexOf(SemanticTokenTypes.Method)
-        val MACRO = LEGEND.indexOf(SemanticTokenTypes.Macro)
-        val KEYWORD = LEGEND.indexOf(SemanticTokenTypes.Keyword)
-        val MODIFIER = LEGEND.indexOf(SemanticTokenTypes.Modifier)
-        val COMMENT = LEGEND.indexOf(SemanticTokenTypes.Comment)
-        val STRING = LEGEND.indexOf(SemanticTokenTypes.String)
-        val NUMBER = LEGEND.indexOf(SemanticTokenTypes.Number)
-        val REGEXP = LEGEND.indexOf(SemanticTokenTypes.Regexp)
-        val OPERATOR = LEGEND.indexOf(SemanticTokenTypes.Operator)
-        val DECORATOR = LEGEND.indexOf(SemanticTokenTypes.Decorator)
+        private fun indexFor(tokenType: String): Int {
+            val index = LEGEND.indexOf(tokenType)
+            require(index >= 0) {
+                "Semantic token type '$tokenType' not found in legend. " +
+                    "Check JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES."
+            }
+            return index
+        }
+
+        val NAMESPACE = indexFor(SemanticTokenTypes.Namespace)
+        val TYPE = indexFor(SemanticTokenTypes.Type)
+        val CLASS = indexFor(SemanticTokenTypes.Class)
+        val ENUM = indexFor(SemanticTokenTypes.Enum)
+        val INTERFACE = indexFor(SemanticTokenTypes.Interface)
+        val STRUCT = indexFor(SemanticTokenTypes.Struct)
+        val TYPE_PARAMETER = indexFor(SemanticTokenTypes.TypeParameter)
+        val PARAMETER = indexFor(SemanticTokenTypes.Parameter)
+        val VARIABLE = indexFor(SemanticTokenTypes.Variable)
+        val PROPERTY = indexFor(SemanticTokenTypes.Property)
+        val ENUM_MEMBER = indexFor(SemanticTokenTypes.EnumMember)
+        val EVENT = indexFor(SemanticTokenTypes.Event)
+        val FUNCTION = indexFor(SemanticTokenTypes.Function)
+        val METHOD = indexFor(SemanticTokenTypes.Method)
+        val MACRO = indexFor(SemanticTokenTypes.Macro)
+        val KEYWORD = indexFor(SemanticTokenTypes.Keyword)
+        val MODIFIER = indexFor(SemanticTokenTypes.Modifier)
+        val COMMENT = indexFor(SemanticTokenTypes.Comment)
+        val STRING = indexFor(SemanticTokenTypes.String)
+        val NUMBER = indexFor(SemanticTokenTypes.Number)
+        val REGEXP = indexFor(SemanticTokenTypes.Regexp)
+        val OPERATOR = indexFor(SemanticTokenTypes.Operator)
+        val DECORATOR = indexFor(SemanticTokenTypes.Decorator)
     }
 
     /**
@@ -80,16 +89,25 @@ object GroovySemanticTokenProvider {
         // Derive bit masks from the shared legend to prevent misalignment
         private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS
 
-        val DECLARATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Declaration)
-        val DEFINITION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Definition)
-        val READONLY = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Readonly)
-        val STATIC = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Static)
-        val DEPRECATED = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Deprecated)
-        val ABSTRACT = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Abstract)
-        val ASYNC = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Async)
-        val MODIFICATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Modification)
-        val DOCUMENTATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Documentation)
-        val DEFAULT_LIBRARY = 1 shl LEGEND.indexOf(SemanticTokenModifiers.DefaultLibrary)
+        private fun maskFor(modifier: String): Int {
+            val index = LEGEND.indexOf(modifier)
+            require(index >= 0) {
+                "Semantic token modifier '$modifier' not found in legend. " +
+                    "Check JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS."
+            }
+            return 1 shl index
+        }
+
+        val DECLARATION = maskFor(SemanticTokenModifiers.Declaration)
+        val DEFINITION = maskFor(SemanticTokenModifiers.Definition)
+        val READONLY = maskFor(SemanticTokenModifiers.Readonly)
+        val STATIC = maskFor(SemanticTokenModifiers.Static)
+        val DEPRECATED = maskFor(SemanticTokenModifiers.Deprecated)
+        val ABSTRACT = maskFor(SemanticTokenModifiers.Abstract)
+        val ASYNC = maskFor(SemanticTokenModifiers.Async)
+        val MODIFICATION = maskFor(SemanticTokenModifiers.Modification)
+        val DOCUMENTATION = maskFor(SemanticTokenModifiers.Documentation)
+        val DEFAULT_LIBRARY = maskFor(SemanticTokenModifiers.DefaultLibrary)
     }
 
     /**
@@ -202,9 +220,14 @@ object GroovySemanticTokenProvider {
 
     /**
      * Visit superclass and interfaces (type references).
+     *
+     * Note: java.lang.Object is explicitly excluded from type references because:
+     * 1. Every class implicitly extends Object, so highlighting it adds noise
+     * 2. Users rarely write "extends Object" explicitly
+     * 3. The Object type reference usually doesn't have meaningful source positions
      */
     private fun visitClassHierarchy(classNode: ClassNode, tokens: MutableList<SemanticToken>) {
-        // Visit superclass
+        // Visit superclass (excluding implicit Object inheritance)
         if (classNode.superClass != null && classNode.superClass.lineNumber > 0) {
             val superName = classNode.superClass.nameWithoutPackage
             if (superName != "Object") {
@@ -289,8 +312,8 @@ object GroovySemanticTokenProvider {
             modifiers = modifiers or TokenModifiers.READONLY
         }
 
-        // Enum constants are special
-        if (field.owner?.isEnum == true && field.isStatic && field.isFinal) {
+        // Enum constants: all enum constants are implicitly static final, so we just check if owner is enum
+        if (field.owner?.isEnum == true && field.type == field.owner) {
             addTokenForNode(field, field.name.length, TokenTypes.ENUM_MEMBER, modifiers, tokens)
         } else {
             addTokenForNode(field, field.name.length, TokenTypes.PROPERTY, modifiers, tokens)
@@ -379,7 +402,8 @@ object GroovySemanticTokenProvider {
         val tokenType = when {
             varExpr.accessedVariable is Parameter -> TokenTypes.PARAMETER
             varExpr.accessedVariable is FieldNode -> TokenTypes.PROPERTY
-            varExpr.name == "it" -> TokenTypes.PARAMETER // Implicit closure parameter fallback
+            // Implicit closure parameter 'it' - only when unresolved (accessedVariable is null)
+            varExpr.accessedVariable == null && varExpr.name == "it" -> TokenTypes.PARAMETER
             else -> TokenTypes.VARIABLE
         }
 

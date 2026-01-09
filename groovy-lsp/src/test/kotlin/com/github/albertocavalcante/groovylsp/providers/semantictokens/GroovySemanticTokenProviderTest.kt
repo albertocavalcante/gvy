@@ -44,7 +44,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -64,7 +64,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyInterface.groovy")
+        val uri = tempWorkspace.resolve("MyInterface.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -86,7 +86,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -109,7 +109,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Test.groovy")
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -132,7 +132,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Test.groovy")
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -156,7 +156,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -175,7 +175,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -201,7 +201,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -229,7 +229,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyEnum.groovy")
+        val uri = tempWorkspace.resolve("MyEnum.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -250,7 +250,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Test.groovy")
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -263,7 +263,9 @@ class GroovySemanticTokenProviderTest {
     }
 
     @Test
-    fun `should handle method calls`(): Unit = runBlocking {
+    fun `should tokenize multiple method declarations`(): Unit = runBlocking {
+        // Note: This test verifies method DECLARATIONS only, not method calls.
+        // Method calls (e.g., otherMethod()) are not currently tokenized by this provider.
         val code = """
             class MyClass {
                 def myMethod() {
@@ -275,22 +277,22 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD tokens for both method declarations
+        // Should have METHOD tokens for both method declarations (not calls)
         val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
 
-        // Verify we have tokens for both methods
+        // Verify we have tokens for both method declarations
         val myMethodToken = methodTokens.find { it.length == "myMethod".length }
         val otherMethodToken = methodTokens.find { it.length == "otherMethod".length }
 
-        assertTrue(myMethodToken != null, "Should have token for myMethod")
-        assertTrue(otherMethodToken != null, "Should have token for otherMethod")
+        assertTrue(myMethodToken != null, "Should have token for myMethod declaration")
+        assertTrue(otherMethodToken != null, "Should have token for otherMethod declaration")
         assertEquals(2, methodTokens.size, "Should have exactly 2 METHOD tokens for the two method declarations")
     }
 
@@ -333,7 +335,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/AbstractService.groovy")
+        val uri = tempWorkspace.resolve("AbstractService.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -370,7 +372,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Config.groovy")
+        val uri = tempWorkspace.resolve("Config.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -399,7 +401,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Status.groovy")
+        val uri = tempWorkspace.resolve("Status.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -425,7 +427,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Worker.groovy")
+        val uri = tempWorkspace.resolve("Worker.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -450,7 +452,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Outer.groovy")
+        val uri = tempWorkspace.resolve("Outer.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -473,7 +475,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -495,7 +497,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -519,7 +521,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Test.groovy")
+        val uri = tempWorkspace.resolve("Test.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -543,7 +545,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Config.groovy")
+        val uri = tempWorkspace.resolve("Config.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -570,7 +572,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Calculator.groovy")
+        val uri = tempWorkspace.resolve("Calculator.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -593,7 +595,7 @@ class GroovySemanticTokenProviderTest {
             }
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/Service.groovy")
+        val uri = tempWorkspace.resolve("Service.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
@@ -614,7 +616,7 @@ class GroovySemanticTokenProviderTest {
             println greeting
         """.trimIndent()
 
-        val uri = URI.create("file://$tempWorkspace/script.groovy")
+        val uri = tempWorkspace.resolve("script.groovy").toUri()
         compilationService.compile(uri, code)
 
         val astModel = compilationService.getAstModel(uri)!!
