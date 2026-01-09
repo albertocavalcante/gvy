@@ -122,6 +122,19 @@ async function handleActionClick(action: string): Promise<void> {
 
   // Check for install/download actions
   if (lowerAction.includes("install") || lowerAction.includes("download")) {
+    // Check if the action contains a URL
+    const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
+    if (urlMatch) {
+      const url = urlMatch[1];
+      vscode.window
+        .showInformationMessage(`Open ${url} in browser?`, "Open")
+        .then((choice) => {
+          if (choice === "Open") {
+            vscode.env.openExternal(vscode.Uri.parse(url));
+          }
+        });
+      return;
+    }
     // Show info message with instructions
     vscode.window
       .showInformationMessage(
