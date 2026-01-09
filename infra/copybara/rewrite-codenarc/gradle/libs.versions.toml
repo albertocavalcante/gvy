@@ -1,0 +1,18 @@
+[versions]
+kotlin = "2.3.0"
+rewriteGroovy = "8.70.4"
+junit = "6.0.2"
+junitPlatform = "6.0.2"
+assertj = "3.27.6"
+logback = "1.5.24"
+
+[libraries]
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+rewrite-groovy = { module = "org.openrewrite:rewrite-groovy", version.ref = "rewriteGroovy" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
