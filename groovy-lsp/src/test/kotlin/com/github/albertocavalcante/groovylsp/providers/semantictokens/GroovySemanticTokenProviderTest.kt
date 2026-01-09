@@ -53,10 +53,10 @@ class GroovySemanticTokenProviderTest {
             while (true) {
                 val col = line.indexOf(identifier, startIndex)
                 if (col < 0) break
-                // Check word boundaries to avoid matching substrings (e.g., "it" in "list")
-                val beforeOk = col == 0 || !line[col - 1].isLetterOrDigit()
+                // Check word boundaries using isJavaIdentifierPart() to handle underscores
+                val beforeOk = col == 0 || !Character.isJavaIdentifierPart(line[col - 1])
                 val afterOk = col + identifier.length >= line.length ||
-                    !line[col + identifier.length].isLetterOrDigit()
+                    !Character.isJavaIdentifierPart(line[col + identifier.length])
                 if (beforeOk && afterOk) {
                     found++
                     if (found == occurrence) {
@@ -71,7 +71,9 @@ class GroovySemanticTokenProviderTest {
 
     /**
      * Finds a token by its expected position and length.
+     * Reserved for exact column matching when #769 (static method position fix) is implemented.
      */
+    @Suppress("unused")
     private fun List<GroovySemanticTokenProvider.SemanticToken>.findByPosition(
         line: Int,
         startChar: Int,
