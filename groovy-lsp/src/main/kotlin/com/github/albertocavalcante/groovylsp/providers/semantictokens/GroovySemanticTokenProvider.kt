@@ -592,31 +592,6 @@ object GroovySemanticTokenProvider {
     }
 
     /**
-     * Add a token for an AST node with a column offset applied.
-     */
-    private fun addTokenWithOffset(
-        node: ASTNode,
-        columnOffset: Int,
-        length: Int,
-        tokenType: Int,
-        modifiers: Int,
-        tokens: MutableList<SemanticToken>,
-    ) {
-        if (length <= 0) return
-        if (node.lineNumber > 0 && node.columnNumber > 0) {
-            tokens.add(
-                SemanticToken(
-                    line = node.lineNumber - 1, // Convert to 0-based
-                    startChar = node.columnNumber - 1 + columnOffset, // Convert to 0-based + offset
-                    length = length,
-                    tokenType = tokenType,
-                    tokenModifiers = modifiers,
-                ),
-            )
-        }
-    }
-
-    /**
      * Add a token for an AST node if it has valid position information.
      */
     private fun addTokenForNode(
