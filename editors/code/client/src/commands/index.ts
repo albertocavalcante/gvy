@@ -1,4 +1,11 @@
-import { ExtensionContext, commands, Disposable, window, Uri } from "vscode";
+import {
+  ExtensionContext,
+  commands,
+  Disposable,
+  window,
+  Uri,
+  ProgressLocation,
+} from "vscode";
 import { restartClient, stopClient, getClient } from "../server/client";
 import { ExecuteCommandRequest } from "vscode-languageclient";
 import { UpdateService } from "../features/update/UpdateService";
@@ -196,18 +203,28 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
         return;
       }
 
-      try {
-        window.showInformationMessage("Retrying dependency resolution...");
-        await client.sendRequest(ExecuteCommandRequest.type, {
-          command: "groovy.resolveDependencies",
-          arguments: [],
-        });
-      } catch (error) {
-        console.error("Failed to retry dependency resolution:", error);
-        window.showErrorMessage(
-          `Failed to retry dependency resolution: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
-      }
+      // Use withProgress to show a proper progress notification that auto-dismisses
+      await window.withProgress(
+        {
+          location: ProgressLocation.Notification,
+          title: "Retrying dependency resolution...",
+          cancellable: false,
+        },
+        async () => {
+          try {
+            await client.sendRequest(ExecuteCommandRequest.type, {
+              command: "groovy.resolveDependencies",
+              arguments: [],
+            });
+            // Success - progress notification will auto-dismiss
+          } catch (error) {
+            console.error("Failed to retry dependency resolution:", error);
+            window.showErrorMessage(
+              `Failed to retry dependency resolution: ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+          }
+        },
+      );
     },
   );
   disposables.push(retryDependencyResolutionCommand);
