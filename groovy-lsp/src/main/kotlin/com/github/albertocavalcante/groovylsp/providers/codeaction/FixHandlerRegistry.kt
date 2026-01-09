@@ -61,6 +61,10 @@ object FixHandlerRegistry {
             handler = ::fixBlankLineBeforePackage,
             title = "Remove blank lines before package",
         ),
+        "SpaceBeforeOpeningBrace" to FixRegistration(
+            handler = ::fixSpaceBeforeOpeningBrace,
+            title = "Add space before opening brace",
+        ),
 
         // Phase 2: Import Cleanup
         "UnusedImport" to FixRegistration(
@@ -301,6 +305,42 @@ private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? {
     )
 
     return TextEdit(range, "")
+}
+
+/**
+ * Fix handler for SpaceBeforeOpeningBrace rule.
+ * Adds a space before an opening brace when it's missing.
+ *
+ * **Feature: codenarc-lint-fixes**
+ *
+ * @param context The fix context containing diagnostic and source information
+ * @return A TextEdit that adds a space before the brace, or null if the fix cannot be applied
+ */
+@Suppress("ReturnCount") // Multiple early returns for clarity in validation chain
+private fun fixSpaceBeforeOpeningBrace(context: FixContext): TextEdit? {
+    val range = context.diagnostic.range
+    val lineNumber = range.start.line
+
+    if (lineNumber < 0 || lineNumber >= context.lines.size) return null
+
+    val line = context.lines[lineNumber]
+    val braceIndex = range.start.character
+
+    // Validate brace position
+    if (braceIndex < 0 || braceIndex >= line.length || line[braceIndex] != '{') {
+        return null
+    }
+
+    // Already has whitespace - no-op
+    if (braceIndex > 0 && line[braceIndex - 1].isWhitespace()) {
+        return null
+    }
+
+    // Insert space before brace
+    return TextEdit(
+        Range(Position(lineNumber, braceIndex), Position(lineNumber, braceIndex)),
+        " ",
+    )
 }
 
 /**
