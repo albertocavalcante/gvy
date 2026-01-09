@@ -160,6 +160,14 @@ class WorkspaceManager {
     fun getWorkspaceSources(): List<Path> = workspaceSources
 
     /**
+     * Computes a fingerprint of the current workspace configuration.
+     * Used for cache coherency - when this changes, cached compilations may be stale.
+     * Issue #743: Normalize parse modes and cache authority for cross-file resolution
+     */
+    fun getConfigurationFingerprint(): String =
+        ConfigurationFingerprint.compute(dependencyClasspath, sourceRoots.toList())
+
+    /**
      * Gets workspace source URIs for indexing.
      * Converts Path objects to URI objects for use in compilation service.
      */
