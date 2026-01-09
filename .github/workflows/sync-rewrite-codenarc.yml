@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
 
     steps:
@@ -61,5 +61,5 @@ jobs:
           ssh_key: ${{ secrets.COPYBARA_SSH_KEY }}
           access_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: ${{ inputs.direction || 'push-to-rewrite-codenarc' }}
-          copybara_options: ${{ inputs.force_sync && '--force' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
+          copybara_options: ${{ inputs.force_sync && inputs.dry_run && '--force --dry-run' || inputs.force_sync && '--force' || inputs.dry_run && '--dry-run' || '' }}
           custom_config: infra/copybara/rewrite-codenarc.bara.sky
