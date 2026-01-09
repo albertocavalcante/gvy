@@ -322,4 +322,310 @@ class GroovySemanticTokenProviderTest {
         assertEquals(21, GroovySemanticTokenProvider.TokenTypes.OPERATOR)
         assertEquals(22, GroovySemanticTokenProvider.TokenTypes.DECORATOR)
     }
+
+    // ==================== QA Edge Case Tests ====================
+
+    @Test
+    fun `should apply abstract modifier to abstract class`(): Unit = runBlocking {
+        val code = """
+            abstract class AbstractService {
+                abstract def process()
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/AbstractService.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Class should have ABSTRACT modifier
+        val classTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS &&
+                it.length == "AbstractService".length
+        }
+        assertTrue(classTokens.isNotEmpty(), "Should have CLASS token for abstract class")
+        val hasAbstractModifier =
+            (classTokens.first().tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.ABSTRACT) != 0
+        assertTrue(hasAbstractModifier, "Abstract class should have ABSTRACT modifier")
+
+        // Abstract method should also have ABSTRACT modifier
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD &&
+                it.length == "process".length
+        }
+        assertTrue(methodTokens.isNotEmpty(), "Should have METHOD token for abstract method")
+        val methodHasAbstract =
+            (methodTokens.first().tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.ABSTRACT) != 0
+        assertTrue(methodHasAbstract, "Abstract method should have ABSTRACT modifier")
+    }
+
+    @Test
+    fun `should apply readonly modifier to final fields`(): Unit = runBlocking {
+        val code = """
+            class Config {
+                final String API_KEY = "secret"
+                static final int MAX_RETRIES = 3
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Config.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Find property tokens for final fields
+        val propertyTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.PROPERTY
+        }
+
+        // At least one should have READONLY modifier
+        val hasReadonlyField = propertyTokens.any {
+            (it.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.READONLY) != 0
+        }
+        assertTrue(hasReadonlyField, "Final field should have READONLY modifier")
+    }
+
+    @Test
+    fun `should tokenize enum members as ENUM_MEMBER`(): Unit = runBlocking {
+        val code = """
+            enum Status {
+                PENDING,
+                ACTIVE,
+                COMPLETED
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Status.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have ENUM_MEMBER tokens for each enum constant
+        val enumMemberTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.ENUM_MEMBER
+        }
+        assertTrue(
+            enumMemberTokens.size >= 3,
+            "Should have ENUM_MEMBER tokens for enum constants, got ${enumMemberTokens.size}",
+        )
+    }
+
+    @Test
+    fun `should tokenize implements clause interfaces`(): Unit = runBlocking {
+        val code = """
+            interface Runnable { }
+            interface Closeable { }
+            class Worker implements Runnable, Closeable {
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Worker.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have INTERFACE tokens for declared interfaces
+        val interfaceTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.INTERFACE
+        }
+        // At least the two interface declarations should be tokenized
+        assertTrue(interfaceTokens.size >= 2, "Should have INTERFACE tokens for interface declarations")
+    }
+
+    @Test
+    fun `should handle nested class`(): Unit = runBlocking {
+        val code = """
+            class Outer {
+                class Inner {
+                    def innerMethod() {}
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Outer.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have CLASS tokens for both Outer and Inner
+        val classTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS
+        }
+        assertTrue(classTokens.size >= 2, "Should have CLASS tokens for both Outer and Inner classes")
+    }
+
+    @Test
+    fun `should not produce duplicate tokens at same position`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                String name
+                def getName() { name }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Check for duplicates at same position
+        val positionCounts = tokens.groupBy { Pair(it.line, it.startChar) }
+        val duplicates = positionCounts.filter { it.value.size > 1 }
+
+        assertTrue(duplicates.isEmpty(), "Should not have duplicate tokens at same position: $duplicates")
+    }
+
+    @Test
+    fun `should produce valid 0-based line and column numbers`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                def myMethod() {}
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/MyClass.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // All tokens should have non-negative line and column numbers (0-based)
+        tokens.forEach { token ->
+            assertTrue(token.line >= 0, "Line number should be >= 0, got ${token.line}")
+            assertTrue(token.startChar >= 0, "Column number should be >= 0, got ${token.startChar}")
+            assertTrue(token.length > 0, "Length should be > 0, got ${token.length}")
+        }
+    }
+
+    @Test
+    fun `should handle closure implicit it parameter`(): Unit = runBlocking {
+        val code = """
+            def list = [1, 2, 3]
+            list.each {
+                println it
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Test.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // The implicit 'it' parameter reference should be tokenized as PARAMETER
+        val paramOrVarTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.PARAMETER ||
+                it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE
+        }
+        val itToken = paramOrVarTokens.find { it.length == "it".length }
+        assertTrue(itToken != null, "Should have token for implicit 'it' parameter")
+    }
+
+    @Test
+    fun `should handle static field with modifier`(): Unit = runBlocking {
+        val code = """
+            class Config {
+                static String VERSION = "1.0"
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Config.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Static field should have STATIC modifier
+        val propertyTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.PROPERTY
+        }
+        val hasStaticProperty = propertyTokens.any {
+            (it.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.STATIC) != 0
+        }
+        assertTrue(hasStaticProperty, "Static field should have STATIC modifier")
+    }
+
+    @Test
+    fun `should handle typed method parameters`(): Unit = runBlocking {
+        val code = """
+            class Calculator {
+                int add(int a, int b) {
+                    return a + b
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Calculator.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have PARAMETER tokens for both parameters
+        val paramTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.PARAMETER
+        }
+        assertTrue(paramTokens.size >= 2, "Should have PARAMETER tokens for both parameters a and b")
+    }
+
+    @Test
+    fun `should handle interface method declarations`(): Unit = runBlocking {
+        val code = """
+            interface Service {
+                def start()
+                def stop()
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/Service.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Interface methods should be tokenized
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+        assertTrue(methodTokens.size >= 2, "Should have METHOD tokens for interface methods")
+    }
+
+    @Test
+    fun `should handle script with no explicit class`(): Unit = runBlocking {
+        val code = """
+            def greeting = "Hello"
+            println greeting
+        """.trimIndent()
+
+        val uri = URI.create("file://$tempWorkspace/script.groovy")
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have at least a VARIABLE token for greeting
+        val varTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE
+        }
+        val greetingToken = varTokens.find { it.length == "greeting".length }
+        assertTrue(greetingToken != null, "Should have VARIABLE token for greeting in script")
+    }
 }

@@ -10,6 +10,8 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.eclipse.lsp4j.SemanticTokenModifiers
+import org.eclipse.lsp4j.SemanticTokenTypes
 import org.slf4j.LoggerFactory
 import java.net.URI
 
@@ -45,29 +47,29 @@ object GroovySemanticTokenProvider {
         // Derive indices from the shared legend to prevent misalignment
         private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_TYPES
 
-        val NAMESPACE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Namespace)
-        val TYPE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Type)
-        val CLASS = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Class)
-        val ENUM = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Enum)
-        val INTERFACE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Interface)
-        val STRUCT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Struct)
-        val TYPE_PARAMETER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.TypeParameter)
-        val PARAMETER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Parameter)
-        val VARIABLE = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Variable)
-        val PROPERTY = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Property)
-        val ENUM_MEMBER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.EnumMember)
-        val EVENT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Event)
-        val FUNCTION = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Function)
-        val METHOD = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Method)
-        val MACRO = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Macro)
-        val KEYWORD = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Keyword)
-        val MODIFIER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Modifier)
-        val COMMENT = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Comment)
-        val STRING = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.String)
-        val NUMBER = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Number)
-        val REGEXP = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Regexp)
-        val OPERATOR = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Operator)
-        val DECORATOR = LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenTypes.Decorator)
+        val NAMESPACE = LEGEND.indexOf(SemanticTokenTypes.Namespace)
+        val TYPE = LEGEND.indexOf(SemanticTokenTypes.Type)
+        val CLASS = LEGEND.indexOf(SemanticTokenTypes.Class)
+        val ENUM = LEGEND.indexOf(SemanticTokenTypes.Enum)
+        val INTERFACE = LEGEND.indexOf(SemanticTokenTypes.Interface)
+        val STRUCT = LEGEND.indexOf(SemanticTokenTypes.Struct)
+        val TYPE_PARAMETER = LEGEND.indexOf(SemanticTokenTypes.TypeParameter)
+        val PARAMETER = LEGEND.indexOf(SemanticTokenTypes.Parameter)
+        val VARIABLE = LEGEND.indexOf(SemanticTokenTypes.Variable)
+        val PROPERTY = LEGEND.indexOf(SemanticTokenTypes.Property)
+        val ENUM_MEMBER = LEGEND.indexOf(SemanticTokenTypes.EnumMember)
+        val EVENT = LEGEND.indexOf(SemanticTokenTypes.Event)
+        val FUNCTION = LEGEND.indexOf(SemanticTokenTypes.Function)
+        val METHOD = LEGEND.indexOf(SemanticTokenTypes.Method)
+        val MACRO = LEGEND.indexOf(SemanticTokenTypes.Macro)
+        val KEYWORD = LEGEND.indexOf(SemanticTokenTypes.Keyword)
+        val MODIFIER = LEGEND.indexOf(SemanticTokenTypes.Modifier)
+        val COMMENT = LEGEND.indexOf(SemanticTokenTypes.Comment)
+        val STRING = LEGEND.indexOf(SemanticTokenTypes.String)
+        val NUMBER = LEGEND.indexOf(SemanticTokenTypes.Number)
+        val REGEXP = LEGEND.indexOf(SemanticTokenTypes.Regexp)
+        val OPERATOR = LEGEND.indexOf(SemanticTokenTypes.Operator)
+        val DECORATOR = LEGEND.indexOf(SemanticTokenTypes.Decorator)
     }
 
     /**
@@ -78,16 +80,16 @@ object GroovySemanticTokenProvider {
         // Derive bit masks from the shared legend to prevent misalignment
         private val LEGEND = JenkinsSemanticTokenProvider.LEGEND_TOKEN_MODIFIERS
 
-        val DECLARATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Declaration)
-        val DEFINITION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Definition)
-        val READONLY = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Readonly)
-        val STATIC = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Static)
-        val DEPRECATED = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Deprecated)
-        val ABSTRACT = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Abstract)
-        val ASYNC = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Async)
-        val MODIFICATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Modification)
-        val DOCUMENTATION = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.Documentation)
-        val DEFAULT_LIBRARY = 1 shl LEGEND.indexOf(org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary)
+        val DECLARATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Declaration)
+        val DEFINITION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Definition)
+        val READONLY = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Readonly)
+        val STATIC = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Static)
+        val DEPRECATED = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Deprecated)
+        val ABSTRACT = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Abstract)
+        val ASYNC = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Async)
+        val MODIFICATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Modification)
+        val DOCUMENTATION = 1 shl LEGEND.indexOf(SemanticTokenModifiers.Documentation)
+        val DEFAULT_LIBRARY = 1 shl LEGEND.indexOf(SemanticTokenModifiers.DefaultLibrary)
     }
 
     /**
@@ -322,6 +324,11 @@ object GroovySemanticTokenProvider {
 
         if (property.isStatic) {
             modifiers = modifiers or TokenModifiers.STATIC
+        }
+
+        // Check if the backing field is final
+        if (property.field?.isFinal == true) {
+            modifiers = modifiers or TokenModifiers.READONLY
         }
 
         addTokenForNode(property, property.name.length, TokenTypes.PROPERTY, modifiers, tokens)
