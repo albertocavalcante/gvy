@@ -613,9 +613,12 @@ private object InlayHintsCandidates {
             return emptyList()
         }
 
+        // Expand simple names (e.g., "String" -> "java.lang.String") for Class.forName()
+        val lookupType = expandToFqn(normalizedReceiverType) ?: return emptyList()
+
         // TODO(#581): Resolve synthetic parameter names via JDK source indexing for deterministic hints.
         //   See: https://github.com/albertocavalcante/gvy/issues/581
-        return compilationService.classpathService.getMethods(normalizedReceiverType)
+        return compilationService.classpathService.getMethods(lookupType)
             .filter { it.name == methodName && it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
             .map { InlayHintsTypes.toSignature(it) }
@@ -671,7 +674,10 @@ private object InlayHintsCandidates {
             return emptyList()
         }
 
-        val clazz = compilationService.classpathService.loadClass(normalizedType) ?: return emptyList()
+        // Expand simple names (e.g., "String" -> "java.lang.String") for Class.forName()
+        val lookupType = expandToFqn(normalizedType) ?: return emptyList()
+
+        val clazz = compilationService.classpathService.loadClass(lookupType) ?: return emptyList()
         return clazz.constructors
             .filter { it.parameterCount == argCount }
             .map { constructor ->
@@ -679,6 +685,17 @@ private object InlayHintsCandidates {
                 val names = constructor.parameters.map { it.name }
                 InlayHintsTypes.toSignature(types, names)
             }
+    }
+
+    /**
+     * Expand a simple class name to its fully qualified name for classpath lookup.
+     * Returns the FQN if the type already contains a package, expands java.lang aliases,
+     * or returns null if the simple name cannot be resolved.
+     */
+    fun expandToFqn(typeName: String): String? = when {
+        typeName.contains('.') -> typeName // Already FQN
+        javaLangTypeAliases.containsKey(typeName) -> javaLangTypeAliases.getValue(typeName)
+        else -> null // Unknown simple name - skip classpath lookup
     }
 }
 
