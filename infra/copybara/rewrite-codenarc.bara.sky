@@ -83,7 +83,9 @@ core.workflow(
         metadata.expose_label("Closes"),
         metadata.expose_label("Fixes"),
 
-        # Add origin tracking
+        # Add origin tracking header (prepended to commit message)
+        # TODO: Re-evaluate if we want to preserve commit messages exactly without headers.
+        #       Could use Gemini action to auto-generate summaries for squashed syncs instead.
         metadata.add_header("Synced-From: gvy/refactor/openrewrite/rewrite-codenarc"),
     ],
 )
