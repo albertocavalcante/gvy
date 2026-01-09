@@ -53,7 +53,15 @@ class GroovyCompilationService(
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
-    private val workspaceCompiler = WorkspaceCompiler(workerSessionManager, workspaceManager, semanticDb)
+
+    // Shared dependency graph for bounded workspace selection (Issue #743)
+    private val dependencyGraph = DependencyGraph()
+    private val workspaceCompiler = WorkspaceCompiler(
+        workerSessionManager,
+        workspaceManager,
+        semanticDb,
+        dependencyGraph = dependencyGraph,
+    )
 
     // Managers that handle complex lifecycle and orchestration
     private val engineManager = LanguageEngineManager(
@@ -79,6 +87,7 @@ class GroovyCompilationService(
             ioDispatcher = ioDispatcher,
             errorHandler = errorHandler,
             semanticDb = semanticDb,
+            dependencyGraph = dependencyGraph,
         ),
     )
 

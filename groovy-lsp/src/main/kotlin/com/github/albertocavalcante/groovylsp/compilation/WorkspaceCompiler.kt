@@ -60,6 +60,7 @@ class WorkspaceCompiler(
     private val workspaceManager: WorkspaceManager,
     private val semanticDb: GroovySemanticDB,
     private val semanticCache: SemanticCache? = null,
+    val dependencyGraph: DependencyGraph = DependencyGraph(),
 ) {
     private val logger = LoggerFactory.getLogger(WorkspaceCompiler::class.java)
 
@@ -76,7 +77,7 @@ class WorkspaceCompiler(
     private val incrementalCompiler: IncrementalCompiler by lazy {
         IncrementalCompiler(
             workspaceCompiler = this,
-            dependencyGraph = DependencyGraph(),
+            dependencyGraph = dependencyGraph,
             semanticDb = semanticDb,
         )
     }
