@@ -571,12 +571,14 @@ object GroovySemanticTokenProvider {
         // Try to use actual source text if available
         val lines = sourceLines.get() ?: emptyList()
         val (declLine, declCol) = getMethodDeclarationPosition(method)
+        // declLine is 1-based, so declLine <= lines.size ensures declLine - 1 < lines.size
         if (lines.isNotEmpty() && declLine > 0 && declLine <= lines.size && declCol > 0) {
             val sourceLine = lines[declLine - 1] // Convert to 0-based
             val methodName = method.name
 
             // Find the method name in the source line
             // We look for the method name followed by '(' to avoid false matches
+            // Regex.escape handles any special characters in the method name
             val namePattern = Regex("""\b${Regex.escape(methodName)}\s*\(""")
             val match = namePattern.find(sourceLine)
             if (match != null) {
