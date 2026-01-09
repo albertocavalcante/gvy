@@ -116,6 +116,8 @@ core.workflow(
             ".gradle/**",
             ".git/**",
             # Gradle infrastructure (maintained in monorepo)
+            # These use the shared version catalog and must not be overwritten
+            "build.gradle.kts",
             "settings.gradle.kts",
             "gradle.properties",
             "gradle/libs.versions.toml",
@@ -127,13 +129,9 @@ core.workflow(
         ]
     ),
 
-    # Files in destination that should be synced
+    # Files in destination that can be modified by this sync
     destination_files = glob(
         include = ["refactor/openrewrite/rewrite-codenarc/**"],
-        exclude = [
-            # Don't overwrite monorepo build.gradle.kts (uses shared version catalog)
-            "refactor/openrewrite/rewrite-codenarc/build.gradle.kts",
-        ]
     ),
 
     mode = "ITERATIVE",
