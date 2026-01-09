@@ -453,6 +453,8 @@ object GroovySemanticTokenProvider {
         modifiers: Int,
         tokens: MutableList<SemanticToken>,
     ) {
+        // Validate token before adding - skip invalid lengths
+        if (length <= 0) return
         if (node.lineNumber > 0 && node.columnNumber > 0) {
             tokens.add(
                 SemanticToken(
