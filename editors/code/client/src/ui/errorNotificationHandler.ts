@@ -135,7 +135,7 @@ async function handleSpecialActions(
 
   if (action === "Retry Resolution" && retryCommand) {
     const vscode = await import("vscode");
-    vscode.commands.executeCommand(retryCommand);
+    await vscode.commands.executeCommand(retryCommand);
     return true;
   }
 
