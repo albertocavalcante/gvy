@@ -4,12 +4,10 @@ import { ExecuteCommandRequest } from "vscode-languageclient";
 import { UpdateService } from "../features/update/UpdateService";
 import { showStatusMenu, getStatusBarManager } from "../ui/statusBar";
 import { toggleDebugLogs, selectLogLevel } from "./logLevel";
+import { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
 
-/**
- * Command ID for retrying dependency resolution.
- * Exported for use by error notification handler.
- */
-export const RETRY_DEPENDENCY_RESOLUTION = "groovy.retryDependencyResolution";
+// Re-export command constants for backward compatibility
+export { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
 
 let updateService: UpdateService | null = null;
 let serverOutputChannel: import("vscode").OutputChannel | null = null;

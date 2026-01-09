@@ -10,7 +10,7 @@ import {
   WorkDoneProgressEnd,
 } from "vscode-languageserver-protocol";
 import { getLanguageStatusManager } from "./languageStatus";
-import { RETRY_DEPENDENCY_RESOLUTION } from "../commands";
+import { RETRY_DEPENDENCY_RESOLUTION } from "../commands/constants";
 
 import {
   ServerState,
