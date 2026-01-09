@@ -823,6 +823,18 @@ class GroovySemanticTokenProviderTest {
             helperTokens.size >= 2,
             "Should have METHOD tokens for helper declaration and static call, got ${helperTokens.size}",
         )
+
+        // Verify static method call position points to method name, not class name
+        // Line 3: "Utility.helper()" - "helper" starts at column 8
+        val staticCallToken = helperTokens.find { it.line == 3 }
+        assertTrue(staticCallToken != null, "Should have METHOD token on line 3 for static call")
+        assertEquals(8, staticCallToken!!.startChar, "Static method call token should start at column 8 (method name)")
+
+        // Verify method declaration position points to method name
+        // Line 1: "    static def helper() { }" - "helper" starts at column 15
+        val declToken = helperTokens.find { it.line == 1 }
+        assertTrue(declToken != null, "Should have METHOD token on line 1 for declaration")
+        assertEquals(15, declToken!!.startChar, "Method declaration token should start at column 15 (method name)")
     }
 
     @Test
@@ -868,5 +880,65 @@ class GroovySemanticTokenProviderTest {
         val (eachLine, _) = findPosition(code, "each")!!
         val eachToken = methodTokens.findByLineAndLength(eachLine, "each".length)
         assertTrue(eachToken != null, "Should have METHOD token for each() on line $eachLine")
+    }
+
+    @Test
+    fun `should handle generic return types in method declarations`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                List<String> getItems() { [] }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD token for getItems
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val getItemsToken = methodTokens.find { it.length == "getItems".length }
+        assertTrue(getItemsToken != null, "Should have METHOD token for getItems")
+
+        // Line 1: "    List<String> getItems() { [] }"
+        // "getItems" starts at column 17 (after "    List<String> ")
+        // 4 spaces + "List<String>" (12) + 1 space = 17
+        assertEquals(1, getItemsToken!!.line, "getItems should be on line 1")
+        assertEquals(17, getItemsToken.startChar, "getItems should start at column 17")
+    }
+
+    @Test
+    fun `should handle annotated method declarations`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                @Override
+                def myMethod() { }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have METHOD token for myMethod
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val myMethodToken = methodTokens.find { it.length == "myMethod".length }
+        assertTrue(myMethodToken != null, "Should have METHOD token for myMethod")
+
+        // Line 2: "    def myMethod() { }" - "myMethod" starts at column 8
+        // 4 spaces + "def" (3) + 1 space = 8
+        assertEquals(2, myMethodToken!!.line, "myMethod should be on line 2")
+        assertEquals(8, myMethodToken.startChar, "myMethod should start at column 8 (after 'def ')")
     }
 }

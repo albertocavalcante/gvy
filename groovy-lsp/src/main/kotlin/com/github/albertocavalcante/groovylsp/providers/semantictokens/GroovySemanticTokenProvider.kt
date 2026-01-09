@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
 import org.slf4j.LoggerFactory
+import java.lang.reflect.Modifier
 import java.net.URI
 
 /**
@@ -276,7 +277,13 @@ object GroovySemanticTokenProvider {
             modifiers = modifiers or TokenModifiers.ABSTRACT
         }
 
-        addTokenForNode(method, method.name.length, TokenTypes.METHOD, modifiers, tokens)
+        // Calculate the actual method declaration line and offset
+        // MethodNode.lineNumber may point to annotations if present
+        val (declLine, declCol) = getMethodDeclarationPosition(method)
+
+        // Calculate offset from declaration start to method name
+        val nameOffset = calculateMethodNameOffset(method)
+        addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
 
         // Visit parameters
         method.parameters.forEach { param ->
@@ -479,6 +486,109 @@ object GroovySemanticTokenProvider {
         classNode.isInterface -> TokenTypes.INTERFACE
         classNode.isEnum -> TokenTypes.ENUM
         else -> TokenTypes.CLASS
+    }
+
+    /**
+     * Get the actual method declaration position, accounting for annotations.
+     *
+     * MethodNode.lineNumber points to the first annotation if present, not the
+     * actual method declaration line. This function finds the line after all
+     * annotations where the actual modifiers/return type start.
+     *
+     * @return Pair of (line, column) in 1-based coordinates
+     */
+    private fun getMethodDeclarationPosition(method: MethodNode): Pair<Int, Int> {
+        val annotations = method.annotations
+        if (annotations.isNullOrEmpty()) {
+            // No annotations, use the method's reported position
+            return Pair(method.lineNumber, method.columnNumber)
+        }
+
+        // Find the last annotation's last line
+        val lastAnnotationLine = annotations.maxOfOrNull { it.lastLineNumber } ?: method.lineNumber
+
+        // The method declaration starts on the line after the last annotation
+        // Use the method's column number as a reasonable estimate for the declaration start
+        return Pair(lastAnnotationLine + 1, method.columnNumber)
+    }
+
+    /**
+     * Add a method token with explicit line/column position.
+     */
+    private fun addMethodToken(
+        line: Int,
+        column: Int,
+        columnOffset: Int,
+        length: Int,
+        modifiers: Int,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        if (length <= 0) return
+        if (line > 0 && column > 0) {
+            tokens.add(
+                SemanticToken(
+                    line = line - 1, // Convert to 0-based
+                    startChar = column - 1 + columnOffset, // Convert to 0-based + offset
+                    length = length,
+                    tokenType = TokenTypes.METHOD,
+                    tokenModifiers = modifiers,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Calculate the column offset from the method declaration start to the method name.
+     *
+     * For a method like "static def myMethod()", the AST reports position at "static",
+     * but we need the position of "myMethod". This calculates the offset based on
+     * the method's modifiers and return type.
+     *
+     * Note: We exclude 'public' from the calculation because Groovy methods are
+     * implicitly public - the modifier is rarely written explicitly. If we included
+     * it, the offset would be wrong for 99% of Groovy code.
+     */
+    private fun calculateMethodNameOffset(method: MethodNode): Int {
+        var offset = 0
+
+        // Add modifier lengths + spaces
+        // Note: We deliberately SKIP public because it's implicit in Groovy.
+        // Methods are public by default and the keyword is almost never written.
+        val modifierTexts = mutableListOf<String>()
+        // Skip isPublic - it's implicit in Groovy
+        if (Modifier.isProtected(method.modifiers)) modifierTexts.add("protected")
+        if (Modifier.isPrivate(method.modifiers)) modifierTexts.add("private")
+        if (Modifier.isStatic(method.modifiers)) modifierTexts.add("static")
+        if (Modifier.isFinal(method.modifiers)) modifierTexts.add("final")
+        if (Modifier.isAbstract(method.modifiers)) modifierTexts.add("abstract")
+        if (Modifier.isSynchronized(method.modifiers)) modifierTexts.add("synchronized")
+
+        // Calculate total modifier length including spaces
+        offset += modifierTexts.sumOf { it.length + 1 } // +1 for space after each modifier
+
+        // Add return type length + space
+        // In Groovy, "def" methods have Object as return type in AST
+        // Handle generic types like List<String> by reconstructing the full type text
+        val returnTypeNode = method.returnType
+        val sourceTypeName = if (returnTypeNode != null) {
+            fun getSourceText(node: ClassNode): String {
+                if (node.genericsTypes.isNullOrEmpty()) {
+                    return node.nameWithoutPackage
+                }
+                val generics = node.genericsTypes.joinToString(", ") { gt ->
+                    gt.type?.let { getSourceText(it) } ?: gt.name
+                }
+                return "${node.nameWithoutPackage}<$generics>"
+            }
+            val typeText = getSourceText(returnTypeNode)
+            // Use "def" (3 chars) as the source representation, not "Object" (6 chars)
+            if (typeText == "Object") "def" else typeText
+        } else {
+            "def"
+        }
+        offset += sourceTypeName.length + 1 // +1 for space after type
+
+        return offset
     }
 
     /**
