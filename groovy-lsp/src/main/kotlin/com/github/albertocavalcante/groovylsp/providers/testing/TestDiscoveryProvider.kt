@@ -115,15 +115,15 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
 
     private fun readFileContent(uri: URI): String? {
         val path = UriPathConverter.toPath(uri) ?: return null
-        return try {
+        return runCatching {
             Files.readString(path)
-        } catch (e: IOException) {
-            logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-            null
-        } catch (e: SecurityException) {
-            logger.warn("Failed to read file for test discovery: {} - {}", uri, e.message)
-            null
-        }
+        }.onFailure { e ->
+            when (e) {
+                is IOException, is SecurityException ->
+                    logger.warn("Failed to read file for test discovery: {}", uri, e)
+                else -> throw e
+            }
+        }.getOrNull()
     }
 
     companion object {
