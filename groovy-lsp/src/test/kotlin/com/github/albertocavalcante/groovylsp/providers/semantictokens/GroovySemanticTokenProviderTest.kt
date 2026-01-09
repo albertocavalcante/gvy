@@ -282,8 +282,15 @@ class GroovySemanticTokenProviderTest {
 
         val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
 
-        // Should have METHOD tokens for both method declarations and method call
+        // Should have METHOD tokens for both method declarations
         val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
-        assertTrue(methodTokens.size >= 2, "Should have METHOD tokens for method declarations")
+
+        // Verify we have tokens for both methods
+        val myMethodToken = methodTokens.find { it.length == "myMethod".length }
+        val otherMethodToken = methodTokens.find { it.length == "otherMethod".length }
+
+        assertTrue(myMethodToken != null, "Should have token for myMethod")
+        assertTrue(otherMethodToken != null, "Should have token for otherMethod")
+        assertEquals(2, methodTokens.size, "Should have exactly 2 METHOD tokens for the two method declarations")
     }
 }
