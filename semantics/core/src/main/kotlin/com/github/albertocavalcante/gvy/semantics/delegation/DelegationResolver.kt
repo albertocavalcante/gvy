@@ -117,27 +117,11 @@ class DelegationResolver {
 
     /**
      * Finds a method by name on a class.
+     *
+     * ClassNode.getMethods(name) searches the entire class hierarchy (superclasses and interfaces).
      */
-    private fun findMethod(classNode: ClassNode, methodName: String): MethodNode? {
-        // Direct methods
-        val direct = classNode.getMethods(methodName).firstOrNull()
-        if (direct != null) return direct
-
-        // Check superclass
-        val superClass = classNode.superClass
-        if (superClass != null) {
-            val inherited = findMethod(superClass, methodName)
-            if (inherited != null) return inherited
-        }
-
-        // Check interfaces
-        for (iface in classNode.interfaces) {
-            val fromInterface = findMethod(iface, methodName)
-            if (fromInterface != null) return fromInterface
-        }
-
-        return null
-    }
+    private fun findMethod(classNode: ClassNode, methodName: String): MethodNode? =
+        classNode.getMethods(methodName).firstOrNull()
 }
 
 /**

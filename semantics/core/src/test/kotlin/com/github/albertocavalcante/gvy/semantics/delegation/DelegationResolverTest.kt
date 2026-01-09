@@ -85,7 +85,9 @@ class DelegationResolverTest {
     @Test
     @Disabled("Requires real AST context - see TODO #638")
     fun `respects DELEGATE_FIRST strategy`() {
-        // Given: closure with delegate set, strategy = DELEGATE_FIRST (default)
+        // Given: closure with delegate set, strategy = DELEGATE_FIRST
+        // Note: DELEGATE_FIRST is NOT the default. OWNER_FIRST is the default per Groovy spec:
+        // https://docs.groovy-lang.org/latest/html/documentation/core-closures.html#_delegation_strategy
         // When: both owner and delegate have method 'foo'
         // Then: should resolve to delegate.foo
     }
