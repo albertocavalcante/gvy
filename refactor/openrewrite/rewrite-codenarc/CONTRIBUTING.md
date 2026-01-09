@@ -22,7 +22,7 @@ Each recipe corresponds to a CodeNarc rule. Follow these steps:
 
 ### 1. Identify the CodeNarc Rule
 
-Find the rule at [codenarc.org/codenarc-rules](https://codenarc.org/codenarc-rules.html) and understand:
+Find the rule at [CodeNarc Rules](https://codenarc.github.io/CodeNarc/codenarc-rules.html) and understand:
 
 - What violation it detects
 - What the fix should be

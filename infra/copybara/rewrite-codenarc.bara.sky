@@ -18,6 +18,7 @@
 
 sourceUrl = "https://github.com/albertocavalcante/gvy.git"
 destinationUrl = "git@github.com:albertocavalcante/rewrite-codenarc.git"
+destinationPublicUrl = "https://github.com/albertocavalcante/rewrite-codenarc.git"
 
 # ============================================================================
 # Push: Monorepo → Standalone Repository
@@ -88,7 +89,7 @@ core.workflow(
     name = "pull-from-rewrite-codenarc",
 
     origin = git.origin(
-        url = "https://github.com/albertocavalcante/rewrite-codenarc.git",
+        url = destinationPublicUrl,
         ref = "main",
     ),
 
@@ -124,8 +125,8 @@ core.workflow(
     destination_files = glob(
         include = ["refactor/openrewrite/rewrite-codenarc/**"],
         exclude = [
-            # Don't touch the build.gradle.kts - changes should come through
-            # but the monorepo version uses the shared version catalog
+            # Don't overwrite monorepo build.gradle.kts (uses shared version catalog)
+            "refactor/openrewrite/rewrite-codenarc/build.gradle.kts",
         ]
     ),
 
