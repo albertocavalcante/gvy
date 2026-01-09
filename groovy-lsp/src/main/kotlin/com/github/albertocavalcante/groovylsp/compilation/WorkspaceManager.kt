@@ -165,7 +165,7 @@ class WorkspaceManager {
      * Issue #743: Normalize parse modes and cache authority for cross-file resolution
      */
     fun getConfigurationFingerprint(): String =
-        ConfigurationFingerprint.compute(dependencyClasspath, sourceRoots.toList())
+        ConfigurationFingerprint.compute(dependencyClasspath.toList(), sourceRoots.toList())
 
     /**
      * Gets workspace source URIs for indexing.

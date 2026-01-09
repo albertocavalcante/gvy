@@ -48,7 +48,9 @@ class CompilationCache {
 
     /**
      * Stores a parse result without fingerprint (backward compatibility).
-     * Uses empty fingerprint, meaning it will match any fingerprint on get(uri, content).
+     * Uses empty fingerprint. Entries stored this way can be retrieved via get(uri, content)
+     * which ignores fingerprint, but will NOT match get(uri, content, fingerprint) unless
+     * the fingerprint parameter is also empty.
      */
     fun put(uri: URI, content: String, parseResult: ParseResult) {
         cache[uri] = CacheEntry(content, parseResult, "")
