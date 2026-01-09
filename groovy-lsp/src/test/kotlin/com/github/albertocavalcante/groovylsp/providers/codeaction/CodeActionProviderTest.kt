@@ -398,6 +398,149 @@ class CodeActionProviderTest {
         assertNull(lintAction, "Should not provide lint fix action for non-CodeNarc diagnostic")
     }
 
+    // ============================================================================
+    // Integration Tests for UnnecessaryGString
+    // ============================================================================
+
+    @Test
+    fun `provides lint fix action for UnnecessaryGString diagnostic`() = runBlocking {
+        // Position verified by Python: "hello" at 8-15
+        val content = "def s = \"hello\"\n"
+        documentProvider.put(testUri, content)
+
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(0, 8), Position(0, 15))
+            message = "The String 'hello' can be wrapped in single quotes"
+            source = "CodeNarc"
+            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+
+        val params = createCodeActionParams(listOf(diagnostic))
+
+        val actions = provider.provideCodeActions(params)
+
+        val lintAction = actions.find { it.title == "Use single-quoted string" }
+        assertNotNull(lintAction, "Should provide lint fix action for UnnecessaryGString")
+        assertEquals(CodeActionKind.QuickFix, lintAction?.kind)
+        assertNotNull(lintAction?.edit)
+        assertTrue(lintAction?.diagnostics?.contains(diagnostic) == true)
+    }
+
+    @Test
+    fun `UnnecessaryGString fix action produces correct text edit`() = runBlocking {
+        // Position verified by Python: "hello" at 8-15
+        val content = "def s = \"hello\"\n"
+        documentProvider.put(testUri, content)
+
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(0, 8), Position(0, 15))
+            message = "The String 'hello' can be wrapped in single quotes"
+            source = "CodeNarc"
+            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+
+        val params = createCodeActionParams(listOf(diagnostic))
+
+        val actions = provider.provideCodeActions(params)
+
+        val lintAction = actions.find { it.title == "Use single-quoted string" }
+        assertNotNull(lintAction)
+
+        val changes = lintAction?.edit?.changes
+        assertNotNull(changes)
+        val edits = changes?.get(testUri.toString())
+        assertNotNull(edits)
+        assertEquals(1, edits?.size)
+
+        val edit = edits?.first()
+        assertEquals("'hello'", edit?.newText, "Should replace with single-quoted string")
+        assertEquals(0, edit?.range?.start?.line)
+        assertEquals(8, edit?.range?.start?.character)
+        assertEquals(0, edit?.range?.end?.line)
+        assertEquals(15, edit?.range?.end?.character)
+    }
+
+    @Test
+    fun `UnnecessaryGString fix handles long string from screenshot`() = runBlocking {
+        // This reproduces the exact case from the user's screenshot
+        // Position verified by Python: "myCustomDynamicPropertyValue" at 15-45
+        val content = "        return \"myCustomDynamicPropertyValue\"\n"
+        documentProvider.put(testUri, content)
+
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(0, 15), Position(0, 45))
+            message = "The String 'myCustomDynamicPropertyValue' can be wrapped in single quotes"
+            source = "CodeNarc"
+            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+
+        val params = createCodeActionParams(listOf(diagnostic))
+
+        val actions = provider.provideCodeActions(params)
+
+        val lintAction = actions.find { it.title == "Use single-quoted string" }
+        assertNotNull(lintAction, "Should provide lint fix action for UnnecessaryGString")
+
+        val changes = lintAction?.edit?.changes
+        val edits = changes?.get(testUri.toString())
+        val edit = edits?.first()
+        assertEquals("'myCustomDynamicPropertyValue'", edit?.newText)
+    }
+
+    @Test
+    fun `UnnecessaryGString fix does not apply for strings containing single quotes`() = runBlocking {
+        // Strings containing single quotes should not be converted
+        // Position verified by Python: "it's" at 8-14
+        val content = "def s = \"it's\"\n"
+        documentProvider.put(testUri, content)
+
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(0, 8), Position(0, 14))
+            message = "The String 'it's' can be wrapped in single quotes"
+            source = "CodeNarc"
+            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+
+        val params = createCodeActionParams(listOf(diagnostic))
+
+        val actions = provider.provideCodeActions(params)
+
+        // Handler returns null, so no action should be provided
+        val lintAction = actions.find { it.title == "Use single-quoted string" }
+        assertNull(lintAction, "Should not provide fix action for strings containing single quotes")
+    }
+
+    @Test
+    fun `UnnecessaryGString fix converts empty string`() = runBlocking {
+        // Position verified by Python: "" at 8-10
+        val content = "def s = \"\"\n"
+        documentProvider.put(testUri, content)
+
+        val diagnostic = Diagnostic().apply {
+            range = Range(Position(0, 8), Position(0, 10))
+            message = "The String '' can be wrapped in single quotes"
+            source = "CodeNarc"
+            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+
+        val params = createCodeActionParams(listOf(diagnostic))
+
+        val actions = provider.provideCodeActions(params)
+
+        val lintAction = actions.find { it.title == "Use single-quoted string" }
+        assertNotNull(lintAction, "Should provide lint fix action for empty GString")
+
+        val changes = lintAction?.edit?.changes
+        val edits = changes?.get(testUri.toString())
+        val edit = edits?.first()
+        assertEquals("''", edit?.newText, "Should convert empty string to single quotes")
+    }
+
     private fun createCodeActionParams(diagnostics: List<Diagnostic>): CodeActionParams = CodeActionParams().apply {
         textDocument = TextDocumentIdentifier(testUri.toString())
         range = Range(Position(0, 0), Position(0, 0))

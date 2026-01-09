@@ -271,10 +271,17 @@ object RuleRangeCalculator {
 
     /**
      * Extract a quoted value from a message.
+     * Supports both single quotes (CodeNarc's current format: "The String 'value' can be wrapped...")
+     * and double quotes (for backward compatibility).
      */
     private fun extractQuotedValue(message: String): String? {
-        val regex = Regex(""""([^"]+)"""")
-        return regex.find(message)?.groupValues?.getOrNull(1)
+        // Try single quotes first (CodeNarc's current format for UnnecessaryGString)
+        val singleQuoteRegex = Regex("""'([^']*)'""")
+        singleQuoteRegex.find(message)?.groupValues?.getOrNull(1)?.let { return it }
+
+        // Fall back to double quotes for backward compatibility
+        val doubleQuoteRegex = Regex(""""([^"]*)"""")
+        return doubleQuoteRegex.find(message)?.groupValues?.getOrNull(1)
     }
 
     /**
