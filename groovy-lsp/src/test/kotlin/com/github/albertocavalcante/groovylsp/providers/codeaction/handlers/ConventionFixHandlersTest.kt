@@ -1108,4 +1108,30 @@ class ConventionFixHandlersTest {
         assertNotNull(textEdit, "Handler should produce a TextEdit")
         assertEquals("'   '", textEdit!!.newText, "Should convert whitespace-only string")
     }
+
+    @Test
+    fun `gstring handler returns null for string containing escaped double quotes`() {
+        // Strings with escaped double quotes should NOT be converted
+        // because in single-quoted strings, \" is literal backslash + quote
+        // Content: "hello \"world\"" -> raw value: hello "world"
+        // If converted to 'hello \"world\"' -> raw value: hello \"world\" (incorrect!)
+        val content = "def s = \"hello \\\"world\\\"\""
+        val lines = content.lines()
+        val diagnostic = TestDiagnosticFactory.createCodeNarcDiagnostic(
+            code = "UnnecessaryGString",
+            message = "The String 'hello \"world\"' can be wrapped in single quotes",
+            line = 0,
+            startChar = 8,
+            endChar = 25,
+        )
+
+        val handler = FixHandlerRegistry.getHandler("UnnecessaryGString")
+        assertNotNull(handler, "UnnecessaryGString handler should be registered")
+
+        val context = FixContext(diagnostic, content, lines, "file:///test.groovy")
+        val textEdit = handler!!(context)
+
+        // Handler should return null because converting would change string semantics
+        assertEquals(null, textEdit, "Should return null for strings containing escaped double quotes")
+    }
 }

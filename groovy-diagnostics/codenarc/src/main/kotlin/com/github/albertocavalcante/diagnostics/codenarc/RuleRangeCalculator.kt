@@ -280,7 +280,7 @@ object RuleRangeCalculator {
         singleQuoteRegex.find(message)?.groupValues?.getOrNull(1)?.let { return it }
 
         // Fall back to double quotes for backward compatibility
-        val doubleQuoteRegex = Regex(""""([^"]+)"""")
+        val doubleQuoteRegex = Regex(""""([^"]*)"""")
         return doubleQuoteRegex.find(message)?.groupValues?.getOrNull(1)
     }
 

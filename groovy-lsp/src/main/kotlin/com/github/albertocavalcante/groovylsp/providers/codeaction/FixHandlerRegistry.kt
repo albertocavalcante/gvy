@@ -655,33 +655,18 @@ private fun fixUnnecessaryDotClass(context: FixContext): TextEdit? {
  * @return A TextEdit that converts to single-quoted string, or null if the fix cannot be applied
  */
 private fun fixUnnecessaryGString(context: FixContext): TextEdit? {
+    // Range validation is handled by LintFixAction.isValidRange() before this handler is called.
     val range = context.diagnostic.range
     val lineNumber = range.start.line
-
-    // Validate line number is within bounds
-    if (lineNumber < 0 || lineNumber >= context.lines.size) {
-        return null
-    }
-
     val line = context.lines[lineNumber]
     val startIndex = range.start.character
     val endIndex = range.end.character
-
-    // Validate that the diagnostic's range is within the line's bounds
-    if (startIndex < 0 || endIndex > line.length || startIndex >= endIndex) {
-        return null
-    }
 
     // Extract the string from the line using the diagnostic range
     val gstring = line.substring(startIndex, endIndex)
 
     // Validate it's a double-quoted string
-    if (!gstring.startsWith("\"") || !gstring.endsWith("\"")) {
-        return null
-    }
-
-    // Need at least 2 characters for the quotes
-    if (gstring.length < 2) {
+    if (!gstring.startsWith("\"") || !gstring.endsWith("\"") || gstring.length < 2) {
         return null
     }
 
@@ -691,6 +676,12 @@ private fun fixUnnecessaryGString(context: FixContext): TextEdit? {
     // If the content contains single quotes, we cannot convert
     // (it would break the syntax: 'it's' is invalid)
     if (content.contains("'")) {
+        return null
+    }
+
+    // If the content contains escaped double quotes (\"), we cannot convert
+    // (in single-quoted strings, \" is treated as literal backslash + quote, not an escaped quote)
+    if (content.contains("\\\"")) {
         return null
     }
 
