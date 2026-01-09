@@ -105,3 +105,32 @@ object TypeConstants {
     /** Dynamic type (equivalent to `def` or untyped `Object`). */
     val DYNAMIC = SemanticType.Dynamic()
 }
+
+/**
+ * String constants for type names used in comparisons and classpath lookups.
+ * Single source of truth - use these instead of hardcoded strings.
+ */
+object TypeNames {
+    // Dynamic/unknown type representations
+    const val DEF = "def"
+    const val OBJECT = "Object"
+    const val JAVA_LANG_OBJECT = "java.lang.Object"
+    const val UNRESOLVED = "unresolved"
+    const val NULL = "null"
+
+    // Groovy types
+    const val GROOVY_LANG_CLOSURE = "groovy.lang.Closure"
+    const val GROOVY_LANG_GSTRING = "groovy.lang.GString"
+    const val GROOVY_LANG_SCRIPT = "groovy.lang.Script"
+
+    // Java types
+    const val JAVA_LANG_STRING = "java.lang.String"
+    const val JAVA_LANG_CLASS = "java.lang.Class"
+    const val JAVA_LANG_NUMBER = "java.lang.Number"
+
+    /** Set of type names that represent dynamic/unknown types */
+    val DYNAMIC_TYPE_NAMES = setOf(JAVA_LANG_OBJECT, OBJECT, DEF, UNRESOLVED, NULL)
+
+    /** Set of type names that represent unknown types (subset of dynamic, excludes unresolved/null) */
+    val UNKNOWN_TYPE_NAMES = setOf(JAVA_LANG_OBJECT, OBJECT, DEF)
+}
