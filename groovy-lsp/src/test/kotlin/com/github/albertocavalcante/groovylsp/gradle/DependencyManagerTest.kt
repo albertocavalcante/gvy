@@ -112,7 +112,7 @@ class DependencyManagerTest {
         // Give a moment for onError to potentially be called (it shouldn't be)
         errorLatch.await(500, TimeUnit.MILLISECONDS)
 
-        assertTrue(!onErrorCalled, "onError should NOT be called for classified errors")
+        assertFalse(onErrorCalled, "onError should NOT be called for classified errors")
     }
 
     @Test
