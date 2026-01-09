@@ -116,7 +116,8 @@ class MavenFailureAnalyzer {
                         append("Groovy $groovyVersion ")
                     }
                     if (asmInfo != null) {
-                        append("cannot handle class files from JDK ${asmInfo.jdkVersion ?: asmInfo.majorVersion}. ")
+                        val jdkVersionStr = asmInfo.jdkVersion?.toString() ?: "version ${asmInfo.majorVersion}"
+                        append("cannot handle class files from JDK $jdkVersionStr. ")
                         append(asmInfo.suggestions.firstOrNull() ?: "")
                     } else {
                         append("ASM version too old for current JDK.")

@@ -163,14 +163,16 @@ data class ToolchainProvisioningError(val requiredVersion: Int?, val vendor: Str
  *
  * @property groovyVersion The detected Groovy version (e.g., "3.0.9").
  * @property jdkVersion The running JDK version (e.g., 21).
- * @property majorVersion The class file major version that caused the error (e.g., 65 for JDK 21).
+ * @property classFileMajorVersion The class file major version that caused the error (e.g., 65 for JDK 21).
  * @property minGroovyVersion The minimum Groovy version required for this JDK (e.g., "4.0.0").
+ * @property maxJdkVersion The maximum JDK version supported by the current Groovy version (e.g., "16").
  */
 data class GroovyJdkIncompatibleError(
     val groovyVersion: String?,
     val jdkVersion: Int,
-    val majorVersion: Int,
+    val classFileMajorVersion: Int,
     val minGroovyVersion: String?,
+    val maxJdkVersion: String?,
     override val suggestions: List<String> = emptyList(),
 ) : ErrorDetails {
     override val type: String = "GROOVY_JDK_INCOMPATIBLE"

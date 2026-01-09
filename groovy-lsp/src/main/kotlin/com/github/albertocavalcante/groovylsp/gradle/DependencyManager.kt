@@ -5,6 +5,8 @@ import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
+import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenFailureAnalyzer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -140,9 +142,18 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                         // Only classify build tool errors. For truly unexpected errors (like NPE during detection),
                         // use the error callback
                         if (detectedBuildTool != null) {
-                            // Classify the exception using GradleFailureAnalyzer
-                            val failureAnalyzer = GradleFailureAnalyzer()
-                            val classifiedStatus = failureAnalyzer.classifyException(e)
+                            // Classify the exception using the appropriate failure analyzer
+                            val classifiedStatus = when (detectedBuildTool) {
+                                is MavenBuildTool -> {
+                                    val mavenAnalyzer = MavenFailureAnalyzer()
+                                    mavenAnalyzer.classifyException(e, groovyVersion = null)
+                                }
+                                else -> {
+                                    // For Gradle and other build tools, use GradleFailureAnalyzer
+                                    val gradleAnalyzer = GradleFailureAnalyzer()
+                                    gradleAnalyzer.classifyException(e)
+                                }
+                            }
 
                             // Create a WorkspaceResolution with the failed status
                             val failedResolution = WorkspaceResolution(

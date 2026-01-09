@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovylsp.buildtool.AsmErrorInfo
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
@@ -419,17 +420,27 @@ class ProjectStartupManager(
             )
         }
         ResolutionCodes.GRADLE_JDK_INCOMPATIBLE -> {
-            // Extract version information from the error message or use defaults
-            // For now, we'll create a basic error - this can be enhanced later
+            val info = status.details as? GradleFailureAnalyzer.GradleJdkIncompatibleInfo
             GradleJdkIncompatibleError(
-                gradleVersion = "unknown",
-                jdkVersion = 0,
-                minGradleVersion = "unknown",
-                maxJdkVersion = null,
-                suggestions = listOf(
+                gradleVersion = info?.gradleVersion ?: "unknown",
+                jdkVersion = info?.jdkVersion ?: 0,
+                minGradleVersion = info?.minGradleVersion ?: "unknown",
+                maxJdkVersion = info?.maxJdkVersion,
+                suggestions = info?.suggestions ?: listOf(
                     "Update Gradle wrapper to a newer version",
                     "Or configure groovy.gradle.javaHome to use a compatible JDK",
                 ),
+            )
+        }
+        ResolutionCodes.GROOVY_JDK_INCOMPATIBLE -> {
+            val info = status.details as? AsmErrorInfo
+            GroovyJdkIncompatibleError(
+                groovyVersion = null, // Could be extracted from project if available
+                jdkVersion = info?.jdkVersion ?: info?.currentJdk ?: 0,
+                classFileMajorVersion = info?.majorVersion ?: 0,
+                minGroovyVersion = null, // Could be computed from GroovyCompatibilityService
+                maxJdkVersion = null, // Could be computed from GroovyCompatibilityService
+                suggestions = info?.suggestions ?: emptyList(),
             )
         }
         else -> {
