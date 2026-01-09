@@ -114,20 +114,15 @@ class TokenEditDistanceTest {
 
         val editDistance = TokenEditDistance.fromTexts(original, revised)
 
-        // Position of 'bar' token - LCS matching finds it in both versions
-        // Column 10 in original points to 'bar', should find 'bar' in revised at column 13
+        // Position of 'bar' token at column 10 in original
         val originalPosition = Position(0, 10)
         val revisedPosition = editDistance.toRevised(originalPosition)
 
-        // Since lines match (LCS), column mapping uses token finding
-        // The token 'bar' at column 10 in original maps to somewhere in the revised line
-        // Current implementation uses proportional mapping as fallback
-        // Accept that column stays at 10 since line is still matched
+        // KNOWN LIMITATION: Since lines don't match exactly, LCS creates no mapping.
+        // With no mapping, fallback finds closest line (0) but preserves original column.
+        // Column-level mapping (proportional or token-based) only applies when lines ARE mapped.
+        // This means modified lines don't get smart column adjustment.
+        // TODO: Consider using line similarity or token-level LCS for modified lines.
         assertEquals(Position(0, 10), revisedPosition)
     }
 }
-
-/**
- * Simple position class for tests.
- */
-data class Position(val line: Int, val column: Int)
