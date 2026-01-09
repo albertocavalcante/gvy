@@ -170,11 +170,12 @@ class CompilationOrchestratorTest {
         )
         val boundedSources = listOf(tempDir.resolve("A.groovy"))
 
+        val boundedUrisSlot = slot<Set<URI>>()
         val workspaceManager = mockk<WorkspaceManager>()
         every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
-        every { workspaceManager.getBoundedWorkspaceSources(any()) } returns boundedSources
+        every { workspaceManager.getBoundedWorkspaceSources(capture(boundedUrisSlot)) } returns boundedSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
 
         // DependencyGraph with info for this URI
@@ -201,6 +202,13 @@ class CompilationOrchestratorTest {
 
         // Should use bounded sources, not full workspace
         assertEquals(boundedSources, requestSlot.captured.workspaceSources)
+
+        // Verify the correct URIs were passed to getBoundedWorkspaceSources
+        assertEquals(
+            setOf(depUri),
+            boundedUrisSlot.captured,
+            "Should pass dependency URIs to getBoundedWorkspaceSources",
+        )
     }
 
     @Test
