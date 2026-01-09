@@ -130,4 +130,7 @@ object TypeNames {
 
     /** Set of type names that represent dynamic/unknown types */
     val DYNAMIC_TYPE_NAMES = setOf(JAVA_LANG_OBJECT, OBJECT, DEF, UNRESOLVED, NULL)
+
+    /** Set of type names that represent unknown types (subset of dynamic, excludes unresolved/null) */
+    val UNKNOWN_TYPE_NAMES = setOf(JAVA_LANG_OBJECT, OBJECT, DEF)
 }

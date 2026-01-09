@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.semantics
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -39,21 +40,18 @@ class TypeStringUtilsTest {
         }
 
         @Test
-        fun `returns true for unresolved variable pattern`() {
-            assertTrue(TypeStringUtils.isDynamicType("unresolved variable: binding"))
-        }
-
-        @Test
-        fun `returns true for Unresolved with different case`() {
-            assertTrue(TypeStringUtils.isDynamicType("Unresolved"))
-            assertTrue(TypeStringUtils.isDynamicType("UNRESOLVED"))
-        }
-
-        @Test
         fun `returns false for concrete types`() {
             assertFalse(TypeStringUtils.isDynamicType("java.lang.String"))
             assertFalse(TypeStringUtils.isDynamicType("java.util.List"))
             assertFalse(TypeStringUtils.isDynamicType("MyClass"))
+        }
+
+        @Test
+        fun `returns false for class names starting with Unresolved`() {
+            // Class names like UnresolvedDependency should NOT be considered dynamic
+            // The space/colon check in isValidClasspathTypeName handles error patterns
+            assertFalse(TypeStringUtils.isDynamicType("UnresolvedDependency"))
+            assertFalse(TypeStringUtils.isDynamicType("UnresolvedException"))
         }
     }
 
@@ -104,14 +102,30 @@ class TypeStringUtilsTest {
 
         @Test
         fun `strips generic parameters`() {
-            kotlin.test.assertEquals("List", TypeStringUtils.normalizeTypeName("List<String>"))
-            kotlin.test.assertEquals("Map", TypeStringUtils.normalizeTypeName("Map<String, Integer>"))
+            assertEquals("List", TypeStringUtils.normalizeTypeName("List<String>"))
+            assertEquals("Map", TypeStringUtils.normalizeTypeName("Map<String, Integer>"))
         }
 
         @Test
         fun `returns unchanged for non-generic type`() {
-            kotlin.test.assertEquals("String", TypeStringUtils.normalizeTypeName("String"))
-            kotlin.test.assertEquals("java.lang.String", TypeStringUtils.normalizeTypeName("java.lang.String"))
+            assertEquals("String", TypeStringUtils.normalizeTypeName("String"))
+            assertEquals("java.lang.String", TypeStringUtils.normalizeTypeName("java.lang.String"))
+        }
+
+        @Test
+        fun `handles nested generics`() {
+            assertEquals("Map", TypeStringUtils.normalizeTypeName("Map<String, List<Integer>>"))
+        }
+
+        @Test
+        fun `handles malformed type with unclosed bracket`() {
+            // substringBefore('<') handles this gracefully
+            assertEquals("List", TypeStringUtils.normalizeTypeName("List<String"))
+        }
+
+        @Test
+        fun `handles empty string`() {
+            assertEquals("", TypeStringUtils.normalizeTypeName(""))
         }
     }
 
@@ -139,6 +153,19 @@ class TypeStringUtilsTest {
         fun `returns false for concrete types`() {
             assertFalse(TypeStringUtils.isUnknownType("java.lang.String"))
             assertFalse(TypeStringUtils.isUnknownType("int"))
+        }
+
+        @Test
+        fun `returns false for unresolved - it indicates error state not unknown`() {
+            // "unresolved" is a dynamic type (error state) but not an "unknown" type
+            // Unknown types are intentionally dynamic (Object, def) where we lack type info
+            assertFalse(TypeStringUtils.isUnknownType("unresolved"))
+        }
+
+        @Test
+        fun `returns false for null type - it indicates error state not unknown`() {
+            // "null" type string is a dynamic type but not an "unknown" type
+            assertFalse(TypeStringUtils.isUnknownType("null"))
         }
     }
 }

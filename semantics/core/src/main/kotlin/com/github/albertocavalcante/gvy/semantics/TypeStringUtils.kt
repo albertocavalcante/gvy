@@ -7,13 +7,15 @@ package com.github.albertocavalcante.gvy.semantics
 object TypeStringUtils {
     /**
      * Check if a type name represents a dynamic/unknown type.
-     * Handles both exact matches and prefix patterns like "unresolved variable: foo".
+     * Uses exact match against [TypeNames.DYNAMIC_TYPE_NAMES].
+     *
+     * Note: Error patterns like "unresolved variable: foo" are caught by
+     * [isValidClasspathTypeName]'s space/colon check, not here.
      *
      * @param typeName The type name to check
      * @return true if the type represents a dynamic/unknown type
      */
-    fun isDynamicType(typeName: String): Boolean = typeName in TypeNames.DYNAMIC_TYPE_NAMES ||
-        typeName.startsWith("unresolved", ignoreCase = true)
+    fun isDynamicType(typeName: String): Boolean = typeName in TypeNames.DYNAMIC_TYPE_NAMES
 
     /**
      * Check if a type name is valid for classpath lookup (Class.forName).
@@ -42,7 +44,12 @@ object TypeStringUtils {
     fun normalizeTypeName(typeName: String): String = typeName.substringBefore('<')
 
     /**
-     * Check if a type name is an unknown/unresolved type (subset of dynamic).
+     * Check if a type name is an unknown type (subset of dynamic).
+     * Unknown types are types that provide no useful type information for hints:
+     * java.lang.Object, Object, def.
+     *
+     * This is distinct from [isDynamicType] which also includes "unresolved" and "null"
+     * which indicate error states rather than intentionally dynamic typing.
      *
      * @param typeName The type name to check, can be null
      * @return true if the type is null or represents an unknown type
@@ -50,8 +57,6 @@ object TypeStringUtils {
     fun isUnknownType(typeName: String?): Boolean {
         if (typeName == null) return true
         val normalized = normalizeTypeName(typeName)
-        return normalized == TypeNames.JAVA_LANG_OBJECT ||
-            normalized == TypeNames.OBJECT ||
-            normalized == TypeNames.DEF
+        return normalized in TypeNames.UNKNOWN_TYPE_NAMES
     }
 }
