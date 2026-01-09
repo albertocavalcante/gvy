@@ -26,7 +26,8 @@ recipeList:
   # Phase 1: Formatting
   - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAfterComma
   - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceAroundOperator
-  
+  - com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceBeforeOpeningBrace
+
   # Phase 2: Unnecessary Code
   - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessarySemicolon
   - com.github.albertocavalcante.refactor.codenarc.unnecessary.RemoveUnnecessaryGString
@@ -86,6 +87,19 @@ tags:
   - codenarc
   - formatting
   - SpaceAroundOperator
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.github.albertocavalcante.refactor.codenarc.formatting.AddSpaceBeforeOpeningBrace
+displayName: Add space before opening brace
+description: >
+  Ensures opening braces are preceded by a space.
+  CodeNarc Rule: SpaceBeforeOpeningBrace
+  https://codenarc.org/codenarc-rules-formatting.html#spacebeforeopeningbrace
+tags:
+  - codenarc
+  - formatting
+  - SpaceBeforeOpeningBrace
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
