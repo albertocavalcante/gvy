@@ -27,9 +27,6 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
     @Suppress("ReturnCount") // Multiple validation checks require early returns
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
-        // Priority weight for multi-line occurrences (line count is more significant than column offset)
-        @Suppress("MagicNumber") // Configuration constant for scoring multi-line occurrences
-        val multiLinePriorityWeight = 10000
         logger.debug("Attempting SemanticDB resolution at {}:{}", context.documentUri, context.position)
 
         // 1. Get SemanticDocument for current file
@@ -53,7 +50,7 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
                     it.range.endColumn - it.range.startColumn
                 } else {
                     // Prioritize line count for multi-lines, add large constant to differentiate from single line
-                    lineDiff * multiLinePriorityWeight + (it.range.endColumn)
+                    lineDiff * MULTI_LINE_PRIORITY_WEIGHT + (it.range.endColumn)
                 }
             }
         if (occurrence == null) {
@@ -131,5 +128,11 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
     companion object {
         private const val STRATEGY_NAME = "SemanticDB"
+
+        /**
+         * Priority weight for multi-line occurrences (line count is more significant than column offset).
+         * Used in occurrence selection to differentiate multi-line ranges from single-line ranges.
+         */
+        private const val MULTI_LINE_PRIORITY_WEIGHT = 10000
     }
 }
