@@ -19,7 +19,7 @@ import kotlin.concurrent.withLock
  * ```kotlin
  * val fixture = GroovySourceFixture()
  * val result = fixture.parse("class MyClass { }")
- * assertThat(result.isSuccess).isTrue()
+ * assertThat(result.isSuccessful).isTrue()
  * ```
  */
 class GroovySourceFixture {
