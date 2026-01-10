@@ -1,78 +1,30 @@
 package com.github.albertocavalcante.testing.jenkins
 
 /**
- * Consolidated Jenkins test stubs.
+ * Jenkins test stubs reference.
  *
- * This file provides stub classes and annotations that mimic Jenkins
- * APIs for testing purposes without requiring the full Jenkins runtime.
- * These stubs allow tests to compile against Jenkins-style code without
- * pulling in heavyweight Jenkins dependencies.
+ * Note: This file previously contained local Jenkins stub classes and annotations.
  *
- * These stubs are minimal and only include the structure needed for
- * testing purposes. They do not implement full Jenkins functionality.
+ * Those stubs have been removed to avoid duplication with the canonical
+ * test stubs defined in the groovy-jenkins module (under src/test/kotlin).
+ * Please use the existing Jenkins stub types from their proper packages,
+ * such as hudson.model, org.jenkinsci.*, and org.kohsuke.stapler.
+ *
+ * Available stubs in groovy-jenkins/src/test/kotlin/:
+ * - hudson.model.Descriptor
+ * - org.jenkinsci.Symbol
+ * - org.jenkinsci.plugins.workflow.cps.GlobalVariable
+ * - org.jenkinsci.plugins.workflow.steps.Step
+ * - org.jenkinsci.plugins.workflow.steps.StepDescriptor
+ * - org.kohsuke.stapler.DataBoundConstructor
+ * - org.kohsuke.stapler.DataBoundSetter
+ *
+ * These stubs use the correct Jenkins package structure and can act as
+ * drop-in replacements for the real Jenkins classes.
  */
-
-// ========== hudson.model package ==========
-
-/**
- * Stub for Hudson Descriptor class.
- *
- * In Jenkins, Descriptor is used to describe the configuration
- * of a particular type of object (e.g., build step, publisher).
- */
-open class Descriptor<T>
-
-// ========== org.jenkinsci packages ==========
-
-/**
- * Stub for Jenkins Symbol annotation.
- *
- * The Symbol annotation is used to provide short names for Jenkins
- * extension points that can be used in Pipeline DSL.
- */
-annotation class Symbol(val value: Array<String>)
-
-/**
- * Stub for Jenkins GlobalVariable class.
- *
- * GlobalVariable represents a global variable in the Jenkins Pipeline DSL
- * (e.g., env, currentBuild, params).
- */
-open class GlobalVariable {
-    open fun getName(): String? = null
-}
-
-/**
- * Stub for Jenkins Step class.
- *
- * Step represents a Pipeline step that can be executed.
- */
-open class Step
-
-/**
- * Stub for Jenkins StepDescriptor class.
- *
- * StepDescriptor provides metadata about a Pipeline step,
- * including its function name for DSL usage.
- */
-open class StepDescriptor {
-    open fun getFunctionName(): String? = null
-}
-
-// ========== org.kohsuke.stapler packages ==========
-
-/**
- * Stub for Stapler DataBoundConstructor annotation.
- *
- * DataBoundConstructor marks a constructor that should be used
- * for binding HTTP form data to an object.
- */
-annotation class DataBoundConstructor
-
-/**
- * Stub for Stapler DataBoundSetter annotation.
- *
- * DataBoundSetter marks a setter method that should be used
- * for binding HTTP form data to an object property.
- */
-annotation class DataBoundSetter
+@Deprecated(
+    "This module previously contained duplicate Jenkins stubs. " +
+        "Use the canonical stubs from groovy-jenkins/src/test/kotlin instead.",
+    level = DeprecationLevel.WARNING,
+)
+object JenkinsStubs

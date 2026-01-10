@@ -11,8 +11,8 @@ import io.mockk.mockk
  *
  * Example usage:
  * ```kotlin
- * val compilationService = MockPatterns.compilationService()
- * val documentProvider = MockPatterns.documentProvider()
+ * val compilationService = MockPatterns.relaxedMock<CompilationService>()
+ * val documentProvider: DocumentProvider = MockPatterns.relaxedMock(name = "docProvider")
  * ```
  */
 object MockPatterns {
@@ -73,59 +73,4 @@ object MockPatterns {
             name = name,
             recordPrivateCalls = recordPrivateCalls,
         )
-
-    /**
-     * Create a compilation service mock.
-     *
-     * This is a convenience method for creating a commonly-used mock
-     * in LSP-related tests. Returns a relaxed mock by default.
-     *
-     * @param relaxed Whether to create a relaxed mock (default: true)
-     * @return A mock compilation service
-     */
-    inline fun <reified T : Any> compilationService(relaxed: Boolean = true): T = mockk(relaxed = relaxed)
-
-    /**
-     * Create a document provider mock.
-     *
-     * This is a convenience method for creating a commonly-used mock
-     * in LSP-related tests. Returns a relaxed mock by default.
-     *
-     * @param relaxed Whether to create a relaxed mock (default: true)
-     * @return A mock document provider
-     */
-    inline fun <reified T : Any> documentProvider(relaxed: Boolean = true): T = mockk(relaxed = relaxed)
-
-    /**
-     * Create a language client mock.
-     *
-     * This is a convenience method for creating a commonly-used mock
-     * in LSP server tests. Returns a relaxed mock by default.
-     *
-     * @param relaxed Whether to create a relaxed mock (default: true)
-     * @return A mock language client
-     */
-    inline fun <reified T : Any> languageClient(relaxed: Boolean = true): T = mockk(relaxed = relaxed)
-
-    /**
-     * Create a type resolver mock.
-     *
-     * This is a convenience method for creating a commonly-used mock
-     * in semantic analysis tests. Returns a relaxed mock by default.
-     *
-     * @param relaxed Whether to create a relaxed mock (default: true)
-     * @return A mock type resolver
-     */
-    inline fun <reified T : Any> typeResolver(relaxed: Boolean = true): T = mockk(relaxed = relaxed)
-
-    /**
-     * Create a parser facade mock.
-     *
-     * This is a convenience method for creating a commonly-used mock
-     * in parser-related tests. Returns a relaxed mock by default.
-     *
-     * @param relaxed Whether to create a relaxed mock (default: true)
-     * @return A mock parser facade
-     */
-    inline fun <reified T : Any> parserFacade(relaxed: Boolean = true): T = mockk(relaxed = relaxed)
 }

@@ -53,12 +53,12 @@ class GroovySourceFixture {
      */
     fun parseToClass(code: String, uri: String = "file:///Test.groovy"): ClassNode {
         val result = parse(code, uri)
-        require(result.isSuccessful) { "Parse failed: ${result.diagnostics}" }
+        check(result.isSuccessful) { "Parse failed: ${result.diagnostics}" }
         val ast = result.ast
-        require(ast != null) { "AST is null" }
+        check(ast != null) { "AST is null" }
 
         val classes = ast.classes
-        require(classes.isNotEmpty()) { "No classes found in parsed code" }
+        check(classes.isNotEmpty()) { "No classes found in parsed code" }
 
         return classes.first()
     }
@@ -73,9 +73,9 @@ class GroovySourceFixture {
      */
     fun parseToModule(code: String, uri: String = "file:///Test.groovy"): ModuleNode {
         val result = parse(code, uri)
-        require(result.isSuccessful) { "Parse failed: ${result.diagnostics}" }
+        check(result.isSuccessful) { "Parse failed: ${result.diagnostics}" }
         val ast = result.ast
-        require(ast != null) { "AST is null" }
+        check(ast != null) { "AST is null" }
         return ast
     }
 

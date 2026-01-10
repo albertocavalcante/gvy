@@ -26,9 +26,9 @@ object DiagnosticFixture {
      *
      * @param severity The severity level (ERROR, WARNING, INFO, HINT)
      * @param message The diagnostic message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based), defaults to line end if not specified
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based), defaults to line end if not specified
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new Diagnostic instance
@@ -56,9 +56,9 @@ object DiagnosticFixture {
      * Create an error diagnostic.
      *
      * @param message The error message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new error Diagnostic
@@ -84,9 +84,9 @@ object DiagnosticFixture {
      * Create a warning diagnostic.
      *
      * @param message The warning message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new warning Diagnostic
@@ -112,9 +112,9 @@ object DiagnosticFixture {
      * Create an info diagnostic.
      *
      * @param message The info message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new info Diagnostic
@@ -140,9 +140,9 @@ object DiagnosticFixture {
      * Create a hint diagnostic.
      *
      * @param message The hint message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new hint Diagnostic
@@ -168,9 +168,9 @@ object DiagnosticFixture {
      * Create a syntax error diagnostic.
      *
      * @param message The error message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @return A new syntax error Diagnostic
      */
     fun syntaxError(message: String, line: Int, startCol: Int = 0, endCol: Int = Int.MAX_VALUE): Diagnostic = error(
@@ -187,9 +187,9 @@ object DiagnosticFixture {
      *
      * @param ruleName The CodeNarc rule name
      * @param message The violation message
-     * @param line The line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endCol The end column (0-based)
+     * @param line The line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endCol The end column (1-based)
      * @param severity The severity level (default: WARNING)
      * @return A new CodeNarc violation Diagnostic
      */
@@ -215,10 +215,10 @@ object DiagnosticFixture {
      *
      * @param severity The severity level
      * @param message The diagnostic message
-     * @param startLine The start line number (0-based)
-     * @param startCol The start column (0-based)
-     * @param endLine The end line number (0-based)
-     * @param endCol The end column (0-based)
+     * @param startLine The start line number (1-based)
+     * @param startCol The start column (1-based)
+     * @param endLine The end line number (1-based)
+     * @param endCol The end column (1-based)
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new multi-line Diagnostic
