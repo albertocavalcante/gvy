@@ -146,4 +146,52 @@ class UnusedImportSemanticTokenTest {
             "UNNECESSARY mask should be 1 << index",
         )
     }
+
+    @Test
+    fun `should highlight static import field name not class name`() = runBlocking {
+        val code = """
+            import static java.util.Collections.emptyMap
+
+            def map = emptyMap()
+        """.trimIndent()
+
+        compile(code)
+
+        val ast = compilationService.getAst(uri) as ModuleNode
+        val astModel = compilationService.getAstModel(uri)!!
+        val unusedImports = UnusedImportDetector.detectUnusedImports(ast).toSet()
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(
+            astModel,
+            uri,
+            unusedImports = unusedImports,
+            moduleNode = ast,
+        )
+
+        // Find token for the static import on line 0
+        // Expected: "import static java.util.Collections.emptyMap"
+        // Token should highlight "emptyMap" (the field name), not "Collections" (the class name)
+        val importToken = tokens.find {
+            it.line == 0 && it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS
+        }
+
+        assertNotNull(importToken, "Should have token for static import on line 0")
+
+        // Calculate expected position for "emptyMap"
+        // "import static java.util.Collections.emptyMap"
+        // Position of "emptyMap" = length of "import static java.util.Collections."
+        val expectedStartChar = "import static java.util.Collections.".length
+        val expectedLength = "emptyMap".length
+
+        assertEquals(
+            expectedStartChar,
+            importToken.startChar,
+            "Static import token should start at field name 'emptyMap', not class name 'Collections'",
+        )
+        assertEquals(
+            expectedLength,
+            importToken.length,
+            "Static import token should span 'emptyMap', not 'Collections'",
+        )
+    }
 }

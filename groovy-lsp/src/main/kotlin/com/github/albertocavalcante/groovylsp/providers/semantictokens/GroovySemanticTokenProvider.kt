@@ -210,16 +210,22 @@ object GroovySemanticTokenProvider {
         // Match pattern from NativeParserAdapter.kt:103 and DocumentHighlightProvider.kt:178
         if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0) return
 
-        val typeName = importNode.type?.nameWithoutPackage ?: importNode.alias ?: return
+        // For static imports, highlight the field/method name (e.g., "emptyMap" in "import static Collections.emptyMap")
+        // For regular imports, highlight the class name (e.g., "ArrayList" in "import java.util.ArrayList")
+        val typeName = if (importNode.isStatic) {
+            importNode.fieldName ?: return
+        } else {
+            importNode.type?.nameWithoutPackage ?: importNode.alias ?: return
+        }
 
         var modifiers = 0
         if (importNode in unusedImports) {
             modifiers = modifiers or TokenModifiers.UNNECESSARY
         }
 
-        // Calculate position of type name in import statement
-        // Regular import: "import java.util.ArrayList" -> ArrayList starts after last dot
-        // Static import: "import static java.lang.Math.PI" -> PI starts after last dot
+        // Calculate position of the name to highlight in import statement
+        // Regular import: "import java.util.ArrayList" -> ArrayList starts after last dot in className
+        // Static import: "import static java.util.Collections.emptyMap" -> emptyMap starts after last dot in className
         // ImportNode provides the position of the start of the import statement via columnNumber
         val className = importNode.className ?: return
         val lastDotIndex = className.lastIndexOf('.')
