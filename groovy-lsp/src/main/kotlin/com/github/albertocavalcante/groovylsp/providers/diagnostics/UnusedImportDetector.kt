@@ -103,9 +103,13 @@ object UnusedImportDetector {
 
         override fun visitVariableExpression(expression: VariableExpression) {
             val name = expression.name
-            logger.debug("Visiting variable expression: {} (checking against {})", name, staticImportNames)
+            UnusedImportDetector.logger.debug(
+                "Visiting variable expression: {} (checking against {})",
+                name,
+                staticImportNames,
+            )
             if (name in staticImportNames) {
-                logger.debug("Found static import usage: {}", name)
+                UnusedImportDetector.logger.debug("Found static import usage: {}", name)
                 usedMembers.add(name)
             }
             super.visitVariableExpression(expression)
@@ -124,9 +128,13 @@ object UnusedImportDetector {
         override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
             // Static method calls via import like "emptyList()" become StaticMethodCallExpression
             val methodName = call.method
-            logger.debug("Visiting static method call: {} (checking against {})", methodName, staticImportNames)
+            UnusedImportDetector.logger.debug(
+                "Visiting static method call: {} (checking against {})",
+                methodName,
+                staticImportNames,
+            )
             if (methodName in staticImportNames) {
-                logger.debug("Found static import method usage: {}", methodName)
+                UnusedImportDetector.logger.debug("Found static import method usage: {}", methodName)
                 usedMembers.add(methodName)
             }
             super.visitStaticMethodCallExpression(call)
