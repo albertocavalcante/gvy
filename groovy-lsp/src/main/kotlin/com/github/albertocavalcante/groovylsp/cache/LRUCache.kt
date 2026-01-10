@@ -1,12 +1,14 @@
 package com.github.albertocavalcante.groovylsp.cache
 
-import java.util.LinkedHashMap
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.write
+import com.github.albertocavalcante.groovycommon.cache.CacheStats
+import com.github.albertocavalcante.groovycommon.cache.ThreadSafeLRUCache
 
 /**
  * Thread-safe LRU cache implementation with size limits.
+ *
+ * This class is now a thin wrapper around [ThreadSafeLRUCache] from groovy-common.
+ * It maintains backward compatibility with the existing API while delegating
+ * all functionality to the shared cache implementation.
  *
  * Features:
  * - Thread-safe operations
@@ -16,68 +18,51 @@ import kotlin.concurrent.write
  *
  * @param maxSize Maximum number of entries to keep in cache
  */
-class LRUCache<K, V>(private val maxSize: Int) {
-    private val lock = ReentrantReadWriteLock()
-    private val cache =
-        object : LinkedHashMap<K, V>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>): Boolean = size > maxSize
-        }
+class LRUCache<K, V>(maxSize: Int) {
+    private val delegate = ThreadSafeLRUCache<K, V>(maxSize)
 
     /**
      * Get value from cache, updating access order.
      */
-    fun get(key: K): V? = lock.write { cache[key] }
+    fun get(key: K): V? = delegate.get(key)
 
     /**
      * Put value in cache, evicting old entries if necessary
      */
-    fun put(key: K, value: V): V? = lock.write { cache.put(key, value) }
+    fun put(key: K, value: V): V? = delegate.put(key, value)
 
     /**
      * Remove entry from cache
      */
-    fun remove(key: K): V? = lock.write { cache.remove(key) }
+    fun remove(key: K): V? = delegate.remove(key)
 
     /**
      * Clear all entries
      */
-    fun clear() = lock.write { cache.clear() }
+    fun clear() = delegate.clear()
 
     /**
      * Get current cache size
      */
-    fun size(): Int = lock.read { cache.size }
+    fun size(): Int = delegate.size()
 
     /**
      * Check if cache is empty
      */
-    fun isEmpty(): Boolean = lock.read { cache.isEmpty() }
+    fun isEmpty(): Boolean = delegate.isEmpty()
 
     /**
      * Get all keys in access order (least to most recently used)
      */
-    fun keys(): List<K> = lock.read { cache.keys.toList() }
+    fun keys(): List<K> = delegate.keys()
 
     /**
      * Returns an immutable snapshot of the current cache contents.
      */
-    fun snapshot(): Map<K, V> = lock.read {
-        LinkedHashMap<K, V>(cache.size).apply { putAll(cache) }
-    }
+    fun snapshot(): Map<K, V> = delegate.snapshot()
 
     /**
      * Get cache statistics
      */
-    fun getStats(): CacheStats = lock.read {
-        CacheStats(
-            size = cache.size,
-            maxSize = maxSize,
-            hitRate = 0.0, // Could implement hit rate tracking if needed
-        )
-    }
-
-    data class CacheStats(val size: Int, val maxSize: Int, val hitRate: Double)
+    fun getStats(): CacheStats = delegate.getStats()
 }
-
-private const val DEFAULT_INITIAL_CAPACITY = 16
-private const val DEFAULT_LOAD_FACTOR = 0.75f
