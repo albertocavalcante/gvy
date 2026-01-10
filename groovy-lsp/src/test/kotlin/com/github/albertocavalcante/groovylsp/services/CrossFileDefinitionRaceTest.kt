@@ -199,4 +199,169 @@ class CrossFileDefinitionRaceTest {
         job2.join()
         job3.join()
     }
+
+    @Test
+    fun `should resolve definition when files opened in reverse dependency order`() = runTest {
+        // Open Main.groovy first (depends on Calculator)
+        // Then open Calculator.groovy
+        // Definition should still work
+
+        val mainUri = "file:///test/Main.groovy"
+        val mainContent = """
+            class Main {
+                void test() {
+                    Calculator calc = new Calculator()
+                }
+            }
+        """.trimIndent()
+
+        val calculatorUri = "file:///test/Calculator.groovy"
+        val calculatorContent = """
+            class Calculator {
+                int add(int a, int b) { return a + b }
+            }
+        """.trimIndent()
+
+        // Open Main first (reverse order)
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(mainUri, "groovy", 1, mainContent)))
+        delay(50)
+
+        // Open Calculator second
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(calculatorUri, "groovy", 1, calculatorContent)))
+        delay(50)
+
+        // Request definition in Main
+        val params = DefinitionParams(
+            TextDocumentIdentifier(mainUri),
+            Position(2, 30), // "Calculator" in "new Calculator()"
+        )
+
+        val resultFuture = service.definition(params)
+        val result = resultFuture.get()
+
+        // Should resolve to Calculator.groovy despite reverse opening order
+        assertTrue(result.isLeft, "Result should be Left (List<Location>)")
+        val locations = result.left
+        assertTrue(locations.isNotEmpty(), "Should find at least one definition")
+        assertTrue(
+            locations[0].uri.contains("Calculator.groovy"),
+            "Definition should point to Calculator.groovy, but got: ${locations[0].uri}",
+        )
+    }
+
+    @Test
+    fun `should handle multiple cross-file references in single file`() = runTest {
+        // Main.groovy references Calculator, Logger, Utils - all in memory
+
+        val calculatorUri = "file:///test/Calculator.groovy"
+        val calculatorContent = "class Calculator { int add(int a, int b) { return a + b } }"
+
+        val loggerUri = "file:///test/Logger.groovy"
+        val loggerContent = "class Logger { void log(String msg) { } }"
+
+        val utilsUri = "file:///test/Utils.groovy"
+        val utilsContent = "class Utils { static String format(String s) { return s } }"
+
+        val mainUri = "file:///test/Main.groovy"
+        val mainContent = """
+            class Main {
+                void run() {
+                    Calculator calc = new Calculator()
+                    Logger logger = new Logger()
+                    String formatted = Utils.format("test")
+                }
+            }
+        """.trimIndent()
+
+        // Open all files
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(calculatorUri, "groovy", 1, calculatorContent)))
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(loggerUri, "groovy", 1, loggerContent)))
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(utilsUri, "groovy", 1, utilsContent)))
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(mainUri, "groovy", 1, mainContent)))
+        delay(100)
+
+        // Test definition for Calculator
+        val calcParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(2, 30)) // "Calculator" in new
+        val calcResult = service.definition(calcParams).get()
+        assertTrue(calcResult.isLeft)
+        assertTrue(calcResult.left.isNotEmpty())
+        assertTrue(calcResult.left[0].uri.contains("Calculator.groovy"))
+
+        // Test definition for Logger
+        val loggerParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(3, 24)) // "Logger" in new
+        val loggerResult = service.definition(loggerParams).get()
+        assertTrue(loggerResult.isLeft)
+        assertTrue(loggerResult.left.isNotEmpty())
+        assertTrue(loggerResult.left[0].uri.contains("Logger.groovy"))
+
+        // Test definition for Utils
+        val utilsParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(4, 40)) // "Utils" in Utils.format
+        val utilsResult = service.definition(utilsParams).get()
+        assertTrue(utilsResult.isLeft)
+        assertTrue(utilsResult.left.isNotEmpty())
+        assertTrue(utilsResult.left[0].uri.contains("Utils.groovy"))
+    }
+
+    @Test
+    fun `should resolve definition after file content changes`() = runTest {
+        // Open files, change Calculator.groovy, request definition in Main.groovy
+
+        val calculatorUri = "file:///test/Calculator.groovy"
+        val initialContent = """
+            class Calculator {
+                int add(int a, int b) { return a + b }
+            }
+        """.trimIndent()
+
+        val mainUri = "file:///test/Main.groovy"
+        val mainContent = """
+            class Main {
+                void test() {
+                    Calculator calc = new Calculator()
+                }
+            }
+        """.trimIndent()
+
+        // Open both files
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(calculatorUri, "groovy", 1, initialContent)))
+        service.didOpen(DidOpenTextDocumentParams(TextDocumentItem(mainUri, "groovy", 1, mainContent)))
+        delay(100)
+
+        // Change Calculator content
+        val updatedContent = """
+            class Calculator {
+                int add(int a, int b) { return a + b }
+                int subtract(int a, int b) { return a - b }
+            }
+        """.trimIndent()
+
+        service.didChange(
+            DidChangeTextDocumentParams().apply {
+                textDocument = org.eclipse.lsp4j.VersionedTextDocumentIdentifier(calculatorUri, 2)
+                contentChanges = listOf(
+                    org.eclipse.lsp4j.TextDocumentContentChangeEvent().apply {
+                        text = updatedContent
+                    },
+                )
+            },
+        )
+        delay(100)
+
+        // Request definition in Main - should still work after change
+        val params = DefinitionParams(
+            TextDocumentIdentifier(mainUri),
+            Position(2, 30), // "Calculator" in "new Calculator()"
+        )
+
+        val resultFuture = service.definition(params)
+        val result = resultFuture.get()
+
+        assertTrue(result.isLeft, "Result should be Left (List<Location>)")
+        val locations = result.left
+        assertTrue(locations.isNotEmpty(), "Should find definition after content change")
+        assertTrue(
+            locations[0].uri.contains("Calculator.groovy"),
+            "Definition should point to Calculator.groovy",
+        )
+    }
 }
