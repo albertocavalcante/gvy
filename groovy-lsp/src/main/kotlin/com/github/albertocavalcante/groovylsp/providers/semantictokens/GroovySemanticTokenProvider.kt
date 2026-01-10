@@ -210,8 +210,10 @@ object GroovySemanticTokenProvider {
         // Match pattern from NativeParserAdapter.kt:103 and DocumentHighlightProvider.kt:178
         if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0) return
 
-        // For static imports, highlight the field/method name (e.g., "emptyMap" in "import static Collections.emptyMap")
-        // For regular imports, highlight the class name (e.g., "ArrayList" in "import java.util.ArrayList")
+        // For static imports, highlight the field/method name
+        // (e.g., "emptyMap" in "import static Collections.emptyMap")
+        // For regular imports, highlight the class name
+        // (e.g., "ArrayList" in "import java.util.ArrayList")
         val typeName = if (importNode.isStatic) {
             importNode.fieldName ?: return
         } else {
