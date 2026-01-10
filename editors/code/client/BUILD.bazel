@@ -1,0 +1,100 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+# TypeScript compilation for the extension client
+ts_project(
+    name = "client_lib",
+    srcs = glob(
+        ["src/**/*.ts"],
+        exclude = ["src/test/**"],
+    ),
+    composite = True,
+    declaration = True,
+    out_dir = "out",
+    source_map = True,
+    tsconfig = ":tsconfig.json",
+    visibility = ["//visibility:public"],
+    deps = [
+        # VS Code API types
+        "//:node_modules/@types/vscode",
+
+        # Language Server Client dependencies
+        "//:node_modules/vscode-languageclient",
+        "//:node_modules/vscode-languageserver-protocol",
+
+        # Utility dependencies
+        "//:node_modules/jdk-utils",
+
+        # Node types
+        "//:node_modules/@types/node",
+    ],
+)
+
+# TypeScript compilation for tests
+ts_project(
+    name = "test_lib",
+    testonly = True,
+    srcs = glob(["src/test/**/*.ts"]),
+    composite = True,
+    declaration = True,
+    out_dir = "out",
+    source_map = True,
+    tsconfig = ":tsconfig.json",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client_lib",
+        "//:node_modules/@types/mocha",
+        "//:node_modules/@types/node",
+        "//:node_modules/@types/vscode",
+        "//:node_modules/@vscode/test-cli",
+        "//:node_modules/@vscode/test-electron",
+        "//:node_modules/glob",
+    ],
+)
+
+# esbuild bundle for the extension (production)
+esbuild(
+    name = "extension_bundle",
+    srcs = [":client_lib"],
+    entry_point = "src/extension.ts",
+    external = ["vscode"],
+    format = "cjs",
+    minify = select({
+        "//:production": True,
+        "//conditions:default": False,
+    }),
+    output = "extension.js",
+    platform = "node",
+    sourcemap = select({
+        "//:production": False,
+        "//conditions:default": True,
+    }),
+    target = "es2020",
+    visibility = ["//visibility:public"],
+)
+
+# esbuild bundle for the AST webview (browser context)
+esbuild(
+    name = "ast_webview_bundle",
+    srcs = [":client_lib"],
+    entry_point = "src/features/ast/webview/main.ts",
+    format = "iife",
+    minify = select({
+        "//:production": True,
+        "//conditions:default": False,
+    }),
+    output = "main.js",
+    platform = "browser",
+    sourcemap = select({
+        "//:production": False,
+        "//conditions:default": True,
+    }),
+    target = "es2020",
+    visibility = ["//visibility:public"],
+)
+
+# Export configuration files
+exports_files([
+    "package.json",
+    "tsconfig.json",
+])

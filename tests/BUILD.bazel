@@ -1,0 +1,34 @@
+load("//tools/build_defs:kotlin.bzl", "kt_test")
+
+# E2E tests for the Groovy LSP
+kt_test(
+    name = "e2e_test",
+    srcs = glob([
+        "e2e/kotlin/**/*.kt",
+        "lsp-client/kotlin/**/*.kt",
+    ]),
+    data = glob([
+        "e2e/resources/**",
+        "lsp-client/resources/**",
+    ]),
+    deps = [
+        "//fmt",
+        "//jenkins",
+        "//gls",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:com_fasterxml_jackson_core_jackson_databind",
+        "@maven//:com_fasterxml_jackson_dataformat_jackson_dataformat_yaml",
+        "@maven//:com_fasterxml_jackson_jackson_bom",
+        "@maven//:com_fasterxml_jackson_module_jackson_module_kotlin",
+        "@maven//:com_jayway_jsonpath_json_path",
+        "@maven//:io_mockk_mockk",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_spockframework_spock_core",
+    ],
+)

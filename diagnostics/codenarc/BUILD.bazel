@@ -1,0 +1,30 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "codenarc",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//diagnostics/api",
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_apache_groovy_groovy_json",
+        "@maven//:org_codenarc_CodeNarc",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+        "@maven//:org_gmetrics_GMetrics",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "codenarc_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":codenarc",
+        "@maven//:io_mockk_mockk",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+    ],
+)

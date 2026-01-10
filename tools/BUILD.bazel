@@ -1,0 +1,19 @@
+"""Build definitions and toolchains for the Groovy Language Server project."""
+
+load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
+
+# Kotlin toolchain with performance optimizations
+define_kt_toolchain(
+    name = "kotlin_toolchain",
+    api_version = "2.0",  # Matches Kotlin 2.3.0 in MODULE.bazel
+    language_version = "2.0",
+    jvm_target = "21",
+
+    # Performance optimizations
+    experimental_use_abi_jars = True,  # 20-40% faster incremental builds
+    experimental_multiplex_workers = True,  # Better worker utilization
+
+    # Strictness (start with warn, upgrade to error later)
+    experimental_strict_kotlin_deps = "warn",
+    experimental_report_unused_deps = "warn",
+)

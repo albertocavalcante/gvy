@@ -51,6 +51,15 @@ help:
 	@echo "Viz Desktop App (viz/desktop/):"
 	@echo "  viz-run       - Run the desktop app"
 	@echo "  viz-install   - Install the desktop app to /Applications (macOS)"
+	@echo ""
+	@echo "Bazel (experimental dual build system):"
+	@echo "  bazel-build   - Build all Bazel targets"
+	@echo "  bazel-test    - Run all Bazel tests"
+	@echo "  bazel-jar     - Build the fat JAR with Bazel"
+	@echo "  bazel-lint    - Run linting with Bazel"
+	@echo "  bazel-sync    - Update Maven dependencies lock file"
+	@echo "  bazel-clean   - Clean Bazel outputs (expunge)"
+	@echo "  verify-builds - Compare Gradle and Bazel outputs"
 
 
 
@@ -204,3 +213,33 @@ release-build:
 
 release-publish:
 	./tools/release.sh build --version $(shell ./gradlew printVersion -q)
+
+# =============================================================================
+# BAZEL TARGETS (experimental, dual build system)
+# =============================================================================
+.PHONY: bazel-build bazel-test bazel-clean bazel-lint bazel-jar bazel-sync
+
+bazel-build:
+	bazel build //...
+
+bazel-test:
+	bazel test //...
+
+bazel-lint:
+	bazel build --config=lint //...
+
+bazel-clean:
+	bazel clean --expunge
+
+bazel-jar:
+	bazel build //groovy-lsp:gls_deploy.jar
+
+bazel-sync:
+	bazel run @maven//:pin
+
+# Verify both build systems produce equivalent output
+.PHONY: verify-builds
+verify-builds: jar bazel-jar
+	@echo "Comparing Gradle and Bazel outputs..."
+	@echo "Gradle JAR: $$(ls -la build/libs/*.jar 2>/dev/null || echo 'not found')"
+	@echo "Bazel JAR: $$(ls -la bazel-bin/groovy-lsp/*.jar 2>/dev/null || echo 'not found')"

@@ -1,0 +1,36 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "jenkins",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        # TODO: groovy-build-tool temporarily disabled (requires gradle-tooling-api)
+        # "//build-tool",
+        "//dsl/dsld",
+        "//dsl/gdsl",
+        "@maven//:com_vladsch_flexmark_flexmark_html2md_converter",
+        "@maven//:io_arrow_kt_arrow_core",
+        "@maven//:io_github_classgraph_classgraph",
+        "@maven//:io_ktor_ktor_client_cio",
+        "@maven//:io_ktor_ktor_client_content_negotiation",
+        "@maven//:io_ktor_ktor_client_core",
+        "@maven//:io_ktor_ktor_serialization_kotlinx_json",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "groovy-jenkins_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":groovy-jenkins",
+        "@maven//:io_ktor_ktor_client_mock",
+        "@maven//:io_mockk_mockk",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+    ],
+)

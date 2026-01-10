@@ -1,0 +1,26 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "groovy",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dsl/dsld",
+        "//repl",
+        "//jupyter/kernel-core",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "groovy_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

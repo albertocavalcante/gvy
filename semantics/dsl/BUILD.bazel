@@ -1,0 +1,22 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "dsl",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//semantics/core",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
+kt_test(
+    name = "dsl_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":dsl",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

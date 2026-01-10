@@ -1,0 +1,27 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "native",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dsl/dsld",
+        "//parser/api",
+        "@maven//:io_arrow_kt_arrow_core",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_apache_groovy_groovy_macro",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "native_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":native",
+        "@maven//:net_jqwik_jqwik",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+    ],
+)

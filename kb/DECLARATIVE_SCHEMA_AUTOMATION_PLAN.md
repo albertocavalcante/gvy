@@ -109,7 +109,7 @@ Add version metadata to the schema without changing generation:
 
 ```json
 {
-  "$schema": "https://groovy-lsp.dev/schemas/declarative-pipeline-schema-v1.json",
+  "$schema": "https://gls.dev/schemas/declarative-pipeline-schema-v1.json",
   "schemaVersion": "1.0.0",
   "sourcePlugin": {
     "artifactId": "pipeline-model-definition",

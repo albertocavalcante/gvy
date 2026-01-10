@@ -1,0 +1,44 @@
+# Root BUILD file for Groovy LSP
+
+load("@gazelle//:def.bzl", "gazelle")
+
+package(default_visibility = ["//visibility:public"])
+
+# Gazelle directives for the workspace
+# gazelle:prefix github.com/groovy-lsp/groovy-lsp
+# gazelle:exclude node_modules
+# gazelle:exclude build
+# gazelle:exclude bazel-*
+# gazelle:exclude .git
+# gazelle:exclude .gradle
+# gazelle:exclude gradle
+# gazelle:exclude editors/code/node_modules
+# gazelle:exclude **/test/resources
+# gazelle:exclude **/resources/workspaces
+# gazelle:exclude **/resources/fixtures
+
+gazelle(
+    name = "gazelle",
+    gazelle = "@gazelle//cmd/gazelle",
+)
+
+# Update BUILD files from external dependencies
+gazelle(
+    name = "gazelle-update-repos",
+    command = "update-repos",
+    gazelle = "@gazelle//cmd/gazelle",
+)
+
+# Alias to main deliverable
+alias(
+    name = "gls",
+    actual = "//gls:gls",
+)
+
+# Default target when running bazel build //:all
+filegroup(
+    name = "all",
+    srcs = [
+        ":gls",
+    ],
+)

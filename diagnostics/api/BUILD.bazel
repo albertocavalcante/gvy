@@ -1,0 +1,11 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library")
+
+kt_library(
+    name = "api",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+    ],
+)

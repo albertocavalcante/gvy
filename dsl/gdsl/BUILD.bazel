@@ -1,0 +1,21 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "gdsl",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "groovy-gdsl_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":groovy-gdsl",
+        "@maven//:io_mockk_mockk",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+    ],
+)

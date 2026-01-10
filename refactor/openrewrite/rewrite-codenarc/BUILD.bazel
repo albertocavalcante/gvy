@@ -1,0 +1,21 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "rewrite-codenarc",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_openrewrite_rewrite_groovy",
+    ],
+)
+
+kt_test(
+    name = "rewrite-codenarc_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":rewrite-codenarc",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

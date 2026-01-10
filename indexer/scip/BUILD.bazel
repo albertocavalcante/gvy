@@ -1,0 +1,22 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "scip",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//indexer/core",
+        "@maven//:com_squareup_wire_wire_runtime",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
+kt_test(
+    name = "scip_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":scip",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

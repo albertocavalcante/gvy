@@ -1,0 +1,23 @@
+"""Linting tools for the Groovy Language Server project."""
+
+load("@aspect_rules_lint//lint:eslint.bzl", "eslint_binary")
+load("@aspect_rules_lint//lint:ktlint.bzl", "ktlint_binary")
+load("@aspect_rules_lint//lint:buf.bzl", "buf_toolchain")
+
+# ESLint binary for TypeScript linting
+eslint_binary(
+    name = "eslint",
+    visibility = ["//visibility:public"],
+)
+
+# ktlint binary for Kotlin linting
+ktlint_binary(
+    name = "ktlint",
+    visibility = ["//visibility:public"],
+)
+
+# buf toolchain for Protocol Buffers linting
+buf_toolchain(
+    name = "buf",
+    visibility = ["//visibility:public"],
+)

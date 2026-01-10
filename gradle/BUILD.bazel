@@ -1,0 +1,7 @@
+"""
+Gradle configuration files for Bazel build.
+
+This package exports the Gradle version catalog for potential use by Bazel rules.
+"""
+
+exports_files(["libs.versions.toml"])

@@ -1,0 +1,28 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "desktop",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//parser/api",
+        "//parser/core",
+        "//parser/native",
+        "//parser/rewrite",
+        "//viz/ast-model",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "desktop_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":desktop",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

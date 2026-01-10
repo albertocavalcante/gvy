@@ -1,0 +1,26 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "kernel-core",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//repl",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_zeromq_jeromq",
+    ],
+)
+
+kt_test(
+    name = "kernel-core_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    deps = [
+        ":kernel-core",
+        "@maven//:io_mockk_mockk",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

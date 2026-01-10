@@ -1,0 +1,28 @@
+# User-specific Bazel Configuration
+# Copy this file to user.bazelrc (which is gitignored) and customize as needed
+
+# Example: Override cache location
+# build --disk_cache=/custom/path/to/cache
+
+# Example: Adjust number of jobs
+# build --jobs=8
+
+# Example: Enable more verbose output
+# build --announce_rc
+# build --explain=/tmp/bazel_explain.txt
+# build --verbose_explanations
+
+# Example: Disable sandboxing for debugging
+# build --spawn_strategy=local
+
+# Example: Custom test configuration
+# test --test_output=all
+# test --test_verbose_timeout_warnings
+
+# Example: Remote execution/caching (if available)
+# build --remote_cache=grpc://localhost:9092
+# build --remote_executor=grpc://localhost:9092
+
+# Example: Memory settings
+# build --local_ram_resources=HOST_RAM*.8
+# build --local_cpu_resources=HOST_CPUS*.75
