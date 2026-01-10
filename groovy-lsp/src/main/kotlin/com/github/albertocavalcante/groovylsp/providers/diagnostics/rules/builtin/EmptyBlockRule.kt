@@ -31,35 +31,15 @@ class EmptyBlockRule : AbstractDiagnosticRule() {
     override val enabledByDefault = true
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        val diagnostics = mutableListOf<Diagnostic>()
-        val lines = content.lines()
-
         // Pattern: { } with only whitespace between
         val emptyBlockPattern = Regex("""\{\s*}""")
 
-        lines.forEachIndexed { lineIndex, line ->
-            var searchFrom = 0
-            while (true) {
-                val match = emptyBlockPattern.find(line, searchFrom) ?: break
-
-                // Check if this is in a comment
-                val beforeMatch = line.substring(0, match.range.first)
-                if (!beforeMatch.contains("//")) {
-                    diagnostics.add(
-                        diagnostic(
-                            lineIndex,
-                            match.range.first,
-                            match.range.last + 1,
-                            "Empty block found - consider removing or adding implementation",
-                            defaultSeverity,
-                        ),
-                    )
-                }
-
-                searchFrom = match.range.last + 1
-            }
-        }
-
-        return diagnostics
+        return diagnosticsFromPattern(
+            content = content,
+            pattern = emptyBlockPattern,
+            messageProvider = { "Empty block found - consider removing or adding implementation" },
+            severity = defaultSeverity,
+            excludeComments = true,
+        )
     }
 }
