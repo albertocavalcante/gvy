@@ -363,6 +363,8 @@ class GroovyTextDocumentService(
             // Take a snapshot to avoid concurrent modification issues
             val urisSnapshot = try {
                 documentProvider.getAllUris().toList()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("ensureAllOpenDocumentsCompiled: Error getting URIs snapshot", e)
                 emptyList()
@@ -381,6 +383,8 @@ class GroovyTextDocumentService(
                         try {
                             compilationService.compile(uri, content)
                             compiledAny = true
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             // Log but continue - don't let one bad file break everything
                             logger.error(
@@ -388,8 +392,7 @@ class GroovyTextDocumentService(
                                     "Continuing with other files.",
                                 e,
                             )
-                            // Mark as compiled (even though it failed) to avoid infinite retry
-                            compiledAny = true
+                            // Do not set compiledAny here; we only mark successful compilations
                         }
                     }
                 }
@@ -654,6 +657,8 @@ class GroovyTextDocumentService(
                 logger.debug("Found ${locations.size} definitions")
 
                 Either.forLeft(locations)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: IllegalArgumentException) {
                 logger.error("Invalid arguments finding definitions", e)
                 Either.forLeft(emptyList())
