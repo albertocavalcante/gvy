@@ -7,6 +7,7 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -15,6 +16,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.stmt.CatchStatement
+import org.codehaus.groovy.syntax.Types
 import org.slf4j.LoggerFactory
 
 /**
@@ -173,6 +175,11 @@ object TypeUsageCollector {
 
         private fun collectAnnotation(annotation: AnnotationNode) {
             collectTypeReference(annotation.classNode)
+            // Visit annotation member value expressions to collect types used in parameters
+            // For example: @Target(ElementType.TYPE) -> collect ElementType
+            annotation.members?.values?.forEach { expression ->
+                expression?.visit(codeVisitor)
+            }
         }
 
         inner class TypeUsageCodeVisitor : CodeVisitorSupport() {
@@ -231,6 +238,15 @@ object TypeUsageCollector {
                     }
                 }
                 super.visitClosureExpression(expression)
+            }
+
+            override fun visitBinaryExpression(expression: BinaryExpression) {
+                // Collect type from instanceof expressions (e.g., "x instanceof List")
+                // The instanceof operator is represented as a BinaryExpression with operation type KEYWORD_INSTANCEOF
+                if (expression.operation.type == Types.KEYWORD_INSTANCEOF) {
+                    collectTypeReference(expression.rightExpression.type)
+                }
+                super.visitBinaryExpression(expression)
             }
         }
     }

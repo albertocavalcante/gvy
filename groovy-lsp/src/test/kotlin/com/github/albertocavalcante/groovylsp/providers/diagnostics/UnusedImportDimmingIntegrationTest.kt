@@ -86,7 +86,8 @@ class UnusedImportDimmingIntegrationTest {
         }
 
         assertNotNull(hashMapToken, "Should have token for HashMap import")
-        val hasUnnecessary = (hashMapToken.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY) != 0
+        val hasUnnecessary =
+            (hashMapToken.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY) != 0
         assertTrue(hasUnnecessary, "HashMap token should have UNNECESSARY modifier")
 
         // ArrayList (line 0) should NOT have unnecessary modifier
@@ -94,7 +95,8 @@ class UnusedImportDimmingIntegrationTest {
             it.line == 0 && it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS
         }
         assertNotNull(arrayListToken, "Should have token for ArrayList import")
-        val arrayListUnnecessary = (arrayListToken.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY) != 0
+        val arrayListUnnecessary =
+            (arrayListToken.tokenModifiers and GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY) != 0
         assertFalse(arrayListUnnecessary, "ArrayList token should NOT have UNNECESSARY modifier")
     }
 
