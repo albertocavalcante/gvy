@@ -120,10 +120,20 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
                 var shouldExclude = false
 
                 // Check if match is in a single-line comment
-                // Need to verify // is not inside a string
+                // Need to find the first // that's not inside a string (handles URLs in strings)
                 if (excludeComments) {
-                    val commentIndex = line.indexOf("//")
-                    if (commentIndex != -1 && match.range.first > commentIndex && !isInString(line, commentIndex)) {
+                    var commentIndex = -1
+                    var searchIndex = 0
+                    while (true) {
+                        val foundIndex = line.indexOf("//", searchIndex)
+                        if (foundIndex == -1) break
+                        if (!isInString(line, foundIndex)) {
+                            commentIndex = foundIndex
+                            break
+                        }
+                        searchIndex = foundIndex + 1
+                    }
+                    if (commentIndex != -1 && match.range.first > commentIndex) {
                         shouldExclude = true
                     }
                 }
