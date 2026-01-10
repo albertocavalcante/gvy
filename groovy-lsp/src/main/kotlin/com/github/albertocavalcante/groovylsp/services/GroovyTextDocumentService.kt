@@ -129,19 +129,33 @@ class GroovyTextDocumentService(
     companion object {
         /**
          * Maximum iterations for ensureAllOpenDocumentsCompiled loop.
-         * Prevents infinite loops when compilation continuously fails or new files keep being added.
+         *
+         * This is a defensive bound to avoid looping indefinitely when compilation
+         * continuously fails or new files keep being added. Note that the overall
+         * duration of ensureAllOpenDocumentsCompiled is still capped by
+         * [MAX_COMPILATION_TIMEOUT_MS], so increasing this value does not allow the
+         * method to run longer than that hard timeout.
          */
         private const val MAX_COMPILATION_ITERATIONS = 10
 
         /**
          * Maximum time (milliseconds) to spend in ensureAllOpenDocumentsCompiled.
-         * Prevents indefinite blocking when compilations are slow or stuck.
+         *
+         * This value acts as the hard upper bound for the operation. Even though
+         * the combination of [MAX_COMPILATION_ITERATIONS] and [MAX_JOB_WAIT_TIMEOUT_MS]
+         * could theoretically suggest a longer duration (e.g. 10 iterations × 10 seconds
+         * per joinAll = 100+ seconds), the use of this timeout (typically via
+         * withTimeoutOrNull) ensures the actual worst-case latency is limited to
+         * approximately this value (30 seconds).
          */
         private const val MAX_COMPILATION_TIMEOUT_MS = 30_000L
 
         /**
          * Maximum time (milliseconds) to wait for diagnostic jobs to complete.
-         * Prevents indefinite blocking on joinAll() if jobs are stuck.
+         *
+         * This bounds each joinAll() call so that slow or stuck jobs do not block
+         * indefinitely. The overall operation is still additionally constrained by
+         * [MAX_COMPILATION_TIMEOUT_MS], which defines the true worst-case latency.
          */
         private const val MAX_JOB_WAIT_TIMEOUT_MS = 10_000L
     }
@@ -306,6 +320,9 @@ class GroovyTextDocumentService(
         // Loop until all open documents are compiled and indexed.
         // This handles the race condition where new documents might be opened
         // or new diagnostic jobs might be started during the process.
+        // Track failed URIs to avoid retrying them in subsequent iterations
+        val failedUris = mutableSetOf<URI>()
+
         while (true) {
             // SAFEGUARD 1: Check iteration limit to prevent infinite loops
             if (iterations >= MAX_COMPILATION_ITERATIONS) {
@@ -334,7 +351,7 @@ class GroovyTextDocumentService(
 
             // Wait for all pending diagnostic jobs (which include compilation)
             // SAFEGUARD 4: Filter out current job to prevent deadlock
-            val currentJob = kotlin.coroutines.coroutineContext[Job]
+            val currentJob = currentCoroutineContext()[Job]
             val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
 
             if (pendingJobs.isNotEmpty()) {
@@ -370,9 +387,19 @@ class GroovyTextDocumentService(
                 emptyList()
             }
 
+            logger.debug(
+                "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
+                    "Processing ${urisSnapshot.size} open documents",
+            )
+
             for (uri in urisSnapshot) {
                 // Check cancellation in loop
                 currentCoroutineContext().ensureActive()
+
+                // Skip URIs that failed in previous iterations
+                if (uri in failedUris) {
+                    continue
+                }
 
                 if (compilationService.getSymbolStorage(uri) == null) {
                     val content = documentProvider.get(uri)
@@ -387,11 +414,13 @@ class GroovyTextDocumentService(
                             throw e
                         } catch (e: Exception) {
                             // Log but continue - don't let one bad file break everything
+                            // Track failed URIs to skip them in subsequent iterations
                             logger.error(
                                 "ensureAllOpenDocumentsCompiled: Failed to compile $uri. " +
-                                    "Continuing with other files.",
+                                    "Skipping in subsequent iterations.",
                                 e,
                             )
+                            failedUris.add(uri)
                             // Do not set compiledAny here; we only mark successful compilations
                         }
                     }
