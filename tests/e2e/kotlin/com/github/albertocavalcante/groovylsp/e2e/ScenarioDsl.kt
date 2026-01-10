@@ -231,6 +231,10 @@ class ScenarioBuilder(private val source: String? = null) {
 
     /**
      * Request completion at a specific position.
+     * @param path Document path
+     * @param line Line number (0-based)
+     * @param character Character offset (0-based)
+     * @param block Optional assertion block to verify completion results
      */
     fun completion(path: String, line: Int, character: Int, block: AssertionBuilder.() -> Unit = {}) {
         val builder = AssertionBuilder()
@@ -247,6 +251,9 @@ class ScenarioBuilder(private val source: String? = null) {
 
     /**
      * Request code actions for a range.
+     * @param path Document path
+     * @param range Selection range for code actions (defaults to (0,0)-(0,0))
+     * @param block Optional assertion block to verify code action results
      */
     fun codeAction(path: String, range: TestRange? = null, block: AssertionBuilder.() -> Unit = {}) {
         val builder = AssertionBuilder()
@@ -265,6 +272,7 @@ class ScenarioBuilder(private val source: String? = null) {
      * @param path Document path
      * @param tabSize Tab size for formatting (default: 4)
      * @param insertSpaces Use spaces instead of tabs (default: true)
+     * @param block Optional assertion block to verify formatting results
      */
     fun formatting(
         path: String,
@@ -286,6 +294,11 @@ class ScenarioBuilder(private val source: String? = null) {
 
     /**
      * Request symbol rename.
+     * @param path Document path
+     * @param line Line number (0-based)
+     * @param character Character offset (0-based)
+     * @param newName New symbol name
+     * @param block Optional assertion block to verify rename results
      */
     fun rename(path: String, line: Int, character: Int, newName: String, block: AssertionBuilder.() -> Unit = {}) {
         val builder = AssertionBuilder()
