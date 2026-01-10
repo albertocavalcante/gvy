@@ -1211,6 +1211,211 @@ bazel test //...
 
 ---
 
+## Critical Dependencies and Version Notes
+
+### JUnit 6 (Released January 2026)
+
+JUnit 6 was released in late 2025/early 2026 with significant versioning changes:
+
+**Key Changes:**
+
+- JUnit Platform now uses the SAME version numbers as JUnit Jupiter (6.x)
+- Previously: Jupiter 5.x, Platform 1.x (different versioning schemes)
+- Now: Jupiter 6.x, Platform 6.x (unified versioning)
+- Minimum requirement: Java 17, Kotlin 2.2
+
+**MODULE.bazel Configuration:**
+
+```python
+# Testing - JUnit 6 (released Jan 2026)
+# Note: JUnit Platform now uses same version as Jupiter (6.x)
+"org.junit.jupiter:junit-jupiter:6.0.2",
+"org.junit.jupiter:junit-jupiter-api:6.0.2",
+"org.junit.jupiter:junit-jupiter-engine:6.0.2",
+"org.junit.platform:junit-platform-launcher:6.0.2",  # NOT 1.x anymore!
+```
+
+**kotlin-test Compatibility:**
+
+- `kotlin-test-junit5` (2.3.0) is still compatible with JUnit 6
+- JetBrains has not released `kotlin-test-junit6` yet (as of Jan 2026)
+- JUnit 6 maintains backward compatibility with JUnit 5 test code
+
+**JUnit 6 Kotlin Features:**
+
+- Native `suspend` function support in test methods
+- No need for `runBlocking` wrapper for simple coroutine tests
+- For advanced testing (virtual time, dispatcher control), still use `kotlinx-coroutines-test`
+
+Sources:
+
+- [Maven Central: JUnit Jupiter Versions](https://central.sonatype.com/artifact/org.junit.jupiter/junit-jupiter/versions)
+- [Maven Central: JUnit Platform Launcher Versions](https://central.sonatype.com/artifact/org.junit.platform/junit-platform-launcher/versions)
+
+---
+
+### Gradle Tooling API
+
+The `gradle-tooling-api` is NOT available in Maven Central. It requires the Gradle repository.
+
+**MODULE.bazel Configuration:**
+
+```python
+maven.install(
+    artifacts = [
+        # Gradle Tooling API - from repo.gradle.org (configured in repositories)
+        "org.gradle:gradle-tooling-api:9.2.1",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://repo.gradle.org/gradle/libs-releases/",  # Required for gradle-tooling-api
+    ],
+)
+```
+
+**Key Points:**
+
+- Use the same version as your Gradle installation (9.2.1 = Gradle 9.2.1)
+- The Tooling API version is tied to Gradle release versions
+- Supports running builds with Gradle versions from the last 5 major releases
+
+Sources:
+
+- [Gradle Tooling API Documentation](https://docs.gradle.org/current/userguide/tooling_api.html)
+- [Maven Repository: gradle-tooling-api](https://mvnrepository.com/artifact/org.gradle/gradle-tooling-api)
+
+---
+
+### Kotlin Multiplatform JVM Artifacts
+
+Many Kotlin libraries are now Multiplatform and require the `-jvm` suffix for JVM projects:
+
+**MODULE.bazel - JVM-Specific Artifacts:**
+
+```python
+# Kotlin Collections - use JVM variant
+"org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",  # NOT kotlinx-collections-immutable
+
+# Arrow - use JVM variant
+"io.arrow-kt:arrow-core-jvm:2.2.1",  # NOT arrow-core
+
+# Ktor - ALL artifacts need -jvm suffix
+"io.ktor:ktor-client-core-jvm:3.3.3",
+"io.ktor:ktor-client-cio-jvm:3.3.3",
+"io.ktor:ktor-client-content-negotiation-jvm:3.3.3",
+
+# MockK - use JVM variant
+"io.mockk:mockk-jvm:1.14.7",  # NOT mockk
+```
+
+**Why This Matters:**
+
+- Without `-jvm` suffix, you get the common/multiplatform artifact
+- Multiplatform artifacts don't include platform-specific implementations
+- Build will fail with "unresolved reference" errors for platform APIs
+
+**Detection Pattern:** If you see errors like:
+
+```
+error: unresolved reference 'execute'  # Ktor
+error: unresolved reference 'toImmutableList'  # kotlinx-collections
+error: unresolved reference 'mockk'  # MockK
+```
+
+Check if the artifact needs a `-jvm` suffix.
+
+---
+
+### pnpm Version Alignment with aspect_rules_js
+
+When using `aspect_rules_js` with pnpm v9+, you MUST:
+
+1. **Configure `onlyBuiltDependencies`** in package.json (required since pnpm v9)
+2. **Specify `pnpm_version`** in npm_translate_lock for consistency
+3. **Register the pnpm extension** for toolchain management
+
+**package.json Configuration:**
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}
+```
+
+**MODULE.bazel Configuration:**
+
+```python
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    pnpm_lock = "//editors/code:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+    # Align with project's pnpm version (check pnpm-lock.yaml lockfileVersion)
+    pnpm_version = "10.27.0",
+)
+use_repo(npm, "npm")
+
+# pnpm toolchain for consistent version across builds
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+use_repo(pnpm, "pnpm")
+```
+
+**Version Detection:**
+
+- Check `pnpm-lock.yaml` first line: `lockfileVersion: "9.0"` = pnpm 9.x or 10.x
+- Run `pnpm --version` locally to get exact version
+- Ensure Bazel uses the same version for reproducibility
+
+Sources:
+
+- [aspect_rules_js pnpm Documentation](https://github.com/aspect-build/rules_js/blob/main/docs/pnpm.md)
+- [pnpm onlyBuiltDependencies](https://pnpm.io/10.x/settings#onlybuiltdependencies)
+
+---
+
+### Kotlin Internal Visibility with `associates`
+
+Bazel compiles test targets separately from library targets, so `internal` Kotlin members are not accessible by default.
+
+**Solution:** Use the `associates` attribute in `kt_jvm_test`:
+
+**BUILD.bazel:**
+
+```python
+kt_library(
+    name = "mylib",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+)
+
+kt_test(
+    name = "mylib_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":mylib"],  # Grants access to internal members
+    deps = [
+        # Don't include :mylib in deps if it's in associates
+        "@maven//:other_test_deps",
+    ],
+)
+```
+
+**Important Rules:**
+
+- A target can be in `associates` OR `deps`, NOT both (Bazel will error)
+- `associates` automatically provides dependency (no need for duplicate in deps)
+- This is specific to rules_kotlin - mirrors Gradle's test sourceSet behavior
+
+**Error Pattern:**
+
+```
+error: cannot access 'object Foo : Any': it is internal in file
+```
+
+→ Add the library to `associates` in the test target.
+
+---
+
 ## Conclusion
 
 This migration demonstrated that **Gradle-to-Bazel conversion is largely automatable** for standard Kotlin/Java

@@ -12,8 +12,8 @@
 #         "@maven//:ch_epfl_scala_bsp4j",
 #         "@maven//:org_apache_maven_maven_compat",
 #         "@maven//:org_apache_maven_maven_embedder",
-#         "@maven//:org_apache_maven_maven_resolver_supplier",
 #         "@maven//:org_apache_maven_resolver_maven_resolver_connector_basic",
+#         "@maven//:org_apache_maven_resolver_maven_resolver_supplier",
 #         "@maven//:org_apache_maven_resolver_maven_resolver_transport_http",
 #         "@maven//:org_gradle_gradle_tooling_api",
 #         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
@@ -24,10 +24,10 @@
 # )
 #
 # kt_test(
-#     name = "groovy-build-tool_test",
-#     srcs = glob(["src/test/kotlin/**/*.kt"]),
+#     name = "build-tool_test",
+#     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
+#     associates = [":build-tool"],
 #     deps = [
-#         ":build-tool",
 #         "@maven//:io_mockk_mockk_jvm",
 #         "@maven//:org_jetbrains_kotlin_kotlin_test",
 #         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",

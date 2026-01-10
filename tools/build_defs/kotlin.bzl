@@ -35,12 +35,12 @@ def kt_test(
         associates = None,
         test_class = None,
         **kwargs):
-    """Kotlin test with JUnit 5.
+    """Kotlin test with JUnit 6 (Jupiter).
 
     Args:
         name: Target name
         srcs: Test source files (REQUIRED - no default glob)
-        deps: Dependencies (JUnit 5 added automatically)
+        deps: Dependencies (JUnit 6 Jupiter added automatically)
         associates: Associated kt_library targets whose internal members are accessible
         test_class: Main test class
         **kwargs: Additional args

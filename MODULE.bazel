@@ -75,9 +75,8 @@ maven.install(
         "org.gmetrics:GMetrics:2.1.0",
         "org.openrewrite:rewrite-groovy:8.70.4",
 
-        # Gradle Tooling - TODO: Fix Maven coordinates
-        # "org.gradle:gradle-tooling-api:8.5",  # Not found in Maven Central
-        # Need to add Gradle's maven repository or use different artifact
+        # Gradle Tooling API - from repo.gradle.org (configured in repositories)
+        "org.gradle:gradle-tooling-api:9.2.1",
 
         # Build Server Protocol
         "ch.epfl.scala:bsp4j:2.1.1",
@@ -100,11 +99,12 @@ maven.install(
         "org.slf4j:slf4j-api:2.0.17",
         "ch.qos.logback:logback-classic:1.5.24",
 
-        # Testing
-        "org.junit.jupiter:junit-jupiter:5.11.4",
-        "org.junit.jupiter:junit-jupiter-api:5.11.4",
-        "org.junit.jupiter:junit-jupiter-engine:5.11.4",
-        "org.junit.platform:junit-platform-launcher:1.11.4",
+        # Testing - JUnit 6 (released Jan 2026)
+        # Note: JUnit Platform now uses same version as Jupiter (6.x)
+        "org.junit.jupiter:junit-jupiter:6.0.2",
+        "org.junit.jupiter:junit-jupiter-api:6.0.2",
+        "org.junit.jupiter:junit-jupiter-engine:6.0.2",
+        "org.junit.platform:junit-platform-launcher:6.0.2",
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.6",
         "io.mockk:mockk:1.14.7",
@@ -166,5 +166,11 @@ npm.npm_translate_lock(
     name = "npm",
     pnpm_lock = "//editors/code:pnpm-lock.yaml",
     verify_node_modules_ignored = "//:.bazelignore",
+    # Align with project's pnpm version (pnpm-lock.yaml lockfileVersion: "9.0")
+    pnpm_version = "10.27.0",
 )
 use_repo(npm, "npm")
+
+# pnpm toolchain for consistent version across builds
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+use_repo(pnpm, "pnpm")
