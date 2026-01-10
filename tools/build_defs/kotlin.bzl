@@ -32,6 +32,7 @@ def kt_test(
         name,
         srcs,
         deps = None,
+        associates = None,
         test_class = None,
         **kwargs):
     """Kotlin test with JUnit 5.
@@ -40,6 +41,7 @@ def kt_test(
         name: Target name
         srcs: Test source files (REQUIRED - no default glob)
         deps: Dependencies (JUnit 5 added automatically)
+        associates: Associated kt_library targets whose internal members are accessible
         test_class: Main test class
         **kwargs: Additional args
     """
@@ -47,6 +49,8 @@ def kt_test(
         name = name,
         srcs = srcs,
         deps = (deps if deps != None else []) + [
+            "@maven//:org_jetbrains_kotlin_kotlin_test",
+            "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
             "@maven//:org_junit_jupiter_junit_jupiter",
             "@maven//:org_junit_jupiter_junit_jupiter_api",
             "@maven//:org_assertj_assertj_core",
@@ -55,6 +59,7 @@ def kt_test(
             "@maven//:org_junit_jupiter_junit_jupiter_engine",
             "@maven//:org_junit_platform_junit_platform_launcher",
         ],
+        associates = associates if associates != None else [],
         test_class = test_class,
         **kwargs
     )

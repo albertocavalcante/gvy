@@ -16,7 +16,6 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     deps = [
         ":groovy-spock",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_spockframework_spock_core",
     ],
 )

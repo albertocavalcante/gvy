@@ -18,8 +18,7 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     deps = [
         ":kernel-core",
-        "@maven//:io_mockk_mockk",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],

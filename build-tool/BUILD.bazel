@@ -28,7 +28,7 @@
 #     srcs = glob(["src/test/kotlin/**/*.kt"]),
 #     deps = [
 #         ":build-tool",
-#         "@maven//:io_mockk_mockk",
+#         "@maven//:io_mockk_mockk_jvm",
 #         "@maven//:org_jetbrains_kotlin_kotlin_test",
 #         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
 #     ],

@@ -49,6 +49,7 @@ maven.install(
         "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
         "org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0",
         "org.jetbrains.kotlin:kotlin-test:2.3.0",
+        "org.jetbrains.kotlin:kotlin-test-junit5:2.3.0",
 
         # Groovy
         "org.apache.groovy:groovy:4.0.29",
@@ -107,6 +108,7 @@ maven.install(
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.6",
         "io.mockk:mockk:1.14.7",
+        "io.mockk:mockk-jvm:1.14.7",
         "org.spockframework:spock-core:2.3-groovy-4.0",
         "com.jayway.jsonpath:json-path:2.10.0",
         "net.jqwik:jqwik:1.9.3",

@@ -24,7 +24,6 @@ kt_test(
     ]),
     deps = [
         ":ast-model",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )

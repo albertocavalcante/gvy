@@ -32,8 +32,7 @@ kt_test(
     deps = [
         ":groovy-jenkins",
         "@maven//:io_ktor_ktor_client_mock_jvm",
-        "@maven//:io_mockk_mockk",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
     ],
 )

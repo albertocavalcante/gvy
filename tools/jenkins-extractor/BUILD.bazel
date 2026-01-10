@@ -18,7 +18,6 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     deps = [
         ":jenkins-extractor",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )
