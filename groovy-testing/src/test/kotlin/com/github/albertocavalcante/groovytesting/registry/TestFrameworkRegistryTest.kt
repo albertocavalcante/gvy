@@ -18,42 +18,44 @@ import java.net.URI
 class TestFrameworkRegistryTest {
 
     private val parser = GroovyParserFacade()
+    private lateinit var registry: TestFrameworkRegistry
 
     @BeforeEach
     fun setUp() {
-        TestFrameworkRegistry.clear()
+        // Use isolated instance for each test to avoid interference
+        registry = TestFrameworkRegistry()
     }
 
     @AfterEach
     fun tearDown() {
-        TestFrameworkRegistry.clear()
+        // No cleanup needed - each test has its own registry instance
     }
 
     @Test
     fun `should register and retrieve detectors`() {
         val spockDetector = SpockTestDetector()
-        TestFrameworkRegistry.register(spockDetector)
+        registry.register(spockDetector)
 
-        val detectors = TestFrameworkRegistry.getDetectors()
+        val detectors = registry.getDetectors()
         assertEquals(1, detectors.size)
         assertEquals(TestFramework.SPOCK, detectors[0].framework)
     }
 
     @Test
     fun `should find detector by framework`() {
-        TestFrameworkRegistry.register(SpockTestDetector())
+        registry.register(SpockTestDetector())
 
-        val found = TestFrameworkRegistry.getDetector(TestFramework.SPOCK)
+        val found = registry.getDetector(TestFramework.SPOCK)
         assertNotNull(found)
         assertEquals(TestFramework.SPOCK, found?.framework)
 
-        val notFound = TestFrameworkRegistry.getDetector(TestFramework.JUNIT5)
+        val notFound = registry.getDetector(TestFramework.JUNIT5)
         assertNull(notFound)
     }
 
     @Test
     fun `should detect Spock specification`() {
-        TestFrameworkRegistry.register(SpockTestDetector())
+        registry.register(SpockTestDetector())
 
         val source = """
             import spock.lang.Specification
@@ -76,14 +78,14 @@ class TestFrameworkRegistryTest {
         val classNode = result.ast?.classes?.find { it.name == "MySpec" }
         assertNotNull(classNode)
 
-        val detector = TestFrameworkRegistry.findDetector(classNode!!, result.ast)
+        val detector = registry.findDetector(classNode!!, result.ast)
         assertNotNull(detector)
         assertEquals(TestFramework.SPOCK, detector?.framework)
     }
 
     @Test
     fun `should extract tests from Spock specification`() {
-        TestFrameworkRegistry.register(SpockTestDetector())
+        registry.register(SpockTestDetector())
 
         val source = """
             import spock.lang.Specification
@@ -110,7 +112,7 @@ class TestFrameworkRegistryTest {
         val classNode = result.ast?.classes?.find { it.name == "CalculatorSpec" }
         assertNotNull(classNode)
 
-        val tests = TestFrameworkRegistry.extractTests(classNode!!, result.ast)
+        val tests = registry.extractTests(classNode!!, result.ast)
 
         // 1 class + 2 methods = 3 items
         assertEquals(3, tests.size)
@@ -127,7 +129,7 @@ class TestFrameworkRegistryTest {
 
     @Test
     fun `should return empty for non-test class`() {
-        TestFrameworkRegistry.register(SpockTestDetector())
+        registry.register(SpockTestDetector())
 
         val source = """
             class RegularClass {
@@ -146,7 +148,7 @@ class TestFrameworkRegistryTest {
         val classNode = result.ast?.classes?.find { it.name == "RegularClass" }
         assertNotNull(classNode)
 
-        val tests = TestFrameworkRegistry.extractTests(classNode!!, result.ast)
+        val tests = registry.extractTests(classNode!!, result.ast)
         assertTrue(tests.isEmpty())
     }
 }
