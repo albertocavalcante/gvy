@@ -25,6 +25,11 @@ on:
         type: boolean
         default: false
 
+# NOTE: Working directory is applied per-step (not globally) because early steps
+# like "Validate ref input" and "Determine checkout ref" execute BEFORE checkout
+# and must run from the repository root. Steps after checkout use explicit
+# working-directory: editors/code to maintain the correct context.
+
 jobs:
   nightly:
     timeout-minutes: 30
