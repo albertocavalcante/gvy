@@ -106,9 +106,9 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             // Skip comment-only lines if requested (heuristic for common comment patterns)
             if (excludeComments) {
                 val trimmed = line.trimStart()
-                // Only skip if the line starts with comment markers AND has no code after
+                // Only skip if the line starts with single-line comment markers AND has no code after
                 // This is a heuristic - it won't catch all cases (e.g., /* comment */ code)
-                if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+                if (trimmed.startsWith("//")) {
                     continue
                 }
             }
