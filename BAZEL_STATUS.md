@@ -21,6 +21,7 @@ The following modules build successfully:
 - ✅ `//dsl/dsld` - Core common utilities **(VERIFIED)**
 - ✅ `//fmt` - Code formatting **(VERIFIED)**
 - ✅ `//dsl/gdsl` - GDSL support **(VERIFIED)**
+
 - ✅ `//markdown` - Markdown processing **(VERIFIED)**
 - ✅ `//parser/core` - Core parser functionality **(VERIFIED)**
 - ✅ `//repl` - Groovy REPL **(VERIFIED)**
