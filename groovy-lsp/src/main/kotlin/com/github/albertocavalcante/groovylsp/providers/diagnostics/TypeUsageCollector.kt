@@ -173,6 +173,11 @@ object TypeUsageCollector {
 
         private fun collectAnnotation(annotation: AnnotationNode) {
             collectTypeReference(annotation.classNode)
+            // Visit annotation member value expressions to collect types used in parameters
+            // For example: @Target(ElementType.TYPE) -> collect ElementType
+            annotation.members?.values?.forEach { expression ->
+                expression?.visit(codeVisitor)
+            }
         }
 
         inner class TypeUsageCodeVisitor : CodeVisitorSupport() {
@@ -231,6 +236,15 @@ object TypeUsageCollector {
                     }
                 }
                 super.visitClosureExpression(expression)
+            }
+
+            override fun visitBinaryExpression(expression: org.codehaus.groovy.ast.expr.BinaryExpression) {
+                // Collect type from instanceof expressions (e.g., "x instanceof List")
+                // The instanceof operator is represented as a BinaryExpression with operation type KEYWORD_INSTANCEOF
+                if (expression.operation.text == "instanceof") {
+                    collectTypeReference(expression.rightExpression.type)
+                }
+                super.visitBinaryExpression(expression)
             }
         }
     }
