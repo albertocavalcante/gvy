@@ -113,6 +113,22 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
                 }
             }
 
+            // Calculate comment index once per line for efficiency
+            // Need to find the first // that's not inside a string (handles URLs in strings)
+            var commentIndex = -1
+            if (excludeComments) {
+                var searchIndex = 0
+                while (true) {
+                    val foundIndex = line.indexOf("//", searchIndex)
+                    if (foundIndex == -1) break
+                    if (!isInString(line, foundIndex)) {
+                        commentIndex = foundIndex
+                        break
+                    }
+                    searchIndex = foundIndex + 1
+                }
+            }
+
             var searchFrom = 0
             while (true) {
                 val match = pattern.find(line, searchFrom) ?: break
@@ -120,22 +136,8 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
                 var shouldExclude = false
 
                 // Check if match is in a single-line comment
-                // Need to find the first // that's not inside a string (handles URLs in strings)
-                if (excludeComments) {
-                    var commentIndex = -1
-                    var searchIndex = 0
-                    while (true) {
-                        val foundIndex = line.indexOf("//", searchIndex)
-                        if (foundIndex == -1) break
-                        if (!isInString(line, foundIndex)) {
-                            commentIndex = foundIndex
-                            break
-                        }
-                        searchIndex = foundIndex + 1
-                    }
-                    if (commentIndex != -1 && match.range.first > commentIndex) {
-                        shouldExclude = true
-                    }
+                if (excludeComments && commentIndex != -1 && match.range.first > commentIndex) {
+                    shouldExclude = true
                 }
 
                 // Check if match is in a string literal
