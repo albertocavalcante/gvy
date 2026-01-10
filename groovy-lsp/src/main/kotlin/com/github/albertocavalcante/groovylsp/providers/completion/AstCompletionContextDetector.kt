@@ -12,7 +12,6 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
-import org.codehaus.groovy.ast.stmt.ExpressionStatement
 
 /**
  * AST-based completion context detector.
