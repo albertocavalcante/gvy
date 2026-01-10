@@ -385,7 +385,12 @@ class ScenarioBuilder(private val source: String? = null) {
         // This allows WorkspaceFixture to find the workspaces directory
         val effectiveSource = source ?: run {
             val resourcesDir = System.getProperty("groovy.lsp.e2e.scenarioDir")
-                ?: error("System property 'groovy.lsp.e2e.scenarioDir' not set")
+                ?: error(
+                    "System property 'groovy.lsp.e2e.scenarioDir' not set. " +
+                        "Configure this system property in the test environment " +
+                        "(for example via -Dgroovy.lsp.e2e.scenarioDir=/path/to/e2e/resources/scenarios) " +
+                        "to point to the directory containing e2e scenario definitions.",
+                )
             "$resourcesDir/_dsl-scenarios.yaml"
         }
 
