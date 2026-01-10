@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cache
 
+import com.github.albertocavalcante.groovycommon.cache.CacheStats
 import com.github.albertocavalcante.groovycommon.cache.ThreadSafeLRUCache
 
 /**
@@ -63,13 +64,5 @@ class LRUCache<K, V>(maxSize: Int) {
     /**
      * Get cache statistics
      */
-    fun getStats(): CacheStats = delegate.getStats().let { stats ->
-        CacheStats(
-            size = stats.size,
-            maxSize = stats.maxSize,
-            hitRate = stats.hitRate,
-        )
-    }
-
-    data class CacheStats(val size: Int, val maxSize: Int, val hitRate: Double)
+    fun getStats(): CacheStats = delegate.getStats()
 }

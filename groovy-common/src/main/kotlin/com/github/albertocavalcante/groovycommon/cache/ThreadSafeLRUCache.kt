@@ -5,6 +5,15 @@ import kotlin.concurrent.read
 import kotlin.concurrent.write
 
 /**
+ * Statistics for cache usage and performance.
+ *
+ * @property size Current number of entries in the cache
+ * @property maxSize Maximum number of entries allowed in the cache
+ * @property hitRate Cache hit rate (0.0 to 1.0), or 0.0 if not tracked
+ */
+data class CacheStats(val size: Int, val maxSize: Int, val hitRate: Double)
+
+/**
  * Thread-safe LRU (Least Recently Used) cache implementation.
  *
  * This cache extends [LRUCache] with thread-safety guarantees using read-write locks.
@@ -89,6 +98,4 @@ class ThreadSafeLRUCache<K, V>(maxSize: Int) :
             hitRate = 0.0, // Could implement hit rate tracking if needed
         )
     }
-
-    data class CacheStats(val size: Int, val maxSize: Int, val hitRate: Double)
 }
