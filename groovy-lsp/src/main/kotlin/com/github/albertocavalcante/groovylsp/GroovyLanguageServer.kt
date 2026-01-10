@@ -148,9 +148,9 @@ class GroovyLanguageServer(
 
     init {
         // Register test framework detectors
-        TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
-        TestFrameworkRegistry.registerIfAbsent(JUnit5TestDetector())
-        TestFrameworkRegistry.registerIfAbsent(JUnit4TestDetector())
+        TestFrameworkRegistry.default.registerIfAbsent(SpockTestDetector())
+        TestFrameworkRegistry.default.registerIfAbsent(JUnit5TestDetector())
+        TestFrameworkRegistry.default.registerIfAbsent(JUnit4TestDetector())
     }
 
     override fun connect(client: LanguageClient) {

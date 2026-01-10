@@ -16,9 +16,12 @@ import java.net.URI
 
 class TestDiscoveryProviderTest {
 
+    private lateinit var registry: TestFrameworkRegistry
+
     @BeforeEach
     fun setup() {
-        TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
+        registry = TestFrameworkRegistry()
+        registry.registerIfAbsent(SpockTestDetector())
     }
 
     @Test
@@ -46,7 +49,7 @@ class TestDiscoveryProviderTest {
         every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
         coEvery { mockService.getValidParseResult(uri) } returns parseResult
 
-        val testProvider = TestDiscoveryProvider(mockService)
+        val testProvider = TestDiscoveryProvider(mockService, registry)
         val suites = testProvider.discoverTests("file:///")
 
         assertEquals(1, suites.size)
@@ -75,7 +78,7 @@ class TestDiscoveryProviderTest {
         every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
         coEvery { mockService.getValidParseResult(uri) } returns parseResult
 
-        val testProvider = TestDiscoveryProvider(mockService)
+        val testProvider = TestDiscoveryProvider(mockService, registry)
         val suites = testProvider.discoverTests("file:///")
 
         assertTrue(suites.isEmpty())

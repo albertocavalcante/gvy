@@ -5,6 +5,42 @@ workspace:
   fixture: empty-workspace
 
 steps:
+  # CRITICAL: Create both files on disk BEFORE initialization
+  # This ensures the Groovy compiler can find them during workspace compilation
+  # because in-memory documents from didOpen are not visible to the compiler.
+  - cli:
+      command: /bin/sh
+      args:
+        - -c
+        - |
+          mkdir -p src/com/example
+          cat <<'EOF' > src/com/example/Calculator.groovy
+          package com.example
+
+          class Calculator {
+              int value = 0
+
+              int add(int a, int b) {
+                  return a + b
+              }
+
+              Calculator(int initial) {
+                  this.value = initial
+              }
+          }
+          EOF
+          cat <<'EOF' > src/com/example/Main.groovy
+          package com.example
+
+          class Main {
+              void run() {
+                  Calculator calc = new Calculator(10)
+                  int result = calc.add(5, 3)
+                  int v = calc.value
+              }
+          }
+          EOF
+
   - initialize:
       initializationOptions:
         groovy.server.logLevel: DEBUG
@@ -22,7 +58,7 @@ steps:
             value: true
       timeoutMs: 60000
 
-  # File A: Define Calculator class
+  # File A: Open Calculator class (already on disk)
   - openDocument:
       path: src/com/example/Calculator.groovy
       languageId: groovy
@@ -42,7 +78,7 @@ steps:
             }
         }
 
-  # File B: Use Calculator from another file
+  # File B: Open Main class (already on disk)
   - openDocument:
       path: src/com/example/Main.groovy
       languageId: groovy

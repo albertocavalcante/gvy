@@ -37,6 +37,11 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         ScenarioStep.DownloadPlugin::class to DownloadPluginStepExecutor(),
         ScenarioStep.CliCommand::class to CliCommandStepExecutor(),
         ScenarioStep.GoldenAssert::class to GoldenAssertStepExecutor(),
+        // High-level DSL step executors
+        ScenarioStep.Completion::class to CompletionStepExecutor(),
+        ScenarioStep.CodeAction::class to CodeActionStepExecutor(),
+        ScenarioStep.Formatting::class to FormattingStepExecutor(),
+        ScenarioStep.Rename::class to RenameStepExecutor(),
     )
 
     fun execute(definition: ScenarioDefinition) {
