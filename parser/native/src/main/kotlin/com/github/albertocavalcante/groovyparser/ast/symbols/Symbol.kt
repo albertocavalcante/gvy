@@ -199,7 +199,7 @@ sealed class Symbol {
 
         companion object {
             /**
-             * Creates a Symbol.Class from a ClassNode, gracefully handling NoClassDefFoundError
+             * Creates a Symbol.Class from a ClassNode, gracefully handling linkage errors (like `NoClassDefFoundError`)
              * that may occur when accessing members of decompiled classpath classes.
              *
              * @param classNode The ClassNode to convert
