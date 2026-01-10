@@ -134,4 +134,69 @@ class JenkinsVarsResolutionStrategyTest {
             },
         )
     }
+
+    @Test
+    fun `Jenkins vars strategy resolves VariableExpression to vars file`() {
+        val varsDir = Files.createTempDirectory("jenkins-vars-variable-test")
+        val varsFile = Files.createFile(varsDir.resolve("infra.groovy"))
+
+        val jenkinsCapabilities = mockk<JenkinsCapabilities>()
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
+            GlobalVariable(name = "infra", path = varsFile),
+        )
+
+        // Simulate clicking on 'infra' in 'infra.checkoutSCM()'
+        val variableExpr = VariableExpression("infra")
+
+        val strategy = JenkinsVarsResolutionStrategy(jenkinsCapabilities)
+        val context = ResolutionContext(
+            targetNode = variableExpr,
+            documentUri = URI.create("file:///workspace/Jenkinsfile"),
+            position = Position(0, 0),
+        )
+
+        val result = runBlocking { strategy.resolve(context) }
+        result.fold(
+            ifLeft = { error ->
+                throw AssertionError("Expected Right, got Left: ${error.source} - ${error.reason}")
+            },
+            ifRight = { definition ->
+                assertTrue(definition is DefinitionResolver.DefinitionResult.Source)
+                val source = definition as DefinitionResolver.DefinitionResult.Source
+                assertEquals(varsFile.toUri(), source.uri)
+                assertTrue(source.node is ClassNode)
+            },
+        )
+    }
+
+    @Test
+    fun `Jenkins vars strategy does not resolve non-Jenkins VariableExpression`() {
+        val varsDir = Files.createTempDirectory("jenkins-vars-nonmatch-test")
+        val varsFile = Files.createFile(varsDir.resolve("infra.groovy"))
+
+        val jenkinsCapabilities = mockk<JenkinsCapabilities>()
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
+            GlobalVariable(name = "infra", path = varsFile),
+        )
+
+        // 'someLocalVar' is not a Jenkins global variable
+        val variableExpr = VariableExpression("someLocalVar")
+
+        val strategy = JenkinsVarsResolutionStrategy(jenkinsCapabilities)
+        val context = ResolutionContext(
+            targetNode = variableExpr,
+            documentUri = URI.create("file:///workspace/Jenkinsfile"),
+            position = Position(0, 0),
+        )
+
+        val result = runBlocking { strategy.resolve(context) }
+        result.fold(
+            ifLeft = { error ->
+                assertEquals("JenkinsVars", error.source)
+            },
+            ifRight = { definition ->
+                throw AssertionError("Expected Left, got Right: $definition")
+            },
+        )
+    }
 }

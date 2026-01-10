@@ -215,11 +215,12 @@ class TypeDefinitionIntegrationTest {
     /**
      * Main assertion helper for type definition tests.
      */
+    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Implement location assertion when ready
     private suspend fun assertTypeDefinition(
         code: String,
         cursorMarker: String = "//^",
         expectedType: String? = null,
-        expectedLocation: String? = null,
+        _expectedLocation: String? = null,
     ) {
         val (cleanCode, position) = extractCursorPosition(code, cursorMarker)
         val context = compileGroovy(cleanCode)

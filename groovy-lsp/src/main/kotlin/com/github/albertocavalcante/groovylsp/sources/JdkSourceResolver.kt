@@ -40,6 +40,7 @@ class JdkSourceResolver(
      * @param className The fully qualified class name
      * @return SourceNavigator.SourceResult indicating success or failure
      */
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     suspend fun resolveJdkSource(jrtUri: URI, className: String): SourceNavigator.SourceResult {
         logger.debug("Resolving JDK source for: {} from {}", className, jrtUri)
 
@@ -106,6 +107,7 @@ class JdkSourceResolver(
      * 2. $JAVA_HOME/src.zip (Java 8)
      * 3. System property java.home (current JVM)
      */
+    @Suppress("ReturnCount") // Multiple path checks require early returns
     fun findSrcZip(): Path? {
         // Try JAVA_HOME environment variable
         val javaHome = System.getenv("JAVA_HOME")

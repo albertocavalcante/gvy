@@ -63,6 +63,7 @@ class JavaSourceInspector {
     /**
      * Inspect Java source content directly (useful for testing).
      */
+    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
     fun inspectClassFromContent(
         content: String,
         className: String,
