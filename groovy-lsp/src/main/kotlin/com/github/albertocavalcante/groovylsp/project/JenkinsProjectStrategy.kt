@@ -44,7 +44,10 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
 
     override val id: String = "jenkins"
     override val displayName: String = "Jenkins Pipeline"
-    override val priority: Int = 100 // High priority - Jenkins detection before generic strategies
+
+    // High priority - Jenkins detection runs before generic strategies
+    @Suppress("MagicNumber") // Priority constant for strategy ordering
+    override val priority: Int = 100
 
     private var workspaceManager: JenkinsWorkspaceManager? = null
     private var pluginManager: JenkinsPluginManager? = null

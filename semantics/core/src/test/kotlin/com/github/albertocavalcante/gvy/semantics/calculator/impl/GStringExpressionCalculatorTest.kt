@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
-import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.testContext

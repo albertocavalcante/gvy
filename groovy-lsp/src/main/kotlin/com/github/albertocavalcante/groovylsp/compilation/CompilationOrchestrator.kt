@@ -186,6 +186,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * Ensures a file is compiled, either by awaiting active compilation or fetching from cache.
      * Validates configuration fingerprint for cache coherency (Issue #743).
      */
+    @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
         // Check for active compilation first
         cacheService.getActiveCompilation(uri)?.let { deferred ->

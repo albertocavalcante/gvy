@@ -25,9 +25,10 @@ on:
         type: boolean
         default: false
 
-defaults:
-  run:
-    working-directory: editors/code
+# NOTE: Working directory is applied per-step (not globally) because early steps
+# like "Validate ref input" and "Determine checkout ref" execute BEFORE checkout
+# and must run from the repository root. Steps after checkout use explicit
+# working-directory: editors/code to maintain the correct context.
 
 jobs:
   nightly:
@@ -85,6 +86,7 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
+        working-directory: editors/code
         run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
       - name: Cache pnpm store
@@ -105,6 +107,7 @@ jobs:
         id: groovy_lsp_cache
         if: env.USE_LATEST_LSP_INPUT != 'true'
         shell: bash
+        working-directory: editors/code
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -121,6 +124,7 @@ jobs:
           key: groovy-lsp-${{ runner.os }}-${{ steps.groovy_lsp_cache.outputs.tag }}-${{ steps.groovy_lsp_cache.outputs.hash }}
 
       - name: Install dependencies
+        working-directory: editors/code
         run: pnpm install --frozen-lockfile
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,6 +134,7 @@ jobs:
       - name: Compute nightly version
         id: nightly_version
         shell: bash
+        working-directory: editors/code
         run: |
           set -euo pipefail
           BASE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
@@ -139,16 +144,19 @@ jobs:
           echo "nightly_tag=nightly-${NIGHTLY_VERSION}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Build extension
+        working-directory: editors/code
         run: pnpm run compile
 
       - name: Run tests
         if: env.SKIP_TESTS_INPUT != 'true'
+        working-directory: editors/code
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
           pnpm test
 
       - name: Package VSIX
+        working-directory: editors/code
         run: pnpm run package
         env:
           SKIP_PREPARE_SERVER: true

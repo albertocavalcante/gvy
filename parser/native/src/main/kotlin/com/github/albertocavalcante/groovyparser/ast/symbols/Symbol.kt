@@ -198,20 +198,30 @@ sealed class Symbol {
             get() = interfaces.map { it.name }
 
         companion object {
+            /**
+             * Creates a Symbol.Class from a ClassNode, gracefully handling NoClassDefFoundError
+             * that may occur when accessing members of decompiled classpath classes.
+             *
+             * @param classNode The ClassNode to convert
+             * @param uri The URI of the source file
+             * @return A Symbol.Class with available information (empty lists for inaccessible members)
+             */
             fun from(classNode: ClassNode, uri: URI): Class = Class(
                 name = classNode.nameWithoutPackage,
                 uri = uri,
                 node = classNode,
                 packageName = classNode.packageName,
-                superClass = classNode.superClass,
-                interfaces = classNode.interfaces.toList(),
+                // NOTE: Decompiled classpath nodes may throw linkage errors when resolving members.
+                // See: SymbolTableBuilder.kt for the same pattern.
+                superClass = runCatching { classNode.superClass }.getOrNull(),
+                interfaces = runCatching { classNode.interfaces.toList() }.getOrElse { emptyList() },
                 isInterface = classNode.isInterface,
                 isAbstract = classNode.isAbstract,
                 isEnum = classNode.isEnum,
                 visibility = Visibility.from(classNode.modifiers),
-                methods = classNode.methods.toList(),
-                fields = classNode.fields.toList(),
-                properties = classNode.properties.toList(),
+                methods = runCatching { classNode.methods.toList() }.getOrElse { emptyList() },
+                fields = runCatching { classNode.fields.toList() }.getOrElse { emptyList() },
+                properties = runCatching { classNode.properties.toList() }.getOrElse { emptyList() },
             )
         }
     }

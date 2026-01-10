@@ -275,6 +275,7 @@ private fun fixConsecutiveBlankLines(context: FixContext): TextEdit? {
  * @param context The fix context containing diagnostic and source information
  * @return A TextEdit that removes blank lines before package, or null if the fix cannot be applied
  */
+@Suppress("ReturnCount") // Multiple validation checks require early returns
 private fun fixBlankLineBeforePackage(context: FixContext): TextEdit? {
     val packageLine = context.diagnostic.range.start.line
 
@@ -654,6 +655,7 @@ private fun fixUnnecessaryDotClass(context: FixContext): TextEdit? {
  * @param context The fix context containing diagnostic and source information
  * @return A TextEdit that converts to single-quoted string, or null if the fix cannot be applied
  */
+@Suppress("ReturnCount") // Multiple validation checks require early returns
 private fun fixUnnecessaryGString(context: FixContext): TextEdit? {
     // Range validation is handled by LintFixAction.isValidRange() before this handler is called.
     val range = context.diagnostic.range
