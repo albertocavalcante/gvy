@@ -19,7 +19,10 @@ kt_library(
 
 kt_test(
     name = "desktop_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    srcs = glob(
+        ["src/test/kotlin/**/*.kt"],
+        allow_empty = True,
+    ),
     deps = [
         ":desktop",
         "@maven//:org_jetbrains_kotlin_kotlin_test",

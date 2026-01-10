@@ -2,7 +2,10 @@ load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
     name = "ast-model",
-    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    srcs = glob([
+        "src/commonMain/kotlin/**/*.kt",
+        "src/jvmMain/kotlin/**/*.kt",
+    ]),
     visibility = ["//visibility:public"],
     deps = [
         "//parser/core",
@@ -15,7 +18,10 @@ kt_library(
 
 kt_test(
     name = "ast-model_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    srcs = glob([
+        "src/commonTest/kotlin/**/*.kt",
+        "src/jvmTest/kotlin/**/*.kt",
+    ]),
     deps = [
         ":ast-model",
         "@maven//:org_jetbrains_kotlin_kotlin_test",

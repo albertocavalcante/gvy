@@ -66,8 +66,8 @@ esbuild(
     output = "extension.js",
     platform = "node",
     sourcemap = select({
-        "//:production": False,
-        "//conditions:default": True,
+        "//:production": "external",
+        "//conditions:default": "inline",
     }),
     target = "es2020",
     visibility = ["//visibility:public"],
@@ -86,8 +86,8 @@ esbuild(
     output = "main.js",
     platform = "browser",
     sourcemap = select({
-        "//:production": False,
-        "//conditions:default": True,
+        "//:production": "external",
+        "//conditions:default": "inline",
     }),
     target = "es2020",
     visibility = ["//visibility:public"],

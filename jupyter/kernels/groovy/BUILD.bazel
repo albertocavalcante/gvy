@@ -17,7 +17,10 @@ kt_library(
 
 kt_test(
     name = "groovy_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    srcs = glob(
+        ["src/test/kotlin/**/*.kt"],
+        allow_empty = True,
+    ),
     deps = [
         ":groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_test",

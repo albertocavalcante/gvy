@@ -7,10 +7,13 @@ kt_test(
         "e2e/kotlin/**/*.kt",
         "lsp-client/kotlin/**/*.kt",
     ]),
-    data = glob([
-        "e2e/resources/**",
-        "lsp-client/resources/**",
-    ]),
+    data = glob(
+        [
+            "e2e/resources/**",
+            "lsp-client/resources/**",
+        ],
+        allow_empty = True,
+    ),
     deps = [
         "//fmt",
         "//jenkins",

@@ -5,12 +5,10 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//dsl/dsld",
         "//parser/api",
-        "@maven//:io_arrow_kt_arrow_core",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_apache_groovy_groovy_macro",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",
         "@maven//:org_slf4j_slf4j_api",
     ],
 )
