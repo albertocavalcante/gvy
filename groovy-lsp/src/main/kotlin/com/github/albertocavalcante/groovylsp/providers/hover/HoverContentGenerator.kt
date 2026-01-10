@@ -48,6 +48,13 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
     companion object {
         private const val MAX_DISPLAYED_ITEMS = 5
         private val logger = LoggerFactory.getLogger(HoverContentGenerator::class.java)
+
+        // Display limits for collection literals in hover content
+        @Suppress("MagicNumber") // UI display constants
+        private const val MAX_LIST_ELEMENTS_FULL_DISPLAY = 5
+        private const val MAX_LIST_ELEMENTS_PREVIEW = 3
+        private const val MAX_MAP_ENTRIES_FULL_DISPLAY = 3
+        private const val MAX_MAP_ENTRIES_PREVIEW = 2
     }
 
     /**
@@ -318,7 +325,8 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }.filter { it.isNotBlank() }.joinToString(", ")
     }
 
-    private fun MarkdownBuilder.renderPropertyExpression(node: PropertyExpression, moduleNode: ModuleNode?) {
+    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _moduleNode for enhanced type resolution
+    private fun MarkdownBuilder.renderPropertyExpression(node: PropertyExpression, _moduleNode: ModuleNode?) {
         val propertyName = node.propertyAsString ?: node.property.text
         val objectExpr = node.objectExpression
         val objectType = objectExpr.type.nameWithoutPackage
@@ -397,10 +405,10 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
         section("List Literal") {
             code("groovy") {
-                if (elementCount <= 5) {
+                if (elementCount <= MAX_LIST_ELEMENTS_FULL_DISPLAY) {
                     "[${node.expressions.joinToString(", ") { it.text }}]"
                 } else {
-                    "[${node.expressions.take(3).joinToString(", ") { it.text }}, ...]"
+                    "[${node.expressions.take(MAX_LIST_ELEMENTS_PREVIEW).joinToString(", ") { it.text }}, ...]"
                 }
             }
             keyValue(
@@ -426,12 +434,12 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
             code("groovy") {
                 if (entryCount == 0) {
                     "[:]"
-                } else if (entryCount <= 3) {
+                } else if (entryCount <= MAX_MAP_ENTRIES_FULL_DISPLAY) {
                     "[${node.mapEntryExpressions.joinToString(", ") {
                         "${it.keyExpression.text}: ${it.valueExpression.text}"
                     }}]"
                 } else {
-                    "[${node.mapEntryExpressions.take(2).joinToString(", ") {
+                    "[${node.mapEntryExpressions.take(MAX_MAP_ENTRIES_PREVIEW).joinToString(", ") {
                         "${it.keyExpression.text}: ${it.valueExpression.text}"
                     }}, ...]"
                 }
@@ -531,20 +539,6 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         if (Modifier.isFinal(modifiers)) parts += "final"
         if (Modifier.isAbstract(modifiers)) parts += "abstract"
         append(parts.joinToString(" "))
-    }
-
-    private fun classSignature(node: ClassNode): String = buildString {
-        when {
-            node.isInterface -> append("interface ")
-            node.isEnum -> append("enum ")
-            node.isAbstract -> append("abstract class ")
-            else -> append("class ")
-        }
-        append(node.nameWithoutPackage)
-        node.superClass?.let { if (it.name != "java.lang.Object") append(" extends ${it.nameWithoutPackage}") }
-        if (node.interfaces.isNotEmpty()) {
-            append(" implements ${node.interfaces.joinToString(", ") { it.nameWithoutPackage }}")
-        }
     }
 
     private fun parametersString(node: MethodNode): String =

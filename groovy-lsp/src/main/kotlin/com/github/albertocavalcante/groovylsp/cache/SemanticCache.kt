@@ -280,6 +280,7 @@ private fun SerializedRange.toRange() = Range(
     endColumn = endColumn,
 )
 
+@Suppress("FunctionOnlyReturningConstant") // TODO: Implement full type deserialization when needed for cache validation
 private fun SerializedType.toSemanticType(): SemanticType? {
     // For now, we don't fully deserialize types - just return null
     // Full type deserialization would require parsing the string representation

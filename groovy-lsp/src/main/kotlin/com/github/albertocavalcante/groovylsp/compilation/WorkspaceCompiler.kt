@@ -59,7 +59,7 @@ class WorkspaceCompiler(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
     private val semanticDb: GroovySemanticDB,
-    private val semanticCache: SemanticCache? = null,
+    @Suppress("unused") private val semanticCache: SemanticCache? = null,
     val dependencyGraph: DependencyGraph = DependencyGraph(),
 ) {
     private val logger = LoggerFactory.getLogger(WorkspaceCompiler::class.java)

@@ -46,6 +46,7 @@ object InlineTagRenderer {
      * @param text The text containing inline tags
      * @return Text with inline tags converted to markdown
      */
+    @Suppress("LoopWithTooManyJumpStatements") // Tag parsing requires multiple break conditions
     fun render(text: String): String {
         val result = StringBuilder()
         var pos = 0
