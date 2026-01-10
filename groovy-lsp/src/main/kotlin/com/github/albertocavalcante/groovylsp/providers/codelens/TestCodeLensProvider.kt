@@ -18,7 +18,10 @@ import java.net.URI
  * Uses [TestFrameworkRegistry] to detect test classes and extract test items,
  * supporting Spock, JUnit 5, JUnit 4, TestNG, and any other registered frameworks.
  */
-class TestCodeLensProvider(private val compilationService: GroovyCompilationService) {
+class TestCodeLensProvider(
+    private val compilationService: GroovyCompilationService,
+    private val registry: TestFrameworkRegistry = TestFrameworkRegistry.default,
+) {
     private val logger = LoggerFactory.getLogger(TestCodeLensProvider::class.java)
 
     /**
@@ -33,7 +36,7 @@ class TestCodeLensProvider(private val compilationService: GroovyCompilationServ
 
         for (classNode in ast.classes) {
             // Use registry to find applicable detector and extract tests
-            val tests = TestFrameworkRegistry.extractTests(classNode, ast, classLoader)
+            val tests = registry.extractTests(classNode, ast, classLoader)
             if (tests.isEmpty()) continue
 
             // Generate CodeLens for each test method (not the class itself)

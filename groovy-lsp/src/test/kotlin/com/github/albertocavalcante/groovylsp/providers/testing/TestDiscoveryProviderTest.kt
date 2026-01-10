@@ -18,7 +18,7 @@ class TestDiscoveryProviderTest {
 
     @BeforeEach
     fun setup() {
-        TestFrameworkRegistry.registerIfAbsent(SpockTestDetector())
+        TestFrameworkRegistry.default.registerIfAbsent(SpockTestDetector())
     }
 
     @Test

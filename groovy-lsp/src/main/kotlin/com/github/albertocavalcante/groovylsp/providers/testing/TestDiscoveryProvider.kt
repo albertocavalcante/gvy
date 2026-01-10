@@ -18,7 +18,10 @@ import java.nio.file.Files
  * Uses [TestFrameworkRegistry] to detect tests from Spock, JUnit 5, JUnit 4, TestNG,
  * and any other registered frameworks.
  */
-class TestDiscoveryProvider(private val compilationService: GroovyCompilationService) {
+class TestDiscoveryProvider(
+    private val compilationService: GroovyCompilationService,
+    private val registry: TestFrameworkRegistry = TestFrameworkRegistry.default,
+) {
     private val logger = LoggerFactory.getLogger(TestDiscoveryProvider::class.java)
 
     /**
@@ -77,7 +80,7 @@ class TestDiscoveryProvider(private val compilationService: GroovyCompilationSer
         )
 
         return ast.classes.mapNotNull { classNode ->
-            val testItems = TestFrameworkRegistry.extractTests(classNode, ast, classLoader)
+            val testItems = registry.extractTests(classNode, ast, classLoader)
             if (testItems.isEmpty()) return@mapNotNull null
 
             val tests = testItems

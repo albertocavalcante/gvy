@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovytesting.api.TestItem
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.slf4j.LoggerFactory
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Registry for test framework detectors.
@@ -14,19 +15,37 @@ import org.slf4j.LoggerFactory
  * test framework detectors. Allows the LSP to support multiple frameworks
  * without hard-coding dependencies.
  *
+ * Thread-safe implementation using [CopyOnWriteArrayList] for safe concurrent
+ * registration and iteration.
+ *
  * Usage:
  * ```
- * // Register detectors
- * TestFrameworkRegistry.register(SpockTestDetector())
- * TestFrameworkRegistry.register(JUnit5TestDetector())
+ * // Use the default shared instance
+ * TestFrameworkRegistry.default.register(SpockTestDetector())
+ * TestFrameworkRegistry.default.register(JUnit5TestDetector())
  *
  * // Discover tests in a class
- * val tests = TestFrameworkRegistry.extractTests(classNode, module)
+ * val tests = TestFrameworkRegistry.default.extractTests(classNode, module)
+ *
+ * // Or create isolated instances for testing
+ * val registry = TestFrameworkRegistry()
+ * registry.register(SpockTestDetector())
  * ```
  */
-object TestFrameworkRegistry {
+class TestFrameworkRegistry {
     private val logger = LoggerFactory.getLogger(TestFrameworkRegistry::class.java)
-    private val detectors = mutableListOf<TestFrameworkDetector>()
+    private val detectors = CopyOnWriteArrayList<TestFrameworkDetector>()
+
+    companion object {
+        /**
+         * Shared default instance for production use.
+         *
+         * This instance is shared across the entire application and is thread-safe.
+         * For testing, consider creating isolated instances instead.
+         */
+        @JvmStatic
+        val default = TestFrameworkRegistry()
+    }
 
     /**
      * Registers a test framework detector.
