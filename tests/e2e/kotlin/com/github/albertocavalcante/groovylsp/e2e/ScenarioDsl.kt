@@ -391,6 +391,9 @@ class ScenarioBuilder(private val source: String? = null) {
                         "(for example via -Dgroovy.lsp.e2e.scenarioDir=/path/to/e2e/resources/scenarios) " +
                         "to point to the directory containing e2e scenario definitions.",
                 )
+            // Synthetic path for DSL scenarios: Uses .yaml extension for WorkspaceFixture compatibility
+            // (expects scenario source to have .yaml extension). The '_' prefix distinguishes DSL-based
+            // scenarios from actual YAML files. This path is never read; it's just used for path resolution.
             "$resourcesDir/_dsl-scenarios.yaml"
         }
 
