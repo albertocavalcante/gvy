@@ -324,6 +324,8 @@ class GroovyTextDocumentService(
             documentProvider.getAllUris().all { uri ->
                 compilationService.getSymbolStorage(uri) != null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.debug("ensureAllOpenDocumentsCompiled: Error checking compilation status", e)
             false
