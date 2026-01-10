@@ -13,6 +13,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -147,23 +148,13 @@ class CrossFileDefinitionRaceTest {
 
         // Should still resolve correctly
         // The fix ensures all open documents are compiled before resolution
-        if (result.isRight) {
-            // If it's Right, it's a LocationLink list - convert to check
-            val locationLinks = result.right
-            assertTrue(locationLinks.isNotEmpty(), "Should find at least one definition location (LocationLink)")
-            assertTrue(
-                locationLinks[0].targetUri.contains("Calculator.groovy"),
-                "Definition should point to Calculator.groovy, but got: ${locationLinks[0].targetUri}",
-            )
-        } else {
-            // If it's Left, it's a Location list
-            val locations = result.left
-            assertTrue(locations.isNotEmpty(), "Should find at least one definition location (Location)")
-            assertTrue(
-                locations[0].uri.contains("Calculator.groovy"),
-                "Definition should point to Calculator.groovy, but got: ${locations[0].uri}",
-            )
-        }
+        assertTrue(result.isLeft, "Result should be Left (List<Location>) but was Right")
+        val locations = result.left
+        assertTrue(locations.isNotEmpty(), "Should find at least one definition location (Location)")
+        assertTrue(
+            locations[0].uri.contains("Calculator.groovy"),
+            "Definition should point to Calculator.groovy, but got: ${locations[0].uri}",
+        )
     }
 
     @Test
@@ -188,17 +179,20 @@ class CrossFileDefinitionRaceTest {
             delay(10) // Small delay to increase chance of race
             val params = DefinitionParams(
                 TextDocumentIdentifier(file2Uri),
-                Position(0, 19), // "File1" reference
+                Position(0, 13), // "File1" reference in "class File2 { File1 f }"
             )
-            service.definition(params).get()
+            val result = service.definition(params).get()
+
+            // Assert that the definition request succeeded and returned a valid result
+            assertTrue(result.isLeft, "Result should be Left (List<Location>) not Right")
+            val locations = result.left
+            // The result should contain locations (or be empty if not found, but no exception is the key)
+            assertNotNull(locations, "Locations list should not be null")
         }
 
         // Wait for all to complete
         job1.join()
         job2.join()
         job3.join()
-
-        // If we get here without exceptions, the fix handles concurrency correctly
-        assertTrue(true, "Concurrent operations should not cause race conditions")
     }
 }

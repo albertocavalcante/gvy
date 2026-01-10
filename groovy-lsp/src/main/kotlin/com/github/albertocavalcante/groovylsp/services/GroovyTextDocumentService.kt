@@ -39,6 +39,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
@@ -274,11 +275,11 @@ class GroovyTextDocumentService(
         val pendingJobs = diagnosticJobs.values.toList()
         if (pendingJobs.isNotEmpty()) {
             logger.debug("Waiting for ${pendingJobs.size} pending compilation jobs")
-            pendingJobs.forEach { it.join() }
+            pendingJobs.joinAll()
         }
 
         // Also ensure any documents without pending jobs are compiled
-        documentProvider.getAllUris().forEach { uri ->
+        for (uri in documentProvider.getAllUris()) {
             if (compilationService.getSymbolStorage(uri) == null) {
                 val content = documentProvider.get(uri)
                 if (content != null) {
