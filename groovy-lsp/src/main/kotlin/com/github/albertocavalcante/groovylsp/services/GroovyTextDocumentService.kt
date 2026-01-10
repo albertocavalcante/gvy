@@ -314,6 +314,16 @@ class GroovyTextDocumentService(
      * - Exception handling: Catches compilation failures to avoid retry loops
      */
     private suspend fun ensureAllOpenDocumentsCompiled() {
+        // PERFORMANCE OPTIMIZATION: Only proceed if there are pending diagnostic jobs
+        // This avoids unnecessary blocking when all documents are already compiled
+        val currentJob = currentCoroutineContext()[Job]
+        val hasPendingJobs = diagnosticJobs.values.any { it != currentJob && it.isActive }
+
+        if (!hasPendingJobs) {
+            logger.debug("ensureAllOpenDocumentsCompiled: No pending jobs, skipping wait")
+            return
+        }
+
         var iterations = 0
         val startTime = System.currentTimeMillis()
 
@@ -336,7 +346,7 @@ class GroovyTextDocumentService(
             iterations++
 
             // SAFEGUARD 2: Check overall timeout to prevent indefinite blocking
-            val elapsedMs = System.currentTimeMillis() - startTime
+            var elapsedMs = System.currentTimeMillis() - startTime
             if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
                 logger.warn(
                     "ensureAllOpenDocumentsCompiled: Timeout after ${elapsedMs}ms " +
@@ -351,7 +361,6 @@ class GroovyTextDocumentService(
 
             // Wait for all pending diagnostic jobs (which include compilation)
             // SAFEGUARD 4: Filter out current job to prevent deadlock
-            val currentJob = currentCoroutineContext()[Job]
             val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
 
             if (pendingJobs.isNotEmpty()) {
@@ -393,6 +402,16 @@ class GroovyTextDocumentService(
             )
 
             for (uri in urisSnapshot) {
+                // SAFEGUARD 6: Check timeout inside loop to prevent long-running iterations
+                elapsedMs = System.currentTimeMillis() - startTime
+                if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
+                    logger.warn(
+                        "ensureAllOpenDocumentsCompiled: Timeout during compilation loop after ${elapsedMs}ms. " +
+                            "Stopping mid-iteration.",
+                    )
+                    return
+                }
+
                 // Check cancellation in loop
                 currentCoroutineContext().ensureActive()
 
@@ -406,7 +425,7 @@ class GroovyTextDocumentService(
                     if (content != null) {
                         logger.debug("ensureAllOpenDocumentsCompiled: Compiling unindexed document: $uri")
 
-                        // SAFEGUARD 6: Catch exceptions to prevent retry loops
+                        // SAFEGUARD 7: Catch exceptions to prevent retry loops
                         try {
                             compilationService.compile(uri, content)
                             compiledAny = true
@@ -430,9 +449,11 @@ class GroovyTextDocumentService(
             if (!compiledAny) {
                 // No new documents were compiled in this iteration, so all open documents
                 // should now be compiled and indexed.
+                // Recalculate elapsed time for accurate logging
+                val completionElapsedMs = System.currentTimeMillis() - startTime
                 logger.debug(
                     "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
-                        "(${elapsedMs}ms)",
+                        "(${completionElapsedMs}ms)",
                 )
                 break
             }
