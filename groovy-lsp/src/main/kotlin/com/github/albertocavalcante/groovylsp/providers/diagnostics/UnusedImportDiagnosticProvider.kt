@@ -51,7 +51,7 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
     private fun createDiagnostic(importNode: ImportNode): Diagnostic {
         // Defensive guard: Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
         if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0 ||
-            importNode.lastLineNumber <= 0 || importNode.lastColumnNumber < 0
+            importNode.lastLineNumber <= 0 || importNode.lastColumnNumber <= 0
         ) {
             // Fallback to safe default position if AST has invalid coordinates
             return Diagnostic().apply {
