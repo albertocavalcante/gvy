@@ -62,16 +62,17 @@ object JenkinsSemanticTokenProvider {
      * Complete list of Semantic Token Modifiers supported by this server.
      */
     val LEGEND_TOKEN_MODIFIERS = listOf(
-        SemanticTokenModifiers.Declaration,
-        SemanticTokenModifiers.Definition,
-        SemanticTokenModifiers.Readonly,
-        SemanticTokenModifiers.Static,
-        SemanticTokenModifiers.Deprecated,
-        SemanticTokenModifiers.Abstract,
-        SemanticTokenModifiers.Async,
-        SemanticTokenModifiers.Modification,
-        SemanticTokenModifiers.Documentation,
-        SemanticTokenModifiers.DefaultLibrary,
+        SemanticTokenModifiers.Declaration, // 0
+        SemanticTokenModifiers.Definition, // 1
+        SemanticTokenModifiers.Readonly, // 2
+        SemanticTokenModifiers.Static, // 3
+        SemanticTokenModifiers.Deprecated, // 4
+        SemanticTokenModifiers.Abstract, // 5
+        SemanticTokenModifiers.Async, // 6
+        SemanticTokenModifiers.Modification, // 7
+        SemanticTokenModifiers.Documentation, // 8
+        SemanticTokenModifiers.DefaultLibrary, // 9
+        "unnecessary", // 10 - For unused imports/code dimming (IntelliJ-like)
     )
 
     /**

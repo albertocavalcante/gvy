@@ -192,6 +192,12 @@
         "path": "./syntaxes/groovy.tmLanguage.json"
       }
     ],
+    "semanticTokenModifiers": [
+      {
+        "id": "unnecessary",
+        "description": "Unused/unnecessary code (for dimming unused imports)"
+      }
+    ],
     "semanticTokenScopes": [
       {
         "language": "jenkinsfile",
@@ -201,6 +207,9 @@
           ],
           "decorator": [
             "entity.name.function.decorator.jenkins"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
           ]
         }
       },
@@ -212,6 +221,9 @@
           ],
           "decorator": [
             "entity.name.function.decorator.jenkins"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
           ]
         }
       }

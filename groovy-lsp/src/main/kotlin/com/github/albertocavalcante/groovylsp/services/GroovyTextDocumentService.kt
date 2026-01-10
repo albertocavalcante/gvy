@@ -15,6 +15,8 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.UnusedImportDetector
+import com.github.albertocavalcante.groovylsp.providers.diagnostics.UnusedImportDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
@@ -43,6 +45,7 @@ import kotlinx.coroutines.future.await
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
@@ -192,6 +195,10 @@ class GroovyTextDocumentService(
                 ruleConfig = serverConfiguration.diagnosticRuleConfig,
             )
             add(customRulesProvider)
+
+            // Unused import detection with DiagnosticTag.Unnecessary for IDE dimming
+            val unusedImportProvider = UnusedImportDiagnosticProvider(compilationService)
+            add(unusedImportProvider)
         }
 
         val config = serverConfiguration.diagnosticConfig
@@ -1010,8 +1017,19 @@ class GroovyTextDocumentService(
                     ?.toSet()
                     ?: emptySet()
 
+                // Detect unused imports for dimming (semantic token modifier)
+                val moduleNode = compilationService.getAst(uri) as? ModuleNode
+                val unusedImports = moduleNode?.let {
+                    UnusedImportDetector.detectUnusedImports(it).toSet()
+                } ?: emptySet()
+
                 // Get general Groovy semantic tokens for ALL files
-                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(
+                    astModel,
+                    uri,
+                    unusedImports = unusedImports,
+                    moduleNode = moduleNode,
+                )
 
                 // Get Jenkins-specific tokens (built-in blocks + vars/ globals) only for Jenkins files
                 val jenkinsTokens = if (isJenkinsFile) {

@@ -1,7 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.Diagnostic
@@ -9,67 +10,91 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DiagnosticTag
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
  * Diagnostic provider for unused imports.
  *
- * NOTE: Performance concern - kotlin-lsp disables unused import inspection as "too slow"
- * This provider is disabled by default (opt-in via configuration).
- *
- * TODO: Implement full type usage analysis using TypeCollector
- * TODO: Benchmark on realistic files and optimize if needed
+ * Uses deterministic AST-based detection via TypeUsageCollector and UnusedImportDetector.
+ * Diagnostics include DiagnosticTag.Unnecessary for IDE dimming/strikethrough support.
  */
-class UnusedImportDiagnosticProvider : StreamingDiagnosticProvider {
+class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompilationService) :
+    StreamingDiagnosticProvider {
+
     private val logger = LoggerFactory.getLogger(UnusedImportDiagnosticProvider::class.java)
 
     override val id: String = "unused-imports"
 
-    // NOTE: Following kotlin-lsp approach - disabled by default due to performance concerns
-    override val enabledByDefault: Boolean = false
+    // Enabled by default for better UX - this is a common feature users expect
+    override val enabledByDefault: Boolean = true
 
-    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> {
-        // TODO: Implement AST parsing and type usage analysis
-        // For now, return empty flow until we integrate with compilation service
-        logger.debug("UnusedImportDiagnosticProvider called for $uri (not yet implemented)")
-        return emptyFlow()
-    }
+    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
+        logger.debug("Checking unused imports for: {}", uri)
 
-    /**
-     * Internal check method for testability.
-     * NOTE: This is a heuristic approach - checks if import alias is referenced in code
-     * TODO: Implement proper type usage analysis with full semantic understanding
-     */
-    fun checkUnusedImports(moduleNode: ModuleNode, usedTypeNames: Set<String>): List<Diagnostic> {
-        val diagnostics = mutableListOf<Diagnostic>()
-
-        // Check regular imports
-        for (importNode in moduleNode.imports) {
-            // Using alias because that's what's used in the code
-            if (!usedTypeNames.contains(importNode.alias)) {
-                diagnostics.add(createDiagnostic(importNode))
-            }
+        val ast = compilationService.getAst(uri) as? ModuleNode
+        if (ast == null) {
+            logger.debug("No AST available for {}, skipping unused import check", uri)
+            return@flow
         }
 
-        return diagnostics
+        val unusedImports = UnusedImportDetector.detectUnusedImports(ast)
+
+        logger.debug("Found {} unused imports in {}", unusedImports.size, uri)
+
+        unusedImports.forEach { importNode ->
+            emit(createDiagnostic(importNode))
+        }
     }
 
     private fun createDiagnostic(importNode: ImportNode): Diagnostic {
+        // Defensive guard: Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
+        if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0 ||
+            importNode.lastLineNumber <= 0 || importNode.lastColumnNumber <= 0
+        ) {
+            // Fallback to safe default position if AST has invalid coordinates
+            return Diagnostic().apply {
+                this.range = Range(Position(0, 0), Position(0, 0))
+                this.severity = DiagnosticSeverity.Hint
+                this.message = "Unused import"
+                this.source = "Groovy"
+                this.tags = listOf(DiagnosticTag.Unnecessary)
+                this.code = Either.forLeft("unused-import")
+            }
+        }
+
         // Line numbers in Groovy AST are 1-based, LSP is 0-based
         // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
+        // 1-based inclusive column N equals 0-based exclusive column N (no conversion needed for end)
         val range = Range(
             Position(importNode.lineNumber - 1, importNode.columnNumber - 1),
             Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber),
         )
+
+        // Build descriptive import name for static/aliased imports
+        val importName = when {
+            // Static import: show class.member (e.g., "Math.PI" not just "Math")
+            importNode.isStatic && !importNode.fieldName.isNullOrBlank() && !importNode.className.isNullOrBlank() ->
+                "${importNode.className}.${importNode.fieldName}"
+            // Aliased import: show original as alias (e.g., "ArrayList as AL")
+            !importNode.alias.isNullOrBlank() && !importNode.className.isNullOrBlank() ->
+                "${importNode.className} as ${importNode.alias}"
+            // Regular import: show class name
+            !importNode.className.isNullOrBlank() -> importNode.className
+            // Package import: show package name
+            !importNode.packageName.isNullOrBlank() -> importNode.packageName
+            // Fallback
+            else -> "import"
+        }
+
         return Diagnostic().apply {
             this.range = range
             this.severity = DiagnosticSeverity.Hint
-            this.message = "Unused import: ${importNode.className}"
+            this.message = "Unused import: $importName"
             this.source = "Groovy"
             this.tags = listOf(DiagnosticTag.Unnecessary)
-            this.code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("unused-import")
+            this.code = Either.forLeft("unused-import")
         }
     }
 }
