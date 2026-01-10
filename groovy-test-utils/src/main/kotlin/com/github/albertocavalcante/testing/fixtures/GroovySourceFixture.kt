@@ -10,10 +10,16 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * Thread-safe fixture for creating Groovy AST nodes in tests.
+ * Fixture for creating Groovy AST nodes in tests.
  *
  * This fixture provides convenient methods for parsing Groovy source code
  * into AST representations (ModuleNode, ClassNode) for testing purposes.
+ *
+ * Parse operations are synchronized per instance using a lock to prevent
+ * concurrent invocations on the same {@code GroovySourceFixture} instance
+ * from interleaving. It does not coordinate access across different
+ * {@code GroovySourceFixture} instances and does not by itself guarantee
+ * that {@code GroovyParserFacade} is thread-safe.
  *
  * Example usage:
  * ```kotlin
