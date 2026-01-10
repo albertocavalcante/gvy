@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
+import com.github.albertocavalcante.groovylsp.buildtool.jdk.ProjectJdkValidator
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -211,6 +212,13 @@ class ProjectStartupManager(
         val progressReporter = ProgressReporter(client)
         initializeWorkspaces(workspaceRoot, config)
 
+        // Pre-flight: Check JDK requirements BEFORE dependency resolution
+        val jdkValidation = performJdkPreflightCheck(workspaceRoot, client, onStatusUpdate)
+        if (jdkValidation == PreflightResult.Abort) {
+            logger.info("Aborting dependency resolution due to JDK incompatibility")
+            return
+        }
+
         val dependencyManager = setupDependencyManager(config)
 
         dependencyManager.startAsyncResolution(
@@ -404,6 +412,108 @@ class ProjectStartupManager(
                 status.code,
                 errorDetails,
             )
+        }
+    }
+
+    /**
+     * Result of the pre-flight JDK compatibility check.
+     */
+    private enum class PreflightResult {
+        /** Continue with dependency resolution. */
+        Continue,
+
+        /** Abort dependency resolution due to fatal JDK incompatibility. */
+        Abort,
+    }
+
+    /**
+     * Performs a pre-flight JDK compatibility check before dependency resolution.
+     *
+     * This is the "fail-fast" mechanism that detects JDK version mismatches early,
+     * before any compilation or dependency resolution is attempted.
+     *
+     * @return PreflightResult indicating whether to continue or abort.
+     */
+    private fun performJdkPreflightCheck(
+        workspaceRoot: Path,
+        client: LanguageClient?,
+        onStatusUpdate: StatusUpdateCallback,
+    ): PreflightResult {
+        val validator = ProjectJdkValidator()
+        val result = validator.validate(workspaceRoot)
+
+        return when (result) {
+            is ProjectJdkValidator.ValidationResult.IncompatibleOlder -> {
+                // Fatal: Running JDK is older than required
+                logger.error(
+                    "JDK version mismatch: running JDK {} but project requires JDK {}",
+                    result.runningJdk,
+                    result.requiredJdk,
+                )
+
+                val errorDetails = ProjectJdkIncompatibleError(
+                    runningJdkVersion = result.runningJdk,
+                    requiredJdkVersion = result.requiredJdk,
+                    configurationSource = result.source.displayName,
+                    suggestions = result.suggestions,
+                )
+
+                // Send error status
+                onStatusUpdate(
+                    Health.Error,
+                    true,
+                    "Project requires JDK ${result.requiredJdk}, but LSP is running JDK ${result.runningJdk}",
+                    null,
+                    null,
+                    ResolutionCodes.PROJECT_JDK_INCOMPATIBLE,
+                    errorDetails,
+                )
+
+                // Show user-visible message
+                client?.showMessage(
+                    MessageParams().apply {
+                        type = MessageType.Error
+                        message = "Project requires JDK ${result.requiredJdk} (from ${result.source.displayName}), " +
+                            "but LSP is running JDK ${result.runningJdk}. Configure groovy.java.home to fix."
+                    },
+                )
+
+                PreflightResult.Abort
+            }
+
+            is ProjectJdkValidator.ValidationResult.PotentiallyIncompatibleNewer -> {
+                // Warning: Running JDK is significantly newer than target
+                logger.warn(
+                    "JDK version warning: running JDK {} but project targets JDK {}",
+                    result.runningJdk,
+                    result.targetJdk,
+                )
+
+                // Show warning message but continue
+                client?.showMessage(
+                    MessageParams().apply {
+                        type = MessageType.Warning
+                        message = "LSP JDK ${result.runningJdk} is newer than project target ${result.targetJdk}. " +
+                            "You may see 'Unsupported class file major version' errors."
+                    },
+                )
+
+                PreflightResult.Continue
+            }
+
+            is ProjectJdkValidator.ValidationResult.Compatible -> {
+                logger.debug(
+                    "JDK validation passed: running JDK {}, required {}",
+                    result.runningJdk,
+                    result.requiredJdk,
+                )
+                PreflightResult.Continue
+            }
+
+            ProjectJdkValidator.ValidationResult.NoRequirement -> {
+                logger.debug("No JDK requirement configured in project, skipping validation")
+                PreflightResult.Continue
+            }
         }
     }
 
