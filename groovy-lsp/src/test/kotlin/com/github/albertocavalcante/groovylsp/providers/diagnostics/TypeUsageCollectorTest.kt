@@ -289,4 +289,21 @@ class TypeUsageCollectorTest {
 
         assertTrue(usedTypes.contains("Set"), "Should collect Set from field declaration")
     }
+
+    @Test
+    fun `should collect type from annotation parameter value`() {
+        val ast = compile(
+            """
+            import java.lang.annotation.ElementType
+            import java.lang.annotation.Target
+            @Target(ElementType.TYPE)
+            @interface MyAnnotation {}
+            """.trimIndent(),
+        )
+
+        val usedTypes = TypeUsageCollector.collectUsedTypes(ast)
+
+        assertTrue(usedTypes.contains("Target"), "Should collect Target annotation type")
+        assertTrue(usedTypes.contains("ElementType"), "Should collect ElementType from annotation parameter")
+    }
 }
