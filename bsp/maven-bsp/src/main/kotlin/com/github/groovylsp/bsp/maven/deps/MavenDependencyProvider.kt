@@ -158,8 +158,11 @@ class MavenDependencyProvider(
                         null
                     }
                 }
-        } catch (e: Exception) {
+        } catch (e: org.eclipse.aether.resolution.DependencyResolutionException) {
             logger.warn("Failed to resolve dependencies for ${module.moduleId}: ${e.message}")
+            emptyList()
+        } catch (e: Exception) {
+            logger.warn("Unexpected error resolving dependencies for ${module.moduleId}: ${e.message}")
             emptyList()
         }
     }

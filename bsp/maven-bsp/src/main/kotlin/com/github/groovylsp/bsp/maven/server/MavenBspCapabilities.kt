@@ -13,6 +13,11 @@ object MavenBspCapabilities {
     private val SUPPORTED_LANGUAGES = listOf("java", "groovy", "kotlin")
 
     /**
+     * Returns the list of supported languages.
+     */
+    fun supportedLanguages(): List<String> = SUPPORTED_LANGUAGES
+
+    /**
      * Returns the capabilities advertised by this server.
      */
     fun serverCapabilities(): BuildServerCapabilities = BuildServerCapabilities().apply {

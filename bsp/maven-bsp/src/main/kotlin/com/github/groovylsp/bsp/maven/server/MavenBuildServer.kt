@@ -68,7 +68,6 @@ class MavenBuildServer(
 
     private var modules: List<MavenModuleInfo> = emptyList()
     private var client: BuildClient? = null
-    private var initialized = false
 
     fun connect(client: BuildClient) {
         this.client = client
@@ -94,7 +93,6 @@ class MavenBuildServer(
 
     override fun onBuildInitialized() {
         logger.info("Maven BSP server initialized")
-        initialized = true
     }
 
     override fun buildShutdown(): CompletableFuture<Any> {

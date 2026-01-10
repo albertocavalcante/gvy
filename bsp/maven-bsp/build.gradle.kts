@@ -61,8 +61,7 @@ tasks.register<Jar>("fatJar") {
     from({
         configurations.runtimeClasspath
             .get()
-            .filter { it.name.endsWith("jar") }
-            .map { zipTree(it) }
+            .map { if (it.isDirectory) it else zipTree(it) }
     })
 
     manifest {

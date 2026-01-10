@@ -86,7 +86,7 @@ class MavenWorkspaceScanner {
 
         val result = builder.build(request)
         result.effectiveModel
-    } catch (e: Exception) {
+    } catch (e: org.apache.maven.model.building.ModelBuildingException) {
         logger.debug("Failed to parse POM at $pomPath: ${e.message}")
         null
     }
@@ -122,8 +122,6 @@ class MavenWorkspaceScanner {
             val sourcePath = Path.of(source)
             if (sourcePath.isAbsolute && sourcePath.startsWith(pomDir)) {
                 pomDir.relativize(sourcePath).toString()
-            } else if (!sourcePath.isAbsolute) {
-                source
             } else {
                 source
             }
@@ -134,8 +132,6 @@ class MavenWorkspaceScanner {
             val sourcePath = Path.of(source)
             if (sourcePath.isAbsolute && sourcePath.startsWith(pomDir)) {
                 pomDir.relativize(sourcePath).toString()
-            } else if (!sourcePath.isAbsolute) {
-                source
             } else {
                 source
             }

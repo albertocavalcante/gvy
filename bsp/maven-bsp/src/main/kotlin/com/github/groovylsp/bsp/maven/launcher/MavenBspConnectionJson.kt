@@ -1,6 +1,9 @@
 package com.github.groovylsp.bsp.maven.launcher
 
-import com.google.gson.GsonBuilder
+import com.github.groovylsp.bsp.maven.server.MavenBspCapabilities
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -16,9 +19,20 @@ object MavenBspConnectionJson {
     private const val SERVER_NAME = "Maven BSP"
     private const val SERVER_VERSION = "0.1.0"
     private const val BSP_VERSION = "2.1.0"
-    private val SUPPORTED_LANGUAGES = listOf("java", "groovy", "kotlin")
 
-    private val gson = GsonBuilder().setPrettyPrinting().create()
+    private val json = Json { prettyPrint = true }
+
+    /**
+     * BSP connection data structure.
+     */
+    @Serializable
+    private data class BspConnectionData(
+        val name: String,
+        val version: String,
+        val bspVersion: String,
+        val languages: List<String>,
+        val argv: List<String>,
+    )
 
     /**
      * Generates the BSP connection JSON content.
@@ -28,19 +42,19 @@ object MavenBspConnectionJson {
      * @return JSON string for the connection file
      */
     fun generate(workspaceRoot: Path, serverJarPath: Path): String {
-        val connectionData = mapOf(
-            "name" to SERVER_NAME,
-            "version" to SERVER_VERSION,
-            "bspVersion" to BSP_VERSION,
-            "languages" to SUPPORTED_LANGUAGES,
-            "argv" to listOf(
+        val connectionData = BspConnectionData(
+            name = SERVER_NAME,
+            version = SERVER_VERSION,
+            bspVersion = BSP_VERSION,
+            languages = MavenBspCapabilities.supportedLanguages(),
+            argv = listOf(
                 "java",
                 "-jar",
                 serverJarPath.toAbsolutePath().toString(),
                 workspaceRoot.toAbsolutePath().toString(),
             ),
         )
-        return gson.toJson(connectionData)
+        return json.encodeToString(connectionData)
     }
 
     /**

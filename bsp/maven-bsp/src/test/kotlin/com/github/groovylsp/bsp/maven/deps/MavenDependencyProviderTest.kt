@@ -54,11 +54,11 @@ class MavenDependencyProviderTest {
                 it.toFile().createNewFile()
             }
             val module = createModuleWithDependencies(
-                MavenDependency("org.codehaus.groovy", "groovy", "4.0.23", "compile"),
+                MavenDependency("org.apache.groovy", "groovy", "4.0.23", "compile"),
             )
             mockResolutionResult(
                 listOf(
-                    createArtifactResult("org.codehaus.groovy", "groovy", "4.0.23", jarPath),
+                    createArtifactResult("org.apache.groovy", "groovy", "4.0.23", jarPath),
                 ),
             )
 
@@ -69,7 +69,7 @@ class MavenDependencyProviderTest {
             val mainItem = result.items.find { !it.target.uri.endsWith(":test") }
             assertThat(mainItem).isNotNull
             assertThat(mainItem!!.modules).hasSize(1)
-            assertThat(mainItem.modules.first().name).isEqualTo("org.codehaus.groovy:groovy")
+            assertThat(mainItem.modules.first().name).isEqualTo("org.apache.groovy:groovy")
             assertThat(mainItem.modules.first().version).isEqualTo("4.0.23")
         }
 
@@ -83,12 +83,12 @@ class MavenDependencyProviderTest {
                 it.toFile().createNewFile()
             }
             val module = createModuleWithDependencies(
-                MavenDependency("org.codehaus.groovy", "groovy", "4.0.23", "compile"),
+                MavenDependency("org.apache.groovy", "groovy", "4.0.23", "compile"),
                 MavenDependency("junit", "junit", "4.13.2", "test"),
             )
             mockResolutionResult(
                 listOf(
-                    createArtifactResult("org.codehaus.groovy", "groovy", "4.0.23", groovyPath),
+                    createArtifactResult("org.apache.groovy", "groovy", "4.0.23", groovyPath),
                     createArtifactResult("junit", "junit", "4.13.2", junitPath),
                 ),
             )
@@ -112,11 +112,11 @@ class MavenDependencyProviderTest {
                 it.toFile().createNewFile()
             }
             val module = createModuleWithDependencies(
-                MavenDependency("org.codehaus.groovy", "groovy", "4.0.23", "compile"),
+                MavenDependency("org.apache.groovy", "groovy", "4.0.23", "compile"),
             )
             mockResolutionResult(
                 listOf(
-                    createArtifactResult("org.codehaus.groovy", "groovy", "4.0.23", groovyPath),
+                    createArtifactResult("org.apache.groovy", "groovy", "4.0.23", groovyPath),
                     createArtifactResult("org.ow2.asm", "asm", "9.6", asmPath),
                 ),
             )
@@ -137,11 +137,11 @@ class MavenDependencyProviderTest {
             cachedPath.toFile().createNewFile()
 
             val module = createModuleWithDependencies(
-                MavenDependency("org.codehaus.groovy", "groovy", "4.0.23", "compile"),
+                MavenDependency("org.apache.groovy", "groovy", "4.0.23", "compile"),
             )
             mockResolutionResult(
                 listOf(
-                    createArtifactResult("org.codehaus.groovy", "groovy", "4.0.23", cachedPath),
+                    createArtifactResult("org.apache.groovy", "groovy", "4.0.23", cachedPath),
                 ),
             )
 

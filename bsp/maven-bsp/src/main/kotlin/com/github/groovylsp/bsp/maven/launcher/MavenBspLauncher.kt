@@ -109,7 +109,7 @@ object MavenBspLauncher {
                         localRepository = Paths.get(args[i + 1])
                         i += 2
                     } else {
-                        i++
+                        throw IllegalArgumentException("--local-repo requires a path argument")
                     }
                 }
                 else -> {

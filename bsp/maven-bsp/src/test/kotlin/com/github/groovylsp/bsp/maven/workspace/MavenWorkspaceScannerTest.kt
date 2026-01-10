@@ -99,7 +99,7 @@ class MavenWorkspaceScannerTest {
                     <version>1.0.0</version>
                     <dependencies>
                         <dependency>
-                            <groupId>org.codehaus.groovy</groupId>
+                            <groupId>org.apache.groovy</groupId>
                             <artifactId>groovy</artifactId>
                             <version>4.0.23</version>
                         </dependency>
@@ -123,7 +123,7 @@ class MavenWorkspaceScannerTest {
 
             val groovyDep = module.dependencies.find { it.artifactId == "groovy" }
             assertThat(groovyDep).isNotNull
-            assertThat(groovyDep!!.groupId).isEqualTo("org.codehaus.groovy")
+            assertThat(groovyDep!!.groupId).isEqualTo("org.apache.groovy")
             assertThat(groovyDep.version).isEqualTo("4.0.23")
             assertThat(groovyDep.scope).isEqualTo("compile") // default
 
@@ -395,7 +395,7 @@ class MavenWorkspaceScannerTest {
                     </properties>
                     <dependencies>
                         <dependency>
-                            <groupId>org.codehaus.groovy</groupId>
+                            <groupId>org.apache.groovy</groupId>
                             <artifactId>groovy</artifactId>
                             <version>${"$"}{groovy.version}</version>
                         </dependency>
@@ -622,7 +622,7 @@ class MavenWorkspaceScannerTest {
                     <dependencyManagement>
                         <dependencies>
                             <dependency>
-                                <groupId>org.codehaus.groovy</groupId>
+                                <groupId>org.apache.groovy</groupId>
                                 <artifactId>groovy</artifactId>
                                 <version>4.0.23</version>
                             </dependency>
@@ -630,7 +630,7 @@ class MavenWorkspaceScannerTest {
                     </dependencyManagement>
                     <dependencies>
                         <dependency>
-                            <groupId>org.codehaus.groovy</groupId>
+                            <groupId>org.apache.groovy</groupId>
                             <artifactId>groovy</artifactId>
                         </dependency>
                     </dependencies>
