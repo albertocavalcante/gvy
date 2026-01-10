@@ -344,10 +344,11 @@ object CompletionProvider {
         }
     }
 
+    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _metadata for Jenkins-specific completions
     private fun CompletionsBuilder.handleContextualCompletions(
         completionContext: ContextType?,
         ctx: CompletionContext,
-        metadata: MergedJenkinsMetadata?,
+        _metadata: MergedJenkinsMetadata?,
     ): Boolean = when (completionContext) {
         // MemberAccess is handled via early return in buildCompletionsList
         is ContextType.MemberAccess -> false
@@ -410,9 +411,11 @@ object CompletionProvider {
      * For now, this is a simple implementation that extracts parameter types from the signature.
      * Future enhancement: Parse the full signature with parameter names.
      *
-     * @param signature The method signature (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
+     * @param signature The method signature
+     *   (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
      * @return List of parameter strings (e.g., ["String", "int"] or ["Map<String,String>"])
      */
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     private fun parseSignatureToParams(signature: String?): List<String> {
         if (signature == null) return emptyList()
 

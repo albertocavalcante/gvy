@@ -172,15 +172,6 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     }
 
     /**
-     * Internal helper to find a SymbolInfo by symbol ID.
-     * Used internally when we need the full SymbolInfo, not just MemberInfo.
-     *
-     * @param symbolId The symbol ID in SemanticDB format
-     * @return The symbol information, or null if not found
-     */
-    private fun findSymbolInternal(symbolId: String): SymbolInfo? = semanticDb.findSymbolDefinition(symbolId)?.second
-
-    /**
      * Find a method in a class (optionally including inherited methods).
      *
      * Note: Inheritance search not yet implemented as SymbolInfo doesn't track inheritance.
@@ -335,6 +326,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @param methodSymbolId The method symbol ID
      * @return The number of parameters
      */
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     private fun extractParameterCount(methodSymbolId: String): Int {
         val startIndex = methodSymbolId.indexOf('(')
         val endIndex = methodSymbolId.indexOf(')')

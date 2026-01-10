@@ -58,6 +58,13 @@ steps:
             }
         }
 
+  # Wait for diagnostics from both files to make the test more robust by ensuring
+  # async compilation has had time to complete before making definition requests.
+  # The fix in #749 already ensures all open documents are compiled before
+  # cross-file resolution, so this additional wait is defensive rather than required.
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
   - waitNotification:
       method: textDocument/publishDiagnostics
       timeoutMs: 20000

@@ -195,6 +195,7 @@ private fun memberAccessFromExpression(
         CompletionProvider.ContextType.MemberAccess(type, name)
     }
 
+@Suppress("ReturnCount") // Multiple validation checks require early returns
 private fun completionFromVariableExpression(
     expression: VariableExpression,
     parent: ASTNode?,

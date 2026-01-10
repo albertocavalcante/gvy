@@ -13,7 +13,8 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
  *
  * Inspired by IntelliJ's PSI-based context detection.
  *
- * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/completion">IntelliJ Groovy Completion</a>
+ * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/completion">
+ * IntelliJ Groovy Completion</a>
  */
 sealed interface AstCompletionContext {
 
