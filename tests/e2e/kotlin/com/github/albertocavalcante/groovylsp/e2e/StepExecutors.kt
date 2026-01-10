@@ -974,3 +974,6 @@ class RenameStepExecutor : StepExecutor<ScenarioStep.Rename> {
         }
     }
 }
+
+// TODO(#808): Extract common pattern from high-level step executors.
+//   See: https://github.com/albertocavalcante/gvy/issues/808
