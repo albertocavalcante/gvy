@@ -261,6 +261,34 @@ class GroovyTextDocumentService(
         )
     }
 
+    /**
+     * Ensures all open documents are compiled and indexed.
+     * Critical for cross-file features (definition, references, implementation) that depend on
+     * the symbol index containing all relevant files.
+     *
+     * Fixes #749: Race condition where cross-file resolution fails when files are opened
+     * via didOpen and definition request arrives before all files finish compiling.
+     */
+    private suspend fun ensureAllOpenDocumentsCompiled() {
+        // Wait for all pending diagnostic jobs (which include compilation)
+        val pendingJobs = diagnosticJobs.values.toList()
+        if (pendingJobs.isNotEmpty()) {
+            logger.debug("Waiting for ${pendingJobs.size} pending compilation jobs")
+            pendingJobs.forEach { it.join() }
+        }
+
+        // Also ensure any documents without pending jobs are compiled
+        documentProvider.getAllUris().forEach { uri ->
+            if (compilationService.getSymbolStorage(uri) == null) {
+                val content = documentProvider.get(uri)
+                if (content != null) {
+                    logger.debug("Compiling unindexed open document: $uri")
+                    compilationService.compile(uri, content)
+                }
+            }
+        }
+    }
+
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
         compilationService.ensureCompiled(uri)?.let { return it }
 
@@ -477,6 +505,10 @@ class GroovyTextDocumentService(
 
             val uri = URI.create(params.textDocument.uri)
 
+            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
+            // Fixes #749: Race condition where target file may not be indexed yet
+            ensureAllOpenDocumentsCompiled()
+
             // CRITICAL: Ensure compilation completes before proceeding
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
@@ -526,6 +558,11 @@ class GroovyTextDocumentService(
 
         try {
             val uri = URI.create(params.textDocument.uri)
+
+            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
+            // Fixes #749: Race condition where target file may not be indexed yet
+            ensureAllOpenDocumentsCompiled()
+
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide references")
@@ -584,6 +621,11 @@ class GroovyTextDocumentService(
 
         try {
             val uri = URI.create(params.textDocument.uri)
+
+            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
+            // Fixes #749: Race condition where target file may not be indexed yet
+            ensureAllOpenDocumentsCompiled()
+
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
                 logger.warn("Document $uri not compiled, cannot provide implementations")
