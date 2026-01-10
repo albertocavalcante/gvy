@@ -840,27 +840,27 @@ class CodeActionStepExecutor : StepExecutor<ScenarioStep.CodeAction> {
                     put("uri", uri)
                 },
             )
-            step.range?.let { range ->
-                put(
-                    "range",
-                    buildJsonObject {
-                        put(
-                            "start",
-                            buildJsonObject {
-                                put("line", range.start.line)
-                                put("character", range.start.character)
-                            },
-                        )
-                        put(
-                            "end",
-                            buildJsonObject {
-                                put("line", range.end.line)
-                                put("character", range.end.character)
-                            },
-                        )
-                    },
-                )
-            }
+            // LSP requires range - use provided range or default to position (0,0)
+            val range = step.range ?: TestRange(TestPosition(0, 0), TestPosition(0, 0))
+            put(
+                "range",
+                buildJsonObject {
+                    put(
+                        "start",
+                        buildJsonObject {
+                            put("line", range.start.line)
+                            put("character", range.start.character)
+                        },
+                    )
+                    put(
+                        "end",
+                        buildJsonObject {
+                            put("line", range.end.line)
+                            put("character", range.end.character)
+                        },
+                    )
+                },
+            )
             put(
                 "context",
                 buildJsonObject {
