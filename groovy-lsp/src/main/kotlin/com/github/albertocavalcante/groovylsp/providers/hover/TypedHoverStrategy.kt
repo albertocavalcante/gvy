@@ -26,7 +26,7 @@ abstract class TypedHoverStrategy<T : ASTNode>(private val nodeType: KClass<T>) 
     override fun canHandle(node: ASTNode): Boolean = nodeType.isInstance(node)
 
     override fun generateHover(node: ASTNode, context: HoverContext): Hover? {
-        if (!nodeType.isInstance(node)) return null
+        if (!canHandle(node)) return null
         @Suppress("UNCHECKED_CAST")
         return generateTypedHover(node as T, context)
     }
