@@ -35,18 +35,13 @@ class NullSafetyRule : AbstractDiagnosticRule() {
         // Matches: list.find { }.value  OR  list.findAll { }.name  OR  x.collect { }.size
         val unsafeAccessPattern = Regex("""(\w+)\.(get|find|findAll|collect|first|last)\s*[{(].*?[})]\.(\w+)""")
 
-        // Filter out lines that already use null-safe operator and use helper for string checking
+        // Build diagnostics for potentially unsafe access patterns
         return findPatternMatches(
             content = content,
             pattern = unsafeAccessPattern,
             excludeComments = true,
             excludeStrings = true,
-        ).filter { lineMatch ->
-            // Check if the matched pattern specifically uses null-safe operator
-            // by examining the text around the match, not the entire line
-            val matchText = lineMatch.line.substring(lineMatch.match.range)
-            !matchText.contains("?.")
-        }.map { lineMatch ->
+        ).map { lineMatch ->
             diagnostic(
                 lineMatch.lineIndex,
                 lineMatch.match.range.first,
