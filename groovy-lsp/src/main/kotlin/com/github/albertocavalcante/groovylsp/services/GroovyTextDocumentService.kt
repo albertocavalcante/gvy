@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
@@ -123,6 +124,26 @@ class GroovyTextDocumentService(
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
 
     private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
+
+    companion object {
+        /**
+         * Maximum iterations for ensureAllOpenDocumentsCompiled loop.
+         * Prevents infinite loops when compilation continuously fails or new files keep being added.
+         */
+        private const val MAX_COMPILATION_ITERATIONS = 10
+
+        /**
+         * Maximum time (milliseconds) to spend in ensureAllOpenDocumentsCompiled.
+         * Prevents indefinite blocking when compilations are slow or stuck.
+         */
+        private const val MAX_COMPILATION_TIMEOUT_MS = 30_000L
+
+        /**
+         * Maximum time (milliseconds) to wait for diagnostic jobs to complete.
+         * Prevents indefinite blocking on joinAll() if jobs are stuck.
+         */
+        private const val MAX_JOB_WAIT_TIMEOUT_MS = 10_000L
+    }
 
     // Track active diagnostic jobs per URI to cancel stale ones (debouncing/throttling)
     private val diagnosticJobs = ConcurrentHashMap<URI, Job>()
@@ -269,28 +290,106 @@ class GroovyTextDocumentService(
      *
      * Fixes #749: Race condition where cross-file resolution fails when files are opened
      * via didOpen and definition request arrives before all files finish compiling.
+     *
+     * SAFEGUARDS (to prevent infinite loops and timeouts):
+     * - MAX_COMPILATION_ITERATIONS: Limits loop iterations
+     * - MAX_COMPILATION_TIMEOUT_MS: Overall timeout for the entire process
+     * - MAX_JOB_WAIT_TIMEOUT_MS: Timeout for waiting on diagnostic jobs
+     * - ensureActive(): Checks for coroutine cancellation
+     * - Exception handling: Catches compilation failures to avoid retry loops
      */
     private suspend fun ensureAllOpenDocumentsCompiled() {
+        var iterations = 0
+        val startTime = System.currentTimeMillis()
+
         // Loop until all open documents are compiled and indexed.
         // This handles the race condition where new documents might be opened
         // or new diagnostic jobs might be started during the process.
         while (true) {
+            // SAFEGUARD 1: Check iteration limit to prevent infinite loops
+            if (iterations >= MAX_COMPILATION_ITERATIONS) {
+                logger.warn(
+                    "ensureAllOpenDocumentsCompiled: Reached max iterations ($MAX_COMPILATION_ITERATIONS). " +
+                        "Some documents may not be fully compiled. This may indicate a compilation loop or " +
+                        "excessive file churn.",
+                )
+                break
+            }
+            iterations++
+
+            // SAFEGUARD 2: Check overall timeout to prevent indefinite blocking
+            val elapsedMs = System.currentTimeMillis() - startTime
+            if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
+                logger.warn(
+                    "ensureAllOpenDocumentsCompiled: Timeout after ${elapsedMs}ms " +
+                        "(limit: ${MAX_COMPILATION_TIMEOUT_MS}ms). " +
+                        "Some documents may not be fully compiled.",
+                )
+                break
+            }
+
+            // SAFEGUARD 3: Check if coroutine was cancelled
+            ensureActive()
+
             // Wait for all pending diagnostic jobs (which include compilation)
-            val pendingJobs = diagnosticJobs.values.toList()
+            // SAFEGUARD 4: Filter out current job to prevent deadlock
+            val currentJob = kotlin.coroutines.coroutineContext[Job]
+            val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
+
             if (pendingJobs.isNotEmpty()) {
-                logger.debug("Waiting for ${pendingJobs.size} pending compilation jobs")
-                pendingJobs.joinAll()
+                logger.debug(
+                    "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
+                        "Waiting for ${pendingJobs.size} pending compilation jobs " +
+                        "(elapsed: ${elapsedMs}ms)",
+                )
+
+                // SAFEGUARD 5: Timeout on joinAll to prevent indefinite blocking
+                val joinResult = withTimeoutOrNull(MAX_JOB_WAIT_TIMEOUT_MS) {
+                    pendingJobs.joinAll()
+                }
+
+                if (joinResult == null) {
+                    logger.warn(
+                        "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
+                            "after ${MAX_JOB_WAIT_TIMEOUT_MS}ms. Proceeding anyway.",
+                    )
+                }
             }
 
             var compiledAny = false
+
             // Also ensure any documents without pending jobs are compiled
-            for (uri in documentProvider.getAllUris()) {
+            // Take a snapshot to avoid concurrent modification issues
+            val urisSnapshot = try {
+                documentProvider.getAllUris().toList()
+            } catch (e: Exception) {
+                logger.error("ensureAllOpenDocumentsCompiled: Error getting URIs snapshot", e)
+                emptyList()
+            }
+
+            for (uri in urisSnapshot) {
+                // Check cancellation in loop
+                ensureActive()
+
                 if (compilationService.getSymbolStorage(uri) == null) {
                     val content = documentProvider.get(uri)
                     if (content != null) {
-                        logger.debug("Compiling unindexed open document: $uri")
-                        compilationService.compile(uri, content)
-                        compiledAny = true
+                        logger.debug("ensureAllOpenDocumentsCompiled: Compiling unindexed document: $uri")
+
+                        // SAFEGUARD 6: Catch exceptions to prevent retry loops
+                        try {
+                            compilationService.compile(uri, content)
+                            compiledAny = true
+                        } catch (e: Exception) {
+                            // Log but continue - don't let one bad file break everything
+                            logger.error(
+                                "ensureAllOpenDocumentsCompiled: Failed to compile $uri. " +
+                                    "Continuing with other files.",
+                                e,
+                            )
+                            // Mark as compiled (even though it failed) to avoid infinite retry
+                            compiledAny = true
+                        }
                     }
                 }
             }
@@ -298,6 +397,10 @@ class GroovyTextDocumentService(
             if (!compiledAny) {
                 // No new documents were compiled in this iteration, so all open documents
                 // should now be compiled and indexed.
+                logger.debug(
+                    "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
+                        "(${elapsedMs}ms)",
+                )
                 break
             }
         }
