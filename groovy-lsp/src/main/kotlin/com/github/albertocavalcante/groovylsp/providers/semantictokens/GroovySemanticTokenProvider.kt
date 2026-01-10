@@ -212,12 +212,12 @@ object GroovySemanticTokenProvider {
 
         // For static imports, highlight the field/method name
         // (e.g., "emptyMap" in "import static Collections.emptyMap")
-        // For regular imports, highlight the class name
-        // (e.g., "ArrayList" in "import java.util.ArrayList")
+        // For regular imports, highlight the alias if present, otherwise the class name
+        // (e.g., "AL" in "import java.util.ArrayList as AL" or "ArrayList" in "import java.util.ArrayList")
         val typeName = if (importNode.isStatic) {
             importNode.fieldName ?: return
         } else {
-            importNode.type?.nameWithoutPackage ?: importNode.alias ?: return
+            importNode.alias ?: importNode.type?.nameWithoutPackage ?: return
         }
 
         var modifiers = 0
@@ -227,10 +227,10 @@ object GroovySemanticTokenProvider {
 
         // Calculate position of the name to highlight in import statement
         // Regular import: "import java.util.ArrayList" -> ArrayList starts after last dot in className
-        // Static import: "import static java.util.Collections.emptyMap" -> emptyMap starts after last dot in className
+        // Regular aliased import: "import java.util.ArrayList as AL" -> AL starts after " as "
+        // Static import: "import static java.util.Collections.emptyMap" -> emptyMap starts after className + dot
         // ImportNode provides the position of the start of the import statement via columnNumber
         val className = importNode.className ?: return
-        val lastDotIndex = className.lastIndexOf('.')
 
         // Account for "import " vs "import static " prefix
         val importPrefixLength = if (importNode.isStatic) {
@@ -239,11 +239,24 @@ object GroovySemanticTokenProvider {
             "import ".length
         }
 
-        val typeNameStart = if (lastDotIndex >= 0) {
-            // Position is: "import [static ]" + full class name up to and including last dot
-            importPrefixLength + lastDotIndex + 1
+        val typeNameStart = if (importNode.isStatic) {
+            // For static imports: position after full class name plus separator dot
+            // e.g., "import static java.util.Collections.emptyMap"
+            // className = "java.util.Collections", need to add dot before fieldName
+            importPrefixLength + className.length + 1
+        } else if (importNode.alias != null) {
+            // For aliased imports: position after " as "
+            // e.g., "import java.util.ArrayList as AL"
+            importPrefixLength + className.length + " as ".length
         } else {
-            importPrefixLength
+            // For regular imports: position after last dot in className
+            // e.g., "import java.util.ArrayList"
+            val lastDotIndex = className.lastIndexOf('.')
+            if (lastDotIndex >= 0) {
+                importPrefixLength + lastDotIndex + 1
+            } else {
+                importPrefixLength
+            }
         }
 
         tokens.add(
