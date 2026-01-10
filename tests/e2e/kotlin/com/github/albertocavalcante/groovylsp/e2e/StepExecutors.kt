@@ -840,7 +840,8 @@ class CodeActionStepExecutor : StepExecutor<ScenarioStep.CodeAction> {
                     put("uri", uri)
                 },
             )
-            // LSP requires range - use provided range or default to position (0,0)
+            // LSP requires range for code actions. Default to (0,0)-(0,0) if not specified,
+            // though meaningful code actions typically require a specific selection range.
             val range = step.range ?: TestRange(TestPosition(0, 0), TestPosition(0, 0))
             put(
                 "range",
