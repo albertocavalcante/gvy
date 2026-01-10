@@ -62,14 +62,18 @@ object MockPatterns {
      * selective stubbing of specific methods.
      *
      * @param T The type to spy on
-     * @param obj The real object to spy on
+     * @param objToCopy The real object to spy on
      * @param name Optional name for the spy (useful for debugging)
      * @param recordPrivateCalls Whether to record private method calls (default: false)
      * @return A spy instance wrapping the real object
      */
-    inline fun <reified T : Any> spy(obj: T, name: String? = null, recordPrivateCalls: Boolean = false): T =
+    inline fun <reified T : Any> spy(
+        objToCopy: T,
+        name: String? = null,
+        recordPrivateCalls: Boolean = false,
+    ): T =
         io.mockk.spyk(
-            objToCopy = obj,
+            objToCopy = objToCopy,
             name = name,
             recordPrivateCalls = recordPrivateCalls,
         )

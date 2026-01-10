@@ -28,7 +28,7 @@ object DiagnosticFixture {
      * @param message The diagnostic message
      * @param line The line number (1-based)
      * @param startCol The start column (1-based)
-     * @param endCol The end column (1-based), defaults to line end if not specified
+     * @param endCol The end column (1-based), defaults to Int.MAX_VALUE to represent "end of line"
      * @param source The source identifier (default: "test")
      * @param code Optional diagnostic code
      * @return A new Diagnostic instance
