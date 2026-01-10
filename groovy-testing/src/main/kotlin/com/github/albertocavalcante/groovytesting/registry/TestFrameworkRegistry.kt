@@ -61,10 +61,12 @@ class TestFrameworkRegistry {
      * Registers a detector only if one for the same framework isn't already registered.
      *
      * Idempotent - safe to call multiple times (e.g., from init blocks).
+     * Thread-safe via synchronization to prevent duplicate registration.
      *
      * @param detector The detector to register.
      * @return true if registered, false if already present.
      */
+    @Synchronized
     fun registerIfAbsent(detector: TestFrameworkDetector): Boolean {
         if (detectors.any { it.framework == detector.framework }) {
             logger.debug("Detector for ${detector.framework} already registered, skipping")
