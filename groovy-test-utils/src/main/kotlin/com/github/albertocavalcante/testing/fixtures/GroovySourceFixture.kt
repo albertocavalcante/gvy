@@ -15,6 +15,11 @@ import kotlin.concurrent.withLock
  * This fixture provides convenient methods for parsing Groovy source code
  * into AST representations (ModuleNode, ClassNode) for testing purposes.
  *
+ * This extends the functionality of {@code ParserTestFixture} with additional
+ * convenience methods like {@code parseToClass()}, {@code parseToModule()},
+ * {@code parseMultiple()}, and {@code parseAndAssertSuccess()} that simplify
+ * common test patterns and reduce boilerplate in test code.
+ *
  * Parse operations are synchronized per instance using a lock to prevent
  * concurrent invocations on the same {@code GroovySourceFixture} instance
  * from interleaving. It does not coordinate access across different
