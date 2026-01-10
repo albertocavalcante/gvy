@@ -9,7 +9,6 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.gvy.semantics.TypeNames
 import com.github.albertocavalcante.gvy.semantics.TypeStringUtils
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -662,6 +661,7 @@ private object InlayHintsCandidates {
             .toList()
     }
 
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     fun findClasspathConstructorCandidates(
         typeName: String,
         argCount: Int,

@@ -44,6 +44,7 @@ class SourceNavigationService(
      * @param className Fully qualified class name
      * @return SourceResult indicating where to navigate
      */
+    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
     override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult {
         logger.debug("Navigating to source for: {} from {}", className, classpathUri)
 

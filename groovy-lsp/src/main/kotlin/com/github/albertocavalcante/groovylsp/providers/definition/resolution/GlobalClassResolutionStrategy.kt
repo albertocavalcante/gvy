@@ -56,6 +56,7 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         )
     }
 
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     private suspend fun loadClassNodeFromAst(uri: java.net.URI, className: String): ClassNode? {
         // Ensure the file is compiled (handles case where file is in index but not yet compiled)
         val compilationResult = compilationService.ensureCompiled(uri)
