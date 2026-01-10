@@ -14,6 +14,16 @@ import {
  * derived from the suggestions provided by the LSP server.
  */
 
+// Smart action button labels for toolchain provisioning errors
+const DETECT_AND_SET_JAVA = "Detect & Set Java";
+const ADD_FOOJAY_PLUGIN = "Add Auto-Download Plugin";
+
+// TODO(tech-debt): The extension is taking on responsibilities that ideally belong
+// to the build tool layer (foojay plugin management, JDK detection for toolchain resolution).
+// Once BSP (Build Server Protocol) support is implemented, consider moving these
+// responsibilities to the server side where they can be handled more appropriately.
+// Track: https://github.com/albertocavalcante/gvy/issues/785
+
 /**
  * Shows a VS Code notification for the given error details.
  * Displays up to 2 suggestions as action buttons, plus optional
@@ -61,23 +71,12 @@ export async function showErrorNotification(
 
   const message = buildErrorMessage(errorCode, errorDetails);
 
-  // Limit total buttons to 3 max (VS Code UX guideline)
-  // Priority: Retry Resolution > first suggestion > Show Details
-  const actions: string[] = [];
-
-  if (retryCommand) {
-    actions.push("Retry Resolution");
-  }
-
-  // Add first suggestion if room available (max 3 total)
-  if (actions.length < 3 && errorDetails.suggestions.length > 0) {
-    actions.push(errorDetails.suggestions[0]);
-  }
-
-  // Add Show Details if room available (max 3 total)
-  if (actions.length < 3 && outputChannel) {
-    actions.push("Show Details");
-  }
+  // Build actions based on error type
+  const actions = buildActionsForError(
+    errorDetails,
+    retryCommand,
+    outputChannel,
+  );
 
   // Show notification with action buttons
   if (
@@ -98,7 +97,7 @@ export async function showErrorNotification(
             retryCommand,
           );
           if (!handled) {
-            await handleActionClick(selected);
+            await handleActionClick(selected, errorDetails);
           }
         }
       } catch (err: unknown) {
@@ -120,7 +119,7 @@ export async function showErrorNotification(
             retryCommand,
           );
           if (!handled) {
-            await handleActionClick(selected);
+            await handleActionClick(selected, errorDetails);
           }
         }
       } catch (err: unknown) {
@@ -128,6 +127,51 @@ export async function showErrorNotification(
       }
     })();
   }
+}
+
+/**
+ * Builds action buttons based on error type.
+ * For toolchain errors, provides smart actions instead of raw suggestions.
+ */
+function buildActionsForError(
+  errorDetails: ErrorDetails,
+  retryCommand?: string,
+  outputChannel?: OutputChannel,
+): string[] {
+  const actions: string[] = [];
+
+  // For toolchain provisioning errors, use smart action buttons
+  if (errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED") {
+    // Primary action: Detect & Set Java
+    actions.push(DETECT_AND_SET_JAVA);
+
+    // Secondary action: Add foojay plugin for auto-download
+    if (actions.length < 3) {
+      actions.push(ADD_FOOJAY_PLUGIN);
+    }
+
+    // Show Details if room available
+    if (actions.length < 3 && outputChannel) {
+      actions.push("Show Details");
+    }
+  } else {
+    // Default behavior for other error types
+    if (retryCommand) {
+      actions.push("Retry Resolution");
+    }
+
+    // Add first suggestion if room available (max 3 total)
+    if (actions.length < 3 && errorDetails.suggestions.length > 0) {
+      actions.push(errorDetails.suggestions[0]);
+    }
+
+    // Add Show Details if room available (max 3 total)
+    if (actions.length < 3 && outputChannel) {
+      actions.push("Show Details");
+    }
+  }
+
+  return actions;
 }
 
 /**
@@ -197,9 +241,34 @@ function buildErrorMessage(
  * Handles action button clicks by interpreting the suggestion text
  * and executing the appropriate VS Code command.
  */
-async function handleActionClick(action: string): Promise<void> {
+async function handleActionClick(
+  action: string,
+  errorDetails?: ErrorDetails,
+): Promise<void> {
   // Lazy import vscode to avoid breaking unit tests
   const vscode = await import("vscode");
+
+  // Handle smart actions for toolchain provisioning errors
+  if (action === DETECT_AND_SET_JAVA) {
+    // Extract required version from error details if available
+    const requiredVersion =
+      errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED"
+        ? (errorDetails as ToolchainProvisioningError).requiredVersion
+        : undefined;
+
+    // Execute the detectAndSetJavaHome command with the required version
+    await vscode.commands.executeCommand(
+      "groovy.detectAndSetJavaHome",
+      requiredVersion,
+    );
+    return;
+  }
+
+  if (action === ADD_FOOJAY_PLUGIN) {
+    // Execute the addFoojayResolver command
+    await vscode.commands.executeCommand("groovy.addFoojayResolver");
+    return;
+  }
 
   const lowerAction = action.toLowerCase();
 

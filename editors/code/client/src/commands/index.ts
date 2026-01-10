@@ -12,6 +12,7 @@ import { UpdateService } from "../features/update/UpdateService";
 import { showStatusMenu, getStatusBarManager } from "../ui/statusBar";
 import { toggleDebugLogs, selectLogLevel } from "./logLevel";
 import { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
+import { registerJavaCommands } from "../java/commands";
 
 // Re-export command constants for backward compatibility
 export { RETRY_DEPENDENCY_RESOLUTION } from "./constants";
@@ -228,6 +229,9 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
     },
   );
   disposables.push(retryDependencyResolutionCommand);
+
+  // Register Java-related commands (detectAndSetJavaHome, addFoojayResolver)
+  registerJavaCommands(context);
 
   // Add all disposables to context subscriptions
   context.subscriptions.push(...disposables);
