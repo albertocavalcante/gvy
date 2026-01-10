@@ -67,11 +67,7 @@ object MockPatterns {
      * @param recordPrivateCalls Whether to record private method calls (default: false)
      * @return A spy instance wrapping the real object
      */
-    inline fun <reified T : Any> spy(
-        objToCopy: T,
-        name: String? = null,
-        recordPrivateCalls: Boolean = false,
-    ): T =
+    inline fun <reified T : Any> spy(objToCopy: T, name: String? = null, recordPrivateCalls: Boolean = false): T =
         io.mockk.spyk(
             objToCopy = objToCopy,
             name = name,

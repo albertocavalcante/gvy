@@ -8,10 +8,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.DefinitionParams
+import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -288,14 +291,14 @@ class CrossFileDefinitionRaceTest {
         assertTrue(calcResult.left[0].uri.contains("Calculator.groovy"))
 
         // Test definition for Logger
-        val loggerParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(3, 24)) // "Logger" in new
+        val loggerParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(3, 28)) // "Logger" in new
         val loggerResult = service.definition(loggerParams).get()
         assertTrue(loggerResult.isLeft)
         assertTrue(loggerResult.left.isNotEmpty())
         assertTrue(loggerResult.left[0].uri.contains("Logger.groovy"))
 
         // Test definition for Utils
-        val utilsParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(4, 40)) // "Utils" in Utils.format
+        val utilsParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(4, 27)) // "Utils" in Utils.format
         val utilsResult = service.definition(utilsParams).get()
         assertTrue(utilsResult.isLeft)
         assertTrue(utilsResult.left.isNotEmpty())
@@ -337,9 +340,9 @@ class CrossFileDefinitionRaceTest {
 
         service.didChange(
             DidChangeTextDocumentParams().apply {
-                textDocument = org.eclipse.lsp4j.VersionedTextDocumentIdentifier(calculatorUri, 2)
+                textDocument = VersionedTextDocumentIdentifier(calculatorUri, 2)
                 contentChanges = listOf(
-                    org.eclipse.lsp4j.TextDocumentContentChangeEvent().apply {
+                    TextDocumentContentChangeEvent().apply {
                         text = updatedContent
                     },
                 )
