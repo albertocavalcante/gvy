@@ -42,7 +42,7 @@ class ThreadSafeLRUCache<K, V>(maxSize: Int) :
     /**
      * Put value in cache, evicting old entries if necessary
      */
-    override fun put(key: K, value: V) = lock.write { super.put(key, value) }
+    override fun put(key: K, value: V): V? = lock.write { super.put(key, value) }
 
     /**
      * Remove entry from cache
@@ -85,7 +85,7 @@ class ThreadSafeLRUCache<K, V>(maxSize: Int) :
     fun getStats(): CacheStats = lock.read {
         CacheStats(
             size = super.size(),
-            maxSize = size(),
+            maxSize = maxSize,
             hitRate = 0.0, // Could implement hit rate tracking if needed
         )
     }

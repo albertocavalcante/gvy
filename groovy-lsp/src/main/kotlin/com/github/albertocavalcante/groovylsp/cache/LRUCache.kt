@@ -28,10 +28,7 @@ class LRUCache<K, V>(maxSize: Int) {
     /**
      * Put value in cache, evicting old entries if necessary
      */
-    fun put(key: K, value: V): V? {
-        delegate.put(key, value)
-        return null // Original implementation returned V?, but put didn't use return value
-    }
+    fun put(key: K, value: V): V? = delegate.put(key, value)
 
     /**
      * Remove entry from cache

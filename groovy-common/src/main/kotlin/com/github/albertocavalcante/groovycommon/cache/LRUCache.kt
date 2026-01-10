@@ -21,7 +21,7 @@ import java.util.LinkedHashMap
  * @param K The type of keys maintained by this cache
  * @param V The type of mapped values
  */
-open class LRUCache<K, V>(private val maxSize: Int) : Cache<K, V> {
+open class LRUCache<K, V>(protected val maxSize: Int) : Cache<K, V> {
     private val cache =
         object : LinkedHashMap<K, V>(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>): Boolean = size > maxSize
@@ -29,9 +29,7 @@ open class LRUCache<K, V>(private val maxSize: Int) : Cache<K, V> {
 
     override fun get(key: K): V? = cache[key]
 
-    override fun put(key: K, value: V) {
-        cache[key] = value
-    }
+    override fun put(key: K, value: V): V? = cache.put(key, value)
 
     override fun remove(key: K): V? = cache.remove(key)
 
@@ -54,7 +52,7 @@ open class LRUCache<K, V>(private val maxSize: Int) : Cache<K, V> {
     /**
      * Returns an immutable snapshot of the current cache contents.
      */
-    open fun snapshot(): Map<K, V> = LinkedHashMap<K, V>(cache.size).apply { putAll(cache) }
+    open fun snapshot(): Map<K, V> = cache.toMap()
 
     companion object {
         private const val DEFAULT_INITIAL_CAPACITY = 16

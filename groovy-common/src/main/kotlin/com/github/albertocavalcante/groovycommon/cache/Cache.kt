@@ -25,8 +25,9 @@ interface Cache<K, V> {
      *
      * @param key The key with which the specified value is to be associated
      * @param value The value to be associated with the specified key
+     * @return The previous value associated with the key, or null if there was no mapping for the key
      */
-    fun put(key: K, value: V)
+    fun put(key: K, value: V): V?
 
     /**
      * Removes the mapping for a key from this cache if it is present.
