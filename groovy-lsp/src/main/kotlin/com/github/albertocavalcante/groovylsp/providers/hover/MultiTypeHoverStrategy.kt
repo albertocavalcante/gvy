@@ -4,6 +4,8 @@ import org.codehaus.groovy.ast.ASTNode
 import org.eclipse.lsp4j.Hover
 import kotlin.reflect.KClass
 
+// TODO(#807): Add test coverage for MultiTypeHoverStrategy base class.
+//   See: https://github.com/albertocavalcante/gvy/issues/807
 /**
  * Base class for hover strategies that handle multiple AST node types.
  *
