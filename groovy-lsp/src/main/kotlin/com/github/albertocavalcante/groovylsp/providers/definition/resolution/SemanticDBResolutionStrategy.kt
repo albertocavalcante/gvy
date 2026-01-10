@@ -25,7 +25,11 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
 
     private val logger = LoggerFactory.getLogger(SemanticDBResolutionStrategy::class.java)
 
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
+        // Priority weight for multi-line occurrences (line count is more significant than column offset)
+        @Suppress("MagicNumber") // Configuration constant for scoring multi-line occurrences
+        val multiLinePriorityWeight = 10000
         logger.debug("Attempting SemanticDB resolution at {}:{}", context.documentUri, context.position)
 
         // 1. Get SemanticDocument for current file
@@ -49,7 +53,7 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
                     it.range.endColumn - it.range.startColumn
                 } else {
                     // Prioritize line count for multi-lines, add large constant to differentiate from single line
-                    lineDiff * 10000 + (it.range.endColumn)
+                    lineDiff * multiLinePriorityWeight + (it.range.endColumn)
                 }
             }
         if (occurrence == null) {

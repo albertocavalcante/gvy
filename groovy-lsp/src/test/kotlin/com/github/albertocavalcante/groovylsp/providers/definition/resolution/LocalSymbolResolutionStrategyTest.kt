@@ -145,7 +145,6 @@ class LocalSymbolResolutionStrategyTest {
 
         // Compile both files so they're in the compilation service
         compilationService.compile(calculatorUri, calculatorContent)
-        val calculatorAst = compilationService.getAst(calculatorUri) as? ModuleNode
 
         compilationService.compile(mainUri, mainContent)
         val mainAst = compilationService.getAst(mainUri) as? ModuleNode
@@ -175,7 +174,8 @@ class LocalSymbolResolutionStrategyTest {
         println("ConstructorCallExpression.type position: ${targetClass.lineNumber}:${targetClass.columnNumber}")
         println("ConstructorCallExpression.type redirect URI: ${astVisitor.getUri(targetClass.redirect())}")
         println(
-            "ConstructorCallExpression.type redirect position: ${targetClass.redirect().lineNumber}:${targetClass.redirect().columnNumber}",
+            "ConstructorCallExpression.type redirect position: " +
+                "${targetClass.redirect().lineNumber}:${targetClass.redirect().columnNumber}",
         )
         println("All classes in AST model:")
         astVisitor.getAllClassNodes().forEach { cls ->
