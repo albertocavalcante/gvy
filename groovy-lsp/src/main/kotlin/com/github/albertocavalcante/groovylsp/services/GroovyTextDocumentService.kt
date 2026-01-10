@@ -36,6 +36,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
@@ -329,7 +330,7 @@ class GroovyTextDocumentService(
             }
 
             // SAFEGUARD 3: Check if coroutine was cancelled
-            ensureActive()
+            currentCoroutineContext().ensureActive()
 
             // Wait for all pending diagnostic jobs (which include compilation)
             // SAFEGUARD 4: Filter out current job to prevent deadlock
@@ -369,7 +370,7 @@ class GroovyTextDocumentService(
 
             for (uri in urisSnapshot) {
                 // Check cancellation in loop
-                ensureActive()
+                currentCoroutineContext().ensureActive()
 
                 if (compilationService.getSymbolStorage(uri) == null) {
                     val content = documentProvider.get(uri)
