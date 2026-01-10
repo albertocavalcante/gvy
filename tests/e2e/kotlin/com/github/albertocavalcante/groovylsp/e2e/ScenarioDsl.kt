@@ -443,12 +443,13 @@ class RequestBuilder(private val method: String) {
 
     /**
      * Set document position for requests like completion, hover, definition.
-     * @param path Relative path from workspace root (e.g., "src/Main.groovy")
+     * @param path Relative path from workspace root (e.g., "src/Main.groovy"). Leading '/' is ignored.
      * @param line Line number (0-based)
      * @param character Character offset (0-based)
      */
     fun position(path: String, line: Int, character: Int) {
-        val uri = "{{workspace.uri}}$path"
+        val normalizedPath = path.trimStart('/')
+        val uri = "{{workspace.uri}}$normalizedPath"
         params["textDocument"] = buildJsonObject {
             put("uri", uri)
         }
