@@ -181,15 +181,17 @@ class CrossFileDefinitionRaceTest {
             delay(10) // Small delay to increase chance of race
             val params = DefinitionParams(
                 TextDocumentIdentifier(file2Uri),
-                Position(0, 13), // "File1" reference in "class File2 { File1 f }"
+                Position(0, 14), // "File1" reference in "class File2 { File1 f }" - char 14 is 'F' of File1
             )
             val result = service.definition(params).get()
 
             // Assert that the definition request succeeded and returned a valid result
+            // The key test here is thread safety - no exception should be thrown
             assertTrue(result.isLeft, "Result should be Left (List<Location>) not Right")
             val locations = result.left
-            // The result should contain locations (or be empty if not found, but no exception is the key)
             assertNotNull(locations, "Locations list should not be null")
+            // Note: We don't assert the specific resolution here because type resolution
+            // of field declarations is complex and not the focus of this race condition fix
         }
 
         // Wait for all to complete
