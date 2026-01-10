@@ -314,13 +314,23 @@ class GroovyTextDocumentService(
      * - Exception handling: Catches compilation failures to avoid retry loops
      */
     private suspend fun ensureAllOpenDocumentsCompiled() {
-        // PERFORMANCE OPTIMIZATION: Only proceed if there are pending diagnostic jobs
+        // PERFORMANCE OPTIMIZATION: Check if all documents are already compiled
         // This avoids unnecessary blocking when all documents are already compiled
         val currentJob = currentCoroutineContext()[Job]
         val hasPendingJobs = diagnosticJobs.values.any { it != currentJob && it.isActive }
 
-        if (!hasPendingJobs) {
-            logger.debug("ensureAllOpenDocumentsCompiled: No pending jobs, skipping wait")
+        // Check if all open documents are already compiled
+        val allDocumentsCompiled = try {
+            documentProvider.getAllUris().all { uri ->
+                compilationService.getSymbolStorage(uri) != null
+            }
+        } catch (e: Exception) {
+            logger.debug("ensureAllOpenDocumentsCompiled: Error checking compilation status", e)
+            false
+        }
+
+        if (!hasPendingJobs && allDocumentsCompiled) {
+            logger.debug("ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping")
             return
         }
 
