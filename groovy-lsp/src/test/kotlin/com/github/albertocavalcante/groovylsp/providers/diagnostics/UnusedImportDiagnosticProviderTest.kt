@@ -1,73 +1,139 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
-import io.mockk.every
-import io.mockk.mockk
-import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.ImportNode
-import org.codehaus.groovy.ast.ModuleNode
+import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.DiagnosticTag
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+/**
+ * Integration tests for UnusedImportDiagnosticProvider.
+ * Tests the full flow from source code to diagnostics.
+ */
 class UnusedImportDiagnosticProviderTest {
 
-    private val provider = UnusedImportDiagnosticProvider()
+    private lateinit var compilationService: GroovyCompilationService
+    private lateinit var provider: UnusedImportDiagnosticProvider
+    private val uri = URI.create("file:///Test.groovy")
 
-    @Test
-    fun `should return empty list when no imports`() {
-        val moduleNode = mockk<ModuleNode>()
-        every { moduleNode.imports } returns emptyList()
+    @BeforeEach
+    fun setup() {
+        compilationService = GroovyCompilationService()
+        provider = UnusedImportDiagnosticProvider(compilationService)
+    }
 
-        val diagnostics = provider.checkUnusedImports(moduleNode, emptySet())
-        assertTrue(diagnostics.isEmpty())
+    private fun compile(code: String) = runBlocking {
+        compilationService.compile(uri, code)
     }
 
     @Test
-    fun `should identify unused import`() {
-        val moduleNode = mockk<ModuleNode>()
-        // Use 2-arg constructor: ImportNode(type, alias) - correctly sets alias property
-        val unusedImport = ImportNode(ClassNode("com.unused.Type", 0, null), "Type")
-        unusedImport.lineNumber = 10
-        unusedImport.columnNumber = 1
-        unusedImport.lastLineNumber = 10
-        unusedImport.lastColumnNumber = 21 // Groovy AST: 1-based INCLUSIVE end column
+    fun `should return diagnostics for unused imports`() = runBlocking {
+        val code = """
+            import java.util.ArrayList
+            import java.util.HashMap
 
-        every { moduleNode.imports } returns listOf(unusedImport)
+            ArrayList list = new ArrayList()
+        """.trimIndent()
 
-        // "OtherType" is used, but import alias is "Type" - so this import is unused
-        val diagnostics = provider.checkUnusedImports(moduleNode, setOf("OtherType"))
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
+
+        assertEquals(1, diagnostics.size, "Should detect exactly one unused import")
+        val diag = diagnostics.first()
+        assertTrue(diag.tags.contains(DiagnosticTag.Unnecessary), "Should have Unnecessary tag")
+        assertTrue(diag.message.contains("HashMap"), "Message should mention HashMap")
+        assertEquals(DiagnosticSeverity.Hint, diag.severity, "Should be Hint severity")
+    }
+
+    @Test
+    fun `should return empty list when all imports are used`() = runBlocking {
+        val code = """
+            import java.util.ArrayList
+
+            ArrayList list = new ArrayList()
+        """.trimIndent()
+
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
+
+        assertTrue(diagnostics.isEmpty(), "Should have no diagnostics when all imports are used")
+    }
+
+    @Test
+    fun `should return empty list when no imports exist`() = runBlocking {
+        val code = """
+            class Test {
+                def x = 1
+            }
+        """.trimIndent()
+
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
+
+        assertTrue(diagnostics.isEmpty(), "Should have no diagnostics when there are no imports")
+    }
+
+    @Test
+    fun `diagnostic range should cover import line`() = runBlocking {
+        val code = """
+            import java.util.HashMap
+
+            def x = 1
+        """.trimIndent()
+
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
 
         assertEquals(1, diagnostics.size)
-        val diagnostic = diagnostics.first()
-        assertEquals("Unused import: com.unused.Type", diagnostic.message)
-        assertEquals(9, diagnostic.range.start.line) // LSP is 0-indexed
-        assertEquals(0, diagnostic.range.start.character)
-        assertEquals(9, diagnostic.range.end.line)
-        // Groovy AST lastColumnNumber is 1-based INCLUSIVE (the 21st character is the last one)
-        // LSP range.end.character is 0-based EXCLUSIVE (points after the last character)
-        // 1-based inclusive 21 = 0-based exclusive 21 (no conversion needed!)
-        assertEquals(21, diagnostic.range.end.character)
-        assertEquals(org.eclipse.lsp4j.DiagnosticTag.Unnecessary, diagnostic.tags.first())
+        val range = diagnostics.first().range
+        // LSP is 0-indexed, import is on line 0
+        assertEquals(0, range.start.line)
     }
 
     @Test
-    fun `should not report used import`() {
-        val moduleNode = mockk<ModuleNode>()
-        // NOTE: Use 2-arg constructor: ImportNode(type, alias) - correctly sets alias property
-        // ImportNode.alias is what we check against usedTypeNames
-        val usedImport = ImportNode(ClassNode("com.used.Type", 0, null), "Type")
-        usedImport.lineNumber = 5
-        usedImport.columnNumber = 1
-        usedImport.lastLineNumber = 5
-        usedImport.lastColumnNumber = 25
-        every { moduleNode.imports } returns listOf(usedImport)
+    fun `diagnostic should have correct code for quick fix integration`() = runBlocking {
+        val code = """
+            import java.util.HashMap
 
-        // "Type" is used in the source - matches the alias
-        val diagnostics = provider.checkUnusedImports(moduleNode, setOf("Type"))
+            def x = 1
+        """.trimIndent()
 
-        assertTrue(
-            diagnostics.isEmpty(),
-            "Import with alias 'Type' should not be reported when 'Type' is in usedTypeNames",
-        )
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
+
+        assertEquals(1, diagnostics.size)
+        val diagCode = diagnostics.first().code
+        assertEquals("unused-import", diagCode.left, "Diagnostic code should be 'unused-import'")
+    }
+
+    @Test
+    fun `should detect multiple unused imports`() = runBlocking {
+        val code = """
+            import java.util.ArrayList
+            import java.util.HashMap
+            import java.util.LinkedList
+
+            def x = 1
+        """.trimIndent()
+
+        compile(code)
+        val diagnostics = provider.provideDiagnostics(uri, code).toList()
+
+        assertEquals(3, diagnostics.size, "Should detect all three unused imports")
+    }
+
+    @Test
+    fun `provider should be enabled by default`() {
+        assertTrue(provider.enabledByDefault, "Provider should be enabled by default")
+    }
+
+    @Test
+    fun `provider should have correct id`() {
+        assertEquals("unused-imports", provider.id)
     }
 }

@@ -4,7 +4,9 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -111,6 +113,7 @@ object GroovySemanticTokenProvider {
         val MODIFICATION = maskFor(SemanticTokenModifiers.Modification)
         val DOCUMENTATION = maskFor(SemanticTokenModifiers.Documentation)
         val DEFAULT_LIBRARY = maskFor(SemanticTokenModifiers.DefaultLibrary)
+        val UNNECESSARY = maskFor("unnecessary") // For unused imports dimming
     }
 
     /**
@@ -118,14 +121,26 @@ object GroovySemanticTokenProvider {
      *
      * @param astModel Parsed AST model
      * @param uri Document URI
+     * @param unusedImports Set of unused ImportNodes (for marking with UNNECESSARY modifier)
+     * @param moduleNode Optional ModuleNode to get imports from (for generating import tokens)
      * @return List of semantic tokens
      */
-    fun getSemanticTokens(astModel: GroovyAstModel, uri: URI): List<SemanticToken> {
+    fun getSemanticTokens(
+        astModel: GroovyAstModel,
+        uri: URI,
+        unusedImports: Set<ImportNode> = emptySet(),
+        moduleNode: ModuleNode? = null,
+    ): List<SemanticToken> {
         val tokens = mutableListOf<SemanticToken>()
 
         try {
             val allNodes = astModel.getAllNodes()
             val classNodes = astModel.getAllClassNodes()
+
+            // Visit imports to generate tokens with UNNECESSARY modifier for unused ones
+            if (moduleNode != null) {
+                visitImports(moduleNode, unusedImports, tokens)
+            }
 
             // Visit all class nodes to get declarations
             classNodes.forEach { classNode ->
@@ -162,6 +177,64 @@ object GroovySemanticTokenProvider {
         }
 
         return tokens
+    }
+
+    /**
+     * Visit import statements and generate tokens.
+     * Unused imports get the UNNECESSARY modifier for visual dimming.
+     */
+    private fun visitImports(
+        moduleNode: ModuleNode,
+        unusedImports: Set<ImportNode>,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        moduleNode.imports.forEach { importNode ->
+            visitImportNode(importNode, unusedImports, tokens)
+        }
+    }
+
+    /**
+     * Visit a single import node and generate a semantic token.
+     */
+    private fun visitImportNode(
+        importNode: ImportNode,
+        unusedImports: Set<ImportNode>,
+        tokens: MutableList<SemanticToken>,
+    ) {
+        if (importNode.lineNumber < 0) return
+
+        val typeName = importNode.type?.nameWithoutPackage ?: importNode.alias ?: return
+
+        var modifiers = 0
+        if (importNode in unusedImports) {
+            modifiers = modifiers or TokenModifiers.UNNECESSARY
+        }
+
+        // Calculate position of type name in import statement
+        // "import java.util.ArrayList" -> ArrayList starts at column after last dot
+        // ImportNode provides the position of the start of the import statement
+        val className = importNode.className ?: return
+        val lastDotIndex = className.lastIndexOf('.')
+
+        // The import keyword is 6 chars + 1 space = 7 chars
+        // Then comes the package path
+        val importPrefixLength = "import ".length
+        val typeNameStart = if (lastDotIndex >= 0) {
+            // Position is: "import " + full class name up to and including last dot
+            importPrefixLength + lastDotIndex + 1
+        } else {
+            importPrefixLength
+        }
+
+        tokens.add(
+            SemanticToken(
+                line = importNode.lineNumber - 1, // Convert to 0-based
+                startChar = typeNameStart, // Calculated position of type name
+                length = typeName.length,
+                tokenType = TokenTypes.CLASS,
+                tokenModifiers = modifiers,
+            ),
+        )
     }
 
     /**

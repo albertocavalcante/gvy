@@ -201,6 +201,9 @@
           ],
           "decorator": [
             "entity.name.function.decorator.jenkins"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
           ]
         }
       },
@@ -212,6 +215,9 @@
           ],
           "decorator": [
             "entity.name.function.decorator.jenkins"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
           ]
         }
       }
