@@ -37,7 +37,7 @@ object DiagnosticFixture {
         severity: Severity,
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         source: String = "test",
         code: String? = null,
@@ -66,7 +66,7 @@ object DiagnosticFixture {
     fun error(
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         source: String = "test",
         code: String? = null,
@@ -94,7 +94,7 @@ object DiagnosticFixture {
     fun warning(
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         source: String = "test",
         code: String? = null,
@@ -122,7 +122,7 @@ object DiagnosticFixture {
     fun info(
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         source: String = "test",
         code: String? = null,
@@ -150,7 +150,7 @@ object DiagnosticFixture {
     fun hint(
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         source: String = "test",
         code: String? = null,
@@ -173,7 +173,7 @@ object DiagnosticFixture {
      * @param endCol The end column (1-based)
      * @return A new syntax error Diagnostic
      */
-    fun syntaxError(message: String, line: Int, startCol: Int = 0, endCol: Int = Int.MAX_VALUE): Diagnostic = error(
+    fun syntaxError(message: String, line: Int, startCol: Int = 1, endCol: Int = Int.MAX_VALUE): Diagnostic = error(
         message = message,
         line = line,
         startCol = startCol,
@@ -197,7 +197,7 @@ object DiagnosticFixture {
         ruleName: String,
         message: String,
         line: Int,
-        startCol: Int = 0,
+        startCol: Int = 1,
         endCol: Int = Int.MAX_VALUE,
         severity: Severity = Severity.WARNING,
     ): Diagnostic = create(
