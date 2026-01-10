@@ -43,7 +43,7 @@ class CompletionDslTest {
 
             // Request completion at the position after "prin"
             request("textDocument/completion", saveAs = "completion") {
-                position(line = 2, character = 16)
+                position(path = "src/Main.groovy", line = 2, character = 16)
                 extract("completion.items", "$.items")
             }
 

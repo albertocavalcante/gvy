@@ -233,6 +233,8 @@ sealed interface ScenarioStep {
     data class Formatting(
         val uri: String? = null,
         val path: String? = null,
+        val tabSize: Int = 4,
+        val insertSpaces: Boolean = true,
         val checks: List<JsonCheck> = emptyList(),
     ) : ScenarioStep
 

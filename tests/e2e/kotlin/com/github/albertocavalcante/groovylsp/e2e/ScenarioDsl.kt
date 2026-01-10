@@ -25,8 +25,8 @@ import kotlinx.serialization.json.put
  *
  *     openDocument("src/Main.groovy", "class Foo { prin }")
  *
- *     request("textDocument/completion") {
- *         position(0, 17)
+ *     completion(path = "src/Main.groovy", line = 0, character = 17) {
+ *         jsonPath("$.items") { notEmpty() }
  *     }
  *
  *     assertResponse {
@@ -96,7 +96,7 @@ class ScenarioBuilder(private val source: String? = null) {
     }
 
     /**
-     * Add an initialized step (notification sent by server after initialize).
+     * Send initialized notification to the server (after initialize response).
      */
     fun initialized() {
         steps.add(ScenarioStep.Initialized)
@@ -262,13 +262,23 @@ class ScenarioBuilder(private val source: String? = null) {
 
     /**
      * Request document formatting.
+     * @param path Document path
+     * @param tabSize Tab size for formatting (default: 4)
+     * @param insertSpaces Use spaces instead of tabs (default: true)
      */
-    fun formatting(path: String, block: AssertionBuilder.() -> Unit = {}) {
+    fun formatting(
+        path: String,
+        tabSize: Int = 4,
+        insertSpaces: Boolean = true,
+        block: AssertionBuilder.() -> Unit = {},
+    ) {
         val builder = AssertionBuilder()
         builder.block()
         steps.add(
             ScenarioStep.Formatting(
                 path = path,
+                tabSize = tabSize,
+                insertSpaces = insertSpaces,
                 checks = builder.buildChecks(),
             ),
         )
@@ -425,9 +435,12 @@ class RequestBuilder(private val method: String) {
 
     /**
      * Set document position for requests like completion, hover, definition.
+     * @param path Relative path from workspace root (e.g., "src/Main.groovy")
+     * @param line Line number (0-based)
+     * @param character Character offset (0-based)
      */
-    fun position(line: Int, character: Int) {
-        val uri = "{{workspace.uri}}"
+    fun position(path: String, line: Int, character: Int) {
+        val uri = "{{workspace.uri}}$path"
         params["textDocument"] = buildJsonObject {
             put("uri", uri)
         }
@@ -626,7 +639,7 @@ class JsonExpectationBuilder {
 
     private fun toJsonElement(value: Any): JsonElement = when (value) {
         is String -> JsonPrimitive(value)
-        is Number -> JsonPrimitive(value.toDouble())
+        is Number -> JsonPrimitive(value)
         is Boolean -> JsonPrimitive(value)
         is JsonElement -> value
         else -> JsonPrimitive(value.toString())

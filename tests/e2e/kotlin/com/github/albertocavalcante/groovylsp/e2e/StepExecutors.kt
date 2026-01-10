@@ -14,6 +14,7 @@ import com.jayway.jsonpath.PathNotFoundException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
@@ -863,7 +864,7 @@ class CodeActionStepExecutor : StepExecutor<ScenarioStep.CodeAction> {
             put(
                 "context",
                 buildJsonObject {
-                    // Empty diagnostics for now
+                    put("diagnostics", buildJsonArray {})
                 },
             )
         }
@@ -905,8 +906,8 @@ class FormattingStepExecutor : StepExecutor<ScenarioStep.Formatting> {
             put(
                 "options",
                 buildJsonObject {
-                    put("tabSize", 4)
-                    put("insertSpaces", true)
+                    put("tabSize", step.tabSize)
+                    put("insertSpaces", step.insertSpaces)
                 },
             )
         }
