@@ -21,10 +21,6 @@ dependencies {
     detektPlugins(libs.detekt.formatting)
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
-
 // Skip coverage verification for test utilities module
 tasks.named("koverVerify") {
     enabled = false
