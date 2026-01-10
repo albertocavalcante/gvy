@@ -298,13 +298,13 @@ class CrossFileDefinitionRaceTest {
         assertTrue(loggerResult.left[0].uri.contains("Logger.groovy"))
 
         // Test definition for Utils
-        // Note: Static method calls on class names (e.g., Utils.format()) may not be resolved
-        // by the definition provider. This is a known limitation where the provider focuses
-        // on constructor calls and instance references rather than static method invocations.
+        // FIXME(#813): Static method calls on class names (e.g., Utils.format()) are not resolved
+        // by the definition provider. The provider handles constructor calls and instance references
+        // but not static method invocations. See https://github.com/albertocavalcante/gvy/issues/813
         val utilsParams = DefinitionParams(TextDocumentIdentifier(mainUri), Position(4, 27)) // "Utils" in Utils.format
         val utilsResult = service.definition(utilsParams).get()
         assertTrue(utilsResult.isLeft)
-        // Static method invocations may not resolve - this is acceptable behavior
+        // FIXME(#813): This should assert isNotEmpty() once static method resolution is implemented
         if (utilsResult.left.isNotEmpty()) {
             assertTrue(utilsResult.left[0].uri.contains("Utils.groovy"))
         }
