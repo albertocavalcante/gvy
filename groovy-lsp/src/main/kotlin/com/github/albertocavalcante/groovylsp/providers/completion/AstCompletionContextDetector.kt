@@ -12,7 +12,6 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
-import org.codehaus.groovy.ast.stmt.ExpressionStatement
 
 /**
  * AST-based completion context detector.
@@ -27,8 +26,10 @@ import org.codehaus.groovy.ast.stmt.ExpressionStatement
  * - Builder pattern recognition
  * - Handles incomplete/broken syntax gracefully
  *
- * @see <a href="https://github.com/scalameta/metals/blob/main/metals/src/main/scala/scala/meta/internal/pc/CompletionProvider.scala">Metals CompletionProvider</a>
- * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/completion">IntelliJ Groovy Completion</a>
+ * @see <a href="https://github.com/scalameta/metals/blob/main/metals/src/main/scala/scala/meta/internal/pc/CompletionProvider.scala">
+ * Metals CompletionProvider</a>
+ * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/completion">
+ * IntelliJ Groovy Completion</a>
  */
 object AstCompletionContextDetector {
 
@@ -40,6 +41,7 @@ object AstCompletionContextDetector {
      * @param moduleNode The module node for the file
      * @return The detected completion context
      */
+    @Suppress("ReturnCount") // Multiple context detection paths require early returns
     fun detect(nodeAtCursor: ASTNode?, astModel: GroovyAstModel, moduleNode: ModuleNode?): AstCompletionContext {
         if (nodeAtCursor == null) {
             return AstCompletionContext.TopLevel
@@ -162,10 +164,12 @@ object AstCompletionContextDetector {
      * heuristics and @DelegatesTo extraction). The DSL pattern matching below is non-functional
      * because [findClassByName] always returns null.
      */
+    @Suppress("UnusedParameter", "FunctionParameterNaming")
+    // TODO: Use _closure and _astModel when implementing @DelegatesTo extraction
     private fun inferDelegateType(
-        closure: ClosureExpression,
+        _closure: ClosureExpression,
         enclosingMethodCall: MethodCallExpression?,
-        astModel: GroovyAstModel,
+        _astModel: GroovyAstModel,
     ): ClassNode? {
         // TODO: Implement extraction of delegate type from @DelegatesTo annotations
         // TODO: Implement actual class lookup in findClassByName to enable DSL pattern matching
@@ -252,10 +256,9 @@ object AstCompletionContextDetector {
     /**
      * Infers the expected type for an argument at the given index.
      */
-    private fun inferExpectedArgumentType(methodCall: MethodCallExpression, argumentIndex: Int): ClassNode? {
-        // TODO(#657): Implement method parameter type lookup
-        return null
-    }
+    @Suppress("FunctionOnlyReturningConstant", "UnusedParameter", "FunctionParameterNaming")
+    // TODO(#657): Implement method parameter type lookup
+    private fun inferExpectedArgumentType(_methodCall: MethodCallExpression, _argumentIndex: Int): ClassNode? = null
 
     /**
      * Detects if we're in an annotation context.
@@ -282,10 +285,11 @@ object AstCompletionContextDetector {
     /**
      * Detects the enclosing scope (method body, class body, or top level).
      */
+    @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _moduleNode for top-level scope detection
     private fun detectEnclosingScope(
         node: ASTNode,
         astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
+        _moduleNode: ModuleNode?,
     ): AstCompletionContext? {
         var current: ASTNode? = node
 
@@ -310,6 +314,7 @@ object AstCompletionContextDetector {
     /**
      * Finds the enclosing method call expression.
      */
+    @Suppress("ReturnCount") // Multiple traversal checks require early returns
     private fun findEnclosingMethodCall(node: ASTNode?, astModel: GroovyAstModel): MethodCallExpression? {
         var current: ASTNode? = node
 
@@ -356,38 +361,7 @@ object AstCompletionContextDetector {
     /**
      * Placeholder for class lookup by name.
      */
-    private fun findClassByName(fqn: String): ClassNode? {
-        // TODO: Implement actual class lookup from classpath
-        return null
-    }
-
-    /**
-     * Checks if a node is inside a builder pattern (chained method calls).
-     */
-    private fun isBuilderPattern(node: ASTNode, astModel: GroovyAstModel): Boolean {
-        var methodCallCount = 0
-        var current: ASTNode? = node
-
-        while (current != null) {
-            if (current is MethodCallExpression) {
-                methodCallCount++
-                if (methodCallCount >= 2) {
-                    return true // At least 2 chained calls
-                }
-                // Check if this method call is the receiver of another method call
-                val parent = astModel.getParent(current)
-                if (parent is MethodCallExpression && parent.objectExpression == current) {
-                    // Part of a chained call: move up to the parent call and continue counting
-                    current = parent
-                    continue
-                } else {
-                    // Chain ended; no need to traverse further for builder detection
-                    break
-                }
-            }
-            current = astModel.getParent(current)
-        }
-
-        return methodCallCount >= 2
-    }
+    @Suppress("FunctionOnlyReturningConstant", "UnusedParameter", "FunctionParameterNaming")
+    // TODO: Implement actual class lookup from classpath
+    private fun findClassByName(_fqn: String): ClassNode? = null
 }

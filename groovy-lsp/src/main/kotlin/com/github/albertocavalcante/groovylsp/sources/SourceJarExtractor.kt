@@ -38,6 +38,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
      * @param sourceJarPath Path to the source JAR
      * @return Map of fully qualified class names to extracted source file paths
      */
+    @Suppress("ReturnCount") // Multiple validation checks require early returns
     fun extractAndIndex(sourceJarPath: Path): Map<String, Path> {
         // Check cache first
         extractionCache[sourceJarPath]?.let { return it }

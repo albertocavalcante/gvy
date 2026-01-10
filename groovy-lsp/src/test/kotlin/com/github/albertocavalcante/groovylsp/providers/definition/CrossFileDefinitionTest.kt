@@ -58,7 +58,7 @@ class CrossFileDefinitionTest {
 
         // Compile Main.groovy
         // Even though Calculator is not defined, Groovy still parses the AST
-        val mainResult = compilationService.compile(mainUri, mainContent)
+        compilationService.compile(mainUri, mainContent)
         val mainAst = compilationService.getAst(mainUri) as? ModuleNode
         assertNotNull(mainAst, "Main AST should exist")
 
@@ -166,7 +166,8 @@ class CrossFileDefinitionTest {
                 assertEquals(
                     calculatorUri,
                     resolvedUri,
-                    "BUG REPRODUCED! Expected Calculator.groovy but got $resolvedUri. The fix should prevent Main.groovy from being returned!",
+                    "BUG REPRODUCED! Expected Calculator.groovy but got $resolvedUri. " +
+                        "The fix should prevent Main.groovy from being returned!",
                 )
             }
         }
