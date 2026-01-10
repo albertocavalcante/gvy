@@ -8,13 +8,13 @@ import org.eclipse.lsp4j.Hover
 /**
  * Fallback strategy for generating hover information for any AST node.
  * This should be the last strategy in the chain as it accepts all nodes.
+ *
+ * Note: This strategy cannot use TypedHoverStrategy since it needs to accept
+ * all node types rather than a specific type.
  */
 class GenericHoverStrategy : HoverStrategy {
-    override fun canHandle(node: ASTNode): Boolean {
-        return true // Accept any node
-    }
+    override fun canHandle(node: ASTNode): Boolean = true
 
-    override fun generateHover(node: ASTNode, context: HoverContext): Hover? = context.contentGenerator
-        .generateHover(node, context.moduleNode)
-        .getOrNull()
+    override fun generateHover(node: ASTNode, context: HoverContext): Hover? =
+        context.contentGenerator.generateHover(node, context.moduleNode).getOrNull()
 }

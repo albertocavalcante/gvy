@@ -33,30 +33,22 @@ class PrintlnDebugRule : AbstractDiagnosticRule() {
     override val enabledByDefault = true
 
     override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        val diagnostics = mutableListOf<Diagnostic>()
-        val lines = content.lines()
+        // Use findPatternMatches helper for more control over match processing
+        return findPatternMatches(
+            content = content,
+            pattern = PRINTLN_PATTERN,
+            excludeComments = true,
+        ).mapNotNull { lineMatch ->
+            // Extract the "println" group from the match
+            val printlnGroup = lineMatch.match.groups[2] ?: return@mapNotNull null
 
-        lines.forEachIndexed { lineIndex, line ->
-            // Match println calls (simple pattern)
-            val match = PRINTLN_PATTERN.find(line)
-
-            if (match != null) {
-                val printlnGroup = match.groups[2] ?: return@forEachIndexed
-                val startIndex = printlnGroup.range.first
-                val endIndex = printlnGroup.range.last + 1
-
-                diagnostics.add(
-                    diagnostic(
-                        lineIndex,
-                        startIndex,
-                        endIndex,
-                        "Consider using a proper logger instead of println",
-                        defaultSeverity,
-                    ),
-                )
-            }
-        }
-
-        return diagnostics
+            diagnostic(
+                lineMatch.lineIndex,
+                printlnGroup.range.first,
+                printlnGroup.range.last + 1,
+                "Consider using a proper logger instead of println",
+                defaultSeverity,
+            )
+        }.toList()
     }
 }
