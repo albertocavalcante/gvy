@@ -9,6 +9,9 @@ import org.junit.jupiter.api.Test
  *
  * This demonstrates how to write E2E tests programmatically instead of using YAML files.
  * The DSL provides type safety, IDE support, and better refactoring capabilities.
+ *
+ * TODO(#809): Add test coverage for CodeAction, Formatting, and Rename executors.
+ *   See: https://github.com/albertocavalcante/gvy/issues/809
  */
 class CompletionDslTest {
 
