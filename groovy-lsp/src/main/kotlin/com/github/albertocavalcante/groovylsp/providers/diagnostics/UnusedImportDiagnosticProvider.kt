@@ -49,6 +49,21 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
     }
 
     private fun createDiagnostic(importNode: ImportNode): Diagnostic {
+        // Defensive guard: Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
+        if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0 ||
+            importNode.lastLineNumber <= 0 || importNode.lastColumnNumber < 0
+        ) {
+            // Fallback to safe default position if AST has invalid coordinates
+            return Diagnostic().apply {
+                this.range = Range(Position(0, 0), Position(0, 0))
+                this.severity = DiagnosticSeverity.Hint
+                this.message = "Unused import"
+                this.source = "Groovy"
+                this.tags = listOf(DiagnosticTag.Unnecessary)
+                this.code = Either.forLeft("unused-import")
+            }
+        }
+
         // Line numbers in Groovy AST are 1-based, LSP is 0-based
         // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
         // 1-based inclusive column N equals 0-based exclusive column N (no conversion needed for end)
@@ -57,7 +72,21 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
             Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber),
         )
 
-        val importName = importNode.className ?: importNode.packageName ?: "import"
+        // Build descriptive import name for static/aliased imports
+        val importName = when {
+            // Static import: show class.member (e.g., "Math.PI" not just "Math")
+            importNode.isStatic && !importNode.fieldName.isNullOrBlank() && !importNode.className.isNullOrBlank() ->
+                "${importNode.className}.${importNode.fieldName}"
+            // Aliased import: show original as alias (e.g., "ArrayList as AL")
+            !importNode.alias.isNullOrBlank() && !importNode.className.isNullOrBlank() ->
+                "${importNode.className} as ${importNode.alias}"
+            // Regular import: show class name
+            !importNode.className.isNullOrBlank() -> importNode.className
+            // Package import: show package name
+            !importNode.packageName.isNullOrBlank() -> importNode.packageName
+            // Fallback
+            else -> "import"
+        }
 
         return Diagnostic().apply {
             this.range = range

@@ -42,6 +42,14 @@ object TypeUsageCollector {
 
     private val logger = LoggerFactory.getLogger(TypeUsageCollector::class.java)
 
+    /**
+     * Primitive types and their boxed equivalents that don't require imports.
+     *
+     * Boxed types (Integer, Long, etc.) are intentionally included here even though they're
+     * technically classes from java.lang. This is a deliberate design choice: explicit imports
+     * of boxed types are unnecessary in Groovy due to autoboxing, and marking them as "primitives"
+     * ensures their imports are flagged as unused (which is the expected behavior).
+     */
     private val PRIMITIVES = setOf(
         "int", "long", "short", "byte", "float", "double", "boolean", "char", "void",
         "Integer", "Long", "Short", "Byte", "Float", "Double", "Boolean", "Character", "Void",
@@ -181,8 +189,11 @@ object TypeUsageCollector {
 
             override fun visitDeclarationExpression(expression: DeclarationExpression) {
                 // Only collect if type is explicit (not inferred as Object)
+                // Collect type reference when BOTH conditions are met:
+                // 1. Type is not Object (explicit type annotation)
+                // 2. NOT dynamically typed (has static type information)
                 val type = expression.variableExpression.type
-                if (type.nameWithoutPackage != "Object" || expression.variableExpression.isDynamicTyped.not()) {
+                if (type.nameWithoutPackage != "Object" && expression.variableExpression.isDynamicTyped.not()) {
                     collectTypeReference(type)
                 }
                 super.visitDeclarationExpression(expression)

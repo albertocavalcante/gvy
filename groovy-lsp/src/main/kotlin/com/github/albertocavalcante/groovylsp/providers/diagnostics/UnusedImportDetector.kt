@@ -58,7 +58,9 @@ object UnusedImportDetector {
         // (moduleNode.staticStarImports) are NOT checked because it's impractical
         // to determine if any type from the package is used.
 
-        logger.debug("Found {} unused imports out of {} total", unusedImports.size, moduleNode.imports.size)
+        // Log includes both regular and static imports in the total count
+        val totalImports = moduleNode.imports.size + moduleNode.staticImports.size
+        logger.debug("Found {} unused imports out of {} total", unusedImports.size, totalImports)
         return unusedImports
     }
 

@@ -191,6 +191,11 @@ object GroovySemanticTokenProvider {
         moduleNode.imports.forEach { importNode ->
             visitImportNode(importNode, unusedImports, tokens)
         }
+        // Also cover non-star static imports for dimming
+        // Note: moduleNode.staticStarImports intentionally excluded (star imports always considered used)
+        moduleNode.staticImports.values.forEach { importNode ->
+            visitImportNode(importNode, unusedImports, tokens)
+        }
     }
 
     /**
@@ -201,7 +206,9 @@ object GroovySemanticTokenProvider {
         unusedImports: Set<ImportNode>,
         tokens: MutableList<SemanticToken>,
     ) {
-        if (importNode.lineNumber < 0) return
+        // Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
+        // Match pattern from NativeParserAdapter.kt:103 and DocumentHighlightProvider.kt:178
+        if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0) return
 
         val typeName = importNode.type?.nameWithoutPackage ?: importNode.alias ?: return
 
@@ -211,16 +218,21 @@ object GroovySemanticTokenProvider {
         }
 
         // Calculate position of type name in import statement
-        // "import java.util.ArrayList" -> ArrayList starts at column after last dot
-        // ImportNode provides the position of the start of the import statement
+        // Regular import: "import java.util.ArrayList" -> ArrayList starts after last dot
+        // Static import: "import static java.lang.Math.PI" -> PI starts after last dot
+        // ImportNode provides the position of the start of the import statement via columnNumber
         val className = importNode.className ?: return
         val lastDotIndex = className.lastIndexOf('.')
 
-        // The import keyword is 6 chars + 1 space = 7 chars
-        // Then comes the package path
-        val importPrefixLength = "import ".length
+        // Account for "import " vs "import static " prefix
+        val importPrefixLength = if (importNode.isStatic) {
+            "import static ".length
+        } else {
+            "import ".length
+        }
+
         val typeNameStart = if (lastDotIndex >= 0) {
-            // Position is: "import " + full class name up to and including last dot
+            // Position is: "import [static ]" + full class name up to and including last dot
             importPrefixLength + lastDotIndex + 1
         } else {
             importPrefixLength
@@ -229,7 +241,7 @@ object GroovySemanticTokenProvider {
         tokens.add(
             SemanticToken(
                 line = importNode.lineNumber - 1, // Convert to 0-based
-                startChar = typeNameStart, // Calculated position of type name
+                startChar = (importNode.columnNumber - 1) + typeNameStart, // Account for import start position
                 length = typeName.length,
                 tokenType = TokenTypes.CLASS,
                 tokenModifiers = modifiers,
