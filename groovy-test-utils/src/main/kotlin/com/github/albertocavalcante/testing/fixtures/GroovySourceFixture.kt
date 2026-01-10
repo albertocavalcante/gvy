@@ -86,13 +86,18 @@ class GroovySourceFixture {
      * @return Map of URI strings to ParseResults
      */
     fun parseMultiple(sources: Map<String, String>): Map<String, ParseResult> = lock.withLock {
-        sources.mapValues { (uri, code) ->
-            parser.parse(
-                ParseRequest(
-                    uri = URI.create(uri),
-                    content = code,
-                ),
-            )
+        buildMap {
+            for ((uri, code) in sources) {
+                put(
+                    uri,
+                    parser.parse(
+                        ParseRequest(
+                            uri = URI.create(uri),
+                            content = code,
+                        ),
+                    ),
+                )
+            }
         }
     }
 
