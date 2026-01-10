@@ -729,6 +729,8 @@ class GroovyTextDocumentService(
 
             logger.debug("Found ${locations.size} references")
             locations
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid arguments finding references", e)
             emptyList()
@@ -790,6 +792,8 @@ class GroovyTextDocumentService(
 
             logger.debug("Found ${locations.size} implementations")
             Either.forLeft(locations)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IllegalArgumentException) {
             logger.error("Invalid arguments finding implementations", e)
             Either.forLeft(emptyList())
