@@ -84,9 +84,13 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
     /**
      * Find all regex matches in content, excluding those in comments and optionally strings.
      *
+     * Note: This is a line-based heuristic that handles single-line comments (//) but not
+     * multi-line block comments (/* ... */). For more accurate comment detection, consider
+     * using AST-based analysis.
+     *
      * @param content The source code content to search
      * @param pattern The regex pattern to match
-     * @param excludeComments Whether to skip matches inside comments (default: true)
+     * @param excludeComments Whether to skip matches inside single-line comments (default: true)
      * @param excludeStrings Whether to skip matches inside string literals (default: false)
      * @return Sequence of LineMatch objects containing match details
      */
@@ -99,10 +103,12 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
         val lines = content.lines()
 
         for ((lineIndex, line) in lines.withIndex()) {
-            // Skip comment-only lines if requested
+            // Skip comment-only lines if requested (heuristic for common comment patterns)
             if (excludeComments) {
                 val trimmed = line.trimStart()
-                if (trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
+                // Only skip if the line starts with comment markers AND has no code after
+                // This is a heuristic - it won't catch all cases (e.g., /* comment */ code)
+                if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
                     continue
                 }
             }
@@ -114,9 +120,10 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
                 var shouldExclude = false
 
                 // Check if match is in a single-line comment
+                // Need to verify // is not inside a string
                 if (excludeComments) {
-                    val beforeMatch = line.substring(0, match.range.first)
-                    if (beforeMatch.contains("//")) {
+                    val commentIndex = line.indexOf("//")
+                    if (commentIndex != -1 && match.range.first > commentIndex && !isInString(line, commentIndex)) {
                         shouldExclude = true
                     }
                 }
@@ -168,6 +175,11 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
     /**
      * Check if a position in a line is inside a string literal.
      * Handles both single and double quotes, and respects escape sequences.
+     *
+     * Note: This is a simplified implementation that only handles basic string literals
+     * with single (') and double (") quotes. It does not handle Groovy's triple-quoted
+     * strings (''' or """), slashy strings (/.../), or dollar-slashy strings ($/.../$).
+     * For more accurate string detection, consider using AST-based analysis.
      *
      * @param line The line to check
      * @param position The character position to check

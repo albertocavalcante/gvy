@@ -42,8 +42,10 @@ class NullSafetyRule : AbstractDiagnosticRule() {
             excludeComments = true,
             excludeStrings = true,
         ).filter { lineMatch ->
-            // Skip if the line already uses null-safe operator
-            !lineMatch.line.contains("?.")
+            // Check if the matched pattern specifically uses null-safe operator
+            // by examining the text around the match, not the entire line
+            val matchText = lineMatch.line.substring(lineMatch.match.range)
+            !matchText.contains("?.")
         }.map { lineMatch ->
             diagnostic(
                 lineMatch.lineIndex,
