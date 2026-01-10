@@ -14,6 +14,7 @@ import com.jayway.jsonpath.PathNotFoundException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
@@ -775,3 +776,204 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         logger.info("Golden verification passed for {}", expectedFile.fileName)
     }
 }
+
+// ============================================================================
+// High-level DSL Step Executors
+// ============================================================================
+
+/**
+ * Executor for high-level Completion step.
+ * Translates to textDocument/completion request with assertions.
+ */
+class CompletionStepExecutor : StepExecutor<ScenarioStep.Completion> {
+    override fun execute(step: ScenarioStep.Completion, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val uri = context.resolveUri(step.uri, step.path)
+
+        // Build the completion request params
+        val params = buildJsonObject {
+            put(
+                "textDocument",
+                buildJsonObject {
+                    put("uri", uri)
+                },
+            )
+            put(
+                "position",
+                buildJsonObject {
+                    put("line", step.line)
+                    put("character", step.character)
+                },
+            )
+        }
+
+        // Execute the request
+        val requestStep = ScenarioStep.SendRequest(
+            method = "textDocument/completion",
+            params = params,
+            saveAs = null,
+            extract = emptyList(),
+            timeoutMs = null,
+        )
+        SendRequestStepExecutor().execute(requestStep, context, nextStep)
+
+        // Run assertions if any
+        if (step.checks.isNotEmpty()) {
+            val assertStep = ScenarioStep.Assert(source = null, checks = step.checks)
+            AssertStepExecutor().execute(assertStep, context, nextStep)
+        }
+    }
+}
+
+/**
+ * Executor for high-level CodeAction step.
+ * Translates to textDocument/codeAction request with assertions.
+ */
+class CodeActionStepExecutor : StepExecutor<ScenarioStep.CodeAction> {
+    override fun execute(step: ScenarioStep.CodeAction, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val uri = context.resolveUri(step.uri, step.path)
+
+        // Build the code action request params
+        val params = buildJsonObject {
+            put(
+                "textDocument",
+                buildJsonObject {
+                    put("uri", uri)
+                },
+            )
+            // LSP requires range for code actions. Default to (0,0)-(0,0) if not specified,
+            // though meaningful code actions typically require a specific selection range.
+            val range = step.range ?: TestRange(TestPosition(0, 0), TestPosition(0, 0))
+            put(
+                "range",
+                buildJsonObject {
+                    put(
+                        "start",
+                        buildJsonObject {
+                            put("line", range.start.line)
+                            put("character", range.start.character)
+                        },
+                    )
+                    put(
+                        "end",
+                        buildJsonObject {
+                            put("line", range.end.line)
+                            put("character", range.end.character)
+                        },
+                    )
+                },
+            )
+            put(
+                "context",
+                buildJsonObject {
+                    put("diagnostics", buildJsonArray {})
+                },
+            )
+        }
+
+        // Execute the request
+        val requestStep = ScenarioStep.SendRequest(
+            method = "textDocument/codeAction",
+            params = params,
+            saveAs = null,
+            extract = emptyList(),
+            timeoutMs = null,
+        )
+        SendRequestStepExecutor().execute(requestStep, context, nextStep)
+
+        // Run assertions if any
+        if (step.checks.isNotEmpty()) {
+            val assertStep = ScenarioStep.Assert(source = null, checks = step.checks)
+            AssertStepExecutor().execute(assertStep, context, nextStep)
+        }
+    }
+}
+
+/**
+ * Executor for high-level Formatting step.
+ * Translates to textDocument/formatting request with assertions.
+ */
+class FormattingStepExecutor : StepExecutor<ScenarioStep.Formatting> {
+    override fun execute(step: ScenarioStep.Formatting, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val uri = context.resolveUri(step.uri, step.path)
+
+        // Build the formatting request params
+        val params = buildJsonObject {
+            put(
+                "textDocument",
+                buildJsonObject {
+                    put("uri", uri)
+                },
+            )
+            put(
+                "options",
+                buildJsonObject {
+                    put("tabSize", step.tabSize)
+                    put("insertSpaces", step.insertSpaces)
+                },
+            )
+        }
+
+        // Execute the request
+        val requestStep = ScenarioStep.SendRequest(
+            method = "textDocument/formatting",
+            params = params,
+            saveAs = null,
+            extract = emptyList(),
+            timeoutMs = null,
+        )
+        SendRequestStepExecutor().execute(requestStep, context, nextStep)
+
+        // Run assertions if any
+        if (step.checks.isNotEmpty()) {
+            val assertStep = ScenarioStep.Assert(source = null, checks = step.checks)
+            AssertStepExecutor().execute(assertStep, context, nextStep)
+        }
+    }
+}
+
+/**
+ * Executor for high-level Rename step.
+ * Translates to textDocument/rename request with assertions.
+ */
+class RenameStepExecutor : StepExecutor<ScenarioStep.Rename> {
+    override fun execute(step: ScenarioStep.Rename, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val uri = context.resolveUri(step.uri, step.path)
+
+        // Build the rename request params
+        val params = buildJsonObject {
+            put(
+                "textDocument",
+                buildJsonObject {
+                    put("uri", uri)
+                },
+            )
+            put(
+                "position",
+                buildJsonObject {
+                    put("line", step.line)
+                    put("character", step.character)
+                },
+            )
+            put("newName", step.newName)
+        }
+
+        // Execute the request
+        val requestStep = ScenarioStep.SendRequest(
+            method = "textDocument/rename",
+            params = params,
+            saveAs = null,
+            extract = emptyList(),
+            timeoutMs = null,
+        )
+        SendRequestStepExecutor().execute(requestStep, context, nextStep)
+
+        // Run assertions if any
+        if (step.checks.isNotEmpty()) {
+            val assertStep = ScenarioStep.Assert(source = null, checks = step.checks)
+            AssertStepExecutor().execute(assertStep, context, nextStep)
+        }
+    }
+}
+
+// TODO(#808): Extract common pattern from high-level step executors.
+//   See: https://github.com/albertocavalcante/gvy/issues/808
