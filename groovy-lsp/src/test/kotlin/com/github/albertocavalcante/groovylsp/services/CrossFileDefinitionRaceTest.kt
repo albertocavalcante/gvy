@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.services
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -49,6 +50,7 @@ class CrossFileDefinitionRaceTest {
 
     @AfterEach
     fun tearDown() {
+        scope.cancel()
         compilationService.clearCaches()
     }
 
@@ -140,7 +142,7 @@ class CrossFileDefinitionRaceTest {
         // Immediately request definition (no delay - worst case race condition)
         val params = DefinitionParams(
             TextDocumentIdentifier(mainUri),
-            Position(2, 31), // "Calculator" in "new Calculator()"
+            Position(2, 30), // "Calculator" in "new Calculator()"
         )
 
         val resultFuture = service.definition(params)

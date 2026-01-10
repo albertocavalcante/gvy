@@ -58,10 +58,10 @@ steps:
             }
         }
 
-  # Wait for diagnostics from both files to ensure compilation is complete.
-  # The fix in #749 addresses the race condition by ensuring all open documents
-  # are compiled before cross-file resolution, but the E2E test still needs to wait
-  # for async compilation to complete before making definition requests.
+  # Wait for diagnostics from both files to make the test more robust by ensuring
+  # async compilation has had time to complete before making definition requests.
+  # The fix in #749 already ensures all open documents are compiled before
+  # cross-file resolution, so this additional wait is defensive rather than required.
   - waitNotification:
       method: textDocument/publishDiagnostics
       timeoutMs: 20000
