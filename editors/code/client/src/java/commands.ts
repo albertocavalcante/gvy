@@ -18,6 +18,19 @@ import {
   JavaResolutionExtended,
 } from "./finder";
 
+// Foojay resolver plugin constants
+const FOOJAY_PLUGIN_ID = "org.gradle.toolchains.foojay-resolver-convention";
+const FOOJAY_PLUGIN_VERSION = "0.9.0";
+
+// Pre-compiled regex patterns for detecting foojay plugin in settings files
+const FOOJAY_PLUGIN_ID_ESCAPED = FOOJAY_PLUGIN_ID.replace(/\./g, "\\.");
+const GROOVY_PLUGIN_PATTERN = new RegExp(
+  `plugins\\s*\\{[\\s\\S]*?id\\s+['"]${FOOJAY_PLUGIN_ID_ESCAPED}['"]`,
+);
+const KOTLIN_PLUGIN_PATTERN = new RegExp(
+  `plugins\\s*\\{[\\s\\S]*?id\\s*\\(\\s*["']${FOOJAY_PLUGIN_ID_ESCAPED}["']\\s*\\)`,
+);
+
 /**
  * Command: groovy.detectAndSetJavaHome
  *
@@ -177,7 +190,7 @@ function createJdkItem(
   let detail = `From: ${jdk.sourceDescription}`;
 
   if (isIncompatible) {
-    detail += " $(warning) Requires Java 17+";
+    detail += " $(warning) Not compatible (Java 17+ required)";
   }
 
   return {
@@ -278,12 +291,14 @@ async function createSettingsGradleWithFoojay(
   workspaceUri: vscode.Uri,
 ): Promise<boolean> {
   const settingsPath = vscode.Uri.joinPath(workspaceUri, "settings.gradle");
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(workspaceUri);
+  const rootProjectName = workspaceFolder?.name || "project";
 
   const content = `plugins {
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
+    id '${FOOJAY_PLUGIN_ID}' version '${FOOJAY_PLUGIN_VERSION}'
 }
 
-rootProject.name = '${vscode.workspace.name || "project"}'
+rootProject.name = '${rootProjectName}'
 `;
 
   const edit = new vscode.WorkspaceEdit();
@@ -308,8 +323,8 @@ async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
   const text = document.getText();
   const isKotlin = settingsUri.path.endsWith(".kts");
 
-  // Check if already has foojay
-  if (text.includes("foojay")) {
+  // Check if foojay resolver plugin is already declared in a plugins block
+  if (GROOVY_PLUGIN_PATTERN.test(text) || KOTLIN_PLUGIN_PATTERN.test(text)) {
     vscode.window.showInformationMessage(
       "The foojay-resolver plugin is already configured in this file.",
     );
@@ -318,8 +333,8 @@ async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
 
   // Build the plugin block
   const pluginLine = isKotlin
-    ? `    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"`
-    : `    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'`;
+    ? `    id("${FOOJAY_PLUGIN_ID}") version "${FOOJAY_PLUGIN_VERSION}"`
+    : `    id '${FOOJAY_PLUGIN_ID}' version '${FOOJAY_PLUGIN_VERSION}'`;
 
   const edit = new vscode.WorkspaceEdit();
 

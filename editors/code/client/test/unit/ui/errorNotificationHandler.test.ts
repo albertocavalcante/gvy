@@ -272,7 +272,7 @@ describe("Error Notification Handler", () => {
 
   describe("special action buttons", () => {
     it("should execute retry command and await completion when Retry Resolution is clicked", async () => {
-      // Use a generic error type where "Retry Resolution" would appear as a button
+      // Use GRADLE_JDK_INCOMPATIBLE to test "Retry Resolution" button with toolchain errors
       const errorDetails: GradleJdkIncompatibleError = {
         type: "GRADLE_JDK_INCOMPATIBLE",
         gradleVersion: "7.4",
