@@ -17,6 +17,15 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_kotlin", version = "2.2.2")
 
+# NOTE: rules_kotlin 2.2.2 bundles Kotlin 2.2.21 compiler and kotlinbuilder
+# The kotlinc_version extension CAN override the compiler download, BUT:
+# - The kotlinbuilder (rules_kotlin's compilation wrapper) is pre-compiled against 2.2.21
+# - Compiler plugins load INTO kotlinbuilder's classloader
+# - Plugin version MUST match kotlinbuilder's Kotlin version, not the downloaded compiler
+#
+# To use Kotlin 2.3.0, need rules_kotlin with commit f08e668 or newer (not yet released)
+# For now, we align with the bundled version: Kotlin 2.2.21
+
 # Register custom Kotlin toolchain
 register_toolchains("//tools:kotlin_toolchain")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
@@ -47,7 +56,7 @@ maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 
 maven.install(
     artifacts = [
-        # Kotlin - versions aligned with rules_kotlin 2.2.2 (uses Kotlin 2.2.21)
+        # Kotlin - versions MUST align with rules_kotlin 2.2.2's bundled kotlinbuilder (Kotlin 2.2.21)
         "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",

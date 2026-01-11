@@ -2,8 +2,8 @@
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
 
-# kotlinx-serialization plugin enabled - versions now aligned with rules_kotlin 2.2.2
-# (Kotlin 2.2.21 compiler, serialization plugin 2.2.21)
+# kotlinx-serialization plugin enabled - versions aligned with rules_kotlin 2.2.2
+# (Kotlin 2.2.21 compiler bundled in kotlinbuilder, serialization plugin 2.2.21)
 _DEFAULT_PLUGINS = ["//tools/build_defs:serialization_plugin"]
 
 def _kt_library_impl(name, visibility, srcs, deps, runtime_deps, plugins, **kwargs):

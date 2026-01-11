@@ -9,6 +9,8 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 #
 # All deps are referenced as "//editors/code:node_modules/<package-name>" because
 # the workspace resolution makes them available at the root level.
+# NOTE: Requires `pnpm install` from editors/code/ to generate node_modules with @types/vscode
+# Run: cd editors/code && pnpm install
 ts_project(
     name = "client_lib",
     srcs = glob(
@@ -19,6 +21,7 @@ ts_project(
     declaration = True,
     out_dir = "out",
     source_map = True,
+    tags = ["manual"],  # Excluded until pnpm install generates @types/vscode
     tsconfig = ":tsconfig.json",
     visibility = ["//visibility:public"],
     deps = [
@@ -43,6 +46,7 @@ ts_project(
     declaration = True,
     out_dir = "out",
     source_map = True,
+    tags = ["manual"],  # Excluded until pnpm install generates @types/vscode
     tsconfig = ":tsconfig.json",
     visibility = ["//visibility:public"],
     deps = [
@@ -72,6 +76,7 @@ esbuild(
         "//:production": "external",
         "//conditions:default": "inline",
     }),
+    tags = ["manual"],  # Excluded until pnpm install
     target = "es2020",
     visibility = ["//visibility:public"],
 )
@@ -92,6 +97,7 @@ esbuild(
         "//:production": "external",
         "//conditions:default": "inline",
     }),
+    tags = ["manual"],  # Excluded until pnpm install
     target = "es2020",
     visibility = ["//visibility:public"],
 )
