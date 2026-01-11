@@ -138,9 +138,9 @@
         "category": "View"
       },
       {
-        "command": "groovy.detectAndSetJavaHome",
-        "title": "Groovy: Detect and Set Java Home",
-        "icon": "$(search)"
+        "command": "groovy.configureJava",
+        "title": "Groovy: Configure Java Runtime",
+        "icon": "$(coffee)"
       },
       {
         "command": "groovy.addFoojayResolver",
@@ -252,6 +252,49 @@
         "groovy.java.home": {
           "type": "string",
           "description": "Path to Java home (requires Java 17+)"
+        },
+        "groovy.jdk.suppressMismatchWarning": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Suppress warnings when LSP JDK version is newer than project target. Set this if you intentionally use a newer JDK and accept potential 'Unsupported class file major version' errors."
+        },
+        "groovy.configuration.runtimes": {
+          "type": "array",
+          "scope": "machine-overridable",
+          "description": "Map Java versions to local JDK installations. Used to select the appropriate JDK for projects with specific version requirements.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "path"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Identifier for this JDK (e.g., 'JDK-8', 'JDK-17')",
+                "enum": [
+                  "JDK-8",
+                  "JDK-11",
+                  "JDK-17",
+                  "JDK-21",
+                  "JDK-22",
+                  "JDK-23",
+                  "JDK-24",
+                  "JDK-25"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "description": "Absolute path to the JDK installation directory"
+              },
+              "default": {
+                "type": "boolean",
+                "description": "Reserved for future use. Currently not interpreted by the extension."
+              }
+            }
+          },
+          "default": []
         },
         "groovy.trace.server": {
           "type": "string",

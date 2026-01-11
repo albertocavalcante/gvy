@@ -6,30 +6,49 @@ import {
   GroovyJdkIncompatibleError,
   ToolchainProvisioningError,
   GenericError,
+  ProjectJdkNewerWarning,
 } from "../../../src/ui/statusUtils";
 
 describe("Error Notification Handler", () => {
   let showErrorMessageStub: sinon.SinonStub;
   let showWarningMessageStub: sinon.SinonStub;
+  let showInformationMessageStub: sinon.SinonStub;
   let executeCommandStub: sinon.SinonStub;
+  let getConfigurationStub: sinon.SinonStub;
+  let configUpdateStub: sinon.SinonStub;
   let showErrorNotification: typeof import("../../../src/ui/errorNotificationHandler").showErrorNotification;
   let mockVscode: any;
 
   beforeEach(() => {
     showErrorMessageStub = sinon.stub();
     showWarningMessageStub = sinon.stub();
+    showInformationMessageStub = sinon.stub();
     executeCommandStub = sinon.stub();
+    configUpdateStub = sinon.stub();
+    getConfigurationStub = sinon.stub();
 
     // By default, return undefined (no action selected)
     showErrorMessageStub.resolves(undefined);
     showWarningMessageStub.resolves(undefined);
+    showInformationMessageStub.resolves(undefined);
     executeCommandStub.resolves();
+    configUpdateStub.resolves();
+
+    // Mock configuration object
+    const mockConfig = {
+      get: sinon.stub().returns(false), // Default: warnings not suppressed
+      update: configUpdateStub,
+    };
+    getConfigurationStub.returns(mockConfig);
 
     mockVscode = {
       window: {
         showErrorMessage: showErrorMessageStub,
         showWarningMessage: showWarningMessageStub,
-        showInformationMessage: sinon.stub().resolves(undefined),
+        showInformationMessage: showInformationMessageStub,
+      },
+      workspace: {
+        getConfiguration: getConfigurationStub,
       },
       commands: {
         executeCommand: executeCommandStub,
@@ -44,6 +63,9 @@ describe("Error Notification Handler", () => {
         parse: sinon
           .stub()
           .callsFake((url: string) => ({ toString: () => url })),
+      },
+      ConfigurationTarget: {
+        Workspace: 2,
       },
     };
 
@@ -188,7 +210,7 @@ describe("Error Notification Handler", () => {
   });
 
   describe("handleActionClick (via user interaction)", () => {
-    it("should execute detectAndSetJavaHome when Detect & Set Java is clicked", async () => {
+    it("should execute configureJava when Detect & Set Java is clicked", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -208,10 +230,10 @@ describe("Error Notification Handler", () => {
       // Wait for async handler to complete
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Should have called detectAndSetJavaHome command with requiredVersion
+      // Should have called configureJava command with requiredVersion
       assert.ok(
-        executeCommandStub.calledWith("groovy.detectAndSetJavaHome", 17),
-        "should call detectAndSetJavaHome command with required version",
+        executeCommandStub.calledWith("groovy.configureJava", 17),
+        "should call configureJava command with required version",
       );
     });
 
@@ -357,6 +379,141 @@ describe("Error Notification Handler", () => {
       assert.ok(
         mockOutputChannel.show.calledWith(true),
         "output channel show should be called with preserveFocus=true",
+      );
+    });
+  });
+
+  describe("JDK version mismatch warnings (PROJECT_JDK_NEWER_WARNING)", () => {
+    it("should suppress warning when jdk.suppressMismatchWarning is true", async () => {
+      // Configure mock to return true for suppressMismatchWarning
+      const mockConfig = {
+        get: sinon.stub().returns(true),
+        update: configUpdateStub,
+      };
+      getConfigurationStub.returns(mockConfig);
+
+      const warningDetails: ProjectJdkNewerWarning = {
+        type: "PROJECT_JDK_NEWER_WARNING",
+        runningJdkVersion: 21,
+        targetJdkVersion: 17,
+        configurationSource: "build.gradle",
+        suggestions: [],
+      };
+
+      await showErrorNotification("PROJECT_JDK_NEWER_WARNING", warningDetails);
+
+      // Wait for async handler
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Warning should be suppressed - no notification shown
+      assert.strictEqual(showWarningMessageStub.called, false);
+      assert.ok(
+        mockConfig.get.calledWith("jdk.suppressMismatchWarning", false),
+        "should check suppressMismatchWarning config",
+      );
+    });
+
+    it("should show warning with Configure Java button and execute command with target version", async () => {
+      const warningDetails: ProjectJdkNewerWarning = {
+        type: "PROJECT_JDK_NEWER_WARNING",
+        runningJdkVersion: 21,
+        targetJdkVersion: 17,
+        configurationSource: "build.gradle",
+        suggestions: [],
+      };
+
+      // Simulate user clicking "Configure Java"
+      showWarningMessageStub.resolves("Configure Java");
+
+      await showErrorNotification("PROJECT_JDK_NEWER_WARNING", warningDetails);
+
+      // Wait for async handler to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should show warning with correct message
+      assert.ok(showWarningMessageStub.calledOnce);
+      const call = showWarningMessageStub.getCall(0);
+      assert.ok(call.args[0].includes("LSP JDK 21"));
+      assert.ok(call.args[0].includes("project target 17"));
+      assert.ok(call.args[0].includes("build.gradle"));
+
+      // Should have Configure Java, Dismiss, and Don't Show Again buttons
+      assert.strictEqual(call.args[1], "Configure Java");
+      assert.strictEqual(call.args[2], "Dismiss");
+      assert.strictEqual(call.args[3], "Don't Show Again");
+
+      // Should execute configureJava command with target version
+      assert.ok(
+        executeCommandStub.calledWith("groovy.configureJava", 17),
+        "should call configureJava command with target version 17",
+      );
+    });
+
+    it("should update workspace configuration when Don't Show Again is clicked", async () => {
+      const warningDetails: ProjectJdkNewerWarning = {
+        type: "PROJECT_JDK_NEWER_WARNING",
+        runningJdkVersion: 21,
+        targetJdkVersion: 17,
+        configurationSource: "build.gradle",
+        suggestions: [],
+      };
+
+      // Simulate user clicking "Don't Show Again"
+      showWarningMessageStub.resolves("Don't Show Again");
+
+      await showErrorNotification("PROJECT_JDK_NEWER_WARNING", warningDetails);
+
+      // Wait for async handler to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should update workspace configuration
+      assert.ok(
+        configUpdateStub.calledWith(
+          "jdk.suppressMismatchWarning",
+          true,
+          2, // ConfigurationTarget.Workspace
+        ),
+        "should update jdk.suppressMismatchWarning to true in workspace config",
+      );
+
+      // Should show confirmation message
+      assert.ok(
+        showInformationMessageStub.calledWith(
+          sinon.match(/JDK version mismatch warnings will be suppressed/),
+        ),
+        "should show confirmation that warnings are suppressed",
+      );
+    });
+
+    it("should close notification without action when Dismiss is clicked", async () => {
+      const warningDetails: ProjectJdkNewerWarning = {
+        type: "PROJECT_JDK_NEWER_WARNING",
+        runningJdkVersion: 21,
+        targetJdkVersion: 17,
+        configurationSource: "build.gradle",
+        suggestions: [],
+      };
+
+      // Simulate user clicking "Dismiss"
+      showWarningMessageStub.resolves("Dismiss");
+
+      await showErrorNotification("PROJECT_JDK_NEWER_WARNING", warningDetails);
+
+      // Wait for async handler to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should not execute any command
+      assert.strictEqual(
+        executeCommandStub.called,
+        false,
+        "should not execute any command when Dismiss is clicked",
+      );
+
+      // Should not update configuration
+      assert.strictEqual(
+        configUpdateStub.called,
+        false,
+        "should not update configuration when Dismiss is clicked",
       );
     });
   });

@@ -489,13 +489,24 @@ class ProjectStartupManager(
                     result.targetJdk,
                 )
 
-                // Show warning message but continue
-                client?.showMessage(
-                    MessageParams().apply {
-                        type = MessageType.Warning
-                        message = "LSP JDK ${result.runningJdk} is newer than project target ${result.targetJdk}. " +
-                            "You may see 'Unsupported class file major version' errors."
-                    },
+                // Create structured warning details for client-side handling
+                val warningDetails = ProjectJdkNewerWarning(
+                    runningJdkVersion = result.runningJdk,
+                    targetJdkVersion = result.targetJdk,
+                    configurationSource = result.source.displayName,
+                )
+
+                // Send warning status via groovy/status notification
+                // This allows the client to show actionable buttons
+                onStatusUpdate(
+                    Health.Warning,
+                    false, // Not quiescent yet - we'll continue with resolution
+                    "LSP JDK ${result.runningJdk} is newer than project target ${result.targetJdk}. " +
+                        "You may see 'Unsupported class file major version' errors.",
+                    null,
+                    null,
+                    "PROJECT_JDK_NEWER_WARNING",
+                    warningDetails,
                 )
 
                 PreflightResult.Continue

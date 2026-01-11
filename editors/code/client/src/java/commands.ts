@@ -20,7 +20,7 @@ import {
 
 // Foojay resolver plugin constants
 const FOOJAY_PLUGIN_ID = "org.gradle.toolchains.foojay-resolver-convention";
-const FOOJAY_PLUGIN_VERSION = "0.9.0";
+const FOOJAY_PLUGIN_VERSION = "1.0.0";
 
 // Pre-compiled regex patterns for detecting foojay plugin in settings files
 const FOOJAY_PLUGIN_ID_ESCAPED = FOOJAY_PLUGIN_ID.replace(/\./g, "\\.");
@@ -32,91 +32,171 @@ const KOTLIN_PLUGIN_PATTERN = new RegExp(
 );
 
 /**
- * Command: groovy.detectAndSetJavaHome
+ * Command: groovy.configureJava
  *
- * Detects all installed JDKs and presents a picker for the user to select one.
- * Sets the selected JDK path in the groovy.java.home setting.
+ * Shows a picker with detected JDKs and allows manual path selection.
+ * Sets the selected JDK path in the workspace settings (.vscode/settings.json).
  *
  * @param requiredVersion Optional version to prioritize (e.g., from toolchain error)
  * @returns true if a JDK was selected and configured, false otherwise
  */
-export async function detectAndSetJavaHome(
+export async function configureJava(
   requiredVersion?: number,
 ): Promise<boolean> {
-  return vscode.window.withProgress(
+  // Find all JDKs with progress indicator
+  const jdks = await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: "Detecting installed JDKs...",
       cancellable: false,
     },
-    async () => {
-      // Find all JDKs, prioritizing the required version
-      const jdks = await findAllJdks(undefined, requiredVersion);
-
-      if (jdks.length === 0) {
-        await showNoJdksFoundMessage(requiredVersion);
-        return false;
-      }
-
-      // Build QuickPick items
-      const items = buildQuickPickItems(jdks, requiredVersion);
-
-      // Show picker
-      const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: requiredVersion
-          ? `Select a JDK (Java ${requiredVersion} recommended)`
-          : "Select a JDK to use for Groovy projects",
-        title: "Select Java Home",
-      });
-
-      if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {
-        return false;
-      }
-
-      // Type guard: after excluding separator, we know jdk exists
-      const jdk = selected.jdk;
-      if (!jdk) {
-        return false;
-      }
-
-      // Set the selected JDK
-      const config = vscode.workspace.getConfiguration("groovy");
-      await config.update(
-        "java.home",
-        jdk.path,
-        vscode.ConfigurationTarget.Global,
-      );
-
-      // Show success message
-      const restartAction = "Restart Server";
-      const result = await vscode.window.showInformationMessage(
-        `Java home set to Java ${jdk.version} (${jdk.path}). Restart the server to apply changes.`,
-        restartAction,
-      );
-
-      if (result === restartAction) {
-        await vscode.commands.executeCommand("groovy.restartServer");
-      }
-
-      return true;
-    },
+    async () => findAllJdks(undefined, requiredVersion),
   );
+
+  // Build QuickPick items (includes Browse option even if no JDKs found)
+  const items = buildQuickPickItems(jdks, requiredVersion);
+
+  // Show picker
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: requiredVersion
+      ? `Select a JDK (Java ${requiredVersion} recommended)`
+      : "Select a JDK for this workspace",
+    title: "Configure Java Runtime",
+  });
+
+  if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {
+    return false;
+  }
+
+  // Handle browse action
+  if (selected.action === "browse") {
+    return await browseAndSetJavaHome();
+  }
+
+  // Handle JDK selection
+  const jdk = selected.jdk;
+  if (!jdk) {
+    return false;
+  }
+
+  return await setJavaHomeAndRestart(jdk.path, jdk.version);
+}
+
+/**
+ * Opens a folder browser for manual JDK selection.
+ * Validates the selected path is a valid JDK and warns if below minimum version.
+ *
+ * @returns true if a valid JDK was selected and configured, false otherwise
+ */
+async function browseAndSetJavaHome(): Promise<boolean> {
+  const { getRuntime } = await import("jdk-utils");
+
+  const selected = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: "Select JDK",
+    title: "Select Java Home Directory",
+  });
+
+  if (!selected || selected.length === 0) {
+    return false;
+  }
+
+  const jdkPath = selected[0].fsPath;
+
+  // Validate the selected path is a valid JDK
+  try {
+    const runtime = await getRuntime(jdkPath, { withVersion: true });
+    if (!runtime?.version?.major) {
+      vscode.window.showErrorMessage(
+        `The selected folder is not a valid JDK: ${jdkPath}`,
+      );
+      return false;
+    }
+
+    // Warn if version is below minimum
+    if (runtime.version.major < MINIMUM_JAVA_VERSION) {
+      const proceed = await vscode.window.showWarningMessage(
+        `Java ${runtime.version.major} is below the minimum required version (Java ${MINIMUM_JAVA_VERSION}). Continue anyway?`,
+        "Yes",
+        "No",
+      );
+      if (proceed !== "Yes") {
+        return false;
+      }
+    }
+
+    return await setJavaHomeAndRestart(runtime.homedir, runtime.version.major);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to validate JDK at ${jdkPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Sets the Java home in workspace settings and offers to restart the server.
+ * Updates groovy.java.home in .vscode/settings.json (workspace scope).
+ *
+ * @param jdkPath Absolute path to the JDK home directory
+ * @param version Major Java version number
+ * @returns true if settings were updated successfully
+ */
+async function setJavaHomeAndRestart(
+  jdkPath: string,
+  version: number,
+): Promise<boolean> {
+  const config = vscode.workspace.getConfiguration("groovy");
+  await config.update(
+    "java.home",
+    jdkPath,
+    vscode.ConfigurationTarget.Workspace,
+  );
+
+  const restartAction = "Restart Server";
+  const result = await vscode.window.showInformationMessage(
+    `Java home set to Java ${version} in workspace settings. Restart the server to apply.`,
+    restartAction,
+  );
+
+  if (result === restartAction) {
+    await vscode.commands.executeCommand("groovy.restartServer");
+  }
+
+  return true;
 }
 
 interface JdkQuickPickItem extends vscode.QuickPickItem {
   jdk: JavaResolutionExtended;
   kind?: undefined;
+  action?: undefined;
 }
 
 interface SeparatorItem extends vscode.QuickPickItem {
   kind: vscode.QuickPickItemKind.Separator;
   jdk?: undefined;
+  action?: undefined;
 }
 
-type QuickPickItem = JdkQuickPickItem | SeparatorItem;
+interface ActionItem extends vscode.QuickPickItem {
+  action: "browse";
+  jdk?: undefined;
+  kind?: undefined;
+}
+
+type QuickPickItem = JdkQuickPickItem | SeparatorItem | ActionItem;
 
 /**
  * Builds QuickPick items from found JDKs.
+ * Groups JDKs into sections: Recommended (matches required version),
+ * Compatible (>= Java 17), Incompatible (< Java 17).
+ * Always includes a "Browse..." option at the end.
+ *
+ * @param jdks Array of detected JDKs
+ * @param requiredVersion Optional version to mark as "Recommended"
+ * @returns Array of QuickPickItem including separators and browse option
  */
 function buildQuickPickItems(
   jdks: JavaResolutionExtended[],
@@ -166,7 +246,7 @@ function buildQuickPickItems(
   // Add other section (incompatible JDKs)
   if (other.length > 0) {
     items.push({
-      label: "Incompatible (Java < 17)",
+      label: `Incompatible (Java < ${MINIMUM_JAVA_VERSION})`,
       kind: vscode.QuickPickItemKind.Separator,
     });
     for (const jdk of other) {
@@ -174,11 +254,29 @@ function buildQuickPickItems(
     }
   }
 
+  // Add browse option at the end
+  if (items.length > 0) {
+    items.push({
+      label: "",
+      kind: vscode.QuickPickItemKind.Separator,
+    });
+  }
+  items.push({
+    label: "$(folder) Browse...",
+    detail: "Select a JDK folder manually",
+    action: "browse",
+  });
+
   return items;
 }
 
 /**
- * Creates a QuickPick item for a JDK.
+ * Creates a QuickPick item for a JDK with appropriate icons and labels.
+ *
+ * @param jdk The JDK to create an item for
+ * @param isRecommended Whether to mark with a star icon
+ * @param isIncompatible Whether to show incompatibility warning
+ * @returns Formatted QuickPickItem
  */
 function createJdkItem(
   jdk: JavaResolutionExtended,
@@ -190,7 +288,7 @@ function createJdkItem(
   let detail = `From: ${jdk.sourceDescription}`;
 
   if (isIncompatible) {
-    detail += " $(warning) Not compatible (Java 17+ required)";
+    detail += ` $(warning) Not compatible (Java ${MINIMUM_JAVA_VERSION}+ required)`;
   }
 
   return {
@@ -199,34 +297,6 @@ function createJdkItem(
     detail,
     jdk,
   };
-}
-
-/**
- * Shows a message when no JDKs are found.
- */
-async function showNoJdksFoundMessage(requiredVersion?: number): Promise<void> {
-  const versionStr = requiredVersion ? `Java ${requiredVersion}` : "Java 17+";
-  const installAction = "Install Instructions";
-  const manualAction = "Set Manually";
-
-  const result = await vscode.window.showWarningMessage(
-    `No compatible JDKs found. ${versionStr} is required for this project.`,
-    installAction,
-    manualAction,
-  );
-
-  if (result === installAction) {
-    // Open adoptium.net for JDK downloads
-    await vscode.env.openExternal(
-      vscode.Uri.parse("https://adoptium.net/temurin/releases/"),
-    );
-  } else if (result === manualAction) {
-    // Open settings to groovy.java.home
-    await vscode.commands.executeCommand(
-      "workbench.action.openSettings",
-      "groovy.java.home",
-    );
-  }
 }
 
 /**
@@ -286,6 +356,10 @@ export async function addFoojayResolver(): Promise<boolean> {
 
 /**
  * Creates a new settings.gradle file with foojay-resolver plugin.
+ * Used when no settings.gradle exists in the workspace.
+ *
+ * @param workspaceUri URI of the workspace folder
+ * @returns true if the file was created successfully
  */
 async function createSettingsGradleWithFoojay(
   workspaceUri: vscode.Uri,
@@ -317,6 +391,11 @@ rootProject.name = '${rootProjectName}'
 
 /**
  * Inserts the foojay-resolver plugin into an existing settings.gradle file.
+ * Handles both Groovy (.gradle) and Kotlin (.gradle.kts) syntax.
+ * Adds to existing plugins block or creates a new one.
+ *
+ * @param settingsUri URI of the settings.gradle file
+ * @returns true if the plugin was added successfully
  */
 async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
   const document = await vscode.workspace.openTextDocument(settingsUri);
@@ -375,8 +454,8 @@ async function insertFoojayPlugin(settingsUri: vscode.Uri): Promise<boolean> {
 export function registerJavaCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      "groovy.detectAndSetJavaHome",
-      (requiredVersion?: number) => detectAndSetJavaHome(requiredVersion),
+      "groovy.configureJava",
+      (requiredVersion?: number) => configureJava(requiredVersion),
     ),
   );
 
