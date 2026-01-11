@@ -38,17 +38,29 @@ class MethodCallMetadataResolver(
      * @return Resolved metadata if found, null otherwise
      */
     fun resolveMethodCall(call: MethodCallExpression, moduleNode: ModuleNode?): MethodMetadata? {
-        val methodName = call.methodAsString ?: return null
+        val methodName = call.methodAsString
+        if (methodName.isNullOrBlank()) {
+            logger.debug("Method name is null or blank")
+            return null
+        }
+
         val receiverType = resolveReceiverType(call, moduleNode) ?: return null
+
+        // Get argument count from method call for better overload resolution
+        val argCount = when (val args = call.arguments) {
+            is org.codehaus.groovy.ast.expr.ArgumentListExpression -> args.expressions.size
+            is org.codehaus.groovy.ast.expr.TupleExpression -> args.expressions.size
+            else -> null
+        }
 
         // 1. Try GDK first (higher priority for Groovy extension methods)
         gdkProvider.getMethodsForType(receiverType)
-            .find { it.name == methodName }
+            .find { it.name == methodName && (argCount == null || it.parameterTypes.size == argCount) }
             ?.let { return it.toMethodMetadata() }
 
         // 2. Then classpath
         classpathService.getMethods(receiverType)
-            .find { it.name == methodName && it.isPublic }
+            .find { it.name == methodName && it.isPublic && (argCount == null || it.parameters.size == argCount) }
             ?.let { return it.toMethodMetadata() }
 
         return null
@@ -83,9 +95,11 @@ class MethodCallMetadataResolver(
      * Converts a GDK extension method to method metadata.
      */
     private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata {
-        val params = parameterTypes.zip(parameterNames).joinToString(", ") { (type, name) ->
-            "$type $name"
-        }
+        // Use mapIndexed to avoid truncation when parameterNames.size < parameterTypes.size
+        val params = parameterTypes.mapIndexed { i, type ->
+            val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+            "$type $paramName"
+        }.joinToString(", ")
         val signature = "$returnType $name($params)"
         return MethodMetadata(
             signature = signature,
@@ -99,9 +113,11 @@ class MethodCallMetadataResolver(
      * Converts a classpath method to method metadata.
      */
     private fun com.github.albertocavalcante.groovylsp.services.ReflectedMethod.toMethodMetadata(): MethodMetadata {
-        val params = parameters.zip(parameterNames).joinToString(", ") { (type, name) ->
-            "$type $name"
-        }
+        // Use mapIndexed to avoid truncation when parameterNames.size < parameters.size
+        val params = parameters.mapIndexed { i, type ->
+            val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+            "$type $paramName"
+        }.joinToString(", ")
         val signature = "$returnType $name($params)"
         return MethodMetadata(
             signature = signature,

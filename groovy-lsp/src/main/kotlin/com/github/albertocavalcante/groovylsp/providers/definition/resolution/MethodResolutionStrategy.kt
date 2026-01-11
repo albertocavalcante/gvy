@@ -49,9 +49,16 @@ class MethodResolutionStrategy(
 
         logger.debug("Resolving method {} on type {}", methodName, receiverType)
 
+        // Get argument count from method call for better overload resolution
+        val argCount = when (val args = methodCall.arguments) {
+            is org.codehaus.groovy.ast.expr.ArgumentListExpression -> args.expressions.size
+            is org.codehaus.groovy.ast.expr.TupleExpression -> args.expressions.size
+            else -> null
+        }
+
         // Find method in classpath
         val method = compilationService.classpathService.getMethods(receiverType)
-            .find { it.name == methodName && it.isPublic }
+            .find { it.name == methodName && it.isPublic && (argCount == null || it.parameters.size == argCount) }
             ?: return SymbolResolutionStrategy.notFound(
                 "Method $methodName not found on type $receiverType",
                 STRATEGY_NAME,

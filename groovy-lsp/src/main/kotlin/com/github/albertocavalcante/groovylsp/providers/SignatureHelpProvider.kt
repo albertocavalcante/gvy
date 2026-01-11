@@ -419,7 +419,13 @@ private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
     val label = buildString {
         append(returnType).append(" ")
         append(name).append("(")
-        append(parameterTypes.zip(parameterNames).joinToString(", ") { "${it.first} ${it.second}" })
+        // Use mapIndexed to avoid truncation when parameterNames.size < parameterTypes.size
+        append(
+            parameterTypes.mapIndexed { i, type ->
+                val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+                "$type $paramName"
+            }.joinToString(", "),
+        )
         append(")")
     }
 
