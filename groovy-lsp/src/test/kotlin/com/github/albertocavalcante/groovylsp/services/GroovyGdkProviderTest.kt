@@ -139,8 +139,8 @@ class GroovyGdkProviderTest {
 
         assertThat(eachMethod).isNotNull
         assertThat(eachMethod?.parameterNames).hasSize(1)
-        // GDK JAR is not compiled with -parameters flag, so we get synthetic names
-        // See issue #830 for tracking the proper fix
+        // GDK JAR is not compiled with -parameters flag, so we get synthetic names.
+        // This is a known limitation; see https://github.com/albertocavalcante/groovy-lsp/issues/830
         assertThat(eachMethod?.parameterNames).containsExactly("arg1")
         assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
     }

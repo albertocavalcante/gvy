@@ -92,6 +92,8 @@ class MethodResolutionStrategy(
     /**
      * Resolves the receiver type of a method call.
      */
+    // TODO(#650): This logic is duplicated in MethodCallMetadataResolver. Extract to shared utility.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/650
     private fun resolveReceiverType(call: MethodCallExpression, context: ResolutionContext): String? {
         // Handle static calls (e.g., ClassName.method())
         val objectExpr = call.objectExpression

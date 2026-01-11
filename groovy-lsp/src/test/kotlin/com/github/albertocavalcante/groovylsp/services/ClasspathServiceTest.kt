@@ -302,6 +302,8 @@ private class RecordingClasspathReflection : ClasspathReflection {
         return emptyList()
     }
 
+    override fun getFields(className: String): List<ReflectedField> = emptyList()
+
     override fun loadClass(className: String): Class<*>? {
         loadCalls.add(className)
         return loadResult

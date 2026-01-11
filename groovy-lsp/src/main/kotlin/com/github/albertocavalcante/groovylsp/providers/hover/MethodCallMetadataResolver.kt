@@ -71,6 +71,8 @@ class MethodCallMetadataResolver(
     /**
      * Resolves the receiver type of a method call.
      */
+    // TODO(#650): This logic is duplicated in MethodResolutionStrategy. Extract to shared utility.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/650
     private fun resolveReceiverType(call: MethodCallExpression, moduleNode: ModuleNode?): String? {
         // Handle static calls (e.g., ClassName.method())
         val objectExpr = call.objectExpression
@@ -96,6 +98,8 @@ class MethodCallMetadataResolver(
     /**
      * Converts a GDK extension method to method metadata.
      */
+    // TODO(#650): Parameter name handling logic is duplicated in toMethodMetadata extensions.
+    //   Consider extracting to shared utility for consistent parameter formatting.
     private fun GdkExtensionMethod.toMethodMetadata(): MethodMetadata {
         // Use mapIndexed to avoid truncation when parameterNames.size < parameterTypes.size
         val params = parameterTypes.mapIndexed { i, type ->

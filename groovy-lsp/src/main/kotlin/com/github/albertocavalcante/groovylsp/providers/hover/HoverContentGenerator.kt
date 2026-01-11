@@ -100,7 +100,7 @@ class HoverContentGenerator(
     private fun MarkdownBuilder.renderExpressionNode(node: ASTNode, moduleNode: ModuleNode?) = when (node) {
         is VariableExpression -> renderVariableExpression(node, moduleNode)
         is DeclarationExpression -> renderDeclarationExpression(node, moduleNode)
-        is MethodCallExpression -> renderMethodCallExpression(node)
+        is MethodCallExpression -> renderMethodCallExpression(node, moduleNode)
         is ConstructorCallExpression -> renderConstructorCallExpression(node)
         is PropertyExpression -> renderPropertyExpression(node, moduleNode)
         is BinaryExpression -> renderBinaryExpression(node)
@@ -250,7 +250,7 @@ class HoverContentGenerator(
         }
     }
 
-    private fun MarkdownBuilder.renderMethodCallExpression(node: MethodCallExpression) {
+    private fun MarkdownBuilder.renderMethodCallExpression(node: MethodCallExpression, moduleNode: ModuleNode?) {
         val methodName = node.displayMethodName()
         val receiver = node.displayReceiver()
         val arguments = node.displayArguments()
@@ -281,8 +281,8 @@ class HoverContentGenerator(
                 code("groovy") { SignatureFormatter.formatMethod(methodTarget) }
                 keyValue("Owner" to (methodTarget.declaringClass?.nameWithoutPackage ?: "unknown"))
             } else {
-                // Fallback: try classpath/GDK resolution
-                methodCallMetadataResolver?.resolveMethodCall(node, null)?.let { metadata ->
+                // Fallback: try classpath/GDK resolution with module context
+                methodCallMetadataResolver?.resolveMethodCall(node, moduleNode)?.let { metadata ->
                     markdown("**Resolved Target**")
                     code("groovy") { metadata.signature }
                     keyValue("Owner" to metadata.declaringClass)

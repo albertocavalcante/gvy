@@ -719,17 +719,22 @@ object CompletionProvider {
             return
         }
 
+        val classpathService = compilationService.classpathService
+
         // Handle static member completion (e.g., "import static java.lang.Math.PI")
+        // Only if we can actually find the class on the classpath
         if (ctx.isStaticMemberCompletion) {
             val className = ctx.staticClassName
-            if (className != null) {
+            // Try to load the class - if it succeeds, it's a real class; if null, it's a package
+            if (className != null && classpathService.loadClass(className) != null) {
                 addStaticMethodCompletions(className, compilationService, ctx)
                 addStaticFieldCompletions(className, compilationService, ctx)
+                return
             }
-            return
+            // If className is not found, fall through to normal class completion
+            // (it's likely a package path, e.g., "import static org.junit.")
         }
 
-        val classpathService = compilationService.classpathService
         val candidates = if (prefix.contains('.')) {
             classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
         } else {
@@ -779,7 +784,7 @@ object CompletionProvider {
                     kind = CompletionItemKind.Method
                     detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
                     insertText = method.name
-                    textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
+                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${method.name}"))
                 },
             )
         }
@@ -808,7 +813,7 @@ object CompletionProvider {
                     kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
                     detail = "${field.type} ${field.name}"
                     insertText = field.name
-                    textEdit = Either.forLeft(TextEdit(range, "$className.${field.name}"))
+                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${field.name}"))
                 },
             )
         }

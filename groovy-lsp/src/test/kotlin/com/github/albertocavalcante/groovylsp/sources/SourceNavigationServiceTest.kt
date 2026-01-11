@@ -162,6 +162,155 @@ class SourceNavigationServiceTest {
     }
 
     @Nested
+    inner class NavigateToMethodSourceTest {
+
+        @Test
+        fun `navigates to method line number in Java source`() = runBlocking {
+            // Create a JAR with source code
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+
+            val binaryJar = libDir.resolve("mylib.jar")
+            val sourceJar = libDir.resolve("mylib-sources.jar")
+
+            createMinimalJar(binaryJar)
+
+            // Create Java source with a method at a specific line
+            val javaSource = """
+                package com.example;
+
+                public class MyClass {
+                    public void doSomething() {
+                        // Method body
+                    }
+
+                    public int calculate(int x) {
+                        return x * 2;
+                    }
+                }
+            """.trimIndent()
+            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            val service = SourceNavigationService(sourceExtractor = extractor)
+
+            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
+            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "doSomething")
+
+            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
+                "Expected SourceLocation but got: $result"
+            }
+            val location = result as SourceNavigator.SourceResult.SourceLocation
+            assertNotNull(location.lineNumber, "Should have line number for method")
+            assertTrue(location.lineNumber!! > 3, "Method should be after class declaration")
+        }
+
+        @Test
+        fun `falls back to class-level navigation when method not found`() = runBlocking {
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+
+            val binaryJar = libDir.resolve("mylib.jar")
+            val sourceJar = libDir.resolve("mylib-sources.jar")
+
+            createMinimalJar(binaryJar)
+
+            val javaSource = """
+                package com.example;
+
+                public class MyClass {
+                    public void existingMethod() {
+                    }
+                }
+            """.trimIndent()
+            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            val service = SourceNavigationService(sourceExtractor = extractor)
+
+            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
+            // Try to navigate to a method that doesn't exist
+            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "nonExistentMethod")
+
+            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
+                "Should fall back to class-level navigation"
+            }
+            val location = result as SourceNavigator.SourceResult.SourceLocation
+            // Should return class-level location (no method-specific line)
+            assertEquals("com.example.MyClass", location.className, "Should preserve class name on fallback")
+        }
+
+        @Test
+        fun `returns BinaryOnly when source not available for method`() = runBlocking {
+            val service = SourceNavigationService()
+
+            // Use a non-existent JAR
+            val jarUri = URI.create("jar:file:///nonexistent/lib.jar!/com/example/MyClass.class")
+            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "someMethod")
+
+            assertTrue(result is SourceNavigator.SourceResult.BinaryOnly) {
+                "Expected BinaryOnly when source not available"
+            }
+        }
+
+        @Test
+        fun `handles method overloads by name only`() = runBlocking {
+            // Note: Current implementation matches by method name only (not signature)
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+
+            val binaryJar = libDir.resolve("mylib.jar")
+            val sourceJar = libDir.resolve("mylib-sources.jar")
+
+            createMinimalJar(binaryJar)
+
+            val javaSource = """
+                package com.example;
+
+                public class MyClass {
+                    public void add(int x) {
+                    }
+
+                    public void add(int x, int y) {
+                    }
+                }
+            """.trimIndent()
+            createSourceJar(sourceJar, "com/example/MyClass.java", javaSource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            val service = SourceNavigationService(sourceExtractor = extractor)
+
+            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyClass.class")
+            val result = service.navigateToMethodSource(jarUri, "com.example.MyClass", "add")
+
+            // With overloads, JavaSourceInspector returns null (ambiguous)
+            // So we should fall back to class-level navigation
+            assertTrue(result is SourceNavigator.SourceResult.SourceLocation)
+            val location = result as SourceNavigator.SourceResult.SourceLocation
+            assertEquals("com.example.MyClass", location.className)
+        }
+
+        @Test
+        fun `works with JDK classes that have source available`() = runBlocking {
+            val service = SourceNavigationService()
+
+            // Test with a JDK class - result depends on src.zip availability
+            val jrtUri = URI.create("jrt:/java.base/java/util/ArrayList.class")
+            val result = service.navigateToMethodSource(jrtUri, "java.util.ArrayList", "add")
+
+            assertNotNull(result, "Should return a result for JDK method")
+            // Result type depends on whether src.zip is present
+            assertTrue(
+                result is SourceNavigator.SourceResult.SourceLocation ||
+                    result is SourceNavigator.SourceResult.BinaryOnly,
+            )
+        }
+    }
+
+    @Nested
     inner class InstanceTest {
 
         @Test

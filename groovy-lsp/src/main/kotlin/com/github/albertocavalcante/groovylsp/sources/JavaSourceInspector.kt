@@ -63,27 +63,16 @@ class JavaSourceInspector {
     /**
      * Inspect a Java source file to find the definition of a specific method within a class.
      *
-     * TODO(#830): Add parameter count/types to method inspection API for overload resolution
-     *   Current limitation: inspectMethod only matches by name, not signature.
-     *   This causes incorrect navigation when multiple method overloads exist.
-     *
-     *   Required API changes:
-     *   1. Add parameterTypes parameter: inspectMethod(sourcePath, className, methodName, parameterTypes)
-     *   2. Update SourceNavigator.navigateToMethodSource to accept parameter types
-     *   3. Update SourceNavigationService.navigateToMethodSource to pass parameter types
-     *   4. Update method matching logic to compare parameter types, not just name
-     *
-     *   Example problem: navigating to `String.indexOf(String)` may incorrectly navigate
-     *   to `String.indexOf(int)` because we only match by method name.
-     *
-     *   Solution: Match signature using parameter types list for precise overload resolution.
-     *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
-     *
      * @param sourcePath Path to the .java file
      * @param className Fully qualified class name (e.g., "java.util.Date")
      * @param methodName Simple method name (e.g., "getTime")
      * @return InspectionResult containing line number and documentation, or null if not found
      */
+    // TODO(#830): Add parameter count/types to method inspection API for overload resolution.
+    //   Current limitation: inspectMethod only matches by name, not signature, causing incorrect
+    //   navigation when multiple method overloads exist. Requires adding parameterTypes parameter
+    //   and updating method matching logic to compare signatures for precise overload resolution.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
     fun inspectMethod(sourcePath: Path, className: String, methodName: String): InspectionResult? {
         if (!Files.exists(sourcePath)) {
             logger.debug("Source file does not exist: {}", sourcePath)
@@ -123,7 +112,10 @@ class JavaSourceInspector {
             val compilationUnit = parseResult.result.orElse(null) ?: return null
 
             // Extract simple class name for matching
-            val simpleClassName = className.substringAfterLast('.')
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
 
             // Find the class declaration
             val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
@@ -176,7 +168,10 @@ class JavaSourceInspector {
             val compilationUnit = parseResult.result.orElse(null) ?: return null
 
             // Extract simple class name for matching
-            val simpleClassName = className.substringAfterLast('.')
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
 
             // Find the class declaration
             val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
@@ -188,8 +183,22 @@ class JavaSourceInspector {
             }
 
             // Find the method declaration within the class
-            val methodDecl = classDecl.methods
-                .firstOrNull { it.nameAsString == methodName }
+            // Handle method overloading: filter all candidates and warn if ambiguous
+            val methodCandidates = classDecl.methods.filter { it.nameAsString == methodName }
+            val methodDecl = when (methodCandidates.size) {
+                0 -> null
+                1 -> methodCandidates[0]
+                else -> {
+                    logger.debug(
+                        "Ambiguous method {}.{} ({} overloads) in {}",
+                        className,
+                        methodName,
+                        methodCandidates.size,
+                        sourceName,
+                    )
+                    null
+                }
+            }
 
             if (methodDecl == null) {
                 logger.debug("Could not find method {} in class {} in {}", methodName, className, sourceName)
