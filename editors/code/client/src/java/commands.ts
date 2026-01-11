@@ -106,27 +106,34 @@ async function browseAndSetJavaHome(): Promise<boolean> {
   const jdkPath = selected[0].fsPath;
 
   // Validate the selected path is a valid JDK
-  const runtime = await getRuntime(jdkPath, { withVersion: true });
-  if (!runtime?.version?.major) {
+  try {
+    const runtime = await getRuntime(jdkPath, { withVersion: true });
+    if (!runtime?.version?.major) {
+      vscode.window.showErrorMessage(
+        `The selected folder is not a valid JDK: ${jdkPath}`,
+      );
+      return false;
+    }
+
+    // Warn if version is below minimum
+    if (runtime.version.major < MINIMUM_JAVA_VERSION) {
+      const proceed = await vscode.window.showWarningMessage(
+        `Java ${runtime.version.major} is below the minimum required version (Java ${MINIMUM_JAVA_VERSION}). Continue anyway?`,
+        "Yes",
+        "No",
+      );
+      if (proceed !== "Yes") {
+        return false;
+      }
+    }
+
+    return await setJavaHomeAndRestart(runtime.homedir, runtime.version.major);
+  } catch (error) {
     vscode.window.showErrorMessage(
-      `The selected folder is not a valid JDK: ${jdkPath}`,
+      `Failed to validate JDK at ${jdkPath}: ${error instanceof Error ? error.message : String(error)}`,
     );
     return false;
   }
-
-  // Warn if version is below minimum
-  if (runtime.version.major < MINIMUM_JAVA_VERSION) {
-    const proceed = await vscode.window.showWarningMessage(
-      `Java ${runtime.version.major} is below the minimum required version (Java ${MINIMUM_JAVA_VERSION}). Continue anyway?`,
-      "Yes",
-      "No",
-    );
-    if (proceed !== "Yes") {
-      return false;
-    }
-  }
-
-  return await setJavaHomeAndRestart(runtime.homedir, runtime.version.major);
 }
 
 /**
@@ -239,7 +246,7 @@ function buildQuickPickItems(
   // Add other section (incompatible JDKs)
   if (other.length > 0) {
     items.push({
-      label: "Incompatible (Java < 17)",
+      label: `Incompatible (Java < ${MINIMUM_JAVA_VERSION})`,
       kind: vscode.QuickPickItemKind.Separator,
     });
     for (const jdk of other) {
@@ -248,10 +255,12 @@ function buildQuickPickItems(
   }
 
   // Add browse option at the end
-  items.push({
-    label: "",
-    kind: vscode.QuickPickItemKind.Separator,
-  });
+  if (items.length > 0) {
+    items.push({
+      label: "",
+      kind: vscode.QuickPickItemKind.Separator,
+    });
+  }
   items.push({
     label: "$(folder) Browse...",
     detail: "Select a JDK folder manually",
@@ -279,7 +288,7 @@ function createJdkItem(
   let detail = `From: ${jdk.sourceDescription}`;
 
   if (isIncompatible) {
-    detail += " $(warning) Not compatible (Java 17+ required)";
+    detail += ` $(warning) Not compatible (Java ${MINIMUM_JAVA_VERSION}+ required)`;
   }
 
   return {

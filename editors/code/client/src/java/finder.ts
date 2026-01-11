@@ -577,12 +577,12 @@ async function scanSdkmanJdks(
             });
             existingPaths.add(runtime.homedir);
           }
-        } catch {
-          // Invalid JDK path, skip
+        } catch (err) {
+          debugLog(`Invalid JDK path in ${source}: ${javaHome}`, err);
         }
       }
-    } catch {
-      // Directory doesn't exist or isn't readable
+    } catch (err) {
+      debugLog(`Could not scan SDKMAN directory ${candidatesDir}:`, err);
     }
   }
 
@@ -639,9 +639,11 @@ async function readConfiguredRuntimes(
         });
         existingPaths.add(runtime.homedir);
       }
-    } catch {
-      // Invalid path configured, skip silently
-      // TODO: Consider warning the user about invalid configured runtimes
+    } catch (err) {
+      debugLog(
+        `Invalid runtime path configured for ${config.name}: ${expandedPath}`,
+        err,
+      );
     }
   }
 
