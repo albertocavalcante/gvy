@@ -443,7 +443,7 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             )
         } catch (e: TimeoutException) {
             if (step.optional) {
-                logger.info { "Optional step '${step.method}' timed out after $timeoutms - continuing" }
+                logger.info { "Optional step '${step.method}' timed out after ${timeout}ms - continuing" }
                 return
             }
             throw e

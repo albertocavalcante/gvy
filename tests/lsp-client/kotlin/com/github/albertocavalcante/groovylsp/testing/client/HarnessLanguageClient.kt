@@ -207,7 +207,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
         var nextProgressLogTime = if (enableProgressLogging) startTime + progressIntervalNs else Long.MAX_VALUE
 
         if (enableProgressLogging) {
-            logger.info { "Waiting for notification '$method' (timeout: $timeoutMsms)" }
+            logger.info { "Waiting for notification '$method' (timeout: ${timeoutMs}ms)" }
         }
 
         lock.withLock {
@@ -254,7 +254,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
                 // Check if we should skip early (e.g., next step's notification arrived)
                 if (earlySkipPredicate?.invoke() == true) {
                     val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
-                    logger.info { "Early skip triggered after $elapsedMsms - next notification ready" }
+                    logger.info { "Early skip triggered after ${elapsedMs}ms - next notification ready" }
                     return WaitResult(
                         envelope = null,
                         receivedDuringWait = receivedDuringWait,
@@ -273,7 +273,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
                     consumedNotificationIds += match.id
                     val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
                     if (enableProgressLogging) {
-                        logger.info { "Notification '$method' received after $elapsedMsms" }
+                        logger.info { "Notification '$method' received after ${elapsedMs}ms" }
                     }
                     return WaitResult(
                         envelope = match,
@@ -310,7 +310,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
                     val elapsedSec = (now - startTime) / 1_000_000_000
                     val matchedCount = matchedButFailed.size
                     logger.info {
-                        "Still waiting... $elapsedSecs elapsed, received ${receivedDuringWait.size} notifications ($matchedCount matched method but failed check)"
+                        "Still waiting... ${elapsedSec}s elapsed, received ${receivedDuringWait.size} notifications ($matchedCount matched method but failed check)"
                     }
                     nextProgressLogTime = now + progressIntervalNs
                 }

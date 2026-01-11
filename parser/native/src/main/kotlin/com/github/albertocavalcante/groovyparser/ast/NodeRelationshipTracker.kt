@@ -140,7 +140,7 @@ class NodeRelationshipTracker {
         val result = modulesByUri.values.flatMap { module ->
             collectClassDefinitions(module)
         }
-        if (logger.isDebugEnabled) {
+        if (logger.isDebugEnabled()) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
             logger.debug { "[getAllClassNodes] Found ${result.size} classes:" }
             result.forEach { cls ->
