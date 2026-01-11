@@ -112,7 +112,9 @@ class SourceNavigationService(
      * @param classpathUri URI of the class (jrt: or jar:file:...)
      * @param className Fully qualified class name
      * @param methodName Simple method name (e.g., "add")
-     * @return SourceResult indicating where to navigate, or BinaryOnly if method not found
+     * @return SourceResult indicating where to navigate. Returns BinaryOnly if the class source
+     *         cannot be found, or SourceLocation (either method-level with lineNumber, or
+     *         class-level fallback if method cannot be located within the source)
      */
     @Suppress("ReturnCount") // Multiple resolution strategies require early returns
     override suspend fun navigateToMethodSource(
@@ -123,14 +125,10 @@ class SourceNavigationService(
         logger.debug("Navigating to method source for: {}.{} from {}", className, methodName, classpathUri)
 
         // First, navigate to the class source
-        val classResult = navigateToSource(classpathUri, className)
-
-        // If we couldn't navigate to the class source, return that result
-        if (classResult is SourceNavigator.SourceResult.BinaryOnly) {
-            return classResult
+        val sourceLocation = when (val classResult = navigateToSource(classpathUri, className)) {
+            is SourceNavigator.SourceResult.BinaryOnly -> return classResult
+            is SourceNavigator.SourceResult.SourceLocation -> classResult
         }
-
-        val sourceLocation = classResult as SourceNavigator.SourceResult.SourceLocation
 
         // Now find the specific method within the source file
         val sourcePath = try {
