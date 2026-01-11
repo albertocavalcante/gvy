@@ -188,7 +188,7 @@ describe("Error Notification Handler", () => {
   });
 
   describe("handleActionClick (via user interaction)", () => {
-    it("should execute detectAndSetJavaHome when Detect & Set Java is clicked", async () => {
+    it("should execute configureJava when Detect & Set Java is clicked", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -208,10 +208,10 @@ describe("Error Notification Handler", () => {
       // Wait for async handler to complete
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Should have called detectAndSetJavaHome command with requiredVersion
+      // Should have called configureJava command with requiredVersion
       assert.ok(
-        executeCommandStub.calledWith("groovy.detectAndSetJavaHome", 17),
-        "should call detectAndSetJavaHome command with required version",
+        executeCommandStub.calledWith("groovy.configureJava", 17),
+        "should call configureJava command with required version",
       );
     });
 
