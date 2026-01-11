@@ -42,6 +42,12 @@ object ResolutionCodes {
 
     /** Generic dependency resolution failure. */
     const val DEPENDENCY_RESOLUTION_FAILED = "DEPENDENCY_RESOLUTION_FAILED"
+
+    /** Project JDK requirement cannot be met by running JDK (running < required). */
+    const val PROJECT_JDK_INCOMPATIBLE = "PROJECT_JDK_INCOMPATIBLE"
+
+    /** Warning: Running JDK is significantly newer than project target (potential bytecode issues). */
+    const val PROJECT_JDK_MISMATCH_WARNING = "PROJECT_JDK_MISMATCH_WARNING"
 }
 
 /**

@@ -251,3 +251,138 @@ function categorizeSource(sources: string[]): JavaSource {
   }
   return "system";
 }
+
+/**
+ * Extended Java resolution info including raw source names for display.
+ */
+export interface JavaResolutionExtended extends JavaResolution {
+  /** Human-readable source description (e.g., "SDKMAN", "Homebrew", "JAVA_HOME") */
+  sourceDescription: string;
+}
+
+/**
+ * Finds all Java installations on the system.
+ * Returns all JDKs found, sorted by version (descending) and source priority.
+ *
+ * Use this for presenting a picker to the user when they need to select a JDK.
+ *
+ * @param minVersion Optional minimum version filter (default: no filter)
+ * @param preferredVersion Optional version to prioritize in sorting
+ */
+export async function findAllJdks(
+  minVersion?: number,
+  preferredVersion?: number,
+): Promise<JavaResolutionExtended[]> {
+  const results: JavaResolutionExtended[] = [];
+
+  // 1. Use jdk-utils to scan all sources
+  try {
+    const runtimes = await findRuntimes({
+      checkJavac: true,
+      withVersion: true,
+      withTags: true,
+    });
+
+    for (const runtime of runtimes) {
+      if (!runtime.version?.major) continue;
+      if (minVersion && runtime.version.major < minVersion) continue;
+
+      const sources = getSources(runtime);
+      results.push({
+        path: runtime.homedir,
+        version: runtime.version.major,
+        source: categorizeSource(sources),
+        sourceDescription: formatSourceDescription(sources),
+      });
+    }
+  } catch {
+    // jdk-utils failed, continue with login shell fallback
+  }
+
+  // 2. Try login shell to find additional JDKs (handles SDKMAN lazy init)
+  const loginShellResult = await tryLoginShell();
+  if (loginShellResult) {
+    const alreadyFound = results.some((r) => r.path === loginShellResult.path);
+    if (!alreadyFound) {
+      if (!minVersion || loginShellResult.version >= minVersion) {
+        results.push({
+          ...loginShellResult,
+          source: "login_shell",
+          sourceDescription: "Shell (lazy-loaded)",
+        });
+      }
+    }
+  }
+
+  // 3. Sort results
+  results.sort((a, b) => {
+    // Preferred version first
+    if (preferredVersion) {
+      const aIsPreferred = a.version === preferredVersion;
+      const bIsPreferred = b.version === preferredVersion;
+      if (aIsPreferred && !bIsPreferred) return -1;
+      if (bIsPreferred && !aIsPreferred) return 1;
+    }
+
+    // Then by version (descending - newer is better)
+    if (a.version !== b.version) {
+      return b.version - a.version;
+    }
+
+    // Then by source priority
+    return (
+      getSourcePriorityByCategory(a.source) -
+      getSourcePriorityByCategory(b.source)
+    );
+  });
+
+  // 4. Remove duplicates (same path)
+  const seen = new Set<string>();
+  return results.filter((r) => {
+    if (seen.has(r.path)) return false;
+    seen.add(r.path);
+    return true;
+  });
+}
+
+/**
+ * Formats source names for human-readable display.
+ */
+function formatSourceDescription(sources: string[]): string {
+  if (sources.length === 0) return "System";
+
+  // Map technical names to friendly names
+  const friendlyNames: Record<string, string> = {
+    JAVA_HOME: "JAVA_HOME",
+    JDK_HOME: "JDK_HOME",
+    PATH: "PATH",
+    SDKMAN: "SDKMAN",
+    jEnv: "jEnv",
+    jabba: "jabba",
+    asdf: "asdf",
+  };
+
+  const displaySources = sources.map((s) => friendlyNames[s] || s).slice(0, 2); // Show at most 2 sources
+
+  return displaySources.join(", ");
+}
+
+/**
+ * Returns priority score for JavaSource category (lower is better).
+ */
+function getSourcePriorityByCategory(source: JavaSource): number {
+  switch (source) {
+    case "setting":
+      return 0;
+    case "java_home":
+      return 1;
+    case "jdk_manager":
+      return 2;
+    case "system":
+      return 3;
+    case "login_shell":
+      return 4;
+    default:
+      return 5;
+  }
+}

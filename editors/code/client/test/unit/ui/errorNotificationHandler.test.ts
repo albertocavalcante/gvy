@@ -120,7 +120,7 @@ describe("Error Notification Handler", () => {
       assert.strictEqual(call.args[1], "Upgrade to Groovy 3.0.0 or higher");
     });
 
-    it("should show error message for TOOLCHAIN_PROVISIONING_FAILED with action buttons", async () => {
+    it("should show error message for TOOLCHAIN_PROVISIONING_FAILED with smart action buttons", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -141,11 +141,9 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Java 17"));
       assert.ok(call.args[0].includes("Mac OS X aarch64"));
-      // With new priority logic (max 3 buttons), only first suggestion is shown
-      assert.strictEqual(
-        call.args[1],
-        "Set groovy.gradle.javaHome in VS Code settings",
-      );
+      // Smart action buttons for toolchain errors
+      assert.strictEqual(call.args[1], "Detect & Set Java");
+      assert.strictEqual(call.args[2], "Add Auto-Download Plugin");
     });
 
     it("should show warning message for generic errors", async () => {
@@ -190,7 +188,7 @@ describe("Error Notification Handler", () => {
   });
 
   describe("handleActionClick (via user interaction)", () => {
-    it("should open settings when action mentions settings", async () => {
+    it("should execute detectAndSetJavaHome when Detect & Set Java is clicked", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -199,15 +197,65 @@ describe("Error Notification Handler", () => {
         suggestions: ["Set groovy.gradle.javaHome in VS Code settings"],
       };
 
-      // Simulate user clicking the button
-      showErrorMessageStub.resolves(
-        "Set groovy.gradle.javaHome in VS Code settings",
-      );
+      // Simulate user clicking "Detect & Set Java"
+      showErrorMessageStub.resolves("Detect & Set Java");
 
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
         errorDetails,
       );
+
+      // Wait for async handler to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should have called detectAndSetJavaHome command with requiredVersion
+      assert.ok(
+        executeCommandStub.calledWith("groovy.detectAndSetJavaHome", 17),
+        "should call detectAndSetJavaHome command with required version",
+      );
+    });
+
+    it("should execute addFoojayResolver when Add Auto-Download Plugin is clicked", async () => {
+      const errorDetails: ToolchainProvisioningError = {
+        type: "TOOLCHAIN_PROVISIONING_FAILED",
+        requiredVersion: 17,
+        vendor: null,
+        platform: null,
+        suggestions: ["Set groovy.gradle.javaHome in VS Code settings"],
+      };
+
+      // Simulate user clicking "Add Auto-Download Plugin"
+      showErrorMessageStub.resolves("Add Auto-Download Plugin");
+
+      await showErrorNotification(
+        "TOOLCHAIN_PROVISIONING_FAILED",
+        errorDetails,
+      );
+
+      // Wait for async handler to complete
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Should have called addFoojayResolver command
+      assert.ok(
+        executeCommandStub.calledWith("groovy.addFoojayResolver"),
+        "should call addFoojayResolver command",
+      );
+    });
+
+    it("should open settings when action mentions settings (generic error)", async () => {
+      const errorDetails: GenericError = {
+        type: "GENERIC",
+        errorCode: "TEST_ERROR",
+        details: null,
+        suggestions: ["Set groovy.gradle.javaHome in VS Code settings"],
+      };
+
+      // Simulate user clicking the button
+      showWarningMessageStub.resolves(
+        "Set groovy.gradle.javaHome in VS Code settings",
+      );
+
+      await showErrorNotification("TEST_ERROR", errorDetails);
 
       // Wait for async handler to complete
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -224,12 +272,14 @@ describe("Error Notification Handler", () => {
 
   describe("special action buttons", () => {
     it("should execute retry command and await completion when Retry Resolution is clicked", async () => {
-      const errorDetails: ToolchainProvisioningError = {
-        type: "TOOLCHAIN_PROVISIONING_FAILED",
-        requiredVersion: 17,
-        vendor: null,
-        platform: null,
-        suggestions: ["Install JDK 17"],
+      // Use a generic error type where "Retry Resolution" would appear as a button
+      const errorDetails: GradleJdkIncompatibleError = {
+        type: "GRADLE_JDK_INCOMPATIBLE",
+        gradleVersion: "7.4",
+        jdkVersion: 21,
+        minGradleVersion: "8.5",
+        maxJdkVersion: "17",
+        suggestions: ["Upgrade Gradle to 8.5"],
       };
 
       // Track if executeCommand was awaited by using a deferred promise
@@ -246,7 +296,7 @@ describe("Error Notification Handler", () => {
       showErrorMessageStub.resolves("Retry Resolution");
 
       await showErrorNotification(
-        "TOOLCHAIN_PROVISIONING_FAILED",
+        "GRADLE_JDK_INCOMPATIBLE",
         errorDetails,
         undefined,
         "groovy.retryDependencyResolution",
@@ -269,6 +319,7 @@ describe("Error Notification Handler", () => {
     });
 
     it("should show output channel when Show Details is clicked", async () => {
+      // Use TOOLCHAIN_PROVISIONING_FAILED which has Show Details as third button
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,

@@ -136,6 +136,16 @@
         "title": "Groovy: Show AST Explorer",
         "icon": "$(symbol-structure)",
         "category": "View"
+      },
+      {
+        "command": "groovy.detectAndSetJavaHome",
+        "title": "Groovy: Detect and Set Java Home",
+        "icon": "$(search)"
+      },
+      {
+        "command": "groovy.addFoojayResolver",
+        "title": "Groovy: Add Foojay Resolver Plugin",
+        "icon": "$(add)"
       }
     ],
     "keybindings": [

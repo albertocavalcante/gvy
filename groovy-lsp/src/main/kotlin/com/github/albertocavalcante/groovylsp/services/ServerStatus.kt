@@ -179,6 +179,28 @@ data class GroovyJdkIncompatibleError(
 }
 
 /**
+ * Error: Project's configured JDK requirement doesn't match running JDK.
+ *
+ * This is detected at startup by parsing build configuration files (pom.xml, build.gradle)
+ * and comparing against the JDK running the LSP.
+ *
+ * This error is raised when the running JDK is OLDER than what the project requires.
+ * For cases where the running JDK is NEWER, a warning is issued instead.
+ *
+ * @property runningJdkVersion The JDK version running the LSP (e.g., 11).
+ * @property requiredJdkVersion The JDK version required by the project (e.g., 17).
+ * @property configurationSource Where the requirement was found (e.g., "maven-compiler-plugin").
+ */
+data class ProjectJdkIncompatibleError(
+    val runningJdkVersion: Int,
+    val requiredJdkVersion: Int,
+    val configurationSource: String,
+    override val suggestions: List<String> = emptyList(),
+) : ErrorDetails {
+    override val type: String = "PROJECT_JDK_INCOMPATIBLE"
+}
+
+/**
  * Generic error details for unclassified errors.
  *
  * Use this when a more specific error type doesn't exist yet.
