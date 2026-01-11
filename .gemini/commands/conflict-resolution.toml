@@ -1,0 +1,6 @@
+description = "Step-by-step guide for resolving Git conflicts during rebase or merge"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/conflict-resolution.md}
+"""

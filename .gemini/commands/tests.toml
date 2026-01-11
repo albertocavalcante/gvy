@@ -1,0 +1,6 @@
+description = "Develop, verify, and manage End-to-End (E2E) test scenarios"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/tests-tests-tests.md}
+"""

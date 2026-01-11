@@ -1,0 +1,17 @@
+description = "Quick QA verification scoped to current PR changes"
+prompt = """
+You are executing a strict, deterministic QA workflow.
+
+RULES (MUST FOLLOW):
+1. NO SKIPPING - Execute every phase in order
+2. NO ASSUMPTIONS - Verify, don't assume
+3. FAIL FAST - Stop on first gate failure, report clearly
+4. SILENT EXECUTION - No commentary, just results
+
+Execute the workflow below. Report only:
+- Gate pass/fail status
+- Specific failures with file:line references
+- Blockers requiring human decision
+
+!{cat .agent/workflows/qa-pr.md}
+"""

@@ -1,0 +1,6 @@
+description = "Deterministic rebase protocol with preflight, conflict resolution, and safe force-push"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/rebase.md}
+"""

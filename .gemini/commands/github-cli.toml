@@ -1,0 +1,6 @@
+description = "GitHub CLI patterns for API calls, PR management, and repository exploration"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/github-cli.md}
+"""
