@@ -724,6 +724,7 @@ object CompletionProvider {
             val className = ctx.staticClassName
             if (className != null) {
                 addStaticMethodCompletions(className, compilationService, ctx)
+                addStaticFieldCompletions(className, compilationService, ctx)
             }
             return
         }
@@ -785,6 +786,35 @@ object CompletionProvider {
     }
 
     /**
+     * Adds completions for static fields and constants when completing static imports.
+     */
+    private fun CompletionsBuilder.addStaticFieldCompletions(
+        className: String,
+        compilationService: GroovyCompilationService,
+        ctx: ImportCompletionContext,
+    ) {
+        val fields = compilationService.classpathService.getFields(className)
+            .filter { it.isStatic && it.isPublic }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+
+        fields.forEach { field ->
+            add(
+                CompletionItem().apply {
+                    label = field.name
+                    kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
+                    detail = "${field.type} ${field.name}"
+                    insertText = field.name
+                    textEdit = Either.forLeft(TextEdit(range, "$className.${field.name}"))
+                },
+            )
+        }
+    }
+
+    /**
      * Add GDK (GroovyDevelopment Kit) method completions for a given type.
      */
     private fun CompletionsBuilder.addGdkMethods(className: String, compilationService: GroovyCompilationService) {
@@ -810,7 +840,7 @@ object CompletionProvider {
             builder.method(
                 name = gdkMethod.name,
                 returnType = gdkMethod.returnType,
-                parameters = gdkMethod.parameters,
+                parameters = gdkMethod.parameterTypes,
                 doc = gdkMethod.doc,
             )
         }

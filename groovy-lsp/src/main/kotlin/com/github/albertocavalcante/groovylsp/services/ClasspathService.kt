@@ -180,6 +180,14 @@ class ClasspathService(
     fun getMethods(className: String): List<ReflectedMethod> = reflection.getMethods(className)
 
     /**
+     * Loads fields (including constants) from a class using reflection.
+     *
+     * @param className The fully qualified class name (e.g., "java.lang.Math")
+     * @return List of reflected fields
+     */
+    fun getFields(className: String): List<ReflectedField> = reflection.getFields(className)
+
+    /**
      * Tries to load a class by name.
      */
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)

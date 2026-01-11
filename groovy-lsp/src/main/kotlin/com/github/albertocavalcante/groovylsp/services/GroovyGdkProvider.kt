@@ -194,5 +194,9 @@ data class GdkExtensionMethod(
     val doc: String,
 ) {
     // Backward compatibility
+    @Deprecated(
+        message = "Use parameterTypes instead for clarity",
+        replaceWith = ReplaceWith("parameterTypes"),
+    )
     val parameters: List<String> get() = parameterTypes
 }

@@ -133,7 +133,12 @@ class SourceNavigationService(
         val sourceLocation = classResult as SourceNavigator.SourceResult.SourceLocation
 
         // Now find the specific method within the source file
-        val sourcePath = Path.of(sourceLocation.uri)
+        val sourcePath = try {
+            Path.of(sourceLocation.uri)
+        } catch (e: Exception) {
+            logger.debug("Cannot convert URI to Path: {}", sourceLocation.uri, e)
+            return sourceLocation // Fall back to class-level
+        }
         val methodInspection = javaSourceInspector.inspectMethod(sourcePath, className, methodName)
 
         return if (methodInspection != null) {
