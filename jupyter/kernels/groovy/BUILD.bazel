@@ -1,11 +1,9 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
-# NOTE: Disabled - depends on jupyter/kernel-core which needs serialization plugin
 kt_library(
     name = "groovy",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     deps = [
         "//dsl/dsld",
         "//repl",
@@ -23,7 +21,6 @@ kt_test(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,
     ),
-    tags = ["manual"],
     deps = [
         ":groovy",
         "@maven//:org_junit_platform_junit_platform_launcher",

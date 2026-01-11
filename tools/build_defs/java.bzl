@@ -1,5 +1,7 @@
 """Java build macros for Groovy LSP."""
 
+load("@rules_java//java:defs.bzl", _java_library = "java_library", _java_test = "java_test")
+
 def java_library(
         name,
         srcs = None,
@@ -15,9 +17,9 @@ def java_library(
         deps: Compile dependencies
         runtime_deps: Runtime-only deps
         visibility: Visibility
-        **kwargs: Additional args to native.java_library
+        **kwargs: Additional args to java_library
     """
-    native.java_library(
+    _java_library(
         name = name,
         srcs = srcs if srcs else native.glob(["src/main/java/**/*.java"]),
         deps = deps or [],
@@ -47,7 +49,7 @@ def java_test(
         test_class: Main test class
         **kwargs: Additional args
     """
-    native.java_test(
+    _java_test(
         name = name,
         srcs = srcs if srcs else native.glob(["src/test/java/**/*Test.java"]),
         deps = (deps or []) + [
