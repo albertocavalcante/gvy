@@ -620,6 +620,15 @@ async function readConfiguredRuntimes(
     .getConfiguration("groovy")
     .get<RuntimeConfig[]>("configuration.runtimes", []);
 
+  // Validate that runtimes is actually an array to prevent "not iterable" errors
+  if (!Array.isArray(runtimes)) {
+    console.warn(
+      "groovy.configuration.runtimes is not an array. Expected array, got:",
+      typeof runtimes,
+    );
+    return results;
+  }
+
   for (const config of runtimes) {
     if (!config.path) continue;
 
