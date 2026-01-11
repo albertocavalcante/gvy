@@ -60,3 +60,7 @@ project(":refactor:openrewrite:rewrite-codenarc").projectDir = file("refactor/op
 // BSP (Build Server Protocol) modules - reusable infrastructure
 include("bsp:bsp-core")
 project(":bsp:bsp-core").projectDir = file("bsp/bsp-core")
+
+// Maven BSP Server
+include("bsp:maven-bsp")
+project(":bsp:maven-bsp").projectDir = file("bsp/maven-bsp")
