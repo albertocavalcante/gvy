@@ -15,7 +15,10 @@ dependencies {
     compileOnly(libs.junit4)
 
     // Logging
+    // kotlin-logging provides the API; SLF4J implementation needed at runtime.
+    // This is a leaf module with no project dependencies that provide logback transitively.
     implementation(libs.kotlin.logging)
+    testRuntimeOnly(libs.logback.classic)
 
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)
