@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
+import { exec } from "child_process";
 
 // Type for JDK results in tests
 interface TestJdkResult {
@@ -53,8 +54,8 @@ describe("JDK Finder Module - Public API", () => {
     // Mock util.promisify to return our execAsyncStub
     const mockUtil = {
       promisify: sinon.stub().callsFake((fn: any) => {
-        // Check if this is the exec function being promisified
-        if (fn && fn.name === "exec") {
+        // Check if this is the exec function being promisified by comparing to the actual exec function
+        if (fn === exec) {
           return execAsyncStub;
         }
         // For other functions (like fs.access), return a stub that rejects

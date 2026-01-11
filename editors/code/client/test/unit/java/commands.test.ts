@@ -953,28 +953,32 @@ describe("Java Commands", () => {
       const mockContext = {
         subscriptions: [],
       };
-      let registeredHandler: any;
-      mockVscode.commands.registerCommand.callsFake(
-        (cmd: string, handler: any) => {
-          if (cmd === "groovy.configureJava") {
-            registeredHandler = handler;
-          }
-          return { dispose: sinon.stub() };
-        },
-      );
 
+      // Register commands
       commandsModule.registerJavaCommands(mockContext);
 
-      // Mock configureJava to verify parameter passing
-      const configureJavaSpy = sinon.spy(commandsModule, "configureJava");
+      // Get the registered handler
+      const registerCall = mockVscode.commands.registerCommand
+        .getCalls()
+        .find((call: any) => call.args[0] === "groovy.configureJava");
+
+      assert.isDefined(
+        registerCall,
+        "groovy.configureJava should be registered",
+      );
+
+      const handler = registerCall.args[1];
+
+      // Setup mocks to track the call
+      mockFinder.findAllJdks.resolves([]);
+      mockVscode.window.showQuickPick.resolves(undefined);
 
       // Execute the registered handler with a required version
-      await registeredHandler(21);
+      await handler(21);
 
-      // Note: This test verifies the command registration structure.
-      // The actual configureJava call happens through the module,
-      // so we just verify the handler exists and can be called.
-      assert.isDefined(registeredHandler);
+      // Verify that findAllJdks was called with the requiredVersion parameter (21)
+      // This proves the handler correctly passes the parameter to configureJava
+      assert.isTrue(mockFinder.findAllJdks.calledWith(undefined, 21));
     });
   });
 });
