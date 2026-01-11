@@ -16,17 +16,14 @@ ts_project(
     visibility = ["//visibility:public"],
     deps = [
         # VS Code API types
-        "//:node_modules/@types/vscode",
+        "//editors/code:node_modules/@types/vscode",
 
         # Language Server Client dependencies
-        "//:node_modules/vscode-languageclient",
-        "//:node_modules/vscode-languageserver-protocol",
-
-        # Utility dependencies
-        "//:node_modules/jdk-utils",
+        "//editors/code:node_modules/vscode-languageclient",
+        "//editors/code:node_modules/vscode-languageserver-protocol",
 
         # Node types
-        "//:node_modules/@types/node",
+        "//editors/code:node_modules/@types/node",
     ],
 )
 
@@ -43,12 +40,11 @@ ts_project(
     visibility = ["//visibility:public"],
     deps = [
         ":client_lib",
-        "//:node_modules/@types/mocha",
-        "//:node_modules/@types/node",
-        "//:node_modules/@types/vscode",
-        "//:node_modules/@vscode/test-cli",
-        "//:node_modules/@vscode/test-electron",
-        "//:node_modules/glob",
+        "//editors/code:node_modules/@types/mocha",
+        "//editors/code:node_modules/@types/node",
+        "//editors/code:node_modules/@types/vscode",
+        "//editors/code:node_modules/@vscode/test-cli",
+        "//editors/code:node_modules/@vscode/test-electron",
     ],
 )
 

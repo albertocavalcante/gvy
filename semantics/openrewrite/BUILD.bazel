@@ -6,7 +6,7 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//semantics/core",
-        "@maven//:io_arrow_kt_arrow_core",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_openrewrite_rewrite_groovy",
     ],

@@ -1,8 +1,20 @@
 # Root BUILD file for Groovy LSP
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@gazelle//:def.bzl", "gazelle")
 
 package(default_visibility = ["//visibility:public"])
+
+# Build mode flag for production builds
+bool_flag(
+    name = "production_flag",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "production",
+    flag_values = {":production_flag": "True"},
+)
 
 # Gazelle directives for the workspace
 # gazelle:prefix github.com/groovy-lsp/groovy-lsp

@@ -11,9 +11,10 @@ kt_library(
         # Internal dependencies
         "//dsl/dsld",
         "//fmt",
-        # TODO: groovy-build-tool temporarily disabled (requires gradle-tooling-api)
+        # TODO: build-tool temporarily disabled (requires gradle-tooling-api)
         # "//build-tool",
         "//diagnostics/api",
+        "//semantics/core",
         "//diagnostics/codenarc",
         # Note: groovy-diagnostics/sarif doesn't have BUILD file yet
         "//dsl/gdsl",
@@ -34,17 +35,16 @@ kt_library(
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_apache_groovy_groovy_groovydoc",
 
-        # TODO: Gradle Tooling API temporarily disabled (not in Maven Central)
-        # "@maven//:org_gradle_gradle_tooling_api",
+        "@maven//:org_gradle_gradle_tooling_api",
 
         # Kotlin Coroutines
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
 
         # Kotlin Immutable Collections
-        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",
 
         # Functional Programming - Arrow-kt
-        "@maven//:io_arrow_kt_arrow_core",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
 
         # Serialization
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",

@@ -21,8 +21,8 @@ kt_library(
 kt_test(
     name = "codenarc_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":codenarc"],
     deps = [
-        ":codenarc",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
     ],
