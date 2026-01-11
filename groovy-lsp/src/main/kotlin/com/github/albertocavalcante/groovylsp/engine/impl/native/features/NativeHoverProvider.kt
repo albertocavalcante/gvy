@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.engine.impl.native.features
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator
+import com.github.albertocavalcante.groovylsp.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
@@ -36,8 +37,14 @@ class NativeHoverProvider(
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
     )
+    private val methodCallMetadataResolver =
+        MethodCallMetadataResolver(
+            compilationService.classpathService,
+            compilationService.gdkProvider,
+            semanticResolver,
+        )
     private val contentGenerator =
-        HoverContentGenerator(semanticResolver)
+        HoverContentGenerator(semanticResolver, methodCallMetadataResolver)
 
     // Delegate to existing HoverProvider which has all the domain logic
     private val delegate = DelegateHoverProvider(

@@ -180,6 +180,14 @@ class ClasspathService(
     fun getMethods(className: String): List<ReflectedMethod> = reflection.getMethods(className)
 
     /**
+     * Loads fields (including constants) from a class using reflection.
+     *
+     * @param className The fully qualified class name (e.g., "java.lang.Math")
+     * @return List of reflected fields
+     */
+    fun getFields(className: String): List<ReflectedField> = reflection.getFields(className)
+
+    /**
      * Tries to load a class by name.
      */
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
@@ -235,6 +243,7 @@ class ClasspathService(
  * Reflection snapshot for a classpath method.
  *
  * @property parameterNames Available when the class was compiled with `-parameters`; empty otherwise.
+ * @property declaringClass The fully qualified name of the class that declares this method.
  */
 data class ReflectedMethod(
     val name: String,
@@ -244,6 +253,7 @@ data class ReflectedMethod(
     val isStatic: Boolean,
     val isPublic: Boolean,
     val doc: String,
+    val declaringClass: String,
 )
 
 data class ClassInfo(val simpleName: String, val fullName: String, val packageName: String)

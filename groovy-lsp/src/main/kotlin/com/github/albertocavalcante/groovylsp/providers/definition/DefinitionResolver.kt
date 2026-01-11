@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.resolution.Cl
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.GlobalClassResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.JenkinsVarsResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.LocalSymbolResolutionStrategy
+import com.github.albertocavalcante.groovylsp.providers.definition.resolution.MethodResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.ResolutionContext
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SymbolResolutionStrategy
@@ -22,6 +23,7 @@ import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -52,8 +54,9 @@ class DefinitionResolver(
      * 1. JenkinsVars - Jenkins vars/ directory lookup (highest priority)
      * 2. LocalSymbol - Same-file definitions via AST/symbol table
      * 3. SemanticDB - Cross-file resolution for all symbol types (methods, fields, properties, etc.)
-     * 4. GlobalClass - Cross-file class lookup via symbol index (fallback for class-only)
-     * 5. Classpath - JAR/JRT external dependencies (lowest priority)
+     * 4. Method - Method-level navigation for classpath methods
+     * 5. GlobalClass - Cross-file class lookup via symbol index (fallback for class-only)
+     * 6. Classpath - JAR/JRT external dependencies (lowest priority)
      *
      * The pipeline short-circuits on first success (Either.Right).
      */
@@ -68,6 +71,7 @@ class DefinitionResolver(
                     add(SemanticDBResolutionStrategy(index))
                 }
                 compilationService?.let {
+                    add(MethodResolutionStrategy(it, sourceNavigator))
                     add(GlobalClassResolutionStrategy(it))
                     add(ClasspathResolutionStrategy(it, sourceNavigator))
                 }
@@ -319,6 +323,14 @@ class DefinitionResolver(
 
         val targetNode = astVisitor.getNodeAt(uri, position)
             ?: return emptyList()
+
+        // Special case for ImportNode: prioritize DECLARATION over REFERENCE
+        // When clicking on an import, users want to navigate to the imported class,
+        // not see references to the import statement
+        if (targetNode is ImportNode && TargetKind.DECLARATION in targetKinds) {
+            logger.debug("ImportNode detected, deferring to resolution pipeline for navigation")
+            return emptyList() // Let the main definition flow handle it
+        }
 
         val results = mutableListOf<ASTNode>()
 

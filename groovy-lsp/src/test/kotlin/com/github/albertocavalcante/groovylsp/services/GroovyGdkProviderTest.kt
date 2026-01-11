@@ -129,4 +129,19 @@ class GroovyGdkProviderTest {
         assertThat(eachMethod?.doc).isNotBlank
         assertThat(eachMethod?.doc).contains("Groovy GDK method")
     }
+
+    @Test
+    fun `should extract parameter names from GDK methods`() {
+        val methods = gdkProvider.getMethodsForType("java.util.List")
+
+        // Find 'each' method - in GDK it's: each(List self, Closure closure)
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+
+        assertThat(eachMethod).isNotNull
+        assertThat(eachMethod?.parameterNames).hasSize(1)
+        // GDK JAR is not compiled with -parameters flag, so we get synthetic names.
+        // This is a known limitation; see https://github.com/albertocavalcante/groovy-lsp/issues/830
+        assertThat(eachMethod?.parameterNames).containsExactly("arg1")
+        assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
+    }
 }

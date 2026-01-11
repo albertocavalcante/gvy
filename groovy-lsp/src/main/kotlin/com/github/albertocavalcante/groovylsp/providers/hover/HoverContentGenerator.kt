@@ -44,7 +44,10 @@ import java.lang.reflect.Modifier
  * Service to generate hover content for AST nodes using SemanticTypeResolver.
  * Replaces static extension functions in HoverNodeConverters.kt.
  */
-class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) {
+class HoverContentGenerator(
+    private val semanticResolver: SemanticTypeResolver,
+    private val methodCallMetadataResolver: MethodCallMetadataResolver? = null,
+) {
     companion object {
         private const val MAX_DISPLAYED_ITEMS = 5
         private val logger = LoggerFactory.getLogger(HoverContentGenerator::class.java)
@@ -97,7 +100,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
     private fun MarkdownBuilder.renderExpressionNode(node: ASTNode, moduleNode: ModuleNode?) = when (node) {
         is VariableExpression -> renderVariableExpression(node, moduleNode)
         is DeclarationExpression -> renderDeclarationExpression(node, moduleNode)
-        is MethodCallExpression -> renderMethodCallExpression(node)
+        is MethodCallExpression -> renderMethodCallExpression(node, moduleNode)
         is ConstructorCallExpression -> renderConstructorCallExpression(node)
         is PropertyExpression -> renderPropertyExpression(node, moduleNode)
         is BinaryExpression -> renderBinaryExpression(node)
@@ -247,7 +250,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
         }
     }
 
-    private fun MarkdownBuilder.renderMethodCallExpression(node: MethodCallExpression) {
+    private fun MarkdownBuilder.renderMethodCallExpression(node: MethodCallExpression, moduleNode: ModuleNode?) {
         val methodName = node.displayMethodName()
         val receiver = node.displayReceiver()
         val arguments = node.displayArguments()
@@ -277,6 +280,13 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
                 markdown("**Resolved Target**")
                 code("groovy") { SignatureFormatter.formatMethod(methodTarget) }
                 keyValue("Owner" to (methodTarget.declaringClass?.nameWithoutPackage ?: "unknown"))
+            } else {
+                // Fallback: try classpath/GDK resolution with module context
+                methodCallMetadataResolver?.resolveMethodCall(node, moduleNode)?.let { metadata ->
+                    markdown("**Resolved Target**")
+                    code("groovy") { metadata.signature }
+                    keyValue("Owner" to metadata.declaringClass)
+                }
             }
         }
     }

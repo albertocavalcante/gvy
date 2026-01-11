@@ -103,6 +103,61 @@ class SourceNavigationService(
     }
 
     /**
+     * Navigate to source code for a specific method within a class.
+     *
+     * This method first navigates to the class source using [navigateToSource],
+     * then uses [JavaSourceInspector.inspectMethod] to find the specific method
+     * declaration within the class.
+     *
+     * @param classpathUri URI of the class (jrt: or jar:file:...)
+     * @param className Fully qualified class name
+     * @param methodName Simple method name (e.g., "add")
+     * @return SourceResult indicating where to navigate. Returns BinaryOnly if the class source
+     *         cannot be found, or SourceLocation (either method-level with lineNumber, or
+     *         class-level fallback if method cannot be located within the source)
+     */
+    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
+    override suspend fun navigateToMethodSource(
+        classpathUri: URI,
+        className: String,
+        methodName: String,
+    ): SourceNavigator.SourceResult {
+        logger.debug("Navigating to method source for: {}.{} from {}", className, methodName, classpathUri)
+
+        // First, navigate to the class source
+        val sourceLocation = when (val classResult = navigateToSource(classpathUri, className)) {
+            is SourceNavigator.SourceResult.BinaryOnly -> return classResult
+            is SourceNavigator.SourceResult.SourceLocation -> classResult
+        }
+
+        // Now find the specific method within the source file
+        val sourcePath = try {
+            Path.of(sourceLocation.uri)
+        } catch (e: Exception) {
+            logger.debug("Cannot convert URI to Path: {}", sourceLocation.uri, e)
+            return sourceLocation // Fall back to class-level
+        }
+        val methodInspection = javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+
+        return if (methodInspection != null) {
+            SourceNavigator.SourceResult.SourceLocation(
+                uri = sourceLocation.uri,
+                className = className,
+                lineNumber = methodInspection.lineNumber,
+                documentation = methodInspection.documentation,
+            )
+        } else {
+            // Method not found - fall back to class-level navigation
+            logger.debug(
+                "Method {} not found in class {}, falling back to class-level navigation",
+                methodName,
+                className,
+            )
+            sourceLocation
+        }
+    }
+
+    /**
      * Extract the JAR file path from a jar: URI.
      *
      * Input: jar:file:///path/to/library.jar!/com/example/Foo.class

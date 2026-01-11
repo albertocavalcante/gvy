@@ -354,6 +354,11 @@ class InlayHintsProvider(
             InlayHintsCandidates.resolveReceiverType(call, astModel, moduleNode, symbolTable, semanticResolver, logger)
         val isStaticCall = call.objectExpression is ClassExpression
 
+        // Resolution order:
+        // 1. AST methods (same file)
+        // 2. Workspace methods (cross-file)
+        // 3. GDK methods (Groovy extensions)
+        // 4. Classpath methods (fallback)
         val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
             compilationService,
@@ -373,6 +378,14 @@ class InlayHintsProvider(
                     receiverType,
                     isStaticCall,
                     workspaceSymbols,
+                )
+            },
+            {
+                InlayHintsCandidates.findGdkMethodCandidates(
+                    methodName,
+                    argCount,
+                    receiverType,
+                    compilationService,
                 )
             },
             {
@@ -621,6 +634,25 @@ private object InlayHintsCandidates {
             .filter { it.name == methodName && it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
             .map { InlayHintsTypes.toSignature(it) }
+    }
+
+    fun findGdkMethodCandidates(
+        methodName: String,
+        argCount: Int,
+        receiverType: String?,
+        compilationService: GroovyCompilationService,
+    ): List<CallableSignature> {
+        val normalizedType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) }
+            ?: return emptyList()
+
+        return compilationService.gdkProvider.getMethodsForType(normalizedType)
+            .filter { it.name == methodName && it.parameterTypes.size == argCount }
+            .map {
+                CallableSignature(
+                    parameterNames = it.parameterNames,
+                    parameterTypes = it.parameterTypes.map { t -> InlayHintsTypes.normalizeTypeName(t) },
+                )
+            }
     }
 
     fun findConstructorCandidatesInAst(

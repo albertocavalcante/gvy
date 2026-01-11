@@ -6,8 +6,19 @@ import java.lang.reflect.Modifier
 interface ClasspathReflection {
     fun getMethods(className: String): List<ReflectedMethod>
 
+    fun getFields(className: String): List<ReflectedField>
+
     fun loadClass(className: String): Class<*>?
 }
+
+data class ReflectedField(
+    val name: String,
+    val type: String,
+    val isStatic: Boolean,
+    val isPublic: Boolean,
+    val isFinal: Boolean,
+    val declaringClass: String,
+)
 
 class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader) : ClasspathReflection {
     private val logger = LoggerFactory.getLogger(JvmClasspathReflection::class.java)
@@ -23,6 +34,40 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 isStatic = Modifier.isStatic(method.modifiers),
                 isPublic = Modifier.isPublic(method.modifiers),
                 doc = "JDK/Classpath method from ${clazz.simpleName}",
+                declaringClass = method.declaringClass.name,
+            )
+        }
+    }.getOrElse { throwable ->
+        when (throwable) {
+            is ClassNotFoundException -> {
+                logger.debug("Class not found on classpath: $className", throwable)
+                emptyList()
+            }
+
+            is NoClassDefFoundError -> {
+                logger.debug("Class definition not found: $className", throwable)
+                emptyList()
+            }
+
+            is Exception -> {
+                logger.error("Error reflecting on class $className", throwable)
+                emptyList()
+            }
+
+            else -> throw throwable
+        }
+    }
+
+    override fun getFields(className: String): List<ReflectedField> = runCatching {
+        val clazz = classLoaderProvider().loadClass(className)
+        clazz.fields.map { field ->
+            ReflectedField(
+                name = field.name,
+                type = field.type.simpleName,
+                isStatic = Modifier.isStatic(field.modifiers),
+                isPublic = Modifier.isPublic(field.modifiers),
+                isFinal = Modifier.isFinal(field.modifiers),
+                declaringClass = field.declaringClass.name,
             )
         }
     }.getOrElse { throwable ->

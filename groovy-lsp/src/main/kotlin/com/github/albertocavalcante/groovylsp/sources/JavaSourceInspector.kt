@@ -61,6 +61,34 @@ class JavaSourceInspector {
     }
 
     /**
+     * Inspect a Java source file to find the definition of a specific method within a class.
+     *
+     * @param sourcePath Path to the .java file
+     * @param className Fully qualified class name (e.g., "java.util.Date")
+     * @param methodName Simple method name (e.g., "getTime")
+     * @return InspectionResult containing line number and documentation, or null if not found
+     */
+    // TODO(#830): Add parameter count/types to method inspection API for overload resolution.
+    //   Current limitation: inspectMethod only matches by name, not signature, causing incorrect
+    //   navigation when multiple method overloads exist. Requires adding parameterTypes parameter
+    //   and updating method matching logic to compare signatures for precise overload resolution.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+    fun inspectMethod(sourcePath: Path, className: String, methodName: String): InspectionResult? {
+        if (!Files.exists(sourcePath)) {
+            logger.debug("Source file does not exist: {}", sourcePath)
+            return null
+        }
+
+        return try {
+            val content = Files.readString(sourcePath)
+            inspectMethodFromContent(content, className, methodName, sourcePath.toString())
+        } catch (e: Exception) {
+            logger.warn("Failed to inspect method in Java source: $sourcePath", e)
+            null
+        }
+    }
+
+    /**
      * Inspect Java source content directly (useful for testing).
      */
     @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
@@ -84,7 +112,10 @@ class JavaSourceInspector {
             val compilationUnit = parseResult.result.orElse(null) ?: return null
 
             // Extract simple class name for matching
-            val simpleClassName = className.substringAfterLast('.')
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
 
             // Find the class declaration
             val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
@@ -113,6 +144,90 @@ class JavaSourceInspector {
     }
 
     /**
+     * Inspect Java source content to find a specific method within a class.
+     */
+    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
+    fun inspectMethodFromContent(
+        content: String,
+        className: String,
+        methodName: String,
+        sourceName: String = "<unknown>",
+    ): InspectionResult? {
+        return try {
+            val parseResult = parser.parse(content)
+
+            if (!parseResult.isSuccessful) {
+                logger.debug(
+                    "Failed to parse Java source {}: {}",
+                    sourceName,
+                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
+                )
+                return null
+            }
+
+            val compilationUnit = parseResult.result.orElse(null) ?: return null
+
+            // Extract simple class name for matching
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
+
+            // Find the class declaration
+            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
+                .firstOrNull { it.nameAsString == simpleClassName }
+
+            if (classDecl == null) {
+                logger.debug("Could not find class {} in {}", className, sourceName)
+                return null
+            }
+
+            // Find the method declaration within the class
+            // Handle method overloading: filter all candidates and warn if ambiguous
+            val methodCandidates = classDecl.methods.filter { it.nameAsString == methodName }
+            val methodDecl = when (methodCandidates.size) {
+                0 -> null
+                1 -> methodCandidates[0]
+                else -> {
+                    logger.debug(
+                        "Ambiguous method {}.{} ({} overloads) in {}",
+                        className,
+                        methodName,
+                        methodCandidates.size,
+                        sourceName,
+                    )
+                    null
+                }
+            }
+
+            if (methodDecl == null) {
+                logger.debug("Could not find method {} in class {} in {}", methodName, className, sourceName)
+                return null
+            }
+
+            val lineNumber = methodDecl.begin.map { it.line }.orElse(0)
+            if (lineNumber <= 0) {
+                logger.debug(
+                    "Method {} in class {} found but has invalid line number in {}",
+                    methodName,
+                    className,
+                    sourceName,
+                )
+                return null
+            }
+
+            // Extract Javadoc from method
+            val documentation = extractMethodJavadoc(methodDecl)
+
+            logger.debug("Found method {}.{} at line {} in {}", className, methodName, lineNumber, sourceName)
+            InspectionResult(lineNumber, documentation)
+        } catch (e: Exception) {
+            logger.warn("Failed to inspect method $methodName in $className", e)
+            null
+        }
+    }
+
+    /**
      * Extract Javadoc documentation from a class declaration.
      *
      * Parses the Javadoc comment and converts it to our Documentation model,
@@ -120,6 +235,16 @@ class JavaSourceInspector {
      */
     private fun extractJavadoc(classDecl: ClassOrInterfaceDeclaration): Documentation {
         val javadocComment = classDecl.javadocComment.orElse(null)
+            ?: return Documentation()
+
+        return parseJavadoc(javadocComment)
+    }
+
+    /**
+     * Extract Javadoc documentation from a method declaration.
+     */
+    private fun extractMethodJavadoc(methodDecl: com.github.javaparser.ast.body.MethodDeclaration): Documentation {
+        val javadocComment = methodDecl.javadocComment.orElse(null)
             ?: return Documentation()
 
         return parseJavadoc(javadocComment)

@@ -8,6 +8,43 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
  * Scans DefaultGroovyMethods and StringGroovyMethods.
+ *
+ * TODO(#830): Implement Groovy source JAR resolution for GDK parameter names
+ *   Current limitation: Parameter names for GDK methods are obtained via reflection,
+ *   which provides non-deterministic names like "arg0", "arg1" when debug symbols are missing.
+ *
+ *   Proposed solution: Similar to JdkSourceResolver handling of src.zip, implement
+ *   GroovySourceResolver to extract parameter names from Groovy source JARs:
+ *
+ *   1. Detect Groovy version from classpath
+ *      - Scan classpath for groovy-*.jar (e.g., groovy-4.0.23.jar)
+ *      - Extract version string (e.g., "4.0.23")
+ *
+ *   2. Resolve corresponding sources JAR
+ *      - Look for adjacent groovy-4.0.23-sources.jar
+ *      - If not found, download from Maven Central:
+ *        https://repo1.maven.org/maven2/org/apache/groovy/groovy/{version}/groovy-{version}-sources.jar
+ *      - Cache downloaded JAR in ~/.gls/cache/groovy-sources/
+ *
+ *   3. Extract and index GDK source files
+ *      - Extract DefaultGroovyMethods.java and related GDK classes
+ *      - Use JavaSourceInspector to parse method declarations
+ *      - Build index: methodName -> List<ParameterName>
+ *
+ *   4. Enhance GdkExtensionMethod with real parameter names
+ *      - Replace reflection-based parameter names with source-extracted names
+ *      - Provides deterministic parameter names for inlay hints and completion
+ *
+ *   Benefits:
+ *   - Accurate parameter names for GDK methods in IDE (e.g., "closure" instead of "arg0")
+ *   - No need to rebuild Groovy with debug symbols
+ *   - Consistent experience across all GDK methods
+ *
+ *   Implementation files to create:
+ *   - groovy-lsp/src/main/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolver.kt
+ *   - groovy-lsp/src/test/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolverTest.kt
+ *
+ *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
  */
 class GroovyGdkProvider(private val classpathService: ClasspathService) {
     private val logger = LoggerFactory.getLogger(GroovyGdkProvider::class.java)
@@ -54,7 +91,8 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
                 name = method.name,
                 returnType = method.returnType.simpleName,
                 // Parameters excluding the first one (self)
-                parameters = method.parameterTypes.drop(1).map { it.simpleName },
+                parameterTypes = method.parameterTypes.drop(1).map { it.simpleName },
+                parameterNames = method.parameters.drop(1).map { it.name },
                 originClass = clazz.simpleName,
                 doc = "Groovy GDK method from ${clazz.simpleName}",
             )
@@ -133,7 +171,7 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
         }
     }
 
-    private fun GdkExtensionMethod.signatureKey(): String = name + parameters.joinToString(",")
+    private fun GdkExtensionMethod.signatureKey(): String = name + parameterTypes.joinToString(",")
 
     private companion object {
         private const val JAVA_LANG_OBJECT = "java.lang.Object"
@@ -150,7 +188,15 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
 data class GdkExtensionMethod(
     val name: String,
     val returnType: String,
-    val parameters: List<String>,
+    val parameterTypes: List<String>,
+    val parameterNames: List<String>,
     val originClass: String,
     val doc: String,
-)
+) {
+    // Backward compatibility
+    @Deprecated(
+        message = "Use parameterTypes instead for clarity",
+        replaceWith = ReplaceWith("parameterTypes"),
+    )
+    val parameters: List<String> get() = parameterTypes
+}

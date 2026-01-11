@@ -593,7 +593,16 @@ object CompletionProvider {
         val line: Int,
         val replaceStartCharacter: Int,
         val replaceEndCharacter: Int,
-    )
+    ) {
+        // Static member completion is when we have a fully qualified class name followed by a dot
+        // e.g., "import static java.lang.Math." (cursor after dot)
+        // NOT "import static java.lang.Math" (cursor at end of class name)
+        val isStaticMemberCompletion: Boolean
+            get() = isStatic && prefix.endsWith('.') && prefix.substringBeforeLast('.').contains('.')
+
+        val staticClassName: String?
+            get() = if (isStaticMemberCompletion) prefix.substringBeforeLast('.') else null
+    }
 
     internal sealed interface ContextType {
         /**
@@ -711,6 +720,21 @@ object CompletionProvider {
         }
 
         val classpathService = compilationService.classpathService
+
+        // Handle static member completion (e.g., "import static java.lang.Math.PI")
+        // Only if we can actually find the class on the classpath
+        if (ctx.isStaticMemberCompletion) {
+            val className = ctx.staticClassName
+            // Try to load the class - if it succeeds, it's a real class; if null, it's a package
+            if (className != null && classpathService.loadClass(className) != null) {
+                addStaticMethodCompletions(className, compilationService, ctx)
+                addStaticFieldCompletions(className, compilationService, ctx)
+                return
+            }
+            // If className is not found, fall through to normal class completion
+            // (it's likely a package path, e.g., "import static org.junit.")
+        }
+
         val candidates = if (prefix.contains('.')) {
             classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
         } else {
@@ -735,6 +759,63 @@ object CompletionProvider {
                     },
                 )
             }
+    }
+
+    /**
+     * Adds completions for static methods when completing static imports.
+     */
+    private fun CompletionsBuilder.addStaticMethodCompletions(
+        className: String,
+        compilationService: GroovyCompilationService,
+        ctx: ImportCompletionContext,
+    ) {
+        val methods = compilationService.classpathService.getMethods(className)
+            .filter { it.isStatic && it.isPublic }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+
+        methods.forEach { method ->
+            add(
+                CompletionItem().apply {
+                    label = method.name
+                    kind = CompletionItemKind.Method
+                    detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
+                    insertText = method.name
+                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${method.name}"))
+                },
+            )
+        }
+    }
+
+    /**
+     * Adds completions for static fields and constants when completing static imports.
+     */
+    private fun CompletionsBuilder.addStaticFieldCompletions(
+        className: String,
+        compilationService: GroovyCompilationService,
+        ctx: ImportCompletionContext,
+    ) {
+        val fields = compilationService.classpathService.getFields(className)
+            .filter { it.isStatic && it.isPublic }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+
+        fields.forEach { field ->
+            add(
+                CompletionItem().apply {
+                    label = field.name
+                    kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
+                    detail = "${field.type} ${field.name}"
+                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${field.name}"))
+                },
+            )
+        }
     }
 
     /**
@@ -763,7 +844,7 @@ object CompletionProvider {
             builder.method(
                 name = gdkMethod.name,
                 returnType = gdkMethod.returnType,
-                parameters = gdkMethod.parameters,
+                parameters = gdkMethod.parameterTypes,
                 doc = gdkMethod.doc,
             )
         }
