@@ -15,8 +15,9 @@ kt_library(
 kt_test(
     name = "core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":core"],
     deps = [
-        ":core",
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )

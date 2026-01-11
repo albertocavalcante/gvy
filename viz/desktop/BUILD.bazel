@@ -4,6 +4,8 @@ kt_library(
     name = "desktop",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    # Disabled: Requires Compose Multiplatform Bazel configuration
+    tags = ["manual"],
     deps = [
         "//parser/api",
         "//parser/core",
@@ -23,6 +25,8 @@ kt_test(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,
     ),
+    # Disabled: Requires Compose Multiplatform Bazel configuration
+    tags = ["manual"],
     deps = [
         ":desktop",
         "@maven//:org_junit_platform_junit_platform_launcher",

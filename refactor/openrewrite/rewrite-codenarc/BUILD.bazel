@@ -10,9 +10,12 @@ kt_library(
     ],
 )
 
+# Tests require openrewrite-test dependency which is not currently configured.
+# Run manually with: bazel test //refactor/openrewrite/rewrite-codenarc:rewrite-codenarc_test
 kt_test(
     name = "rewrite-codenarc_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    tags = ["manual"],
     deps = [
         ":rewrite-codenarc",
         "@maven//:ch_qos_logback_logback_classic",

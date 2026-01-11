@@ -2,6 +2,13 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
 # TypeScript compilation for the extension client
+#
+# NOTE: Dependencies are resolved through the pnpm workspace at editors/code/
+# The client/package.json dependencies (like vscode-languageclient) are included
+# in the unified pnpm-lock.yaml after running `pnpm install` from editors/code/
+#
+# All deps are referenced as "//editors/code:node_modules/<package-name>" because
+# the workspace resolution makes them available at the root level.
 ts_project(
     name = "client_lib",
     srcs = glob(

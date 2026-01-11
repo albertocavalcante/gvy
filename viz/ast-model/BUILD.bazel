@@ -7,6 +7,8 @@ kt_library(
         "src/jvmMain/kotlin/**/*.kt",
     ]),
     visibility = ["//visibility:public"],
+    # Disabled: Requires Compose Multiplatform Bazel configuration
+    tags = ["manual"],
     deps = [
         "//parser/core",
         "//parser/native",
@@ -22,6 +24,8 @@ kt_test(
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",
     ]),
+    # Disabled: Requires Compose Multiplatform Bazel configuration
+    tags = ["manual"],
     deps = [
         ":ast-model",
         "@maven//:org_junit_platform_junit_platform_launcher",

@@ -2,11 +2,17 @@ load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary")
 load("//tools/build_defs:kotlin.bzl", "kt_library")
 
+# NOTE: groovy-lsp-lib is disabled (tags = ["manual"]) due to:
+# - Kotlin 2.2 features (multi-dollar interpolation, nested type aliases)
+# - Mordant 3.x API incompatibility
+# - Dependencies on disabled modules (viz/ast-model, indexer/scip)
+# Enable once source code is updated for Bazel compatibility
 kt_library(
     name = "gls-lib",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
+    tags = ["manual"],
     deps = [
         # Internal dependencies
         "//dsl/dsld",
@@ -15,6 +21,7 @@ kt_library(
         # "//build-tool",
         "//diagnostics/api",
         "//semantics/core",
+        "//semantics/native",
         "//diagnostics/codenarc",
         # Note: groovy-diagnostics/sarif doesn't have BUILD file yet
         "//dsl/gdsl",
@@ -25,7 +32,11 @@ kt_library(
         "//markdown",
         "//parser/core",
         "//parser/native",
-        # Note: parser/rewrite, indexer/*, semantics/*, viz/ast-model don't have BUILD files yet
+        "//indexer/core",
+        "//indexer/lsif",
+        # "//indexer/scip",  # Disabled: needs protobuf generation for SCIP
+        # "//viz/ast-model",  # Disabled: needs Compose Multiplatform
+        # Note: parser/rewrite doesn't have BUILD file yet
 
         # LSP4J - Language Server Protocol implementation
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
@@ -69,6 +80,7 @@ kt_jvm_binary(
     name = "gls",
     main_class = "com.github.albertocavalcante.groovylsp.MainKt",
     visibility = ["//visibility:public"],
+    tags = ["manual"],
     runtime_deps = [":gls-lib"],
 )
 
@@ -76,5 +88,6 @@ java_binary(
     name = "gls_deploy",
     main_class = "com.github.albertocavalcante.groovylsp.MainKt",
     visibility = ["//visibility:public"],
+    tags = ["manual"],
     runtime_deps = [":gls-lib"],
 )

@@ -16,8 +16,8 @@ kt_library(
 kt_test(
     name = "groovy-repl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":groovy-repl"],
     deps = [
-        ":groovy-repl",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )

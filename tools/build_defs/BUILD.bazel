@@ -1,1 +1,15 @@
-# Empty package marker file for build_defs
+"""Build definitions for Groovy LSP."""
+
+load("@rules_kotlin//kotlin:core.bzl", "kt_compiler_plugin")
+
+# kotlinx-serialization compiler plugin
+kt_compiler_plugin(
+    name = "serialization_plugin",
+    compile_phase = True,
+    id = "org.jetbrains.kotlin.serialization",
+    stubs_phase = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_serialization_compiler_plugin_embeddable",
+    ],
+)

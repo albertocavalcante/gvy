@@ -14,8 +14,9 @@ kt_library(
 kt_test(
     name = "rewrite_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":rewrite"],
     deps = [
-        ":rewrite",
+        "//parser/api",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )

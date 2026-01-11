@@ -1,6 +1,21 @@
 load("@npm//:defs.bzl", "npm_link_all_packages")
 
 # Link all NPM packages from pnpm-lock.yaml
+#
+# IMPORTANT: This VS Code extension uses a pnpm workspace with a nested client package.
+# The workspace is configured in pnpm-workspace.yaml to include the client/ subdirectory.
+#
+# Setup required:
+#   1. The pnpm-workspace.yaml file defines the workspace structure
+#   2. After adding/modifying dependencies in either package.json or client/package.json,
+#      run `pnpm install` from this directory to regenerate pnpm-lock.yaml
+#   3. The lock file will include all dependencies from both the root and client packages
+#
+# Structure:
+#   - editors/code/package.json        (root with devDependencies)
+#   - editors/code/client/package.json (client with runtime deps like vscode-languageclient)
+#   - editors/code/pnpm-workspace.yaml (workspace configuration)
+#   - editors/code/pnpm-lock.yaml      (unified lock file for all packages)
 npm_link_all_packages(name = "node_modules")
 
 # Export configuration files for reference by other targets

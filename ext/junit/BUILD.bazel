@@ -15,7 +15,10 @@ kt_library(
 kt_test(
     name = "groovy-junit_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":groovy-junit"],
     deps = [
-        ":groovy-junit",
+        "//testing",
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
     ],
 )

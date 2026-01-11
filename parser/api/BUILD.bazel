@@ -12,7 +12,5 @@ kt_library(
 kt_test(
     name = "api_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    deps = [
-        ":api",
-    ],
+    associates = [":api"],
 )

@@ -62,7 +62,7 @@ data class ConnectionFile(
         /**
          * Parse connection file from JSON string.
          */
-        fun parse(jsonString: String): ConnectionFile = json.decodeFromString(serializer(), jsonString)
+        fun parse(jsonString: String): ConnectionFile = json.decodeFromString(ConnectionFile.serializer(), jsonString)
 
         /**
          * Parse connection file from file path.

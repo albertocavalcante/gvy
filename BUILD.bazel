@@ -42,15 +42,19 @@ gazelle(
 )
 
 # Alias to main deliverable
+# NOTE: Disabled until groovy-lsp is fixed for Bazel compatibility
 alias(
     name = "gls",
     actual = "//gls:gls",
+    tags = ["manual"],
 )
 
 # Default target when running bazel build //:all
+# NOTE: Disabled until groovy-lsp is fixed for Bazel compatibility
 filegroup(
     name = "all",
     srcs = [
         ":gls",
     ],
+    tags = ["manual"],
 )

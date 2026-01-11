@@ -16,8 +16,8 @@ kt_library(
 kt_test(
     name = "native_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":native"],
     deps = [
-        ":native",
         "//parser/api",
         "//parser/native",
         "@maven//:org_junit_platform_junit_platform_launcher",

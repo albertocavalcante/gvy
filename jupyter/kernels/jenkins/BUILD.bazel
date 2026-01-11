@@ -1,9 +1,11 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
+# NOTE: Disabled - depends on jupyter/kernel-core which needs serialization plugin
 kt_library(
     name = "jenkins",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    tags = ["manual"],
     deps = [
         "//jupyter/kernel-core",
         "@maven//:ch_qos_logback_logback_classic",
@@ -18,6 +20,7 @@ kt_test(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,
     ),
+    tags = ["manual"],
     deps = [
         ":jenkins",
         "@maven//:org_junit_platform_junit_platform_launcher",

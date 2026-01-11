@@ -12,8 +12,8 @@ kt_library(
 kt_test(
     name = "markdown_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":markdown"],
     deps = [
-        ":markdown",
         "@maven//:org_junit_platform_junit_platform_launcher",
     ],
 )
