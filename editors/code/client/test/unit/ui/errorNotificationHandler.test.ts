@@ -118,8 +118,8 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Gradle 7.4"));
       assert.ok(call.args[0].includes("JDK 21"));
-      // With new priority logic (max 3 buttons), only first suggestion is shown
-      assert.strictEqual(call.args[1], "Upgrade to Gradle 8.5 or higher");
+      // For incompatibility errors, Configure Java is shown as the primary action
+      assert.strictEqual(call.args[1], "Configure Java");
     });
 
     it("should show error message for GROOVY_JDK_INCOMPATIBLE with action buttons", async () => {
@@ -138,8 +138,8 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Groovy 2.5.0"));
       assert.ok(call.args[0].includes("JDK 17"));
-      // With new priority logic (max 3 buttons), only first suggestion is shown
-      assert.strictEqual(call.args[1], "Upgrade to Groovy 3.0.0 or higher");
+      // For incompatibility errors, Configure Java is shown as the primary action
+      assert.strictEqual(call.args[1], "Configure Java");
     });
 
     it("should show error message for TOOLCHAIN_PROVISIONING_FAILED with smart action buttons", async () => {
@@ -163,9 +163,9 @@ describe("Error Notification Handler", () => {
       const call = showErrorMessageStub.getCall(0);
       assert.ok(call.args[0].includes("Java 17"));
       assert.ok(call.args[0].includes("Mac OS X aarch64"));
-      // Smart action buttons for toolchain errors
-      assert.strictEqual(call.args[1], "Detect & Set Java");
-      assert.strictEqual(call.args[2], "Add Auto-Download Plugin");
+      // Smart action buttons for toolchain errors (renamed from "Detect & Set Java")
+      assert.strictEqual(call.args[1], "Configure Java");
+      assert.strictEqual(call.args[2], "Add Foojay Plugin");
     });
 
     it("should show warning message for generic errors", async () => {
@@ -210,7 +210,7 @@ describe("Error Notification Handler", () => {
   });
 
   describe("handleActionClick (via user interaction)", () => {
-    it("should execute configureJava when Detect & Set Java is clicked", async () => {
+    it("should execute configureJava when Configure Java is clicked", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -219,8 +219,8 @@ describe("Error Notification Handler", () => {
         suggestions: ["Set groovy.gradle.javaHome in VS Code settings"],
       };
 
-      // Simulate user clicking "Detect & Set Java"
-      showErrorMessageStub.resolves("Detect & Set Java");
+      // Simulate user clicking "Configure Java"
+      showErrorMessageStub.resolves("Configure Java");
 
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
@@ -237,7 +237,7 @@ describe("Error Notification Handler", () => {
       );
     });
 
-    it("should execute addFoojayResolver when Add Auto-Download Plugin is clicked", async () => {
+    it("should execute addFoojayResolver when Add Foojay Plugin is clicked", async () => {
       const errorDetails: ToolchainProvisioningError = {
         type: "TOOLCHAIN_PROVISIONING_FAILED",
         requiredVersion: 17,
@@ -246,8 +246,8 @@ describe("Error Notification Handler", () => {
         suggestions: ["Set groovy.gradle.javaHome in VS Code settings"],
       };
 
-      // Simulate user clicking "Add Auto-Download Plugin"
-      showErrorMessageStub.resolves("Add Auto-Download Plugin");
+      // Simulate user clicking "Add Foojay Plugin"
+      showErrorMessageStub.resolves("Add Foojay Plugin");
 
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",

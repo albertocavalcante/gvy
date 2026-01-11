@@ -640,7 +640,7 @@ async function readConfiguredRuntimes(
   }
 
   for (const config of runtimes) {
-    if (!config.path) continue;
+    if (!config?.path) continue;
 
     const expandedPath = expandHomeDir(config.path);
 

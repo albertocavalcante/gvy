@@ -56,11 +56,11 @@ export async function configureJava(
   // Build QuickPick items (includes Browse option even if no JDKs found)
   const items = buildQuickPickItems(jdks, requiredVersion);
 
-  // Show picker
+  // Show picker with clear messaging about LSP requirements
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: requiredVersion
-      ? `Select a JDK (Java ${requiredVersion} recommended)`
-      : "Select a JDK for this workspace",
+      ? `Select a JDK (LSP needs 17+, project targets Java ${requiredVersion})`
+      : `Select a JDK for the Groovy Language Server (requires Java ${MINIMUM_JAVA_VERSION}+)`,
     title: "Configure Java Runtime",
   });
 
@@ -115,14 +115,14 @@ async function browseAndSetJavaHome(): Promise<boolean> {
       return false;
     }
 
-    // Warn if version is below minimum
+    // Warn if version is below minimum - LSP cannot run
     if (runtime.version.major < MINIMUM_JAVA_VERSION) {
       const proceed = await vscode.window.showWarningMessage(
-        `Java ${runtime.version.major} is below the minimum required version (Java ${MINIMUM_JAVA_VERSION}). Continue anyway?`,
-        "Yes",
-        "No",
+        `Java ${runtime.version.major} cannot run the Groovy Language Server (requires Java ${MINIMUM_JAVA_VERSION}+). The LSP will fail to start. Continue anyway?`,
+        "Yes, use anyway",
+        "No, choose another",
       );
-      if (proceed !== "Yes") {
+      if (proceed !== "Yes, use anyway") {
         return false;
       }
     }
@@ -204,53 +204,78 @@ function buildQuickPickItems(
 ): QuickPickItem[] {
   const items: QuickPickItem[] = [];
 
-  // Group by: recommended (matches required version), compatible (>= 17), other
+  // Group by:
+  // - recommended: matches required version AND can run LSP (>= 17)
+  // - compatible: can run LSP (>= 17) but doesn't match project version
+  // - projectOnly: matches project version but cannot run LSP (< 17)
+  // - incompatible: cannot run LSP and doesn't match project
   const recommended: JavaResolutionExtended[] = [];
   const compatible: JavaResolutionExtended[] = [];
-  const other: JavaResolutionExtended[] = [];
+  const projectOnly: JavaResolutionExtended[] = [];
+  const incompatible: JavaResolutionExtended[] = [];
 
   for (const jdk of jdks) {
-    if (requiredVersion && jdk.version === requiredVersion) {
+    const canRunLsp = jdk.version >= MINIMUM_JAVA_VERSION;
+    const matchesProject = requiredVersion && jdk.version === requiredVersion;
+
+    if (canRunLsp && matchesProject) {
+      // Best case: can run LSP AND matches project
       recommended.push(jdk);
-    } else if (jdk.version >= MINIMUM_JAVA_VERSION) {
+    } else if (canRunLsp) {
+      // Can run LSP but doesn't match project
       compatible.push(jdk);
+    } else if (matchesProject) {
+      // Matches project but cannot run LSP
+      projectOnly.push(jdk);
     } else {
-      other.push(jdk);
+      // Cannot run LSP and doesn't match project
+      incompatible.push(jdk);
     }
   }
 
-  // Add recommended section
+  // Add recommended section (matches project's required version AND is LSP compatible)
+  // Note: recommended can only have items when requiredVersion is defined (see matchesProject check above)
   if (recommended.length > 0) {
     items.push({
-      label: "Recommended",
+      label: `Best Match (Java ${requiredVersion} - runs LSP & matches project)`,
       kind: vscode.QuickPickItemKind.Separator,
     });
     for (const jdk of recommended) {
-      items.push(createJdkItem(jdk, true));
+      items.push(createJdkItem(jdk, true, false, requiredVersion));
     }
   }
 
-  // Add compatible section
+  // Add compatible section (can run LSP, Java 17+)
   if (compatible.length > 0) {
-    if (items.length > 0) {
-      items.push({
-        label: "Compatible",
-        kind: vscode.QuickPickItemKind.Separator,
-      });
-    }
-    for (const jdk of compatible) {
-      items.push(createJdkItem(jdk, false));
-    }
-  }
-
-  // Add other section (incompatible JDKs)
-  if (other.length > 0) {
     items.push({
-      label: `Incompatible (Java < ${MINIMUM_JAVA_VERSION})`,
+      label: `LSP Compatible (Java ${MINIMUM_JAVA_VERSION}+)`,
       kind: vscode.QuickPickItemKind.Separator,
     });
-    for (const jdk of other) {
-      items.push(createJdkItem(jdk, false, true));
+    for (const jdk of compatible) {
+      items.push(createJdkItem(jdk, false, false, requiredVersion));
+    }
+  }
+
+  // Add project-only section (matches project but cannot run LSP)
+  // Note: projectOnly can only have items when requiredVersion is defined (see matchesProject check above)
+  if (projectOnly.length > 0) {
+    items.push({
+      label: `Project Target Only (Java ${requiredVersion} - cannot run LSP)`,
+      kind: vscode.QuickPickItemKind.Separator,
+    });
+    for (const jdk of projectOnly) {
+      items.push(createJdkItem(jdk, false, true, requiredVersion));
+    }
+  }
+
+  // Add incompatible section (cannot run LSP and doesn't match project)
+  if (incompatible.length > 0) {
+    items.push({
+      label: `Cannot Run LSP (Java < ${MINIMUM_JAVA_VERSION})`,
+      kind: vscode.QuickPickItemKind.Separator,
+    });
+    for (const jdk of incompatible) {
+      items.push(createJdkItem(jdk, false, true, requiredVersion));
     }
   }
 
@@ -275,20 +300,25 @@ function buildQuickPickItems(
  *
  * @param jdk The JDK to create an item for
  * @param isRecommended Whether to mark with a star icon
- * @param isIncompatible Whether to show incompatibility warning
+ * @param isIncompatible Whether to show incompatibility warning (cannot run LSP)
+ * @param projectVersion Optional project target version for context
  * @returns Formatted QuickPickItem
  */
 function createJdkItem(
   jdk: JavaResolutionExtended,
   isRecommended: boolean,
   isIncompatible: boolean = false,
+  projectVersion?: number,
 ): JdkQuickPickItem {
   const label = `$(coffee) Java ${jdk.version}${isRecommended ? " $(star-full)" : ""}`;
   const description = jdk.path;
   let detail = `From: ${jdk.sourceDescription}`;
 
   if (isIncompatible) {
-    detail += ` $(warning) Not compatible (Java ${MINIMUM_JAVA_VERSION}+ required)`;
+    detail += ` $(error) Cannot run LSP (requires Java ${MINIMUM_JAVA_VERSION}+)`;
+  } else if (projectVersion && jdk.version > projectVersion) {
+    // LSP compatible but newer than project target - show info
+    detail += ` $(info) Newer than project target (Java ${projectVersion})`;
   }
 
   return {

@@ -16,12 +16,9 @@ import {
  * from LSP suggestions). For other errors, buttons are derived from LSP suggestions.
  */
 
-// Smart action button labels for toolchain provisioning errors
-const DETECT_AND_SET_JAVA = "Detect & Set Java";
-const ADD_FOOJAY_PLUGIN = "Add Auto-Download Plugin";
-
-// Smart action button labels for JDK version mismatch warnings
+// Smart action button labels
 const CONFIGURE_JAVA = "Configure Java";
+const ADD_FOOJAY_PLUGIN = "Add Foojay Plugin";
 const DISMISS = "Dismiss";
 const DONT_SHOW_AGAIN = "Don't Show Again";
 
@@ -159,13 +156,24 @@ function buildActionsForError(
 
   // For toolchain provisioning errors, use smart action buttons
   if (errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED") {
-    // Primary action: Detect & Set Java
-    actions.push(DETECT_AND_SET_JAVA);
+    // Primary action: Configure Java
+    actions.push(CONFIGURE_JAVA);
 
-    // Secondary action: Add foojay plugin for auto-download
+    // Secondary action: Add foojay plugin for Gradle toolchain auto-download
     if (actions.length < 3) {
       actions.push(ADD_FOOJAY_PLUGIN);
     }
+
+    // Show Details if room available
+    if (actions.length < 3 && outputChannel) {
+      actions.push("Show Details");
+    }
+  } else if (
+    errorDetails.type === "GRADLE_JDK_INCOMPATIBLE" ||
+    errorDetails.type === "GROOVY_JDK_INCOMPATIBLE"
+  ) {
+    // For JDK incompatibility errors, offer Configure Java as primary action
+    actions.push(CONFIGURE_JAVA);
 
     // Show Details if room available
     if (actions.length < 3 && outputChannel) {
@@ -226,13 +234,13 @@ function buildErrorMessage(
   switch (errorDetails.type) {
     case "GRADLE_JDK_INCOMPATIBLE": {
       const err = errorDetails as GradleJdkIncompatibleError;
-      return `Gradle ${err.gradleVersion} is not compatible with JDK ${err.jdkVersion}. ${errorDetails.suggestions[0] || "Please check your configuration."}`;
+      return `Gradle ${err.gradleVersion} is not compatible with JDK ${err.jdkVersion}. Use 'Configure Java' to select a compatible JDK.`;
     }
 
     case "GROOVY_JDK_INCOMPATIBLE": {
       const err = errorDetails as GroovyJdkIncompatibleError;
       const groovyVer = err.groovyVersion || "current";
-      return `Groovy ${groovyVer} is not compatible with JDK ${err.jdkVersion}. ${errorDetails.suggestions[0] || "Please update Groovy or JDK version."}`;
+      return `Groovy ${groovyVer} is not compatible with JDK ${err.jdkVersion}. Use 'Configure Java' to select a compatible JDK.`;
     }
 
     case "TOOLCHAIN_PROVISIONING_FAILED": {
@@ -241,7 +249,7 @@ function buildErrorMessage(
         ? `Java ${err.requiredVersion}`
         : "required Java";
       const platform = err.platform || "your platform";
-      return `Cannot find ${version} for ${platform}. ${errorDetails.suggestions[0] || "Please install the required JDK."}`;
+      return `Cannot find ${version} for ${platform}. Use 'Configure Java' to select an installed JDK, or add the Foojay plugin for Gradle toolchain auto-downloads.`;
     }
 
     case "GENERIC": {
@@ -265,13 +273,15 @@ async function handleActionClick(
   // Lazy import vscode to avoid breaking unit tests
   const vscode = await import("vscode");
 
-  // Handle smart actions for toolchain provisioning errors
-  if (action === DETECT_AND_SET_JAVA) {
+  // Handle Configure Java action
+  if (action === CONFIGURE_JAVA) {
     // Extract required version from error details if available
-    const requiredVersion =
-      errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED"
-        ? (errorDetails as ToolchainProvisioningError).requiredVersion
-        : undefined;
+    let requiredVersion: number | undefined;
+    if (errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED") {
+      const version = (errorDetails as ToolchainProvisioningError)
+        .requiredVersion;
+      requiredVersion = version !== null ? version : undefined;
+    }
 
     // Execute the configureJava command with the required version
     await vscode.commands.executeCommand(
@@ -302,33 +312,16 @@ async function handleActionClick(
     return;
   }
 
-  // Check for install/download actions
+  // For install/download suggestions, redirect to Configure Java
   if (lowerAction.includes("install") || lowerAction.includes("download")) {
-    // Check if the action contains a URL
-    const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
-    if (urlMatch) {
-      const url = urlMatch[1];
-      vscode.window
-        .showInformationMessage(`Open ${url} in browser?`, "Open")
-        .then((choice) => {
-          if (choice === "Open") {
-            vscode.env.openExternal(vscode.Uri.parse(url));
-          }
-        });
-      return;
-    }
-    // Show info message with instructions
     vscode.window
       .showInformationMessage(
-        `To install the required JDK: ${action}`,
-        "Open Settings",
+        "Use 'Configure Java' to select an installed JDK, or add the Foojay plugin for Gradle toolchain auto-downloads.",
+        "Configure Java",
       )
       .then((selected) => {
-        if (selected === "Open Settings") {
-          vscode.commands.executeCommand(
-            "workbench.action.openSettings",
-            "groovy.gradle.javaHome",
-          );
+        if (selected === "Configure Java") {
+          vscode.commands.executeCommand("groovy.configureJava");
         }
       });
     return;
@@ -360,17 +353,13 @@ async function handleActionClick(
     return;
   }
 
-  // Check for URLs in the action and offer to open in browser
+  // Check for URLs in the action - show the suggestion but don't offer to open external URLs
+  // (download functionality removed - users should use Configure Java or Foojay plugin)
   const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
   if (urlMatch) {
-    const url = urlMatch[1];
-    vscode.window
-      .showInformationMessage(action, "Open in Browser")
-      .then((selected) => {
-        if (selected === "Open in Browser") {
-          vscode.env.openExternal(vscode.Uri.parse(url));
-        }
-      });
+    vscode.window.showInformationMessage(
+      `${action}\n\nUse 'Configure Java' command to select an installed JDK.`,
+    );
     return;
   }
 
