@@ -46,7 +46,9 @@ object WorkspaceFixture {
             copyDirectory(fixturePath, tempDir)
             logger.info { "Materialized fixture '$fixtureName' into $tempDir" }
             Files.list(tempDir).use { stream ->
-                logger.info { "Fixture root entry: ${it.fileName}" }
+                stream.forEach { entry ->
+                    logger.info { "Fixture root entry: ${entry.fileName}" }
+                }
             }
         }
 
