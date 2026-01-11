@@ -289,7 +289,7 @@
               },
               "default": {
                 "type": "boolean",
-                "description": "Use this JDK as the default when no specific version is required"
+                "description": "Reserved for future use. Currently not interpreted by the extension."
               }
             }
           },

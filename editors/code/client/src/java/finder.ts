@@ -600,6 +600,12 @@ async function scanSdkmanJdks(
 interface RuntimeConfig {
   name: string; // e.g., "JDK-17", "JDK-21"
   path: string;
+  /**
+   * Reserved for future use and parity with vscode-java's java.configuration.runtimes.
+   *
+   * NOTE: This flag is currently not interpreted by the Groovy extension. It is kept
+   * here for configuration compatibility and may be wired up in a future release.
+   */
   default?: boolean;
 }
 
