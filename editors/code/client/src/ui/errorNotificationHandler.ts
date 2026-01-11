@@ -16,12 +16,9 @@ import {
  * from LSP suggestions). For other errors, buttons are derived from LSP suggestions.
  */
 
-// Smart action button labels for errors
-const CONFIGURE_JAVA_ACTION = "Configure Java";
-const ADD_FOOJAY_PLUGIN = "Add Foojay Plugin";
-
-// Smart action button labels for JDK version mismatch warnings
+// Smart action button labels
 const CONFIGURE_JAVA = "Configure Java";
+const ADD_FOOJAY_PLUGIN = "Add Foojay Plugin";
 const DISMISS = "Dismiss";
 const DONT_SHOW_AGAIN = "Don't Show Again";
 
@@ -160,7 +157,7 @@ function buildActionsForError(
   // For toolchain provisioning errors, use smart action buttons
   if (errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED") {
     // Primary action: Configure Java
-    actions.push(CONFIGURE_JAVA_ACTION);
+    actions.push(CONFIGURE_JAVA);
 
     // Secondary action: Add foojay plugin for Gradle toolchain auto-download
     if (actions.length < 3) {
@@ -176,7 +173,7 @@ function buildActionsForError(
     errorDetails.type === "GROOVY_JDK_INCOMPATIBLE"
   ) {
     // For JDK incompatibility errors, offer Configure Java as primary action
-    actions.push(CONFIGURE_JAVA_ACTION);
+    actions.push(CONFIGURE_JAVA);
 
     // Show Details if room available
     if (actions.length < 3 && outputChannel) {
@@ -277,7 +274,7 @@ async function handleActionClick(
   const vscode = await import("vscode");
 
   // Handle Configure Java action
-  if (action === CONFIGURE_JAVA_ACTION) {
+  if (action === CONFIGURE_JAVA) {
     // Extract required version from error details if available
     let requiredVersion: number | undefined;
     if (errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED") {

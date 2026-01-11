@@ -234,6 +234,7 @@ function buildQuickPickItems(
   }
 
   // Add recommended section (matches project's required version AND is LSP compatible)
+  // Note: recommended can only have items when requiredVersion is defined (see matchesProject check above)
   if (recommended.length > 0) {
     items.push({
       label: `Best Match (Java ${requiredVersion} - runs LSP & matches project)`,
@@ -256,6 +257,7 @@ function buildQuickPickItems(
   }
 
   // Add project-only section (matches project but cannot run LSP)
+  // Note: projectOnly can only have items when requiredVersion is defined (see matchesProject check above)
   if (projectOnly.length > 0) {
     items.push({
       label: `Project Target Only (Java ${requiredVersion} - cannot run LSP)`,
