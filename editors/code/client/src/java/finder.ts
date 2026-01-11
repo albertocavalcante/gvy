@@ -503,7 +503,7 @@ function getSourcePriorityByCategory(source: JavaSource): number {
 //
 // This is a targeted workaround for a known gap in jdk-utils.
 // TODO(#TBD): File upstream issue with jdk-utils or contribute a PR.
-// See: https://github.com/AnyByte/jdk-utils
+// See: https://github.com/Eskibear/node-jdk-utils
 // =============================================================================
 
 /**
