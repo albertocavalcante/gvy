@@ -496,14 +496,18 @@ function getSourcePriorityByCategory(source: JavaSource): number {
 // SDKMAN Detection (Homebrew-installed)
 // =============================================================================
 //
-// HACK(jdk-detection): jdk-utils scans ~/.sdkman but NOT Homebrew-installed SDKMAN.
+// WORKAROUND(jdk-detection): Explicit Homebrew SDKMAN path scanning.
 // When SDKMAN is installed via `brew install sdkman-cli`, JDKs are stored at:
 //   /opt/homebrew/opt/sdkman-cli/libexec/candidates/java/ (ARM)
 //   /usr/local/opt/sdkman-cli/libexec/candidates/java/ (Intel)
 //
-// This is a targeted workaround for a known gap in jdk-utils.
-// TODO(#TBD): File upstream issue with jdk-utils or contribute a PR.
-// See: https://github.com/Eskibear/node-jdk-utils
+// This is a defensive workaround to ensure Homebrew-installed SDKMAN is detected.
+// While jdk-utils@0.6.0+ may support Homebrew SDKMAN, this explicit scanning
+// provides redundancy and ensures detection across different jdk-utils versions.
+//
+// TODO(#825): Verify jdk-utils@0.6.0+ Homebrew SDKMAN detection and potentially
+//   remove this workaround if upstream support is confirmed reliable.
+//   See: https://github.com/albertocavalcante/gvy/issues/825
 // =============================================================================
 
 /**
