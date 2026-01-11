@@ -332,6 +332,94 @@ class JavaSourceInspector {
     }
 
     /**
+     * Extract all method parameters from a Java source file for a specific class.
+     *
+     * This is useful for indexing all GDK methods at once instead of inspecting them one by one.
+     *
+     * @param sourcePath Path to the .java file
+     * @param className Fully qualified class name (e.g., "org.codehaus.groovy.runtime.DefaultGroovyMethods")
+     * @return Map of method signature to parameter names, or empty map if parsing fails
+     *         Key format: "methodName(ParamType1,ParamType2,...)"
+     *         Example: "each(Closure)" -> ["closure"]
+     */
+    fun extractAllMethodParameters(sourcePath: Path, className: String): Map<String, List<String>> {
+        if (!Files.exists(sourcePath)) {
+            logger.debug("Source file does not exist: {}", sourcePath)
+            return emptyMap()
+        }
+
+        return try {
+            val content = Files.readString(sourcePath)
+            extractAllMethodParametersFromContent(content, className, sourcePath.toString())
+        } catch (e: Exception) {
+            logger.warn("Failed to extract method parameters from Java source: $sourcePath", e)
+            emptyMap()
+        }
+    }
+
+    /**
+     * Extract all method parameters from Java source content directly (useful for testing).
+     */
+    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
+    fun extractAllMethodParametersFromContent(
+        content: String,
+        className: String,
+        sourceName: String = "<unknown>",
+    ): Map<String, List<String>> {
+        return try {
+            val parseResult = parser.parse(content)
+
+            if (!parseResult.isSuccessful) {
+                logger.debug(
+                    "Failed to parse Java source {}: {}",
+                    sourceName,
+                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
+                )
+                return emptyMap()
+            }
+
+            val compilationUnit = parseResult.result.orElse(null) ?: return emptyMap()
+
+            // Extract simple class name for matching
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
+
+            // Find the class declaration
+            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
+                .firstOrNull { it.nameAsString == simpleClassName }
+
+            if (classDecl == null) {
+                logger.debug("Could not find class {} in {}", className, sourceName)
+                return emptyMap()
+            }
+
+            // Extract all methods with their parameter names
+            val result = mutableMapOf<String, List<String>>()
+
+            classDecl.methods.forEach { method ->
+                val methodName = method.nameAsString
+                val paramTypes = method.parameters.map { param ->
+                    // Get simple type name (e.g., "Closure" instead of "groovy.lang.Closure")
+                    param.typeAsString.substringAfterLast('.')
+                }
+                val paramNames = method.parameters.map { it.nameAsString }
+
+                if (paramNames.isNotEmpty()) {
+                    val signature = "$methodName(${paramTypes.joinToString(",")})"
+                    result[signature] = paramNames
+                }
+            }
+
+            logger.debug("Extracted {} methods from class {} in {}", result.size, className, sourceName)
+            result
+        } catch (e: Exception) {
+            logger.warn("Failed to extract method parameters from $className", e)
+            emptyMap()
+        }
+    }
+
+    /**
      * Extract the first sentence from a documentation string.
      *
      * A sentence ends at:
