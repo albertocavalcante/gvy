@@ -142,7 +142,7 @@ class SourceNavigationService(
         return if (methodInspection != null) {
             SourceNavigator.SourceResult.SourceLocation(
                 uri = sourceLocation.uri,
-                className = "$className.$methodName",
+                className = className,
                 lineNumber = methodInspection.lineNumber,
                 documentation = methodInspection.documentation,
             )

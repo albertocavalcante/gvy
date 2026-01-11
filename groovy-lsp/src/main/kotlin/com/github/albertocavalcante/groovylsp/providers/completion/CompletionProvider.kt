@@ -812,7 +812,6 @@ object CompletionProvider {
                     label = field.name
                     kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
                     detail = "${field.type} ${field.name}"
-                    insertText = field.name
                     textEdit = Either.forLeft(TextEdit(range, "import static $className.${field.name}"))
                 },
             )

@@ -130,7 +130,7 @@ class MethodResolutionStrategy(
                 logger.debug("Found source for {}.{} at {}", className, methodName, result.uri)
                 val range = result.lineNumber?.let(::toZeroBasedLineRange)
                 SymbolResolutionStrategy.found(
-                    DefinitionResolver.DefinitionResult.Binary(result.uri, "$className.$methodName", range),
+                    DefinitionResolver.DefinitionResult.Binary(result.uri, "$className#$methodName", range),
                 )
             }
 
