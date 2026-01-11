@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.e2e
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -10,7 +10,7 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 
 object WorkspaceFixture {
-    private val logger = LoggerFactory.getLogger(WorkspaceFixture::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun materialize(scenarioSource: Path, fixtureName: String?): Path {
         val tempDir = Files.createTempDirectory("groovy-lsp-e2e-")
@@ -44,9 +44,9 @@ object WorkspaceFixture {
                 "Fixture '$fixtureName' referenced by $scenarioSource not found at $fixturePath"
             }
             copyDirectory(fixturePath, tempDir)
-            logger.info("Materialized fixture '{}' into {}", fixtureName, tempDir)
+            logger.info { "Materialized fixture '$fixtureName' into $tempDir" }
             Files.list(tempDir).use { stream ->
-                stream.forEach { logger.info("Fixture root entry: {}", it.fileName) }
+                logger.info { "Fixture root entry: ${it.fileName}" }
             }
         }
 
@@ -59,7 +59,7 @@ object WorkspaceFixture {
                 .sorted(Comparator.reverseOrder())
                 .forEach { Files.deleteIfExists(it) }
         } catch (ex: IOException) {
-            logger.warn("Failed to delete temporary workspace at {}", path, ex)
+            logger.warn(ex) { "Failed to delete temporary workspace at $path" }
         }
     }
 

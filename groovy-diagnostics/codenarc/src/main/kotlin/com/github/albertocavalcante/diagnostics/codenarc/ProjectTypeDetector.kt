@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -27,7 +27,7 @@ interface ProjectTypeDetector {
 class DefaultProjectTypeDetector : ProjectTypeDetector {
 
     companion object {
-        private val logger = LoggerFactory.getLogger(DefaultProjectTypeDetector::class.java)
+        private val logger = KotlinLogging.logger {}
 
         // Jenkins project indicators
         private val jenkinsIndicators = listOf(
@@ -47,32 +47,32 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
     }
 
     override fun detect(workspaceRoot: Path): ProjectType {
-        logger.debug("Detecting project type for workspace: $workspaceRoot")
+        logger.debug { "Detecting project type for workspace: $workspaceRoot" }
 
         val result = when {
             isJenkinsProject(workspaceRoot) -> {
-                logger.info("Detected Jenkins project: $workspaceRoot")
+                logger.info { "Detected Jenkins project: $workspaceRoot" }
                 ProjectType.JenkinsLibrary
             }
             isGradleProject(workspaceRoot) -> {
                 val hasSpock = hasSpockTesting(workspaceRoot)
-                logger.info("Detected Gradle project: $workspaceRoot (spock=$hasSpock)")
+                logger.info { "Detected Gradle project: $workspaceRoot (spock=$hasSpock)" }
                 ProjectType.GradleProject(hasSpock)
             }
             isGrailsProject(workspaceRoot) -> {
-                logger.info("Detected Grails project: $workspaceRoot")
+                logger.info { "Detected Grails project: $workspaceRoot" }
                 ProjectType.GrailsApplication
             }
             isSpringBootProject(workspaceRoot) -> {
-                logger.info("Detected Spring Boot project: $workspaceRoot")
+                logger.info { "Detected Spring Boot project: $workspaceRoot" }
                 ProjectType.SpringBootProject
             }
             isMavenProject(workspaceRoot) -> {
-                logger.info("Detected Maven project: $workspaceRoot")
+                logger.info { "Detected Maven project: $workspaceRoot" }
                 ProjectType.MavenProject
             }
             else -> {
-                logger.info("No specific project type detected, using plain Groovy: $workspaceRoot")
+                logger.info { "No specific project type detected, using plain Groovy: $workspaceRoot" }
                 ProjectType.PlainGroovy
             }
         }
@@ -114,7 +114,7 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                     return true
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to read build.gradle for Grails detection", e)
+                logger.debug(e) { "Failed to read build.gradle for Grails detection" }
             }
         }
 
@@ -133,7 +133,7 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                     return true
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to read build.gradle for Spring Boot detection", e)
+                logger.debug(e) { "Failed to read build.gradle for Spring Boot detection" }
             }
         }
 
@@ -145,7 +145,7 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                     return true
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to read pom.xml for Spring Boot detection", e)
+                logger.debug(e) { "Failed to read pom.xml for Spring Boot detection" }
             }
         }
 
@@ -178,7 +178,7 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                     return true
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to read build.gradle for Spock detection", e)
+                logger.debug(e) { "Failed to read build.gradle for Spock detection" }
             }
         }
 
@@ -193,12 +193,12 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
                             file.readText().contains("extends Specification") ||
                                 file.readText().contains("import spock.")
                         } catch (e: Exception) {
-                            logger.debug("Failed to read file for Spock detection: ${file.name}", e)
+                            logger.debug(e) { "Failed to read file for Spock detection: ${file.name}" }
                             false
                         }
                     }
             } catch (e: Exception) {
-                logger.debug("Failed to scan test directory for Spock specs", e)
+                logger.debug(e) { "Failed to scan test directory for Spock specs" }
             }
         }
 

@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovyjupyter.zmq
 
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.zeromq.SocketType
 import org.zeromq.ZContext
 import org.zeromq.ZMQ
@@ -21,7 +21,7 @@ import java.io.Closeable
  * Inspired by kotlin-jupyter's socket architecture.
  */
 class JupyterConnection(private val config: ConnectionFile, val signer: HmacSigner) : Closeable {
-    private val logger = LoggerFactory.getLogger(JupyterConnection::class.java)
+    private val logger = KotlinLogging.logger {}
     private val context = ZContext()
     private val createdSockets = mutableListOf<ZMQ.Socket>()
 
@@ -45,7 +45,7 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
      * This is useful for testing. In production, Jupyter provides specific ports.
      */
     fun bind() {
-        logger.info("Binding sockets...")
+        logger.info { "Binding sockets..." }
 
         bindSocket(shellSocket, config.shellAddress(), "shell")
         bindSocket(iopubSocket, config.iopubAddress(), "iopub")
@@ -54,13 +54,13 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
         bindSocket(heartbeatSocket, config.heartbeatAddress(), "heartbeat")
 
         isBound = true
-        logger.info("All sockets bound successfully")
+        logger.info { "All sockets bound successfully" }
     }
 
     override fun close() {
         if (isClosed) return
 
-        logger.info("Closing sockets...")
+        logger.info { "Closing sockets..." }
 
         // Close sockets in reverse order of creation
         createdSockets.asReversed().forEach { runCatching { it.close() } }
@@ -68,11 +68,11 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
 
         context.close()
         isClosed = true
-        logger.info("All sockets closed")
+        logger.info { "All sockets closed" }
     }
 
     private fun createSocket(type: SocketType, name: String): ZMQ.Socket {
-        logger.debug("Creating {} socket", name)
+        logger.debug { "Creating $name socket" }
         return context.createSocket(type).also { createdSockets.add(it) }
     }
 
@@ -89,9 +89,9 @@ class JupyterConnection(private val config: ConnectionFile, val signer: HmacSign
             address
         }
 
-        logger.debug("Binding {} socket to {}", name, bindAddress)
+        logger.debug { "Binding $name socket to $bindAddress" }
         socket.bind(bindAddress)
-        logger.info("Bound {} socket to {}", name, socket.lastEndpoint)
+        logger.info { "Bound $name socket to ${socket.lastEndpoint}" }
     }
 
     /**

@@ -6,9 +6,9 @@ import arrow.core.right
 import com.github.albertocavalcante.groovycommon.functional.DomainError
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.codehaus.groovy.ast.ASTNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -65,7 +65,7 @@ data class ResolutionContext(
  *     ClasspathResolutionStrategy(compilationService, sourceNavigator),
  * )
  * pipeline.resolve(context).fold(
- *     ifLeft = { error -> logger.debug("Resolution failed: ${error.reason}") },
+ *     ifLeft = { error -> logger.debug { "Resolution failed: ${error.reason}" } },
  *     ifRight = { result -> emit(result) }
  * )
  * ```
@@ -80,7 +80,7 @@ fun interface SymbolResolutionStrategy {
     suspend fun resolve(context: ResolutionContext): ResolutionResult
 
     companion object {
-        private val logger = LoggerFactory.getLogger(SymbolResolutionStrategy::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Compose multiple strategies into a pipeline that short-circuits on first success.
@@ -112,11 +112,9 @@ fun interface SymbolResolutionStrategy {
                         // NOTE: This is intentionally a broad catch to keep definition resolution resilient.
                         // TODO: Replace with strategy-specific error handling (or typed ResolutionError codes) so we
                         // only catch known failure modes and let truly unexpected exceptions fail fast in tests.
-                        logger.debug(
-                            "Resolution strategy {} threw unexpectedly",
-                            strategy::class.simpleName ?: "unknown",
-                            e,
-                        )
+                        logger.debug(e) {
+                            "Resolution strategy ${strategy::class.simpleName ?: "unknown"} threw unexpectedly"
+                        }
                         ResolutionError(
                             "Strategy threw: ${e.message}",
                             strategy::class.simpleName ?: "unknown",

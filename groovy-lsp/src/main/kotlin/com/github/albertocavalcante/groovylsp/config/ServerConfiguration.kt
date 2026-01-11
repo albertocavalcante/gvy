@@ -4,8 +4,8 @@ import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.groovylsp.buildtool.GradleBuildStrategy
 import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.DiagnosticSeverity
-import org.slf4j.LoggerFactory
 
 /**
  * Configuration for the Groovy Language Server.
@@ -98,7 +98,7 @@ data class ServerConfiguration(
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(ServerConfiguration::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Creates configuration from initialization options or configuration settings.
@@ -106,7 +106,7 @@ data class ServerConfiguration(
         @Suppress("TooGenericExceptionCaught") // Config parsing handles all JSON conversion errors
         fun fromMap(map: Map<String, Any>?): ServerConfiguration {
             if (map == null) {
-                logger.debug("No configuration provided, using defaults")
+                logger.debug { "No configuration provided, using defaults" }
                 return ServerConfiguration()
             }
 
@@ -156,7 +156,7 @@ data class ServerConfiguration(
                     ),
                 )
             } catch (e: Exception) {
-                logger.warn("Error parsing configuration, using defaults", e)
+                logger.warn(e) { "Error parsing configuration, using defaults" }
                 ServerConfiguration()
             }
         }
@@ -168,7 +168,7 @@ data class ServerConfiguration(
                 "single-file", "singlefile" -> CompilationMode.SINGLE_FILE
                 null -> CompilationMode.WORKSPACE
                 else -> {
-                    logger.warn("Unknown compilation mode '$modeString', using workspace mode")
+                    logger.warn { "Unknown compilation mode '$modeString', using workspace mode" }
                     CompilationMode.WORKSPACE
                 }
             }
@@ -178,14 +178,11 @@ data class ServerConfiguration(
             val rawValue = map["groovy.server.logLevel"]
             val logLevelString = rawValue as? String
             // Log at INFO level so this is ALWAYS visible before level is changed
-            logger.info(
-                "Parsing logLevel from initOptions: raw='{}', type={}, parsed={}",
-                rawValue,
-                rawValue?.javaClass?.simpleName ?: "null",
-                logLevelString,
-            )
+            logger.info {
+                "Parsing logLevel from initOptions: raw='$rawValue', type=${rawValue?.javaClass?.simpleName ?: "null"}, parsed=$logLevelString"
+            }
             val parsed = LogLevel.fromString(logLevelString)
-            logger.info("LogLevel parsed as: {}", parsed.name)
+            logger.info { "LogLevel parsed as: ${parsed.name}" }
             return parsed
         }
 
@@ -193,13 +190,13 @@ data class ServerConfiguration(
             val rawWorkers = map["groovy.workers"] as? List<*> ?: return emptyList()
             return rawWorkers.mapNotNull { entry ->
                 val entryMap = entry as? Map<*, *> ?: run {
-                    logger.warn("Invalid worker descriptor entry: expected map, got {}", entry?.javaClass?.simpleName)
+                    logger.warn { "Invalid worker descriptor entry: expected map, got ${entry?.javaClass?.simpleName}" }
                     return@mapNotNull null
                 }
                 val id = entryMap["id"] as? String
                 val minVersion = entryMap["minVersion"] as? String
                 if (id.isNullOrBlank() || minVersion.isNullOrBlank()) {
-                    logger.warn("Invalid worker descriptor entry: missing id or minVersion")
+                    logger.warn { "Invalid worker descriptor entry: missing id or minVersion" }
                     return@mapNotNull null
                 }
                 val maxVersion = entryMap["maxVersion"] as? String
@@ -240,7 +237,7 @@ data class ServerConfiguration(
                 "verbose" -> TraceLevel.VERBOSE
                 null -> TraceLevel.OFF
                 else -> {
-                    logger.warn("Unknown trace level '$traceString', using off")
+                    logger.warn { "Unknown trace level '$traceString', using off" }
                     TraceLevel.OFF
                 }
             }

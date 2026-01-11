@@ -8,7 +8,7 @@ import ch.epfl.scala.bsp4j.ShowMessageParams
 import ch.epfl.scala.bsp4j.TaskFinishParams
 import ch.epfl.scala.bsp4j.TaskProgressParams
 import ch.epfl.scala.bsp4j.TaskStartParams
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -19,7 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * to react to build server events.
  */
 class BspClientHandler : BuildClient {
-    private val logger = LoggerFactory.getLogger(BspClientHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val diagnosticListeners = CopyOnWriteArrayList<(PublishDiagnosticsParams) -> Unit>()
     private val showMessageListeners = CopyOnWriteArrayList<(ShowMessageParams) -> Unit>()
@@ -94,31 +94,31 @@ class BspClientHandler : BuildClient {
     // BuildClient interface implementations
 
     override fun onBuildShowMessage(params: ShowMessageParams) {
-        logger.info("[BSP Show] ${params.message}")
+        logger.info { "[BSP Show] ${params.message}" }
         showMessageListeners.forEach { it(params) }
     }
 
     override fun onBuildLogMessage(params: LogMessageParams) {
-        logger.debug("[BSP Log] ${params.message}")
+        logger.debug { "[BSP Log] ${params.message}" }
         logMessageListeners.forEach { it(params) }
     }
 
     override fun onBuildPublishDiagnostics(params: PublishDiagnosticsParams) {
         val diagnosticCount = params.diagnostics?.size ?: 0
-        logger.debug("[BSP Diagnostics] ${params.textDocument.uri}: $diagnosticCount diagnostics")
+        logger.debug { "[BSP Diagnostics] ${params.textDocument.uri}: $diagnosticCount diagnostics" }
         diagnosticListeners.forEach { it(params) }
     }
 
     override fun onBuildTargetDidChange(params: DidChangeBuildTarget) {
         val changeCount = params.changes?.size ?: 0
-        logger.info("[BSP] Build targets changed: $changeCount targets affected")
+        logger.info { "[BSP] Build targets changed: $changeCount targets affected" }
         buildTargetChangeListeners.forEach { it(params) }
     }
 
     override fun onBuildTaskStart(params: TaskStartParams) {
         val taskId = params.taskId.id
         val message = params.message ?: taskId
-        logger.debug("[BSP Task Start] $message")
+        logger.debug { "[BSP Task Start] $message" }
         taskStartListeners.forEach { it(params) }
     }
 
@@ -126,7 +126,7 @@ class BspClientHandler : BuildClient {
         val taskId = params.taskId.id
         val message = params.message ?: ""
         val progress = params.progress?.let { " ($it%)" } ?: ""
-        logger.debug("[BSP Task Progress] $taskId: $message$progress")
+        logger.debug { "[BSP Task Progress] $taskId: $message$progress" }
         taskProgressListeners.forEach { it(params) }
     }
 
@@ -134,7 +134,7 @@ class BspClientHandler : BuildClient {
         val taskId = params.taskId.id
         val message = params.message ?: taskId
         val status = params.status?.name ?: "UNKNOWN"
-        logger.debug("[BSP Task Finish] $message ($status)")
+        logger.debug { "[BSP Task Finish] $message ($status)" }
         taskFinishListeners.forEach { it(params) }
     }
 }

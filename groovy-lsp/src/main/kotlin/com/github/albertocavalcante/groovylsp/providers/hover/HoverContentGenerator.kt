@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
@@ -37,7 +38,6 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
 /**
@@ -47,7 +47,7 @@ import java.lang.reflect.Modifier
 class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) {
     companion object {
         private const val MAX_DISPLAYED_ITEMS = 5
-        private val logger = LoggerFactory.getLogger(HoverContentGenerator::class.java)
+        private val logger = KotlinLogging.logger {}
 
         // Display limits for collection literals in hover content
         @Suppress("MagicNumber") // UI display constants
@@ -469,7 +469,7 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
 
     private fun MarkdownBuilder.renderImportNode(node: ImportNode) {
         val formatted = formatImport(node)
-        logger.debug("formatImport result: '$formatted'")
+        logger.debug { "formatImport result: '$formatted'" }
         section("Import") {
             code("groovy") { formatted }
             keyValue(

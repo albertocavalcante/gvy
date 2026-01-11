@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -31,7 +31,7 @@ class SourceNavigationService(
         private const val MIN_MAVEN_COORDINATE_PARTS = 3
     }
 
-    private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Navigate to source code for a class found in the classpath.
@@ -46,7 +46,7 @@ class SourceNavigationService(
      */
     @Suppress("ReturnCount") // Multiple resolution strategies require early returns
     override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult {
-        logger.debug("Navigating to source for: {} from {}", className, classpathUri)
+        logger.debug { "Navigating to source for: $className from $classpathUri" }
 
         // Handle JDK classes (jrt: scheme)
         if (classpathUri.scheme == "jrt") {
@@ -56,7 +56,7 @@ class SourceNavigationService(
         // Step 1: Check if we already have extracted sources
         val existingSource = sourceExtractor.findSourceForClass(className)
         if (existingSource != null) {
-            logger.debug("Found cached source for: {}", className)
+            logger.debug { "Found cached source for: $className" }
             val inspection = javaSourceInspector.inspectClass(existingSource, className)
             return SourceNavigator.SourceResult.SourceLocation(
                 uri = existingSource.toUri(),
@@ -123,7 +123,7 @@ class SourceNavigationService(
         return try {
             Path.of(jarPath)
         } catch (e: Exception) {
-            logger.debug("Failed to parse JAR path: {}", jarPath)
+            logger.debug { "Failed to parse JAR path: $jarPath" }
             null
         }
     }
@@ -145,22 +145,22 @@ class SourceNavigationService(
             try {
                 val sourceJar = sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
                 if (sourceJar != null) {
-                    logger.debug("Resolved source JAR via Maven: {}", sourceJar)
+                    logger.debug { "Resolved source JAR via Maven: $sourceJar" }
                     return sourceJar
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to resolve source JAR from Maven: {}", e.message)
+                logger.debug { "Failed to resolve source JAR from Maven: ${e.message}" }
             }
         }
 
         // Step 2: Look for adjacent -sources.jar in the same directory
         val adjacentSource = findAdjacentSourceJar(binaryJarPath)
         if (adjacentSource != null) {
-            logger.debug("Found adjacent source JAR: {}", adjacentSource)
+            logger.debug { "Found adjacent source JAR: $adjacentSource" }
             return adjacentSource
         }
 
-        logger.debug("No source JAR found for: {}", binaryJarPath)
+        logger.debug { "No source JAR found for: $binaryJarPath" }
         return null
     }
 

@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Thread-safety is provided by ConcurrentHashMap for concurrent LSP operations.
  */
 class DependencyGraph {
-    private val logger = LoggerFactory.getLogger(DependencyGraph::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Maps a file URI to the set of file URIs it depends on (direct dependencies only).
@@ -48,7 +48,7 @@ class DependencyGraph {
         // Add to reverse dependent map
         dependents.computeIfAbsent(toUri) { ConcurrentHashMap.newKeySet() }.add(fromUri)
 
-        logger.debug("Added dependency: {} -> {}", fromUri, toUri)
+        logger.debug { "Added dependency: $fromUri -> $toUri" }
     }
 
     /**
@@ -77,7 +77,7 @@ class DependencyGraph {
             }
         }
 
-        logger.debug("Removed file from dependency graph: {}", uri)
+        logger.debug { "Removed file from dependency graph: $uri" }
     }
 
     /**
@@ -144,13 +144,9 @@ class DependencyGraph {
 
         val result = directDependencies + directDependents
 
-        logger.debug(
-            "Bounded compilation sources for {}: {} dependencies + {} dependents = {} total",
-            uri,
-            directDependencies.size,
-            directDependents.size,
-            result.size,
-        )
+        logger.debug {
+            "Bounded compilation sources for $uri: ${directDependencies.size} dependencies + ${directDependents.size} dependents = ${result.size} total"
+        }
 
         return result
     }
@@ -185,11 +181,7 @@ class DependencyGraph {
             affected.addAll(getDependents(changedUri))
         }
 
-        logger.debug(
-            "Affected files for changes to {}: {} total affected",
-            changedUris.size,
-            affected.size,
-        )
+        logger.debug { "Affected files for changes to ${changedUris.size}: ${affected.size} total affected" }
 
         return affected
     }
@@ -216,22 +208,20 @@ class DependencyGraph {
         moduleNode.imports.forEach { importNode ->
             val importedClassName = importNode.className ?: importNode.type?.name
             if (importedClassName != null) {
-                logger.trace(
-                    "Processing import: className={}, available keys={}",
-                    importedClassName,
-                    workspaceIndex.keys,
-                )
+                logger.trace {
+                    "Processing import: className=$importedClassName, available keys=${workspaceIndex.keys}"
+                }
                 // Try both fully qualified name and simple name
                 workspaceIndex[importedClassName]?.let { dependencyUri ->
                     newDependencies.add(dependencyUri)
-                    logger.trace("Found dependency for {}: {}", importedClassName, dependencyUri)
+                    logger.trace { "Found dependency for $importedClassName: $dependencyUri" }
                 }
                 // Also try extracting simple name from FQN
                 val simpleName = importedClassName.substringAfterLast('.')
                 if (simpleName != importedClassName) {
                     workspaceIndex[simpleName]?.let { dependencyUri ->
                         newDependencies.add(dependencyUri)
-                        logger.trace("Found dependency for simple name {}: {}", simpleName, dependencyUri)
+                        logger.trace { "Found dependency for simple name $simpleName: $dependencyUri" }
                     }
                 }
             }
@@ -274,11 +264,7 @@ class DependencyGraph {
         // Update the graph with new dependencies
         setDependencies(uri, newDependencies)
 
-        logger.debug(
-            "Updated dependencies for {}: {} dependencies",
-            uri,
-            newDependencies.size,
-        )
+        logger.debug { "Updated dependencies for $uri: ${newDependencies.size} dependencies" }
     }
 
     /**

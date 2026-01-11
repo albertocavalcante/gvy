@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.io.InputStreamReader
 
 /**
@@ -16,7 +16,7 @@ import java.io.InputStreamReader
  */
 object JdkVersionMapper {
 
-    private val logger = LoggerFactory.getLogger(JdkVersionMapper::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @Serializable
     private data class CompatibilityMatrix(val majorVersionMapping: Map<String, Int> = emptyMap())
@@ -40,7 +40,7 @@ object JdkVersionMapper {
         matrix.majorVersionMapping.mapKeys { it.key.toInt() }
     }.getOrElse { throwable ->
         if (throwable is Error) throw throwable
-        logger.error("Failed to load major version mapping from groovy-compatibility.json", throwable)
+        logger.error(throwable) { "Failed to load major version mapping from groovy-compatibility.json" }
         emptyMap()
     }
 

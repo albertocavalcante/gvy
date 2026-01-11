@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyparser.ast
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Extracted from the original visitor implementation to provide focused responsibility.
  */
 class NodeRelationshipTracker {
-    private val logger = LoggerFactory.getLogger(NodeRelationshipTracker::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Parent tracking using a stack - following fork-groovy pattern
     private val nodeStack = ArrayDeque<ASTNode>()
@@ -62,16 +62,12 @@ class NodeRelationshipTracker {
             }.add(node)
 
             if (node is ClassNode) {
-                if (logger.isDebugEnabled) {
+                if (logger.isDebugEnabled()) {
                     // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
-                    logger.debug(
-                        "[pushNode] ClassNode {} @ {}:{}, id={}, added={}",
-                        node.name,
-                        node.lineNumber,
-                        node.columnNumber,
-                        System.identityHashCode(node),
-                        added,
-                    )
+                    logger.debug {
+                        "[pushNode] ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber}, " +
+                            "id=${System.identityHashCode(node)}, added=$added"
+                    }
                 }
             }
 
@@ -146,11 +142,9 @@ class NodeRelationshipTracker {
         }
         if (logger.isDebugEnabled) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
-            logger.debug("[getAllClassNodes] Found ${result.size} classes:")
+            logger.debug { "[getAllClassNodes] Found ${result.size} classes:" }
             result.forEach { cls ->
-                logger.debug(
-                    "  - ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScript}",
-                )
+                logger.debug { "- ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScript}" }
             }
         }
         return result

@@ -8,20 +8,20 @@ import com.github.albertocavalcante.groovyjupyter.kernel.KernelServer
 import com.github.albertocavalcante.groovyjupyter.protocol.ConnectionFile
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
-    val logger = LoggerFactory.getLogger("GroovyKernelMain")
+    val logger = KotlinLogging.logger("GroovyKernelMain")
 
     if (args.isEmpty()) {
-        logger.error("Usage: java -jar groovy-kernel.jar <connection_file>")
+        logger.error { "Usage: java -jar groovy-kernel.jar <connection_file>" }
         exitProcess(1)
     }
 
     val connectionFilePath = args[0]
-    logger.info("Starting Groovy Kernel with connection file: {}", connectionFilePath)
+    logger.info { "Starting Groovy Kernel with connection file: $connectionFilePath" }
 
     runCatching {
         val connectionFileContent = File(connectionFilePath).readText()
@@ -57,7 +57,7 @@ fun main(args: Array<String>) {
         }
     }.getOrElse { throwable ->
         if (throwable is Error) throw throwable
-        logger.error("Fatal error starting kernel", throwable)
+        logger.error(throwable) { "Fatal error starting kernel" }
         exitProcess(1)
     }
 }

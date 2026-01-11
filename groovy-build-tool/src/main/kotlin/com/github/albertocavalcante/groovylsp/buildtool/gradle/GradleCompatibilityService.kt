@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.gradle.util.GradleVersion
-import org.slf4j.LoggerFactory
 import java.io.InputStreamReader
 
 @Serializable
@@ -14,7 +14,7 @@ private data class CompatibilityMatrix(val compatibility: List<CompatibilityEntr
 
 class GradleCompatibilityService {
 
-    private val logger = LoggerFactory.getLogger(GradleCompatibilityService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Maps JDK Major Version -> Minimum Gradle Version Requirement
     private val minimumGradleVersions: Map<Int, GradleVersion> by lazy {
@@ -36,7 +36,7 @@ class GradleCompatibilityService {
         }
     }.getOrElse { throwable ->
         if (throwable is Error) throw throwable
-        logger.error("Failed to load Gradle compatibility matrix", throwable)
+        logger.error(throwable) { "Failed to load Gradle compatibility matrix" }
         emptyMap()
     }
 
@@ -75,7 +75,7 @@ class GradleCompatibilityService {
     private fun parseGradleVersionSafe(version: String): GradleVersion? = runCatching { GradleVersion.version(version) }
         .onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.warn("Failed to parse Gradle version: $version", throwable)
+            logger.warn(throwable) { "Failed to parse Gradle version: $version" }
         }
         .getOrNull()
 }

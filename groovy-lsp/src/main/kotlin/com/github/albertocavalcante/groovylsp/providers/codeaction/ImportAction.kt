@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.codeaction
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolCategory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Diagnostic
@@ -10,14 +11,13 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
-import org.slf4j.LoggerFactory
 
 /**
  * Provides import actions for missing symbols.
  * Only offers actions when there's a single unambiguous match.
  */
 class ImportAction(private val compilationService: GroovyCompilationService) {
-    private val logger = LoggerFactory.getLogger(ImportAction::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Creates import actions for missing symbols identified in diagnostics.
@@ -31,7 +31,7 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
 
         for (diagnostic in missingSymbolDiagnostics) {
             val symbolName = extractSymbolName(diagnostic) ?: continue
-            logger.debug("Looking for import candidates for symbol: $symbolName")
+            logger.debug { "Looking for import candidates for symbol: $symbolName" }
 
             // Find all possible imports for this symbol
             val candidates = findImportCandidates(symbolName)
@@ -41,11 +41,11 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
                 val fullyQualifiedName = candidates.first()
                 val action = createImportAction(uriString, symbolName, fullyQualifiedName, content, diagnostic)
                 actions.add(action)
-                logger.debug("Created import action for $symbolName -> $fullyQualifiedName")
+                logger.debug { "Created import action for $symbolName -> $fullyQualifiedName" }
             } else if (candidates.isEmpty()) {
-                logger.debug("No import candidates found for $symbolName")
+                logger.debug { "No import candidates found for $symbolName" }
             } else {
-                logger.debug("Ambiguous import for $symbolName: ${candidates.size} candidates found, declining")
+                logger.debug { "Ambiguous import for $symbolName: ${candidates.size} candidates found, declining" }
             }
         }
 

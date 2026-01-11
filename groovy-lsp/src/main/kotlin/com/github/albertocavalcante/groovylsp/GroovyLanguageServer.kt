@@ -40,6 +40,7 @@ import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +60,6 @@ import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
-import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -72,7 +72,7 @@ class GroovyLanguageServer(
 ) : LanguageServer,
     LanguageClientAware {
 
-    private val logger = LoggerFactory.getLogger(GroovyLanguageServer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Base client for standard LSP notifications (showMessage, publishDiagnostics, etc.)
     private var baseClient: LanguageClient? = null
@@ -154,7 +154,7 @@ class GroovyLanguageServer(
     }
 
     override fun connect(client: LanguageClient) {
-        logger.info("Connected to language client")
+        logger.info { "Connected to language client" }
         // Always store base client for standard LSP operations
         this.baseClient = client
 
@@ -162,7 +162,7 @@ class GroovyLanguageServer(
         // LSP4J creates a proxy that implements all interfaces registered on the Launcher.
         this.groovyClient = client as? GroovyLanguageClient
         if (this.groovyClient == null) {
-            logger.info("Client does not support GroovyLanguageClient interface - status notifications disabled")
+            logger.info { "Client does not support GroovyLanguageClient interface - status notifications disabled" }
         }
     }
 
@@ -200,16 +200,16 @@ class GroovyLanguageServer(
         )
         try {
             groovyClient?.groovyStatus(notification)
-            logger.debug("Sent status notification: health={}, quiescent={}, message={}", health, quiescent, message)
+            logger.debug { "Sent status notification: health=$health, quiescent=$quiescent, message=$message" }
         } catch (e: Exception) {
-            logger.debug("Could not send status notification: {}", e.message)
+            logger.debug { "Could not send status notification: ${e.message}" }
         }
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        logger.info("Initializing Groovy Language Server...")
-        logger.info("Client: ${params.clientInfo?.name ?: "Unknown"}")
-        logger.info("Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}")
+        logger.info { "Initializing Groovy Language Server..." }
+        logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
+        logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 
         savedInitParams = params
         clientCapabilities = params.capabilities
@@ -218,7 +218,7 @@ class GroovyLanguageServer(
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult()
 
-        logger.info("LSP initialized - ready for requests")
+        logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
 
@@ -235,15 +235,15 @@ class GroovyLanguageServer(
                 @Suppress("UNCHECKED_CAST")
                 Gson().fromJson(options, Map::class.java) as Map<String, Any>
             }.onFailure {
-                logger.warn("Failed to parse JsonObject initialization options", it)
+                logger.warn(it) { "Failed to parse JsonObject initialization options" }
             }.getOrDefault(emptyMap())
         }
-        logger.warn("Unknown initialization options type: {}", options.javaClass.name)
+        logger.warn { "Unknown initialization options type: ${options.javaClass.name}" }
         return emptyMap()
     }
 
     override fun initialized(params: InitializedParams) {
-        logger.info("Server initialized - starting async dependency resolution")
+        logger.info { "Server initialized - starting async dependency resolution" }
 
         // Send starting status before async work begins
         sendStatus(health = Health.Ok, quiescent = false, message = "Initializing workspace...")
@@ -269,7 +269,7 @@ class GroovyLanguageServer(
     }
 
     override fun shutdown(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
-        logger.info("Shutting down Groovy Language Server...")
+        logger.info { "Shutting down Groovy Language Server..." }
         try {
             startupManager.shutdown()
 
@@ -277,24 +277,23 @@ class GroovyLanguageServer(
             try {
                 poolShutdown.get(GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             } catch (e: TimeoutException) {
-                logger.warn(
-                    "Gradle connection pool shutdown exceeded {} seconds; continuing shutdown",
-                    GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS,
-                )
+                logger.warn {
+                    "Gradle connection pool shutdown exceeded $GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS seconds; continuing shutdown"
+                }
                 poolShutdown.cancel(true)
             }
 
             coroutineScope.cancel()
         } catch (e: CancellationException) {
-            logger.debug("Coroutine scope cancelled during shutdown", e)
+            logger.debug(e) { "Coroutine scope cancelled during shutdown" }
         } catch (e: Exception) {
-            logger.warn("Error during shutdown", e)
+            logger.warn(e) { "Error during shutdown" }
         }
         Any()
     }
 
     override fun exit() {
-        logger.info("Exiting Groovy Language Server")
+        logger.info { "Exiting Groovy Language Server" }
     }
 
     override fun getTextDocumentService(): TextDocumentService = textDocumentService

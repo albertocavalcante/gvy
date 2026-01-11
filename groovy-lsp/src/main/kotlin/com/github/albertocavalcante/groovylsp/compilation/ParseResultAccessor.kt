@@ -5,10 +5,10 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,7 +35,7 @@ class ParseResultAccessor(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
 ) {
-    private val logger = LoggerFactory.getLogger(ParseResultAccessor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Gets the cached ParseResult for a URI.
@@ -139,7 +139,7 @@ class ParseResultAccessor(
 
         // Use helper function to check for suspicious Script node
         if (isSuspiciousScript(uri, cachedResult)) {
-            logger.info("Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase")
+            logger.info { "Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase" }
             // Read content directly from file instead of cache to verify content is correct
             val sourcePath = runCatching { Path.of(uri) }.getOrNull()
             val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
@@ -148,9 +148,9 @@ class ParseResultAccessor(
                 cacheService.getCachedWithContent(uri)?.first
             }
             val content = fileContent ?: return null
-            logger.info(
-                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'",
-            )
+            logger.info {
+                "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
+            }
             val parseResult = workerSessionManager.parse(
                 ParseRequest(
                     uri = uri,
@@ -169,16 +169,16 @@ class ParseResultAccessor(
             if (parseResult.ast != null) {
                 cacheService.putCached(uri, content, parseResult)
             }
-            logger.info(
+            logger.info {
                 "Re-parsed $uri at CONVERSION: classes=${
                     parseResult.ast?.classes?.map {
                         "${it.name} (super=${it.superClass?.name ?: "null"})"
                     }
-                }",
-            )
-            logger.debug(
-                "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}",
-            )
+                }"
+            }
+            logger.debug {
+                "Content preview: ${content.take(CONTENT_PREVIEW_LENGTH).replace("\n", "\\n")}"
+            }
             return parseResult
         }
 

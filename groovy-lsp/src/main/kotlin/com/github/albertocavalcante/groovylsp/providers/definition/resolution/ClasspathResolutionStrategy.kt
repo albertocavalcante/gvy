@@ -3,9 +3,9 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -23,7 +23,7 @@ class ClasspathResolutionStrategy(
     private val sourceNavigator: SourceNavigator?,
 ) : SymbolResolutionStrategy {
 
-    private val logger = LoggerFactory.getLogger(ClasspathResolutionStrategy::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @Suppress("TooGenericExceptionCaught")
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
@@ -33,7 +33,7 @@ class ClasspathResolutionStrategy(
         val classpathUri = compilationService.findClasspathClass(className)
             ?: return SymbolResolutionStrategy.notFound("Class $className not on classpath", STRATEGY_NAME)
 
-        logger.debug("Found classpath class {} at {}", className, classpathUri)
+        logger.debug { "Found classpath class $className at $classpathUri" }
 
         sourceNavigator?.let { navigator ->
             navigateToSourceIfPossible(navigator, classpathUri, className)
@@ -51,7 +51,7 @@ class ClasspathResolutionStrategy(
     ): ResolutionResult? = try {
         when (val result = sourceNavigator.navigateToSource(classpathUri, className)) {
             is SourceNavigator.SourceResult.SourceLocation -> {
-                logger.debug("Found source for {} at {}", className, result.uri)
+                logger.debug { "Found source for $className at ${result.uri}" }
                 val range = result.lineNumber?.let(::toZeroBasedLineRange)
                 SymbolResolutionStrategy.found(
                     DefinitionResolver.DefinitionResult.Binary(result.uri, className, range),
@@ -59,7 +59,7 @@ class ClasspathResolutionStrategy(
             }
 
             is SourceNavigator.SourceResult.BinaryOnly -> {
-                logger.debug("No source available for {}: {}", className, result.reason)
+                logger.debug { "No source available for $className: ${result.reason}" }
                 null
             }
         }
@@ -68,7 +68,7 @@ class ClasspathResolutionStrategy(
     } catch (e: Exception) {
         // NOTE: Source navigation is best-effort; resolution should still succeed with binaries when possible.
         // TODO: Narrow the caught exception types once SourceNavigator exposes a more explicit error surface.
-        logger.warn("Failed to navigate to source for {}: {}", className, e.message, e)
+        logger.warn(e) { "Failed to navigate to source for $className: ${e.message}" }
         null
     }
 
@@ -80,7 +80,7 @@ class ClasspathResolutionStrategy(
             )
 
             "jrt" -> {
-                logger.debug("JDK source not available for {}", className)
+                logger.debug { "JDK source not available for $className" }
                 SymbolResolutionStrategy.notFound(
                     "JDK source not available (src.zip extraction failed)",
                     STRATEGY_NAME,
@@ -88,7 +88,7 @@ class ClasspathResolutionStrategy(
             }
 
             "jar" -> {
-                logger.debug("No source available for {} - jar: URI not openable", className)
+                logger.debug { "No source available for $className - jar: URI not openable" }
                 SymbolResolutionStrategy.notFound(
                     "No source JAR available for dependency",
                     STRATEGY_NAME,
@@ -96,7 +96,7 @@ class ClasspathResolutionStrategy(
             }
 
             else -> {
-                logger.debug("Unsupported URI scheme for {}: {}", className, classpathUri.scheme)
+                logger.debug { "Unsupported URI scheme for $className: ${classpathUri.scheme}" }
                 SymbolResolutionStrategy.notFound(
                     "Unsupported URI scheme: ${classpathUri.scheme}",
                     STRATEGY_NAME,

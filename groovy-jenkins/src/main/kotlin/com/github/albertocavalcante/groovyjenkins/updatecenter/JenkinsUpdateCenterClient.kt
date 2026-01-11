@@ -5,9 +5,9 @@
 
 package com.github.albertocavalcante.groovyjenkins.updatecenter
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -29,7 +29,7 @@ class JenkinsUpdateCenterClient(
         .build(),
 ) {
 
-    private val logger = LoggerFactory.getLogger(JenkinsUpdateCenterClient::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Plugin metadata from the Update Center.
@@ -113,7 +113,7 @@ class JenkinsUpdateCenterClient(
             }
         } else {
             // Fallback: assume org.jenkins-ci.plugins group
-            logger.debug("Using fallback GAV for unknown plugin: {}", pluginName)
+            logger.debug { "Using fallback GAV for unknown plugin: $pluginName" }
             Triple("org.jenkins-ci.plugins", pluginName, version)
         }
     }
@@ -128,7 +128,7 @@ class JenkinsUpdateCenterClient(
      */
     suspend fun fetchPluginInfo(pluginName: String): PluginInfo? {
         // For now, use static mapping
-        logger.debug("Plugin info lookup for: {} (using static mapping)", pluginName)
+        logger.debug { "Plugin info lookup for: $pluginName (using static mapping)" }
 
         val gav = KNOWN_PLUGIN_GAVS[pluginName] ?: return null
         val parts = gav.split(":")
@@ -160,7 +160,7 @@ class JenkinsUpdateCenterClient(
             val response = httpClient.send(request, HttpResponse.BodyHandlers.discarding())
             response.statusCode() in 200..299
         } catch (e: Exception) {
-            logger.debug("Update Center not reachable: {}", e.message)
+            logger.debug { "Update Center not reachable: ${e.message}" }
             false
         }
     }

@@ -3,12 +3,12 @@ package com.github.albertocavalcante.groovylsp.buildtool
 import com.github.albertocavalcante.groovylsp.buildtool.maven.AetherSessionFactory
 import com.github.albertocavalcante.groovylsp.buildtool.maven.DefaultRepositoryProvider
 import com.github.albertocavalcante.groovylsp.buildtool.maven.RepositoryProvider
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.eclipse.aether.artifact.DefaultArtifact
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.ArtifactRequest
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -26,7 +26,7 @@ class MavenSourceArtifactResolver(
     private val repositoryProvider: RepositoryProvider = DefaultRepositoryProvider(),
 ) : SourceArtifactResolver {
 
-    private val logger = LoggerFactory.getLogger(MavenSourceArtifactResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? =
         resolveSourceJar(groupId, artifactId, version, repositoryProvider.getRepositories())
@@ -43,12 +43,12 @@ class MavenSourceArtifactResolver(
         version: String,
         repositories: List<RemoteRepository>,
     ): Path? = withContext(Dispatchers.IO) {
-        logger.debug("Resolving sources JAR: {}:{}:{}", groupId, artifactId, version)
+        logger.debug { "Resolving sources JAR: $groupId:$artifactId:$version" }
 
         // Check cache first
         val cachedPath = getCachePath(groupId, artifactId, version)
         if (Files.exists(cachedPath)) {
-            logger.debug("Found cached sources JAR: {}", cachedPath)
+            logger.debug { "Found cached sources JAR: $cachedPath" }
             return@withContext cachedPath
         }
 
@@ -65,7 +65,7 @@ class MavenSourceArtifactResolver(
 
             if (result.isResolved) {
                 val resolvedPath = result.artifact.file.toPath()
-                logger.info("Resolved sources JAR: {}", resolvedPath)
+                logger.info { "Resolved sources JAR: $resolvedPath" }
 
                 // Copy to our cache directory for consistent access
                 ensureCacheDirectory(groupId, artifactId, version)
@@ -74,11 +74,11 @@ class MavenSourceArtifactResolver(
                 }
                 cachedPath
             } else {
-                logger.warn("Sources JAR not found: {}:{}:{}", groupId, artifactId, version)
+                logger.warn { "Sources JAR not found: $groupId:$artifactId:$version" }
                 null
             }
         } catch (e: Exception) {
-            logger.error("Failed to resolve sources JAR: {}:{}:{}", groupId, artifactId, version, e)
+            logger.error(e) { "Failed to resolve sources JAR: $groupId:$artifactId:$version" }
             null
         }
     }

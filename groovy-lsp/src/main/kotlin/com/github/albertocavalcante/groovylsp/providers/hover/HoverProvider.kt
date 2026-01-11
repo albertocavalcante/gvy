@@ -31,6 +31,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
@@ -46,7 +47,6 @@ import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI
 
@@ -63,7 +63,7 @@ class HoverProvider(
     private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
 ) {
-    private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
     private val documentationProvider = DocumentationProvider
@@ -92,7 +92,7 @@ class HoverProvider(
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     suspend fun provideHover(uri: String, position: Position): Hover? = withContext(Dispatchers.Default) {
         try {
-            logger.debug("Providing hover for $uri at ${position.line}:${position.character}")
+            logger.debug { "Providing hover for $uri at ${position.line}:${position.character}" }
 
             val documentUri = URI.create(uri)
             ensureAstPrepared(documentUri)
@@ -108,16 +108,16 @@ class HoverProvider(
             // Create hover using DSL with documentation
             createHoverContent(hoverNode, documentUri)
         } catch (e: NodeNotFoundAtPositionException) {
-            logger.debug("No node found at position for hover: $e")
+            logger.debug { "No node found at position for hover: $e" }
             null
         } catch (e: InvalidPositionException) {
-            logger.warn("Invalid position for hover: $e")
+            logger.warn { "Invalid position for hover: $e" }
             null
         } catch (e: SymbolResolutionException) {
-            logger.debug("Symbol resolution failed for hover: $e")
+            logger.debug { "Symbol resolution failed for hover: $e" }
             null
         } catch (e: IllegalStateException) {
-            logger.error("Error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "Error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: IllegalArgumentException) {
             val documentUri = URI.create(uri)
@@ -126,16 +126,16 @@ class HoverProvider(
                 position.character,
                 e.message ?: "Invalid arguments",
             )
-            logger.error("Invalid arguments for hover: $specificException", e)
+            logger.error(e) { "Invalid arguments for hover: $specificException" }
             null
         } catch (e: GroovyLspException) {
-            logger.error("LSP error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "LSP error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: IOException) {
-            logger.error("I/O error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "I/O error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: Exception) {
-            logger.error("Unexpected error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "Unexpected error providing hover for $uri at ${position.line}:${position.character}" }
             null
         }
     }
@@ -153,7 +153,7 @@ class HoverProvider(
         runCatching {
             compilationService.compile(documentUri, content)
         }.onFailure { error ->
-            logger.debug("HoverProvider: failed to compile $documentUri before hover", error)
+            logger.debug(error) { "HoverProvider: failed to compile $documentUri before hover" }
         }
     }
 
@@ -184,7 +184,7 @@ class HoverProvider(
             else -> nodeAtPosition
         }
 
-        logger.debug("Found node at position: ${importAwareNode.javaClass.simpleName}")
+        logger.debug { "Found node at position: ${importAwareNode.javaClass.simpleName}" }
 
         // 2. If we have visitor/symbol table, try enhanced resolution
         if (astVisitor != null && symbolTable != null) {
@@ -302,13 +302,13 @@ class HoverProvider(
             ?.generateHover(node, context)
             ?: return null
 
-        logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
+        logger.debug { "Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}" }
 
         // Try to get documentation for the node
         var doc = try {
             documentationProvider.getDocumentation(node, documentUri)
         } catch (e: Exception) {
-            logger.debug("Failed to get documentation for node", e)
+            logger.debug(e) { "Failed to get documentation for node" }
             Documentation.EMPTY
         }
 
@@ -325,7 +325,7 @@ class HoverProvider(
                             doc = result.documentation
                         }
                     } catch (e: Exception) {
-                        logger.debug("Failed to get source documentation for $className", e)
+                        logger.debug(e) { "Failed to get source documentation for $className" }
                     }
                 }
             }

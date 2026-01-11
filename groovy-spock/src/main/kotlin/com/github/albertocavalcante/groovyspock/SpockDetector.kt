@@ -42,12 +42,12 @@ object SpockDetector {
      * @param module Optional ModuleNode for import-aware checks.
      * @param specClassNode Optional ClassNode for spock.lang.Specification from classpath.
      */
-    private val logger = org.slf4j.LoggerFactory.getLogger(SpockDetector::class.java)
+    private val logger = io.github.oshai.kotlinlogging.KotlinLogging.logger {}
 
     fun isSpockSpec(classNode: ClassNode, module: ModuleNode? = null, specClassNode: ClassNode? = null): Boolean {
         // Semantic check if we have the Specification class from classpath
         if (specClassNode != null && classNode.isDerivedFrom(specClassNode)) {
-            logger.debug("Detected Spock spec via derivedFrom: ${classNode.name}")
+            logger.debug { "Detected Spock spec via derivedFrom: ${classNode.name}" }
             return true
         }
 

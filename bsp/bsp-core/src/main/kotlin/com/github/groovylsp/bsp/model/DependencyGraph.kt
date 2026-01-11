@@ -1,7 +1,7 @@
 package com.github.groovylsp.bsp.model
 
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Directed Acyclic Graph (DAG) for build target dependencies.
@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory
  * @property cache The build target cache containing dependency information
  */
 class DependencyGraph(private val cache: BuildTargetCache) {
-    private val logger = LoggerFactory.getLogger(DependencyGraph::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Computes a topological sort of all build targets.
@@ -49,7 +49,7 @@ class DependencyGraph(private val cache: BuildTargetCache) {
             if (targetId in visited) return true
             if (targetId in visiting) {
                 // Cycle detected
-                logger.warn("Cycle detected involving target: {}", targetId.uri)
+                logger.warn { "Cycle detected involving target: ${targetId.uri}" }
                 return false
             }
 
@@ -60,7 +60,7 @@ class DependencyGraph(private val cache: BuildTargetCache) {
             for (dep in dependencies) {
                 if (!visit(dep)) {
                     // Cycle in dependency, skip it
-                    logger.debug("Skipping cyclic dependency: {} -> {}", targetId.uri, dep.uri)
+                    logger.debug { "Skipping cyclic dependency: ${targetId.uri} -> ${dep.uri}" }
                 }
             }
 
@@ -76,7 +76,7 @@ class DependencyGraph(private val cache: BuildTargetCache) {
             visit(target.id)
         }
 
-        logger.debug("Topological sort produced {} targets", sorted.size)
+        logger.debug { "Topological sort produced ${sorted.size} targets" }
         return sorted
     }
 
@@ -126,7 +126,7 @@ class DependencyGraph(private val cache: BuildTargetCache) {
             }
         }
 
-        logger.trace("Found {} dependents of {}", dependents.size, targetId.uri)
+        logger.trace { "Found ${dependents.size} dependents of ${targetId.uri}" }
         return dependents
     }
 
@@ -179,7 +179,7 @@ class DependencyGraph(private val cache: BuildTargetCache) {
                 val cycleStart = recStack.indexOf(targetId)
                 val cycle = recStack.subList(cycleStart, recStack.size) + targetId
                 cycles.add(cycle)
-                logger.warn("Cycle detected: {}", cycle.joinToString(" -> ") { it.uri })
+                logger.warn { "Cycle detected: ${cycle.joinToString(" -> ") { it.uri }}" }
                 return true
             }
 
@@ -205,9 +205,9 @@ class DependencyGraph(private val cache: BuildTargetCache) {
         }
 
         if (cycles.isNotEmpty()) {
-            logger.error("Found {} cycles in dependency graph", cycles.size)
+            logger.error { "Found ${cycles.size} cycles in dependency graph" }
         } else {
-            logger.debug("No cycles detected in dependency graph")
+            logger.debug { "No cycles detected in dependency graph" }
         }
 
         return cycles

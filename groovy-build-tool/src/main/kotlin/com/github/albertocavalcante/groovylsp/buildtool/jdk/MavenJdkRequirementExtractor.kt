@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp.buildtool.jdk
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.codehaus.plexus.util.xml.Xpp3Dom
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.xml.parsers.DocumentBuilderFactory
@@ -21,7 +21,7 @@ import kotlin.io.path.exists
  * 4. Maven toolchains.xml (if referenced in pom.xml)
  */
 class MavenJdkRequirementExtractor : JdkRequirementExtractor {
-    private val logger = LoggerFactory.getLogger(MavenJdkRequirementExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun extract(workspaceRoot: Path): JdkRequirementResult {
         val pomPath = workspaceRoot.resolve("pom.xml")
@@ -37,7 +37,7 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
             extractFromModel(model, workspaceRoot)
         }.getOrElse { e ->
             if (e is Error) throw e
-            logger.warn("Failed to extract JDK requirements from pom.xml", e)
+            logger.warn(e) { "Failed to extract JDK requirements from pom.xml" }
             JdkRequirementResult.ParseError("Error parsing pom.xml: ${e.message}", e)
         }
     }
@@ -147,7 +147,7 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
             parseToolchainsXml(toolchainsFile)
         }.onFailure { e ->
             if (e is Error) throw e
-            logger.debug("Failed to parse toolchains.xml", e)
+            logger.debug(e) { "Failed to parse toolchains.xml" }
         }.getOrNull()
     }
 
@@ -212,7 +212,7 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
         return runCatching { builder.build(request).effectiveModel }
             .onFailure { e ->
                 if (e is Error) throw e
-                logger.debug("Failed to build Maven model", e)
+                logger.debug(e) { "Failed to build Maven model" }
             }
             .getOrNull()
     }

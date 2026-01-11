@@ -1,14 +1,14 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.nativeapi.ParseResult
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Maps technical ParseResult into consumer-facing CompilationResult.
  * Handles diagnostic conversion, AST extraction, and result status determination.
  */
 class CompilationResultMapper {
-    private val logger = LoggerFactory.getLogger(CompilationResultMapper::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Maps a ParseResult into a CompilationResult.
@@ -21,7 +21,7 @@ class CompilationResultMapper {
             val isSuccess = parseResult.isSuccessful
             CompilationResult(isSuccess, ast, diagnostics, content)
         } else {
-            logger.debug("Parse result has no AST, returning failure result")
+            logger.debug { "Parse result has no AST, returning failure result" }
             CompilationResult.failure(diagnostics, content)
         }
     }

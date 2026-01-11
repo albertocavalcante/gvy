@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +15,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -50,13 +50,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val semanticDb = dependencies.semanticDb
     private val dependencyGraph = dependencies.dependencyGraph
 
-    private val logger = LoggerFactory.getLogger(CompilationOrchestrator::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Compiles Groovy source code and returns the result.
      */
     suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
-        logger.debug("Compiling: $uri (phase=$compilePhase)")
+        logger.debug { "Compiling: $uri (phase=$compilePhase)" }
 
         return runCatching {
             // Get configuration fingerprint for cache coherency (Issue #743)
@@ -69,10 +69,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 val isSuspiciousScriptNode = parseAccessor.isSuspiciousScript(uri, cachedResult)
 
                 if (isSuspiciousScriptNode) {
-                    logger.info("Cached result has suspicious Script node for $uri, re-compiling")
+                    logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
                     performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
                 } else {
-                    logger.debug("Using cached parse result for: $uri")
+                    logger.debug { "Using cached parse result for: $uri" }
                     resultMapper.map(cachedResult, content)
                 }
             } else {
@@ -138,7 +138,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * Compile a transient version without updating cache.
      */
     suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
-        logger.debug("Transient compile: $uri")
+        logger.debug { "Transient compile: $uri" }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
         val classpath = workspaceManager.getClasspathForFile(uri, content)
 
@@ -165,7 +165,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // Check if already compiling this document
         cacheService.getActiveCompilation(uri)?.let { existing ->
             if (existing.isActive) {
-                logger.debug("Reusing active compilation for: $uri")
+                logger.debug { "Reusing active compilation for: $uri" }
                 return existing
             }
         }
@@ -191,12 +191,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // Check for active compilation first
         cacheService.getActiveCompilation(uri)?.let { deferred ->
             if (deferred.isActive) {
-                logger.debug("Awaiting active compilation for: $uri")
+                logger.debug { "Awaiting active compilation for: $uri" }
                 return try {
                     deferred.await()
                 } catch (e: CancellationException) {
                     // If compilation was cancelled, try once more
-                    logger.debug("Compilation cancelled for $uri, retrying...", e)
+                    logger.debug(e) { "Compilation cancelled for $uri, retrying..." }
                     delay(RETRY_DELAY_MS)
                     cacheService.getActiveCompilation(uri)?.await()
                 }
@@ -211,17 +211,17 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // Validate by attempting to get with fingerprint - if it returns null, cache is stale
             val validatedResult = cacheService.getCached(uri, content, configFingerprint)
             if (validatedResult != null) {
-                logger.debug("Using cached result for: $uri")
+                logger.debug { "Using cached result for: $uri" }
                 return resultMapper.mapFromCache(parseResult, content)
             }
-            logger.debug("Cache entry for $uri is stale (fingerprint mismatch), will recompile")
+            logger.debug { "Cache entry for $uri is stale (fingerprint mismatch), will recompile" }
         }
 
         // Use on-demand compilation from disk if file exists
         // This handles cases where file is in symbol index but not yet opened/compiled
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
-            logger.debug("Compiling from disk on-demand: $uri")
+            logger.debug { "Compiling from disk on-demand: $uri" }
             return try {
                 val content = withContext(ioDispatcher) {
                     Files.readString(path)
@@ -229,12 +229,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                 performCompilation(uri, content, parseMode = ParseMode.MINIMAL, configFingerprint = configFingerprint)
             } catch (e: Exception) {
-                logger.error("Failed to compile from disk for $uri: ${e.message}", e)
+                logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
                 null
             }
         }
 
-        logger.debug("No compilation found for $uri (not cached, not compiling, not on disk)")
+        logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return null
     }
 
@@ -250,7 +250,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (dependencyGraph?.hasInfo(uri) == true) {
             val boundedUris = dependencyGraph.getCompilationSources(uri)
             if (logBounded) {
-                logger.debug("Using bounded workspace sources for {}: {} files", uri, boundedUris.size)
+                logger.debug { "Using bounded workspace sources for $uri: ${boundedUris.size} files" }
             }
             workspaceManager.getBoundedWorkspaceSources(boundedUris)
         } else {
@@ -279,9 +279,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             val builder = SemanticDocumentBuilder(ast, uri)
             val semanticDoc = builder.build()
             db.updateDocument(uri, semanticDoc)
-            logger.trace("Built semantic document for {} with {} symbols", uri, semanticDoc.symbols.size)
+            logger.trace { "Built semantic document for $uri with ${semanticDoc.symbols.size} symbols" }
         } catch (e: Exception) {
-            logger.warn("Failed to build semantic document for {}: {}", uri, e.message)
+            logger.warn { "Failed to build semantic document for $uri: ${e.message}" }
         }
     }
 }

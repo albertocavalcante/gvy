@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.internal.GroovyAstConverter
 import groovy.lang.GroovyClassLoader
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -15,7 +16,6 @@ import org.codehaus.groovy.control.messages.SimpleMessage
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import org.codehaus.groovy.control.messages.WarningMessage
 import org.codehaus.groovy.syntax.SyntaxException
-import org.slf4j.LoggerFactory
 import org.codehaus.groovy.control.CompilationUnit as GroovyCompilationUnit
 
 /**
@@ -43,7 +43,7 @@ import org.codehaus.groovy.control.CompilationUnit as GroovyCompilationUnit
 // TODO(#586): Address detekt lint debt in parser/core.
 //   See: https://github.com/albertocavalcante/gvy/issues/586
 class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration()) {
-    private val logger = LoggerFactory.getLogger(GroovyParser::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         /** Default tolerance level for lenient parsing mode */
@@ -112,7 +112,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         compilationUnit.compile(Phases.CONVERSION)
         false
     } catch (e: CompilationFailedException) {
-        logger.debug("Compilation failed: ${e.message}")
+        logger.debug { "Compilation failed: ${e.message}" }
         true
     }
 
@@ -140,13 +140,13 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         val unit = GroovyAstConverter().convert(moduleNode, sourceForComments)
         ParseResult(unit, problems)
     } catch (e: Exception) {
-        logger.warn("AST conversion error: ${e.message}", e)
+        logger.warn(e) { "AST conversion error: ${e.message}" }
         problems.add(Problem.error("AST conversion error: ${e.message}"))
         if (configuration.lenientMode) ParseResult(CompilationUnit(), problems) else ParseResult(null, problems)
     }
 
     private fun handleInternalError(e: Exception, problems: MutableList<Problem>): ParseResult<CompilationUnit> {
-        logger.error("Unexpected error during parsing", e)
+        logger.error(e) { "Unexpected error during parsing" }
         problems.add(
             Problem(
                 message = "Internal error: ${e.message}",

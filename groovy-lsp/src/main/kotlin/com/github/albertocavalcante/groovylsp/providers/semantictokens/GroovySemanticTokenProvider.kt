@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -16,7 +17,6 @@ import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
-import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 import java.net.URI
 
@@ -36,7 +36,7 @@ import java.net.URI
 @Suppress("TooManyFunctions")
 object GroovySemanticTokenProvider {
 
-    private val logger = LoggerFactory.getLogger(GroovySemanticTokenProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Type alias for semantic tokens.
@@ -158,22 +158,18 @@ object GroovySemanticTokenProvider {
                 }
             }
 
-            logger.debug("Generated {} Groovy semantic tokens for {}", tokens.size, uri)
+            logger.debug { "Generated ${tokens.size} Groovy semantic tokens for $uri" }
         } catch (e: NullPointerException) {
-            logger.error("Null pointer encountered while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Null pointer encountered while generating semantic tokens for $uri: ${e.message}" }
         } catch (e: IndexOutOfBoundsException) {
-            logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Index out of bounds while generating semantic tokens for $uri: ${e.message}" }
         } catch (e: IllegalStateException) {
-            logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Illegal state while generating semantic tokens for $uri: ${e.message}" }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             // Catch remaining exceptions to prevent LSP crashes
-            logger.error(
-                "Unexpected error generating semantic tokens for {}: {} - {}",
-                uri,
-                e.javaClass.simpleName,
-                e.message,
-                e,
-            )
+            logger.error(e) {
+                "Unexpected error generating semantic tokens for $uri: ${e.javaClass.simpleName} - ${e.message}"
+            }
         }
 
         return tokens

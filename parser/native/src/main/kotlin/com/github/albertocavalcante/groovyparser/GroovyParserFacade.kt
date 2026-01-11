@@ -10,6 +10,7 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
@@ -17,7 +18,6 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
-import org.slf4j.LoggerFactory
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
@@ -95,7 +95,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
     }
 
-    private val logger = LoggerFactory.getLogger(GroovyParserFacade::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Parse a Groovy source file.
@@ -109,7 +109,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         // Check if we should retry at an earlier phase
         if (shouldRetryAtConversion(request, result)) {
-            logger.info("Detected Script fallback for ${request.uri}, retrying at CONVERSION phase")
+            logger.info { "Detected Script fallback for ${request.uri}, retrying at CONVERSION phase" }
             return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
         }
 
@@ -126,9 +126,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     private fun shouldRetryAtConversion(request: ParseRequest, result: ParseResult): Boolean {
         // Only retry if we compiled past CONVERSION phase
         if (request.compilePhase <= Phases.CONVERSION) {
-            logger.debug(
-                "shouldRetryAtConversion: false - already at CONVERSION or earlier (phase=${request.compilePhase})",
-            )
+            logger.debug {
+                "shouldRetryAtConversion: false - already at CONVERSION or earlier (phase=${request.compilePhase})"
+            }
             return false
         }
 
@@ -141,31 +141,31 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // Check for Script fallback pattern: single class extending groovy.lang.Script
         val ast = result.ast
         if (ast == null) {
-            logger.debug("shouldRetryAtConversion: false - AST is null")
+            logger.debug { "shouldRetryAtConversion: false - AST is null" }
             shouldRetry = false
         }
 
         val classes = ast?.classes.orEmpty()
         if (shouldRetry && classes.isEmpty()) {
-            logger.debug("shouldRetryAtConversion: false - no classes in AST")
+            logger.debug { "shouldRetryAtConversion: false - no classes in AST" }
             shouldRetry = false
         }
 
         if (shouldRetry) {
             // Log class details for debugging - use safe call for superClass (null for interfaces)
             val classInfo = classes.map { "${it.name} (super=${it.superClass?.name ?: "null"})" }
-            logger.info("shouldRetryAtConversion: checking classes: $classInfo")
+            logger.info { "shouldRetryAtConversion: checking classes: $classInfo" }
         }
 
         if (shouldRetry && classes.size != 1) {
-            logger.debug("shouldRetryAtConversion: false - ${classes.size} classes (expected 1)")
+            logger.debug { "shouldRetryAtConversion: false - ${classes.size} classes (expected 1)" }
             shouldRetry = false
         }
 
         val cls = classes.firstOrNull()
         val isScript = cls?.superClass?.name == "groovy.lang.Script"
         if (shouldRetry && !isScript) {
-            logger.info("shouldRetryAtConversion: false - not a Script for ${cls?.name}")
+            logger.info { "shouldRetryAtConversion: false - not a Script for ${cls?.name}" }
             shouldRetry = false
         }
 
@@ -173,12 +173,12 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // If it doesn't, this is an intentional script (not a class that got converted to Script).
         val hasClassKeyword = request.content.contains(Regex("""\bclass\s+\w+"""))
         if (shouldRetry && !hasClassKeyword) {
-            logger.debug("shouldRetryAtConversion: false - intentional script (no class keyword)")
+            logger.debug { "shouldRetryAtConversion: false - intentional script (no class keyword)" }
             shouldRetry = false
         }
 
         if (shouldRetry) {
-            logger.info("shouldRetryAtConversion: true - class ${cls?.name} was converted to Script")
+            logger.info { "shouldRetryAtConversion: true - class ${cls?.name} was converted to Script" }
         }
 
         return shouldRetry
@@ -211,7 +211,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             compilationUnit.compile(request.compilePhase)
         } catch (e: CompilationFailedException) {
             compilationFailed = true
-            logger.debug("Compilation failed for ${request.uri}: ${e.message}")
+            logger.debug { "Compilation failed for ${request.uri}: ${e.message}" }
         }
 
         val tokenIndex = GroovyTokenIndex.build(request.content)
@@ -239,12 +239,11 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val symbolTable = SymbolTable()
         symbolTable.buildFromVisitor(astModel)
 
-        logger.debug(
-            "Parsed {} -> success={}, diagnostics={}",
-            request.uri,
-            ast != null && diagnostics.none { it.severity == ParserSeverity.ERROR },
-            diagnostics.size,
-        )
+        logger.debug {
+            "Parsed ${request.uri} -> success=${ast != null && diagnostics.none {
+                it.severity == ParserSeverity.ERROR
+            }}, diagnostics=${diagnostics.size}"
+        }
 
         return ParseResult(
             ast = ast,
@@ -279,7 +278,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             val externalTransforms = scanForAstTransformations(classpath)
             if (externalTransforms.isNotEmpty()) {
                 disabledGlobalASTTransformations = externalTransforms
-                logger.info("Disabled {} AST transformations from project classpath", externalTransforms.size)
+                logger.info { "Disabled ${externalTransforms.size} AST transformations from project classpath" }
             }
         }
 
@@ -308,7 +307,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                     }
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to scan {} for transformations: {}", path, e.message)
+                logger.debug { "Failed to scan $path for transformations: ${e.message}" }
             }
         }
 
@@ -340,7 +339,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     private fun addWorkspaceSources(compilationUnit: CompilationUnit, request: ParseRequest) {
         // In MINIMAL mode, skip workspace sources for fast, isolated parsing (Issue #743)
         if (request.parseMode == ParseMode.MINIMAL) {
-            logger.trace("Skipping workspace sources in MINIMAL mode for {}", request.uri)
+            logger.trace { "Skipping workspace sources in MINIMAL mode for ${request.uri}" }
             return
         }
 
@@ -352,10 +351,10 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             }
             .forEach { path ->
                 runCatching {
-                    logger.trace("Adding workspace source: $path")
+                    logger.trace { "Adding workspace source: $path" }
                     compilationUnit.addSource(path.toFile())
                 }.onFailure { throwable ->
-                    logger.trace("Failed adding workspace source {}: {}", path, throwable.message)
+                    logger.trace { "Failed adding workspace source $path: ${throwable.message}" }
                 }
             }
     }
@@ -378,19 +377,17 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                 module.context?.name == sourceUnitName
             } ?: run {
                 // Fallback to first module if no match (e.g., if source was parsed with different name)
-                logger.debug(
-                    "Requested source '{}' not found in {} modules, using first",
-                    sourceUnitName,
-                    ast.modules.size,
-                )
+                logger.debug {
+                    "Requested source '$sourceUnitName' not found in ${ast.modules.size} modules, using first"
+                }
                 ast.modules.first()
             }
         } else {
-            logger.debug("No modules available in compilation unit")
+            logger.debug { "No modules available in compilation unit" }
             null
         }
     } catch (e: CompilationFailedException) {
-        logger.debug("Failed to extract AST: ${e.message}")
+        logger.debug { "Failed to extract AST: ${e.message}" }
         null
     }
 }

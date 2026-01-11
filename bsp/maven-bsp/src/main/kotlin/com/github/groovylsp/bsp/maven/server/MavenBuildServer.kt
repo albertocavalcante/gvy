@@ -43,9 +43,9 @@ import com.github.groovylsp.bsp.maven.targets.MavenBuildTargetProvider
 import com.github.groovylsp.bsp.maven.targets.MavenSourceProvider
 import com.github.groovylsp.bsp.maven.workspace.MavenModuleInfo
 import com.github.groovylsp.bsp.maven.workspace.MavenWorkspaceScanner
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
@@ -59,7 +59,7 @@ class MavenBuildServer(
     private val repositorySystem: RepositorySystem,
     private val sessionSupplier: () -> RepositorySystemSession,
 ) : BuildServer {
-    private val logger = LoggerFactory.getLogger(MavenBuildServer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val scanner = MavenWorkspaceScanner()
     private val targetProvider = MavenBuildTargetProvider()
@@ -76,11 +76,11 @@ class MavenBuildServer(
     // === BSP Lifecycle ===
 
     override fun buildInitialize(params: InitializeBuildParams): CompletableFuture<InitializeBuildResult> {
-        logger.info("Initializing Maven BSP server for workspace: ${params.rootUri}")
+        logger.info { "Initializing Maven BSP server for workspace: ${params.rootUri}" }
 
         return CompletableFuture.supplyAsync {
             modules = scanner.scan(workspaceRoot)
-            logger.info("Found ${modules.size} Maven modules")
+            logger.info { "Found ${modules.size} Maven modules" }
 
             InitializeBuildResult(
                 "Maven BSP",
@@ -92,16 +92,16 @@ class MavenBuildServer(
     }
 
     override fun onBuildInitialized() {
-        logger.info("Maven BSP server initialized")
+        logger.info { "Maven BSP server initialized" }
     }
 
     override fun buildShutdown(): CompletableFuture<Any> {
-        logger.info("Shutting down Maven BSP server")
+        logger.info { "Shutting down Maven BSP server" }
         return CompletableFuture.completedFuture(null)
     }
 
     override fun onBuildExit() {
-        logger.info("Maven BSP server exiting")
+        logger.info { "Maven BSP server exiting" }
     }
 
     // === Workspace Operations ===
@@ -109,14 +109,14 @@ class MavenBuildServer(
     override fun workspaceBuildTargets(): CompletableFuture<WorkspaceBuildTargetsResult> =
         CompletableFuture.supplyAsync {
             val targets = targetProvider.createTargets(modules)
-            logger.info("Returning ${targets.size} build targets")
+            logger.info { "Returning ${targets.size} build targets" }
             WorkspaceBuildTargetsResult(targets)
         }
 
     override fun workspaceReload(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
-        logger.info("Reloading workspace")
+        logger.info { "Reloading workspace" }
         modules = scanner.scan(workspaceRoot)
-        logger.info("Reload complete: ${modules.size} modules")
+        logger.info { "Reload complete: ${modules.size} modules" }
         null
     }
 
@@ -205,7 +205,7 @@ class MavenBuildServer(
 
     override fun buildTargetCompile(params: CompileParams): CompletableFuture<CompileResult> =
         CompletableFuture.supplyAsync {
-            logger.info("Compile requested for ${params.targets.size} targets")
+            logger.info { "Compile requested for ${params.targets.size} targets" }
             // For now, we just return success. Full implementation would invoke Maven compiler
             CompileResult(StatusCode.OK).apply {
                 originId = params.originId
@@ -213,7 +213,7 @@ class MavenBuildServer(
         }
 
     override fun buildTargetTest(params: TestParams): CompletableFuture<TestResult> = CompletableFuture.supplyAsync {
-        logger.info("Test requested for ${params.targets.size} targets")
+        logger.info { "Test requested for ${params.targets.size} targets" }
         // For now, we just return success. Full implementation would invoke Maven surefire
         TestResult(StatusCode.OK).apply {
             originId = params.originId
@@ -221,7 +221,7 @@ class MavenBuildServer(
     }
 
     override fun buildTargetRun(params: RunParams): CompletableFuture<RunResult> = CompletableFuture.supplyAsync {
-        logger.info("Run requested for target: ${params.target.uri}")
+        logger.info { "Run requested for target: ${params.target.uri}" }
         // For now, we just return success. Full implementation would invoke Maven exec
         RunResult(StatusCode.OK).apply {
             originId = params.originId
@@ -230,7 +230,7 @@ class MavenBuildServer(
 
     override fun buildTargetCleanCache(params: CleanCacheParams): CompletableFuture<CleanCacheResult> =
         CompletableFuture.supplyAsync {
-            logger.info("Clean cache requested for ${params.targets.size} targets")
+            logger.info { "Clean cache requested for ${params.targets.size} targets" }
             // Full implementation would run mvn clean
             CleanCacheResult(true)
         }

@@ -2,7 +2,7 @@ package com.github.groovylsp.bsp.model
 
 import ch.epfl.scala.bsp4j.BuildTarget
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap
  * ```
  */
 class BuildTargetCache {
-    private val logger = LoggerFactory.getLogger(BuildTargetCache::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Map of target ID to full BuildTarget.
@@ -116,7 +116,7 @@ class BuildTargetCache {
      * @param newTargets List of build targets from workspace/buildTargets
      */
     fun updateTargets(newTargets: List<BuildTarget>) {
-        logger.debug("Updating cache with {} targets", newTargets.size)
+        logger.debug { "Updating cache with ${newTargets.size} targets" }
 
         // Clear old targets not in the new list
         val newTargetIds = newTargets.map { it.id }.toSet()
@@ -126,10 +126,10 @@ class BuildTargetCache {
         // Add/update new targets
         newTargets.forEach { target ->
             targets[target.id] = target
-            logger.trace("Cached target: {}", target.id.uri)
+            logger.trace { "Cached target: ${target.id.uri}" }
         }
 
-        logger.info("Cache updated: {} targets ({} removed)", targets.size, removedTargets.size)
+        logger.info { "Cache updated: ${targets.size} targets (${removedTargets.size} removed)" }
     }
 
     /**
@@ -141,7 +141,7 @@ class BuildTargetCache {
      * @param sources List of source file paths
      */
     fun updateSources(targetId: BuildTargetIdentifier, sources: List<Path>) {
-        logger.debug("Updating sources for target {}: {} files", targetId.uri, sources.size)
+        logger.debug { "Updating sources for target ${targetId.uri}: ${sources.size} files" }
 
         // Remove old reverse mappings for this target
         val oldSources = targetSources[targetId] ?: emptyList()
@@ -153,7 +153,7 @@ class BuildTargetCache {
             sourceToTarget[source] = targetId
         }
 
-        logger.trace("Updated sources for {}: {} files", targetId.uri, sources.size)
+        logger.trace { "Updated sources for ${targetId.uri}: ${sources.size} files" }
     }
 
     /**
@@ -163,7 +163,7 @@ class BuildTargetCache {
      * @param classpath List of classpath entries (JARs and directories)
      */
     fun updateClasspath(targetId: BuildTargetIdentifier, classpath: List<Path>) {
-        logger.debug("Updating classpath for target {}: {} entries", targetId.uri, classpath.size)
+        logger.debug { "Updating classpath for target ${targetId.uri}: ${classpath.size} entries" }
         targetClasspath[targetId] = classpath
     }
 
@@ -184,7 +184,7 @@ class BuildTargetCache {
         // 2. updateTargets(targetsResult.targets)
         // 3. for each target: call buildTarget/sources and updateSources
         // 4. for each target: call buildTarget/dependencySources and updateClasspath
-        logger.warn("BuildTargetCache.refresh() not yet implemented - waiting for BuildServerConnection")
+        logger.warn { "BuildTargetCache.refresh() not yet implemented - waiting for BuildServerConnection" }
     }
 
     /**
@@ -193,7 +193,7 @@ class BuildTargetCache {
      * @param targetId The target identifier to invalidate
      */
     fun invalidate(targetId: BuildTargetIdentifier) {
-        logger.debug("Invalidating target: {}", targetId.uri)
+        logger.debug { "Invalidating target: ${targetId.uri}" }
 
         targets.remove(targetId)
 
@@ -204,14 +204,14 @@ class BuildTargetCache {
         // Remove classpath
         targetClasspath.remove(targetId)
 
-        logger.trace("Invalidated target: {}", targetId.uri)
+        logger.trace { "Invalidated target: ${targetId.uri}" }
     }
 
     /**
      * Clears all cached data.
      */
     fun clear() {
-        logger.info("Clearing build target cache")
+        logger.info { "Clearing build target cache" }
         targets.clear()
         sourceToTarget.clear()
         targetSources.clear()

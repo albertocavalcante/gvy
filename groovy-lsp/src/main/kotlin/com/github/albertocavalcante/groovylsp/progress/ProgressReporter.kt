@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.progress
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.ProgressParams
 import org.eclipse.lsp4j.WorkDoneProgressBegin
 import org.eclipse.lsp4j.WorkDoneProgressCreateParams
@@ -8,7 +9,6 @@ import org.eclipse.lsp4j.WorkDoneProgressReport
 import org.eclipse.lsp4j.jsonrpc.JsonRpcException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
-import org.slf4j.LoggerFactory
 import java.util.UUID
 
 /**
@@ -16,7 +16,7 @@ import java.util.UUID
  * Provides a clean API for starting, updating, and completing progress notifications.
  */
 class ProgressReporter(private val client: LanguageClient?) {
-    private val logger = LoggerFactory.getLogger(ProgressReporter::class.java)
+    private val logger = KotlinLogging.logger {}
     private val progressToken = "groovy-lsp-deps-${UUID.randomUUID()}"
     private var isActive = false
 
@@ -32,7 +32,7 @@ class ProgressReporter(private val client: LanguageClient?) {
         initialMessage: String = "Initializing...",
     ) {
         if (client == null) {
-            logger.debug("No client available for progress reporting")
+            logger.debug { "No client available for progress reporting" }
             return
         }
 
@@ -60,11 +60,11 @@ class ProgressReporter(private val client: LanguageClient?) {
             )
 
             isActive = true
-            logger.debug("Started progress reporting: $title")
+            logger.debug { "Started progress reporting: $title" }
         } catch (e: JsonRpcException) {
-            logger.warn("JSON-RPC error starting progress reporting: {}", e.message)
+            logger.warn { "JSON-RPC error starting progress reporting: ${e.message}" }
         } catch (e: IllegalStateException) {
-            logger.warn("Illegal state while starting progress reporting: {}", e.message)
+            logger.warn { "Illegal state while starting progress reporting: ${e.message}" }
         }
     }
 
@@ -77,7 +77,7 @@ class ProgressReporter(private val client: LanguageClient?) {
     // Generic exception handling removed
     fun updateProgress(message: String, percentage: Int? = null) {
         if (client == null || !isActive) {
-            logger.debug("Progress update skipped - client unavailable or not active: $message")
+            logger.debug { "Progress update skipped - client unavailable or not active: $message" }
             return
         }
 
@@ -94,11 +94,11 @@ class ProgressReporter(private val client: LanguageClient?) {
                 },
             )
 
-            logger.debug("Updated progress: $message ${percentage?.let { "($it%)" } ?: ""}")
+            logger.debug { "Updated progress: $message ${percentage?.let { "($it%)" } ?: ""}" }
         } catch (e: JsonRpcException) {
-            logger.warn("JSON-RPC error updating progress: {}", e.message)
+            logger.warn { "JSON-RPC error updating progress: ${e.message}" }
         } catch (e: IllegalStateException) {
-            logger.warn("Illegal state while updating progress: {}", e.message)
+            logger.warn { "Illegal state while updating progress: ${e.message}" }
         }
     }
 
@@ -110,7 +110,7 @@ class ProgressReporter(private val client: LanguageClient?) {
     // Generic exception handling removed
     fun complete(message: String) {
         if (client == null || !isActive) {
-            logger.debug("Progress completion skipped - client unavailable or not active: $message")
+            logger.debug { "Progress completion skipped - client unavailable or not active: $message" }
             return
         }
 
@@ -127,11 +127,11 @@ class ProgressReporter(private val client: LanguageClient?) {
             )
 
             isActive = false
-            logger.debug("Completed progress: $message")
+            logger.debug { "Completed progress: $message" }
         } catch (e: JsonRpcException) {
-            logger.warn("JSON-RPC error completing progress: {}", e.message)
+            logger.warn { "JSON-RPC error completing progress: ${e.message}" }
         } catch (e: IllegalStateException) {
-            logger.warn("Illegal state while completing progress: {}", e.message)
+            logger.warn { "Illegal state while completing progress: ${e.message}" }
         }
     }
 

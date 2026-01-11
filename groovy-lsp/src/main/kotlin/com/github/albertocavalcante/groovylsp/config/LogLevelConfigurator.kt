@@ -1,12 +1,13 @@
 package com.github.albertocavalcante.groovylsp.config
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.slf4j.LoggerFactory
 
 /**
  * Configures Logback log level at runtime based on server configuration.
  */
 object LogLevelConfigurator {
-    private val logger = LoggerFactory.getLogger(LogLevelConfigurator::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Applies the configured log level to all Groovy LSP loggers.
@@ -24,7 +25,7 @@ object LogLevelConfigurator {
         // Get the Logback LoggerContext
         val loggerFactory = LoggerFactory.getILoggerFactory()
         if (loggerFactory !is ch.qos.logback.classic.LoggerContext) {
-            logger.warn("Cannot configure log level: not using Logback (found ${loggerFactory.javaClass.name})")
+            logger.warn { "Cannot configure log level: not using Logback (found ${loggerFactory.javaClass.name})" }
             return
         }
 
@@ -37,6 +38,6 @@ object LogLevelConfigurator {
             loggerFactory.getLogger(loggerName).level = logbackLevel
         }
 
-        logger.info("Log level set to: {}", logLevel.name)
+        logger.info { "Log level set to: ${logLevel.name}" }
     }
 }

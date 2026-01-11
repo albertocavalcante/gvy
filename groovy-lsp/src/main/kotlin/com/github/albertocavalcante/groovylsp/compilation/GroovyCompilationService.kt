@@ -13,11 +13,11 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.codehaus.groovy.control.Phases
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
 
@@ -32,7 +32,7 @@ class GroovyCompilationService(
     sourceNavigator: SourceNavigator? = null,
     engineConfig: EngineConfiguration = EngineConfiguration(),
 ) {
-    private val logger = LoggerFactory.getLogger(GroovyCompilationService::class.java)
+    private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
@@ -127,7 +127,7 @@ class GroovyCompilationService(
             engineManager.updateSelectedWorker(worker)
             workerSessionManager.select(worker)
             clearCaches()
-            logger.info("Worker changed to ${worker?.id}; cleared compilation caches")
+            logger.info { "Worker changed to ${worker?.id}; cleared compilation caches" }
         }
         return changed
     }
@@ -161,7 +161,7 @@ class GroovyCompilationService(
         return try {
             resource.toURI()
         } catch (e: Exception) {
-            logger.warn("Invalid classpath resource URI: $resource", e)
+            logger.warn(e) { "Invalid classpath resource URI: $resource" }
             null
         }
     }
@@ -179,7 +179,7 @@ class GroovyCompilationService(
     fun invalidateCache(uri: URI) {
         cacheService.invalidate(uri)
         symbolIndexer.invalidate(uri)
-        logger.debug("Invalidated cache for: $uri")
+        logger.debug { "Invalidated cache for: $uri" }
     }
 
     fun getCacheStatistics() = cacheService.getStatistics()

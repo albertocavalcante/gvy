@@ -17,7 +17,7 @@ dependencies {
     api(libs.groovy.core)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)

@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.model.Model
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -12,7 +12,7 @@ import java.nio.file.Path
  * with the running JDK (e.g., Groovy 3.0.x on JDK 17+).
  */
 class GroovyVersionDetector {
-    private val logger = LoggerFactory.getLogger(GroovyVersionDetector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Groovy version information extracted from a build file.
@@ -40,7 +40,7 @@ class GroovyVersionDetector {
             if (isGroovyDependency(dep.groupId, dep.artifactId)) {
                 val version = resolveVersion(dep.version, model)
                 if (version != null) {
-                    logger.debug("Found Groovy version $version in dependencies")
+                    logger.debug { "Found Groovy version $version in dependencies" }
                     return GroovyVersionInfo(
                         version = version,
                         majorMinor = extractMajorMinor(version),
@@ -55,7 +55,7 @@ class GroovyVersionDetector {
             if (isGroovyDependency(dep.groupId, dep.artifactId)) {
                 val version = resolveVersion(dep.version, model)
                 if (version != null) {
-                    logger.debug("Found Groovy version $version in dependencyManagement")
+                    logger.debug { "Found Groovy version $version in dependencyManagement" }
                     return GroovyVersionInfo(
                         version = version,
                         majorMinor = extractMajorMinor(version),
@@ -68,7 +68,7 @@ class GroovyVersionDetector {
         // Check properties
         val groovyVersionProperty = model.properties?.getProperty("groovy.version")
         if (groovyVersionProperty != null) {
-            logger.debug("Found groovy.version property: $groovyVersionProperty")
+            logger.debug { "Found groovy.version property: $groovyVersionProperty" }
             return GroovyVersionInfo(
                 version = groovyVersionProperty,
                 majorMinor = extractMajorMinor(groovyVersionProperty),
@@ -93,7 +93,7 @@ class GroovyVersionDetector {
      */
     fun detectFromGradle(buildFile: Path): GroovyVersionInfo? {
         if (!Files.exists(buildFile)) {
-            logger.debug("Build file not found: $buildFile")
+            logger.debug { "Build file not found: $buildFile" }
             return null
         }
 
@@ -104,7 +104,7 @@ class GroovyVersionDetector {
             // Try to extract groovyVersion property first
             val propertyVersion = extractGroovyVersionProperty(content)
             if (propertyVersion != null) {
-                logger.debug("Found groovyVersion property: $propertyVersion in $source")
+                logger.debug { "Found groovyVersion property: $propertyVersion in $source" }
                 return GroovyVersionInfo(
                     version = propertyVersion,
                     majorMinor = extractMajorMinor(propertyVersion),
@@ -115,7 +115,7 @@ class GroovyVersionDetector {
             // Look for Groovy dependency declarations
             val version = extractGroovyDependencyVersion(content)
             if (version != null) {
-                logger.debug("Found Groovy dependency version: $version in $source")
+                logger.debug { "Found Groovy dependency version: $version in $source" }
                 return GroovyVersionInfo(
                     version = version,
                     majorMinor = extractMajorMinor(version),
@@ -125,7 +125,7 @@ class GroovyVersionDetector {
 
             null
         } catch (e: java.io.IOException) {
-            logger.error("Failed to read Gradle build file: $buildFile", e)
+            logger.error(e) { "Failed to read Gradle build file: $buildFile" }
             null
         }
     }

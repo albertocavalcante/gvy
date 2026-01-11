@@ -10,6 +10,8 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.semantics.TypeStringUtils
+import io.github.oshai.kotlinlogging.KLogger
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -27,8 +29,6 @@ import org.eclipse.lsp4j.InlayHintKind
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 private const val MAX_PARENT_SEARCH_DEPTH = 10
@@ -99,7 +99,7 @@ class InlayHintsProvider(
     private val semanticResolver: SemanticTypeResolver,
     private val config: InlayHintsConfiguration = InlayHintsConfiguration(),
 ) {
-    private val logger = LoggerFactory.getLogger(InlayHintsProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private data class NodeProcessingContext(
         val range: org.eclipse.lsp4j.Range,
@@ -121,7 +121,7 @@ class InlayHintsProvider(
         val astModel = compilationService.getAstModel(uri)
 
         if (astModel == null) {
-            logger.debug("No AST model available for $uri")
+            logger.debug { "No AST model available for $uri" }
             return emptyList()
         }
         val symbolTable = compilationService.getSymbolTable(uri)
@@ -149,7 +149,7 @@ class InlayHintsProvider(
             processNode(node, context)
         }
 
-        logger.debug("Returning ${hints.size} inlay hints for ${params.textDocument.uri}")
+        logger.debug { "Returning ${hints.size} inlay hints for ${params.textDocument.uri}" }
         return hints
     }
 
@@ -210,7 +210,7 @@ class InlayHintsProvider(
         val rightExpr = decl.rightExpression
         val semanticType = runCatching { semanticResolver.resolveType(rightExpr, moduleNode) }
             .getOrElse {
-                logger.debug("Failed to resolve type for ${varExpr.name}", it)
+                logger.debug(it) { "Failed to resolve type for ${varExpr.name}" }
                 return null
             }
         val inferredType = semanticResolver.formatSemanticType(semanticType)
@@ -440,7 +440,7 @@ private object InlayHintsCandidates {
         moduleNode: ModuleNode?,
         symbolTable: SymbolTable?,
         semanticResolver: SemanticTypeResolver,
-        logger: Logger,
+        logger: KLogger,
     ): String? {
         if (call.isImplicitThis) {
             return resolveImplicitThisReceiverType(call, astModel)
@@ -494,7 +494,7 @@ private object InlayHintsCandidates {
         moduleNode: ModuleNode?,
         symbolTable: SymbolTable?,
         semanticResolver: SemanticTypeResolver,
-        logger: Logger,
+        logger: KLogger,
     ): String? {
         if (inferredType != "java.lang.Object" && inferredType != "java.lang.Class") {
             return inferredType
@@ -534,12 +534,12 @@ private object InlayHintsCandidates {
         moduleNode: ModuleNode?,
         semanticResolver: SemanticTypeResolver,
         context: String,
-        logger: Logger,
+        logger: KLogger,
     ): String? = runCatching {
         val type = semanticResolver.resolveType(expression, moduleNode)
         semanticResolver.formatSemanticType(type)
     }
-        .onFailure { logger.debug("Type resolution failed for $context", it) }
+        .onFailure { logger.debug(it) { "Type resolution failed for $context" } }
         .getOrNull()
 
     fun findMethodCandidatesInAst(

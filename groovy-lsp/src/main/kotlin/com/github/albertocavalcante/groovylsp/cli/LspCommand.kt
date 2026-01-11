@@ -10,8 +10,8 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -19,7 +19,7 @@ import java.net.BindException
 import java.net.ServerSocket
 import java.net.Socket
 
-private val logger = LoggerFactory.getLogger(LspCommand::class.java)
+private val logger = KotlinLogging.logger {}
 private const val DEFAULT_PORT = 8080
 
 /**
@@ -57,22 +57,22 @@ class LspCommand : CliktCommand(name = "lsp") {
         // Redirect System.out to System.err IMMEDIATELY to prevent pollution of LSP messages
         System.setOut(System.err)
 
-        logger.info("Starting Groovy Language Server in stdio mode")
+        logger.info { "Starting Groovy Language Server in stdio mode" }
         startServer(input, output)
     }
 
     internal fun runSocket(port: Int) {
         try {
             ServerSocket(port).use { serverSocket ->
-                logger.info("Listening on port $port...")
+                logger.info { "Listening on port $port..." }
                 addShutdownHook(serverSocket)
                 acceptConnections(serverSocket)
             }
         } catch (e: BindException) {
-            logger.error("Failed to bind to port $port (port may be in use)", e)
+            logger.error(e) { "Failed to bind to port $port (port may be in use)" }
             throw ProgramResult(1)
         } catch (e: IOException) {
-            logger.error("IO error starting server", e)
+            logger.error(e) { "IO error starting server" }
             throw ProgramResult(1)
         }
     }
@@ -82,9 +82,9 @@ class LspCommand : CliktCommand(name = "lsp") {
             Thread {
                 try {
                     serverSocket.close()
-                    logger.info("Server socket closed")
+                    logger.info { "Server socket closed" }
                 } catch (e: IOException) {
-                    logger.error("Error closing server socket", e)
+                    logger.error(e) { "Error closing server socket" }
                 }
             },
         )
@@ -94,11 +94,11 @@ class LspCommand : CliktCommand(name = "lsp") {
         while (!serverSocket.isClosed) {
             try {
                 val socket = serverSocket.accept()
-                logger.info("Client connected from ${socket.inetAddress}")
+                logger.info { "Client connected from ${socket.inetAddress}" }
                 handleClientConnection(socket)
             } catch (e: IOException) {
                 if (!serverSocket.isClosed) {
-                    logger.error("Error accepting connection", e)
+                    logger.error(e) { "Error accepting connection" }
                 }
             }
         }
@@ -110,7 +110,7 @@ class LspCommand : CliktCommand(name = "lsp") {
                 try {
                     startServer(it.getInputStream(), it.getOutputStream())
                 } catch (e: IOException) {
-                    logger.error("Error handling client connection", e)
+                    logger.error(e) { "Error handling client connection" }
                 }
             }
         }, "gls-client-${socket.inetAddress}").start()
@@ -128,7 +128,7 @@ class LspCommand : CliktCommand(name = "lsp") {
         val client = launcher.remoteProxy
         server.connect(client)
 
-        logger.info("Language Server initialized and listening")
+        logger.info { "Language Server initialized and listening" }
         launcher.startListening().get()
     }
 }

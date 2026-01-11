@@ -4,10 +4,10 @@ import com.github.albertocavalcante.groovylsp.dsl.RangeBuilder
 import com.github.albertocavalcante.groovylsp.dsl.diagnostic
 import com.github.albertocavalcante.groovylsp.errors.GroovyLspException
 import com.github.albertocavalcante.groovylsp.errors.syntaxError
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI
 
@@ -16,7 +16,7 @@ import java.net.URI
  * Converts various exceptions into appropriate diagnostic results.
  */
 class CompilationErrorHandler {
-    private val logger = LoggerFactory.getLogger(CompilationErrorHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun handleException(e: Exception, uri: URI): CompilationResult = when (e) {
         is CompilationFailedException -> handleCompilationFailed(e, uri)
@@ -57,7 +57,7 @@ class CompilationErrorHandler {
     }
 
     private fun handleUnexpected(e: Exception): CompilationResult {
-        logger.error("Unexpected compilation error", e)
+        logger.error(e) { "Unexpected compilation error" }
         val diagnostic = createDiagnostic("Compilation error: ${e.message}", DiagnosticSeverity.Error)
         return CompilationResult.failure(listOf(diagnostic))
     }

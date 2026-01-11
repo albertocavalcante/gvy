@@ -6,11 +6,11 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenera
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertTrue
 
@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  */
 class ClosureHoverStrategyTest {
 
-    private val logger = LoggerFactory.getLogger(ClosureHoverStrategyTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
 
@@ -53,7 +53,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Closure hover content: ${content.value}")
+            logger.info { "Closure hover content: ${content.value}" }
 
             assertTrue(content.kind == MarkupKind.MARKDOWN)
             assertTrue(
@@ -76,7 +76,7 @@ class ClosureHoverStrategyTest {
         val hover = hoverProvider.provideHover(uri.toString(), Position(0, 20))
 
         // Test passes if we get here without exception - closures can be tricky to position
-        logger.info("Simple closure hover: ${hover?.contents?.right?.value ?: "null"}")
+        logger.info { "Simple closure hover: ${hover?.contents?.right?.value ?: "null"}" }
 
         // Allow for various valid results at this position (could be variable, closure, etc.)
         assertTrue(true, "Closure hover test completed successfully")
@@ -96,7 +96,7 @@ class ClosureHoverStrategyTest {
         val hover = hoverProvider.provideHover(uri.toString(), Position(1, 12))
 
         // Test passes if we get here without exception
-        logger.info("Implicit it closure hover: ${hover?.contents?.right?.value ?: "null"}")
+        logger.info { "Implicit it closure hover: ${hover?.contents?.right?.value ?: "null"}" }
 
         // Allow for various valid results at this position
         assertTrue(true, "Closure hover test completed successfully")
@@ -117,7 +117,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Method argument closure hover: ${content.value}")
+            logger.info { "Method argument closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("it"),
@@ -143,7 +143,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Multi-param closure hover: ${content.value}")
+            logger.info { "Multi-param closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("key") || content.value.contains("value"),
@@ -171,7 +171,7 @@ class ClosureHoverStrategyTest {
 
         if (outerHover != null) {
             val content = outerHover.contents.right
-            logger.info("Outer closure hover: ${content.value}")
+            logger.info { "Outer closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("x"),
@@ -184,7 +184,7 @@ class ClosureHoverStrategyTest {
 
         if (innerHover != null) {
             val content = innerHover.contents.right
-            logger.info("Inner closure hover: ${content.value}")
+            logger.info { "Inner closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("y"),
@@ -208,7 +208,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Typed closure hover: ${content.value}")
+            logger.info { "Typed closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("int"),
@@ -232,7 +232,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Closure variable hover: ${content.value}")
+            logger.info { "Closure variable hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("name"),
@@ -257,7 +257,7 @@ class ClosureHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Default parameter closure hover: ${content.value}")
+            logger.info { "Default parameter closure hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Closure") || content.value.contains("name") || content.value.contains("String"),

@@ -1,9 +1,9 @@
 package com.github.groovylsp.bsp.transport
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -63,13 +63,13 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
      */
     override fun close() {
         if (!socket.isClosed) {
-            logger.debug("Closing socket transport")
+            logger.debug { "Closing socket transport" }
             socket.close()
         }
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(SocketTransport::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Connects to a BSP server via TCP socket.
@@ -84,7 +84,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
         suspend fun connect(host: String, port: Int, timeout: Duration): SocketTransport = withContext(Dispatchers.IO) {
             require(port in 1..65535) { "Port must be in range 1-65535" }
 
-            logger.info("Connecting to BSP server at $host:$port (timeout: $timeout)")
+            logger.info { "Connecting to BSP server at $host:$port (timeout: $timeout)" }
 
             val socket = withTimeout(timeout) {
                 Socket(host, port).also {
@@ -93,7 +93,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
                 }
             }
 
-            logger.info("Successfully connected to $host:$port")
+            logger.info { "Successfully connected to $host:$port" }
             SocketTransport(socket)
         }
 
@@ -111,7 +111,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
          * @throws UnsupportedOperationException if Unix domain sockets are not supported
          */
         suspend fun connectUnixSocket(path: Path, timeout: Duration): SocketTransport = withContext(Dispatchers.IO) {
-            logger.info("Connecting to BSP server at Unix socket: $path (timeout: $timeout)")
+            logger.info { "Connecting to BSP server at Unix socket: $path (timeout: $timeout)" }
 
             // NOTE: Java 16+ required for Unix domain socket support
             val socket = withTimeout(timeout) {
@@ -127,7 +127,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
                 }
             }
 
-            logger.info("Successfully connected to Unix socket: $path")
+            logger.info { "Successfully connected to Unix socket: $path" }
             SocketTransport(socket)
         }
     }

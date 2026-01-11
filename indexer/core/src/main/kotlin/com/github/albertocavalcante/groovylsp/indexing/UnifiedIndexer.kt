@@ -1,20 +1,20 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
 import groovy.lang.GroovyClassLoader
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
-import org.slf4j.LoggerFactory
 
 class UnifiedIndexer(
     private val writers: List<IndexWriter>,
     private val symbolGenerator: SymbolGenerator = SymbolGenerator(),
 ) {
 
-    private val logger = LoggerFactory.getLogger(UnifiedIndexer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun indexDocument(path: String, content: String) {
         writers.forEach { it.visitDocumentStart(path, content) }
@@ -33,7 +33,7 @@ class UnifiedIndexer(
             }
         }.onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.warn("Failed to parse {}", path, throwable)
+            logger.warn(throwable) { "Failed to parse $path" }
         }
 
         writers.forEach { it.visitDocumentEnd() }

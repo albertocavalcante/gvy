@@ -3,7 +3,7 @@
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovygdsl.GdslLoadResults
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +17,7 @@ class JenkinsWorkspaceManager(
     private val workspaceRoot: Path,
     private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
 ) {
-    private val logger = LoggerFactory.getLogger(JenkinsWorkspaceManager::class.java)
+    private val logger = KotlinLogging.logger {}
     private val jenkinsContext = JenkinsContext(configuration, workspaceRoot, pluginManager)
     private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
     private val librarySourceLoader = LibrarySourceLoader()
@@ -39,7 +39,7 @@ class JenkinsWorkspaceManager(
         val path = try {
             java.nio.file.Paths.get(uri)
         } catch (e: Exception) {
-            logger.debug("Could not convert URI to path: $uri", e)
+            logger.debug(e) { "Could not convert URI to path: $uri" }
             return false
         }
 
@@ -54,7 +54,7 @@ class JenkinsWorkspaceManager(
                 val matcher = java.nio.file.FileSystems.getDefault().getPathMatcher("glob:$pattern")
                 matcher.matches(path) || matcher.matches(path.fileName)
             } catch (e: Exception) {
-                logger.debug("Invalid glob pattern: $pattern", e)
+                logger.debug(e) { "Invalid glob pattern: $pattern" }
                 false
             }
         }
@@ -74,7 +74,7 @@ class JenkinsWorkspaceManager(
         val contentHash = content.hashCode()
         val cached = libraryCache[uri]
         val libraries = if (cached != null && cached.contentHash == contentHash) {
-            logger.debug("Using cached library references for $uri")
+            logger.debug { "Using cached library references for $uri" }
             cached.libraries
         } else {
             // Parse library references from the Jenkinsfile
@@ -89,7 +89,7 @@ class JenkinsWorkspaceManager(
         // Extract library sources for navigation
         extractLibrarySources(libraries)
 
-        logger.debug("Built Jenkins classpath for $uri: ${classpath.size} entries")
+        logger.debug { "Built Jenkins classpath for $uri: ${classpath.size} entries" }
         return classpath
     }
 
@@ -126,7 +126,7 @@ class JenkinsWorkspaceManager(
      * Reloads GDSL metadata.
      */
     fun reloadGdslMetadata(): GdslLoadResults {
-        logger.info("Reloading Jenkins GDSL metadata")
+        logger.info { "Reloading Jenkins GDSL metadata" }
         // In a real implementation, this would likely clear caches or update symbol tables
         return loadGdslMetadata()
     }
@@ -135,7 +135,7 @@ class JenkinsWorkspaceManager(
      * Updates configuration and rebuilds Jenkins context.
      */
     fun updateConfiguration(newConfig: JenkinsConfiguration): JenkinsWorkspaceManager {
-        logger.info("Updating Jenkins configuration")
+        logger.info { "Updating Jenkins configuration" }
         return JenkinsWorkspaceManager(newConfig, workspaceRoot, pluginManager)
     }
 

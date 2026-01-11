@@ -20,6 +20,7 @@ import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
 import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -29,7 +30,6 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -53,7 +53,7 @@ data class CompletionContext(
  * Provides completion items for Groovy language constructs using clean DSL.
  */
 object CompletionProvider {
-    private val logger = LoggerFactory.getLogger(CompletionProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Note: IntelliJ uses "IntelliJIdeaRulezzz"
     // Kotlin LSP uses "RWwgUHN5IEtvbmdyb28g" (El Psy Kongroo)
@@ -146,7 +146,7 @@ object CompletionProvider {
             }
         } catch (e: CompilationFailedException) {
             // If AST analysis fails, log and return empty list
-            logger.debug("AST analysis failed for completion at {}:{}: {}", line, character, e.message)
+            logger.debug { "AST analysis failed for completion at $line:$character: ${e.message}" }
             emptyList()
         }
     }
@@ -353,7 +353,7 @@ object CompletionProvider {
         // MemberAccess is handled via early return in buildCompletionsList
         is ContextType.MemberAccess -> false
         is ContextType.TypeParameter -> {
-            logger.debug("Adding type parameter classes for prefix '{}'", completionContext.prefix)
+            logger.debug { "Adding type parameter classes for prefix '${completionContext.prefix}'" }
             addTypeParameterClasses(completionContext.prefix, ctx.compilationService)
             // Also add auto-import completions for unimported types
             addAutoImportCompletions(completionContext.prefix, ctx.uri, ctx.content, ctx.compilationService)
@@ -493,7 +493,7 @@ object CompletionProvider {
             ?.let { JenkinsCompletionProvider.findJenkinsGlobalVariable(qualifierName, rawType, it) }
 
         if (globalVar != null && globalVar.properties.isNotEmpty()) {
-            logger.debug("Adding Jenkins properties for {}", qualifierName ?: rawType)
+            logger.debug { "Adding Jenkins properties for ${qualifierName ?: rawType}" }
             addJenkinsGlobalVariablePropertyCompletions(globalVar)
             return true
         }
@@ -504,17 +504,17 @@ object CompletionProvider {
             val classFqn = rawType.replace('.', '/')
             val members = index.getAllMembers(classFqn, includeInherited = true)
             if (members.isNotEmpty()) {
-                logger.debug("Adding workspace members for {} (found {} members)", rawType, members.size)
+                logger.debug { "Adding workspace members for $rawType (found ${members.size} members)" }
                 addWorkspaceMembers(members)
             }
         }
 
         // Strategy 3: GDK methods
-        logger.debug("Adding GDK methods for {}", rawType)
+        logger.debug { "Adding GDK methods for $rawType" }
         addGdkMethods(rawType, ctx.compilationService)
 
         // Strategy 4: Classpath methods
-        logger.debug("Adding Classpath methods for {}", rawType)
+        logger.debug { "Adding Classpath methods for $rawType" }
         addClasspathMethods(rawType, ctx.compilationService)
 
         return false
@@ -815,7 +815,7 @@ object CompletionProvider {
     ) {
         val classes =
             compilationService.classpathService.findClassesByPrefix(prefix, maxResults = MAX_TYPE_COMPLETION_RESULTS)
-        logger.debug("Found {} classes for prefix {}", classes.size, prefix)
+        logger.debug { "Found ${classes.size} classes for prefix $prefix" }
 
         classes.forEach { classInfo ->
             clazz(

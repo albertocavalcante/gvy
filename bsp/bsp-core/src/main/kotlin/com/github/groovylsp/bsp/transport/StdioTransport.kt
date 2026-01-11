@@ -1,6 +1,6 @@
 package com.github.groovylsp.bsp.transport
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Path
@@ -57,7 +57,7 @@ class StdioTransport private constructor(private val process: Process) : BspTran
      */
     override fun close() {
         if (process.isAlive) {
-            logger.debug("Closing stdio transport, terminating process")
+            logger.debug { "Closing stdio transport, terminating process" }
             process.destroy()
 
             // NOTE: Not waiting for exit here to avoid blocking.
@@ -67,7 +67,7 @@ class StdioTransport private constructor(private val process: Process) : BspTran
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(StdioTransport::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Launches a BSP server process and returns a stdio transport.
@@ -85,8 +85,8 @@ class StdioTransport private constructor(private val process: Process) : BspTran
         ): StdioTransport {
             require(argv.isNotEmpty()) { "argv must not be empty" }
 
-            logger.info("Launching BSP server: ${argv.joinToString(" ")}")
-            logger.debug("Working directory: $workingDir")
+            logger.info { "Launching BSP server: ${argv.joinToString(" ")}" }
+            logger.debug { "Working directory: $workingDir" }
 
             val process = ProcessLauncher.launch(argv, workingDir, environment)
             return StdioTransport(process)

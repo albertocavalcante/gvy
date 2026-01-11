@@ -35,6 +35,7 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -100,7 +101,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.CompletableFuture
@@ -127,7 +127,7 @@ class GroovyTextDocumentService(
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
 
-    private val logger = LoggerFactory.getLogger(GroovyTextDocumentService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         /**
@@ -262,7 +262,7 @@ class GroovyTextDocumentService(
 
     override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
         coroutineScope.future {
-            logger.debug("Prepare call hierarchy requested for ${params.textDocument.uri}")
+            logger.debug { "Prepare call hierarchy requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
 
             compilationService.ensureCompiled(uri)
@@ -273,22 +273,22 @@ class GroovyTextDocumentService(
     override fun callHierarchyIncomingCalls(
         params: CallHierarchyIncomingCallsParams,
     ): CompletableFuture<List<CallHierarchyIncomingCall>> = coroutineScope.future {
-        logger.debug("Incoming calls requested for ${params.item.name}")
+        logger.debug { "Incoming calls requested for ${params.item.name}" }
         callHierarchyProvider.incomingCalls(params)
     }
 
     override fun callHierarchyOutgoingCalls(
         params: CallHierarchyOutgoingCallsParams,
     ): CompletableFuture<List<CallHierarchyOutgoingCall>> = coroutineScope.future {
-        logger.debug("Outgoing calls requested for ${params.item.name}")
+        logger.debug { "Outgoing calls requested for ${params.item.name}" }
         callHierarchyProvider.outgoingCalls(params)
     }
 
     override fun signatureHelp(params: SignatureHelpParams): CompletableFuture<SignatureHelp> = coroutineScope.future {
-        logger.debug(
+        logger.debug {
             "Signature help requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}",
-        )
+                "${params.position.line}:${params.position.character}"
+        }
         signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
     }
 
@@ -296,7 +296,7 @@ class GroovyTextDocumentService(
      * Helper function to publish diagnostics with better readability
      */
     private fun publishDiagnostics(uri: String, diagnostics: List<Diagnostic>) {
-        logger.debug("Publishing ${diagnostics.size} diagnostics for $uri")
+        logger.debug { "Publishing ${diagnostics.size} diagnostics for $uri" }
         client()?.publishDiagnostics(
             PublishDiagnosticsParams().apply {
                 this.uri = uri
@@ -334,12 +334,12 @@ class GroovyTextDocumentService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.debug("ensureAllOpenDocumentsCompiled: Error checking compilation status", e)
+            logger.debug(e) { "ensureAllOpenDocumentsCompiled: Error checking compilation status" }
             false
         }
 
         if (!hasPendingJobs && allDocumentsCompiled) {
-            logger.debug("ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping")
+            logger.debug { "ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping" }
             return
         }
 
@@ -355,11 +355,11 @@ class GroovyTextDocumentService(
         while (true) {
             // SAFEGUARD 1: Check iteration limit to prevent infinite loops
             if (iterations >= MAX_COMPILATION_ITERATIONS) {
-                logger.warn(
+                logger.warn {
                     "ensureAllOpenDocumentsCompiled: Reached max iterations ($MAX_COMPILATION_ITERATIONS). " +
                         "Some documents may not be fully compiled. This may indicate a compilation loop or " +
-                        "excessive file churn.",
-                )
+                        "excessive file churn."
+                }
                 break
             }
             iterations++
@@ -367,11 +367,11 @@ class GroovyTextDocumentService(
             // SAFEGUARD 2: Check overall timeout to prevent indefinite blocking
             var elapsedMs = System.currentTimeMillis() - startTime
             if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
-                logger.warn(
+                logger.warn {
                     "ensureAllOpenDocumentsCompiled: Timeout after ${elapsedMs}ms " +
                         "(limit: ${MAX_COMPILATION_TIMEOUT_MS}ms). " +
-                        "Some documents may not be fully compiled.",
-                )
+                        "Some documents may not be fully compiled."
+                }
                 break
             }
 
@@ -383,11 +383,11 @@ class GroovyTextDocumentService(
             val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
 
             if (pendingJobs.isNotEmpty()) {
-                logger.debug(
+                logger.debug {
                     "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
                         "Waiting for ${pendingJobs.size} pending compilation jobs " +
-                        "(elapsed: ${elapsedMs}ms)",
-                )
+                        "(elapsed: ${elapsedMs}ms)"
+                }
 
                 // SAFEGUARD 5: Timeout on joinAll to prevent indefinite blocking
                 val joinResult = withTimeoutOrNull(MAX_JOB_WAIT_TIMEOUT_MS) {
@@ -395,10 +395,10 @@ class GroovyTextDocumentService(
                 }
 
                 if (joinResult == null) {
-                    logger.warn(
+                    logger.warn {
                         "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
-                            "after ${MAX_JOB_WAIT_TIMEOUT_MS}ms. Proceeding anyway.",
-                    )
+                            "after ${MAX_JOB_WAIT_TIMEOUT_MS}ms. Proceeding anyway."
+                    }
                 }
             }
 
@@ -411,23 +411,23 @@ class GroovyTextDocumentService(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.error("ensureAllOpenDocumentsCompiled: Error getting URIs snapshot", e)
+                logger.error(e) { "ensureAllOpenDocumentsCompiled: Error getting URIs snapshot" }
                 emptyList()
             }
 
-            logger.debug(
+            logger.debug {
                 "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
-                    "Processing ${urisSnapshot.size} open documents",
-            )
+                    "Processing ${urisSnapshot.size} open documents"
+            }
 
             for (uri in urisSnapshot) {
                 // SAFEGUARD 6: Check timeout inside loop to prevent long-running iterations
                 elapsedMs = System.currentTimeMillis() - startTime
                 if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
-                    logger.warn(
+                    logger.warn {
                         "ensureAllOpenDocumentsCompiled: Timeout during compilation loop after ${elapsedMs}ms. " +
-                            "Stopping mid-iteration.",
-                    )
+                            "Stopping mid-iteration."
+                    }
                     return
                 }
 
@@ -442,7 +442,7 @@ class GroovyTextDocumentService(
                 if (compilationService.getSymbolStorage(uri) == null) {
                     val content = documentProvider.get(uri)
                     if (content != null) {
-                        logger.debug("ensureAllOpenDocumentsCompiled: Compiling unindexed document: $uri")
+                        logger.debug { "ensureAllOpenDocumentsCompiled: Compiling unindexed document: $uri" }
 
                         // SAFEGUARD 7: Catch exceptions to prevent retry loops
                         try {
@@ -453,11 +453,10 @@ class GroovyTextDocumentService(
                         } catch (e: Exception) {
                             // Log but continue - don't let one bad file break everything
                             // Track failed URIs to skip them in subsequent iterations
-                            logger.error(
+                            logger.error(e) {
                                 "ensureAllOpenDocumentsCompiled: Failed to compile $uri. " +
-                                    "Skipping in subsequent iterations.",
-                                e,
-                            )
+                                    "Skipping in subsequent iterations."
+                            }
                             failedUris.add(uri)
                             // Do not set compiledAny here; we only mark successful compilations
                         }
@@ -470,10 +469,10 @@ class GroovyTextDocumentService(
                 // should now be compiled and indexed.
                 // Recalculate elapsed time for accurate logging
                 val completionElapsedMs = System.currentTimeMillis() - startTime
-                logger.debug(
+                logger.debug {
                     "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
-                        "(${completionElapsedMs}ms)",
-                )
+                        "(${completionElapsedMs}ms)"
+                }
                 break
             }
         }
@@ -495,7 +494,7 @@ class GroovyTextDocumentService(
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
-        logger.info("Document opened: ${params.textDocument.uri}")
+        logger.info { "Document opened: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
         val content = params.textDocument.text
         documentProvider.put(uri, content)
@@ -504,7 +503,7 @@ class GroovyTextDocumentService(
     }
 
     override fun didChange(params: DidChangeTextDocumentParams) {
-        logger.debug("Document changed: ${params.textDocument.uri}")
+        logger.debug { "Document changed: ${params.textDocument.uri}" }
 
         // For full sync, we get the entire document content
         if (params.contentChanges.isNotEmpty()) {
@@ -520,7 +519,7 @@ class GroovyTextDocumentService(
     }
 
     override fun didClose(params: DidCloseTextDocumentParams) {
-        logger.info("Document closed: ${params.textDocument.uri}")
+        logger.info { "Document closed: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
 
@@ -533,7 +532,7 @@ class GroovyTextDocumentService(
     }
 
     override fun didSave(params: DidSaveTextDocumentParams) {
-        logger.debug("Document saved: ${params.textDocument.uri}")
+        logger.debug { "Document saved: ${params.textDocument.uri}" }
         // Could trigger additional processing if needed
     }
 
@@ -571,22 +570,17 @@ class GroovyTextDocumentService(
                         publishDiagnostics(uri.toString(), allDiagnostics)
                     }
 
-                    logger.debug("Published ${allDiagnostics.size} diagnostics for $uri")
+                    logger.debug { "Published ${allDiagnostics.size} diagnostics for $uri" }
                 }.onFailure { e ->
                     when (e) {
-                        is CompilationFailedException -> logger.error(
-                            "Compilation failed for: $uri",
-                            e,
-                        )
-
-                        is IllegalArgumentException -> logger.error("Invalid arguments for: $uri", e)
-                        is IOException -> logger.error("I/O error for: $uri", e)
+                        is CompilationFailedException -> logger.error(e) { "Compilation failed for: $uri" }
+                        is IllegalArgumentException -> logger.error(e) { "Invalid arguments for: $uri" }
+                        is IOException -> logger.error(e) { "I/O error for: $uri" }
                         is CancellationException -> {
-                            logger.debug("Diagnostics job cancelled for: $uri")
+                            logger.debug { "Diagnostics job cancelled for: $uri" }
                             throw e
                         }
-
-                        else -> logger.error("Unexpected error during diagnostics for: $uri", e)
+                        else -> logger.error(e) { "Unexpected error during diagnostics for: $uri" }
                     }
                 }
             } finally {
@@ -617,17 +611,17 @@ class GroovyTextDocumentService(
         coroutineScope.launch {
             documentProvider.snapshot().forEach { (uri, content) ->
                 triggerDiagnostics(uri, content)
-                logger.info("Triggered diagnostics refresh for $uri after dependency update")
+                logger.info { "Triggered diagnostics refresh for $uri after dependency update" }
             }
         }
     }
 
     override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> =
         coroutineScope.future {
-            logger.debug(
+            logger.debug {
                 "Completion requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
-            )
+                    "${params.position.line}:${params.position.character}"
+            }
 
             val uri = URI.create(params.textDocument.uri)
             val content = documentProvider.get(uri) ?: ""
@@ -643,7 +637,7 @@ class GroovyTextDocumentService(
                 content,
             )
 
-            logger.debug("Returning ${completions.size} completions")
+            logger.debug { "Returning ${completions.size} completions" }
             Either.forLeft(completions)
         }
 
@@ -651,10 +645,10 @@ class GroovyTextDocumentService(
         CompletableFuture.completedFuture(unresolved)
 
     override fun hover(params: HoverParams): CompletableFuture<Hover> = coroutineScope.future {
-        logger.debug(
+        logger.debug {
             "Hover requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}",
-        )
+                "${params.position.line}:${params.position.character}"
+        }
 
         val uri = URI.create(params.textDocument.uri)
 
@@ -681,17 +675,17 @@ class GroovyTextDocumentService(
         runCatching {
             compilationService.compile(documentUri, content)
         }.onFailure { error ->
-            logger.debug("GroovyTextDocumentService: failed to compile $documentUri before hover", error)
+            logger.debug(error) { "GroovyTextDocumentService: failed to compile $documentUri before hover" }
         }
     }
 
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
         coroutineScope.future {
-            logger.debug(
+            logger.debug {
                 "Definition requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
-            )
+                    "${params.position.line}:${params.position.character}"
+            }
 
             val uri = URI.create(params.textDocument.uri)
 
@@ -707,7 +701,7 @@ class GroovyTextDocumentService(
                 // CRITICAL: Ensure compilation completes before proceeding
                 val compilationResult = ensureCompiledOrCompileNow(uri)
                 if (compilationResult == null) {
-                    logger.warn("Document $uri not compiled, cannot provide definitions")
+                    logger.warn { "Document $uri not compiled, cannot provide definitions" }
                     return@future Either.forLeft(emptyList())
                 }
                 // Create definition provider with source navigation support
@@ -723,29 +717,29 @@ class GroovyTextDocumentService(
                     params.position,
                 ).toList()
 
-                logger.debug("Found ${locations.size} definitions")
+                logger.debug { "Found ${locations.size} definitions" }
 
                 Either.forLeft(locations)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IllegalArgumentException) {
-                logger.error("Invalid arguments finding definitions", e)
+                logger.error(e) { "Invalid arguments finding definitions" }
                 Either.forLeft(emptyList())
             } catch (e: IllegalStateException) {
-                logger.error("Invalid state finding definitions", e)
+                logger.error(e) { "Invalid state finding definitions" }
                 Either.forLeft(emptyList())
             } catch (e: Exception) {
-                logger.error("Unexpected error finding definitions", e)
+                logger.error(e) { "Unexpected error finding definitions" }
                 Either.forLeft(emptyList())
             }
         }
 
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
-        logger.debug(
+        logger.debug {
             "References requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}",
-        )
+                "${params.position.line}:${params.position.character}"
+        }
 
         try {
             val uri = URI.create(params.textDocument.uri)
@@ -756,7 +750,7 @@ class GroovyTextDocumentService(
 
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
-                logger.warn("Document $uri not compiled, cannot provide references")
+                logger.warn { "Document $uri not compiled, cannot provide references" }
                 return@future emptyList()
             }
 
@@ -767,18 +761,18 @@ class GroovyTextDocumentService(
                 params.context.isIncludeDeclaration,
             ).toList()
 
-            logger.debug("Found ${locations.size} references")
+            logger.debug { "Found ${locations.size} references" }
             locations
         } catch (e: CancellationException) {
             throw e
         } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments finding references", e)
+            logger.error(e) { "Invalid arguments finding references" }
             emptyList()
         } catch (e: IllegalStateException) {
-            logger.error("Invalid state finding references", e)
+            logger.error(e) { "Invalid state finding references" }
             emptyList()
         } catch (e: Exception) {
-            logger.error("Unexpected error finding references", e)
+            logger.error(e) { "Unexpected error finding references" }
             emptyList()
         }
     }
@@ -786,16 +780,16 @@ class GroovyTextDocumentService(
     override fun typeDefinition(
         params: TypeDefinitionParams,
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
-        logger.debug(
+        logger.debug {
             "Type definition requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}",
-        )
+                "${params.position.line}:${params.position.character}"
+        }
 
         return typeDefinitionProvider.provideTypeDefinition(params).thenApply { locations ->
-            logger.debug("Found ${locations.size} type definitions")
+            logger.debug { "Found ${locations.size} type definitions" }
             Either.forLeft<List<Location>, List<LocationLink>>(locations)
         }.exceptionally { e ->
-            logger.error("Error providing type definition", e)
+            logger.error(e) { "Error providing type definition" }
             Either.forLeft(emptyList())
         }
     }
@@ -807,10 +801,10 @@ class GroovyTextDocumentService(
     override fun implementation(
         params: ImplementationParams,
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
-        logger.debug(
+        logger.debug {
             "Implementation requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}",
-        )
+                "${params.position.line}:${params.position.character}"
+        }
 
         try {
             val uri = URI.create(params.textDocument.uri)
@@ -821,7 +815,7 @@ class GroovyTextDocumentService(
 
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
-                logger.warn("Document $uri not compiled, cannot provide implementations")
+                logger.warn { "Document $uri not compiled, cannot provide implementations" }
                 return@future Either.forLeft(emptyList())
             }
 
@@ -830,34 +824,34 @@ class GroovyTextDocumentService(
                 params.position,
             ).toList()
 
-            logger.debug("Found ${locations.size} implementations")
+            logger.debug { "Found ${locations.size} implementations" }
             Either.forLeft(locations)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments finding implementations", e)
+            logger.error(e) { "Invalid arguments finding implementations" }
             Either.forLeft(emptyList())
         } catch (e: IllegalStateException) {
-            logger.error("Invalid state finding implementations", e)
+            logger.error(e) { "Invalid state finding implementations" }
             Either.forLeft(emptyList())
         } catch (e: Exception) {
-            logger.error("Unexpected error finding implementations", e)
+            logger.error(e) { "Unexpected error finding implementations" }
             Either.forLeft(emptyList())
         }
     }
 
     override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =
         coroutineScope.future {
-            logger.debug(
+            logger.debug {
                 "Document highlight requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}",
-            )
+                    "${params.position.line}:${params.position.character}"
+            }
 
             try {
                 val uri = URI.create(params.textDocument.uri)
                 val compilationResult = ensureCompiledOrCompileNow(uri)
                 if (compilationResult == null) {
-                    logger.warn("Document $uri not compiled, cannot provide highlights")
+                    logger.warn { "Document $uri not compiled, cannot provide highlights" }
                     return@future emptyList()
                 }
 
@@ -866,13 +860,13 @@ class GroovyTextDocumentService(
                     params.position,
                 )
 
-                logger.debug("Found ${highlights.size} highlights")
+                logger.debug { "Found ${highlights.size} highlights" }
                 highlights
             } catch (e: Exception) {
                 when (e) {
-                    is IllegalArgumentException -> logger.error("Invalid arguments finding highlights", e)
-                    is IllegalStateException -> logger.error("Invalid state finding highlights", e)
-                    else -> logger.error("Unexpected error finding highlights", e)
+                    is IllegalArgumentException -> logger.error(e) { "Invalid arguments finding highlights" }
+                    is IllegalStateException -> logger.error(e) { "Invalid state finding highlights" }
+                    else -> logger.error(e) { "Unexpected error finding highlights" }
                 }
                 emptyList()
             }
@@ -897,10 +891,10 @@ class GroovyTextDocumentService(
 
     @Suppress("TooGenericExceptionCaught")
     override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> = coroutineScope.future {
-        logger.debug(
+        logger.debug {
             "Rename requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character} to '${params.newName}'",
-        )
+                "${params.position.line}:${params.position.character} to '${params.newName}'"
+        }
 
         try {
             val renameProvider = RenameProvider(compilationService)
@@ -910,10 +904,10 @@ class GroovyTextDocumentService(
                 params.newName,
             )
         } catch (e: ResponseErrorException) {
-            logger.error("Rename failed: ${e.message}")
+            logger.error { "Rename failed: ${e.message}" }
             throw e
         } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments for rename", e)
+            logger.error(e) { "Invalid arguments for rename" }
             throw ResponseErrorException(
                 ResponseError(
                     ResponseErrorCode.InvalidParams,
@@ -922,7 +916,7 @@ class GroovyTextDocumentService(
                 ),
             )
         } catch (e: Exception) {
-            logger.error("Unexpected error during rename", e)
+            logger.error(e) { "Unexpected error during rename" }
             throw ResponseErrorException(
                 ResponseError(
                     ResponseErrorCode.InternalError,
@@ -935,19 +929,19 @@ class GroovyTextDocumentService(
 
     override fun codeAction(params: CodeActionParams): CompletableFuture<List<Either<Command, CodeAction>>> =
         coroutineScope.future {
-            logger.debug(
+            logger.debug {
                 "Code action requested for ${params.textDocument.uri} at " +
-                    "${params.range.start.line}:${params.range.start.character}",
-            )
+                    "${params.range.start.line}:${params.range.start.character}"
+            }
 
             val actions = codeActionProvider.provideCodeActions(params)
-            logger.debug("Returning ${actions.size} code actions")
+            logger.debug { "Returning ${actions.size} code actions" }
 
             actions.map { Either.forRight<Command, CodeAction>(it) }
         }
 
     override fun codeLens(params: CodeLensParams): CompletableFuture<List<CodeLens>> = coroutineScope.future {
-        logger.debug("CodeLens requested for ${params.textDocument.uri}")
+        logger.debug { "CodeLens requested for ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
 
         // Ensure file is compiled before providing CodeLenses
@@ -958,13 +952,13 @@ class GroovyTextDocumentService(
 
     override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
         coroutineScope.future {
-            logger.debug("Folding range requested for ${params.textDocument.uri}")
+            logger.debug { "Folding range requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
 
             // Ensure file is compiled before providing folding ranges
             val compilationResult = ensureCompiledOrCompileNow(uri)
             if (compilationResult == null) {
-                logger.warn("Document $uri not compiled, cannot provide folding ranges")
+                logger.warn { "Document $uri not compiled, cannot provide folding ranges" }
                 return@future emptyList()
             }
 
@@ -972,14 +966,14 @@ class GroovyTextDocumentService(
         }
 
     override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
-        logger.debug("Inlay hints requested for ${params.textDocument.uri}")
+        logger.debug { "Inlay hints requested for ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
 
         // TODO(#566): Read dynamic configuration from client settings.
         //  See: https://github.com/albertocavalcante/gvy/issues/566
         val compilationResult = ensureCompiledOrCompileNow(uri)
         if (compilationResult == null) {
-            logger.warn("Document $uri not compiled, cannot provide inlay hints")
+            logger.warn { "Document $uri not compiled, cannot provide inlay hints" }
             return@future emptyList()
         }
 
@@ -988,7 +982,7 @@ class GroovyTextDocumentService(
 
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
         coroutineScope.future {
-            logger.debug("Semantic tokens requested for ${params.textDocument.uri}")
+            logger.debug { "Semantic tokens requested for ${params.textDocument.uri}" }
 
             val uri = URI.create(params.textDocument.uri)
 
@@ -996,14 +990,14 @@ class GroovyTextDocumentService(
                 // Ensure document is compiled
                 val compilationResult = compilationService.ensureCompiled(uri)
                 if (compilationResult == null) {
-                    logger.warn("Document $uri not compiled, returning empty tokens")
+                    logger.warn { "Document $uri not compiled, returning empty tokens" }
                     return@future SemanticTokens(emptyList())
                 }
 
                 // Get AST model
                 val astModel = compilationService.getAstModel(uri)
                 if (astModel == null) {
-                    logger.warn("No AST model available for $uri, returning empty tokens")
+                    logger.warn { "No AST model available for $uri, returning empty tokens" }
                     return@future SemanticTokens(emptyList())
                 }
 
@@ -1047,10 +1041,10 @@ class GroovyTextDocumentService(
                 val allTokens = combineTokens(groovyTokens, jenkinsTokens)
                 val encodedData = encodeSemanticTokens(allTokens)
 
-                logger.debug("Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)")
+                logger.debug { "Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)" }
                 SemanticTokens(encodedData)
             } catch (e: Exception) {
-                logger.error("Failed to generate semantic tokens for $uri", e)
+                logger.error(e) { "Failed to generate semantic tokens for $uri" }
                 SemanticTokens(emptyList())
             }
         }
@@ -1160,7 +1154,7 @@ class GroovyTextDocumentService(
      * Called when .codenarc files change; should be followed by rerunDiagnosticsOnOpenFiles().
      */
     fun reloadCodeNarcRulesets() {
-        logger.info("CodeNarc ruleset reload requested")
+        logger.info { "CodeNarc ruleset reload requested" }
         // NOTE: Currently no caching to invalidate. Rulesets are resolved fresh on each analysis.
         // This method exists as a hook for future cache invalidation logic.
     }
@@ -1170,7 +1164,7 @@ class GroovyTextDocumentService(
      * Called after configuration changes that affect diagnostics.
      */
     fun rerunDiagnosticsOnOpenFiles() {
-        logger.info("Re-running diagnostics on open files")
+        logger.info { "Re-running diagnostics on open files" }
         documentProvider.getAllUris().forEach { uri ->
             val content = documentProvider.get(uri)
             if (content != null) {

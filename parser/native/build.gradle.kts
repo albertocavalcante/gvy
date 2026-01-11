@@ -14,7 +14,7 @@ dependencies {
 
     implementation(libs.arrow.core)
     implementation(libs.kotlin.collections.immutable)
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     detektPlugins(libs.detekt.formatting)
 

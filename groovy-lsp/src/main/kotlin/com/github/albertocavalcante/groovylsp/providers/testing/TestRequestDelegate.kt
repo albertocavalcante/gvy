@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +12,6 @@ import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
-import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -23,16 +23,16 @@ class TestRequestDelegate(
     private val buildToolManagerProvider: () -> BuildToolManager?,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val logger = LoggerFactory.getLogger(TestRequestDelegate::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun discoverTests(params: DiscoverTestsParams): CompletableFuture<List<TestSuite>> {
-        logger.info("Received groovy/discoverTests request for: ${params.workspaceUri}")
+        logger.info { "Received groovy/discoverTests request for: ${params.workspaceUri}" }
 
         return coroutineScope.future {
             withContext(ioDispatcher) {
                 val provider = TestDiscoveryProvider(compilationService)
                 val result = provider.discoverTests(params.workspaceUri)
-                logger.info("discoverTests returning ${result.size} test suites: ${result.map { it.suite }}")
+                logger.info { "discoverTests returning ${result.size} test suites: ${result.map { it.suite }}" }
                 result
             }
         }
@@ -40,16 +40,16 @@ class TestRequestDelegate(
 
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> {
-        logger.info("Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}")
+        logger.info { "Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}" }
 
         return CompletableFuture.supplyAsync {
             try {
                 generateTestCommand(params)
             } catch (e: ResponseErrorException) {
-                logger.error("Error generating test command", e)
+                logger.error(e) { "Error generating test command" }
                 throw e
             } catch (e: Exception) {
-                logger.error("Error generating test command", e)
+                logger.error(e) { "Error generating test command" }
                 throw ResponseErrorException(
                     ResponseError(
                         ResponseErrorCode.InternalError,
@@ -90,22 +90,22 @@ class TestRequestDelegate(
      * Returns information about the detected build tool.
      */
     fun getBuildToolInfo(params: GetBuildToolInfoParams): CompletableFuture<BuildToolInfo> {
-        logger.info("Received groovy/getBuildToolInfo request for: ${params.workspaceUri}")
+        logger.info { "Received groovy/getBuildToolInfo request for: ${params.workspaceUri}" }
 
         return CompletableFuture.supplyAsync {
             val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
                 ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
-                    logger.info("No workspace root found, returning unknown build tool")
+                    logger.info { "No workspace root found, returning unknown build tool" }
                 }
 
             val buildToolManager = buildToolManagerProvider()
                 ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
-                    logger.info("Build tool manager not initialized, returning unknown")
+                    logger.info { "Build tool manager not initialized, returning unknown" }
                 }
 
             val buildTool = buildToolManager.detectBuildTool(workspaceRoot)
                 ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
-                    logger.info("No build tool detected for workspace: $workspaceRoot")
+                    logger.info { "No build tool detected for workspace: $workspaceRoot" }
                 }
 
             // Check capabilities by probing with test commands
@@ -130,11 +130,11 @@ class TestRequestDelegate(
                 test = "test",
             ) != null
 
-            logger.info(
+            logger.info {
                 "Detected build tool: ${buildTool.name}, " +
                     "supportsTestExecution: $supportsTestExecution, supportsDebug: $supportsDebug, " +
-                    "supportsCoverage: $supportsCoverage",
-            )
+                    "supportsCoverage: $supportsCoverage"
+            }
 
             BuildToolInfo(
                 name = buildTool.name.lowercase(),

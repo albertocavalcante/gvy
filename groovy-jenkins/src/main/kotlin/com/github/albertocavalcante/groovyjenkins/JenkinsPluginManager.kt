@@ -16,9 +16,9 @@ import com.github.albertocavalcante.groovyjenkins.metadata.StableStepDefinitions
 import com.github.albertocavalcante.groovyjenkins.updatecenter.JenkinsUpdateCenterClient
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -41,7 +41,7 @@ class JenkinsPluginManager(
     private val cacheDir: Path = MavenSourceArtifactResolver.getDefaultCacheDir().parent.resolve("jenkins-plugins"),
 ) {
 
-    private val logger = LoggerFactory.getLogger(JenkinsPluginManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Thread-safe lazy loading
     private val bundledMetadataLoader = BundledJenkinsMetadataLoader()
@@ -71,7 +71,7 @@ class JenkinsPluginManager(
         downloadedPluginMutex.withLock {
             downloadedPluginCache[pluginId] = jarPath
         }
-        logger.debug("Registered plugin JAR for {}: {}", pluginId, jarPath)
+        logger.debug { "Registered plugin JAR for $pluginId: $jarPath" }
     }
 
     /**
@@ -90,7 +90,7 @@ class JenkinsPluginManager(
             // Or we could implement deep merging logic here if needed via MetadataMerger.
             staticMetadataCache = metadata
         }
-        logger.debug("Registered static Jenkins metadata with {} steps", metadata.steps.size)
+        logger.debug { "Registered static Jenkins metadata with ${metadata.steps.size} steps" }
     }
 
     /**
@@ -195,7 +195,7 @@ class JenkinsPluginManager(
             }
             jarPath
         } catch (e: Exception) {
-            logger.debug("Failed to resolve plugin JAR: {}", key, e)
+            logger.debug(e) { "Failed to resolve plugin JAR: $key" }
             null
         }
     }
@@ -264,7 +264,7 @@ class JenkinsPluginManager(
             bundledMetadataCache = try {
                 bundledMetadataLoader.load()
             } catch (e: Exception) {
-                logger.error("Failed to load bundled Jenkins metadata", e)
+                logger.error(e) { "Failed to load bundled Jenkins metadata" }
                 // Return empty metadata on failure
                 BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
             }
@@ -292,6 +292,6 @@ class JenkinsPluginManager(
         staticMetadataMutex.withLock {
             staticMetadataCache = null
         }
-        logger.info("Invalidated Jenkins plugin manager cache")
+        logger.info { "Invalidated Jenkins plugin manager cache" }
     }
 }

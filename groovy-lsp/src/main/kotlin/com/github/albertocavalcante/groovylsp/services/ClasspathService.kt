@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.services
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.CombinedTypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Path
@@ -20,7 +20,7 @@ class ClasspathService(
     private val classpathIndex: ClasspathIndex = JvmClasspathIndex(),
     reflectionProvider: ClasspathReflection? = null,
 ) {
-    private val logger = LoggerFactory.getLogger(ClasspathService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Start with the system classloader to access JDK and Groovy runtime
     private var currentClassLoader: ClassLoader = ClassLoader.getSystemClassLoader()
@@ -42,7 +42,7 @@ class ClasspathService(
         val oldClassLoader = currentClassLoader
         val oldClasspathEntries = classpathEntries
         try {
-            logger.info("Updating classpath with ${paths.size} paths")
+            logger.info { "Updating classpath with ${paths.size} paths" }
             val urls = paths.map { it.toUri().toURL() }.toTypedArray()
             // Parent is null to strictly separate (or system to inherit JDK/Groovy)
             // We likely want system as parent to get the GDK classes
@@ -54,7 +54,7 @@ class ClasspathService(
             classIndex.clear()
             qualifiedNameIndex.clear()
         } catch (e: Exception) {
-            logger.error("Failed to update classpath", e)
+            logger.error(e) { "Failed to update classpath" }
             // Restore previous classloader to maintain consistent state
             currentClassLoader = oldClassLoader
             classpathEntries = oldClasspathEntries
@@ -71,7 +71,7 @@ class ClasspathService(
         synchronized(this) {
             if (isIndexed.get()) return
 
-            logger.info("Indexing all classes from classpath...")
+            logger.info { "Indexing all classes from classpath..." }
             val startTime = System.currentTimeMillis()
 
             try {
@@ -82,9 +82,9 @@ class ClasspathService(
 
                 isIndexed.set(true)
                 val elapsedMs = System.currentTimeMillis() - startTime
-                logger.info("Indexed ${classIndex.size()} class names in ${elapsedMs}ms")
+                logger.info { "Indexed ${classIndex.size()} class names in ${elapsedMs}ms" }
             } catch (e: Exception) {
-                logger.error("Failed to index classes", e)
+                logger.error(e) { "Failed to index classes" }
             }
         }
     }

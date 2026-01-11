@@ -4,12 +4,12 @@ import com.github.albertocavalcante.groovylsp.buildtool.DependencyResolver
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -45,7 +45,7 @@ class GradleDependencyResolver(
         val backoffMultiplier: Double = 2.0,
     )
 
-    private val logger = LoggerFactory.getLogger(GradleDependencyResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override val name: String = "Gradle Tooling API"
 
@@ -73,7 +73,7 @@ class GradleDependencyResolver(
     fun resolveWithSourceDirectories(projectFile: Path): WorkspaceResolution {
         val projectDir = if (Files.isDirectory(projectFile)) projectFile else projectFile.parent
 
-        logger.info("Resolving dependencies using Gradle Tooling API for: $projectDir")
+        logger.info { "Resolving dependencies using Gradle Tooling API for: $projectDir" }
 
         // First, try with exponential backoff for transient failures
         val transientRetryResult = runWithTransientRetry(projectDir)
@@ -85,7 +85,7 @@ class GradleDependencyResolver(
 
         // Log the original failure before attempting fallback
         if (lastException != null) {
-            logger.error("Initial Gradle resolution failed: ${lastException.message}", lastException)
+            logger.error(lastException) { "Initial Gradle resolution failed: ${lastException.message}" }
         }
 
         // Fall back to isolated Gradle user home for init script errors
@@ -96,7 +96,7 @@ class GradleDependencyResolver(
             }
         }
 
-        logger.error("Gradle dependency resolution failed: ${lastException?.message}", lastException)
+        logger.error(lastException) { "Gradle dependency resolution failed: ${lastException?.message}" }
 
         // Classify the error and return structured failure status so the client can show actionable messages
         val failedStatus = if (lastException != null) {
@@ -126,7 +126,7 @@ class GradleDependencyResolver(
 
             if (lastResult.isSuccess) {
                 if (attempt > 1) {
-                    logger.info("Gradle dependency resolution succeeded on attempt $attempt")
+                    logger.info { "Gradle dependency resolution succeeded on attempt $attempt" }
                 }
                 return lastResult
             }
@@ -138,10 +138,10 @@ class GradleDependencyResolver(
                 break
             }
 
-            logger.warn(
+            logger.warn {
                 "Gradle dependency resolution failed (attempt $attempt/${retryConfig.maxAttempts}): " +
-                    "${exception.message}. Retrying in ${currentDelay}ms...",
-            )
+                    "${exception.message}. Retrying in ${currentDelay}ms..."
+            }
             Thread.sleep(currentDelay)
             currentDelay = (currentDelay * retryConfig.backoffMultiplier).toLong()
         }
@@ -153,16 +153,16 @@ class GradleDependencyResolver(
      * Tries resolution with an isolated Gradle user home to avoid init script issues.
      */
     private fun tryWithIsolatedUserHome(projectDir: Path): WorkspaceResolution? {
-        logger.warn(
+        logger.warn {
             "Gradle dependency resolution failed; retrying with isolated Gradle user home " +
-                "to avoid incompatible user init scripts",
-        )
+                "to avoid incompatible user init scripts"
+        }
 
         val isolatedUserHome = isolatedGradleUserHomeDir()
         return runCatching {
             resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile())
         }.onFailure { e ->
-            logger.error("Isolated Gradle user home retry also failed: ${e.message}", e)
+            logger.error(e) { "Isolated Gradle user home retry also failed: ${e.message}" }
         }.getOrNull()
     }
 
@@ -199,7 +199,7 @@ class GradleDependencyResolver(
 
         // Inject configured JAVA_HOME if available
         if (javaHome != null) {
-            logger.info("Setting Java home for Gradle Tooling operation: $javaHome")
+            logger.info { "Setting Java home for Gradle Tooling operation: $javaHome" }
             modelBuilder.setJavaHome(javaHome.toFile())
         }
 
@@ -214,7 +214,7 @@ class GradleDependencyResolver(
 
         val depCount = dependencies.size
         val srcCount = sourceDirectories.size
-        logger.info("Resolved $depCount dependencies and $srcCount source directories via Gradle Tooling API")
+        logger.info { "Resolved $depCount dependencies and $srcCount source directories via Gradle Tooling API" }
         return WorkspaceResolution(dependencies.toList(), sourceDirectories.toList())
     }
 
@@ -238,13 +238,13 @@ class GradleDependencyResolver(
 
         if (!compatibilityService.isCompatible(gradleVersion, jdkMajor)) {
             val suggestion = compatibilityService.suggestFix(gradleVersion, jdkMajor)
-            logger.error(suggestion)
+            logger.error { suggestion }
             throw GradleJdkIncompatibleException(
                 suggestion ?: "JDK $jdkMajor is incompatible with Gradle $gradleVersion",
             )
         }
 
-        logger.debug("JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor")
+        logger.debug { "JDK/Gradle compatibility check passed: Gradle $gradleVersion with JDK $jdkMajor" }
     }
 
     /**
@@ -259,7 +259,7 @@ class GradleDependencyResolver(
             runCatching { Files.readString(releaseFile) }
                 .onFailure { throwable ->
                     if (throwable is Error) throw throwable
-                    logger.warn("Failed to read release file in $javaHome", throwable)
+                    logger.warn(throwable) { "Failed to read release file in $javaHome" }
                 }
                 .getOrNull()
         }
@@ -289,7 +289,7 @@ class GradleDependencyResolver(
         val dir = base.resolve(".groovy-lsp").resolve("gradle-user-home")
         return runCatching { Files.createDirectories(dir) }
             .getOrElse { e ->
-                logger.error("Failed to create isolated Gradle user home dir at $dir; falling back to temp dir", e)
+                logger.error(e) { "Failed to create isolated Gradle user home dir at $dir; falling back to temp dir" }
                 val tempDir = Paths.get(System.getProperty("java.io.tmpdir"))
                     .resolve("groovy-lsp-gradle-user-home")
                 Files.createDirectories(tempDir)
@@ -302,7 +302,7 @@ class GradleDependencyResolver(
         dependencies: MutableSet<Path>,
         sourceDirectories: MutableSet<Path>,
     ) {
-        logger.debug("Processing module: ${module.name}")
+        logger.debug { "Processing module: ${module.name}" }
 
         // Extract dependencies
         module.dependencies
@@ -310,10 +310,10 @@ class GradleDependencyResolver(
             .forEach { dependency ->
                 val jarPath = dependency.file.toPath()
                 if (jarPath.exists()) {
-                    logger.debug("Found dependency: ${dependency.file.name}")
+                    logger.debug { "Found dependency: ${dependency.file.name}" }
                     dependencies.add(jarPath)
                 } else {
-                    logger.warn("Dependency JAR not found: $jarPath")
+                    logger.warn { "Dependency JAR not found: $jarPath" }
                 }
             }
 

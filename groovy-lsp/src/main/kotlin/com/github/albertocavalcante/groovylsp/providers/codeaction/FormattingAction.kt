@@ -1,20 +1,20 @@
 package com.github.albertocavalcante.groovylsp.providers.codeaction
 
 import com.github.albertocavalcante.groovylsp.services.Formatter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
-import org.slf4j.LoggerFactory
 import kotlin.math.max
 
 /**
  * Provides formatting code actions using the existing formatter.
  */
 class FormattingAction(private val formatter: Formatter) {
-    private val logger = LoggerFactory.getLogger(FormattingAction::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Creates a formatting action if the document needs formatting.
@@ -22,21 +22,21 @@ class FormattingAction(private val formatter: Formatter) {
      */
     @Suppress("ReturnCount") // Multiple exit points for clarity in failure cases
     fun createFormattingAction(uriString: String, content: String): CodeAction? {
-        logger.debug("Checking if formatting action is needed for $uriString")
+        logger.debug { "Checking if formatting action is needed for $uriString" }
 
         val formattedContent = try {
             formatter.format(content)
         } catch (e: IllegalStateException) {
-            logger.debug("Formatter failed, not offering formatting action", e)
+            logger.debug(e) { "Formatter failed, not offering formatting action" }
             return null
         } catch (e: IllegalArgumentException) {
-            logger.debug("Formatter failed, not offering formatting action", e)
+            logger.debug(e) { "Formatter failed, not offering formatting action" }
             return null
         }
 
         // No action if already formatted
         if (formattedContent == content) {
-            logger.debug("Document already formatted, no action needed")
+            logger.debug { "Document already formatted, no action needed" }
             return null
         }
 

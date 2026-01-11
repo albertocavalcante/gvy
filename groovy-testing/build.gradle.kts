@@ -7,7 +7,7 @@ dependencies {
     implementation(project(":parser:native"))
     // Spock-specific detection and extraction
     implementation(project(":groovy-spock"))
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Testing
     testImplementation(libs.kotlin.test)

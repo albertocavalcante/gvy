@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.testing.client
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.Health
 import com.github.albertocavalcante.groovylsp.services.StatusNotification
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
 import org.eclipse.lsp4j.ConfigurationParams
@@ -15,7 +16,6 @@ import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.eclipse.lsp4j.UnregistrationParams
 import org.eclipse.lsp4j.WorkDoneProgressCreateParams
 import org.eclipse.lsp4j.WorkspaceFolder
-import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingDeque
@@ -24,7 +24,7 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 class HarnessLanguageClient : GroovyLanguageClient {
-    private val logger = LoggerFactory.getLogger(HarnessLanguageClient::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val notifications = mutableListOf<NotificationEnvelope>()
     private val consumedNotificationIds = mutableSetOf<Long>()
@@ -61,7 +61,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
     }
 
     override fun showMessage(messageParams: MessageParams) {
-        logger.info("Received showMessage: type={}, message='{}'", messageParams.type, messageParams.message)
+        logger.info { "Received showMessage: type=${messageParams.type}, message='${messageParams.message}'" }
         messagesStorage += messageParams
         recordNotification("window/showMessage", messageParams)
     }
@@ -124,41 +124,33 @@ class HarnessLanguageClient : GroovyLanguageClient {
      * "Error" status, the future is completed exceptionally so tests fail fast.
      */
     override fun groovyStatus(status: StatusNotification) {
-        logger.info(
-            "Received groovy/status: health={}, quiescent={}, message={}",
-            status.health,
-            status.quiescent,
-            status.message,
-        )
+        logger.info {
+            "Received groovy/status: health=${status.health}, quiescent=${status.quiescent}, message=${status.message}"
+        }
         recordNotification("groovy/status", status)
 
         when {
             status.health == Health.Ok && status.quiescent -> {
                 readyFuture.complete(null)
-                logger.info("Server ready - E2E tests can proceed")
+                logger.info { "Server ready - E2E tests can proceed" }
             }
 
             status.health == Health.Error -> {
                 val errorMessage = status.message ?: "Server initialization failed"
                 readyFuture.completeExceptionally(RuntimeException(errorMessage))
-                logger.error("Server error - E2E tests will fail: {}", errorMessage)
+                logger.error { "Server error - E2E tests will fail: $errorMessage" }
             }
 
             !status.quiescent -> {
-                logger.info(
-                    "Server busy (health={}, message={}) - waiting for quiescent",
-                    status.health,
-                    status.message,
-                )
+                logger.info {
+                    "Server busy (health=${status.health}, message=${status.message}) - waiting for quiescent"
+                }
             }
 
             else -> {
-                logger.info(
-                    "Server status: health={}, quiescent={}, message={}",
-                    status.health,
-                    status.quiescent,
-                    status.message,
-                )
+                logger.info {
+                    "Server status: health=${status.health}, quiescent=${status.quiescent}, message=${status.message}"
+                }
             }
         }
     }
@@ -215,7 +207,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
         var nextProgressLogTime = if (enableProgressLogging) startTime + progressIntervalNs else Long.MAX_VALUE
 
         if (enableProgressLogging) {
-            logger.info("Waiting for notification '{}' (timeout: {}ms)", method, timeoutMs)
+            logger.info { "Waiting for notification '$method' (timeout: $timeoutMsms)" }
         }
 
         lock.withLock {
@@ -262,7 +254,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
                 // Check if we should skip early (e.g., next step's notification arrived)
                 if (earlySkipPredicate?.invoke() == true) {
                     val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
-                    logger.info("Early skip triggered after {}ms - next notification ready", elapsedMs)
+                    logger.info { "Early skip triggered after $elapsedMsms - next notification ready" }
                     return WaitResult(
                         envelope = null,
                         receivedDuringWait = receivedDuringWait,
@@ -281,7 +273,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
                     consumedNotificationIds += match.id
                     val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
                     if (enableProgressLogging) {
-                        logger.info("Notification '{}' received after {}ms", method, elapsedMs)
+                        logger.info { "Notification '$method' received after $elapsedMsms" }
                     }
                     return WaitResult(
                         envelope = match,
@@ -317,12 +309,9 @@ class HarnessLanguageClient : GroovyLanguageClient {
                 if (enableProgressLogging && now >= nextProgressLogTime) {
                     val elapsedSec = (now - startTime) / 1_000_000_000
                     val matchedCount = matchedButFailed.size
-                    logger.info(
-                        "Still waiting... {}s elapsed, received {} notifications ({} matched method but failed check)",
-                        elapsedSec,
-                        receivedDuringWait.size,
-                        matchedCount,
-                    )
+                    logger.info {
+                        "Still waiting... $elapsedSecs elapsed, received ${receivedDuringWait.size} notifications ($matchedCount matched method but failed check)"
+                    }
                     nextProgressLogTime = now + progressIntervalNs
                 }
 
@@ -361,7 +350,7 @@ class HarnessLanguageClient : GroovyLanguageClient {
             condition.signalAll()
         }
 
-        logger.debug("Recorded notification {} {}", method, payload)
+        logger.debug { "Recorded notification $method $payload" }
     }
 }
 

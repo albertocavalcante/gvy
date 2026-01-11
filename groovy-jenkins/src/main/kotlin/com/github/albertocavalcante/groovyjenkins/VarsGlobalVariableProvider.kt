@@ -5,7 +5,7 @@ package com.github.albertocavalcante.groovyjenkins
 import arrow.core.Either
 import arrow.core.getOrElse
 import com.vladsch.flexmark.html2md.converter.FlexmarkHtmlConverter
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.nameWithoutExtension
@@ -26,7 +26,7 @@ data class GlobalVariable(
 )
 
 class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
-    private val logger = LoggerFactory.getLogger(VarsGlobalVariableProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Reusable HTML to Markdown converter
     private val htmlToMarkdownConverter: FlexmarkHtmlConverter by lazy {
@@ -57,7 +57,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
         }.map { variables ->
             variables.sortedWith(compareBy({ it.name.lowercase() }, { it.name }))
         }.getOrElse { error ->
-            logger.error("Failed to scan vars directory", error)
+            logger.error(error) { "Failed to scan vars directory" }
             emptyList()
         }
     }
@@ -75,7 +75,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
             1 // Default to line 1 if not found
         }
     } catch (e: java.io.IOException) {
-        logger.debug("Failed to parse {} for call method: {}", path, e.message)
+        logger.debug { "Failed to parse $path for call method: ${e.message}" }
         1
     }
 
@@ -92,7 +92,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
             val htmlContent = Files.readString(txtFile)
             convertHtmlToMarkdown(htmlContent)
         } catch (e: Exception) {
-            logger.warn("Failed to read documentation for $varName: ${e.message}")
+            logger.warn { "Failed to read documentation for $varName: ${e.message}" }
             ""
         }
     }
@@ -113,7 +113,7 @@ class VarsGlobalVariableProvider(private val workspaceRoot: Path) {
         return try {
             htmlToMarkdownConverter.convert(html).trim()
         } catch (e: Exception) {
-            logger.warn("Failed to convert HTML to markdown: ${e.message}")
+            logger.warn { "Failed to convert HTML to markdown: ${e.message}" }
             // Fallback: strip all HTML tags
             html.replace(Regex("<[^>]+>"), "").trim()
         }

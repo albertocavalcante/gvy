@@ -9,7 +9,7 @@ tasks.jar {
 
 dependencies {
     implementation(libs.kotlin.stdlib)
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     implementation(libs.kotlin.serialization.json)
     implementation(project(":parser:core"))
     testImplementation(libs.kotlin.test)

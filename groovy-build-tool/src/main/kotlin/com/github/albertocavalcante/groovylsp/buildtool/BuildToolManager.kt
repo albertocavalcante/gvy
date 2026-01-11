@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -40,7 +40,7 @@ class BuildToolManager(
     private val buildTools: List<BuildTool>,
     private val gradleBuildStrategy: GradleBuildStrategy = GradleBuildStrategy.AUTO,
 ) {
-    private val logger = LoggerFactory.getLogger(BuildToolManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Detects the appropriate build tool for the given workspace.
@@ -50,12 +50,12 @@ class BuildToolManager(
      * @return The detected build tool, or null if none found
      */
     fun detectBuildTool(workspaceRoot: Path): BuildTool? {
-        logger.info("Detecting build tool for workspace: $workspaceRoot (strategy=$gradleBuildStrategy)")
+        logger.info { "Detecting build tool for workspace: $workspaceRoot (strategy=$gradleBuildStrategy)" }
 
         val isGradleProject = isGradleProject(workspaceRoot)
         val hasBspConnection = hasBspConnection(workspaceRoot)
 
-        logger.debug("Gradle project: $isGradleProject, BSP available: $hasBspConnection")
+        logger.debug { "Gradle project: $isGradleProject, BSP available: $hasBspConnection" }
 
         return when (gradleBuildStrategy) {
             GradleBuildStrategy.AUTO -> detectAuto(workspaceRoot)
@@ -63,7 +63,7 @@ class BuildToolManager(
             GradleBuildStrategy.NATIVE_ONLY -> {
                 if (isGradleProject) {
                     // Skip BSP for Gradle, use native Gradle tool directly
-                    logger.info("NATIVE_ONLY: Skipping BSP, looking for native Gradle tool")
+                    logger.info { "NATIVE_ONLY: Skipping BSP, looking for native Gradle tool" }
                     findGradleBuildTool(workspaceRoot)
                         ?: detectAuto(workspaceRoot) // Fallback to normal detection
                 } else {
@@ -75,7 +75,7 @@ class BuildToolManager(
             GradleBuildStrategy.BSP_PREFERRED -> {
                 if (isGradleProject && hasBspConnection) {
                     // Prefer BSP for Gradle when available
-                    logger.info("BSP_PREFERRED: Using BSP for Gradle project")
+                    logger.info { "BSP_PREFERRED: Using BSP for Gradle project" }
                     findBspBuildTool(workspaceRoot)
                         ?: detectAuto(workspaceRoot)
                 } else {
@@ -90,7 +90,7 @@ class BuildToolManager(
      */
     private fun detectAuto(workspaceRoot: Path): BuildTool? = buildTools.firstOrNull { tool ->
         val canHandle = tool.canHandle(workspaceRoot)
-        logger.debug("Build tool '${tool.name}' canHandle=$canHandle")
+        logger.debug { "Build tool '${tool.name}' canHandle=$canHandle" }
         canHandle
     }
 

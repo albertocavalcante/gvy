@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins.extraction
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -10,7 +11,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.jvm.javaio.toInputStream
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -35,7 +35,7 @@ class PluginDownloader(
         followRedirects = true
     },
 ) {
-    private val logger = LoggerFactory.getLogger(PluginDownloader::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         private const val JENKINS_RELEASES_BASE = "https://repo.jenkins-ci.org/releases/org/jenkins-ci/plugins"
@@ -55,7 +55,7 @@ class PluginDownloader(
         val cachedPath = cacheDir.resolve("$pluginId-$version.hpi")
 
         if (Files.exists(cachedPath)) {
-            logger.debug("Using cached plugin: {}", cachedPath)
+            logger.debug { "Using cached plugin: $cachedPath" }
             return cachedPath
         }
 
@@ -65,11 +65,11 @@ class PluginDownloader(
         var lastFailure: Throwable? = null
 
         for (url in urls) {
-            logger.info("Trying URL: {}", url)
+            logger.info { "Trying URL: $url" }
             val attempt = runCatching {
                 httpClient.prepareRequest(url).execute { response ->
                     if (response.status != HttpStatusCode.OK) {
-                        logger.debug("URL returned HTTP {}: {}", response.status, url)
+                        logger.debug { "URL returned HTTP ${response.status}: $url" }
                         return@execute
                     }
 
@@ -82,7 +82,7 @@ class PluginDownloader(
                             Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING)
                         }
                         Files.move(tempFile, cachedPath, StandardCopyOption.REPLACE_EXISTING)
-                        logger.info("Downloaded plugin to: {}", cachedPath)
+                        logger.info { "Downloaded plugin to: $cachedPath" }
                     }.onFailure {
                         runCatching { Files.deleteIfExists(tempFile) }
                     }.getOrThrow()
@@ -94,7 +94,7 @@ class PluginDownloader(
             val failure = attempt.exceptionOrNull()
             if (failure is CancellationException || failure is Error) throw failure
             if (failure != null) {
-                logger.debug("Failed to download from {}: {}", url, failure.message)
+                logger.debug { "Failed to download from $url: ${failure.message}" }
                 lastFailure = failure
                 continue
             }

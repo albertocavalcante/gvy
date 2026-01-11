@@ -10,7 +10,7 @@ dependencies {
     implementation(libs.kotlin.coroutines.core)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Testing
     testImplementation(libs.kotlin.test)

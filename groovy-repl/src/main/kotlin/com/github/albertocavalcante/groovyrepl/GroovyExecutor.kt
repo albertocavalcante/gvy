@@ -2,8 +2,8 @@ package com.github.albertocavalcante.groovyrepl
 
 import groovy.lang.Binding
 import groovy.lang.GroovyShell
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.control.CompilerConfiguration
-import org.slf4j.LoggerFactory
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.util.concurrent.locks.ReentrantLock
@@ -50,7 +50,7 @@ data class ExecutionResult(
  * Inspired by lappsgrid-incubator/jupyter-groovy-kernel (Apache 2.0).
  */
 class GroovyExecutor {
-    private val logger = LoggerFactory.getLogger(GroovyExecutor::class.java)
+    private val logger = KotlinLogging.logger {}
     private val lock = ReentrantLock()
     private val binding = Binding()
     private val config = createCompilerConfiguration()
@@ -88,7 +88,7 @@ class GroovyExecutor {
                 stderr = stderrCapture.toString(),
             )
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            logger.debug("Execution failed: ${e.message}")
+            logger.debug { "Execution failed: ${e.message}" }
             ExecutionResult(
                 isSuccess = false,
                 stdout = stdoutCapture.toString(),

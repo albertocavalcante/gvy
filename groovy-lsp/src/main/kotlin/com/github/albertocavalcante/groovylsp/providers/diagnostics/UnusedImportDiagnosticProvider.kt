@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ImportNode
@@ -11,7 +12,6 @@ import org.eclipse.lsp4j.DiagnosticTag
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -23,7 +23,7 @@ import java.net.URI
 class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompilationService) :
     StreamingDiagnosticProvider {
 
-    private val logger = LoggerFactory.getLogger(UnusedImportDiagnosticProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override val id: String = "unused-imports"
 
@@ -31,17 +31,17 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
     override val enabledByDefault: Boolean = true
 
     override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
-        logger.debug("Checking unused imports for: {}", uri)
+        logger.debug { "Checking unused imports for: $uri" }
 
         val ast = compilationService.getAst(uri) as? ModuleNode
         if (ast == null) {
-            logger.debug("No AST available for {}, skipping unused import check", uri)
+            logger.debug { "No AST available for $uri, skipping unused import check" }
             return@flow
         }
 
         val unusedImports = UnusedImportDetector.detectUnusedImports(ast)
 
-        logger.debug("Found {} unused imports in {}", unusedImports.size, uri)
+        logger.debug { "Found ${unusedImports.size} unused imports in $uri" }
 
         unusedImports.forEach { importNode ->
             emit(createDiagnostic(importNode))

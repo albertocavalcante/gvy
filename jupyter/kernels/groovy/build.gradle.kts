@@ -16,7 +16,7 @@ dependencies {
     implementation(libs.groovy.core)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     runtimeOnly(libs.logback.classic)
 
     // Testing

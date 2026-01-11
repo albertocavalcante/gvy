@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Thread-safe implementation using ConcurrentHashMap.
  */
 class ConfigWatchDebouncer(private val scope: CoroutineScope, private val debounceDelayMs: Long = DEFAULT_DEBOUNCE_MS) {
-    private val logger = LoggerFactory.getLogger(ConfigWatchDebouncer::class.java)
+    private val logger = KotlinLogging.logger {}
     private val pendingJobs = ConcurrentHashMap<String, Job>()
 
     /**
@@ -49,7 +49,7 @@ class ConfigWatchDebouncer(private val scope: CoroutineScope, private val deboun
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e // Re-throw cancellation to preserve coroutine cancellation
         } catch (e: Exception) {
-            logger.warn("Debounced action failed for key: $key", e)
+            logger.warn(e) { "Debounced action failed for key: $key" }
         } finally {
             // Only remove if this is still our job (atomic compare-and-remove)
             // This prevents removing a newer job that was scheduled after us

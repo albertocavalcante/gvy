@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
 import com.github.albertocavalcante.groovylsp.buildtool.NativeGradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -24,7 +24,7 @@ class GradleBuildTool(
     retryConfig: GradleDependencyResolver.RetryConfig = GradleDependencyResolver.RetryConfig(),
 ) : NativeGradleBuildTool {
 
-    private val logger = LoggerFactory.getLogger(GradleBuildTool::class.java)
+    private val logger = KotlinLogging.logger {}
     private val dependencyResolver = GradleDependencyResolver(
         connectionFactory = connectionFactory,
         compatibilityService = compatibilityService,
@@ -41,7 +41,7 @@ class GradleBuildTool(
     override fun canHandle(workspaceRoot: Path): Boolean = GradleBuildFiles.fileNames.any { fileName ->
         val candidate = workspaceRoot.resolve(fileName)
         val present = candidate.exists()
-        logger.debug("Gradle probe: {} present={}", candidate, present)
+        logger.debug { "Gradle probe: $candidate present=$present" }
         present
     }
 
@@ -55,11 +55,11 @@ class GradleBuildTool(
      */
     override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
         if (!canHandle(workspaceRoot)) {
-            logger.info("Not a Gradle project: $workspaceRoot")
+            logger.info { "Not a Gradle project: $workspaceRoot" }
             return WorkspaceResolution(emptyList(), emptyList())
         }
 
-        logger.info("Resolving Gradle dependencies for: $workspaceRoot")
+        logger.info { "Resolving Gradle dependencies for: $workspaceRoot" }
 
         // Delegate to resolver which extracts both dependencies and source directories
         // from the IdeaProject model (supports custom source directory layouts)
@@ -67,7 +67,7 @@ class GradleBuildTool(
 
         val depCount = resolution.dependencies.size
         val srcCount = resolution.sourceDirectories.size
-        logger.info("Resolved $depCount dependencies and $srcCount source directories")
+        logger.info { "Resolved $depCount dependencies and $srcCount source directories" }
         return resolution
     }
 

@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -27,7 +28,6 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -44,7 +44,7 @@ class ReferenceProvider(
     private val compilationService: GroovyCompilationService,
     private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
 ) {
-    private val logger = LoggerFactory.getLogger(ReferenceProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Find all references to the symbol at the given position.
@@ -59,7 +59,7 @@ class ReferenceProvider(
      */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     fun provideReferences(uri: String, position: Position, includeDeclaration: Boolean): Flow<Location> = channelFlow {
-        logger.debug("Finding references for $uri at ${position.line}:${position.character}")
+        logger.debug { "Finding references for $uri at ${position.line}:${position.character}" }
 
         val emittedLocations = mutableSetOf<String>()
 
@@ -69,7 +69,7 @@ class ReferenceProvider(
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
                 if (definition != null) {
-                    logger.debug("Found definition via AST: ${definition.javaClass.simpleName}")
+                    logger.debug { "Found definition via AST: ${definition.javaClass.simpleName}" }
                     findReferences(
                         definition,
                         context.visitor,
@@ -85,13 +85,13 @@ class ReferenceProvider(
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations)
             }
         } catch (e: GroovyLspException) {
-            logger.error("LSP error finding references", e)
+            logger.error(e) { "LSP error finding references" }
         } catch (e: IllegalArgumentException) {
-            logger.error("Invalid arguments for finding references", e)
+            logger.error(e) { "Invalid arguments for finding references" }
         } catch (e: IllegalStateException) {
-            logger.error("Invalid state while finding references", e)
+            logger.error(e) { "Invalid state while finding references" }
         } catch (e: Exception) {
-            logger.error("Unexpected error finding references", e)
+            logger.error(e) { "Unexpected error finding references" }
         }
     }
 
@@ -115,7 +115,7 @@ class ReferenceProvider(
             // Get SemanticDocument for current file
             val doc = index.getDocument(URI.create(uri))
             if (doc == null) {
-                logger.debug("No semantic document found for $uri")
+                logger.debug { "No semantic document found for $uri" }
                 return
             }
 
@@ -125,15 +125,15 @@ class ReferenceProvider(
             }
 
             if (occurrence == null) {
-                logger.debug("No occurrence found at ${position.line}:${position.character}")
+                logger.debug { "No occurrence found at ${position.line}:${position.character}" }
                 return
             }
 
-            logger.debug("Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}")
+            logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
 
             // Find all references across workspace
             val locations = index.findReferences(occurrence.symbol)
-            logger.debug("Found ${locations.size} workspace references for ${occurrence.symbol}")
+            logger.debug { "Found ${locations.size} workspace references for ${occurrence.symbol}" }
 
             locations.forEach { location ->
                 // Filter out definitions if includeDeclaration is false
@@ -147,7 +147,9 @@ class ReferenceProvider(
                     }
 
                     if (targetOccurrence?.role == OccurrenceRole.DEFINITION) {
-                        logger.debug("Skipping definition occurrence at ${location.uri}:${location.range.start.line}")
+                        logger.debug {
+                            "Skipping definition occurrence at ${location.uri}:${location.range.start.line}"
+                        }
                         return@forEach
                     }
                 }
@@ -159,7 +161,7 @@ class ReferenceProvider(
                 }
             }
         } catch (e: Exception) {
-            logger.error("Error finding workspace references", e)
+            logger.error(e) { "Error finding workspace references" }
         }
     }
 
@@ -212,7 +214,7 @@ class ReferenceProvider(
      * Helper to log debug message and return null.
      */
     private fun logAndReturnNull(message: String): ReferenceContext? {
-        logger.debug(message)
+        logger.debug { message }
         return null
     }
 
@@ -260,7 +262,7 @@ class ReferenceProvider(
         }
 
         if (adjustedDefinition == null) {
-            logger.debug("Could not resolve definition for node")
+            logger.debug { "Could not resolve definition for node" }
             return null
         }
         return adjustedDefinition
@@ -343,10 +345,10 @@ class ReferenceProvider(
         }
 
         val isPartOfDeclaration = params.node.isPartOfDeclaration(params.visitor)
-        logger.debug(
+        logger.debug {
             "Node ${params.node.javaClass.simpleName} at ${params.node.lineNumber}:${params.node.columnNumber} - " +
-                "isPartOfDeclaration: $isPartOfDeclaration, includeDeclaration: ${params.includeDeclaration}",
-        )
+                "isPartOfDeclaration: $isPartOfDeclaration, includeDeclaration: ${params.includeDeclaration}"
+        }
 
         if (params.includeDeclaration || !isPartOfDeclaration) {
             emitUniqueLocation(params.node, params.visitor, params.emittedLocations)
@@ -367,7 +369,7 @@ class ReferenceProvider(
             val isDecl = parent is DeclarationExpression &&
                 parent.leftExpression == this
             if (isDecl) {
-                logger.debug("Found variable ${this.name} as part of declaration")
+                logger.debug { "Found variable ${this.name} as part of declaration" }
             }
             isDecl
         }

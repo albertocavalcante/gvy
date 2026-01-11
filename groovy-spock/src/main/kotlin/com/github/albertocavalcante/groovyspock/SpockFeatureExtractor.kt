@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovyspock
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
-import org.slf4j.LoggerFactory
 
 /**
  * Extracts Spock feature methods from a ClassNode.
@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
  * in its body. This uses [SpockBlockIndex] to detect blocks.
  */
 object SpockFeatureExtractor {
-    private val logger = LoggerFactory.getLogger(SpockFeatureExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Extract all feature methods from a Spock specification class.
@@ -31,7 +31,7 @@ object SpockFeatureExtractor {
             }
         }
 
-        logger.debug("Extracted {} feature methods from {}", features.size, classNode.name)
+        logger.debug { "Extracted ${features.size} feature methods from ${classNode.name}" }
         return features
     }
 

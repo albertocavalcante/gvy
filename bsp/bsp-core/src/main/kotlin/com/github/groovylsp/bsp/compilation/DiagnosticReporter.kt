@@ -2,7 +2,7 @@ package com.github.groovylsp.bsp.compilation
 
 import ch.epfl.scala.bsp4j.Diagnostic
 import ch.epfl.scala.bsp4j.PublishDiagnosticsParams
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class DiagnosticReporter {
 
-    private val logger = LoggerFactory.getLogger(DiagnosticReporter::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // NOTE: CopyOnWriteArrayList for thread-safe iteration without locks
     //   during notification (optimized for read-heavy workload)
@@ -43,7 +43,7 @@ class DiagnosticReporter {
     fun subscribe(observer: (PublishDiagnosticsParams) -> Unit): Subscription {
         observers.add(observer)
         val id = nextSubscriptionId.getAndIncrement()
-        logger.debug("Subscription #$id added (${observers.size} total)")
+        logger.debug { "Subscription #$id added (${observers.size} total)" }
 
         return object : Subscription {
             private var closed = false
@@ -52,7 +52,7 @@ class DiagnosticReporter {
                 if (!closed) {
                     observers.remove(observer)
                     closed = true
-                    logger.debug("Subscription #$id closed (${observers.size} remaining)")
+                    logger.debug { "Subscription #$id closed (${observers.size} remaining)" }
                 }
             }
         }
@@ -79,11 +79,11 @@ class DiagnosticReporter {
             try {
                 observer(params)
             } catch (e: Exception) {
-                logger.error("Observer failed to handle diagnostics for $uri", e)
+                logger.error(e) { "Observer failed to handle diagnostics for $uri" }
             }
         }
 
-        logger.debug("Reported ${diagnostics.size} diagnostics for $uri")
+        logger.debug { "Reported ${diagnostics.size} diagnostics for $uri" }
     }
 
     /**
@@ -103,7 +103,7 @@ class DiagnosticReporter {
             PublishDiagnosticsParams(textDoc, ch.epfl.scala.bsp4j.BuildTargetIdentifier(uri), emptyList(), true)
         report(emptyParams)
 
-        logger.debug("Cleared diagnostics for $uri")
+        logger.debug { "Cleared diagnostics for $uri" }
     }
 
     /**
@@ -122,14 +122,14 @@ class DiagnosticReporter {
                 try {
                     observer(emptyParams)
                 } catch (e: Exception) {
-                    logger.error("Observer failed to handle clear for $uri", e)
+                    logger.error(e) { "Observer failed to handle clear for $uri" }
                 }
             }
         }
 
         val count = history.size
         history.clear()
-        logger.info("Cleared all diagnostics ($count files)")
+        logger.info { "Cleared all diagnostics ($count files)" }
     }
 
     /**
@@ -143,7 +143,7 @@ class DiagnosticReporter {
     fun replayTo(observer: (PublishDiagnosticsParams) -> Unit) {
         val fileCount = history.size
         if (fileCount == 0) {
-            logger.debug("No diagnostics to replay")
+            logger.debug { "No diagnostics to replay" }
             return
         }
 
@@ -162,11 +162,11 @@ class DiagnosticReporter {
             try {
                 observer(params)
             } catch (e: Exception) {
-                logger.error("Failed to replay diagnostics for ${params.textDocument.uri}", e)
+                logger.error(e) { "Failed to replay diagnostics for ${params.textDocument.uri}" }
             }
         }
 
-        logger.debug("Replayed diagnostics for $fileCount files")
+        logger.debug { "Replayed diagnostics for $fileCount files" }
     }
 
     /**

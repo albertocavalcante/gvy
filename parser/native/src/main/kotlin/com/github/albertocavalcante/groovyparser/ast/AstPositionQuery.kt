@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -15,7 +16,6 @@ import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.Statement
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -30,7 +30,7 @@ import java.net.URI
  */
 class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
     // TODO: Consider removing this logger once stabilization is complete
-    private val logger = LoggerFactory.getLogger(AstPositionQuery::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Find the AST node at a specific LSP position.
@@ -51,23 +51,23 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         if (logger.isDebugEnabled) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
             val classNodes = nodes.filterIsInstance<ClassNode>()
-            logger.debug("[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)")
-            logger.debug("[getNodeAt] Total nodes tracked: ${nodes.size}")
-            logger.debug("[getNodeAt] ClassNodes tracked:")
+            logger.debug { "[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)" }
+            logger.debug { "[getNodeAt] Total nodes tracked: ${nodes.size}" }
+            logger.debug { "[getNodeAt] ClassNodes tracked:" }
             classNodes.forEach { cls ->
-                logger.debug("  - ${cls.name} @ ${cls.lineNumber}:${cls.columnNumber}")
+                logger.debug { "  - ${cls.name} @ ${cls.lineNumber}:${cls.columnNumber}" }
             }
         }
 
         if (logger.isDebugEnabled) {
-            logger.debug("Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes")
+            logger.debug { "Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes" }
             val constructorCalls = nodes.filterIsInstance<ConstructorCallExpression>()
             if (constructorCalls.isNotEmpty()) {
-                logger.debug("ConstructorCallExpressions tracked:")
+                logger.debug { "ConstructorCallExpressions tracked:" }
                 constructorCalls.forEach { call ->
-                    logger.debug(
-                        "  - ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} (last: ${call.lastLineNumber}:${call.lastColumnNumber})",
-                    )
+                    logger.debug {
+                        "- ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} (last: ${call.lastLineNumber}:${call.lastColumnNumber})"
+                    }
                 }
             }
         }
@@ -80,9 +80,9 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         }
 
         if (logger.isDebugEnabled && matchingNodes.isNotEmpty()) {
-            logger.debug("Matching nodes:")
+            logger.debug { "Matching nodes:" }
             matchingNodes.forEach { node ->
-                logger.debug("  - ${node.javaClass.simpleName} @ ${node.lineNumber}:${node.columnNumber}")
+                logger.debug { "  - ${node.javaClass.simpleName} @ ${node.lineNumber}:${node.columnNumber}" }
             }
         }
 
@@ -113,9 +113,9 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 if (node is ClassNode) {
                     val isDecl = isClassDeclaration(node, matchingNodes)
                     if (logger.isDebugEnabled) {
-                        logger.debug(
-                            "ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber} isDeclaration=$isDecl",
-                        )
+                        logger.debug {
+                            "ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber} isDeclaration=$isDecl"
+                        }
                     }
                     !isDecl
                 } else {
@@ -123,9 +123,9 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 }
             }
             if (logger.isDebugEnabled && filtered.size != candidatesWithoutStatements.size) {
-                logger.debug(
-                    "Filtered out ${candidatesWithoutStatements.size - filtered.size} ClassNode type references",
-                )
+                logger.debug {
+                    "Filtered out ${candidatesWithoutStatements.size - filtered.size} ClassNode type references"
+                }
             }
             filtered.ifEmpty { candidatesWithoutStatements }
         } else {
@@ -176,9 +176,11 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         )
 
         if (logger.isDebugEnabled && result != null) {
-            logger.debug("Selected node: ${result.javaClass.simpleName} at ${result.lineNumber}:${result.columnNumber}")
+            logger.debug {
+                "Selected node: ${result.javaClass.simpleName} at ${result.lineNumber}:${result.columnNumber}"
+            }
             if (result is ConstructorCallExpression) {
-                logger.debug("  ConstructorCall type: ${result.type.name}")
+                logger.debug { "  ConstructorCall type: ${result.type.name}" }
             }
         }
 

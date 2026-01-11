@@ -7,11 +7,11 @@ import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TypeDefinitionParams
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.CompletableFuture
 
@@ -27,7 +27,7 @@ class TypeDefinitionProvider(
     private val contextProvider: (URI) -> CompilationContext?,
 ) {
 
-    private val logger = LoggerFactory.getLogger(TypeDefinitionProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Provides type definition for the symbol at the given position.
@@ -38,17 +38,17 @@ class TypeDefinitionProvider(
             val uri = URI.create(params.textDocument.uri)
             val position = params.position
 
-            logger.debug("Type definition requested for ${params.textDocument.uri} at $position")
+            logger.debug { "Type definition requested for ${params.textDocument.uri} at $position" }
 
             findTypeDefinition(uri, position)?.let { location ->
-                logger.debug("Found type definition at: $location")
+                logger.debug { "Found type definition at: $location" }
                 listOf(location)
             } ?: run {
-                logger.debug("No type definition found")
+                logger.debug { "No type definition found" }
                 emptyList()
             }
         } catch (e: Exception) {
-            logger.error("Error providing type definition", e)
+            logger.error(e) { "Error providing type definition" }
             emptyList()
         }
     }
@@ -61,18 +61,18 @@ class TypeDefinitionProvider(
 
         // Find the AST node at the given position
         val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {
-            logger.debug("No AST node found at position $position")
+            logger.debug { "No AST node found at position $position" }
             return null
         }
-        logger.debug("Found AST node: ${node.javaClass.simpleName} at position $position")
+        logger.debug { "Found AST node: ${node.javaClass.simpleName} at position $position" }
 
         // Resolve semantic type
         val semanticType = semanticResolver.resolveType(node, context.moduleNode)
-        logger.debug("Resolved semantic type: $semanticType")
+        logger.debug { "Resolved semantic type: $semanticType" }
 
         // Convert to location
         val location = resolveTypeLocation(semanticType, context)
-        logger.debug("Resolved location: $location")
+        logger.debug { "Resolved location: $location" }
         return location
     }
 
@@ -87,19 +87,19 @@ class TypeDefinitionProvider(
     }
 
     private suspend fun findClassLocation(fqn: String, context: CompilationContext): Location? {
-        logger.debug("Looking for class location for FQN: '$fqn'")
-        logger.debug("Available classes in module: ${context.moduleNode.classes.map { it.name }}")
+        logger.debug { "Looking for class location for FQN: '$fqn'" }
+        logger.debug { "Available classes in module: ${context.moduleNode.classes.map { it.name }}" }
 
         // 1. Check if defined in current file/module
         // This handles classes defined in the same file we are currently editing.
         context.moduleNode.classes.find { it.name == fqn }?.let { classNode ->
-            logger.debug("Found class in module: ${classNode.name}")
+            logger.debug { "Found class in module: ${classNode.name}" }
             val location = classNode.toLspLocation(context.astModel)
-            logger.debug("Converted to LSP location: $location")
+            logger.debug { "Converted to LSP location: $location" }
             return location
         }
 
-        logger.debug("Class not found in module, would need external resolution")
+        logger.debug { "Class not found in module, would need external resolution" }
 
         // 2. External Class Resolution
         // TODO(#615): Implement Go-To-Type-Definition for external classes (JARs, JDK).

@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
 import com.github.albertocavalcante.groovylsp.buildtool.DependencyResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
@@ -11,7 +12,6 @@ import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.graph.Dependency
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -25,7 +25,7 @@ import java.nio.file.Path
  * - Has no subprocess spawning overhead
  */
 class MavenDependencyResolver : DependencyResolver {
-    private val logger = LoggerFactory.getLogger(MavenDependencyResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override val name: String = "Maven Resolver"
 
@@ -36,10 +36,10 @@ class MavenDependencyResolver : DependencyResolver {
      * @return List of resolved dependency JAR paths
      */
     override fun resolveDependencies(projectFile: Path): List<Path> {
-        logger.info("Resolving dependencies using Maven Resolver for: $projectFile")
+        logger.info { "Resolving dependencies using Maven Resolver for: $projectFile" }
 
         if (!Files.exists(projectFile)) {
-            logger.error("pom.xml not found at: $projectFile")
+            logger.error { "pom.xml not found at: $projectFile" }
             return emptyList()
         }
 
@@ -51,7 +51,7 @@ class MavenDependencyResolver : DependencyResolver {
             // Parse the POM to get dependencies
             val model = parsePom(projectFile)
             if (model == null) {
-                logger.error("Failed to parse pom.xml")
+                logger.error { "Failed to parse pom.xml" }
                 return emptyList()
             }
 
@@ -61,7 +61,7 @@ class MavenDependencyResolver : DependencyResolver {
 
             model.dependencies.forEach { dep ->
                 if (dep.version.isNullOrBlank()) {
-                    logger.warn("Skipping dependency with missing version: {}:{}", dep.groupId, dep.artifactId)
+                    logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
                     return@forEach
                 }
                 val artifact = DefaultArtifact(
@@ -83,10 +83,10 @@ class MavenDependencyResolver : DependencyResolver {
                 .filter { it.isResolved }
                 .mapNotNull { it.artifact?.file?.toPath() }
 
-            logger.info("Resolved ${dependencies.size} dependencies via Maven Resolver")
+            logger.info { "Resolved ${dependencies.size} dependencies via Maven Resolver" }
             dependencies
         } catch (e: Exception) {
-            logger.error("Failed to resolve dependencies with Maven Resolver", e)
+            logger.error(e) { "Failed to resolve dependencies with Maven Resolver" }
             emptyList()
         }
     }
@@ -106,7 +106,7 @@ class MavenDependencyResolver : DependencyResolver {
         version: String,
         repositories: List<RemoteRepository> = emptyList(),
     ): Path? {
-        logger.info("Resolving artifact: $groupId:$artifactId:$version")
+        logger.info { "Resolving artifact: $groupId:$artifactId:$version" }
 
         @Suppress("TooGenericExceptionCaught")
         return try {
@@ -136,13 +136,13 @@ class MavenDependencyResolver : DependencyResolver {
                 ?.artifact?.file?.toPath()
 
             if (resolvedArtifact != null) {
-                logger.info("Resolved $groupId:$artifactId:$version to $resolvedArtifact")
+                logger.info { "Resolved $groupId:$artifactId:$version to $resolvedArtifact" }
             } else {
-                logger.warn("Could not resolve $groupId:$artifactId:$version")
+                logger.warn { "Could not resolve $groupId:$artifactId:$version" }
             }
             resolvedArtifact
         } catch (e: Exception) {
-            logger.error("Failed to resolve artifact $groupId:$artifactId:$version", e)
+            logger.error(e) { "Failed to resolve artifact $groupId:$artifactId:$version" }
             null
         }
     }
@@ -169,7 +169,7 @@ class MavenDependencyResolver : DependencyResolver {
         val result = builder.build(request)
         result.effectiveModel
     } catch (e: Exception) {
-        logger.error("Failed to parse POM: ${e.message}")
+        logger.error { "Failed to parse POM: ${e.message}" }
         null
     }
 

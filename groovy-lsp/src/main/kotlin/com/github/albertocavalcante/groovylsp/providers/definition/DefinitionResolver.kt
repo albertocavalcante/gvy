@@ -20,6 +20,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
@@ -32,7 +33,6 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.Statement
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 class DefinitionResolver(
@@ -43,7 +43,7 @@ class DefinitionResolver(
     private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
 ) {
 
-    private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Resolution pipeline using Railway-Oriented Programming with Arrow Either.
@@ -98,7 +98,7 @@ class DefinitionResolver(
         uri: URI,
         position: Position,
     ): DefinitionResult? {
-        logger.debug("Finding definition at $uri:${position.line}:${position.character}")
+        logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
 
         return try {
             val targetNode = validateAndFindNode(uri, position)
@@ -110,10 +110,10 @@ class DefinitionResolver(
             result
         } catch (e: GroovyLspException) {
             // Re-throw our specific exceptions
-            logger.debug("Specific error finding definition: $e")
+            logger.debug { "Specific error finding definition: $e" }
             throw e
         } catch (e: Exception) {
-            logger.error("Unexpected error finding definition at $uri:${position.line}:${position.character}", e)
+            logger.error(e) { "Unexpected error finding definition at $uri:${position.line}:${position.character}" }
             throw createSymbolNotFoundException("unknown", uri, position)
         }
     }
@@ -181,10 +181,10 @@ class DefinitionResolver(
             throw uri.nodeNotFoundAtPosition(position.line, position.character)
         }
 
-        logger.info("=== Effective target node ===")
-        logger.info("Node type: ${effectiveTarget.javaClass.simpleName}")
-        logger.info("Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}")
-        logger.info("Node text: ${effectiveTarget.text}")
+        logger.info { "=== Effective target node ===" }
+        logger.info { "Node type: ${effectiveTarget.javaClass.simpleName}" }
+        logger.info { "Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}" }
+        logger.info { "Node text: ${effectiveTarget.text}" }
         return effectiveTarget
     }
 
@@ -241,7 +241,7 @@ class DefinitionResolver(
         val result = resolutionPipeline.resolve(context)
 
         return result.getOrElse { error ->
-            logger.debug("Resolution failed [{}]: {}", error.source, error.reason)
+            logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
             null
         }
     }
@@ -252,14 +252,14 @@ class DefinitionResolver(
     private fun validateDefinition(definition: ASTNode, uri: URI): ASTNode {
         // Make sure the definition has valid position information
         if (!definition.hasValidPosition()) {
-            logger.debug("Definition node has invalid position information")
+            logger.debug { "Definition node has invalid position information" }
             handleValidationError("invalidDefinitionPosition", uri, ValidationContext.NodeContext(definition))
         }
 
-        logger.debug(
+        logger.debug {
             "Resolved to definition: ${definition.javaClass.simpleName} " +
-                "at ${definition.lineNumber}:${definition.columnNumber}",
-        )
+                "at ${definition.lineNumber}:${definition.columnNumber}"
+        }
         return definition
     }
 
@@ -315,7 +315,7 @@ class DefinitionResolver(
      * Based on kotlin-lsp's getTargetsAtPosition pattern.
      */
     fun findTargetsAt(uri: URI, position: Position, targetKinds: Set<TargetKind>): List<ASTNode> {
-        logger.debug("Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds")
+        logger.debug { "Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds" }
 
         val targetNode = astVisitor.getNodeAt(uri, position)
             ?: return emptyList()
@@ -337,7 +337,7 @@ class DefinitionResolver(
             }
         }
 
-        logger.debug("Found ${results.size} targets")
+        logger.debug { "Found ${results.size} targets" }
         return results
     }
 

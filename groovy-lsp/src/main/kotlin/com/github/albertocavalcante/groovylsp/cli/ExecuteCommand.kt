@@ -8,10 +8,10 @@ import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.mordant.terminal.Terminal
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.ExecuteCommandParams
-import org.slf4j.LoggerFactory
 
-private val logger = LoggerFactory.getLogger(ExecuteCommand::class.java)
+private val logger = KotlinLogging.logger {}
 
 /**
  * Executes a custom LSP command.
@@ -37,7 +37,7 @@ class ExecuteCommand : CliktCommand(name = "execute") {
                 terminal.println(result.toString())
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            logger.error("Error executing command '$command'", e)
+            logger.error(e) { "Error executing command '$command'" }
             // Re-throw as ProgramResult to ensure finally block runs for cleanup
             throw ProgramResult(1)
         } finally {

@@ -2,7 +2,7 @@
 
 package com.github.albertocavalcante.groovyjenkins.plugins
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -24,7 +24,7 @@ class PluginDiscoveryService(
     private val workspaceRoot: Path,
     private val config: PluginConfiguration = PluginConfiguration(),
 ) {
-    private val logger = LoggerFactory.getLogger(PluginDiscoveryService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     data class InstalledPlugin(val shortName: String, val version: String? = null, val jarPath: Path? = null)
 
@@ -63,7 +63,7 @@ class PluginDiscoveryService(
             PluginConfiguration.DEFAULT_PLUGINS.forEach { name ->
                 pluginMap[name] = InstalledPlugin(shortName = name)
             }
-            logger.debug("Added {} default plugins", PluginConfiguration.DEFAULT_PLUGINS.size)
+            logger.debug { "Added ${PluginConfiguration.DEFAULT_PLUGINS.size} default plugins" }
         }
 
         // Layer 2: Config plugins (can override defaults)
@@ -73,7 +73,7 @@ class PluginDiscoveryService(
             }
         }
         if (config.plugins.isNotEmpty()) {
-            logger.debug("Added {} config plugins", config.plugins.size)
+            logger.debug { "Added ${config.plugins.size} config plugins" }
         }
 
         // Layer 3: plugins.txt (highest priority, can override all)
@@ -99,13 +99,13 @@ class PluginDiscoveryService(
             }
             // SEC: Log warning if path escapes workspace root
             if (!path.normalize().startsWith(workspaceRoot.normalize())) {
-                logger.warn("Configured plugins.txt path escapes workspace: {}", path)
+                logger.warn { "Configured plugins.txt path escapes workspace: $path" }
             }
             if (Files.exists(path) && Files.isRegularFile(path)) {
-                logger.debug("Using configured plugins.txt path: {}", path)
+                logger.debug { "Using configured plugins.txt path: $path" }
                 return path
             }
-            logger.warn("Configured plugins.txt not found: {}", path)
+            logger.warn { "Configured plugins.txt not found: $path" }
             return null
         }
 
@@ -114,7 +114,7 @@ class PluginDiscoveryService(
             .asSequence()
             .map { workspaceRoot.resolve(it) }
             .firstOrNull { Files.exists(it) && Files.isRegularFile(it) }
-            ?.also { logger.debug("Auto-discovered plugins.txt: {}", it) }
+            ?.also { logger.debug { "Auto-discovered plugins.txt: $it" } }
     }
 
     /**
@@ -127,9 +127,9 @@ class PluginDiscoveryService(
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .mapNotNull { parsePluginSpec(it) }
             .toList()
-            .also { logger.info("Parsed {} plugins from {}", it.size, path) }
+            .also { plugins -> logger.info { "Parsed ${plugins.size} plugins from $path" } }
     } catch (e: Exception) {
-        logger.warn("Failed to parse plugins.txt at {}: {}", path, e.message)
+        logger.warn { "Failed to parse plugins.txt at $path: ${e.message}" }
         emptyList()
     }
 

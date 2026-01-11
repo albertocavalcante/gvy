@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Scans DefaultGroovyMethods and StringGroovyMethods.
  */
 class GroovyGdkProvider(private val classpathService: ClasspathService) {
-    private val logger = LoggerFactory.getLogger(GroovyGdkProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
@@ -35,7 +35,7 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
         }
 
         isInitialized.set(true)
-        logger.info("Initialized GDK Provider with ${cache.size} target types")
+        logger.info { "Initialized GDK Provider with ${cache.size} target types" }
     }
 
     private fun indexGdkClass(className: String) {

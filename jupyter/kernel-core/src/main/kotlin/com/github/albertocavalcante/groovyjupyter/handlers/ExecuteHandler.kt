@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovyjupyter.kernel.core.KernelExecutor
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Handles execute_request messages - the core code execution handler.
@@ -22,7 +22,7 @@ class ExecuteHandler(
         StatusPublisher(conn.iopubSocket, conn.signer)
     },
 ) : MessageHandler {
-    private val logger = LoggerFactory.getLogger(ExecuteHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     var executionCount: Int = 0
         private set
@@ -30,7 +30,7 @@ class ExecuteHandler(
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.EXECUTE_REQUEST
 
     override fun handle(request: JupyterMessage, connection: JupyterConnection) {
-        logger.info("Handling execute_request")
+        logger.info { "Handling execute_request" }
 
         val statusPublisher = statusPublisherFactory(connection)
         val silent = request.isSilent()
@@ -42,13 +42,13 @@ class ExecuteHandler(
             handleExecuteRequest(request, connection, silent)
         }.onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.error("Error handling execute_request", throwable)
+            logger.error(throwable) { "Error handling execute_request" }
             sendKernelErrorReply(request, connection, throwable)
         }
 
         statusPublisher.publishIdle(request)
 
-        logger.info("Completed execute_request (execution_count={})", executionCount)
+        logger.info { "Completed execute_request (execution_count=$executionCount)" }
     }
 
     private fun handleExecuteRequest(request: JupyterMessage, connection: JupyterConnection, silent: Boolean) {

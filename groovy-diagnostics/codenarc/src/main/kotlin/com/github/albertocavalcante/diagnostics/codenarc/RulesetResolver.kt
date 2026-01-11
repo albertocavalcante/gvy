@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
 import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -71,13 +71,13 @@ class HierarchicalRulesetResolver(
      * Useful when configuration files change.
      */
     fun reloadRulesets() {
-        logger.info("Reload requested for CodeNarc rulesets")
+        logger.info { "Reload requested for CodeNarc rulesets" }
         // This method is a placeholder for future cache invalidation logic.
         // Currently, rulesets are resolved fresh on each call to resolve(), so no cache clearing is needed.
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(HierarchicalRulesetResolver::class.java)
+        private val logger = KotlinLogging.logger {}
 
         // Workspace configuration files in order of precedence
         private val WORKSPACE_CONFIG_FILES = listOf(
@@ -95,7 +95,7 @@ class HierarchicalRulesetResolver(
     }
 
     override fun resolve(context: WorkspaceContext): RulesetConfiguration {
-        logger.debug("Resolving ruleset configuration for context: $context")
+        logger.debug { "Resolving ruleset configuration for context: $context" }
 
         // Find properties file first
         val propertiesFile = resolvePropertiesFile(context)
@@ -108,7 +108,7 @@ class HierarchicalRulesetResolver(
             propertiesFile = propertiesFile,
             source = rulesetContent.source,
         ).also {
-            logger.info("Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}")
+            logger.info { "Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}" }
         }
     }
 
@@ -164,28 +164,28 @@ class HierarchicalRulesetResolver(
             try {
                 val path = Paths.get(URI.create(explicitPath))
                 if (path.exists()) {
-                    logger.info("Using explicit CodeNarc properties file: $explicitPath")
+                    logger.info { "Using explicit CodeNarc properties file: $explicitPath" }
                     path.toString()
                 } else {
-                    logger.warn("Explicit CodeNarc properties file not found: $explicitPath")
+                    logger.warn { "Explicit CodeNarc properties file not found: $explicitPath" }
                     null
                 }
             } catch (e: Exception) {
-                logger.warn("Invalid explicit CodeNarc properties file URI: $explicitPath", e)
+                logger.warn(e) { "Invalid explicit CodeNarc properties file URI: $explicitPath" }
                 null
             }
         } else if (workspaceRoot != null) {
             // Relative path from workspace root
             val path = workspaceRoot.resolve(explicitPath)
             if (path.exists()) {
-                logger.info("Using explicit CodeNarc properties file: $explicitPath")
+                logger.info { "Using explicit CodeNarc properties file: $explicitPath" }
                 path.toString()
             } else {
-                logger.warn("Explicit CodeNarc properties file not found: $explicitPath")
+                logger.warn { "Explicit CodeNarc properties file not found: $explicitPath" }
                 null
             }
         } else {
-            logger.warn("Cannot resolve relative properties path without workspace: $explicitPath")
+            logger.warn { "Cannot resolve relative properties path without workspace: $explicitPath" }
             null
         }
 
@@ -196,7 +196,7 @@ class HierarchicalRulesetResolver(
         for (propertiesFileName in PROPERTIES_FILENAMES) {
             val propertiesFile = workspaceRoot.resolve(propertiesFileName)
             if (propertiesFile.exists()) {
-                logger.debug("Found CodeNarc properties file: $propertiesFileName")
+                logger.debug { "Found CodeNarc properties file: $propertiesFileName" }
                 return propertiesFile.toString()
             }
         }
@@ -221,13 +221,13 @@ class HierarchicalRulesetResolver(
         return try {
             val content = configFile.readText()
             if (content.isNotEmpty()) {
-                logger.info("Loaded CodeNarc ruleset from workspace file: $configFileName")
+                logger.info { "Loaded CodeNarc ruleset from workspace file: $configFileName" }
                 ResolvedRuleset(content, "workspace:$configFileName")
             } else {
                 null
             }
         } catch (e: Exception) {
-            logger.warn("Failed to read CodeNarc configuration from: $configFileName", e)
+            logger.warn(e) { "Failed to read CodeNarc configuration from: $configFileName" }
             null
         }
     }
@@ -270,7 +270,7 @@ class HierarchicalRulesetResolver(
         // Try default ruleset as fallback
         val defaultResourcePath = "codenarc/rulesets/base/default.groovy"
         loadRulesetFromResource(defaultResourcePath)?.let {
-            logger.info("Falling back to default ruleset: {}", defaultResourcePath)
+            logger.info { "Falling back to default ruleset: $defaultResourcePath" }
             return ResolvedRuleset(it, "resource:$defaultResourcePath")
         }
 
@@ -281,10 +281,9 @@ class HierarchicalRulesetResolver(
             else -> "rulesets/basic.xml"
         }
 
-        logger.warn(
-            "Custom rulesets not found in classpath. Falling back to CodeNarc bundled ruleset: {}",
-            bundledRulesetPath,
-        )
+        logger.warn {
+            "Custom rulesets not found in classpath. Falling back to CodeNarc bundled ruleset: $bundledRulesetPath"
+        }
 
         // Generate minimal DSL wrapper for bundled XML ruleset
         val bundledWrapper = """
@@ -302,10 +301,10 @@ class HierarchicalRulesetResolver(
      */
     private fun loadRulesetFromResource(resourcePath: String): String? = try {
         resourceLoader.load(resourcePath)?.also {
-            logger.debug("Successfully loaded ruleset from {} ({} characters)", resourcePath, it.length)
+            logger.debug { "Successfully loaded ruleset from $resourcePath (${it.length} characters)" }
         }
     } catch (e: Exception) {
-        logger.debug("Failed to load ruleset from resource: {}", resourcePath, e)
+        logger.debug(e) { "Failed to load ruleset from resource: $resourcePath" }
         null
     }
 

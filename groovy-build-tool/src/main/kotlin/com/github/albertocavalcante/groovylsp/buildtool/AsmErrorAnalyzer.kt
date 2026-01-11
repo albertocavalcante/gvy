@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Data class containing structured information about an ASM error.
@@ -23,7 +23,7 @@ data class AsmErrorInfo(
  */
 class AsmErrorAnalyzer {
 
-    private val logger = LoggerFactory.getLogger(AsmErrorAnalyzer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Lazy initialization to avoid circular dependency issues
     private val compatibilityService: GroovyCompatibilityService by lazy {

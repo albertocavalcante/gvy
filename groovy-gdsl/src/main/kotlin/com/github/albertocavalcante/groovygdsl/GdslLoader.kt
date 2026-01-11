@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovygdsl
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -22,7 +22,7 @@ data class GdslLoadResults(val successful: List<GdslLoadResult>, val failed: Lis
  * Loads GDSL (Groovy Domain Specific Language) files for Jenkins pipeline metadata.
  */
 class GdslLoader {
-    private val logger = LoggerFactory.getLogger(GdslLoader::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Loads a single GDSL file from the given path.
@@ -32,20 +32,20 @@ class GdslLoader {
         return try {
             val path = Paths.get(pathString)
             if (!Files.exists(path)) {
-                logger.debug("GDSL file not found: $pathString")
+                logger.debug { "GDSL file not found: $pathString" }
                 return GdslLoadResult(pathString, error = "File not found: $pathString")
             }
 
             if (!Files.isRegularFile(path)) {
-                logger.debug("GDSL path is not a regular file: $pathString")
+                logger.debug { "GDSL path is not a regular file: $pathString" }
                 return GdslLoadResult(pathString, error = "Not a regular file: $pathString")
             }
 
             val content = Files.readString(path)
-            logger.info("Loaded GDSL file: $pathString (${content.length} characters)")
+            logger.info { "Loaded GDSL file: $pathString (${content.length} characters)" }
             GdslLoadResult(pathString, content = content)
         } catch (e: Exception) {
-            logger.warn("Failed to load GDSL file: $pathString", e)
+            logger.warn(e) { "Failed to load GDSL file: $pathString" }
             GdslLoadResult(pathString, error = "Error loading file: ${e.message}")
         }
     }
@@ -83,7 +83,7 @@ class GdslLoader {
             if (Files.exists(resolved)) listOf(resolved.toString()) else emptyList()
         }
     } catch (e: Exception) {
-        logger.warn("Failed to expand GDSL pattern: $pattern", e)
+        logger.warn(e) { "Failed to expand GDSL pattern: $pattern" }
         emptyList()
     }
 }
