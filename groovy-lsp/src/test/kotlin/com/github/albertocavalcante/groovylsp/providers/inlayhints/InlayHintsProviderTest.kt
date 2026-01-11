@@ -686,6 +686,7 @@ class InlayHintsProviderTest {
                     isStatic = false,
                     isPublic = true,
                     doc = "classpath",
+                    declaringClass = "java.util.ArrayList",
                 ),
             )
             // Mock type resolution for the constructor call receiver

@@ -44,7 +44,10 @@ import java.lang.reflect.Modifier
  * Service to generate hover content for AST nodes using SemanticTypeResolver.
  * Replaces static extension functions in HoverNodeConverters.kt.
  */
-class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) {
+class HoverContentGenerator(
+    private val semanticResolver: SemanticTypeResolver,
+    private val methodCallMetadataResolver: MethodCallMetadataResolver? = null,
+) {
     companion object {
         private const val MAX_DISPLAYED_ITEMS = 5
         private val logger = LoggerFactory.getLogger(HoverContentGenerator::class.java)
@@ -277,6 +280,13 @@ class HoverContentGenerator(private val semanticResolver: SemanticTypeResolver) 
                 markdown("**Resolved Target**")
                 code("groovy") { SignatureFormatter.formatMethod(methodTarget) }
                 keyValue("Owner" to (methodTarget.declaringClass?.nameWithoutPackage ?: "unknown"))
+            } else {
+                // Fallback: try classpath/GDK resolution
+                methodCallMetadataResolver?.resolveMethodCall(node, null)?.let { metadata ->
+                    markdown("**Resolved Target**")
+                    code("groovy") { metadata.signature }
+                    keyValue("Owner" to metadata.declaringClass)
+                }
             }
         }
     }

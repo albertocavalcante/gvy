@@ -411,17 +411,15 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
 }
 
 private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
-    val paramsInfo = parameters.map { param ->
-        // GDK params are just type names usually (from simpleName)
-        // We can improve this if GDK provider gives more info.
-        // For now, assume "Type arg" pattern or just "Type"
-        ParameterInformation().apply { label = Either.forLeft(param) }
+    val paramsInfo = parameterTypes.mapIndexed { i, type ->
+        val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+        ParameterInformation().apply { label = Either.forLeft("$type $paramName") }
     }
 
     val label = buildString {
         append(returnType).append(" ")
         append(name).append("(")
-        append(parameters.joinToString(", "))
+        append(parameterTypes.zip(parameterNames).joinToString(", ") { "${it.first} ${it.second}" })
         append(")")
     }
 

@@ -235,6 +235,7 @@ class ClasspathService(
  * Reflection snapshot for a classpath method.
  *
  * @property parameterNames Available when the class was compiled with `-parameters`; empty otherwise.
+ * @property declaringClass The fully qualified name of the class that declares this method.
  */
 data class ReflectedMethod(
     val name: String,
@@ -244,6 +245,7 @@ data class ReflectedMethod(
     val isStatic: Boolean,
     val isPublic: Boolean,
     val doc: String,
+    val declaringClass: String,
 )
 
 data class ClassInfo(val simpleName: String, val fullName: String, val packageName: String)

@@ -129,4 +129,18 @@ class GroovyGdkProviderTest {
         assertThat(eachMethod?.doc).isNotBlank
         assertThat(eachMethod?.doc).contains("Groovy GDK method")
     }
+
+    @Test
+    fun `should extract parameter names from GDK methods`() {
+        val methods = gdkProvider.getMethodsForType("java.util.List")
+
+        // Find 'each' method - in GDK it's: each(List self, Closure closure)
+        // Parameter name should be "closure" not "arg0"
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+
+        assertThat(eachMethod).isNotNull
+        assertThat(eachMethod?.parameterNames).hasSize(1)
+        assertThat(eachMethod?.parameterNames?.get(0)).isEqualTo("closure")
+        assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
+    }
 }

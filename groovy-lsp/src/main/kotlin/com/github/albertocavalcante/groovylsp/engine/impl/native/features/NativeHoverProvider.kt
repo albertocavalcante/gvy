@@ -36,8 +36,14 @@ class NativeHoverProvider(
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
     )
+    private val methodCallMetadataResolver =
+        com.github.albertocavalcante.groovylsp.providers.hover.MethodCallMetadataResolver(
+            compilationService.classpathService,
+            compilationService.gdkProvider,
+            semanticResolver,
+        )
     private val contentGenerator =
-        HoverContentGenerator(semanticResolver)
+        HoverContentGenerator(semanticResolver, methodCallMetadataResolver)
 
     // Delegate to existing HoverProvider which has all the domain logic
     private val delegate = DelegateHoverProvider(

@@ -23,6 +23,7 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 isStatic = Modifier.isStatic(method.modifiers),
                 isPublic = Modifier.isPublic(method.modifiers),
                 doc = "JDK/Classpath method from ${clazz.simpleName}",
+                declaringClass = className,
             )
         }
     }.getOrElse { throwable ->

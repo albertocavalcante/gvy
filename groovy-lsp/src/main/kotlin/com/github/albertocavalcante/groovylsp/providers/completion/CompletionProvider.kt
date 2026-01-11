@@ -593,7 +593,16 @@ object CompletionProvider {
         val line: Int,
         val replaceStartCharacter: Int,
         val replaceEndCharacter: Int,
-    )
+    ) {
+        // Static member completion is when we have a fully qualified class name followed by a dot
+        // e.g., "import static java.lang.Math." (cursor after dot)
+        // NOT "import static java.lang.Math" (cursor at end of class name)
+        val isStaticMemberCompletion: Boolean
+            get() = isStatic && prefix.endsWith('.') && prefix.substringBeforeLast('.').contains('.')
+
+        val staticClassName: String?
+            get() = if (isStaticMemberCompletion) prefix.substringBeforeLast('.') else null
+    }
 
     internal sealed interface ContextType {
         /**
@@ -710,6 +719,15 @@ object CompletionProvider {
             return
         }
 
+        // Handle static member completion (e.g., "import static java.lang.Math.PI")
+        if (ctx.isStaticMemberCompletion) {
+            val className = ctx.staticClassName
+            if (className != null) {
+                addStaticMethodCompletions(className, compilationService, ctx)
+            }
+            return
+        }
+
         val classpathService = compilationService.classpathService
         val candidates = if (prefix.contains('.')) {
             classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
@@ -735,6 +753,35 @@ object CompletionProvider {
                     },
                 )
             }
+    }
+
+    /**
+     * Adds completions for static methods when completing static imports.
+     */
+    private fun CompletionsBuilder.addStaticMethodCompletions(
+        className: String,
+        compilationService: GroovyCompilationService,
+        ctx: ImportCompletionContext,
+    ) {
+        val methods = compilationService.classpathService.getMethods(className)
+            .filter { it.isStatic && it.isPublic }
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+
+        methods.forEach { method ->
+            add(
+                CompletionItem().apply {
+                    label = method.name
+                    kind = CompletionItemKind.Method
+                    detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
+                    insertText = method.name
+                    textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
+                },
+            )
+        }
     }
 
     /**

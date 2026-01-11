@@ -103,6 +103,58 @@ class SourceNavigationService(
     }
 
     /**
+     * Navigate to source code for a specific method within a class.
+     *
+     * This method first navigates to the class source using [navigateToSource],
+     * then uses [JavaSourceInspector.inspectMethod] to find the specific method
+     * declaration within the class.
+     *
+     * @param classpathUri URI of the class (jrt: or jar:file:...)
+     * @param className Fully qualified class name
+     * @param methodName Simple method name (e.g., "add")
+     * @return SourceResult indicating where to navigate, or BinaryOnly if method not found
+     */
+    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
+    override suspend fun navigateToMethodSource(
+        classpathUri: URI,
+        className: String,
+        methodName: String,
+    ): SourceNavigator.SourceResult {
+        logger.debug("Navigating to method source for: {}.{} from {}", className, methodName, classpathUri)
+
+        // First, navigate to the class source
+        val classResult = navigateToSource(classpathUri, className)
+
+        // If we couldn't navigate to the class source, return that result
+        if (classResult is SourceNavigator.SourceResult.BinaryOnly) {
+            return classResult
+        }
+
+        val sourceLocation = classResult as SourceNavigator.SourceResult.SourceLocation
+
+        // Now find the specific method within the source file
+        val sourcePath = Path.of(sourceLocation.uri)
+        val methodInspection = javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+
+        return if (methodInspection != null) {
+            SourceNavigator.SourceResult.SourceLocation(
+                uri = sourceLocation.uri,
+                className = "$className.$methodName",
+                lineNumber = methodInspection.lineNumber,
+                documentation = methodInspection.documentation,
+            )
+        } else {
+            // Method not found - fall back to class-level navigation
+            logger.debug(
+                "Method {} not found in class {}, falling back to class-level navigation",
+                methodName,
+                className,
+            )
+            sourceLocation
+        }
+    }
+
+    /**
      * Extract the JAR file path from a jar: URI.
      *
      * Input: jar:file:///path/to/library.jar!/com/example/Foo.class

@@ -54,7 +54,8 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
                 name = method.name,
                 returnType = method.returnType.simpleName,
                 // Parameters excluding the first one (self)
-                parameters = method.parameterTypes.drop(1).map { it.simpleName },
+                parameterTypes = method.parameterTypes.drop(1).map { it.simpleName },
+                parameterNames = method.parameters.drop(1).map { it.name },
                 originClass = clazz.simpleName,
                 doc = "Groovy GDK method from ${clazz.simpleName}",
             )
@@ -133,7 +134,7 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
         }
     }
 
-    private fun GdkExtensionMethod.signatureKey(): String = name + parameters.joinToString(",")
+    private fun GdkExtensionMethod.signatureKey(): String = name + parameterTypes.joinToString(",")
 
     private companion object {
         private const val JAVA_LANG_OBJECT = "java.lang.Object"
@@ -150,7 +151,11 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
 data class GdkExtensionMethod(
     val name: String,
     val returnType: String,
-    val parameters: List<String>,
+    val parameterTypes: List<String>,
+    val parameterNames: List<String>,
     val originClass: String,
     val doc: String,
-)
+) {
+    // Backward compatibility
+    val parameters: List<String> get() = parameterTypes
+}
