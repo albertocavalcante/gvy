@@ -20,7 +20,7 @@ import {
 
 // Foojay resolver plugin constants
 const FOOJAY_PLUGIN_ID = "org.gradle.toolchains.foojay-resolver-convention";
-const FOOJAY_PLUGIN_VERSION = "0.9.0";
+const FOOJAY_PLUGIN_VERSION = "1.0.0";
 
 // Pre-compiled regex patterns for detecting foojay plugin in settings files
 const FOOJAY_PLUGIN_ID_ESCAPED = FOOJAY_PLUGIN_ID.replace(/\./g, "\\.");

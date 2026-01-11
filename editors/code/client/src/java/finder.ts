@@ -505,9 +505,9 @@ function getSourcePriorityByCategory(source: JavaSource): number {
 // While jdk-utils@0.6.0+ may support Homebrew SDKMAN, this explicit scanning
 // provides redundancy and ensures detection across different jdk-utils versions.
 //
-// TODO(#825): Verify jdk-utils@0.6.0+ Homebrew SDKMAN detection and potentially
+// TODO(#22): Verify jdk-utils@0.6.0+ Homebrew SDKMAN detection and potentially
 //   remove this workaround if upstream support is confirmed reliable.
-//   See: https://github.com/albertocavalcante/gvy/issues/825
+//   See: https://github.com/Eskibear/node-jdk-utils/issues/22
 // =============================================================================
 
 /**
@@ -526,7 +526,7 @@ const HOMEBREW_SDKMAN_PATHS = {
  * 1. SDKMAN_DIR environment variable (canonical, works for any installation)
  * 2. Homebrew-installed SDKMAN paths (not covered by jdk-utils)
  *
- * @param existingPaths Set of already discovered JDK paths to avoid duplicates
+ * @param existingPaths Set of already discovered JDK paths (mutated: new paths are added)
  */
 async function scanSdkmanJdks(
   existingPaths: Set<string>,
@@ -619,7 +619,7 @@ interface RuntimeConfig {
  * This allows users to explicitly specify JDK paths, which is the most reliable
  * method and works regardless of installation method.
  *
- * @param existingPaths Set of already discovered JDK paths to avoid duplicates
+ * @param existingPaths Set of already discovered JDK paths (mutated: new paths are added)
  */
 async function readConfiguredRuntimes(
   existingPaths: Set<string>,
