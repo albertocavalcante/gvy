@@ -152,10 +152,12 @@ function buildQuickPickItems(
 
   // Add compatible section
   if (compatible.length > 0) {
-    items.push({
-      label: "Compatible",
-      kind: vscode.QuickPickItemKind.Separator,
-    });
+    if (items.length > 0) {
+      items.push({
+        label: "Compatible",
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+    }
     for (const jdk of compatible) {
       items.push(createJdkItem(jdk, false));
     }
