@@ -295,8 +295,12 @@ export async function findAllJdks(
         sourceDescription: formatSourceDescription(sources),
       });
     }
-  } catch {
+  } catch (error) {
     // jdk-utils failed, continue with login shell fallback
+    console.warn(
+      "Failed to find JDKs using jdk-utils, falling back to login shell. Error:",
+      error,
+    );
   }
 
   // 2. Try login shell to find additional JDKs (handles SDKMAN lazy init)

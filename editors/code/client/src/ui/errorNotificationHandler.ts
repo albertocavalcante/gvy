@@ -10,8 +10,9 @@ import {
 /**
  * Handles showing VS Code notifications for error details with actionable suggestions.
  *
- * This module displays user-friendly error messages with up to 2 action buttons
- * derived from the suggestions provided by the LSP server.
+ * This module displays user-friendly error messages with up to 3 action buttons.
+ * For toolchain provisioning errors, smart action buttons are provided (not derived
+ * from LSP suggestions). For other errors, buttons are derived from LSP suggestions.
  */
 
 // Smart action button labels for toolchain provisioning errors
@@ -26,8 +27,9 @@ const ADD_FOOJAY_PLUGIN = "Add Auto-Download Plugin";
 
 /**
  * Shows a VS Code notification for the given error details.
- * Displays up to 2 suggestions as action buttons, plus optional
- * "Show Details" and "Retry Resolution" buttons.
+ * Displays up to 3 action buttons total (VS Code UX guideline).
+ * For toolchain errors, shows smart actions. For other errors, shows suggestions
+ * plus optional "Show Details" and "Retry Resolution" buttons.
  *
  * @param errorCode The error code (e.g., "GRADLE_JDK_INCOMPATIBLE")
  * @param errorDetails The detailed error information with suggestions
