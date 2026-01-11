@@ -75,8 +75,8 @@ class MavenBuildServerLifecycleTest {
             // Then: CURRENT BEHAVIOR - Returns empty list (but should error!)
             assertThat(result.targets).isEmpty()
 
-            // TODO: After implementing pre-init protection, this test should change to:
-            // val exception = assertThrows<ExecutionException> {
+            // TODO(#822): Implement pre-init protection and update test expectations
+            // Expected: val exception = assertThrows<ExecutionException> {
             //     server.workspaceBuildTargets().get()
             // }
             // assertThat(exception.cause).isInstanceOf<ResponseErrorException>()
@@ -111,7 +111,7 @@ class MavenBuildServerLifecycleTest {
             // Then: CURRENT BEHAVIOR - Returns OK (stub doesn't check state)
             assertThat(result.statusCode).isEqualTo(ch.epfl.scala.bsp4j.StatusCode.OK)
 
-            // TODO: Should reject with -32002 error
+            // TODO(#822): Should reject with -32002 error
         }
     }
 
@@ -278,9 +278,7 @@ class MavenBuildServerLifecycleTest {
             // Then: CURRENT BEHAVIOR - Still works
             assertThat(result.targets).isNotEmpty
 
-            // TODO: Consider if this should be rejected after shutdown
-            // BSP spec: "After shutdown, client sends exit to terminate"
-            // But doesn't explicitly say requests should fail
+            // TODO(#823): Consider if requests should be rejected after shutdown (BSP spec is ambiguous)
         }
     }
 

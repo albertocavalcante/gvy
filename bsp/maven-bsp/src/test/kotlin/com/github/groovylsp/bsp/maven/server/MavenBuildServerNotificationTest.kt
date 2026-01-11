@@ -9,10 +9,6 @@ import ch.epfl.scala.bsp4j.TaskFinishParams
 import ch.epfl.scala.bsp4j.TaskProgressParams
 import ch.epfl.scala.bsp4j.TaskStartParams
 import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TARGET_ID
-import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TEST_TARGET_ID
-import com.github.groovylsp.bsp.maven.server.TestFixtures.BSP_VERSION
-import com.github.groovylsp.bsp.maven.server.TestFixtures.DISPLAY_NAME
-import com.github.groovylsp.bsp.maven.server.TestFixtures.SERVER_VERSION
 import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
 import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProject
 import io.mockk.every
@@ -101,8 +97,8 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildLogMessage(any<LogMessageParams>())
             }
 
-            // TODO: After implementing notification support, this should change to:
-            // verify(atLeast = 1) {
+            // TODO(#821): Implement BSP logMessage notifications and update test
+            // Expected: verify(atLeast = 1) {
             //     mockClient.onBuildLogMessage(match {
             //         it.message.contains("Initializing Maven BSP server")
             //     })
@@ -121,7 +117,7 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildLogMessage(any<LogMessageParams>())
             }
 
-            // TODO: Should send messages like "Found X Maven modules"
+            // TODO(#821): Should send messages like "Found X Maven modules"
         }
     }
 
@@ -147,9 +143,7 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildTaskFinish(any<TaskFinishParams>())
             }
 
-            // TODO: Should send:
-            // 1. TaskStart with taskId and message "Scanning Maven workspace"
-            // 2. TaskFinish with taskId and StatusCode.OK
+            // TODO(#821): Should send TaskStart with message "Scanning Maven workspace" and TaskFinish with StatusCode.OK
         }
 
         @Test
@@ -192,7 +186,7 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildTaskFinish(any<TaskFinishParams>())
             }
 
-            // TODO: Real implementation should send task notifications
+            // TODO(#821): Real compile implementation should send task notifications
         }
     }
 
@@ -237,7 +231,7 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildPublishDiagnostics(any())
             }
 
-            // TODO: Real compile implementation should publish diagnostics
+            // TODO(#821): Real compile implementation should publish diagnostics
         }
     }
 
@@ -291,10 +285,19 @@ class MavenBuildServerNotificationTest {
             // When
             server.buildInitialize(createInitParams(tempDir)).get()
 
-            // Then: CURRENT BEHAVIOR - No notifications
-            // All verification calls would show 0 invocations
+            // Then: CURRENT BEHAVIOR - No notifications sent
+            verify(exactly = 0) {
+                mockClient.onBuildTaskStart(any<TaskStartParams>())
+            }
+            verify(exactly = 0) {
+                mockClient.onBuildLogMessage(any<LogMessageParams>())
+            }
+            verify(exactly = 0) {
+                mockClient.onBuildTaskFinish(any<TaskFinishParams>())
+            }
 
-            // TODO: Expected pattern:
+            // TODO(#821): Implement recommended BSP notification pattern
+            // Expected pattern:
             // verify {
             //     mockClient.onBuildTaskStart(match {
             //         it.message == "Scanning Maven workspace"
