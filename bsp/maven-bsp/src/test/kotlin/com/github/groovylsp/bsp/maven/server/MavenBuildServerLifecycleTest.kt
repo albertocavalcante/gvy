@@ -1,10 +1,15 @@
 package com.github.groovylsp.bsp.maven.server
 
-import ch.epfl.scala.bsp4j.BuildClientCapabilities
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.CompileParams
-import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.SourcesParams
+import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TARGET_ID
+import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TEST_TARGET_ID
+import com.github.groovylsp.bsp.maven.server.TestFixtures.BSP_VERSION
+import com.github.groovylsp.bsp.maven.server.TestFixtures.DISPLAY_NAME
+import com.github.groovylsp.bsp.maven.server.TestFixtures.SERVER_VERSION
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProject
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
@@ -16,7 +21,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import kotlin.io.path.writeText
 
 /**
  * Tests for BSP lifecycle compliance of MavenBuildServer.
@@ -28,14 +32,6 @@ import kotlin.io.path.writeText
  * 4. build/shutdown and build/exit for graceful termination
  */
 class MavenBuildServerLifecycleTest {
-
-    companion object {
-        private const val DISPLAY_NAME = "Maven BSP"
-        private const val SERVER_VERSION = "0.1.0"
-        private const val BSP_VERSION = "2.1.0"
-        private const val APP_TARGET_ID = "maven:com.example:my-app"
-        private const val APP_TEST_TARGET_ID = "maven:com.example:my-app:test"
-    }
 
     private lateinit var server: MavenBuildServer
     private lateinit var repositorySystem: RepositorySystem
@@ -56,7 +52,7 @@ class MavenBuildServerLifecycleTest {
             repositorySystem.resolveDependencies(any(), any<org.eclipse.aether.resolution.DependencyRequest>())
         } returns emptyResult
 
-        createSimpleMavenProject()
+        createSimpleMavenProject(tempDir)
         server = MavenBuildServer(tempDir, repositorySystem) { session }
     }
 
@@ -125,7 +121,7 @@ class MavenBuildServerLifecycleTest {
         @Test
         fun `buildInitialize returns correct server capabilities`() {
             // Given
-            val params = createInitParams()
+            val params = createInitParams(tempDir)
 
             // When
             val result = server.buildInitialize(params).get()
@@ -150,7 +146,7 @@ class MavenBuildServerLifecycleTest {
         @Test
         fun `buildInitialize scans workspace and finds modules`() {
             // Given
-            val params = createInitParams()
+            val params = createInitParams(tempDir)
 
             // When
             server.buildInitialize(params).get()
@@ -167,7 +163,7 @@ class MavenBuildServerLifecycleTest {
         @Test
         fun `onBuildInitialized notification completes without error`() {
             // Given
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // When/Then: Should not throw
             server.onBuildInitialized()
@@ -179,10 +175,10 @@ class MavenBuildServerLifecycleTest {
             // BSP spec is unclear if this should be rejected or allowed
 
             // Given: Server already initialized
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // When: Call initialize again
-            val result = server.buildInitialize(createInitParams()).get()
+            val result = server.buildInitialize(createInitParams(tempDir)).get()
 
             // Then: Succeeds (rescans workspace)
             assertThat(result).isNotNull
@@ -200,7 +196,7 @@ class MavenBuildServerLifecycleTest {
 
         @BeforeEach
         fun initializeServer() {
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
             server.onBuildInitialized()
         }
 
@@ -246,7 +242,7 @@ class MavenBuildServerLifecycleTest {
 
         @BeforeEach
         fun initializeServer() {
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
             server.onBuildInitialized()
         }
 
@@ -294,7 +290,7 @@ class MavenBuildServerLifecycleTest {
         @Test
         fun `full lifecycle sequence executes correctly`() {
             // 1. Initialize
-            val initResult = server.buildInitialize(createInitParams()).get()
+            val initResult = server.buildInitialize(createInitParams(tempDir)).get()
             assertThat(initResult).isNotNull
 
             // 2. Initialized notification
@@ -319,25 +315,4 @@ class MavenBuildServerLifecycleTest {
             server.onBuildExit()
         }
     }
-
-    private fun createSimpleMavenProject() {
-        val pomContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <project xmlns="http://maven.apache.org/POM/4.0.0">
-                <modelVersion>4.0.0</modelVersion>
-                <groupId>com.example</groupId>
-                <artifactId>my-app</artifactId>
-                <version>1.0.0</version>
-            </project>
-        """.trimIndent()
-        tempDir.resolve("pom.xml").writeText(pomContent)
-    }
-
-    private fun createInitParams(): InitializeBuildParams = InitializeBuildParams(
-        "Test Client",
-        "1.0.0",
-        BSP_VERSION,
-        tempDir.toUri().toString(),
-        BuildClientCapabilities(listOf("java")),
-    )
 }

@@ -1,15 +1,20 @@
 package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildClient
-import ch.epfl.scala.bsp4j.BuildClientCapabilities
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.CompileParams
-import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.LogMessageParams
 import ch.epfl.scala.bsp4j.ShowMessageParams
 import ch.epfl.scala.bsp4j.TaskFinishParams
 import ch.epfl.scala.bsp4j.TaskProgressParams
 import ch.epfl.scala.bsp4j.TaskStartParams
+import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TARGET_ID
+import com.github.groovylsp.bsp.maven.server.TestFixtures.APP_TEST_TARGET_ID
+import com.github.groovylsp.bsp.maven.server.TestFixtures.BSP_VERSION
+import com.github.groovylsp.bsp.maven.server.TestFixtures.DISPLAY_NAME
+import com.github.groovylsp.bsp.maven.server.TestFixtures.SERVER_VERSION
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProject
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -22,7 +27,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import kotlin.io.path.writeText
 
 /**
  * Tests for BSP notification compliance of MavenBuildServer.
@@ -36,14 +40,6 @@ import kotlin.io.path.writeText
  * - build/publishDiagnostics: For compilation errors/warnings
  */
 class MavenBuildServerNotificationTest {
-
-    companion object {
-        private const val DISPLAY_NAME = "Maven BSP"
-        private const val SERVER_VERSION = "0.1.0"
-        private const val BSP_VERSION = "2.1.0"
-        private const val APP_TARGET_ID = "maven:com.example:my-app"
-        private const val APP_TEST_TARGET_ID = "maven:com.example:my-app:test"
-    }
 
     private lateinit var server: MavenBuildServer
     private lateinit var repositorySystem: RepositorySystem
@@ -66,7 +62,7 @@ class MavenBuildServerNotificationTest {
             repositorySystem.resolveDependencies(any(), any<org.eclipse.aether.resolution.DependencyRequest>())
         } returns emptyResult
 
-        createSimpleMavenProject()
+        createSimpleMavenProject(tempDir)
         server = MavenBuildServer(tempDir, repositorySystem) { session }
         server.connect(mockClient)
     }
@@ -98,7 +94,7 @@ class MavenBuildServerNotificationTest {
             // Servers SHOULD send log messages via build/logMessage
 
             // When: Initialize server
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // Then: CURRENT BEHAVIOR - No log messages sent to client
             verify(exactly = 0) {
@@ -118,7 +114,7 @@ class MavenBuildServerNotificationTest {
             // ISSUE: Same as above
 
             // When
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // Then: CURRENT BEHAVIOR - No notifications
             verify(exactly = 0) {
@@ -138,7 +134,7 @@ class MavenBuildServerNotificationTest {
             // BSP spec recommends task notifications for long operations
 
             // When: Initialize server (potentially long operation)
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // Then: CURRENT BEHAVIOR - No task notifications
             verify(exactly = 0) {
@@ -161,7 +157,7 @@ class MavenBuildServerNotificationTest {
             // ISSUE: Same as above
 
             // Given: Initialized server
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // When: Reload workspace
             server.workspaceReload().get()
@@ -180,7 +176,7 @@ class MavenBuildServerNotificationTest {
             // ISSUE: Stub implementation doesn't send notifications
 
             // Given: Initialized server
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // When: Compile (stub)
             val params = CompileParams(
@@ -208,7 +204,7 @@ class MavenBuildServerNotificationTest {
             // ISSUE: No use of showMessage for important user-facing messages
 
             // When: Various operations
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
             server.buildShutdown().get()
 
             // Then: CURRENT BEHAVIOR - No show message calls
@@ -230,7 +226,7 @@ class MavenBuildServerNotificationTest {
             // Diagnostics are typically published during compilation
 
             // When: Initialize and compile
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
             val params = CompileParams(
                 listOf(BuildTargetIdentifier(APP_TARGET_ID)),
             )
@@ -257,7 +253,7 @@ class MavenBuildServerNotificationTest {
             assertThat(server).isNotNull
 
             // When: Multiple operations
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
             server.workspaceBuildTargets().get()
             server.workspaceReload().get()
             server.buildShutdown().get()
@@ -293,7 +289,7 @@ class MavenBuildServerNotificationTest {
             // 3. Send taskFinish with status
 
             // When
-            server.buildInitialize(createInitParams()).get()
+            server.buildInitialize(createInitParams(tempDir)).get()
 
             // Then: CURRENT BEHAVIOR - No notifications
             // All verification calls would show 0 invocations
@@ -316,25 +312,4 @@ class MavenBuildServerNotificationTest {
             // }
         }
     }
-
-    private fun createSimpleMavenProject() {
-        val pomContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <project xmlns="http://maven.apache.org/POM/4.0.0">
-                <modelVersion>4.0.0</modelVersion>
-                <groupId>com.example</groupId>
-                <artifactId>my-app</artifactId>
-                <version>1.0.0</version>
-            </project>
-        """.trimIndent()
-        tempDir.resolve("pom.xml").writeText(pomContent)
-    }
-
-    private fun createInitParams(): InitializeBuildParams = InitializeBuildParams(
-        "Test Client",
-        "1.0.0",
-        BSP_VERSION,
-        tempDir.toUri().toString(),
-        BuildClientCapabilities(listOf("java")),
-    )
 }
