@@ -2,6 +2,8 @@ package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildClient
 import ch.epfl.scala.bsp4j.BuildClientCapabilities
+import ch.epfl.scala.bsp4j.BuildTargetIdentifier
+import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.LogMessageParams
 import ch.epfl.scala.bsp4j.ShowMessageParams
@@ -34,6 +36,14 @@ import kotlin.io.path.writeText
  * - build/publishDiagnostics: For compilation errors/warnings
  */
 class MavenBuildServerNotificationTest {
+
+    companion object {
+        private const val DISPLAY_NAME = "Maven BSP"
+        private const val SERVER_VERSION = "0.1.0"
+        private const val BSP_VERSION = "2.1.0"
+        private const val APP_TARGET_ID = "maven:com.example:my-app"
+        private const val APP_TEST_TARGET_ID = "maven:com.example:my-app:test"
+    }
 
     private lateinit var server: MavenBuildServer
     private lateinit var repositorySystem: RepositorySystem
@@ -173,8 +183,8 @@ class MavenBuildServerNotificationTest {
             server.buildInitialize(createInitParams()).get()
 
             // When: Compile (stub)
-            val params = ch.epfl.scala.bsp4j.CompileParams(
-                listOf(ch.epfl.scala.bsp4j.BuildTargetIdentifier("maven:com.example:my-app")),
+            val params = CompileParams(
+                listOf(BuildTargetIdentifier(APP_TARGET_ID)),
             )
             server.buildTargetCompile(params).get()
 
@@ -221,8 +231,8 @@ class MavenBuildServerNotificationTest {
 
             // When: Initialize and compile
             server.buildInitialize(createInitParams()).get()
-            val params = ch.epfl.scala.bsp4j.CompileParams(
-                listOf(ch.epfl.scala.bsp4j.BuildTargetIdentifier("maven:com.example:my-app")),
+            val params = CompileParams(
+                listOf(BuildTargetIdentifier(APP_TARGET_ID)),
             )
             server.buildTargetCompile(params).get()
 
@@ -323,7 +333,7 @@ class MavenBuildServerNotificationTest {
     private fun createInitParams(): InitializeBuildParams = InitializeBuildParams(
         "Test Client",
         "1.0.0",
-        "2.1.0",
+        BSP_VERSION,
         tempDir.toUri().toString(),
         BuildClientCapabilities(listOf("java")),
     )

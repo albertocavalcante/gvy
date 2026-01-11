@@ -29,6 +29,14 @@ import kotlin.io.path.writeText
  */
 class MavenBuildServerLifecycleTest {
 
+    companion object {
+        private const val DISPLAY_NAME = "Maven BSP"
+        private const val SERVER_VERSION = "0.1.0"
+        private const val BSP_VERSION = "2.1.0"
+        private const val APP_TARGET_ID = "maven:com.example:my-app"
+        private const val APP_TEST_TARGET_ID = "maven:com.example:my-app:test"
+    }
+
     private lateinit var server: MavenBuildServer
     private lateinit var repositorySystem: RepositorySystem
     private lateinit var session: RepositorySystemSession
@@ -85,7 +93,7 @@ class MavenBuildServerLifecycleTest {
             // ISSUE: Same as above - should reject with -32002 error
 
             // Given: Server not initialized
-            val params = SourcesParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
+            val params = SourcesParams(listOf(BuildTargetIdentifier(APP_TARGET_ID)))
 
             // When: Call buildTargetSources before initialization
             val result = server.buildTargetSources(params).get()
@@ -99,7 +107,7 @@ class MavenBuildServerLifecycleTest {
             // ISSUE: Stub implementation doesn't check initialization state
 
             // Given: Server not initialized
-            val params = CompileParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
+            val params = CompileParams(listOf(BuildTargetIdentifier(APP_TARGET_ID)))
 
             // When: Call buildTargetCompile before initialization
             val result = server.buildTargetCompile(params).get()
@@ -123,9 +131,9 @@ class MavenBuildServerLifecycleTest {
             val result = server.buildInitialize(params).get()
 
             // Then
-            assertThat(result.displayName).isEqualTo("Maven BSP")
-            assertThat(result.version).isEqualTo("0.1.0")
-            assertThat(result.bspVersion).isEqualTo("2.1.0")
+            assertThat(result.displayName).isEqualTo(DISPLAY_NAME)
+            assertThat(result.version).isEqualTo(SERVER_VERSION)
+            assertThat(result.bspVersion).isEqualTo(BSP_VERSION)
             assertThat(result.capabilities).isNotNull
             assertThat(result.capabilities.compileProvider).isNotNull
             assertThat(result.capabilities.testProvider).isNotNull
@@ -151,8 +159,8 @@ class MavenBuildServerLifecycleTest {
             // Then: Should find the module (main + test targets)
             assertThat(targets.targets).hasSize(2)
             assertThat(targets.targets.map { it.id.uri }).containsExactlyInAnyOrder(
-                "maven:com.example:my-app",
-                "maven:com.example:my-app:test",
+                APP_TARGET_ID,
+                APP_TEST_TARGET_ID,
             )
         }
 
@@ -178,7 +186,7 @@ class MavenBuildServerLifecycleTest {
 
             // Then: Succeeds (rescans workspace)
             assertThat(result).isNotNull
-            assertThat(result.displayName).isEqualTo("Maven BSP")
+            assertThat(result.displayName).isEqualTo(DISPLAY_NAME)
 
             // Alternative behavior: Could reject with error
             // The spec says "the client must not send any additional requests
@@ -209,7 +217,7 @@ class MavenBuildServerLifecycleTest {
         @Test
         fun `buildTargetSources after initialization returns sources`() {
             // Given
-            val params = SourcesParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
+            val params = SourcesParams(listOf(BuildTargetIdentifier(APP_TARGET_ID)))
 
             // When
             val result = server.buildTargetSources(params).get()
@@ -296,7 +304,7 @@ class MavenBuildServerLifecycleTest {
             val targets = server.workspaceBuildTargets().get()
             assertThat(targets.targets).isNotEmpty
 
-            val params = SourcesParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
+            val params = SourcesParams(listOf(BuildTargetIdentifier(APP_TARGET_ID)))
             val sources = server.buildTargetSources(params).get()
             assertThat(sources.items).isNotEmpty
 
@@ -328,7 +336,7 @@ class MavenBuildServerLifecycleTest {
     private fun createInitParams(): InitializeBuildParams = InitializeBuildParams(
         "Test Client",
         "1.0.0",
-        "2.1.0",
+        BSP_VERSION,
         tempDir.toUri().toString(),
         BuildClientCapabilities(listOf("java")),
     )
