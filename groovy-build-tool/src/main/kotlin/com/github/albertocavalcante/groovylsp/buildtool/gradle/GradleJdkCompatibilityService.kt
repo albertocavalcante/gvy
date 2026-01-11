@@ -2,14 +2,14 @@ package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Service for loading and querying Gradle/JDK compatibility data from JSON resources.
  * Externalizes version mappings to allow updates without code changes.
  */
 class GradleJdkCompatibilityService {
-    private val logger = LoggerFactory.getLogger(GradleJdkCompatibilityService::class.java)
+    private val logger = KotlinLogging.logger {}
     private val gson = Gson()
 
     private val majorVersionToJdk: Map<Int, Int> by lazy { loadMajorVersionMapping() }
@@ -38,7 +38,7 @@ class GradleJdkCompatibilityService {
         return try {
             val stream = javaClass.getResourceAsStream("/class-file-versions.json")
             if (stream == null) {
-                logger.warn("class-file-versions.json not found, using fallback formula")
+                logger.warn { "class-file-versions.json not found, using fallback formula" }
                 return emptyMap()
             }
 
@@ -50,7 +50,7 @@ class GradleJdkCompatibilityService {
                 key.toInt() to value.asInt
             }
         } catch (e: Exception) {
-            logger.warn("Failed to load class-file-versions.json: ${e.message}")
+            logger.warn { "Failed to load class-file-versions.json: ${e.message}" }
             emptyMap()
         }
     }
@@ -59,7 +59,7 @@ class GradleJdkCompatibilityService {
         return try {
             val stream = javaClass.getResourceAsStream("/gradle-jdk-compatibility.json")
             if (stream == null) {
-                logger.warn("gradle-jdk-compatibility.json not found, using fallback mappings")
+                logger.warn { "gradle-jdk-compatibility.json not found, using fallback mappings" }
                 return emptyMap()
             }
 
@@ -74,7 +74,7 @@ class GradleJdkCompatibilityService {
                 if (minGradle.isJsonNull) null else jdk to minGradle.asString
             }.toMap()
         } catch (e: Exception) {
-            logger.warn("Failed to load gradle-jdk-compatibility.json: ${e.message}")
+            logger.warn { "Failed to load gradle-jdk-compatibility.json: ${e.message}" }
             emptyMap()
         }
     }

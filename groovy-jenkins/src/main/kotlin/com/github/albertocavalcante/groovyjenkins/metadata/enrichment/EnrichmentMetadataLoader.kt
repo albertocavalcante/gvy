@@ -4,8 +4,8 @@
 
 package com.github.albertocavalcante.groovyjenkins.metadata.enrichment
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 
 /**
  * Loads enrichment metadata from bundled resources.
@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory
  * @see BundledJenkinsMetadataLoader (pattern to follow)
  */
 class EnrichmentMetadataLoader {
-    private val logger = LoggerFactory.getLogger(EnrichmentMetadataLoader::class.java)
+    private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
@@ -38,7 +38,7 @@ class EnrichmentMetadataLoader {
      * @throws IllegalStateException if enrichment resource not found or invalid
      */
     fun load(): JenkinsEnrichment {
-        logger.debug("Loading enrichment metadata from {}", ENRICHMENT_RESOURCE)
+        logger.debug { "Loading enrichment metadata from $ENRICHMENT_RESOURCE" }
 
         val resourceStream = javaClass.getResourceAsStream(ENRICHMENT_RESOURCE)
             ?: error("Enrichment metadata not found: $ENRICHMENT_RESOURCE")
@@ -47,7 +47,7 @@ class EnrichmentMetadataLoader {
             val jsonString = resourceStream.bufferedReader().use { it.readText() }
             json.decodeFromString<JenkinsEnrichment>(jsonString)
         } catch (e: Exception) {
-            logger.error("Failed to load enrichment metadata", e)
+            logger.error(e) { "Failed to load enrichment metadata" }
             throw IllegalStateException("Failed to parse enrichment metadata: ${e.message}", e)
         }
     }

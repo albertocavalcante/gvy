@@ -28,7 +28,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
  *         .ensureFound { SymbolNotFound(symbolName) }
  *
  * resolveType("myVar").fold(
- *     ifLeft = { error -> logger.warn("Type error: ${error.reason}") },
+ *     ifLeft = { error -> logger.warn { "Type error: ${error.reason}" } },
  *     ifRight = { type -> useType(type) }
  * )
  * ```

@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Result of resolving libraries with warnings for missing ones.
@@ -11,7 +11,7 @@ data class LibraryResolutionResult(val resolved: List<SharedLibrary>, val missin
  * Resolves library references to configured shared library artifacts.
  */
 class SharedLibraryResolver(private val config: JenkinsConfiguration) {
-    private val logger = LoggerFactory.getLogger(SharedLibraryResolver::class.java)
+    private val logger = KotlinLogging.logger {}
     private val librariesByName = config.sharedLibraries.associateBy { it.name }
 
     /**
@@ -21,7 +21,7 @@ class SharedLibraryResolver(private val config: JenkinsConfiguration) {
     fun resolve(reference: LibraryReference): SharedLibrary? {
         val library = librariesByName[reference.name]
         if (library == null) {
-            logger.debug("Library '${reference.name}' not found in configuration")
+            logger.debug { "Library '${reference.name}' not found in configuration" }
         }
         return library
     }
@@ -44,7 +44,7 @@ class SharedLibraryResolver(private val config: JenkinsConfiguration) {
                 resolved.add(library)
             } else {
                 missing.add(ref)
-                logger.warn("Jenkins shared library '${ref.name}' referenced but not configured")
+                logger.warn { "Jenkins shared library '${ref.name}' referenced but not configured" }
             }
         }
 

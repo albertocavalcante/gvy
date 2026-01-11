@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyparser.ast.AstPositionQuery
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
@@ -51,14 +52,13 @@ import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.ThrowStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 // ...
 class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : GroovyAstModel {
     // NOTE: Never write to stdout from LSP code paths (stdio mode): it corrupts the JSON-RPC stream.
     // Keep any temporary instrumentation behind logger debug/trace instead.
-    private val logger = LoggerFactory.getLogger(RecursiveAstVisitor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private lateinit var currentUri: URI
     private val positionQuery = AstPositionQuery(tracker)
@@ -77,16 +77,12 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     fun visitModule(module: ModuleNode, uri: URI) {
         currentUri = uri
         tracker.clear()
-        if (logger.isDebugEnabled) {
-            logger.debug("[DEBUG visitModule] module.classes size: {}", module.classes.size)
+        if (logger.isDebugEnabled()) {
+            logger.debug { "[DEBUG visitModule] module.classes size: ${module.classes.size}" }
             module.classes.forEach { cls ->
-                logger.debug(
-                    "  - {} @ Line {}:{}, isScript={}",
-                    cls.name,
-                    cls.lineNumber,
-                    cls.columnNumber,
-                    cls.isScript,
-                )
+                logger.debug {
+                    "  - ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScript}"
+                }
             }
         }
         tracker.setModuleNode(uri, module)
@@ -125,15 +121,11 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     }
 
     private fun visitClass(classNode: ClassNode) {
-        if (logger.isDebugEnabled) {
-            logger.debug(
-                "[DEBUG visitClass] Visiting {} @ {}:{}, shouldTrack={}, id={}",
-                classNode.name,
-                classNode.lineNumber,
-                classNode.columnNumber,
-                shouldTrack(classNode),
-                System.identityHashCode(classNode),
-            )
+        if (logger.isDebugEnabled()) {
+            logger.debug {
+                "[DEBUG visitClass] Visiting ${classNode.name} @ ${classNode.lineNumber}:${classNode.columnNumber}, " +
+                    "shouldTrack=${shouldTrack(classNode)}, id=${System.identityHashCode(classNode)}"
+            }
         }
         track(classNode) {
             visitAnnotations(classNode)
@@ -324,15 +316,13 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
             track(call) {
                 // Track the referenced type so position queries inside `new TypeName(...)` can resolve to the type.
-                if (logger.isDebugEnabled) {
+                if (logger.isDebugEnabled()) {
                     // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
-                    logger.debug(
-                        "[visitConstructorCallExpression] Constructor type: {} @ {}:{}, id={}",
-                        call.type.name,
-                        call.type.lineNumber,
-                        call.type.columnNumber,
-                        System.identityHashCode(call.type),
-                    )
+                    logger.debug {
+                        "[visitConstructorCallExpression] Constructor type: ${call.type.name} " +
+                            "@ ${call.type.lineNumber}:${call.type.columnNumber}, " +
+                            "id=${System.identityHashCode(call.type)}"
+                    }
                 }
                 track(call.type) { /* no-op */ }
                 super.visitConstructorCallExpression(call)

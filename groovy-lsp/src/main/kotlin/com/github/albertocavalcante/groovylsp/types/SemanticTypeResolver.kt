@@ -8,11 +8,11 @@ import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import com.github.albertocavalcante.gvy.semantics.native.GroovySemantics
 import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 
 /**
  * Bridge between GroovySemantics and LSP providers.
@@ -23,7 +23,7 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
     val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry())
 
     companion object {
-        private val logger = LoggerFactory.getLogger(SemanticTypeResolver::class.java)
+        private val logger = KotlinLogging.logger {}
     }
 
     /**
@@ -44,7 +44,7 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
             resolveTypeResult(node)
         }
         ).getOrElse { error ->
-        logger.debug("Type resolution failed, returning Unknown: {}", error.reason)
+        logger.debug { "Type resolution failed, returning Unknown: ${error.reason}" }
         SemanticType.Unknown(error.reason)
     }
 

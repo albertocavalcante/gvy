@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -17,7 +18,6 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.syntax.Types
-import org.slf4j.LoggerFactory
 
 /**
  * Collects all type names used in a ModuleNode.
@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory
  */
 object TypeUsageCollector {
 
-    private val logger = LoggerFactory.getLogger(TypeUsageCollector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Primitive types and their boxed equivalents that don't require imports.
@@ -78,7 +78,7 @@ object TypeUsageCollector {
             visitor.visitMethod(method)
         }
 
-        logger.debug("Collected {} used types from module", usedTypes.size)
+        logger.debug { "Collected ${usedTypes.size} used types from module" }
         return usedTypes
     }
 

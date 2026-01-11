@@ -10,10 +10,10 @@ import com.github.albertocavalcante.groovyjenkins.metadata.extracted.ExtractionI
 import com.github.albertocavalcante.groovyjenkins.metadata.extracted.PluginInfo
 import com.github.albertocavalcante.groovyjenkins.metadata.extracted.PluginMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
@@ -24,7 +24,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.system.exitProcess
 
-private val logger = LoggerFactory.getLogger("GdslToJson")
+private val logger = KotlinLogging.logger("GdslToJson")
 
 private const val REQUIRED_ARGS_COUNT = 5
 private const val USAGE_EXIT_CODE = 1
@@ -93,13 +93,13 @@ fun simplifyType(type: String): String = when {
  * @return PluginMetadata containing all extracted information
  */
 fun convertGdslToMetadata(gdslContent: String, pluginInfo: PluginInfo, inputs: ExtractionInputs): PluginMetadata {
-    logger.info("Converting GDSL to metadata for plugin: ${pluginInfo.id}")
+    logger.info { "Converting GDSL to metadata for plugin: ${pluginInfo.id}" }
 
     val executor = GdslExecutor()
     val parseResult = executor.executeAndCapture(gdslContent, "${pluginInfo.id}.gdsl")
 
     if (!parseResult.success) {
-        logger.error("Failed to parse GDSL: ${parseResult.error}")
+        logger.error { "Failed to parse GDSL: ${parseResult.error}" }
         throw IllegalArgumentException("GDSL parsing failed: ${parseResult.error}")
     }
 
@@ -127,7 +127,7 @@ fun convertGdslToMetadata(gdslContent: String, pluginInfo: PluginInfo, inputs: E
         extractorVersion = "1.0.0",
     )
 
-    logger.info("Extracted ${steps.size} steps and ${globalVariables.size} global variables")
+    logger.info { "Extracted ${steps.size} steps and ${globalVariables.size} global variables" }
 
     return PluginMetadata(
         plugin = pluginInfo,
@@ -157,7 +157,7 @@ fun writePluginMetadataJson(gdslContent: String, pluginInfo: PluginInfo, inputs:
     val json = jsonEncoder.encodeToString(metadata)
     outputFile.writeText("$json\n")
 
-    logger.info("Wrote plugin metadata to: $outputFile")
+    logger.info { "Wrote plugin metadata to: $outputFile" }
 }
 
 /**
@@ -204,7 +204,7 @@ fun main(args: Array<String>) {
         outputFile = outputFile,
     )
 
-    logger.info("Converted ${parsed.gdslFile.name} to ${outputFile.name}")
+    logger.info { "Converted ${parsed.gdslFile.name} to ${outputFile.name}" }
 }
 
 private fun parseCliArgs(args: Array<String>): CliArgs? {

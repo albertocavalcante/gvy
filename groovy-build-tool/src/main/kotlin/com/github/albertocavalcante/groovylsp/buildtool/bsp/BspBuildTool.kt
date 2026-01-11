@@ -4,7 +4,7 @@ import ch.epfl.scala.bsp4j.DependencyModulesResult
 import ch.epfl.scala.bsp4j.SourcesResult
 import com.github.albertocavalcante.groovylsp.buildtool.BspCompatibleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -18,7 +18,7 @@ import kotlin.io.path.exists
  */
 class BspBuildTool : BspCompatibleBuildTool {
 
-    private val logger = LoggerFactory.getLogger(BspBuildTool::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private companion object {
         private const val MAVEN_DATA_KIND = "maven"
@@ -37,27 +37,27 @@ class BspBuildTool : BspCompatibleBuildTool {
     override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
         val connection = BspConnectionDetails.findFirst(workspaceRoot)
             ?: return WorkspaceResolution.empty().also {
-                logger.warn("No BSP connection found in ${workspaceRoot.resolve(".bsp")}")
+                logger.warn { "No BSP connection found in ${workspaceRoot.resolve(".bsp")}" }
             }
 
-        logger.info("Resolving dependencies via BSP server: ${connection.name}")
+        logger.info { "Resolving dependencies via BSP server: ${connection.name}" }
         onProgress?.invoke("Connecting to ${connection.name}...")
 
         return BspClient(connection, workspaceRoot).use { client ->
             if (!client.connect(onProgress)) {
-                logger.error("Failed to connect to BSP server ${connection.name}")
+                logger.error { "Failed to connect to BSP server ${connection.name}" }
                 return@use WorkspaceResolution.empty()
             }
 
             onProgress?.invoke("Fetching build targets...")
             val targets = client.workspaceBuildTargets()
             if (targets == null || targets.targets.isEmpty()) {
-                logger.warn("No build targets found from BSP server")
+                logger.warn { "No build targets found from BSP server" }
                 return@use WorkspaceResolution.empty()
             }
 
             val targetIds = targets.targets.map { it.id }
-            logger.info("Found ${targetIds.size} build targets")
+            logger.info { "Found ${targetIds.size} build targets" }
 
             onProgress?.invoke("Fetching source directories...")
             val sources = client.buildTargetSources(targetIds)
@@ -67,7 +67,7 @@ class BspBuildTool : BspCompatibleBuildTool {
             val deps = client.buildTargetDependencyModules(targetIds)
             val dependencies = extractDependencies(deps)
 
-            logger.info("BSP resolution complete: ${dependencies.size} deps, ${sourceDirectories.size} sources")
+            logger.info { "BSP resolution complete: ${dependencies.size} deps, ${sourceDirectories.size} sources" }
             onProgress?.invoke("${connection.name}: ${dependencies.size} dependencies loaded")
 
             WorkspaceResolution(dependencies, sourceDirectories)
@@ -86,7 +86,7 @@ class BspBuildTool : BspCompatibleBuildTool {
         ?.flatMap { it.modules }
         ?.flatMap { module ->
             if (module.dataKind != MAVEN_DATA_KIND) {
-                logger.debug("Skipping dependency module of kind '{}', expected '{}'", module.dataKind, MAVEN_DATA_KIND)
+                logger.debug { "Skipping dependency module of kind '${module.dataKind}', expected '$MAVEN_DATA_KIND'" }
                 return@flatMap emptyList<String>()
             }
             val data = module.data as? Map<String, Any> ?: return@flatMap emptyList()
@@ -101,6 +101,6 @@ class BspBuildTool : BspCompatibleBuildTool {
     private fun uriToPath(uri: String): Path? = runCatching {
         Paths.get(URI.create(uri))
     }.onFailure {
-        logger.debug("Could not resolve URI: $uri")
+        logger.debug { "Could not resolve URI: $uri" }
     }.getOrNull()
 }

@@ -6,11 +6,11 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenera
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
  */
 class PropertyExpressionHoverStrategyTest {
 
-    private val logger = LoggerFactory.getLogger(PropertyExpressionHoverStrategyTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
 
@@ -60,7 +60,7 @@ class PropertyExpressionHoverStrategyTest {
         assertTrue(hover.contents.isRight, "Expected MarkupContent")
 
         val content = hover.contents.right
-        logger.info("Property hover content: ${content.value}")
+        logger.info { "Property hover content: ${content.value}" }
 
         assertTrue(content.kind == MarkupKind.MARKDOWN)
         assertTrue(
@@ -91,7 +91,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (titleHover != null) {
             val content = titleHover.contents.right
-            logger.info("Title property hover: ${content.value}")
+            logger.info { "Title property hover: ${content.value}" }
             assertTrue(
                 content.value.contains("title") || content.value.contains("String"),
                 "Expected title property with String type. Actual: ${content.value}",
@@ -103,7 +103,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (pagesHover != null) {
             val content = pagesHover.contents.right
-            logger.info("Pages property hover: ${content.value}")
+            logger.info { "Pages property hover: ${content.value}" }
             assertTrue(
                 content.value.contains("pages") || content.value.contains("int"),
                 "Expected pages property with int type. Actual: ${content.value}",
@@ -132,7 +132,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Map property hover: ${content.value}")
+            logger.info { "Map property hover: ${content.value}" }
             assertTrue(
                 content.value.contains("host") || content.value.contains("Property"),
                 "Expected map property information. Actual: ${content.value}",
@@ -169,7 +169,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (addressHover != null) {
             val content = addressHover.contents.right
-            logger.info("Nested property (address) hover: ${content.value}")
+            logger.info { "Nested property (address) hover: ${content.value}" }
             assertTrue(
                 content.value.contains("address") || content.value.contains("Address"),
                 "Expected address property. Actual: ${content.value}",
@@ -181,7 +181,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (cityHover != null) {
             val content = cityHover.contents.right
-            logger.info("Nested property (city) hover: ${content.value}")
+            logger.info { "Nested property (city) hover: ${content.value}" }
             assertTrue(
                 content.value.contains("city") || content.value.contains("String"),
                 "Expected city property. Actual: ${content.value}",
@@ -208,7 +208,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Safe navigation property hover: ${content.value}")
+            logger.info { "Safe navigation property hover: ${content.value}" }
             assertTrue(
                 content.value.contains("name") || content.value.contains("Property"),
                 "Expected property with safe navigation. Actual: ${content.value}",
@@ -239,7 +239,7 @@ class PropertyExpressionHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Property with getter hover: ${content.value}")
+            logger.info { "Property with getter hover: ${content.value}" }
             assertTrue(
                 content.value.contains("count") || content.value.contains("int"),
                 "Expected count property. Actual: ${content.value}",
@@ -262,7 +262,7 @@ class PropertyExpressionHoverStrategyTest {
         val hover = hoverProvider.provideHover(uri.toString(), Position(2, 16)) // On "dynamicProp"
 
         // May be null or have content, but should not crash
-        logger.info("Dynamic property hover: ${hover?.contents?.right?.value ?: "null"}")
+        logger.info { "Dynamic property hover: ${hover?.contents?.right?.value ?: "null"}" }
 
         // Test passes if we get here without exception
         assertTrue(true, "Dynamic property hover completed without crash")

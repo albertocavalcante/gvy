@@ -2,8 +2,8 @@ package com.github.groovylsp.bsp.compilation
 
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.CompileResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CompletableDeferred
-import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object CompileGatekeeper {
 
-    private val logger = LoggerFactory.getLogger(CompileGatekeeper::class.java)
+    private val logger = KotlinLogging.logger {}
     private val runningCompilations = ConcurrentHashMap<UniqueCompileInputs, RunningCompilation>()
 
     /**
@@ -72,7 +72,7 @@ object CompileGatekeeper {
         // Atomically check-and-register to prevent race condition
         // computeIfAbsent ensures only one thread creates the RunningCompilation
         val running = runningCompilations.computeIfAbsent(inputs) {
-            logger.debug("Starting new compilation: $inputs")
+            logger.debug { "Starting new compilation: $inputs" }
             val deferred = CompletableDeferred<CompileResult>()
             val observers = CopyOnWriteArrayList<(CompilationEvent) -> Unit>()
             observers.add(onEvent)
@@ -81,7 +81,7 @@ object CompileGatekeeper {
 
         // If we joined an existing compilation, add our observer
         if (!running.observers.contains(onEvent)) {
-            logger.debug("Joining existing compilation: $inputs")
+            logger.debug { "Joining existing compilation: $inputs" }
             running.observers.add(onEvent)
             return running.deferred.await()
         }
@@ -98,7 +98,7 @@ object CompileGatekeeper {
         } finally {
             // Clean up registration
             runningCompilations.remove(inputs)
-            logger.debug("Finished compilation: $inputs")
+            logger.debug { "Finished compilation: $inputs" }
         }
     }
 
@@ -119,7 +119,7 @@ object CompileGatekeeper {
             try {
                 observer(event)
             } catch (e: Exception) {
-                logger.error("Observer failed to handle event: $event", e)
+                logger.error(e) { "Observer failed to handle event: $event" }
             }
         }
     }

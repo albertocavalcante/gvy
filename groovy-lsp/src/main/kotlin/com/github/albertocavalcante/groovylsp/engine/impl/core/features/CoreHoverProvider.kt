@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
@@ -21,7 +22,6 @@ import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
-import org.slf4j.LoggerFactory
 
 /**
  * Hover provider for the Core (JavaParser-style) parser engine.
@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory
  */
 class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver: TypeSolver) : HoverProvider {
 
-    private val logger = LoggerFactory.getLogger(CoreHoverProvider::class.java)
+    private val logger = KotlinLogging.logger {}
     private val resolver by lazy { GroovySymbolResolver(typeSolver) }
 
     override suspend fun getHover(params: HoverParams): Hover {
@@ -47,7 +47,7 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
             when (throwable) {
                 is CancellationException -> throw throwable
                 is Exception -> {
-                    logger.debug("Error creating hover", throwable)
+                    logger.debug(throwable) { "Error creating hover" }
                     emptyHover()
                 }
 
@@ -138,7 +138,7 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
             when (throwable) {
                 is CancellationException -> throw throwable
                 is Exception -> {
-                    logger.debug("Could not resolve method call {}", methodName, throwable)
+                    logger.debug(throwable) { "Could not resolve method call $methodName" }
                     null
                 }
 
@@ -207,7 +207,7 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
             when (throwable) {
                 is CancellationException -> throw throwable
                 is Exception -> {
-                    logger.debug("Could not resolve symbol {}", name, throwable)
+                    logger.debug(throwable) { "Could not resolve symbol $name" }
                     null
                 }
 

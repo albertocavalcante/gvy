@@ -8,8 +8,8 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionInfo
 import com.github.albertocavalcante.groovylsp.worker.WorkerDescriptor
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import java.net.URLClassLoader
 import java.util.concurrent.atomic.AtomicReference
 
@@ -30,7 +30,7 @@ class LanguageEngineManager(
     private val workspaceManager: WorkspaceManager,
     options: LanguageEngineManagerOptions = LanguageEngineManagerOptions(),
 ) {
-    private val logger = LoggerFactory.getLogger(LanguageEngineManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val documentProvider: DocumentProvider? = options.documentProvider
     private val sourceNavigator: SourceNavigator? = options.sourceNavigator
@@ -56,7 +56,7 @@ class LanguageEngineManager(
     fun updateEngineConfiguration(newConfig: EngineConfiguration) {
         synchronized(activeEngineLock) {
             if (engineConfig != newConfig) {
-                logger.info("Updating engine configuration from ${engineConfig.type.id} to ${newConfig.type.id}")
+                logger.info { "Updating engine configuration from ${engineConfig.type.id} to ${newConfig.type.id}" }
                 engineConfig = newConfig
                 activeEngineInstance = null // Invalidate to force re-creation
             }
@@ -65,7 +65,7 @@ class LanguageEngineManager(
 
     private fun createEngine(): LanguageEngine {
         val config = engineConfig
-        logger.info("Creating language engine: ${config.type.id}")
+        logger.info { "Creating language engine: ${config.type.id}" }
         return EngineFactory.create(
             config = config,
             parser = parser,
@@ -96,7 +96,7 @@ class LanguageEngineManager(
                 return parentClassLoader
             }
 
-            logger.info("Creating URLClassLoader with ${classpath.size} dependencies")
+            logger.info { "Creating URLClassLoader with ${classpath.size} dependencies" }
             val urls = classpath.map { it.toUri().toURL() }.toTypedArray()
             return URLClassLoader(urls, parentClassLoader).also {
                 currentClassLoader = it
@@ -107,11 +107,11 @@ class LanguageEngineManager(
     fun invalidateClassLoader() {
         synchronized(classLoaderLock) {
             currentClassLoader?.let {
-                logger.info("Invalidating ClassLoader")
+                logger.info { "Invalidating ClassLoader" }
                 runCatching { it.close() }
                     .onFailure { throwable ->
                         rethrowIfCancellationOrError(throwable)
-                        logger.warn("Failed to close ClassLoader", throwable)
+                        logger.warn(throwable) { "Failed to close ClassLoader" }
                     }
                 currentClassLoader = null
             }

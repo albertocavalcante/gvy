@@ -39,6 +39,9 @@ kotlin {
             dependencies {
                 implementation(libs.junit.jupiter)
                 implementation(libs.assertj.core)
+                runtimeOnly(libs.junit.platform.launcher)
+                // kotlin-logging in transitive deps needs SLF4J impl at test runtime
+                runtimeOnly(libs.logback.classic)
             }
         }
     }

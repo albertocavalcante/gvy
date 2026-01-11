@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyspock
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.Statement
-import org.slf4j.LoggerFactory
 
 /**
  * Represents a span of code within a specific Spock block.
@@ -83,7 +83,7 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(SpockBlockIndex::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Build a SpockBlockIndex from a feature method's AST.
@@ -94,7 +94,7 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
         fun build(method: MethodNode): SpockBlockIndex {
             val code = method.code
             if (code !is BlockStatement) {
-                logger.debug("Method {} has no block statement body", method.name)
+                logger.debug { "Method ${method.name} has no block statement body" }
                 return SpockBlockIndex(method.name, emptyList())
             }
 
@@ -104,7 +104,7 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
             }
 
             val blocks = buildBlockList(statements)
-            logger.debug("Built SpockBlockIndex for {} with {} blocks", method.name, blocks.size)
+            logger.debug { "Built SpockBlockIndex for ${method.name} with ${blocks.size} blocks" }
             return SpockBlockIndex(method.name, blocks)
         }
 

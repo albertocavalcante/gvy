@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.zmq
 import com.github.albertocavalcante.groovyjupyter.protocol.Header
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -12,7 +13,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
-import org.slf4j.LoggerFactory
 
 /**
  * Represents a Jupyter message in wire protocol format.
@@ -95,7 +95,7 @@ data class WireMessage(
         return runCatching {
             jsonParser.decodeFromString<Header>(json)
         }.onFailure { throwable ->
-            logger.debug("Failed to parse Jupyter header JSON", throwable)
+            logger.debug(throwable) { "Failed to parse Jupyter header JSON" }
         }.getOrElse {
             Header()
         }
@@ -109,7 +109,7 @@ data class WireMessage(
             val element = jsonParser.parseToJsonElement(json)
             (element as? JsonObject)?.let { jsonObjectToMap(it) } ?: emptyMap()
         }.onFailure { throwable ->
-            logger.debug("Failed to parse Jupyter JSON object", throwable)
+            logger.debug(throwable) { "Failed to parse Jupyter JSON object" }
         }.getOrElse {
             emptyMap()
         }
@@ -142,7 +142,7 @@ data class WireMessage(
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(WireMessage::class.java)
+        private val logger = KotlinLogging.logger {}
         private val jsonParser = Json { ignoreUnknownKeys = true }
         const val DELIMITER = "<IDS|MSG>"
         private val DELIMITER_BYTES = DELIMITER.toByteArray(Charsets.UTF_8)

@@ -3,11 +3,11 @@ package com.github.albertocavalcante.groovylsp.providers.codelens
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeLens
 import org.eclipse.lsp4j.Command
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -22,7 +22,7 @@ class TestCodeLensProvider(
     private val compilationService: GroovyCompilationService,
     private val registry: TestFrameworkRegistry = TestFrameworkRegistry.default,
 ) {
-    private val logger = LoggerFactory.getLogger(TestCodeLensProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Generate CodeLens for all test methods in a file.
@@ -89,7 +89,7 @@ class TestCodeLensProvider(
             }
         }
 
-        logger.debug("Generated {} CodeLenses for {}", codeLenses.size, uri)
+        logger.debug { "Generated ${codeLenses.size} CodeLenses for $uri" }
         return codeLenses
     }
 }

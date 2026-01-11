@@ -12,8 +12,8 @@ import com.github.albertocavalcante.groovylsp.engine.api.UnifiedDefinition
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.Position
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 class NativeDefinitionService(
@@ -28,7 +28,7 @@ class NativeDefinitionService(
     ): List<UnifiedDefinition> {
         val uriStr = context.uri
         return runCatching { URI.create(uriStr) }
-            .onFailure { e -> logger.debug("Failed to parse URI: {}", uriStr, e) }
+            .onFailure { e -> logger.debug(e) { "Failed to parse URI: $uriStr" } }
             .map { uri ->
                 val visitor = compilationService.getAstModel(uri)
                 val symbolTable = compilationService.getSymbolTable(uri)
@@ -84,4 +84,4 @@ class NativeDefinitionService(
     }
 }
 
-private val logger = LoggerFactory.getLogger(NativeDefinitionService::class.java)
+private val logger = KotlinLogging.logger {}

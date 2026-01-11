@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 
 /**
@@ -42,7 +42,7 @@ class IncrementalCompiler(
     private val dependencyGraph: DependencyGraph,
     private val semanticDb: GroovySemanticDB,
 ) {
-    private val logger = LoggerFactory.getLogger(IncrementalCompiler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Performs initial workspace compilation and populates the dependency graph.
@@ -53,7 +53,7 @@ class IncrementalCompiler(
      * @return WorkspaceCompilationResult with all compiled modules
      */
     suspend fun initialCompile(): WorkspaceCompilationResult {
-        logger.info("Performing initial workspace compilation")
+        logger.info { "Performing initial workspace compilation" }
         val startTime = System.currentTimeMillis()
 
         // Compile all workspace files
@@ -66,10 +66,10 @@ class IncrementalCompiler(
         buildSemanticDocuments(result.modules)
 
         val elapsed = System.currentTimeMillis() - startTime
-        logger.info(
+        logger.info {
             "Initial compilation completed in ${elapsed}ms: " +
-                "${result.modules.size} modules, ${result.errors.size} errors",
-        )
+                "${result.modules.size} modules, ${result.errors.size} errors"
+        }
 
         return result
     }
@@ -88,7 +88,7 @@ class IncrementalCompiler(
      */
     suspend fun compile(changedUris: Set<URI>): IncrementalCompilationResult {
         if (changedUris.isEmpty()) {
-            logger.debug("No changed files, skipping compilation")
+            logger.debug { "No changed files, skipping compilation" }
             return IncrementalCompilationResult(
                 modules = emptyMap(),
                 errors = emptyList(),
@@ -97,12 +97,12 @@ class IncrementalCompiler(
             )
         }
 
-        logger.info("Incremental compile for ${changedUris.size} changed files")
+        logger.info { "Incremental compile for ${changedUris.size} changed files" }
         val startTime = System.currentTimeMillis()
 
         // Determine all files that need recompilation
         val affectedFiles = dependencyGraph.getAffectedFiles(changedUris)
-        logger.info("Found ${affectedFiles.size} affected files (including transitive dependents)")
+        logger.info { "Found ${affectedFiles.size} affected files (including transitive dependents)" }
 
         // For now, do a full workspace recompilation to ensure correctness
         // TODO: Implement selective recompilation of only affected files
@@ -115,10 +115,10 @@ class IncrementalCompiler(
         buildSemanticDocuments(result.modules)
 
         val elapsed = System.currentTimeMillis() - startTime
-        logger.info(
+        logger.info {
             "Incremental compilation completed in ${elapsed}ms: " +
-                "${affectedFiles.size} files recompiled, ${result.errors.size} errors",
-        )
+                "${affectedFiles.size} files recompiled, ${result.errors.size} errors"
+        }
 
         return IncrementalCompilationResult(
             modules = result.modules,
@@ -135,7 +135,7 @@ class IncrementalCompiler(
      * then updates the graph.
      */
     private fun buildDependencyGraph(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>) {
-        logger.debug("Building dependency graph from ${modules.size} modules")
+        logger.debug { "Building dependency graph from ${modules.size} modules" }
 
         // Build workspace index: class name -> file URI
         val workspaceIndex = buildWorkspaceIndex(modules)
@@ -146,11 +146,9 @@ class IncrementalCompiler(
         }
 
         val stats = dependencyGraph.getStatistics()
-        logger.debug(
-            "Dependency graph built: {} files, {} dependency edges",
-            stats.totalFiles,
-            stats.totalDependencyEdges,
-        )
+        logger.debug {
+            "Dependency graph built: ${stats.totalFiles} files, ${stats.totalDependencyEdges} dependency edges"
+        }
     }
 
     /**
@@ -177,7 +175,7 @@ class IncrementalCompiler(
             }
         }
 
-        logger.trace("Built workspace index with ${index.size} class entries")
+        logger.trace { "Built workspace index with ${index.size} class entries" }
         return index
     }
 
@@ -186,19 +184,19 @@ class IncrementalCompiler(
      * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
      */
     private fun buildSemanticDocuments(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>) {
-        logger.debug("Building semantic documents from ${modules.size} modules")
+        logger.debug { "Building semantic documents from ${modules.size} modules" }
 
         modules.forEach { (uri, moduleNode) ->
             try {
                 val builder = SemanticDocumentBuilder(moduleNode, uri)
                 val semanticDoc = builder.build()
                 semanticDb.updateDocument(uri, semanticDoc)
-                logger.trace("Built semantic document for {} with {} symbols", uri, semanticDoc.symbols.size)
+                logger.trace { "Built semantic document for $uri with ${semanticDoc.symbols.size} symbols" }
             } catch (e: Exception) {
-                logger.warn("Failed to build semantic document for {}: {}", uri, e.message)
+                logger.warn { "Failed to build semantic document for $uri: ${e.message}" }
             }
         }
 
-        logger.info("Semantic documents built: {} files indexed", modules.size)
+        logger.info { "Semantic documents built: ${modules.size} files indexed" }
     }
 }

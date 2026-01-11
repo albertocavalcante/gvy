@@ -4,14 +4,14 @@ import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteResult
 import com.github.albertocavalcante.groovyjupyter.kernel.core.GroovyKernelExecutorAdapter
 import com.github.albertocavalcante.groovyjupyter.kernel.core.KernelExecutor
 import com.github.albertocavalcante.groovyrepl.GroovyExecutor
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 class GroovyKernelExecutor : KernelExecutor {
-    private val logger = LoggerFactory.getLogger(GroovyKernelExecutor::class.java)
+    private val logger = KotlinLogging.logger {}
     private val adapter = GroovyKernelExecutorAdapter(GroovyExecutor())
 
     override fun execute(code: String): ExecuteResult {
-        logger.debug("Delegating execution to GroovyExecutor")
+        logger.debug { "Delegating execution to GroovyExecutor" }
         return adapter.execute(code)
     }
 }

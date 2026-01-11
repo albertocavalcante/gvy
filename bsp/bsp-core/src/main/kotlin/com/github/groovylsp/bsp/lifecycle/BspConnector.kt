@@ -11,11 +11,11 @@ import com.github.groovylsp.bsp.client.BspCapabilities
 import com.github.groovylsp.bsp.client.BuildServerConnection
 import com.github.groovylsp.bsp.client.ConnectionConfig
 import com.github.groovylsp.bsp.model.BuildTargetCache
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
@@ -38,7 +38,7 @@ import java.util.concurrent.CompletableFuture
  * ```
  */
 class BspConnector(private val workspace: Path, private val config: BspConnectorConfig = BspConnectorConfig()) {
-    private val logger = LoggerFactory.getLogger(BspConnector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Discover and connect to a BSP server.
@@ -54,14 +54,14 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
      * @return Either a connection error or a ready BspSession
      */
     suspend fun connect(): Either<BspConnectionError, BspSession> {
-        logger.info("Connecting to BSP server in workspace: $workspace")
+        logger.info { "Connecting to BSP server in workspace: $workspace" }
 
         val details = selectServer() ?: run {
-            logger.warn("No BSP servers found in ${workspace.resolve(".bsp")}")
+            logger.warn { "No BSP servers found in ${workspace.resolve(".bsp")}" }
             return BspConnectionError.NoServerFound(workspace).left()
         }
 
-        logger.info("Selected BSP server: ${details.name} v${details.version}")
+        logger.info { "Selected BSP server: ${details.name} v${details.version}" }
 
         return launchServer(details)
             .flatMap { (server, processClient) ->
@@ -76,9 +76,9 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
      * @return List of discovered server details
      */
     fun discoverServers(): List<BspConnectionDetails> {
-        logger.debug("Discovering BSP servers in workspace: $workspace")
+        logger.debug { "Discovering BSP servers in workspace: $workspace" }
         val servers = BspConnectionDetails.findAll(workspace)
-        logger.info("Discovered ${servers.size} BSP server(s)")
+        logger.info { "Discovered ${servers.size} BSP server(s)" }
         return servers
     }
 
@@ -91,7 +91,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
     private suspend fun launchServer(
         details: BspConnectionDetails,
     ): Either<BspConnectionError, Pair<BuildServer, Pair<Process, BspClientHandler>>> {
-        logger.info("Launching BSP server: ${details.argv.joinToString(" ")}")
+        logger.info { "Launching BSP server: ${details.argv.joinToString(" ")}" }
 
         val process = try {
             ProcessBuilder(details.argv)
@@ -99,7 +99,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
                 .redirectError(ProcessBuilder.Redirect.PIPE) // Capture stderr for logging
                 .start()
         } catch (e: Exception) {
-            logger.error("Failed to start BSP server process: ${e.message}", e)
+            logger.error(e) { "Failed to start BSP server process: ${e.message}" }
             return BspConnectionError.LaunchFailed(details.name, e).left()
         }
 
@@ -107,7 +107,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         CompletableFuture.runAsync {
             process.errorStream.bufferedReader().useLines { lines ->
                 lines.forEach { line ->
-                    logger.debug("[BSP ${details.name} stderr] $line")
+                    logger.debug { "[BSP ${details.name} stderr] $line" }
                 }
             }
         }
@@ -123,7 +123,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
                 .create()
         } catch (e: Exception) {
             process.destroyForcibly()
-            logger.error("Failed to create BSP launcher: ${e.message}", e)
+            logger.error(e) { "Failed to create BSP launcher: ${e.message}" }
             return BspConnectionError.LaunchFailed(details.name, e).left()
         }
 
@@ -134,7 +134,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
             try {
                 launcher.startListening().get()
             } catch (e: Exception) {
-                logger.error("BSP message listening failed: ${e.message}", e)
+                logger.error(e) { "BSP message listening failed: ${e.message}" }
             }
         }
 
@@ -145,12 +145,12 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         try {
             delay(config.serverStartupDelayMs)
         } catch (e: CancellationException) {
-            logger.warn("BSP connection cancelled during startup delay, cleaning up process")
+            logger.warn { "BSP connection cancelled during startup delay, cleaning up process" }
             process.destroyForcibly()
             throw e
         }
 
-        logger.info("BSP server process started (PID: ${process.pid()})")
+        logger.info { "BSP server process started (PID: ${process.pid()})" }
 
         // Note: BuildServerConnection will be created after initialization with capabilities
         return (server to Pair(process, client)).right()
@@ -163,10 +163,10 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         // If a preferred server is configured, use it
         config.preferredServerName?.let { preferred ->
             servers.find { it.name.equals(preferred, ignoreCase = true) }?.let { server ->
-                logger.info("Using preferred server: ${server.name}")
+                logger.info { "Using preferred server: ${server.name}" }
                 return server
             }
-            logger.warn("Preferred server '$preferred' not found, using first available")
+            logger.warn { "Preferred server '$preferred' not found, using first available" }
         }
 
         // Use first server found
@@ -191,7 +191,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
             // Initialize the server
             val initResult = server.buildInitialize(params).await()
             server.onBuildInitialized()
-            logger.info("BSP initialized: ${initResult.displayName} v${initResult.version}")
+            logger.info { "BSP initialized: ${initResult.displayName} v${initResult.version}" }
 
             // Create capabilities wrapper and connection
             val capabilities = BspCapabilities(initResult.capabilities)
@@ -209,7 +209,7 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
                 }
                 .map { session }
         } catch (e: Exception) {
-            logger.error("Failed to initialize BSP server: ${e.message}", e)
+            logger.error(e) { "Failed to initialize BSP server: ${e.message}" }
             process.destroyForcibly()
             BspConnectionError.InitializationFailed(details.name, e.message ?: "Unknown error").left()
         }

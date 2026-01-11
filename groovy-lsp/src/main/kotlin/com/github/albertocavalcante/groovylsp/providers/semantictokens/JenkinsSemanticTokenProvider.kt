@@ -2,10 +2,10 @@ package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -26,7 +26,7 @@ import java.net.URI
  */
 object JenkinsSemanticTokenProvider {
 
-    private val logger = LoggerFactory.getLogger(JenkinsSemanticTokenProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Complete list of Semantic Token Types supported by this server.
@@ -166,9 +166,9 @@ object JenkinsSemanticTokenProvider {
                 }
             }
 
-            logger.debug("Generated {} Jenkins semantic tokens for {}", tokens.size, uri)
+            logger.debug { "Generated ${tokens.size} Jenkins semantic tokens for $uri" }
         } catch (e: Exception) {
-            logger.error("Failed to generate Jenkins semantic tokens for {}", uri, e)
+            logger.error(e) { "Failed to generate Jenkins semantic tokens for $uri" }
         }
 
         return tokens

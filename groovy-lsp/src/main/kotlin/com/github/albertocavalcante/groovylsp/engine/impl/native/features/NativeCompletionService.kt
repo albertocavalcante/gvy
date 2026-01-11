@@ -5,12 +5,12 @@ import com.github.albertocavalcante.groovylsp.engine.adapters.ParseUnit
 import com.github.albertocavalcante.groovylsp.engine.api.CompletionService
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionList
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 
 class NativeCompletionService(
     private val compilationService: GroovyCompilationService,
@@ -41,13 +41,9 @@ class NativeCompletionService(
                         is CancellationException -> throw throwable
                         is Error -> throw throwable
                         else ->
-                            logger.error(
-                                "Error getting completions for URI: {} at position: {}:{}",
-                                uri,
-                                position.line,
-                                position.character,
-                                throwable,
-                            )
+                            logger.error(throwable) {
+                                "Error getting completions for URI: $uri at position: ${position.line}:${position.character}"
+                            }
                     }
                 }
                 .getOrDefault(emptyList())
@@ -56,4 +52,4 @@ class NativeCompletionService(
     }
 }
 
-private val logger = LoggerFactory.getLogger(NativeCompletionService::class.java)
+private val logger = KotlinLogging.logger {}

@@ -9,8 +9,8 @@ import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
 import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
 import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -19,7 +19,7 @@ import kotlin.io.path.name
 import kotlin.io.path.readText
 
 class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
-    private val logger = LoggerFactory.getLogger(IndexExportService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private fun rethrowIfCancellationOrError(throwable: Throwable) {
         when (throwable) {
@@ -29,7 +29,7 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
     }
 
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
-        logger.info("Exporting index format=${params.format} to=${params.outputPath}")
+        logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
 
         FileOutputStream(params.outputPath).use { fileOutputStream ->
             val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
@@ -80,7 +80,7 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
                         .onFailure { throwable ->
                             rethrowIfCancellationOrError(throwable)
                             // Keep indexing other files; log for debugging.
-                            logger.warn("Failed to index file $path", throwable)
+                            logger.warn(throwable) { "Failed to index file $path" }
                         }
                 }
         }

@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
-import org.slf4j.LoggerFactory
 
 /**
  * Detects unused imports by comparing import statements against actual type usage.
@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory
  */
 object UnusedImportDetector {
 
-    private val logger = LoggerFactory.getLogger(UnusedImportDetector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Detect unused imports in a ModuleNode.
@@ -40,7 +40,7 @@ object UnusedImportDetector {
             val isUsed = (alias != null && alias in usedTypes) ||
                 (simpleName != null && simpleName in usedTypes)
             if (!isUsed) {
-                logger.debug("Detected unused import: {} (alias: {})", importNode.className, alias)
+                logger.debug { "Detected unused import: ${importNode.className} (alias: $alias)" }
                 unusedImports.add(importNode)
             }
         }
@@ -49,7 +49,7 @@ object UnusedImportDetector {
         moduleNode.staticImports.values.forEach { importNode ->
             val fieldName = importNode.fieldName
             if (fieldName != null && fieldName !in usedStaticMembers) {
-                logger.debug("Detected unused static import: {}.{}", importNode.className, fieldName)
+                logger.debug { "Detected unused static import: ${importNode.className}.$fieldName" }
                 unusedImports.add(importNode)
             }
         }
@@ -60,7 +60,7 @@ object UnusedImportDetector {
 
         // Log includes both regular and static imports in the total count
         val totalImports = moduleNode.imports.size + moduleNode.staticImports.size
-        logger.debug("Found {} unused imports out of {} total", unusedImports.size, totalImports)
+        logger.debug { "Found ${unusedImports.size} unused imports out of $totalImports total" }
         return unusedImports
     }
 
@@ -103,13 +103,11 @@ object UnusedImportDetector {
 
         override fun visitVariableExpression(expression: VariableExpression) {
             val name = expression.name
-            UnusedImportDetector.logger.debug(
-                "Visiting variable expression: {} (checking against {})",
-                name,
-                staticImportNames,
-            )
+            UnusedImportDetector.logger.debug {
+                "Visiting variable expression: $name (checking against $staticImportNames)"
+            }
             if (name in staticImportNames) {
-                UnusedImportDetector.logger.debug("Found static import usage: {}", name)
+                logger.debug { "Found static import usage: $name" }
                 usedMembers.add(name)
             }
             super.visitVariableExpression(expression)
@@ -128,13 +126,11 @@ object UnusedImportDetector {
         override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
             // Static method calls via import like "emptyList()" become StaticMethodCallExpression
             val methodName = call.method
-            UnusedImportDetector.logger.debug(
-                "Visiting static method call: {} (checking against {})",
-                methodName,
-                staticImportNames,
-            )
+            UnusedImportDetector.logger.debug {
+                "Visiting static method call: $methodName (checking against $staticImportNames)"
+            }
             if (methodName in staticImportNames) {
-                UnusedImportDetector.logger.debug("Found static import method usage: {}", methodName)
+                logger.debug { "Found static import method usage: $methodName" }
                 usedMembers.add(methodName)
             }
             super.visitStaticMethodCallExpression(call)

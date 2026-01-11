@@ -2,7 +2,7 @@
 
 package com.github.albertocavalcante.groovyjenkins.config
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -24,7 +24,7 @@ import java.nio.file.Path
  */
 class JenkinsPluginConfiguration {
 
-    private val logger = LoggerFactory.getLogger(JenkinsPluginConfiguration::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Parsed plugin entry with coordinates.
@@ -94,7 +94,7 @@ class JenkinsPluginConfiguration {
      */
     fun parsePluginsFile(path: Path): List<PluginEntry> {
         if (!Files.exists(path)) {
-            logger.warn("Plugins file not found: {}", path)
+            logger.warn { "Plugins file not found: $path" }
             return emptyList()
         }
 
@@ -104,7 +104,7 @@ class JenkinsPluginConfiguration {
                 .filter { it.isNotBlank() }
                 .mapNotNull { line -> parsePluginLine(line) }
         } catch (e: Exception) {
-            logger.error("Failed to parse plugins file: {}", path, e)
+            logger.error(e) { "Failed to parse plugins file: $path" }
             emptyList()
         }
     }
@@ -134,10 +134,10 @@ class JenkinsPluginConfiguration {
         val pluginsFile = findPluginsFile(workspaceRoot)
 
         return if (pluginsFile != null) {
-            logger.info("Loading plugins from: {}", pluginsFile)
+            logger.info { "Loading plugins from: $pluginsFile" }
             parsePluginsFile(pluginsFile)
         } else {
-            logger.debug("No plugins.txt found in workspace: {}", workspaceRoot)
+            logger.debug { "No plugins.txt found in workspace: $workspaceRoot" }
             emptyList()
         }
     }

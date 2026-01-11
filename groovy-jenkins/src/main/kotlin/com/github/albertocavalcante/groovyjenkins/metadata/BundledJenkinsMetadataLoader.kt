@@ -8,8 +8,8 @@ package com.github.albertocavalcante.groovyjenkins.metadata
 
 import com.github.albertocavalcante.groovyjenkins.metadata.json.MetadataJson
 import com.github.albertocavalcante.groovyjenkins.metadata.json.toBundledMetadata
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 
 /**
  * Loads bundled Jenkins metadata from resources.
@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory
  * @see BundledJenkinsMetadata
  */
 class BundledJenkinsMetadataLoader {
-    private val logger = LoggerFactory.getLogger(BundledJenkinsMetadataLoader::class.java)
+    private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
@@ -41,7 +41,7 @@ class BundledJenkinsMetadataLoader {
      * @throws IllegalStateException if metadata resource not found or invalid
      */
     fun load(): BundledJenkinsMetadata {
-        logger.debug("Loading bundled Jenkins metadata from {}", METADATA_RESOURCE)
+        logger.debug { "Loading bundled Jenkins metadata from $METADATA_RESOURCE" }
 
         val resourceStream = javaClass.getResourceAsStream(METADATA_RESOURCE)
             ?: throw IllegalStateException("Bundled Jenkins metadata not found: $METADATA_RESOURCE")
@@ -51,7 +51,7 @@ class BundledJenkinsMetadataLoader {
             val metadataJson = json.decodeFromString<MetadataJson>(jsonString)
             metadataJson.toBundledMetadata()
         } catch (e: Exception) {
-            logger.error("Failed to load bundled Jenkins metadata", e)
+            logger.error(e) { "Failed to load bundled Jenkins metadata" }
             throw IllegalStateException("Failed to parse bundled Jenkins metadata: ${e.message}", e)
         }
     }

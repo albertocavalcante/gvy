@@ -12,6 +12,7 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
@@ -24,7 +25,6 @@ import org.eclipse.lsp4j.WorkspaceSymbol
 import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.WorkspaceService
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.CompletableFuture
 
@@ -39,21 +39,21 @@ class GroovyWorkspaceService(
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
 ) : WorkspaceService {
 
-    private val logger = LoggerFactory.getLogger(GroovyWorkspaceService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
-        logger.info("Executing command: ${params.command}")
+        logger.info { "Executing command: ${params.command}" }
         return when (params.command) {
             "groovy.version" -> CompletableFuture.completedFuture(Version.current)
             else -> {
-                logger.warn("Unknown command: ${params.command}")
+                logger.warn { "Unknown command: ${params.command}" }
                 CompletableFuture.completedFuture(null)
             }
         }
     }
 
     override fun didChangeConfiguration(params: DidChangeConfigurationParams) {
-        logger.info("Configuration changed, updating Jenkins context if applicable")
+        logger.info { "Configuration changed, updating Jenkins context if applicable" }
 
         // Parse new configuration
         val settings = params.settings
@@ -72,12 +72,12 @@ class GroovyWorkspaceService(
                 strategy.updateConfiguration(newConfig)
             }
             updateGroovyVersion(newConfig)
-            logger.info("Configuration updated for active strategies")
+            logger.info { "Configuration updated for active strategies" }
         }
     }
 
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
-        logger.debug("Watched files changed: ${params.changes?.size ?: 0} changes")
+        logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
 
         if (params.changes.isNullOrEmpty()) return
 
@@ -85,7 +85,7 @@ class GroovyWorkspaceService(
 
         // Handle CodeNarc config changes
         changes[FileType.CODENARC]?.let { _ ->
-            logger.info("CodeNarc config changed, reloading rulesets")
+            logger.info { "CodeNarc config changed, reloading rulesets" }
             textDocumentService?.reloadCodeNarcRulesets()
             // Re-run diagnostics on open files
             textDocumentService?.rerunDiagnosticsOnOpenFiles()
@@ -103,7 +103,7 @@ class GroovyWorkspaceService(
         }
 
         if (shouldReloadGdsl) {
-            logger.info("GDSL file changed, reloading metadata")
+            logger.info { "GDSL file changed, reloading metadata" }
             jenkinsCapabilities?.reloadGdsl()
         }
 
@@ -131,9 +131,9 @@ class GroovyWorkspaceService(
             try {
                 val uri = URI.create(event.uri)
                 compilationService.invalidateCache(uri)
-                logger.debug("Removed deleted file from index: ${event.uri}")
+                logger.debug { "Removed deleted file from index: ${event.uri}" }
             } catch (e: Exception) {
-                logger.debug("Failed to process deleted file: ${event.uri}", e)
+                logger.debug(e) { "Failed to process deleted file: ${event.uri}" }
             }
         }
 
@@ -147,7 +147,7 @@ class GroovyWorkspaceService(
         }
 
         if (toIndex.isNotEmpty()) {
-            logger.info("Indexing ${toIndex.size} changed source files")
+            logger.info { "Indexing ${toIndex.size} changed source files" }
             coroutineScope.launch {
                 symbolIndexer.indexAllWorkspaceSources(toIndex)
             }
@@ -201,10 +201,10 @@ class GroovyWorkspaceService(
         if (changed) {
             val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
             if (sourceUris.isEmpty()) {
-                logger.debug("No workspace sources to reindex after worker change")
+                logger.debug { "No workspace sources to reindex after worker change" }
                 return
             }
-            logger.info("Worker changed; reindexing ${sourceUris.size} workspace sources")
+            logger.info { "Worker changed; reindexing ${sourceUris.size} workspace sources" }
             coroutineScope.launch {
                 symbolIndexer.indexAllWorkspaceSources(sourceUris)
             }
@@ -223,7 +223,7 @@ class GroovyWorkspaceService(
     ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
         val query = params.query
         if (query.isNullOrBlank()) {
-            logger.debug("Workspace symbol query blank; returning empty result")
+            logger.debug { "Workspace symbol query blank; returning empty result" }
             return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
         }
         val storages = symbolIndexer.getAllSymbolIndices()

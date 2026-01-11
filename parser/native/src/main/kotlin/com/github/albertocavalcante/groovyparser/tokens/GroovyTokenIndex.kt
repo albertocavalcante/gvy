@@ -5,9 +5,9 @@ import arrow.core.none
 import arrow.core.some
 import groovyjarjarantlr4.v4.runtime.CharStreams
 import groovyjarjarantlr4.v4.runtime.Token
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
 import org.apache.groovy.parser.antlr4.GroovySyntaxError
-import org.slf4j.LoggerFactory
 
 /**
  * Token classification at a given offset.
@@ -59,7 +59,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
     fun isInCommentOrString(offset: Int): Boolean = isInComment(offset) || isInString(offset)
 
     companion object {
-        private val logger = LoggerFactory.getLogger(GroovyTokenIndex::class.java)
+        private val logger = KotlinLogging.logger {}
 
         private val LINE_COMMENT_NAMES = setOf("SINGLE_LINE_COMMENT", "SH_COMMENT")
         private val STRING_LITERAL_NAMES = setOf("StringLiteral", "SQ_STRING", "DQ_STRING", "TQS", "StringLiteralPart")
@@ -91,7 +91,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             GroovyLangLexer(CharStreams.fromString(source))
         }.onFailure { throwable ->
             if (shouldRethrow(throwable)) throw throwable
-            logger.debug("Failed to initialize GroovyLangLexer", throwable)
+            logger.debug(throwable) { "Failed to initialize GroovyLangLexer" }
         }.getOrNull()
 
         private fun handleShebang(source: String, collector: SpanCollector) {
@@ -111,7 +111,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
                 }
             }.onFailure { throwable ->
                 if (shouldRethrow(throwable)) throw throwable
-                logger.debug("Ignoring throwable during token indexing for resiliency", throwable)
+                logger.debug(throwable) { "Ignoring throwable during token indexing for resiliency" }
             }
         }
 
@@ -119,11 +119,7 @@ class GroovyTokenIndex private constructor(private val spans: List<TokenSpan>) {
             lexer.nextToken()
         }.onFailure { throwable ->
             if (shouldRethrow(throwable)) throw throwable
-            logger.debug(
-                "Lexer error at offset {}: {}",
-                collector.lastOrNull()?.end ?: 0,
-                throwable.message,
-            )
+            logger.debug { "Lexer error at offset ${collector.lastOrNull()?.end ?: 0}: ${throwable.message}" }
         }.getOrNull()
 
         private fun processToken(token: Token, lexer: GroovyLangLexer, collector: SpanCollector) {

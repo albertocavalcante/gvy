@@ -4,10 +4,10 @@ import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
 import com.github.albertocavalcante.groovylsp.config.WorkerDescriptorConfig
 import com.github.albertocavalcante.groovylsp.version.GroovyVersion
 import com.github.albertocavalcante.groovylsp.version.GroovyVersionRange
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 object WorkerRouterFactory {
-    private val logger = LoggerFactory.getLogger(WorkerRouterFactory::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun fromConfig(config: ServerConfiguration): WorkerRouter {
         val seenIds = mutableSetOf<String>()
@@ -17,7 +17,7 @@ object WorkerRouterFactory {
                 if (seenIds.add(descriptor.id)) {
                     true
                 } else {
-                    logger.warn("Duplicate worker id '{}' configured; ignoring entry", descriptor.id)
+                    logger.warn { "Duplicate worker id '${descriptor.id}' configured; ignoring entry" }
                     false
                 }
             }
@@ -35,12 +35,9 @@ object WorkerRouterFactory {
             null
         }
         if (maxVersion != null && maxVersion < minVersion) {
-            logger.warn(
-                "Invalid worker descriptor range for {}: minVersion {} > maxVersion {}",
-                config.id,
-                minVersion.raw,
-                maxVersion.raw,
-            )
+            logger.warn {
+                "Invalid worker descriptor range for ${config.id}: minVersion ${minVersion.raw} > maxVersion ${maxVersion.raw}"
+            }
             return null
         }
         val features = parseFeatures(config.id, config.features)
@@ -57,7 +54,7 @@ object WorkerRouterFactory {
     private fun parseVersion(workerId: String, field: String, raw: String): GroovyVersion? {
         val parsed = GroovyVersion.parse(raw)
         if (parsed == null) {
-            logger.warn("Invalid worker descriptor {} for {}: '{}'", field, workerId, raw)
+            logger.warn { "Invalid worker descriptor $field for $workerId: '$raw'" }
         }
         return parsed
     }
@@ -68,7 +65,7 @@ object WorkerRouterFactory {
         raw.forEach { name ->
             val feature = WorkerFeature.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
             if (feature == null) {
-                logger.warn("Unknown worker feature '{}' for {}", name, workerId)
+                logger.warn { "Unknown worker feature '$name' for $workerId" }
             } else {
                 features.add(feature)
             }
@@ -79,7 +76,7 @@ object WorkerRouterFactory {
     private fun parseConnector(workerId: String, raw: String): WorkerConnector? = when (raw.lowercase()) {
         "in-process", "inprocess", "in_process" -> WorkerConnector.InProcess
         else -> {
-            logger.warn("Unsupported worker connector '{}' for {}", raw, workerId)
+            logger.warn { "Unsupported worker connector '$raw' for $workerId" }
             null
         }
     }

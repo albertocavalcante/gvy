@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovycommon.UriPathConverter
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Path
@@ -11,7 +11,7 @@ import java.nio.file.Paths
  * Detects Jenkins pipeline files based on configured patterns.
  */
 class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfile")) {
-    private val logger = LoggerFactory.getLogger(JenkinsFileDetector::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compiledPatterns = patterns.map { compilePattern(it) }
 
     /**
@@ -53,7 +53,7 @@ class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfi
         private val matcher = try {
             FileSystems.getDefault().getPathMatcher("glob:$pattern")
         } catch (e: Exception) {
-            LoggerFactory.getLogger(GlobMatcher::class.java)
+            KotlinLogging.logger {}
                 .warn("Failed to compile glob pattern: $pattern", e)
             null
         }

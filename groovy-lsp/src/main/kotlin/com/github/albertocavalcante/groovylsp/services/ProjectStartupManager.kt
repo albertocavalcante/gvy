@@ -22,6 +22,7 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -39,7 +40,6 @@ import org.eclipse.lsp4j.RegistrationParams
 import org.eclipse.lsp4j.WatchKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.LanguageClient
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.FileSystemNotFoundException
 import java.nio.file.InvalidPathException
@@ -90,7 +90,7 @@ class ProjectStartupManager(
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    private val logger = LoggerFactory.getLogger(ProjectStartupManager::class.java)
+    private val logger = KotlinLogging.logger {}
     private val groovyVersionResolver = GroovyVersionResolver()
 
     var buildToolManager: BuildToolManager? = null
@@ -111,12 +111,12 @@ class ProjectStartupManager(
             ?.dynamicRegistration == true
 
         if (!supportsDynamicRegistration) {
-            logger.info("Client does not support dynamic file watcher registration - relying on client defaults")
+            logger.info { "Client does not support dynamic file watcher registration - relying on client defaults" }
             return
         }
 
         if (client == null) {
-            logger.warn("No client connected - cannot register file watchers")
+            logger.warn { "No client connected - cannot register file watchers" }
             return
         }
 
@@ -130,9 +130,9 @@ class ProjectStartupManager(
         )
 
         client.registerCapability(RegistrationParams(listOf(registration)))
-            .thenAccept { logger.info("Successfully registered ${watchers.size} file watchers") }
+            .thenAccept { logger.info { "Successfully registered ${watchers.size} file watchers" } }
             .exceptionally { error ->
-                logger.warn("Failed to register file watchers: ${error.message}")
+                logger.warn { "Failed to register file watchers: ${error.message}" }
                 null
             }
     }
@@ -176,29 +176,29 @@ class ProjectStartupManager(
         compilationService.updateEngineConfiguration(engineConfig)
 
         if (initParams == null) {
-            logger.warn("No saved initialization parameters - skipping dependency resolution")
+            logger.warn { "No saved initialization parameters - skipping dependency resolution" }
             updateGroovyVersion(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (no workspace)", null, null, null, null)
             return
         }
 
         val workspaceRoot = getWorkspaceRoot(initParams) ?: run {
-            logger.info("No workspace root found - running in light mode without dependencies")
+            logger.info { "No workspace root found - running in light mode without dependencies" }
             updateGroovyVersion(config, emptyList())
             onStatusUpdate(Health.Ok, true, "Ready (light mode)", null, null, null, null)
             return
         }
 
-        logger.info("Starting background dependency resolution for: $workspaceRoot")
-        logger.info(
-            "Client connection status: ${if (client != null) "connected" else "NULL - notifications will not be sent"}",
-        )
+        logger.info { "Starting background dependency resolution for: $workspaceRoot" }
+        logger.info {
+            "Client connection status: ${if (client != null) "connected" else "NULL - notifications will not be sent"}"
+        }
 
         // Send resolving deps status
         onStatusUpdate(Health.Ok, false, "Resolving build dependencies...", null, null, null, null)
 
         if (client != null) {
-            logger.info("Sending 'Resolving build dependencies' notification to client")
+            logger.info { "Sending 'Resolving build dependencies' notification to client" }
             client.showMessage(
                 MessageParams().apply {
                     type = MessageType.Info
@@ -206,7 +206,7 @@ class ProjectStartupManager(
                 },
             )
         } else {
-            logger.warn("Cannot send showMessage - client is null")
+            logger.warn { "Cannot send showMessage - client is null" }
         }
 
         val progressReporter = ProgressReporter(client)
@@ -215,7 +215,7 @@ class ProjectStartupManager(
         // Pre-flight: Check JDK requirements BEFORE dependency resolution
         val jdkValidation = performJdkPreflightCheck(workspaceRoot, client, onStatusUpdate)
         if (jdkValidation == PreflightResult.Abort) {
-            logger.info("Aborting dependency resolution due to JDK incompatibility")
+            logger.info { "Aborting dependency resolution due to JDK incompatibility" }
             return
         }
 
@@ -248,7 +248,7 @@ class ProjectStartupManager(
 
         // Select project strategies
         val activeStrategies = strategyRegistry.selectStrategies(workspaceRoot, config)
-        logger.info("Active project strategies: {}", activeStrategies.map { it.id })
+        logger.info { "Active project strategies: ${activeStrategies.map { it.id }}" }
 
         // Initialize strategies synchronously on the calling thread.
         // Strategy.initialize() performs synchronous setup (e.g., GDSL loading) and returns
@@ -258,20 +258,20 @@ class ProjectStartupManager(
         strategyInitJobs = kotlinx.coroutines.runBlocking {
             activeStrategies.mapNotNull { strategy ->
                 runCatching {
-                    logger.info("Initializing strategy: {} ({})", strategy.id, strategy.displayName)
+                    logger.info { "Initializing strategy: ${strategy.id} (${strategy.displayName})" }
                     strategy.initialize(workspaceRoot, config)
                 }.onFailure { throwable ->
                     rethrowIfCancellationOrError(throwable)
-                    logger.error("Failed to initialize strategy '{}': {}", strategy.id, throwable.message)
+                    logger.error { "Failed to initialize strategy '${strategy.id}': ${throwable.message}" }
                 }.getOrNull()
             }
         }
     }
 
     private fun setupDependencyManager(config: ServerConfiguration): DependencyManager {
-        logger.info("Gradle build strategy: ${config.gradleBuildStrategy}")
+        logger.info { "Gradle build strategy: ${config.gradleBuildStrategy}" }
         if (config.javaHome != null) {
-            logger.info("Custom JAVA_HOME configured: ${config.javaHome}")
+            logger.info { "Custom JAVA_HOME configured: ${config.javaHome}" }
         }
 
         val javaHomePath = config.javaHome?.let { Paths.get(it) }
@@ -331,10 +331,10 @@ class ProjectStartupManager(
                 }
                 else -> {
                     // Success or Warning - proceed with normal flow
-                    logger.info(
+                    logger.info {
                         "Dependencies resolved: ${resolution.dependencies.size} JARs, " +
-                            "${resolution.sourceDirectories.size} source directories",
-                    )
+                            "${resolution.sourceDirectories.size} source directories"
+                    }
 
                     updateGroovyVersion(context.config, resolution.dependencies)
 
@@ -350,7 +350,7 @@ class ProjectStartupManager(
                     val toolName = dependencyManager?.getCurrentBuildToolName() ?: "Build Tool"
                     if (context.client != null) {
                         val msg = "Dependencies loaded: ${resolution.dependencies.size} JARs from $toolName"
-                        logger.info("Sending completion notification to client: $msg")
+                        logger.info { "Sending completion notification to client: $msg" }
                         context.client.showMessage(
                             MessageParams().apply {
                                 type = MessageType.Info
@@ -358,7 +358,7 @@ class ProjectStartupManager(
                             },
                         )
                     } else {
-                        logger.warn("Cannot send completion showMessage - client is null")
+                        logger.warn { "Cannot send completion showMessage - client is null" }
                     }
 
                     startWorkspaceIndexing(context.client, context.onStatusUpdate)
@@ -372,7 +372,7 @@ class ProjectStartupManager(
         config: ServerConfiguration,
         onStatusUpdate: StatusUpdateCallback,
     ): (Exception) -> Unit = { error ->
-        logger.error("Failed to resolve dependencies", error)
+        logger.error(error) { "Failed to resolve dependencies" }
         updateGroovyVersion(config, emptyList())
         progressReporter.completeWithError("Failed to load dependencies: ${error.message}")
         client?.showMessage(
@@ -389,7 +389,7 @@ class ProjectStartupManager(
     }
 
     private fun handleFailedResolution(context: CompletionCallbackContext, status: ResolutionStatus.Failed) {
-        logger.error("Dependency resolution failed: ${status.code} - ${status.message}", status.cause)
+        logger.error { "Dependency resolution failed: ${status.code} - ${status.message}" }
 
         // Update Groovy version with empty dependencies
         updateGroovyVersion(context.config, emptyList())
@@ -445,11 +445,9 @@ class ProjectStartupManager(
         return when (result) {
             is ProjectJdkValidator.ValidationResult.IncompatibleOlder -> {
                 // Fatal: Running JDK is older than required
-                logger.error(
-                    "JDK version mismatch: running JDK {} but project requires JDK {}",
-                    result.runningJdk,
-                    result.requiredJdk,
-                )
+                logger.error {
+                    "JDK version mismatch: running JDK ${result.runningJdk} but project requires JDK ${result.requiredJdk}"
+                }
 
                 val errorDetails = ProjectJdkIncompatibleError(
                     runningJdkVersion = result.runningJdk,
@@ -483,11 +481,9 @@ class ProjectStartupManager(
 
             is ProjectJdkValidator.ValidationResult.PotentiallyIncompatibleNewer -> {
                 // Warning: Running JDK is significantly newer than target
-                logger.warn(
-                    "JDK version warning: running JDK {} but project targets JDK {}",
-                    result.runningJdk,
-                    result.targetJdk,
-                )
+                logger.warn {
+                    "JDK version warning: running JDK ${result.runningJdk} but project targets JDK ${result.targetJdk}"
+                }
 
                 // Create structured warning details for client-side handling
                 val warningDetails = ProjectJdkNewerWarning(
@@ -513,16 +509,14 @@ class ProjectStartupManager(
             }
 
             is ProjectJdkValidator.ValidationResult.Compatible -> {
-                logger.debug(
-                    "JDK validation passed: running JDK {}, required {}",
-                    result.runningJdk,
-                    result.requiredJdk,
-                )
+                logger.debug {
+                    "JDK validation passed: running JDK ${result.runningJdk}, required ${result.requiredJdk}"
+                }
                 PreflightResult.Continue
             }
 
             ProjectJdkValidator.ValidationResult.NoRequirement -> {
-                logger.debug("No JDK requirement configured in project, skipping validation")
+                logger.debug { "No JDK requirement configured in project, skipping validation" }
                 PreflightResult.Continue
             }
         }
@@ -599,7 +593,7 @@ class ProjectStartupManager(
     private fun startWorkspaceIndexing(client: LanguageClient?, onStatusUpdate: StatusUpdateCallback) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
-            logger.debug("No workspace sources to index")
+            logger.debug { "No workspace sources to index" }
             // No files to index, signal ready after making sure strategy init is done
             coroutineScope.launch(indexingDispatcher) {
                 strategyInitJobs.forEach { it.join() }
@@ -609,7 +603,7 @@ class ProjectStartupManager(
         }
 
         val total = sourceUris.size
-        logger.info("Starting workspace indexing: $total files")
+        logger.info { "Starting workspace indexing: $total files" }
 
         // Send initial indexing status with file counts
         onStatusUpdate(Health.Ok, false, "Indexing $total files...", 0, total, null, null)
@@ -642,19 +636,19 @@ class ProjectStartupManager(
                     }
                 }
                 indexingProgressReporter.complete("✅ Indexed $total files")
-                logger.info("Workspace indexing complete: $total files")
+                logger.info { "Workspace indexing complete: $total files" }
 
                 // Trigger workspace compilation for cross-file semantic resolution
-                logger.info("Starting workspace compilation for cross-file resolution")
+                logger.info { "Starting workspace compilation for cross-file resolution" }
                 onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
                 val workspaceCompiler = compilationService.getWorkspaceCompiler()
                 val compilationResult = workspaceCompiler.compileWorkspace()
-                logger.info(
+                logger.info {
                     "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
-                        "${compilationResult.errors.size} errors",
-                )
+                        "${compilationResult.errors.size} errors"
+                }
                 if (!compilationResult.success) {
-                    logger.warn("Workspace compilation had errors, but proceeding with partial results")
+                    logger.warn { "Workspace compilation had errors, but proceeding with partial results" }
                 }
 
                 // Ensure strategy initialization is also complete before signaling ready
@@ -664,7 +658,7 @@ class ProjectStartupManager(
                 onStatusUpdate(Health.Ok, true, "Ready", total, total, null, null)
             }.onFailure { throwable ->
                 rethrowIfCancellationOrError(throwable)
-                logger.error("Workspace indexing failed", throwable)
+                logger.error(throwable) { "Workspace indexing failed" }
                 indexingProgressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
                 // Signal warning state but still quiescent
                 onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null, null, null)
@@ -704,17 +698,17 @@ class ProjectStartupManager(
     private fun parseUri(uriString: String, description: String): Path? = try {
         Paths.get(URI.create(uriString))
     } catch (e: IllegalArgumentException) {
-        logger.error("Invalid $description format: $uriString", e)
+        logger.error(e) { "Invalid $description format: $uriString" }
         null
     } catch (e: FileSystemNotFoundException) {
-        logger.error("File system not found for $description: $uriString", e)
+        logger.error(e) { "File system not found for $description: $uriString" }
         null
     }
 
     private fun parsePath(pathString: String, description: String): Path? = try {
         Paths.get(pathString)
     } catch (e: InvalidPathException) {
-        logger.error("Invalid $description: $pathString", e)
+        logger.error(e) { "Invalid $description: $pathString" }
         null
     }
 

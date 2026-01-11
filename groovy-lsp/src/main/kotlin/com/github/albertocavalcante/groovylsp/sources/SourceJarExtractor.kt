@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -17,7 +17,7 @@ import java.util.zip.ZipFile
  */
 class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionDir()) {
 
-    private val logger = LoggerFactory.getLogger(SourceJarExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Cache: sourceJarPath -> Map<className, extractedSourcePath>
     private val extractionCache = ConcurrentHashMap<Path, Map<String, Path>>()
@@ -44,7 +44,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
         extractionCache[sourceJarPath]?.let { return it }
 
         if (!Files.exists(sourceJarPath)) {
-            logger.warn("Source JAR not found: {}", sourceJarPath)
+            logger.warn { "Source JAR not found: $sourceJarPath" }
             return emptyMap()
         }
 
@@ -64,7 +64,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
                     .forEach { entry ->
                         val outputPath = normalizedOutputDir.resolve(entry.name).normalize()
                         if (!outputPath.startsWith(normalizedOutputDir)) {
-                            logger.warn("Zip Slip attempt detected in source JAR: {}", entry.name)
+                            logger.warn { "Zip Slip attempt detected in source JAR: ${entry.name}" }
                             return@forEach
                         }
 
@@ -84,18 +84,18 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
                         classToSource[className] = outputPath
                         classToSourceCache[className] = outputPath
 
-                        logger.debug("Extracted: {} -> {}", className, outputPath)
+                        logger.debug { "Extracted: $className -> $outputPath" }
                     }
             }
 
-            logger.info("Extracted {} source files from {}", classToSource.size, sourceJarPath)
+            logger.info { "Extracted ${classToSource.size} source files from $sourceJarPath" }
 
             // Cache the result
             extractionCache[sourceJarPath] = classToSource
 
             return classToSource
         } catch (e: Exception) {
-            logger.error("Failed to extract source JAR: {}", sourceJarPath, e)
+            logger.error(e) { "Failed to extract source JAR: $sourceJarPath" }
             return emptyMap()
         }
     }
@@ -139,6 +139,6 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
 
         extractionCache.clear()
         classToSourceCache.clear()
-        logger.info("Cleared source extraction cache")
+        logger.info { "Cleared source extraction cache" }
     }
 }

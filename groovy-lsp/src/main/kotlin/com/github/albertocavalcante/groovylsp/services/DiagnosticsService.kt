@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.config.DiagnosticConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -12,7 +13,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Diagnostic
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -31,7 +31,7 @@ class DiagnosticsService(
 
     companion object {
         private const val NANOS_TO_MILLIS = 1_000_000L
-        private val logger = LoggerFactory.getLogger(DiagnosticsService::class.java)
+        private val logger = KotlinLogging.logger {}
     }
 
     /**
@@ -50,16 +50,13 @@ class DiagnosticsService(
         val enabledProviders = providers.filter { config.isProviderEnabled(it) }
 
         if (enabledProviders.isEmpty()) {
-            logger.debug("No enabled diagnostic providers for {}", uri)
+            logger.debug { "No enabled diagnostic providers for $uri" }
             return@withContext emptyList()
         }
 
-        logger.debug(
-            "Running {} enabled providers for {}: {}",
-            enabledProviders.size,
-            uri,
-            enabledProviders.map { it.id },
-        )
+        logger.debug {
+            "Running ${enabledProviders.size} enabled providers for $uri: ${enabledProviders.map { it.id }}"
+        }
 
         try {
             // Execute all providers concurrently and collect results
@@ -70,20 +67,20 @@ class DiagnosticsService(
                     // Wrap each provider in error handling
                     flow {
                         try {
-                            logger.debug("Executing provider: {}", provider.id)
+                            logger.debug { "Executing provider: ${provider.id}" }
                             val startTime = System.nanoTime()
 
                             emitAll(provider.provideDiagnostics(uri, content))
 
                             val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
-                            logger.debug("Provider {} completed in {}ms", provider.id, elapsedMs)
+                            logger.debug { "Provider ${provider.id} completed in ${elapsedMs}ms" }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             // NOTE: Error isolation - one provider failure doesn't stop others
                             // TODO(#456): Consider publishing provider-specific error diagnostics.
                             //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
-                            logger.error("Provider {} failed for {}: {}", provider.id, uri, e.message, e)
+                            logger.error(e) { "Provider ${provider.id} failed for $uri: ${e.message}" }
                             // Don't re-throw - continue with other providers
                         }
                     }
@@ -91,11 +88,11 @@ class DiagnosticsService(
                 .toList()
         } catch (e: CancellationException) {
             // Job cancellation is expected during rapid document edits (debouncing)
-            logger.debug("Diagnostic collection cancelled for {}", uri)
+            logger.debug { "Diagnostic collection cancelled for $uri" }
             throw e // Re-throw to preserve cancellation
         } catch (e: Exception) {
             // NOTE: This should rarely happen due to per-provider error handling above
-            logger.error("Unexpected error during diagnostic collection for {}", uri, e)
+            logger.error(e) { "Unexpected error during diagnostic collection for $uri" }
             emptyList()
         }
     }

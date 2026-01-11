@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.ast.safePosition
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import groovy.lang.Script
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -34,7 +35,6 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.net.URI
@@ -46,7 +46,7 @@ class SignatureHelpProvider(
     private val semanticResolver: SemanticTypeResolver,
 ) {
 
-    private val logger = LoggerFactory.getLogger(SignatureHelpProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
@@ -78,7 +78,7 @@ class SignatureHelpProvider(
 
         val signatures = collectSignatures(documentUri, inputs).distinctBy { it.label }
         if (signatures.isEmpty()) {
-            logger.debug("No signatures found for ${inputs.methodName}")
+            logger.debug { "No signatures found for ${inputs.methodName}" }
             return null
         }
 
@@ -88,17 +88,17 @@ class SignatureHelpProvider(
     private suspend fun resolveSignatureInputs(documentUri: URI, position: Position): ResolvedSignatureInputs? {
         val astVisitor = compilationService.getAstModel(documentUri)
         if (astVisitor == null) {
-            logger.debug("No AST visitor available for {}", documentUri)
+            logger.debug { "No AST visitor available for $documentUri" }
         }
         val symbolTable = compilationService.getSymbolTable(documentUri)
         if (symbolTable == null) {
-            logger.debug("No symbol table available for {}", documentUri)
+            logger.debug { "No symbol table available for $documentUri" }
         }
 
         val groovyPos = position.toGroovyPosition()
         val nodeAtPosition = astVisitor?.getNodeAt(documentUri, groovyPos)
         if (astVisitor != null && nodeAtPosition == null) {
-            logger.debug("No AST node found at $position for $documentUri")
+            logger.debug { "No AST node found at $position for $documentUri" }
         }
 
         val canFindMethodCall = astVisitor != null && nodeAtPosition != null
@@ -111,7 +111,7 @@ class SignatureHelpProvider(
 
         val methodName = methodCall?.extractMethodName()
         if (methodCall != null && methodName == null) {
-            logger.debug("Could not resolve method name for call at $position in $documentUri")
+            logger.debug { "Could not resolve method name for call at $position in $documentUri" }
         }
 
         val hasCompilationContext = astVisitor != null && symbolTable != null
@@ -338,7 +338,7 @@ class SignatureHelpProvider(
         val content = documentProvider.get(uri) ?: return
         runCatching { compilationService.compile(uri, content) }
             .onFailure { error ->
-                logger.debug("Unable to compile $uri before providing signature help", error)
+                logger.debug(error) { "Unable to compile $uri before providing signature help" }
             }
     }
 
@@ -350,7 +350,7 @@ class SignatureHelpProvider(
                 .filter { p -> Modifier.isPublic(p.modifiers) }
                 .groupBy { it.name }
         } catch (e: SecurityException) {
-            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
+            logger.warn { "Failed to pre-resolve Script methods: ${e.message}" }
             emptyMap<String, List<Method>>()
         }
     }

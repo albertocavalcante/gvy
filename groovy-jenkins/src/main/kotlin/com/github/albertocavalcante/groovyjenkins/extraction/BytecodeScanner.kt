@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovyjenkins.extraction
 
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 
 /**
@@ -44,7 +44,7 @@ data class ScannedStep(
  */
 class BytecodeScanner {
 
-    private val logger = LoggerFactory.getLogger(javaClass)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         private const val STEP_CLASS = "org.jenkinsci.plugins.workflow.steps.Step"
@@ -62,7 +62,7 @@ class BytecodeScanner {
      */
     fun scanClasspath(superclassName: String, packages: List<String>): List<ScannedStep> {
         if (packages.isEmpty()) {
-            logger.debug("No packages specified, returning empty list")
+            logger.debug { "No packages specified, returning empty list" }
             return emptyList()
         }
         return scan(superclassName) {
@@ -93,7 +93,7 @@ class BytecodeScanner {
             }
     }.onFailure { throwable ->
         if (throwable is Error) throw throwable
-        logger.warn("Failed to scan for steps: ${throwable.message}", throwable)
+        logger.warn(throwable) { "Failed to scan for steps: ${throwable.message}" }
     }.getOrDefault(emptyList())
 
     /**
@@ -116,7 +116,7 @@ class BytecodeScanner {
                 }
         }.onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.debug("Failed to extract constructor params for $className: ${throwable.message}", throwable)
+            logger.debug(throwable) { "Failed to extract constructor params for $className: ${throwable.message}" }
         }.getOrDefault(emptyList())
     }
 

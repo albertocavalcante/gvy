@@ -11,7 +11,7 @@ dependencies {
     runtimeOnly(libs.ivy)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     runtimeOnly(libs.logback.classic)
 
     // Testing

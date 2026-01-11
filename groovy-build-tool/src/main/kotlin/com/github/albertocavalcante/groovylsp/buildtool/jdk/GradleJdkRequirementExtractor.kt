@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.jdk
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -20,7 +20,7 @@ import kotlin.io.path.exists
  * 3. targetCompatibility setting
  */
 class GradleJdkRequirementExtractor : JdkRequirementExtractor {
-    private val logger = LoggerFactory.getLogger(GradleJdkRequirementExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         // Toolchain patterns
@@ -67,7 +67,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
             parseJdkRequirements(content, isKts)
         }.getOrElse { e ->
             if (e is Error) throw e
-            logger.warn("Failed to parse Gradle build file for JDK requirements", e)
+            logger.warn(e) { "Failed to parse Gradle build file for JDK requirements" }
             JdkRequirementResult.ParseError("Error parsing build file: ${e.message}", e)
         }
     }
@@ -93,7 +93,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
                 match.groupValues.getOrNull(1)?.toIntOrNull()?.let { version ->
                     toolchainVersion = version
                     source = RequirementSource.GRADLE_TOOLCHAIN
-                    logger.debug("Found Gradle toolchain languageVersion: {}", version)
+                    logger.debug { "Found Gradle toolchain languageVersion: $version" }
                 }
             }
             if (toolchainVersion != null) break
@@ -113,7 +113,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
                     if (source == RequirementSource.UNKNOWN) {
                         source = RequirementSource.GRADLE_SOURCE_COMPATIBILITY
                     }
-                    logger.debug("Found Gradle sourceCompatibility: {}", version)
+                    logger.debug { "Found Gradle sourceCompatibility: $version" }
                 }
             }
             if (sourceCompatibility != null) break
@@ -127,7 +127,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
                     if (source == RequirementSource.UNKNOWN) {
                         source = RequirementSource.GRADLE_TARGET_COMPATIBILITY
                     }
-                    logger.debug("Found Gradle targetCompatibility: {}", version)
+                    logger.debug { "Found Gradle targetCompatibility: $version" }
                 }
             }
             if (targetCompatibility != null) break
@@ -140,7 +140,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
                 parseVersionFromMatch(match.groupValues.getOrNull(1))?.let { version ->
                     sourceCompatibility = version
                     source = RequirementSource.GRADLE_SOURCE_COMPATIBILITY
-                    logger.debug("Found Gradle java block sourceCompatibility: {}", version)
+                    logger.debug { "Found Gradle java block sourceCompatibility: $version" }
                 }
             }
         }

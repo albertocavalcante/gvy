@@ -3,9 +3,9 @@ package com.github.albertocavalcante.groovylsp.providers.codeaction
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.Formatter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -20,7 +20,7 @@ class CodeActionProvider(
     private val documentProvider: DocumentProvider,
     formatter: Formatter,
 ) {
-    private val logger = LoggerFactory.getLogger(CodeActionProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Reuse action provider instances to reduce object allocation
     private val formattingAction = FormattingAction(formatter)
@@ -33,11 +33,11 @@ class CodeActionProvider(
      */
     suspend fun provideCodeActions(params: CodeActionParams): List<CodeAction> {
         val uri = URI.create(params.textDocument.uri)
-        logger.debug("Providing code actions for ${params.textDocument.uri}")
+        logger.debug { "Providing code actions for ${params.textDocument.uri}" }
 
         // Get document content
         val content = documentProvider.get(uri) ?: run {
-            logger.debug("Document not found in provider: $uri")
+            logger.debug { "Document not found in provider: $uri" }
             return emptyList()
         }
 
@@ -64,7 +64,7 @@ class CodeActionProvider(
             )
         }
 
-        logger.debug("Returning ${actions.size} code actions for ${params.textDocument.uri}")
+        logger.debug { "Returning ${actions.size} code actions for ${params.textDocument.uri}" }
         return actions
     }
 }

@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.handlers
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Handles shutdown_request messages.
@@ -12,13 +12,13 @@ import org.slf4j.LoggerFactory
  * If restart=true, Jupyter will restart the kernel after shutdown.
  */
 class ShutdownHandler(private val onShutdown: () -> Unit = {}) : MessageHandler {
-    private val logger = LoggerFactory.getLogger(ShutdownHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.SHUTDOWN_REQUEST
 
     override fun handle(request: JupyterMessage, connection: JupyterConnection) {
         val restart = shouldRestart(request)
-        logger.info("Handling shutdown_request (restart={})", restart)
+        logger.info { "Handling shutdown_request (restart=$restart)" }
 
         // Send shutdown_reply on control socket
         val reply = request.createReply(MessageType.SHUTDOWN_REPLY).apply {
@@ -29,7 +29,7 @@ class ShutdownHandler(private val onShutdown: () -> Unit = {}) : MessageHandler 
         // Trigger shutdown callback
         onShutdown()
 
-        logger.info("Shutdown initiated")
+        logger.info { "Shutdown initiated" }
     }
 
     /**

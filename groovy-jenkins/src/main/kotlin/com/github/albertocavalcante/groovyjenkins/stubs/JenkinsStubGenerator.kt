@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovyjenkins.stubs
 
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -13,10 +13,10 @@ import kotlin.io.path.writeText
  * heavy plugin JARs on the classpath.
  */
 class JenkinsStubGenerator {
-    private val logger = LoggerFactory.getLogger(JenkinsStubGenerator::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun generateStubs(metadata: MergedJenkinsMetadata, outputDir: Path) {
-        logger.info("Generating Jenkins stubs in $outputDir")
+        logger.info { "Generating Jenkins stubs in $outputDir" }
         outputDir.createDirectories()
 
         // 1. Generate CpsScript for 'pipeline' support

@@ -14,7 +14,7 @@ dependencies {
 
     implementation(libs.arrow.core)
     implementation(libs.kotlin.collections.immutable)
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     detektPlugins(libs.detekt.formatting)
 
@@ -22,6 +22,9 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.jqwik)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    // kotlin-logging needs SLF4J impl at test runtime
+    testRuntimeOnly(libs.logback.classic)
 }
 
 jmh {

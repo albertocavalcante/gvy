@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovycommon
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.FileSystemNotFoundException
 import java.nio.file.InvalidPathException
@@ -18,7 +18,7 @@ import java.nio.file.Paths
  * not an error condition.
  */
 object UriPathConverter {
-    private val logger = LoggerFactory.getLogger(UriPathConverter::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Converts a URI to a Path, returning null if the URI cannot be converted.
@@ -29,7 +29,7 @@ object UriPathConverter {
     fun toPath(uri: URI): Path? {
         // Fast path: reject non-file schemes immediately
         if (!isFileUri(uri)) {
-            logger.debug("Skipping non-file URI scheme: {}", uri.scheme)
+            logger.debug { "Skipping non-file URI scheme: ${uri.scheme}" }
             return null
         }
 
@@ -41,9 +41,9 @@ object UriPathConverter {
                     is InvalidPathException,
                     is IllegalArgumentException,
                     ->
-                        logger.debug("Cannot convert URI to path: {}", uri, e)
+                        logger.debug(e) { "Cannot convert URI to path: $uri" }
                     is SecurityException ->
-                        logger.warn("Security exception for URI: {}", uri, e)
+                        logger.warn(e) { "Security exception for URI: $uri" }
                     else -> throw e // Rethrow unexpected exceptions
                 }
             }

@@ -12,9 +12,9 @@ import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
-import org.slf4j.LoggerFactory
 
 /**
  * Definition service for the Core (JavaParser-style) parser engine.
@@ -32,7 +32,7 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
         position: Position,
     ): List<UnifiedDefinition> {
         if (node == null || node.name == null || node.originalNode !is Node) {
-            logger.debug("findDefinition: invalid node or missing name")
+            logger.debug { "findDefinition: invalid node or missing name" }
             return emptyList()
         }
 
@@ -45,25 +45,25 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
             runCatching {
                 val symbolRef = resolver.solveSymbol(name, coreNode)
                 if (!symbolRef.isSolved) {
-                    logger.debug("findDefinition: symbol '{}' not resolved", name)
+                    logger.debug { "findDefinition: symbol '$name' not resolved" }
                     return@runCatching null
                 }
 
                 val declNode = symbolRef.getDeclaration().declarationNode
                 if (declNode == null) {
-                    logger.debug("findDefinition: declaration has no AST node for '{}'", name)
+                    logger.debug { "findDefinition: declaration has no AST node for '$name'" }
                     return@runCatching null
                 }
 
                 val resolvedRange = extractRangeFromNode(declNode)
                 if (resolvedRange == null) {
-                    logger.debug("findDefinition: declaration node has no range for '{}'", name)
+                    logger.debug { "findDefinition: declaration node has no range for '$name'" }
                     return@runCatching null
                 }
 
                 resolvedRange
             }.getOrElse { e ->
-                logger.debug("findDefinition: error resolving symbol '{}': {}", name, e.message)
+                logger.debug { "findDefinition: error resolving symbol '$name': ${e.message}" }
                 null
             }
         }
@@ -96,6 +96,6 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
     }
 
     companion object {
-        private val logger = LoggerFactory.getLogger(CoreDefinitionService::class.java)
+        private val logger = KotlinLogging.logger {}
     }
 }

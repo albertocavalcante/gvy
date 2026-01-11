@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -14,7 +14,7 @@ import java.net.URI
  */
 class DocumentationService(providers: List<PluggableDocProvider> = emptyList()) {
 
-    private val logger = LoggerFactory.getLogger(DocumentationService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Sorted by priority (highest first)
     private val providers: List<PluggableDocProvider> = providers.sortedByDescending { it.priority }
@@ -36,11 +36,11 @@ class DocumentationService(providers: List<PluggableDocProvider> = emptyList()) 
             try {
                 val doc = provider.generateDoc(node, model, documentUri)
                 if (doc != null) {
-                    logger.debug("Documentation provided by: {}", provider.name)
+                    logger.debug { "Documentation provided by: ${provider.name}" }
                     return doc
                 }
             } catch (e: Exception) {
-                logger.warn("Provider {} failed for node {}", provider.name, node::class.simpleName, e)
+                logger.warn(e) { "Provider ${provider.name} failed for node ${node::class.simpleName}" }
             }
         }
 
@@ -62,7 +62,7 @@ class DocumentationService(providers: List<PluggableDocProvider> = emptyList()) 
                     return info
                 }
             } catch (e: Exception) {
-                logger.warn("Provider {} failed for quick info", provider.name, e)
+                logger.warn(e) { "Provider ${provider.name} failed for quick info" }
             }
         }
 

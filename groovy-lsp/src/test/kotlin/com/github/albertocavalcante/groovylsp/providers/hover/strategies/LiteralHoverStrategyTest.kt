@@ -6,11 +6,11 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenera
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertTrue
 
@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  */
 class LiteralHoverStrategyTest {
 
-    private val logger = LoggerFactory.getLogger(LiteralHoverStrategyTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
 
@@ -52,7 +52,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("String literal hover: ${content.value}")
+            logger.info { "String literal hover: ${content.value}" }
 
             assertTrue(content.kind == MarkupKind.MARKDOWN)
             assertTrue(
@@ -77,7 +77,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Integer literal hover: ${content.value}")
+            logger.info { "Integer literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Integer") || content.value.contains("int") || content.value.contains("42"),
@@ -101,7 +101,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Decimal literal hover: ${content.value}")
+            logger.info { "Decimal literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("BigDecimal") || content.value.contains("Double") ||
@@ -126,7 +126,7 @@ class LiteralHoverStrategyTest {
 
         if (trueHover != null) {
             val content = trueHover.contents.right
-            logger.info("Boolean (true) literal hover: ${content.value}")
+            logger.info { "Boolean (true) literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains(
@@ -141,7 +141,7 @@ class LiteralHoverStrategyTest {
 
         if (falseHover != null) {
             val content = falseHover.contents.right
-            logger.info("Boolean (false) literal hover: ${content.value}")
+            logger.info { "Boolean (false) literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Boolean") || content.value.contains("boolean") ||
@@ -166,7 +166,7 @@ class LiteralHoverStrategyTest {
         val hover = hoverProvider.provideHover(uri.toString(), Position(0, 15))
 
         // Test passes if we get here without exception
-        logger.info("List literal hover: ${hover?.contents?.right?.value ?: "null"}")
+        logger.info { "List literal hover: ${hover?.contents?.right?.value ?: "null"}" }
 
         // At position 0,15 we might be on the first element or the list
         // Both are valid hover results
@@ -188,7 +188,7 @@ class LiteralHoverStrategyTest {
         val hover = hoverProvider.provideHover(uri.toString(), Position(0, 15))
 
         // Test passes if we get here without exception
-        logger.info("Map literal hover: ${hover?.contents?.right?.value ?: "null"}")
+        logger.info { "Map literal hover: ${hover?.contents?.right?.value ?: "null"}" }
 
         // At position 0,15 we might be on a map key or the map itself
         // Both are valid hover results
@@ -212,7 +212,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Null literal hover: ${content.value}")
+            logger.info { "Null literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("null") || content.value.contains("Constant"),
@@ -236,7 +236,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("GString literal hover: ${content.value}")
+            logger.info { "GString literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains(
@@ -262,7 +262,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Long literal hover: ${content.value}")
+            logger.info { "Long literal hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Long") || content.value.contains("long") || content.value.contains("999"),
@@ -286,7 +286,7 @@ class LiteralHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Character literal hover: ${content.value}")
+            logger.info { "Character literal hover: ${content.value}" }
 
             // Note: In Groovy, single-quoted strings are actually Strings, not chars
             // unless explicitly cast. So we accept either String or Character

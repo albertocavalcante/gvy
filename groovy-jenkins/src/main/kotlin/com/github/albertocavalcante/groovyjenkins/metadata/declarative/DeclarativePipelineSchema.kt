@@ -1,14 +1,14 @@
 package com.github.albertocavalcante.groovyjenkins.metadata.declarative
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.io.IOException
 
 object DeclarativePipelineSchema {
-    private val logger = LoggerFactory.getLogger(DeclarativePipelineSchema::class.java)
+    private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
     private val schema: Schema = loadSchema()
@@ -61,7 +61,7 @@ object DeclarativePipelineSchema {
                 else -> IllegalStateException("Failed to load declarative pipeline schema", throwable)
             }
 
-            logger.error("Failed to parse declarative pipeline schema", wrapped)
+            logger.error { "Failed to parse declarative pipeline schema" }
             throw wrapped
         }
     }

@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.launch.LSPLauncher
 import org.eclipse.lsp4j.services.LanguageClient
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
 import java.io.PipedInputStream
@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * This allows integration testing without the server blocking the shell.
  */
 class TestLanguageServerRunner {
-    private val logger = LoggerFactory.getLogger(TestLanguageServerRunner::class.java)
+    private val logger = KotlinLogging.logger {}
     private var serverProcess: Process? = null
     private var launcher: Launcher<LanguageClient>? = null
     private var server: GroovyLanguageServer? = null
@@ -108,7 +108,7 @@ class TestLanguageServerRunner {
                 process.waitFor(5, TimeUnit.SECONDS)
             }
         } catch (e: IOException) {
-            logger.debug("Error during cleanup", e)
+            logger.debug(e) { "Error during cleanup" }
         } finally {
             serverProcess = null
             launcher = null
@@ -149,13 +149,13 @@ data class TestLanguageServerHandle(
     val launcher: Launcher<LanguageClient>,
     val listening: Future<Void>,
 ) {
-    private val logger = LoggerFactory.getLogger(TestLanguageServerHandle::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun stop() {
         try {
             listening.cancel(true)
         } catch (e: CancellationException) {
-            logger.debug("Future cancelled during stop", e)
+            logger.debug(e) { "Future cancelled during stop" }
         }
     }
 }

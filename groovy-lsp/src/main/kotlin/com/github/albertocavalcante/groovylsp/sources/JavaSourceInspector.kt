@@ -5,7 +5,7 @@ import com.github.javaparser.JavaParser
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -23,7 +23,7 @@ class JavaSourceInspector {
         private const val DOC_FALLBACK_LENGTH = 200
     }
 
-    private val logger = LoggerFactory.getLogger(JavaSourceInspector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Configure JavaParser to be lenient and handle modern Java syntax
     private val parserConfig = ParserConfiguration().apply {
@@ -47,7 +47,7 @@ class JavaSourceInspector {
      */
     fun inspectClass(sourcePath: Path, className: String): InspectionResult? {
         if (!Files.exists(sourcePath)) {
-            logger.debug("Source file does not exist: {}", sourcePath)
+            logger.debug { "Source file does not exist: $sourcePath" }
             return null
         }
 
@@ -55,7 +55,7 @@ class JavaSourceInspector {
             val content = Files.readString(sourcePath)
             inspectClassFromContent(content, className, sourcePath.toString())
         } catch (e: Exception) {
-            logger.warn("Failed to inspect Java source: $sourcePath", e)
+            logger.warn(e) { "Failed to inspect Java source: $sourcePath" }
             null
         }
     }
@@ -101,11 +101,10 @@ class JavaSourceInspector {
             val parseResult = parser.parse(content)
 
             if (!parseResult.isSuccessful) {
-                logger.debug(
-                    "Failed to parse Java source {}: {}",
-                    sourceName,
-                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
-                )
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
                 return null
             }
 
@@ -122,23 +121,23 @@ class JavaSourceInspector {
                 .firstOrNull { it.nameAsString == simpleClassName }
 
             if (classDecl == null) {
-                logger.debug("Could not find class {} in {}", className, sourceName)
+                logger.debug { "Could not find class $className in $sourceName" }
                 return null
             }
 
             val lineNumber = classDecl.begin.map { it.line }.orElse(0)
             if (lineNumber <= 0) {
-                logger.debug("Class {} found but has invalid line number in {}", className, sourceName)
+                logger.debug { "Class $className found but has invalid line number in $sourceName" }
                 return null
             }
 
             // Extract Javadoc
             val documentation = extractJavadoc(classDecl)
 
-            logger.debug("Found class {} at line {} in {}", className, lineNumber, sourceName)
+            logger.debug { "Found class $className at line $lineNumber in $sourceName" }
             InspectionResult(lineNumber, documentation)
         } catch (e: Exception) {
-            logger.warn("Failed to inspect Java source content for $className", e)
+            logger.warn(e) { "Failed to inspect Java source content for $className" }
             null
         }
     }
@@ -323,7 +322,7 @@ class JavaSourceInspector {
             see = seeAlso,
         )
     } catch (e: Exception) {
-        logger.debug("Failed to parse Javadoc: ${e.message}")
+        logger.debug { "Failed to parse Javadoc: ${e.message}" }
         // Fallback: use raw comment text
         val rawText = javadocComment.content.trim()
         Documentation(

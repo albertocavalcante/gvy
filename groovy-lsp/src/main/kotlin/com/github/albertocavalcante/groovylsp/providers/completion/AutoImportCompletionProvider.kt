@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.services.ClasspathService
 import com.github.albertocavalcante.groovylsp.utils.ImportUtils
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -13,7 +14,6 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -21,7 +21,7 @@ import java.net.URI
  * Searches both workspace symbol index and classpath for matching types.
  */
 object AutoImportCompletionProvider {
-    private val logger = LoggerFactory.getLogger(AutoImportCompletionProvider::class.java)
+    private val logger = KotlinLogging.logger {}
     private const val MAX_RESULTS = 20
 
     /**
@@ -121,7 +121,7 @@ object AutoImportCompletionProvider {
                     )
                 }
         } catch (e: Exception) {
-            logger.warn("Failed to search classpath for types", e)
+            logger.warn(e) { "Failed to search classpath for types" }
         }
     }
 

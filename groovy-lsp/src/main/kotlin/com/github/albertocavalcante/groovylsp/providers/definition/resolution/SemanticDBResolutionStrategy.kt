@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Resolves symbols using SemanticDB and WorkspaceSymbolIndex for full cross-file resolution.
@@ -23,16 +23,16 @@ import org.slf4j.LoggerFactory
  */
 class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSymbolIndex) : SymbolResolutionStrategy {
 
-    private val logger = LoggerFactory.getLogger(SemanticDBResolutionStrategy::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @Suppress("ReturnCount") // Multiple validation checks require early returns
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
-        logger.debug("Attempting SemanticDB resolution at {}:{}", context.documentUri, context.position)
+        logger.debug { "Attempting SemanticDB resolution at ${context.documentUri}:${context.position}" }
 
         // 1. Get SemanticDocument for current file
         val document = workspaceSymbolIndex.getDocument(context.documentUri)
         if (document == null) {
-            logger.debug("No SemanticDocument found for {}", context.documentUri)
+            logger.debug { "No SemanticDocument found for ${context.documentUri}" }
             return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
         }
 
@@ -54,25 +54,22 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
                 }
             }
         if (occurrence == null) {
-            logger.debug(
-                "No occurrence found at {}:{}:{}",
-                context.documentUri,
-                context.position.line,
-                context.position.character,
-            )
+            logger.debug {
+                "No occurrence found at ${context.documentUri}:${context.position.line}:${context.position.character}"
+            }
             return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
         }
 
-        logger.debug("Found occurrence for symbol: {} at cursor position", occurrence.symbol)
+        logger.debug { "Found occurrence for symbol: ${occurrence.symbol} at cursor position" }
 
         // 3. Use WorkspaceSymbolIndex to find definition
         val location = workspaceSymbolIndex.findDefinition(occurrence.symbol)
         if (location == null) {
-            logger.debug("Symbol {} not found in workspace index", occurrence.symbol)
+            logger.debug { "Symbol ${occurrence.symbol} not found in workspace index" }
             return SymbolResolutionStrategy.notFound("Symbol not found in workspace index", STRATEGY_NAME)
         }
 
-        logger.debug("Resolved symbol {} to {}", occurrence.symbol, location.uri)
+        logger.debug { "Resolved symbol ${occurrence.symbol} to ${location.uri}" }
 
         // 4. Get symbol info to extract the name
         val symbolInfo = workspaceSymbolIndex.findSymbol(occurrence.symbol)

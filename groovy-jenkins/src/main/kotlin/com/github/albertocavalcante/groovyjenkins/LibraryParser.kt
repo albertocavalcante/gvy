@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovycommon.text.ShebangUtils
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -17,7 +18,6 @@ import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
-import org.slf4j.LoggerFactory
 
 /**
  * Represents a reference to a Jenkins shared library in a Jenkinsfile.
@@ -28,7 +28,7 @@ data class LibraryReference(val name: String, val version: String? = null)
  * Parses @Library annotations and library() calls from Jenkinsfile source.
  */
 class LibraryParser {
-    private val logger = LoggerFactory.getLogger(LibraryParser::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         private const val MAX_PARSING_ATTEMPTS = 5
@@ -60,17 +60,17 @@ class LibraryParser {
                 is MultipleCompilationErrorsException -> {
                     val newSource = tryRecoverFromError(currentSource, failure)
                     if (newSource == null || newSource == currentSource) {
-                        logger.warn("Unrecoverable parsing error in Jenkinsfile: ${failure.message}")
+                        logger.warn { "Unrecoverable parsing error in Jenkinsfile: ${failure.message}" }
                         finished = true
                         return@repeat
                     }
 
                     currentSource = newSource
-                    logger.info("Retrying parsing after stripping invalid lines (Attempt $attemptNumber)")
+                    logger.info { "Retrying parsing after stripping invalid lines (Attempt $attemptNumber)" }
                 }
 
                 else -> {
-                    logger.warn("Failed to parse libraries from Jenkinsfile", failure)
+                    logger.warn(failure) { "Failed to parse libraries from Jenkinsfile" }
                     finished = true
                 }
             }

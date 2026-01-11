@@ -5,9 +5,9 @@ import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import org.slf4j.LoggerFactory
 import org.zeromq.ZMQ
 
 /**
@@ -25,7 +25,7 @@ enum class StreamName(val value: String) {
  * frontends can display output in real-time.
  */
 class StreamPublisher(private val iopubSocket: ZMQ.Socket, private val signer: HmacSigner) {
-    private val logger = LoggerFactory.getLogger(StreamPublisher::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Publish stdout output.
@@ -44,7 +44,7 @@ class StreamPublisher(private val iopubSocket: ZMQ.Socket, private val signer: H
     private fun publishStream(name: StreamName, text: String, parent: JupyterMessage) {
         if (text.isEmpty()) return
 
-        logger.debug("Publishing stream {}: {} chars", name.value, text.length)
+        logger.debug { "Publishing stream ${name.value}: ${text.length} chars" }
 
         val header = Header(
             session = parent.header.session,
@@ -69,7 +69,7 @@ class StreamPublisher(private val iopubSocket: ZMQ.Socket, private val signer: H
         val frames = wireMessage.toSignedFrames(signer)
         sendMultipart(frames)
 
-        logger.trace("Stream {} published", name.value)
+        logger.trace { "Stream ${name.value} published" }
     }
 
     private fun sendMultipart(frames: List<ByteArray>) {

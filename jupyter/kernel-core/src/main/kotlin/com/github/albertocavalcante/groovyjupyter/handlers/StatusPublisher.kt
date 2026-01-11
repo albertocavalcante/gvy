@@ -5,9 +5,9 @@ import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import org.slf4j.LoggerFactory
 import org.zeromq.ZMQ
 
 /**
@@ -16,7 +16,7 @@ import org.zeromq.ZMQ
  * its execution state. This helps UI show activity indicators.
  */
 class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: HmacSigner) {
-    private val logger = LoggerFactory.getLogger(StatusPublisher::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Publish that the kernel is busy processing a request.
@@ -33,7 +33,7 @@ class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: H
     }
 
     private fun publishStatus(status: KernelStatus, parent: JupyterMessage) {
-        logger.debug("Publishing status: {}", status.value)
+        logger.debug { "Publishing status: ${status.value}" }
 
         val header = Header(
             session = parent.header.session,
@@ -58,7 +58,7 @@ class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: H
         val frames = wireMessage.toSignedFrames(signer)
         sendMultipart(frames)
 
-        logger.trace("Status {} published", status.value)
+        logger.trace { "Status ${status.value} published" }
     }
 
     private fun sendMultipart(frames: List<ByteArray>) {

@@ -60,7 +60,7 @@ testing {
                 implementation(libs.jackson.module.kotlin)
                 implementation(libs.json.path)
                 implementation(libs.kotlin.coroutines.core)
-                implementation(libs.slf4j.api)
+                implementation(libs.kotlin.logging)
                 implementation(libs.logback.classic)
 
                 implementation(libs.kotlin.test)

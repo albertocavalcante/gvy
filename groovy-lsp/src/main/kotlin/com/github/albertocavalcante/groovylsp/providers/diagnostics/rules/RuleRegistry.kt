@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Registry for managing diagnostic rules.
@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory
  */
 class RuleRegistry {
     private val rules = mutableListOf<DiagnosticRule>()
-    private val logger = LoggerFactory.getLogger(RuleRegistry::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Register a rule.
@@ -24,11 +24,11 @@ class RuleRegistry {
     fun register(rule: DiagnosticRule) {
         val existing = rules.find { it.id == rule.id }
         if (existing != null) {
-            logger.warn("Duplicate rule ID: ${rule.id}, replacing existing rule")
+            logger.warn { "Duplicate rule ID: ${rule.id}, replacing existing rule" }
             rules.remove(existing)
         }
         rules.add(rule)
-        logger.debug("Registered rule: ${rule.id} (${rule.description})")
+        logger.debug { "Registered rule: ${rule.id} (${rule.description})" }
     }
 
     /**

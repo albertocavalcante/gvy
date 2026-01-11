@@ -23,6 +23,7 @@ collectionsImmutable = "0.4.0"
 serialization = "1.9.0"
 slf4j = "2.0.17"
 logback = "1.5.24"
+kotlinLogging = "7.0.3"
 rewriteGroovy = "8.70.4"
 
 junit = "6.0.2"
@@ -105,6 +106,7 @@ arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }
 # Logging
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
 
 # Testing
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }

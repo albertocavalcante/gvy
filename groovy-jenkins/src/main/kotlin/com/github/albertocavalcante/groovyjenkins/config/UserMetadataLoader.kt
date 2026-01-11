@@ -6,9 +6,9 @@ import com.github.albertocavalcante.groovyjenkins.gdsl.GdslParser
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -24,7 +24,7 @@ import java.nio.file.Path
  * Configuration is read from `.gls/jenkins.json` in the workspace root.
  */
 class UserMetadataLoader(private val workspaceRoot: Path) {
-    private val logger = LoggerFactory.getLogger(UserMetadataLoader::class.java)
+    private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
@@ -41,7 +41,7 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
         val configPath = workspaceRoot.resolve(CONFIG_DIR).resolve(CONFIG_FILE)
 
         if (!Files.exists(configPath)) {
-            logger.debug("No user config found at {}", configPath)
+            logger.debug { "No user config found at $configPath" }
             return null
         }
 
@@ -49,7 +49,7 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
             val content = Files.readString(configPath)
             json.decodeFromString<JenkinsUserConfigJson>(content).toConfig()
         } catch (e: Exception) {
-            logger.warn("Failed to parse user config at {}: {}", configPath, e.message)
+            logger.warn { "Failed to parse user config at $configPath: ${e.message}" }
             null
         }
     }
@@ -94,7 +94,7 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
         val fullPath = workspaceRoot.resolve(gdslPath)
 
         if (!Files.exists(fullPath)) {
-            logger.warn("GDSL file not found: {}", fullPath)
+            logger.warn { "GDSL file not found: $fullPath" }
             return null
         }
 
@@ -117,7 +117,7 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
                 )
             }
         } catch (e: Exception) {
-            logger.warn("Failed to parse GDSL file {}: {}", fullPath, e.message)
+            logger.warn { "Failed to parse GDSL file $fullPath: ${e.message}" }
             null
         }
     }

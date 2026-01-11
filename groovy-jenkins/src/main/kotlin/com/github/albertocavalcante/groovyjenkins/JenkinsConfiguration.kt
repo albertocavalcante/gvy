@@ -3,7 +3,7 @@
 package com.github.albertocavalcante.groovyjenkins
 
 import com.github.albertocavalcante.groovyjenkins.plugins.PluginConfiguration
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Configuration for Jenkins pipeline support.
@@ -18,7 +18,7 @@ data class JenkinsConfiguration(
     val jenkinsMetadataFile: String? = null,
 ) {
     companion object {
-        private val logger = LoggerFactory.getLogger(JenkinsConfiguration::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Parses Jenkins configuration from a map.
@@ -35,7 +35,7 @@ data class JenkinsConfiguration(
                 jenkinsMetadataFile = map["jenkins.metadata.file"] as? String,
             )
         } catch (e: Exception) {
-            logger.warn("Error parsing Jenkins configuration, using defaults", e)
+            logger.warn(e) { "Error parsing Jenkins configuration, using defaults" }
             JenkinsConfiguration()
         }
 
@@ -58,7 +58,7 @@ data class JenkinsConfiguration(
                         sourcesJar = libMap["sourcesJar"] as? String,
                     )
                 } catch (e: Exception) {
-                    logger.warn("Failed to parse shared library entry: $lib", e)
+                    logger.warn(e) { "Failed to parse shared library entry: $lib" }
                     null
                 }
             }

@@ -3,15 +3,15 @@ package com.github.albertocavalcante.groovylsp.providers.symbols
 import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovyparser.ast.safeRange
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.DocumentSymbol
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.SymbolKind
-import org.slf4j.LoggerFactory
 
-private val logger = LoggerFactory.getLogger("SymbolLspExtensions")
+private val logger = KotlinLogging.logger("SymbolLspExtensions")
 
 /**
  * Converts a [Symbol] into a [SymbolInformation] for use in LSP responses.
@@ -44,7 +44,7 @@ private fun Symbol.displayName(): String = when (this) {
             ?: node.declaringClass?.nameWithoutPackage
             ?: node.declaringClass?.name
             ?: run {
-                logger.warn("Constructor symbol missing declaring class; using fallback name.")
+                logger.warn { "Constructor symbol missing declaring class; using fallback name." }
                 "constructor"
             }
     } else {

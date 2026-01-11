@@ -10,6 +10,7 @@ import ch.epfl.scala.bsp4j.MavenDependencyModule
 import ch.epfl.scala.bsp4j.MavenDependencyModuleArtifact
 import com.github.groovylsp.bsp.maven.targets.MavenBuildTargetProvider
 import com.github.groovylsp.bsp.maven.workspace.MavenModuleInfo
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.artifact.DefaultArtifact
@@ -17,7 +18,6 @@ import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.graph.Dependency
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 
 /**
@@ -27,7 +27,7 @@ class MavenDependencyProvider(
     private val repositorySystem: RepositorySystem,
     private val sessionSupplier: () -> RepositorySystemSession,
 ) {
-    private val logger = LoggerFactory.getLogger(MavenDependencyProvider::class.java)
+    private val logger = KotlinLogging.logger {}
     private val targetProvider = MavenBuildTargetProvider()
 
     companion object {
@@ -125,7 +125,7 @@ class MavenDependencyProvider(
 
             deps.forEach { dep ->
                 if (dep.version.isNullOrBlank()) {
-                    logger.warn("Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}")
+                    logger.warn { "Skipping dependency with missing version: ${dep.groupId}:${dep.artifactId}" }
                     return@forEach
                 }
                 val artifact = DefaultArtifact(
@@ -159,10 +159,10 @@ class MavenDependencyProvider(
                     }
                 }
         } catch (e: org.eclipse.aether.resolution.DependencyResolutionException) {
-            logger.warn("Failed to resolve dependencies for ${module.moduleId}: ${e.message}")
+            logger.warn { "Failed to resolve dependencies for ${module.moduleId}: ${e.message}" }
             emptyList()
         } catch (e: Exception) {
-            logger.warn("Unexpected error resolving dependencies for ${module.moduleId}: ${e.message}")
+            logger.warn { "Unexpected error resolving dependencies for ${module.moduleId}: ${e.message}" }
             emptyList()
         }
     }

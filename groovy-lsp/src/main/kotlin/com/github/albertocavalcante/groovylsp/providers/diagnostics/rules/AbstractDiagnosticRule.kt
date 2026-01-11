@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
@@ -16,6 +17,9 @@ import java.net.URI
  */
 abstract class AbstractDiagnosticRule : DiagnosticRule {
 
+    /** Logger for error handling. Uses subclass name for per-rule filtering. */
+    protected val logger by lazy { KotlinLogging.logger(javaClass.name) }
+
     override suspend fun analyze(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
         // Skip analysis if there are syntax errors (unless rule explicitly allows it)
         if (context.hasErrors() && !allowsErroredCode()) {
@@ -26,7 +30,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 // Log error but don't propagate - rules should be isolated
-                org.slf4j.LoggerFactory.getLogger(javaClass).error("Rule $id failed", error)
+                logger.error(error) { "Rule $id failed" }
             }
             .getOrElse { emptyList() }
     }

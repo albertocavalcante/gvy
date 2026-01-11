@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins.metadata
 
 import com.github.albertocavalcante.groovyjenkins.metadata.enrichment.EnrichmentMetadataLoader
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Loads Jenkins metadata based on Jenkins LTS version.
@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory
  * take priority over bundled to provide more accurate/complete parameter information.
  */
 class VersionedMetadataLoader {
-    private val logger = LoggerFactory.getLogger(VersionedMetadataLoader::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val bundledLoader = BundledJenkinsMetadataLoader()
     private val enrichmentLoader = EnrichmentMetadataLoader()
@@ -42,11 +42,11 @@ class VersionedMetadataLoader {
             val versionResource = javaClass.getResourceAsStream(versionPath)
 
             if (versionResource != null) {
-                logger.debug("Loading version-specific metadata for LTS {}", ltsVersion)
+                logger.debug { "Loading version-specific metadata for LTS $ltsVersion" }
                 // TODO: Parse version-specific JSON when available
                 versionResource.close()
             } else {
-                logger.debug("No version-specific metadata for LTS {}, using bundled", ltsVersion)
+                logger.debug { "No version-specific metadata for LTS $ltsVersion, using bundled" }
             }
         }
 

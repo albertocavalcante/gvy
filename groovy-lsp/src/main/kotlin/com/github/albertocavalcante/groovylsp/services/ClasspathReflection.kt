@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.reflect.Modifier
 
 interface ClasspathReflection {
@@ -21,7 +21,7 @@ data class ReflectedField(
 )
 
 class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader) : ClasspathReflection {
-    private val logger = LoggerFactory.getLogger(JvmClasspathReflection::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun getMethods(className: String): List<ReflectedMethod> = runCatching {
         val clazz = classLoaderProvider().loadClass(className)
@@ -73,17 +73,17 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
     }.getOrElse { throwable ->
         when (throwable) {
             is ClassNotFoundException -> {
-                logger.debug("Class not found on classpath: $className", throwable)
+                logger.debug(throwable) { "Class not found on classpath: $className" }
                 emptyList()
             }
 
             is NoClassDefFoundError -> {
-                logger.debug("Class definition not found: $className", throwable)
+                logger.debug(throwable) { "Class definition not found: $className" }
                 emptyList()
             }
 
             is Exception -> {
-                logger.error("Error reflecting on class $className", throwable)
+                logger.error(throwable) { "Error reflecting on class $className" }
                 emptyList()
             }
 
@@ -97,7 +97,7 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 is ClassNotFoundException -> null
                 is NoClassDefFoundError -> null
                 is Exception -> {
-                    logger.error("Error loading class $className", throwable)
+                    logger.error(throwable) { "Error loading class $className" }
                     null
                 }
 

@@ -17,7 +17,7 @@ import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import java.util.jar.JarFile
 
@@ -31,7 +31,7 @@ import java.util.jar.JarFile
  */
 class JenkinsPluginMetadataExtractor {
 
-    private val logger = LoggerFactory.getLogger(JenkinsPluginMetadataExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Extract all step definitions from a plugin JAR.
@@ -41,10 +41,10 @@ class JenkinsPluginMetadataExtractor {
      * @return List of extracted step metadata
      */
     fun extractFromJar(jarPath: Path, pluginId: String): List<JenkinsStepMetadata> {
-        logger.debug("Extracting step metadata from: {}", jarPath)
+        logger.debug { "Extracting step metadata from: $jarPath" }
 
         if (!jarPath.toFile().exists()) {
-            logger.warn("JAR file does not exist: {}", jarPath)
+            logger.warn { "JAR file does not exist: $jarPath" }
             return emptyList()
         }
 
@@ -74,9 +74,9 @@ class JenkinsPluginMetadataExtractor {
                     }
                 }
 
-            logger.info("Extracted {} steps from {}", steps.size, jarPath.fileName)
+            logger.info { "Extracted ${steps.size} steps from ${jarPath.fileName}" }
         } catch (e: Exception) {
-            logger.error("Failed to extract metadata from JAR: {}", jarPath, e)
+            logger.error(e) { "Failed to extract metadata from JAR: $jarPath" }
         }
 
         return steps
@@ -109,13 +109,13 @@ class JenkinsPluginMetadataExtractor {
                 // Try to derive step name from enclosing class name
                 stepName = deriveStepNameFromDescriptor(classInfo)
                 if (stepName == null) {
-                    logger.debug("Skipping DescriptorImpl with no derivable step name: {}", classInfo.name)
+                    logger.debug { "Skipping DescriptorImpl with no derivable step name: ${classInfo.name}" }
                 }
             }
 
             val validStepName = stepName?.takeUnless { shouldSkipSymbol(it) }
             if (validStepName != null) {
-                logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
+                logger.debug { "Found @Symbol step: $validStepName in class ${classInfo.name}" }
 
                 val parameters = extractParameters(classInfo)
 
@@ -163,7 +163,7 @@ class JenkinsPluginMetadataExtractor {
 
         // Validate it's a reasonable step name
         return if (stepName.isNotBlank() && stepName.length > 1) {
-            logger.debug("Derived step name '{}' from DescriptorImpl: {}", stepName, className)
+            logger.debug { "Derived step name '$stepName' from DescriptorImpl: $className" }
             stepName
         } else {
             null
@@ -201,7 +201,7 @@ class JenkinsPluginMetadataExtractor {
 
         if (stepName.isBlank()) return null
 
-        logger.debug("Found StepDescriptor: {} -> {}", classInfo.name, stepName)
+        logger.debug { "Found StepDescriptor: ${classInfo.name} -> $stepName" }
 
         return JenkinsStepMetadata(
             name = stepName,
@@ -276,7 +276,7 @@ class JenkinsPluginMetadataExtractor {
     fun extractDocumentationFromSources(sourcesJarPath: Path, className: String): String? {
         // TODO: Implement source parsing for Javadoc extraction
         // This would parse .java files in the sources JAR
-        logger.debug("Source documentation extraction not yet implemented for: {}", className)
+        logger.debug { "Source documentation extraction not yet implemented for: $className" }
         return null
     }
 
@@ -292,7 +292,7 @@ class JenkinsPluginMetadataExtractor {
      * @return List of extracted global variable metadata
      */
     fun extractGlobalVariables(jarPath: Path, pluginId: String): List<GlobalVariableMetadata> {
-        logger.debug("Extracting global variables from: {}", jarPath)
+        logger.debug { "Extracting global variables from: $jarPath" }
 
         if (!jarPath.toFile().exists()) {
             return emptyList()
@@ -310,7 +310,7 @@ class JenkinsPluginMetadataExtractor {
                             .map { it.trim() }
                             .filter { it.isNotEmpty() && !it.startsWith("#") }
                             .forEach { className ->
-                                logger.debug("Found GlobalVariable in services: {}", className)
+                                logger.debug { "Found GlobalVariable in services: $className" }
                                 // Variable name is typically the simple class name in lowerCamelCase
                                 val varName = className.simpleClassName()
                                     .removeSuffix("Global")
@@ -347,7 +347,7 @@ class JenkinsPluginMetadataExtractor {
                             val varName = extractSymbolName(symbolValue)
 
                             if (varName != null && variables.none { it.name == varName }) {
-                                logger.debug("Found @Symbol GlobalVariable: {} -> {}", varName, classInfo.name)
+                                logger.debug { "Found @Symbol GlobalVariable: $varName -> ${classInfo.name}" }
                                 variables.add(
                                     GlobalVariableMetadata(
                                         name = varName,
@@ -360,9 +360,9 @@ class JenkinsPluginMetadataExtractor {
                     }
                 }
 
-            logger.info("Extracted {} global variables from {}", variables.size, jarPath.fileName)
+            logger.info { "Extracted ${variables.size} global variables from ${jarPath.fileName}" }
         } catch (e: Exception) {
-            logger.error("Failed to extract global variables from JAR: {}", jarPath, e)
+            logger.error(e) { "Failed to extract global variables from JAR: $jarPath" }
         }
 
         return variables

@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.testing.api.TestCommand
 import com.github.albertocavalcante.groovylsp.testing.api.TestSuite
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.PathNotFoundException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -31,7 +32,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlin.io.path.name
 
-private val logger = LoggerFactory.getLogger("StepExecutors")
+private val logger = KotlinLogging.logger("StepExecutors")
 
 // ============================================================================
 // Custom Request Routing
@@ -200,7 +200,7 @@ class ShutdownStepExecutor : StepExecutor<ScenarioStep.Shutdown> {
         val start = System.nanoTime()
         context.session.server.shutdown().get(timeout, TimeUnit.MILLISECONDS)
         val elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis()
-        logger.info("Shutdown completed in {} ms", elapsedMs)
+        logger.info { "Shutdown completed in $elapsedMs ms" }
     }
 }
 
@@ -305,7 +305,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         val paramsObject = paramsNode?.toJavaObject()
         val timeout = step.timeoutMs ?: 30_000L
 
-        logger.info("Sending request '{}' with params: {}", step.method, paramsObject)
+        logger.info { "Sending request '${step.method}' with params: $paramsObject" }
 
         // Route custom @JsonRequest methods through typed proxy for proper response deserialization.
         // Standard LSP methods use the generic endpoint.request() fallback.
@@ -319,33 +319,33 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
 
         val response = try {
             if (customRequest != null) {
-                logger.info("Using typed proxy for custom method '{}'", step.method)
+                logger.info { "Using typed proxy for custom method '${step.method}'" }
                 val future = customRequest.invoke(context.session.groovyServer, paramsObject)
-                logger.info("Custom request future created for '{}', waiting for response...", step.method)
+                logger.info { "Custom request future created for '${step.method}', waiting for response..." }
                 val result = future.get(timeout, TimeUnit.MILLISECONDS)
-                logger.info("Custom request '{}' completed successfully", step.method)
+                logger.info { "Custom request '${step.method}' completed successfully" }
                 result
             } else {
                 // Standard LSP method - use generic endpoint
                 val future = context.session.endpoint.request(step.method, paramsObject)
-                logger.info("Request future created for '{}', waiting for response...", step.method)
+                logger.info { "Request future created for '${step.method}', waiting for response..." }
                 val result = future.get(timeout, TimeUnit.MILLISECONDS)
-                logger.info("Request '{}' completed successfully", step.method)
+                logger.info { "Request '${step.method}' completed successfully" }
                 result
             }
         } catch (e: Exception) {
-            logger.error("Request '{}' failed with exception: {} - {}", step.method, e::class.simpleName, e.message)
+            logger.error { "Request '${step.method}' failed with exception: ${e::class.simpleName} - ${e.message}" }
             throw e
         }
 
-        logger.info("Raw response for {}: {} (type={})", step.method, response, response?.javaClass?.simpleName)
+        logger.info { "Raw response for ${step.method}: $response (type=${response?.javaClass?.simpleName})" }
         val responseNode = wrapJavaObject(response) // Convert whatever Gson returned to JsonElement
         val normalized = context.normalizeResponse(step.method, responseNode)
         context.lastResult = normalized
-        logger.info("Response for {}: {}", step.method, normalized)
+        logger.info { "Response for ${step.method}: $normalized" }
 
         step.saveAs?.let { name ->
-            logger.info("Saving result as '{}': {}", name, normalized)
+            logger.info { "Saving result as '$name': $normalized" }
             context.saveResult(name, normalized)
         }
 
@@ -396,11 +396,9 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             }
 
             if (context.session.client.peekNotification(nextStep.method, nextStepPredicate)) {
-                logger.info(
-                    "Skipping optional step '{}' - next step's notification '{}' already available",
-                    step.method,
-                    nextStep.method,
-                )
+                logger.info {
+                    "Skipping optional step '${step.method}' - next step's notification '${nextStep.method}' already available"
+                }
                 return
             }
         }
@@ -436,7 +434,7 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
                         if (!success) {
                             val failureReason = result.exceptionOrNull()?.message ?: "Check failed"
                             checkFailureReasons.add("${check.jsonPath} ${check.expect.type}: $failureReason")
-                            logger.debug("Notification check failed: {}", failureReason)
+                            logger.debug { "Notification check failed: $failureReason" }
                         }
                         success
                     }
@@ -445,14 +443,14 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             )
         } catch (e: TimeoutException) {
             if (step.optional) {
-                logger.info("Optional step '{}' timed out after {}ms - continuing", step.method, timeout)
+                logger.info { "Optional step '${step.method}' timed out after ${timeout}ms - continuing" }
                 return
             }
             throw e
         }
 
         if (waitResult.skipped) {
-            logger.info("Skipping optional step '{}' - next notification arrived", step.method)
+            logger.info { "Skipping optional step '${step.method}' - next notification arrived" }
             return
         }
 
@@ -482,8 +480,8 @@ class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
             try {
                 context.evaluateCheck(sourceNode, check)
             } catch (e: AssertionError) {
-                logger.error("Assertion failed in step: {}", step)
-                logger.error("Source node: {}", sourceNode)
+                logger.error { "Assertion failed in step: $step" }
+                logger.error { "Source node: $sourceNode" }
                 throw e
             }
         }
@@ -493,7 +491,7 @@ class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
 class WaitStepExecutor : StepExecutor<ScenarioStep.Wait> {
     override fun execute(step: ScenarioStep.Wait, context: ScenarioContext, nextStep: ScenarioStep?) {
         Thread.sleep(step.duration)
-        logger.info("Waited for {} ms", step.duration)
+        logger.info { "Waited for ${step.duration} ms" }
     }
 }
 
@@ -515,7 +513,7 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
         val downloader = PluginDownloader(cacheDir)
 
         try {
-            logger.info("Downloading plugin {}:{}", pluginId, version)
+            logger.info { "Downloading plugin $pluginId:$version" }
             val path = runBlocking {
                 downloader.download(pluginId, version)
             }
@@ -563,7 +561,7 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
                 interpolatedCommand.split(" ") + interpolatedArgs
             }
 
-        logger.info("Executing CLI command: {}", fullCommand.joinToString(" "))
+        logger.info { "Executing CLI command: ${fullCommand.joinToString(" ")}" }
 
         val builder = ProcessBuilder(fullCommand)
         builder.directory(context.workspace.rootDir.toFile())
@@ -592,9 +590,9 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
         val stdout = outputFile.readText()
         val stderr = errorFile.readText()
 
-        logger.info("CLI exit code: {}", exitCode)
+        logger.info { "CLI exit code: $exitCode" }
         if (stderr.isNotEmpty()) {
-            logger.warn("CLI stderr: {}", stderr)
+            logger.warn { "CLI stderr: $stderr" }
         }
 
         if (exitCode != step.expectExitCode) {
@@ -651,7 +649,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
 
         if (updateSnapshot) {
-            logger.warn("Updating golden file: {}", expectedFile)
+            logger.warn { "Updating golden file: $expectedFile" }
             Files.createDirectories(expectedFile.parent)
 
             // For text/JSON files, normalize paths to placeholders for portability
@@ -773,7 +771,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                 }
             }
         }
-        logger.info("Golden verification passed for {}", expectedFile.fileName)
+        logger.info { "Golden verification passed for ${expectedFile.fileName}" }
     }
 }
 

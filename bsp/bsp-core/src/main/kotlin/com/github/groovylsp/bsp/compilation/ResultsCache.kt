@@ -1,7 +1,7 @@
 package com.github.groovylsp.bsp.compilation
 
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ResultsCache {
 
-    private val logger = LoggerFactory.getLogger(ResultsCache::class.java)
+    private val logger = KotlinLogging.logger {}
     private val lastSuccessful = ConcurrentHashMap<BuildTargetIdentifier, LastSuccessfulResult>()
 
     /**
@@ -46,13 +46,13 @@ class ResultsCache {
 
         // Check hash match
         if (cached.inputsHash != currentInputsHash) {
-            logger.debug("Cache miss for $targetId: hash changed")
+            logger.debug { "Cache miss for $targetId: hash changed" }
             return false
         }
 
         // NOTE: We assume classes directory exists - the build system
         //   is responsible for not deleting output directories
-        logger.debug("Cache hit for $targetId")
+        logger.debug { "Cache hit for $targetId" }
         return true
     }
 
@@ -67,7 +67,7 @@ class ResultsCache {
      */
     fun recordSuccess(targetId: BuildTargetIdentifier, result: LastSuccessfulResult) {
         lastSuccessful[targetId] = result
-        logger.debug("Cached successful compilation for $targetId at ${result.timestamp}")
+        logger.debug { "Cached successful compilation for $targetId at ${result.timestamp}" }
     }
 
     /**
@@ -81,7 +81,7 @@ class ResultsCache {
     fun invalidate(targetId: BuildTargetIdentifier) {
         val removed = lastSuccessful.remove(targetId)
         if (removed != null) {
-            logger.debug("Invalidated cache for $targetId")
+            logger.debug { "Invalidated cache for $targetId" }
         }
     }
 
@@ -94,7 +94,7 @@ class ResultsCache {
     fun invalidateAll() {
         val count = lastSuccessful.size
         lastSuccessful.clear()
-        logger.info("Invalidated all caches ($count targets)")
+        logger.info { "Invalidated all caches ($count targets)" }
     }
 
     /**

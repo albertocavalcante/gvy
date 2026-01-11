@@ -10,7 +10,7 @@ import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.security.HmacSigner
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
 import com.github.albertocavalcante.groovyjupyter.zmq.WireMessage
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.zeromq.ZMQ
 import java.io.Closeable
 
@@ -25,7 +25,7 @@ class KernelServer(
     val handlers: List<MessageHandler>,
     private val heartbeatHandler: HeartbeatHandler,
 ) : Closeable {
-    private val logger = LoggerFactory.getLogger(KernelServer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @Volatile
     var isRunning: Boolean = true
@@ -42,7 +42,7 @@ class KernelServer(
      * Polls Shell, Control, and Heartbeat sockets and dispatches messages.
      */
     fun run() {
-        logger.info("Starting kernel server main loop")
+        logger.info { "Starting kernel server main loop" }
 
         connection.bind()
 
@@ -77,14 +77,14 @@ class KernelServer(
         }
 
         poller.close()
-        logger.info("Kernel server stopped")
+        logger.info { "Kernel server stopped" }
     }
 
     /**
      * Stop the server gracefully.
      */
     fun shutdown() {
-        logger.info("Shutdown requested")
+        logger.info { "Shutdown requested" }
         isRunning = false
     }
 
@@ -94,7 +94,7 @@ class KernelServer(
     }
 
     private fun handleSocketMessage(socket: ZMQ.Socket, socketName: String) {
-        logger.debug("Received message on {} socket", socketName)
+        logger.debug { "Received message on $socketName socket" }
 
         // Receive all frames
         val frames = mutableListOf<ByteArray>()
@@ -106,11 +106,11 @@ class KernelServer(
         }
 
         if (frames.isEmpty()) {
-            logger.debug("No frames received on {}", socketName)
+            logger.debug { "No frames received on $socketName" }
             return
         }
 
-        logger.debug("Received {} frames on {}", frames.size, socketName)
+        logger.debug { "Received ${frames.size} frames on $socketName" }
 
         try {
             // Parse wire message
@@ -120,27 +120,27 @@ class KernelServer(
             val jupyterMessage = wireMessage.toJupyterMessage()
 
             val msgType = jupyterMessage.header.msgType
-            logger.info("Received message type: {} on {}", msgType, socketName)
+            logger.info { "Received message type: $msgType on $socketName" }
 
             // Find handler
             val messageType = MessageType.fromValue(msgType)
             if (messageType == null) {
-                logger.warn("Unknown message type: {}", msgType)
+                logger.warn { "Unknown message type: $msgType" }
                 return
             }
 
             val handler = findHandler(messageType)
             if (handler == null) {
-                logger.warn("No handler for message type: {}", messageType)
+                logger.warn { "No handler for message type: $messageType" }
                 return
             }
 
             // Dispatch to handler
-            logger.debug("Dispatching {} to {}", messageType, handler::class.simpleName)
+            logger.debug { "Dispatching $messageType to ${handler::class.simpleName}" }
             handler.handle(jupyterMessage, connection)
-            logger.debug("Handler completed for {}", messageType)
+            logger.debug { "Handler completed for $messageType" }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-            logger.error("Error processing message on {}: {}", socketName, e.message, e)
+            logger.error(e) { "Error processing message on $socketName: ${e.message}" }
         }
     }
 

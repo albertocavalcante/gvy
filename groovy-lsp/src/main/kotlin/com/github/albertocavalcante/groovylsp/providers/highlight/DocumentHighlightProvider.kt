@@ -6,6 +6,7 @@ import com.github.albertocavalcante.groovylsp.converters.toLspRange
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -25,7 +26,6 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.DocumentHighlight
 import org.eclipse.lsp4j.DocumentHighlightKind
 import org.eclipse.lsp4j.Position
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -34,7 +34,7 @@ import java.net.URI
  * This is similar to references but limited to a single document and includes read/write semantics.
  */
 class DocumentHighlightProvider(private val compilationService: GroovyCompilationService) {
-    private val logger = LoggerFactory.getLogger(DocumentHighlightProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Find all highlights for the symbol at the given position.
@@ -44,7 +44,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
      * @return List of document highlights with read/write classification
      */
     fun provideHighlights(uri: String, position: Position): List<DocumentHighlight> {
-        logger.debug("Finding highlights for $uri at ${position.line}:${position.character}")
+        logger.debug { "Finding highlights for $uri at ${position.line}:${position.character}" }
 
         val documentUri = URI.create(uri)
         val groovyPosition = position.toGroovyPosition()
@@ -55,24 +55,24 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
 
         val resolved = when {
             astModel == null -> {
-                logger.debug("No AST model available for $uri")
+                logger.debug { "No AST model available for $uri" }
                 null
             }
 
             symbolTable == null -> {
-                logger.debug("No symbol table available for $uri")
+                logger.debug { "No symbol table available for $uri" }
                 null
             }
 
             targetNode == null || !targetNode.isHighlightableSymbol() -> {
-                logger.debug("No highlightable symbol at position")
+                logger.debug { "No highlightable symbol at position" }
                 null
             }
 
             else -> {
                 val definition = targetNode.resolveToDefinition(astModel, symbolTable, strict = false)
                 if (definition == null) {
-                    logger.debug("Could not resolve definition for node")
+                    logger.debug { "Could not resolve definition for node" }
                     null
                 } else {
                     Triple(definition, astModel, symbolTable)
@@ -124,7 +124,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
                 }
             }
 
-        logger.debug("Found ${highlights.size} highlights")
+        logger.debug { "Found ${highlights.size} highlights" }
         return highlights
     }
 
@@ -180,7 +180,7 @@ class DocumentHighlightProvider(private val compilationService: GroovyCompilatio
     private fun ASTNode.isHighlightableSymbol(): Boolean = HIGHLIGHTABLE_TYPES.contains(this::class)
 
     companion object {
-        private val logger = LoggerFactory.getLogger(DocumentHighlightProvider::class.java)
+        private val logger = KotlinLogging.logger {}
 
         private val ASSIGNMENT_OPERATORS = setOf(
             "=", "+=", "-=", "*=", "/=", "%=", // Arithmetic

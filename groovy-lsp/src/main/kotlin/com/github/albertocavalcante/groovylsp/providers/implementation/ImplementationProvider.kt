@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -16,7 +17,6 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
-import org.slf4j.LoggerFactory
 import java.net.URI
 import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
@@ -29,23 +29,23 @@ import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPos
  * - Abstract method -> Concrete overrides
  */
 class ImplementationProvider(private val compilationService: GroovyCompilationService) {
-    private val logger = LoggerFactory.getLogger(ImplementationProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Find all implementations for the symbol at the given position.
      */
     @Suppress("TooGenericExceptionCaught")
     fun provideImplementations(uri: String, position: Position): Flow<Location> = channelFlow {
-        logger.debug("Finding implementations for $uri at ${position.line}:${position.character}")
+        logger.debug { "Finding implementations for $uri at ${position.line}:${position.character}" }
 
         try {
             val context = createContext(uri, position.toGroovyPosition()) ?: return@channelFlow
             val target = identifyTarget(context) ?: return@channelFlow
 
-            logger.debug("Implementation target: ${target.javaClass.simpleName}")
+            logger.debug { "Implementation target: ${target.javaClass.simpleName}" }
             findImplementations(target, context.visitor)
         } catch (e: Exception) {
-            logger.error("Error finding implementations", e)
+            logger.error(e) { "Error finding implementations" }
         }
     }
 
@@ -102,7 +102,7 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
                     node.isInterface -> ImplementationTarget.InterfaceClass(node)
                     node.isAbstract -> ImplementationTarget.AbstractClass(node)
                     else -> {
-                        logger.debug("Node is a concrete class, no implementations to find")
+                        logger.debug { "Node is a concrete class, no implementations to find" }
                         null
                     }
                 }
@@ -120,14 +120,14 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
                     }
 
                     else -> {
-                        logger.debug("Node is a concrete method, no implementations to find")
+                        logger.debug { "Node is a concrete method, no implementations to find" }
                         null
                     }
                 }
             }
 
             else -> {
-                logger.debug("Node type ${node.javaClass.simpleName} is not an implementation target")
+                logger.debug { "Node type ${node.javaClass.simpleName} is not an implementation target" }
                 null
             }
         }

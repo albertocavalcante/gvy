@@ -10,7 +10,7 @@ import ch.epfl.scala.bsp4j.SourcesParams
 import ch.epfl.scala.bsp4j.TestResult
 import com.github.groovylsp.bsp.client.BuildServerConnection
 import com.github.groovylsp.bsp.model.BuildTargetCache
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.Closeable
 import java.nio.file.Path
 
@@ -40,7 +40,7 @@ class BspSession(
     private val client: BspClientHandler,
     private val serverProcess: Process,
 ) : Closeable {
-    private val logger = LoggerFactory.getLogger(BspSession::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @Volatile
     private var closed = false
@@ -58,7 +58,7 @@ class BspSession(
             return SessionError.InvalidOperation("No targets to compile").left()
         }
 
-        logger.info("Compiling ${targetIds.size} targets")
+        logger.info { "Compiling ${targetIds.size} targets" }
         return connection.buildTargetCompile(ch.epfl.scala.bsp4j.CompileParams(targetIds)).mapLeft { error ->
             SessionError.OperationFailed("Compilation failed", error.message)
         }
@@ -75,11 +75,11 @@ class BspSession(
 
         val target = buildTargets.findTargetForSource(file)
         if (target == null) {
-            logger.warn("No build targets found for file: $file")
+            logger.warn { "No build targets found for file: $file" }
             return SessionError.NoTargetsFound("No build targets contain file: $file").left()
         }
 
-        logger.info("Found target ${target.id.uri} for file $file")
+        logger.info { "Found target ${target.id.uri} for file $file" }
         return compile(listOf(target.id))
     }
 
@@ -96,7 +96,7 @@ class BspSession(
             return SessionError.InvalidOperation("No targets to test").left()
         }
 
-        logger.info("Testing ${targetIds.size} targets")
+        logger.info { "Testing ${targetIds.size} targets" }
         return connection.buildTargetTest(ch.epfl.scala.bsp4j.TestParams(targetIds)).mapLeft { error ->
             SessionError.OperationFailed("Test execution failed", error.message)
         }
@@ -110,7 +110,7 @@ class BspSession(
     suspend fun reload(): Either<SessionError, Unit> {
         ensureNotClosed()
 
-        logger.info("Reloading build targets")
+        logger.info { "Reloading build targets" }
 
         return connection.workspaceBuildTargets()
             .mapLeft { error -> SessionError.OperationFailed("Failed to reload targets", error.message) }
@@ -128,13 +128,13 @@ class BspSession(
                                 try {
                                     java.nio.file.Paths.get(java.net.URI.create(sourceItem.uri))
                                 } catch (e: Exception) {
-                                    logger.debug("Failed to parse source URI: ${sourceItem.uri}")
+                                    logger.debug { "Failed to parse source URI: ${sourceItem.uri}" }
                                     null
                                 }
                             } ?: emptyList()
                             buildTargets.updateSources(item.target, sources)
                         }
-                        logger.info("Build targets reloaded: ${targets.size} targets")
+                        logger.info { "Build targets reloaded: ${targets.size} targets" }
                     }
             }
     }
@@ -152,7 +152,7 @@ class BspSession(
     suspend fun cleanCache(targetIds: List<BuildTargetIdentifier>): Either<SessionError, Unit> {
         ensureNotClosed()
 
-        logger.info("Cleaning cache for ${targetIds.size} targets")
+        logger.info { "Cleaning cache for ${targetIds.size} targets" }
         return connection.buildTargetCleanCache(ch.epfl.scala.bsp4j.CleanCacheParams(targetIds))
             .mapLeft { error -> SessionError.OperationFailed("Cache clean failed", error.message) }
             .map { Unit }
@@ -185,7 +185,7 @@ class BspSession(
     override fun close() {
         if (closed) return
 
-        logger.info("Closing BSP session")
+        logger.info { "Closing BSP session" }
         closed = true
 
         try {
@@ -195,7 +195,7 @@ class BspSession(
                 serverProcess.destroyForcibly()
             }
         } catch (e: Exception) {
-            logger.error("Error closing BSP session: ${e.message}", e)
+            logger.error(e) { "Error closing BSP session: ${e.message}" }
         }
     }
 

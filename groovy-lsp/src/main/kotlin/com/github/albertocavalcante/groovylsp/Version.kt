@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.util.Properties
 
@@ -10,7 +10,7 @@ import java.util.Properties
  */
 object Version {
 
-    private val logger = LoggerFactory.getLogger(Version::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val properties: Properties by lazy {
         loadVersionProperties()
@@ -23,9 +23,9 @@ object Version {
     val current: String by lazy {
         properties.getProperty("version", "unknown").also { version ->
             if (version == "unknown") {
-                logger.warn("Could not determine version from build properties, using fallback")
+                logger.warn { "Could not determine version from build properties, using fallback" }
             } else {
-                logger.debug("Loaded version: $version")
+                logger.debug { "Loaded version: $version" }
             }
         }
     }
@@ -50,17 +50,17 @@ object Version {
         val inputStream = Version::class.java.classLoader.getResourceAsStream(resourceName)
 
         if (inputStream == null) {
-            logger.warn("{} not found in classpath", resourceName)
+            logger.warn { "$resourceName not found in classpath" }
             return properties
         }
 
         try {
             inputStream.use(properties::load)
-            logger.debug("Successfully loaded version properties")
+            logger.debug { "Successfully loaded version properties" }
         } catch (e: IOException) {
-            logger.error("Failed to read {}", resourceName, e)
+            logger.error(e) { "Failed to read $resourceName" }
         } catch (e: IllegalArgumentException) {
-            logger.error("Failed to parse {}", resourceName, e)
+            logger.error(e) { "Failed to parse $resourceName" }
         }
 
         return properties

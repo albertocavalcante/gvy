@@ -16,6 +16,8 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
+    // kotlin-logging in transitive deps needs SLF4J impl at test runtime
+    testRuntimeOnly(libs.logback.classic)
 }
 
 tasks.test {

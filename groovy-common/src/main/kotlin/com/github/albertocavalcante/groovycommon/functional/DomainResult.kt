@@ -35,7 +35,7 @@ data class DomainError(val reason: String, val source: String = "unknown", val c
  * val result = parseConfig(userInput)
  *     .map { it.validate() }
  *     .fold(
- *         ifLeft = { error -> logger.warn("Parse failed: ${error.reason}") },
+ *         ifLeft = { error -> logger.warn { "Parse failed: ${error.reason}" } },
  *         ifRight = { config -> applyConfig(config) }
  *     )
  * ```

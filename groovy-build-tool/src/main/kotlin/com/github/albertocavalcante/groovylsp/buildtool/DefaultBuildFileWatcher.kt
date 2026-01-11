@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -8,7 +9,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.nio.file.ClosedWatchServiceException
 import java.nio.file.FileSystems
@@ -48,7 +48,7 @@ internal class DefaultBuildFileWatcher(
     private val debounceDelayMs: Long = DEFAULT_BUILD_FILE_CHANGE_DELAY_MS,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : BuildToolFileWatcher {
-    private val logger = LoggerFactory.getLogger(DefaultBuildFileWatcher::class.java)
+    private val logger = KotlinLogging.logger {}
     private var watchService: WatchService? = null
     private var watchJob: Job? = null
     private var debounceJob: Job? = null
@@ -63,7 +63,7 @@ internal class DefaultBuildFileWatcher(
     @Suppress("TooGenericExceptionCaught")
     override fun startWatching(projectDir: Path) {
         if (watchJob?.isActive == true) {
-            logger.debug("{} build file watcher already active for project", logLabel)
+            logger.debug { "$logLabel build file watcher already active for project" }
             return
         }
 
@@ -78,15 +78,15 @@ internal class DefaultBuildFileWatcher(
             )
             watchKeys[watchKey] = projectDir
 
-            logger.info("Started watching {} build files in: {}", logLabel, projectDir)
+            logger.info { "Started watching $logLabel build files in: $projectDir" }
 
             watchJob = coroutineScope.launch(Dispatchers.IO) {
                 watchLoop()
             }
         } catch (e: IOException) {
-            logger.error("IO error starting {} build file watcher", logLabel, e)
+            logger.error(e) { "IO error starting $logLabel build file watcher" }
         } catch (e: UnsupportedOperationException) {
-            logger.error("File watching not supported on this platform", e)
+            logger.error(e) { "File watching not supported on this platform" }
         }
     }
 
@@ -107,9 +107,9 @@ internal class DefaultBuildFileWatcher(
             watchService?.close()
             watchService = null
 
-            logger.info("Stopped {} build file watcher", logLabel)
+            logger.info { "Stopped $logLabel build file watcher" }
         } catch (e: IOException) {
-            logger.warn("IO error stopping {} build file watcher", logLabel, e)
+            logger.warn(e) { "IO error stopping $logLabel build file watcher" }
         } catch (e: ClosedWatchServiceException) {
             // Already closed, ignore - this is expected when stopping an already-stopped watcher
         }
@@ -129,15 +129,15 @@ internal class DefaultBuildFileWatcher(
             }
         } catch (e: ClosedWatchServiceException) {
             if (watchJob != null) {
-                logger.warn("Watch service closed unexpectedly", e)
+                logger.warn(e) { "Watch service closed unexpectedly" }
                 throw e
             } else {
-                logger.debug("Watch service closed, terminating watch loop.")
+                logger.debug { "Watch service closed, terminating watch loop." }
             }
         } catch (e: IOException) {
-            logger.error("IO error in {} build file watch loop", logLabel, e)
+            logger.error(e) { "IO error in $logLabel build file watch loop" }
         } catch (e: Exception) {
-            logger.error("Unexpected error in {} build file watch loop", logLabel, e)
+            logger.error(e) { "Unexpected error in $logLabel build file watch loop" }
         }
     }
 
@@ -149,12 +149,12 @@ internal class DefaultBuildFileWatcher(
             PollResult.Success(watchKey)
         }
     } catch (e: InterruptedException) {
-        logger.debug("Watch service interrupted")
+        logger.debug { "Watch service interrupted" }
         PollResult.Interrupted
     }
 
     private fun handleUnknownWatchKey(watchKey: WatchKey) {
-        logger.warn("Unknown watch key, skipping events")
+        logger.warn { "Unknown watch key, skipping events" }
         watchKey.reset()
     }
 
@@ -180,7 +180,7 @@ internal class DefaultBuildFileWatcher(
 
         val stillValid = watchKey.reset()
         if (!stillValid) {
-            logger.warn("Watch key no longer valid for: {}", projectDir)
+            logger.warn { "Watch key no longer valid for: $projectDir" }
             watchKeys.remove(watchKey)
         }
 
@@ -192,7 +192,7 @@ internal class DefaultBuildFileWatcher(
         val kind = event.kind()
 
         if (kind == StandardWatchEventKinds.OVERFLOW) {
-            logger.warn("File system watch overflow - some events may have been lost")
+            logger.warn { "File system watch overflow - some events may have been lost" }
             return
         }
 
@@ -230,7 +230,7 @@ internal class DefaultBuildFileWatcher(
             -> handleBuildFileModification(fullPath, filenameStr, projectDir)
 
             StandardWatchEventKinds.ENTRY_DELETE -> {
-                logger.info("{} build file deleted: {}", logLabel, filenameStr)
+                logger.info { "$logLabel build file deleted: $filenameStr" }
             }
         }
     }
@@ -250,7 +250,7 @@ internal class DefaultBuildFileWatcher(
             return
         }
 
-        logger.info("{} build file changed: {}", logLabel, filenameStr)
+        logger.info { "$logLabel build file changed: $filenameStr" }
         scheduleDebouncedCallback(projectDir, filenameStr)
     }
 
@@ -275,7 +275,7 @@ internal class DefaultBuildFileWatcher(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.error("{} build file change handling failed for {}", logLabel, filenameStr, e)
+                logger.error(e) { "$logLabel build file change handling failed for $filenameStr" }
             }
         }
     }

@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -14,7 +14,7 @@ import java.nio.file.Paths
 import kotlin.io.path.exists
 
 class MavenBuildTool : BuildTool {
-    private val logger = LoggerFactory.getLogger(MavenBuildTool::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override val name: String = "Maven"
 
@@ -35,7 +35,7 @@ class MavenBuildTool : BuildTool {
         }
 
         onProgress?.invoke("Resolving Maven dependencies...")
-        logger.info("Resolving Maven dependencies for: $workspaceRoot")
+        logger.info { "Resolving Maven dependencies for: $workspaceRoot" }
 
         val pomPath = workspaceRoot.resolve("pom.xml")
 
@@ -45,7 +45,7 @@ class MavenBuildTool : BuildTool {
             embeddedDeps
         } else {
             // Fallback to CLI-based resolution
-            logger.info("Embedded resolution returned no results, falling back to CLI")
+            logger.info { "Embedded resolution returned no results, falling back to CLI" }
             resolveViaCli(workspaceRoot)
         }
 
@@ -66,7 +66,7 @@ class MavenBuildTool : BuildTool {
             dependencies
         }
 
-        logger.info("Resolved ${finalDependencies.size} Maven dependencies")
+        logger.info { "Resolved ${finalDependencies.size} Maven dependencies" }
         return WorkspaceResolution(finalDependencies, sourceDirs)
     }
 
@@ -77,11 +77,11 @@ class MavenBuildTool : BuildTool {
         }
 
         if (hasJenkinsCore) {
-            logger.debug("jenkins-core already present in dependencies")
+            logger.debug { "jenkins-core already present in dependencies" }
             return dependencies
         }
 
-        logger.info("Jenkinsfile detected but jenkins-core missing (likely 'provided' scope). Attempting injection.")
+        logger.info { "Jenkinsfile detected but jenkins-core missing (likely 'provided' scope). Attempting injection." }
 
         // Use repos from POM for resolution
         val model = runCatching {
@@ -93,7 +93,7 @@ class MavenBuildTool : BuildTool {
             factory.newInstance().build(request).effectiveModel
         }.onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.debug("Failed to build Maven model for Jenkins core injection; skipping injection", throwable)
+            logger.debug(throwable) { "Failed to build Maven model for Jenkins core injection; skipping injection" }
         }.getOrNull()
 
         val repositories = if (model != null) dependencyResolver.getRemoteRepositories(model) else emptyList()
@@ -109,7 +109,7 @@ class MavenBuildTool : BuildTool {
         }
 
         val jenkinsVersion = jenkinsVersionFromPom ?: "2.440.1" // Fallback to LTS baseline
-        logger.info("Attempting to inject jenkins-core version: {}", jenkinsVersion)
+        logger.info { "Attempting to inject jenkins-core version: $jenkinsVersion" }
 
         // Resolve the artifact using the determined version
         val jenkinsCore = dependencyResolver.resolveArtifact(
@@ -120,10 +120,10 @@ class MavenBuildTool : BuildTool {
         )
 
         return if (jenkinsCore != null) {
-            logger.info("Injected jenkins-core support: $jenkinsCore")
+            logger.info { "Injected jenkins-core support: $jenkinsCore" }
             dependencies + jenkinsCore
         } else {
-            logger.warn("Failed to inject jenkins-core; some Jenkins symbols may be unresolved")
+            logger.warn { "Failed to inject jenkins-core; some Jenkins symbols may be unresolved" }
             dependencies
         }
     }
@@ -132,7 +132,7 @@ class MavenBuildTool : BuildTool {
         runCatching { dependencyResolver.resolveDependencies(pomPath) }
             .onFailure { throwable ->
                 if (throwable is Error) throw throwable
-                logger.warn("Embedded Maven resolution failed, will try CLI fallback", throwable)
+                logger.warn(throwable) { "Embedded Maven resolution failed, will try CLI fallback" }
             }
             .getOrDefault(emptyList())
 
@@ -148,7 +148,7 @@ class MavenBuildTool : BuildTool {
                 "-Dmdep.outputFile=${cpFile.toAbsolutePath()}",
             )
 
-            logger.debug("Running Maven command: $command")
+            logger.debug { "Running Maven command: $command" }
             val processBuilder = ProcessBuilder(command)
             processBuilder.directory(workspaceRoot.toFile())
             processBuilder.redirectErrorStream(true)
@@ -163,7 +163,7 @@ class MavenBuildTool : BuildTool {
             val exitCode = process.waitFor()
 
             if (exitCode != 0) {
-                logger.error("Maven CLI dependency resolution failed. Output:\n$output")
+                logger.error { "Maven CLI dependency resolution failed. Output:\n$output" }
             } else {
                 val classpathString = Files.readString(cpFile)
                 result = classpathString
@@ -176,11 +176,11 @@ class MavenBuildTool : BuildTool {
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            logger.error("Maven CLI dependency resolution interrupted", e)
+            logger.error(e) { "Maven CLI dependency resolution interrupted" }
         } catch (e: java.io.IOException) {
-            logger.error("Failed to resolve Maven dependencies via CLI", e)
+            logger.error(e) { "Failed to resolve Maven dependencies via CLI" }
         } catch (e: SecurityException) {
-            logger.error("Failed to resolve Maven dependencies via CLI", e)
+            logger.error(e) { "Failed to resolve Maven dependencies via CLI" }
         } finally {
             Files.deleteIfExists(cpFile)
         }
@@ -212,23 +212,21 @@ class MavenBuildTool : BuildTool {
             runCatching { Files.readString(pomPath) }
                 .onSuccess { pomContents ->
                     if (!pomContents.contains("jacoco-maven-plugin")) {
-                        logger.warn(
-                            "JaCoCo Maven plugin not detected in pom.xml at {}. " +
+                        logger.warn {
+                            "JaCoCo Maven plugin not detected in pom.xml at ${pomPath.toAbsolutePath()}. " +
                                 "Coverage command may not generate coverage data. " +
-                                "Ensure the jacoco-maven-plugin is configured with the prepare-agent goal.",
-                            pomPath.toAbsolutePath(),
-                        )
+                                "Ensure the jacoco-maven-plugin is configured with the prepare-agent goal."
+                        }
                     }
                 }
                 .onFailure { throwable ->
-                    logger.warn("Failed to read pom.xml at $pomPath to verify JaCoCo configuration", throwable)
+                    logger.warn(throwable) { "Failed to read pom.xml at $pomPath to verify JaCoCo configuration" }
                 }
         } else {
-            logger.warn(
-                "No pom.xml found at {}. JaCoCo configuration cannot be verified; " +
-                    "coverage command may not generate coverage data.",
-                pomPath.toAbsolutePath(),
-            )
+            logger.warn {
+                "No pom.xml found at ${pomPath.toAbsolutePath()}. JaCoCo configuration cannot be verified; " +
+                    "coverage command may not generate coverage data."
+            }
         }
 
         val args = listOf("test", "-Dtest=$testArg", "jacoco:report")
