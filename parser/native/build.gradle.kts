@@ -22,6 +22,9 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.jqwik)
+    testRuntimeOnly(libs.junit.platform.launcher)
+    // kotlin-logging needs SLF4J impl at test runtime
+    testRuntimeOnly(libs.logback.classic)
 }
 
 jmh {

@@ -27,6 +27,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
+    // kotlin-logging needs SLF4J impl at test runtime
+    testRuntimeOnly(libs.logback.classic)
 }
 
 tasks.test {
