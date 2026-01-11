@@ -63,6 +63,14 @@ interface SourceNavigator {
      * This method first navigates to the class source, then uses JavaSourceInspector
      * to find the specific method declaration within the class.
      *
+     * TODO(#830): Add parameterTypes parameter for overload resolution
+     *   Current signature: navigateToMethodSource(classpathUri, className, methodName)
+     *   Proposed signature: navigateToMethodSource(classpathUri, className, methodName, parameterTypes: List<String>?)
+     *
+     *   When parameterTypes is null, match any overload (current behavior).
+     *   When parameterTypes is provided, match exact signature for precise navigation.
+     *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+     *
      * @param classpathUri URI of the class (jrt: or jar:file:...)
      * @param className Fully qualified class name (e.g., "java.util.ArrayList")
      * @param methodName Simple method name (e.g., "add")

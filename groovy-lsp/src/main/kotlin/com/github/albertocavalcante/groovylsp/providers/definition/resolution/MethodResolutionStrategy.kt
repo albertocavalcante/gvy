@@ -4,11 +4,14 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.slf4j.LoggerFactory
+import java.net.URI
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -51,8 +54,8 @@ class MethodResolutionStrategy(
 
         // Get argument count from method call for better overload resolution
         val argCount = when (val args = methodCall.arguments) {
-            is org.codehaus.groovy.ast.expr.ArgumentListExpression -> args.expressions.size
-            is org.codehaus.groovy.ast.expr.TupleExpression -> args.expressions.size
+            is ArgumentListExpression -> args.expressions.size
+            is TupleExpression -> args.expressions.size
             else -> null
         }
 
@@ -115,7 +118,7 @@ class MethodResolutionStrategy(
     @Suppress("TooGenericExceptionCaught")
     private suspend fun navigateToMethodSource(
         sourceNavigator: SourceNavigator,
-        classpathUri: java.net.URI,
+        classpathUri: URI,
         className: String,
         methodName: String,
     ): ResolutionResult? = try {

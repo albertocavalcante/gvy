@@ -8,6 +8,43 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
  * Scans DefaultGroovyMethods and StringGroovyMethods.
+ *
+ * TODO(#830): Implement Groovy source JAR resolution for GDK parameter names
+ *   Current limitation: Parameter names for GDK methods are obtained via reflection,
+ *   which provides non-deterministic names like "arg0", "arg1" when debug symbols are missing.
+ *
+ *   Proposed solution: Similar to JdkSourceResolver handling of src.zip, implement
+ *   GroovySourceResolver to extract parameter names from Groovy source JARs:
+ *
+ *   1. Detect Groovy version from classpath
+ *      - Scan classpath for groovy-*.jar (e.g., groovy-4.0.23.jar)
+ *      - Extract version string (e.g., "4.0.23")
+ *
+ *   2. Resolve corresponding sources JAR
+ *      - Look for adjacent groovy-4.0.23-sources.jar
+ *      - If not found, download from Maven Central:
+ *        https://repo1.maven.org/maven2/org/apache/groovy/groovy/{version}/groovy-{version}-sources.jar
+ *      - Cache downloaded JAR in ~/.gls/cache/groovy-sources/
+ *
+ *   3. Extract and index GDK source files
+ *      - Extract DefaultGroovyMethods.java and related GDK classes
+ *      - Use JavaSourceInspector to parse method declarations
+ *      - Build index: methodName -> List<ParameterName>
+ *
+ *   4. Enhance GdkExtensionMethod with real parameter names
+ *      - Replace reflection-based parameter names with source-extracted names
+ *      - Provides deterministic parameter names for inlay hints and completion
+ *
+ *   Benefits:
+ *   - Accurate parameter names for GDK methods in IDE (e.g., "closure" instead of "arg0")
+ *   - No need to rebuild Groovy with debug symbols
+ *   - Consistent experience across all GDK methods
+ *
+ *   Implementation files to create:
+ *   - groovy-lsp/src/main/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolver.kt
+ *   - groovy-lsp/src/test/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolverTest.kt
+ *
+ *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
  */
 class GroovyGdkProvider(private val classpathService: ClasspathService) {
     private val logger = LoggerFactory.getLogger(GroovyGdkProvider::class.java)

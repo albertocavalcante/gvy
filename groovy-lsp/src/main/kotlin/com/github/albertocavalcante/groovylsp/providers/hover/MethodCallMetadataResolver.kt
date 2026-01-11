@@ -5,8 +5,10 @@ import com.github.albertocavalcante.groovylsp.services.GdkExtensionMethod
 import com.github.albertocavalcante.groovylsp.services.GroovyGdkProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.slf4j.LoggerFactory
 
 /**
@@ -48,8 +50,8 @@ class MethodCallMetadataResolver(
 
         // Get argument count from method call for better overload resolution
         val argCount = when (val args = call.arguments) {
-            is org.codehaus.groovy.ast.expr.ArgumentListExpression -> args.expressions.size
-            is org.codehaus.groovy.ast.expr.TupleExpression -> args.expressions.size
+            is ArgumentListExpression -> args.expressions.size
+            is TupleExpression -> args.expressions.size
             else -> null
         }
 

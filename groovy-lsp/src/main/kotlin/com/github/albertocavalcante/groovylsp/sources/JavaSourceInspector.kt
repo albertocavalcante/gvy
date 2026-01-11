@@ -63,6 +63,22 @@ class JavaSourceInspector {
     /**
      * Inspect a Java source file to find the definition of a specific method within a class.
      *
+     * TODO(#830): Add parameter count/types to method inspection API for overload resolution
+     *   Current limitation: inspectMethod only matches by name, not signature.
+     *   This causes incorrect navigation when multiple method overloads exist.
+     *
+     *   Required API changes:
+     *   1. Add parameterTypes parameter: inspectMethod(sourcePath, className, methodName, parameterTypes)
+     *   2. Update SourceNavigator.navigateToMethodSource to accept parameter types
+     *   3. Update SourceNavigationService.navigateToMethodSource to pass parameter types
+     *   4. Update method matching logic to compare parameter types, not just name
+     *
+     *   Example problem: navigating to `String.indexOf(String)` may incorrectly navigate
+     *   to `String.indexOf(int)` because we only match by method name.
+     *
+     *   Solution: Match signature using parameter types list for precise overload resolution.
+     *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+     *
      * @param sourcePath Path to the .java file
      * @param className Fully qualified class name (e.g., "java.util.Date")
      * @param methodName Simple method name (e.g., "getTime")
