@@ -102,6 +102,8 @@ class JenkinsPluginMetadataExtractor {
 
             var stepName = extractSymbolName(symbolValues)
 
+            // TODO(#834): Resolve @Symbol values for DescriptorImpl to avoid incorrect step names.
+            //   See: https://github.com/albertocavalcante/gvy/issues/834
             // FIXME: Some plugins put @Symbol on DescriptorImpl but the value is still
             // "descriptorImpl" because ClassGraph returns the simple class name as fallback.
             // This happens when the annotation value is not a literal string but a reference.

@@ -40,6 +40,12 @@ See [core/README.md](core/README.md) for full documentation.
 
 ---
 
+## Feature Matrix
+
+See [feature-matrix.md](feature-matrix.md) for a documented comparison of parser/native and parser/core.
+
+---
+
 ## Architecture
 
 ```

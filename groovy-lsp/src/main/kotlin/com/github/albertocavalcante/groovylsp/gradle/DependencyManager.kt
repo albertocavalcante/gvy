@@ -64,6 +64,8 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
     ) {
+        // TODO(#833): Allow retries after FAILED state instead of blocking indefinitely.
+        //   See: https://github.com/albertocavalcante/gvy/issues/833
         // Only start if not already running or if workspace changed
         if (state.compareAndSet(State.NOT_STARTED, State.IN_PROGRESS) ||
             (currentWorkspaceRoot != workspaceRoot && state.get() != State.IN_PROGRESS)

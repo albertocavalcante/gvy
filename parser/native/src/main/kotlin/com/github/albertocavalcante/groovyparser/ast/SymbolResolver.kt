@@ -2,8 +2,12 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
 
 /**
  * Resolves symbols to their definitions using registry data.
@@ -19,13 +23,46 @@ class SymbolResolver(private val registry: SymbolRegistry) {
 
         return when (node) {
             is VariableExpression -> {
-                // First try to find as local variable
-                registry.findVariableDeclaration(uri, node.name)
-                    // Fall back to field search
+                resolveVariableInScope(uri, node, visitor)
                     ?: findFieldInScope(node, visitor)
             }
             else -> null
         }
+    }
+
+    private fun resolveVariableInScope(
+        uri: java.net.URI,
+        node: VariableExpression,
+        visitor: GroovyAstModel,
+    ): Variable? {
+        val candidates = registry.findVariableDeclarations(uri, node.name)
+        if (candidates.isEmpty()) {
+            return null
+        }
+        if (candidates.size == 1) {
+            return candidates.first()
+        }
+
+        val directMatch = candidates.firstOrNull { it === node }
+        if (directMatch != null) {
+            return directMatch
+        }
+
+        val scopeChain = buildScopeChain(node, visitor)
+        val allCandidates = candidates.mapNotNull { candidate ->
+            val candidateNode = candidate as? ASTNode ?: return@mapNotNull null
+            val scope = findEnclosingScope(candidateNode, visitor)
+            val scopeIndex = scope?.let { scopeChain.indexOfFirst { chainScope -> chainScope === it } } ?: -1
+            Candidate(
+                variable = candidate,
+                scopeIndex = if (scopeIndex == -1) Int.MAX_VALUE else scopeIndex,
+                line = candidateNode.lineNumber,
+                column = candidateNode.columnNumber,
+                isBeforeReference = isBeforeReference(candidateNode, node),
+            )
+        }
+
+        return selectBestCandidate(allCandidates)
     }
 
     /**
@@ -69,4 +106,64 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         val classDeclarations = registry.getClassDeclarations(uri)
         return if (classDeclarations.isNotEmpty()) classDeclarations else null
     }
+
+    private fun isBeforeReference(candidate: ASTNode, reference: ASTNode): Boolean =
+        candidate.lineNumber < reference.lineNumber ||
+            (candidate.lineNumber == reference.lineNumber && candidate.columnNumber < reference.columnNumber)
+
+    private fun buildScopeChain(node: ASTNode, visitor: GroovyAstModel): List<ASTNode> {
+        val scopes = mutableListOf<ASTNode>()
+        var current = visitor.getParent(node)
+        while (current != null) {
+            if (isScopeBoundary(current)) {
+                scopes.add(current)
+            }
+            current = visitor.getParent(current)
+        }
+        return scopes
+    }
+
+    private fun findEnclosingScope(node: ASTNode, visitor: GroovyAstModel): ASTNode? {
+        var current = visitor.getParent(node)
+        while (current != null) {
+            if (isScopeBoundary(current)) {
+                return current
+            }
+            current = visitor.getParent(current)
+        }
+        return null
+    }
+
+    private fun isScopeBoundary(node: ASTNode): Boolean = node is MethodNode ||
+        node is ConstructorNode ||
+        node is ClosureExpression ||
+        node is BlockStatement ||
+        node is ClassNode
+
+    private fun selectBestCandidate(candidates: List<Candidate>): Variable? {
+        if (candidates.isEmpty()) {
+            return null
+        }
+
+        val bestScopeIndex = candidates.minOf { it.scopeIndex }
+        val scopedCandidates = candidates.filter { it.scopeIndex == bestScopeIndex }
+
+        val beforeCandidates = scopedCandidates.filter { it.isBeforeReference }
+        val comparator = compareBy<Candidate> { it.line }.thenBy { it.column }
+
+        val best = if (beforeCandidates.isNotEmpty()) {
+            beforeCandidates.maxWithOrNull(comparator)
+        } else {
+            scopedCandidates.minWithOrNull(comparator)
+        }
+        return best?.variable
+    }
+
+    private data class Candidate(
+        val variable: Variable,
+        val scopeIndex: Int,
+        val line: Int,
+        val column: Int,
+        val isBeforeReference: Boolean,
+    )
 }
