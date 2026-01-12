@@ -148,24 +148,16 @@ class JenkinsPluginMetadataExtractor {
      * This is the most reliable method as it reads the exact same value Jenkins uses at runtime.
      */
     private fun extractFunctionNameFromBytecode(classInfo: ClassInfo, jarPath: Path): String? {
-        // Check if this is a DescriptorImpl class
-        val isDescriptor = classInfo.simpleName.endsWith("DescriptorImpl") ||
-            classInfo.simpleName.endsWith("Descriptor")
+        fun isDescriptor(info: ClassInfo) =
+            info.simpleName.endsWith("DescriptorImpl") || info.simpleName.endsWith("Descriptor")
 
-        if (isDescriptor) {
-            // Extract directly from this descriptor class
+        if (isDescriptor(classInfo)) {
             return functionNameExtractor.extractFromJar(jarPath, classInfo.name)
         }
 
-        // Check for inner DescriptorImpl class
-        val descriptorClass = classInfo.innerClasses
-            .firstOrNull { it.simpleName == "DescriptorImpl" || it.simpleName.endsWith("Descriptor") }
-
-        if (descriptorClass != null) {
-            return functionNameExtractor.extractFromJar(jarPath, descriptorClass.name)
-        }
-
-        return null
+        return classInfo.innerClasses
+            .firstOrNull(::isDescriptor)
+            ?.let { functionNameExtractor.extractFromJar(jarPath, it.name) }
     }
 
     // Symbol name extraction is now handled by com.github.albertocavalcante.groovycommon.text.extractSymbolName
