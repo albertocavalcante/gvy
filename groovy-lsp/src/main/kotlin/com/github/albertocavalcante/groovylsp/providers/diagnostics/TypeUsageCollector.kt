@@ -188,9 +188,9 @@ object TypeUsageCollector {
             override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
                 collectTypeReference(call.type)
                 // Explicitly traverse constructor arguments to collect types within them
-                // (Groovy's CodeVisitorSupport doesn't always traverse arguments in all contexts)
+                // (CodeVisitorSupport.visitConstructorCallExpression only does call.arguments.visit,
+                // so we do it directly here and skip the super call)
                 call.arguments?.visit(this)
-                super.visitConstructorCallExpression(call)
             }
 
             override fun visitClassExpression(expression: ClassExpression) {
@@ -228,12 +228,10 @@ object TypeUsageCollector {
                 // Case 1: ClassExpression.class (e.g., Date.class in simple assignments)
                 if (obj is ClassExpression) {
                     collectTypeReference(obj.type)
-                }
-
-                // Case 2: VariableExpression.class where the variable name is a type
-                // In Groovy, "SimpleDateFormat.class" inside a method body is parsed as
-                // PropertyExpression(VariableExpression("SimpleDateFormat"), "class")
-                if (obj is VariableExpression && prop == "class") {
+                } else if (obj is VariableExpression && prop == "class") {
+                    // Case 2: VariableExpression.class where the variable name is a type
+                    // In Groovy, "SimpleDateFormat.class" inside a method body is parsed as
+                    // PropertyExpression(VariableExpression("SimpleDateFormat"), "class")
                     val typeName = obj.name
                     // Only collect if it looks like a type name (starts with uppercase)
                     if (typeName.isNotEmpty() && typeName[0].isUpperCase()) {
