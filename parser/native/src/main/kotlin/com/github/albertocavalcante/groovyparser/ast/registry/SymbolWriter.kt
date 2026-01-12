@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class SymbolWriter(private val storage: SymbolStorage) {
 
-    fun addVariable(uri: URI, variable: Variable) {
+    fun <T> addVariable(uri: URI, variable: T) where T : Variable, T : ASTNode {
         storage.variableDeclarations
             .computeIfAbsent(uri) { ConcurrentHashMap() }
             .computeIfAbsent(variable.name) { Collections.synchronizedList(mutableListOf()) }
@@ -25,7 +25,7 @@ class SymbolWriter(private val storage: SymbolStorage) {
     fun addMethod(uri: URI, method: MethodNode) {
         storage.methodDeclarations
             .computeIfAbsent(uri) { ConcurrentHashMap() }
-            .computeIfAbsent(method.name) { mutableListOf() }
+            .computeIfAbsent(method.name) { Collections.synchronizedList(mutableListOf()) }
             .add(method)
     }
 

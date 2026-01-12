@@ -2,9 +2,12 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -168,7 +171,12 @@ class SymbolResolverTest {
     private fun findEnclosingScope(astModel: GroovyAstModel, node: ASTNode): ASTNode? {
         var current = astModel.getParent(node)
         while (current != null) {
-            if (current is MethodNode || current is ClosureExpression) {
+            if (current is MethodNode ||
+                current is ConstructorNode ||
+                current is ClosureExpression ||
+                current is BlockStatement ||
+                current is ClassNode
+            ) {
                 return current
             }
             current = astModel.getParent(current)

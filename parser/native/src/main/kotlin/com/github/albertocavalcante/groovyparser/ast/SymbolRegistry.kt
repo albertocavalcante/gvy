@@ -28,7 +28,8 @@ class SymbolRegistry {
     val reader = SymbolReader(storage)
 
     // Simplified API (6 functions)
-    fun addVariableDeclaration(uri: URI, variable: Variable) = writer.addVariable(uri, variable)
+    fun <T> addVariableDeclaration(uri: URI, variable: T) where T : Variable, T : ASTNode =
+        writer.addVariable(uri, variable)
     fun addMethodDeclaration(uri: URI, method: MethodNode) = writer.addMethod(uri, method)
     fun addClassDeclaration(uri: URI, classNode: ClassNode) = writer.addClass(uri, classNode)
     fun addImportDeclaration(uri: URI, importNode: ImportNode) = writer.addImport(uri, importNode)
