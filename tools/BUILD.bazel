@@ -5,7 +5,7 @@ load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
 # Kotlin toolchain with performance optimizations
 define_kt_toolchain(
     name = "kotlin_toolchain",
-    api_version = "2.0",  # Matches Kotlin 2.3.0 in MODULE.bazel
+    api_version = "2.0",  # Corresponds to compiler in rules_kotlin v2.2.2 (Kotlin 2.2.21)
     experimental_multiplex_workers = True,  # Better worker utilization
     experimental_report_unused_deps = "warn",
 

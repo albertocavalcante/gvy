@@ -23,7 +23,7 @@ kt_library(
         "//semantics/core",
         "//semantics/native",
         "//diagnostics/codenarc",
-        # Note: groovy-diagnostics/sarif doesn't have BUILD file yet
+        "//diagnostics/sarif",
         "//dsl/gdsl",
         "//jenkins",
         "//ext/junit",
@@ -34,9 +34,9 @@ kt_library(
         "//parser/native",
         "//indexer/core",
         "//indexer/lsif",
+        "//parser/rewrite",
         # "//indexer/scip",  # Disabled: needs protobuf generation for SCIP
         # "//viz/ast-model",  # Disabled: needs Compose Multiplatform
-        # Note: parser/rewrite doesn't have BUILD file yet
 
         # LSP4J - Language Server Protocol implementation
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",

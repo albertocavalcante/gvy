@@ -24,7 +24,7 @@ def java_library(
         srcs = srcs if srcs else native.glob(["src/main/java/**/*.java"]),
         deps = deps or [],
         runtime_deps = runtime_deps or [],
-        visibility = visibility or ["//visibility:public"],
+        visibility = visibility,  # Require explicit visibility
         javacopts = [
             "-source",
             "17",

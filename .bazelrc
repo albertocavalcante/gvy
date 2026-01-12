@@ -235,9 +235,10 @@ build:ci --repository_cache=~/.cache/bazel-repo
 ###############################
 
 # Lint configuration using aspect_rules_lint
-build:lint --aspects=//tools/lint:linters.bzl%eslint,//tools/lint:linters.bzl%ktlint
-build:lint --output_groups=+rules_lint_report
-build:lint --@aspect_rules_lint//lint:fail_on_violation
+# NOTE: Disabled until lint binary targets are configured in //tools/lint/BUILD.bazel
+# build:lint --aspects=//tools/lint:linters.bzl%eslint,//tools/lint:linters.bzl%ktlint
+# build:lint --output_groups=+rules_lint_report
+# build:lint --@aspect_rules_lint//lint:fail_on_violation
 
 ###############################
 # User Overrides

@@ -232,7 +232,7 @@ bazel-clean:
 	bazel clean --expunge
 
 bazel-jar:
-	bazel build //groovy-lsp:gls_deploy.jar
+	bazel build //groovy-lsp:gls_deploy_deploy.jar
 
 bazel-sync:
 	bazel run @maven//:pin
