@@ -350,4 +350,23 @@ class TypeUsageCollectorTest {
         )
         assertTrue(usedTypes.contains("StubFor"), "Should collect StubFor from constructor call")
     }
+
+    @Test
+    fun `should not collect lowercase variable names with class property`() {
+        // Verify that lowercase variable names followed by .class are NOT collected as type references
+        // The uppercase check should filter out actual variables
+        val ast = compile(
+            """
+            def variable = "test"
+            def x = new Object(variable.class)
+            """.trimIndent(),
+        )
+
+        val usedTypes = TypeUsageCollector.collectUsedTypes(ast)
+
+        assertFalse(
+            usedTypes.contains("variable"),
+            "Should NOT collect lowercase 'variable' as a type reference",
+        )
+    }
 }
