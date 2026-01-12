@@ -359,7 +359,6 @@ class CompletionProviderTest {
     @Test
     fun `should use inner declaration when variable is shadowed`() = runTest {
         val realSemanticResolver = createRealSemanticResolver()
-        // Use different variable names in nested scope to avoid Groovy redefinition error
         val content = """
 class MyService {
     void process() {
@@ -373,18 +372,15 @@ class MyService {
         """.trimIndent()
         val uri = "file:///test.groovy"
 
-        // Line 5 is "            innerConfig." (0-indexed)
-        // Position after dot: "            innerConfig." = 12 + 12 = 24
         val completions = CompletionProvider.getContextualCompletions(
             uri,
-            5, // Line with 'innerConfig.'
-            24, // After 'innerConfig.'
+            5,
+            24,
             compilationService,
             realSemanticResolver,
             content,
         )
 
-        // Should suggest the inner map's key
         assertTrue(
             completions.any { it.label == "inner" },
             "Should suggest 'inner' from inner map variable. Found: ${completions.map { it.label }}",
@@ -392,13 +388,8 @@ class MyService {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled(
-        "Multi-class map completion needs further investigation - see PR #839 review comments",
-    )
+    @org.junit.jupiter.api.Disabled("Multi-class map completion needs investigation - PR #839")
     fun `should suggest map keys in second class of multi-class file`() = runTest {
-        // TODO(#839): Multi-class file support for map key completion
-        // The findEnclosingBlock iterates all classes, but map completion returns empty
-        // for methods in non-first classes. This test documents the expected behavior.
         val realSemanticResolver = createRealSemanticResolver()
         val content = """class FirstClass {
     void first() {
@@ -415,30 +406,15 @@ class SecondClass {
         """.trimIndent()
         val uri = "file:///test.groovy"
 
-        // Lines (0-indexed):
-        // 0: class FirstClass {
-        // 1:     void first() {
-        // 2:         def firstMap = [a: 1]
-        // 3:         firstMap.
-        // 4:     }
-        // 5: }
-        // 6: class SecondClass {
-        // 7:     void second() {
-        // 8:         def secondMap = [b: 2]
-        // 9:         secondMap.
-        // 10:    }
-        // 11: }
-        // Position: "        secondMap." = 8 spaces + 10 chars = 18
         val completions = CompletionProvider.getContextualCompletions(
             uri,
-            9, // Line with 'secondMap.'
-            18, // After 'secondMap.'
+            9,
+            18,
             compilationService,
             realSemanticResolver,
             content,
         )
 
-        // Should suggest 'b' from secondMap, not fail silently
         assertTrue(
             completions.any { it.label == "b" },
             "Should suggest 'b' from map in second class. Found: ${completions.map { it.label }}",
