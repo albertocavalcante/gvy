@@ -84,7 +84,7 @@ maven.install(
         "com.squareup.wire:wire-compiler:5.4.0",
 
         # Code Quality & Analysis
-        "org.codenarc:CodeNarc:3.7.0-groovy-4.0",
+        # Note: CodeNarc exclusions are defined separately via maven.artifact()
         "org.gmetrics:GMetrics:2.1.0",
         "org.openrewrite:rewrite-groovy:8.70.4",
 
@@ -174,6 +174,28 @@ maven.install(
     # fail_if_repin_required = True,
     # strict_visibility = True,
     # lock_file = "//:maven_install.json",
+)
+
+# CodeNarc with Groovy exclusions to avoid version conflicts
+# CodeNarc 3.7.0-groovy-4.0 bundles old Groovy 3.0.9 transitives that conflict with our 4.0.29
+maven.artifact(
+    artifact = "CodeNarc",
+    group = "org.codenarc",
+    version = "3.7.0-groovy-4.0",
+    exclusions = [
+        "org.apache.groovy:groovy",
+        "org.apache.groovy:groovy-ant",
+        "org.apache.groovy:groovy-groovydoc",
+        "org.apache.groovy:groovy-json",
+        "org.apache.groovy:groovy-templates",
+        "org.apache.groovy:groovy-xml",
+        "org.codehaus.groovy:groovy",
+        "org.codehaus.groovy:groovy-ant",
+        "org.codehaus.groovy:groovy-groovydoc",
+        "org.codehaus.groovy:groovy-json",
+        "org.codehaus.groovy:groovy-templates",
+        "org.codehaus.groovy:groovy-xml",
+    ],
 )
 use_repo(maven, "maven")
 

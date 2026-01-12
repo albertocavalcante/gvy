@@ -1,4 +1,4 @@
-load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+load("//tools/build_defs:kotlin.bzl", "kt_library")
 
 kt_library(
     name = "jenkins",
@@ -12,15 +12,4 @@ kt_library(
     ],
 )
 
-kt_test(
-    name = "jenkins_test",
-    srcs = glob(
-        ["src/test/kotlin/**/*.kt"],
-        allow_empty = True,
-    ),
-    test_packages = [],
-    deps = [
-        ":jenkins",
-        "@maven//:org_junit_platform_junit_platform_launcher",
-    ],
-)
+# No tests in this module yet - add kt_test when tests are created

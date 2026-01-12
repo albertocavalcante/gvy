@@ -18,7 +18,7 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     test_packages = ["com.github.albertocavalcante.groovyparser"],
     associates = [":native"],
-    data = glob(["src/test/resources/**/*"]),
+    resources = glob(["src/test/resources/**/*"]),
     deps = [
         "@maven//:net_jqwik_jqwik",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.groovylsp.buildtool.TestResources
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -9,7 +10,7 @@ class GradleBuildToolTest {
     @Test
     fun `should resolve dependencies from gradle project using test resources`() {
         val resolver = GradleBuildTool()
-        val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
+        val testProjectPath = TestResources.getTestGradleProject()
 
         // Use our test project which has known dependencies
         val resolution = resolver.resolve(testProjectPath, null)
@@ -44,7 +45,7 @@ class GradleBuildToolTest {
     @Test
     fun `should handle non-gradle project gracefully`() {
         val resolver = GradleBuildTool()
-        val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
+        val nonGradleProject = TestResources.getNonGradleProject()
 
         val resolution = resolver.resolve(nonGradleProject, null)
 

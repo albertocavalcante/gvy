@@ -9,9 +9,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.net.URL
+import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 class RepositoryProviderTest {
 
@@ -131,8 +130,21 @@ class RepositoryProviderTest {
         return pomFile
     }
 
-    private fun resourcePath(path: String): Path =
-        urlToPath(requireNotNull(javaClass.getResource(path)) { "Missing test resource: $path" })
-
-    private fun urlToPath(url: URL): Path = Paths.get(url.toURI())
+    /**
+     * Load a classpath resource to a temp file.
+     * Works in both Gradle (file system) and Bazel (JAR) environments.
+     */
+    private fun resourcePath(path: String): Path {
+        val inputStream = requireNotNull(javaClass.getResourceAsStream(path)) {
+            "Missing test resource: $path"
+        }
+        val tempFile = Files.createTempFile("test-pom", ".xml")
+        tempFile.toFile().deleteOnExit()
+        inputStream.use { input ->
+            Files.newOutputStream(tempFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+        return tempFile
+    }
 }

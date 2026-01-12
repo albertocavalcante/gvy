@@ -9,7 +9,6 @@ import org.codehaus.groovy.ast.stmt.CaseStatement
 import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.junit.jupiter.api.Test
-import java.io.File
 import java.net.URI
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -38,15 +37,9 @@ class KitchenSinkCoverageTest {
     }
 
     private fun loadKitchenSinkContent(): String {
-        // Try relative path first (standard gradle project layout)
-        var file = File("groovy-parser/src/test/resources/kitchen-sink.groovy")
-        if (!file.exists()) {
-            // Try relative to the module root (if running from module dir)
-            file = File("src/test/resources/kitchen-sink.groovy")
-        }
-
-        assertTrue(file.exists(), "Kitchen sink file not found at ${file.absolutePath}")
-        return file.readText()
+        // Use classpath resource for portability across Gradle and Bazel
+        return this::class.java.getResource("/kitchen-sink.groovy")?.readText()
+            ?: error("Kitchen sink file not found on classpath at /kitchen-sink.groovy")
     }
 
     private fun assertParseOk(result: ParseResult) {
