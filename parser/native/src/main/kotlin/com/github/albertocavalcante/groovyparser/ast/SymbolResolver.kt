@@ -44,36 +44,20 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         }
 
         val scopeChain = buildScopeChain(node, visitor)
-        val scopedCandidates = candidates.mapNotNull { candidate ->
+        val allCandidates = candidates.mapNotNull { candidate ->
             val candidateNode = candidate as? ASTNode ?: return@mapNotNull null
-            val scope = findEnclosingScope(candidateNode, visitor) ?: return@mapNotNull null
-            val scopeIndex = scopeChain.indexOfFirst { it === scope }
-            if (scopeIndex == -1) return@mapNotNull null
+            val scope = findEnclosingScope(candidateNode, visitor)
+            val scopeIndex = scope?.let { scopeChain.indexOfFirst { chainScope -> chainScope === it } } ?: -1
             Candidate(
                 variable = candidate,
-                scopeIndex = scopeIndex,
+                scopeIndex = if (scopeIndex == -1) Int.MAX_VALUE else scopeIndex,
                 line = candidateNode.lineNumber,
                 column = candidateNode.columnNumber,
                 isBeforeReference = isBeforeReference(candidateNode, node),
             )
         }
 
-        val bestInScope = selectBestCandidate(scopedCandidates)
-        if (bestInScope != null) {
-            return bestInScope
-        }
-
-        val fallbackCandidates = candidates.mapNotNull { candidate ->
-            val candidateNode = candidate as? ASTNode ?: return@mapNotNull null
-            Candidate(
-                variable = candidate,
-                scopeIndex = Int.MAX_VALUE,
-                line = candidateNode.lineNumber,
-                column = candidateNode.columnNumber,
-                isBeforeReference = isBeforeReference(candidateNode, node),
-            )
-        }
-        return selectBestCandidate(fallbackCandidates)
+        return selectBestCandidate(allCandidates)
     }
 
     /**

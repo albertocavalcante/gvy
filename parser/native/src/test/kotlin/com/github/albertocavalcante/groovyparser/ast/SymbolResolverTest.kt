@@ -3,10 +3,12 @@ package com.github.albertocavalcante.groovyparser.ast
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SymbolResolverTest {
 
@@ -43,16 +45,68 @@ class SymbolResolverTest {
         assertEquals("method2", secondMethod)
     }
 
+    @Test
+    fun `resolveSymbol respects block-scoped declarations`() {
+        val code = """
+            class Sample {
+                def method() {
+                    def x = 1
+                    if (true) {
+                        def x = 2
+                        println x
+                    }
+                    println x
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(code)
+        val astModel = result.astModel
+        val symbolTable = result.symbolTable
+
+        val innerReference = findVariableReference(astModel, "x", 6)
+        val outerReference = findVariableReference(astModel, "x", 8)
+
+        assertEquals(5, resolveDefinitionLine(symbolTable, astModel, innerReference))
+        assertEquals(3, resolveDefinitionLine(symbolTable, astModel, outerReference))
+    }
+
+    @Test
+    fun `resolveSymbol prefers closure parameters over method parameters`() {
+        val code = """
+            class Sample {
+                def method(x) {
+                    def closure = { x ->
+                        println x
+                    }
+                    println x
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(code)
+        val astModel = result.astModel
+        val symbolTable = result.symbolTable
+
+        val innerReference = findVariableReference(astModel, "x", 4)
+        val outerReference = findVariableReference(astModel, "x", 6)
+
+        val innerResolved = resolveDefinitionNode(symbolTable, astModel, innerReference)
+        val outerResolved = resolveDefinitionNode(symbolTable, astModel, outerReference)
+
+        val innerScope = findEnclosingScope(astModel, innerResolved)
+        val outerScope = findEnclosingScope(astModel, outerResolved)
+
+        assertTrue(innerScope is ClosureExpression, "Expected closure parameter resolution inside closure")
+        assertTrue(outerScope is MethodNode, "Expected method parameter resolution outside closure")
+    }
+
     private fun resolveMethodName(
         symbolTable: SymbolTable,
         astModel: GroovyAstModel,
         reference: VariableExpression,
     ): String {
-        val resolved = symbolTable.resolveSymbol(reference, astModel)
-        assertNotNull(resolved, "Expected resolved symbol for ${reference.name}")
-
-        val resolvedNode = resolved as? ASTNode
-        assertNotNull(resolvedNode, "Resolved symbol should be an AST node")
+        val resolvedNode = resolveDefinitionNode(symbolTable, astModel, reference)
         var current: ASTNode? = resolvedNode
         var method: MethodNode? = null
         while (current != null) {
@@ -65,5 +119,40 @@ class SymbolResolverTest {
 
         assertNotNull(method, "Expected symbol to resolve within a method")
         return method.name
+    }
+
+    private fun resolveDefinitionLine(
+        symbolTable: SymbolTable,
+        astModel: GroovyAstModel,
+        reference: VariableExpression,
+    ): Int = resolveDefinitionNode(symbolTable, astModel, reference).lineNumber
+
+    private fun resolveDefinitionNode(
+        symbolTable: SymbolTable,
+        astModel: GroovyAstModel,
+        reference: VariableExpression,
+    ): ASTNode {
+        val resolved = symbolTable.resolveSymbol(reference, astModel)
+        assertNotNull(resolved, "Expected resolved symbol for ${reference.name}")
+
+        val resolvedNode = resolved as? ASTNode
+        assertNotNull(resolvedNode, "Resolved symbol should be an AST node")
+        return resolvedNode
+    }
+
+    private fun findVariableReference(astModel: GroovyAstModel, name: String, lineNumber: Int): VariableExpression =
+        astModel.getAllNodes()
+            .filterIsInstance<VariableExpression>()
+            .first { it.name == name && it.lineNumber == lineNumber }
+
+    private fun findEnclosingScope(astModel: GroovyAstModel, node: ASTNode): ASTNode? {
+        var current = astModel.getParent(node)
+        while (current != null) {
+            if (current is MethodNode || current is ClosureExpression) {
+                return current
+            }
+            current = astModel.getParent(current)
+        }
+        return null
     }
 }

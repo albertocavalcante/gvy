@@ -6,6 +6,7 @@ import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Variable
 import java.net.URI
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -17,7 +18,7 @@ class SymbolWriter(private val storage: SymbolStorage) {
     fun addVariable(uri: URI, variable: Variable) {
         storage.variableDeclarations
             .computeIfAbsent(uri) { ConcurrentHashMap() }
-            .computeIfAbsent(variable.name) { mutableListOf() }
+            .computeIfAbsent(variable.name) { Collections.synchronizedList(mutableListOf()) }
             .add(variable)
     }
 
