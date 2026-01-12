@@ -105,7 +105,36 @@ object DeclarationWalker {
                 walkChild(stmt.elseBlock, context, captureMapKeys, out)
             }
 
-            is ForStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
+            is ForStatement -> {
+                // Capture the loop variable declaration (e.g., 'i' in 'for (int i = 0; ...)' or 'item' in 'for (item in list)')
+                val loopVar = stmt.variable
+                // FOR_LOOP_DUMMY is a placeholder parameter when there's no loop variable
+                if (loopVar != null && loopVar !== ForStatement.FOR_LOOP_DUMMY && loopVar.name != null) {
+                    val calculatedType = context.calculateType(loopVar)
+                    val varType = calculatedType as? SemanticType
+                        ?: SemanticType.Unknown("loop variable type inference")
+                    out += DeclarationInfo(
+                        name = loopVar.name,
+                        inferredType = varType,
+                        line = loopVar.lineNumber,
+                        column = loopVar.columnNumber,
+                    )
+                }
+
+                // Handle C-style for loops: for (int i = 0; i < 10; i++)
+                // The 'int i = 0' is hidden inside collectionExpression which is a ClosureListExpression
+                val collectionExpr = stmt.collectionExpression
+                if (collectionExpr is org.codehaus.groovy.ast.expr.ClosureListExpression) {
+                    collectionExpr.expressions.forEach { expr ->
+                        if (expr is DeclarationExpression) {
+                            out += extractDeclaration(expr, context, captureMapKeys)
+                        }
+                    }
+                }
+
+                walkChild(stmt.loopBlock, context, captureMapKeys, out)
+            }
+
             is WhileStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
             is DoWhileStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
             is TryCatchStatement -> {

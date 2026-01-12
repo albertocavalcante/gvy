@@ -572,7 +572,8 @@ object CompletionProvider {
         val block = findEnclosingBlock(ctx) ?: return false
         val result = DeclarationWalker.walk(block, nativeContext, captureMapKeys = true)
 
-        val mapDecl = result.variables.find { it.name == qualifierName }
+        // Use findLast to get the innermost scope declaration (handles variable shadowing)
+        val mapDecl = result.variables.findLast { it.name == qualifierName }
         val mapKeys = mapDecl?.mapKeys
 
         if (mapKeys.isNullOrEmpty()) return false

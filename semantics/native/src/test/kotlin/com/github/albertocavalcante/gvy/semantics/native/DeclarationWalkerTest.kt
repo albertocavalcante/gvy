@@ -200,7 +200,11 @@ class DeclarationWalkerTest {
 
             val result = DeclarationWalker.walk(block, context)
 
-            // Note: For loop variable 'i' is a Parameter, not a DeclarationExpression, so only 'loopVar' is captured
+            // Both loop variable 'i' and body variable 'loopVar' should be captured
+            assertTrue(
+                result.variables.any { it.name == "i" },
+                "For loop variable 'i' should be captured",
+            )
             assertTrue(
                 result.variables.any { it.name == "loopVar" },
                 "Declaration inside for loop body should be captured",
