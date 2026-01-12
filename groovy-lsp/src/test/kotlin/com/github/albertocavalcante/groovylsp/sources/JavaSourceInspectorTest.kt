@@ -463,4 +463,409 @@ class JavaSourceInspectorTest {
             println("✓ Deprecated: ${doc.deprecated}")
         }
     }
+
+    @Nested
+    inner class ExtractAllMethodParametersTest {
+
+        /**
+         * Test 1: Basic method extraction
+         * Test extracting params from a simple class with methods
+         */
+        @Test
+        fun `extracts parameters from basic methods`() {
+            val source = """
+                package com.example;
+
+                public class TestClass {
+                    public void method1(String param1) {}
+                    public void method2(String param1, int param2) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.TestClass")
+
+            assertEquals(2, result.size) { "Should extract 2 methods" }
+            assertEquals(listOf("param1"), result["method1(String)"]) {
+                "method1 should have one String parameter"
+            }
+            assertEquals(listOf("param1", "param2"), result["method2(String,int)"]) {
+                "method2 should have String and int parameters"
+            }
+        }
+
+        /**
+         * Test 2: Generic types
+         * Test that List<String> becomes List (generics stripped)
+         */
+        @Test
+        fun `strips generic type parameters from signatures`() {
+            val source = """
+                package com.example;
+
+                import java.util.List;
+                import java.util.Map;
+
+                public class GenericTest {
+                    public void processItems(List<String> items) {}
+                    public void processMap(Map<String, Integer> data, List<Object> list) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.GenericTest")
+
+            assertEquals(2, result.size) { "Should extract 2 methods" }
+            assertEquals(listOf("items"), result["processItems(List)"]) {
+                "List<String> should become List in signature"
+            }
+            assertEquals(listOf("data", "list"), result["processMap(Map,List)"]) {
+                "Generic types should be stripped to base type"
+            }
+        }
+
+        /**
+         * Test 3: Varargs handling
+         * Test Object... args - normalized to Object[] to match reflection.
+         *
+         * DOCUMENTED BEHAVIOR: Varargs are normalized to array notation to match Java reflection.
+         * - Source: `void method(Object... args)` -> Signature: `method(Object[])`
+         * - Arrays: `void method(Object[] args)` -> Signature: `method(Object[])`
+         *
+         * This ensures consistency with GroovyGdkProvider which uses reflection to get parameter types.
+         * When GroovyGdkProvider queries for parameter names using reflection-based types (Object[]),
+         * the lookup in GdkMethodIndex succeeds because JavaSourceInspector indexes with Object[] too.
+         */
+        @Test
+        fun `handles varargs parameters`() {
+            val source = """
+                package com.example;
+
+                public class VarargsTest {
+                    public void varargMethod(Object... args) {}
+                    public void mixedMethod(String prefix, Object... args) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.VarargsTest")
+
+            assertEquals(2, result.size) { "Should extract 2 methods" }
+
+            // Varargs are normalized to array notation to match reflection
+            assertEquals(listOf("args"), result["varargMethod(Object[])"]) {
+                "varargMethod(Object... args) should become varargMethod(Object[])"
+            }
+            assertEquals(listOf("prefix", "args"), result["mixedMethod(String,Object[])"]) {
+                "mixedMethod(String, Object... args) should become mixedMethod(String,Object[])"
+            }
+        }
+
+        /**
+         * Test 4: Array types
+         * Test String[] parameter types
+         */
+        @Test
+        fun `handles array parameter types`() {
+            val source = """
+                package com.example;
+
+                public class ArrayTest {
+                    public void processArray(String[] values) {}
+                    public void processMultiDim(int[][] matrix, String[] labels) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.ArrayTest")
+
+            assertEquals(2, result.size) { "Should extract 2 methods" }
+            assertEquals(listOf("values"), result["processArray(String[])"]) {
+                "Should handle String[] array type"
+            }
+            assertEquals(listOf("matrix", "labels"), result["processMultiDim(int[][],String[])"]) {
+                "Should handle multi-dimensional arrays"
+            }
+        }
+
+        /**
+         * Test 5: Primitive types
+         * Test int, boolean, long parameters
+         */
+        @Test
+        fun `handles primitive parameter types`() {
+            val source = """
+                package com.example;
+
+                public class PrimitiveTest {
+                    public void primitiveInt(int value) {}
+                    public void primitiveBoolean(boolean flag) {}
+                    public void primitiveLong(long timestamp) {}
+                    public void mixedPrimitives(int x, double y, boolean z) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.PrimitiveTest")
+
+            assertEquals(4, result.size) { "Should extract 4 methods" }
+            assertEquals(listOf("value"), result["primitiveInt(int)"]) {
+                "Should handle int primitive"
+            }
+            assertEquals(listOf("flag"), result["primitiveBoolean(boolean)"]) {
+                "Should handle boolean primitive"
+            }
+            assertEquals(listOf("timestamp"), result["primitiveLong(long)"]) {
+                "Should handle long primitive"
+            }
+            assertEquals(listOf("x", "y", "z"), result["mixedPrimitives(int,double,boolean)"]) {
+                "Should handle multiple primitive types"
+            }
+        }
+
+        /**
+         * Test 6: Multiple overloads
+         * Test same method name with different signatures are all captured
+         */
+        @Test
+        fun `captures all method overloads`() {
+            val source = """
+                package com.example;
+
+                public class OverloadTest {
+                    public void process(String text) {}
+                    public void process(String text, int count) {}
+                    public void process(String text, int count, boolean verbose) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.OverloadTest")
+
+            assertEquals(3, result.size) { "Should extract all 3 overloads" }
+            assertEquals(listOf("text"), result["process(String)"]) {
+                "First overload: process(String)"
+            }
+            assertEquals(listOf("text", "count"), result["process(String,int)"]) {
+                "Second overload: process(String, int)"
+            }
+            assertEquals(listOf("text", "count", "verbose"), result["process(String,int,boolean)"]) {
+                "Third overload: process(String, int, boolean)"
+            }
+        }
+
+        /**
+         * Test 7: No parameters method
+         * Test methods with no params are excluded
+         */
+        @Test
+        fun `excludes methods with no parameters`() {
+            val source = """
+                package com.example;
+
+                public class NoParamTest {
+                    public void noParams() {}
+                    public String getStatus() { return "ok"; }
+                    public void withParams(String value) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.NoParamTest")
+
+            assertEquals(1, result.size) { "Should only extract method with parameters" }
+            assertEquals(listOf("value"), result["withParams(String)"]) {
+                "Only withParams should be included"
+            }
+            assertNotNull(result["withParams(String)"]) { "withParams should be present" }
+            org.junit.jupiter.api.Assertions.assertNull(result["noParams()"]) {
+                "noParams should be excluded"
+            }
+            org.junit.jupiter.api.Assertions.assertNull(result["getStatus()"]) {
+                "getStatus should be excluded"
+            }
+        }
+
+        /**
+         * Test 8: Inner class methods
+         * Test extraction from inner classes
+         */
+        @Test
+        fun `extracts methods from inner classes`() {
+            val source = """
+                package com.example;
+
+                public class OuterClass {
+                    public void outerMethod(String param) {}
+
+                    public class InnerClass {
+                        public void innerMethod(int value) {}
+                    }
+
+                    public static class StaticInnerClass {
+                        public void staticInnerMethod(boolean flag) {}
+                    }
+                }
+            """.trimIndent()
+
+            // Test extraction from InnerClass
+            val innerResult = inspector.extractAllMethodParametersFromContent(
+                source,
+                "com.example.OuterClass.InnerClass",
+            )
+            assertEquals(1, innerResult.size) { "Should extract 1 method from InnerClass" }
+            assertEquals(listOf("value"), innerResult["innerMethod(int)"]) {
+                "InnerClass should have innerMethod"
+            }
+
+            // Test extraction from StaticInnerClass
+            val staticInnerResult = inspector.extractAllMethodParametersFromContent(
+                source,
+                "com.example.OuterClass.StaticInnerClass",
+            )
+            assertEquals(1, staticInnerResult.size) { "Should extract 1 method from StaticInnerClass" }
+            assertEquals(listOf("flag"), staticInnerResult["staticInnerMethod(boolean)"]) {
+                "StaticInnerClass should have staticInnerMethod"
+            }
+        }
+
+        /**
+         * Test 9: Mixed visibility
+         * Test that private/protected/public methods are all extracted
+         */
+        @Test
+        fun `extracts methods regardless of visibility modifiers`() {
+            val source = """
+                package com.example;
+
+                public class VisibilityTest {
+                    public void publicMethod(String param1) {}
+                    protected void protectedMethod(int param2) {}
+                    private void privateMethod(boolean param3) {}
+                    void packagePrivateMethod(double param4) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.VisibilityTest")
+
+            assertEquals(4, result.size) { "Should extract all 4 methods regardless of visibility" }
+            assertEquals(listOf("param1"), result["publicMethod(String)"]) {
+                "Should extract public method"
+            }
+            assertEquals(listOf("param2"), result["protectedMethod(int)"]) {
+                "Should extract protected method"
+            }
+            assertEquals(listOf("param3"), result["privateMethod(boolean)"]) {
+                "Should extract private method"
+            }
+            assertEquals(listOf("param4"), result["packagePrivateMethod(double)"]) {
+                "Should extract package-private method"
+            }
+        }
+
+        /**
+         * Test with file-based extraction (not just content)
+         */
+        @Test
+        fun `extracts parameters from file path`() {
+            val javaFile = tempDir.resolve("com/example/FileTest.java")
+            Files.createDirectories(javaFile.parent)
+            Files.writeString(
+                javaFile,
+                """
+                package com.example;
+
+                public class FileTest {
+                    public void method1(String param1) {}
+                    public void method2(int param2, boolean param3) {}
+                }
+                """.trimIndent(),
+            )
+
+            val result = inspector.extractAllMethodParameters(javaFile, "com.example.FileTest")
+
+            assertEquals(2, result.size) { "Should extract 2 methods from file" }
+            assertEquals(listOf("param1"), result["method1(String)"]) {
+                "method1 should have String parameter"
+            }
+            assertEquals(listOf("param2", "param3"), result["method2(int,boolean)"]) {
+                "method2 should have int and boolean parameters"
+            }
+        }
+
+        /**
+         * Test with realistic GDK-style class
+         */
+        @Test
+        fun `extracts parameters from GDK-style utility methods`() {
+            val source = """
+                package org.codehaus.groovy.runtime;
+
+                import groovy.lang.Closure;
+                import java.util.Collection;
+                import java.util.List;
+
+                public class DefaultGroovyMethods {
+                    public static <T> T each(Collection<T> self, Closure closure) { return null; }
+                    public static <T> List<T> findAll(Collection<T> self, Closure closure) { return null; }
+                    public static <T> T find(Collection<T> self, Closure closure) { return null; }
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(
+                source,
+                "org.codehaus.groovy.runtime.DefaultGroovyMethods",
+            )
+
+            assertEquals(3, result.size) { "Should extract 3 GDK-style methods" }
+            assertEquals(listOf("self", "closure"), result["each(Collection,Closure)"]) {
+                "each should have Collection and Closure parameters"
+            }
+            assertEquals(listOf("self", "closure"), result["findAll(Collection,Closure)"]) {
+                "findAll should have Collection and Closure parameters"
+            }
+            assertEquals(listOf("self", "closure"), result["find(Collection,Closure)"]) {
+                "find should have Collection and Closure parameters"
+            }
+        }
+
+        /**
+         * Test with non-existent file
+         */
+        @Test
+        fun `returns empty map for non-existent file`() {
+            val result = inspector.extractAllMethodParameters(
+                tempDir.resolve("nonexistent.java"),
+                "com.example.NonExistent",
+            )
+            assertTrue(result.isEmpty()) { "Should return empty map for non-existent file" }
+        }
+
+        /**
+         * Test with invalid Java source
+         */
+        @Test
+        fun `returns empty map for invalid Java source`() {
+            val invalidSource = """
+                this is not valid java code {{{
+                syntax error !!!
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(
+                invalidSource,
+                "com.example.Invalid",
+            )
+            assertTrue(result.isEmpty()) { "Should return empty map for invalid source" }
+        }
+
+        /**
+         * Test with class not found in source
+         */
+        @Test
+        fun `returns empty map when class not found`() {
+            val source = """
+                package com.example;
+
+                public class RightClass {
+                    public void method(String param) {}
+                }
+            """.trimIndent()
+
+            val result = inspector.extractAllMethodParametersFromContent(source, "com.example.WrongClass")
+            assertTrue(result.isEmpty()) { "Should return empty map when class not found" }
+        }
+    }
 }

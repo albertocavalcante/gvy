@@ -1,52 +1,24 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
- * Scans DefaultGroovyMethods and StringGroovyMethods.
+ * Scans all GDK classes defined in [GroovySourceResolver.GDK_CLASSES].
  *
- * TODO(#830): Implement Groovy source JAR resolution for GDK parameter names
- *   Current limitation: Parameter names for GDK methods are obtained via reflection,
- *   which provides non-deterministic names like "arg0", "arg1" when debug symbols are missing.
- *
- *   Proposed solution: Similar to JdkSourceResolver handling of src.zip, implement
- *   GroovySourceResolver to extract parameter names from Groovy source JARs:
- *
- *   1. Detect Groovy version from classpath
- *      - Scan classpath for groovy-*.jar (e.g., groovy-4.0.23.jar)
- *      - Extract version string (e.g., "4.0.23")
- *
- *   2. Resolve corresponding sources JAR
- *      - Look for adjacent groovy-4.0.23-sources.jar
- *      - If not found, download from Maven Central:
- *        https://repo1.maven.org/maven2/org/apache/groovy/groovy/{version}/groovy-{version}-sources.jar
- *      - Cache downloaded JAR in ~/.gls/cache/groovy-sources/
- *
- *   3. Extract and index GDK source files
- *      - Extract DefaultGroovyMethods.java and related GDK classes
- *      - Use JavaSourceInspector to parse method declarations
- *      - Build index: methodName -> List<ParameterName>
- *
- *   4. Enhance GdkExtensionMethod with real parameter names
- *      - Replace reflection-based parameter names with source-extracted names
- *      - Provides deterministic parameter names for inlay hints and completion
- *
- *   Benefits:
- *   - Accurate parameter names for GDK methods in IDE (e.g., "closure" instead of "arg0")
- *   - No need to rebuild Groovy with debug symbols
- *   - Consistent experience across all GDK methods
- *
- *   Implementation files to create:
- *   - groovy-lsp/src/main/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolver.kt
- *   - groovy-lsp/src/test/kotlin/com/github/albertocavalcante/groovylsp/sources/GroovySourceResolverTest.kt
- *
- *   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+ * Now uses GroovySourceResolver to extract real parameter names from Groovy source JARs
+ * instead of relying on reflection which provides synthetic names like "arg0", "arg1".
  */
-class GroovyGdkProvider(private val classpathService: ClasspathService) {
+class GroovyGdkProvider(
+    private val classpathService: ClasspathService,
+    private val groovySourceResolver: GroovySourceResolver? = null,
+) {
     private val logger = KotlinLogging.logger {}
 
     // Map of <TargetType, List<ExtensionMethod>>
@@ -58,20 +30,29 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
      * Initializes the GDK index. Call this on startup.
      */
     fun initialize() {
-        if (isInitialized.get()) return
+        if (!isInitialized.compareAndSet(false, true)) return
 
-        // Common GDK classes in Groovy
-        val gdkClasses = listOf(
-            "org.codehaus.groovy.runtime.DefaultGroovyMethods",
-            "org.codehaus.groovy.runtime.StringGroovyMethods",
-            "org.codehaus.groovy.vmplugin.v8.PluginDefaultGroovyMethods",
-        )
+        // Initialize source resolver if available
+        // Note: runBlocking is intentional here - GDK initialization is a one-time
+        // startup cost that must complete before the provider is usable.
+        // Moving to async would require significant refactoring of callers.
+        groovySourceResolver?.let { resolver ->
+            runBlocking {
+                val success = resolver.initialize()
+                if (success) {
+                    logger.info { "Successfully initialized Groovy source resolver for parameter names" }
+                } else {
+                    logger.warn { "Failed to initialize Groovy source resolver, will use reflection-based names" }
+                }
+            }
+        }
 
-        gdkClasses.forEach { className ->
+        // Use the same GDK classes as GroovySourceResolver for consistency
+        // This ensures parameter names from sources match the methods we index
+        GDK_CLASSES.forEach { className ->
             indexGdkClass(className)
         }
 
-        isInitialized.set(true)
         logger.info { "Initialized GDK Provider with ${cache.size} target types" }
     }
 
@@ -87,12 +68,21 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
             // The first parameter is the "self" type (the type being extended)
             val selfType = method.parameterTypes[0].name // Full qualified name
 
+            // Parameters excluding the first one (self)
+            val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
+
+            // Try to get real parameter names from source resolver first
+            val parameterNames = groovySourceResolver?.getParameterNames(
+                clazz.simpleName,
+                method.name,
+                parameterTypes,
+            ) ?: method.parameters.drop(1).map { it.name } // Fallback to reflection
+
             val methodInfo = GdkExtensionMethod(
                 name = method.name,
                 returnType = method.returnType.simpleName,
-                // Parameters excluding the first one (self)
-                parameterTypes = method.parameterTypes.drop(1).map { it.simpleName },
-                parameterNames = method.parameters.drop(1).map { it.name },
+                parameterTypes = parameterTypes,
+                parameterNames = parameterNames,
                 originClass = clazz.simpleName,
                 doc = "Groovy GDK method from ${clazz.simpleName}",
             )
