@@ -40,17 +40,17 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
     }.getOrElse { throwable ->
         when (throwable) {
             is ClassNotFoundException -> {
-                logger.debug("Class not found on classpath: $className", throwable)
+                logger.debug(throwable) { "Class not found on classpath: $className" }
                 emptyList()
             }
 
             is NoClassDefFoundError -> {
-                logger.debug("Class definition not found: $className", throwable)
+                logger.debug(throwable) { "Class definition not found: $className" }
                 emptyList()
             }
 
             is Exception -> {
-                logger.error("Error reflecting on class $className", throwable)
+                logger.error(throwable) { "Error reflecting on class $className" }
                 emptyList()
             }
 

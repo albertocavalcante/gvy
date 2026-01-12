@@ -328,7 +328,7 @@ class DefinitionResolver(
         // When clicking on an import, users want to navigate to the imported class,
         // not see references to the import statement
         if (targetNode is ImportNode && TargetKind.DECLARATION in targetKinds) {
-            logger.debug("ImportNode detected, deferring to resolution pipeline for navigation")
+            logger.debug { "ImportNode detected, deferring to resolution pipeline for navigation" }
             return emptyList() // Let the main definition flow handle it
         }
 
