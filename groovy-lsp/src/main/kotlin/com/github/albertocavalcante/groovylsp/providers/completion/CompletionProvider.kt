@@ -499,7 +499,8 @@ object CompletionProvider {
         val qualifierName = completionContext.qualifierName
 
         // Strategy 0: Map literal keys (check first - most specific)
-        if (rawType.contains("Map") && qualifierName != null) {
+        // Strategy 0: Map literal keys (check first - most specific)
+        if (rawType.endsWith("Map") && qualifierName != null) {
             addMapLiteralKeyCompletions(qualifierName, ctx)
             // Don't return early - also add standard map methods below
         }
@@ -545,7 +546,8 @@ object CompletionProvider {
 
         // Check if cursor is inside any class method
         for (classNode in moduleNode.classes) {
-            val method = classNode.methods.find { method ->
+            // Use findLast to prefer the innermost scope if a method has invalid end line (effectively infinite range)
+            val method = classNode.methods.findLast { method ->
                 method.lineNumber > 0 &&
                     method.lineNumber <= ctx.line + 1 &&
                     (method.lastLineNumber >= ctx.line + 1 || method.lastLineNumber <= 0)

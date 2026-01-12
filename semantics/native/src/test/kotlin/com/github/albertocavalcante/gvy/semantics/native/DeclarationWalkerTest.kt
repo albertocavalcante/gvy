@@ -205,6 +205,12 @@ class DeclarationWalkerTest {
                 result.variables.any { it.name == "i" },
                 "For loop variable 'i' should be captured",
             )
+            // Ensure no duplicates
+            assertEquals(
+                1,
+                result.variables.count { it.name == "i" },
+                "For loop variable 'i' should be captured exactly once",
+            )
             assertTrue(
                 result.variables.any { it.name == "loopVar" },
                 "Declaration inside for loop body should be captured",
