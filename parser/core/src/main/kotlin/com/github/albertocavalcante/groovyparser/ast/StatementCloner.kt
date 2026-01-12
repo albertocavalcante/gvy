@@ -17,7 +17,7 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
 
 internal object StatementCloner {
 
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod", "UNCHECKED_CAST")
     fun <T : Statement> clone(node: T): T = when (node) {
         is BlockStatement -> cloneBlockStatement(node) as T
         is ExpressionStatement -> cloneExpressionStatement(node) as T

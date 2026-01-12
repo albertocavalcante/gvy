@@ -59,6 +59,7 @@ object MavenBspLauncher {
     /**
      * Creates the Aether RepositorySystem for dependency resolution.
      */
+    @Suppress("DEPRECATION")
     fun createRepositorySystem(): RepositorySystem {
         val locator = MavenRepositorySystemUtils.newServiceLocator()
 

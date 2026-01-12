@@ -49,12 +49,15 @@ class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfi
     }
 
     private class GlobMatcher(pattern: String) : PathMatcher {
+        companion object {
+            private val logger = KotlinLogging.logger {}
+        }
+
         @Suppress("TooGenericExceptionCaught")
         private val matcher = try {
             FileSystems.getDefault().getPathMatcher("glob:$pattern")
         } catch (e: Exception) {
-            KotlinLogging.logger {}
-                .warn("Failed to compile glob pattern: $pattern", e)
+            logger.warn(e) { "Failed to compile glob pattern: $pattern" }
             null
         }
 
