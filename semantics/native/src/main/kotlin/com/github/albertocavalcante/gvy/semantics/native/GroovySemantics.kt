@@ -88,25 +88,12 @@ class GroovySemantics(
 
     /**
      * Populates scope with variables from a BlockStatement.
-     * Traverses DeclarationExpressions and registers their types.
+     * Uses shared DeclarationWalker to traverse DeclarationExpressions.
      */
     private fun populateScopeFromBlock(block: BlockStatement, scope: NativeScope, context: NativeTypeContext) {
-        for (stmt in block.statements) {
-            when (stmt) {
-                is ExpressionStatement -> {
-                    val expr = stmt.expression
-                    if (expr is DeclarationExpression) {
-                        val name = expr.variableExpression.name
-                        val type = calculatorRegistry.calculate(expr, context)
-                        scope.defineVariable(name, type)
-                    }
-                }
-
-                is BlockStatement -> {
-                    // Recurse into nested blocks
-                    populateScopeFromBlock(stmt, scope, context)
-                }
-            }
+        val result = DeclarationWalker.walk(block, context, captureMapKeys = false)
+        for (decl in result.variables) {
+            scope.defineVariable(decl.name, decl.inferredType)
         }
     }
 
@@ -221,5 +208,17 @@ class GroovySemantics(
         // TODO: Walk up using parent logic if we had it.
         // For now, we assume single module injection and return the first one.
         return contextCache.values.firstOrNull()
+    }
+
+    /**
+     * Get the type context for a module.
+     * Ensures the module is injected first.
+     *
+     * @param module The module to get context for
+     * @return The NativeTypeContext, or null if injection failed
+     */
+    fun getContext(module: ModuleNode): NativeTypeContext? {
+        inject(module)
+        return contextCache[module]
     }
 }

@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
+import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
 import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
 import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
@@ -23,6 +24,7 @@ import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
@@ -382,6 +384,7 @@ object CompletionProvider {
                         doc = "Field: ${member.name}",
                     )
                 }
+
                 com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD -> {
                     method(
                         name = member.name,
@@ -390,7 +393,10 @@ object CompletionProvider {
                         doc = "Method: ${member.name}${member.signature ?: "()"}",
                     )
                 }
-                else -> { /* Skip constructors and other kinds */ }
+
+                else -> {
+                    /* Skip constructors and other kinds */
+                }
             }
         }
     }
@@ -446,6 +452,7 @@ object CompletionProvider {
                     bracketDepth++
                     currentParam.append(char)
                 }
+
                 '>' -> {
                     bracketDepth--
                     if (bracketDepth < 0) {
@@ -454,6 +461,7 @@ object CompletionProvider {
                     }
                     currentParam.append(char)
                 }
+
                 ',' -> {
                     if (bracketDepth == 0) {
                         addCurrentParam()
@@ -461,6 +469,7 @@ object CompletionProvider {
                         currentParam.append(char)
                     }
                 }
+
                 else -> currentParam.append(char)
             }
         }
@@ -487,6 +496,12 @@ object CompletionProvider {
     ): Boolean {
         val rawType = completionContext.qualifierType.substringBefore('<')
         val qualifierName = completionContext.qualifierName
+
+        // Strategy 0: Map literal keys (check first - most specific)
+        if (rawType.contains("LinkedHashMap") && qualifierName != null) {
+            addMapLiteralKeyCompletions(qualifierName, ctx)
+            // Don't return early - also add standard map methods below
+        }
 
         // Strategy 1: Jenkins global variables
         val globalVar = metadata
@@ -518,6 +533,60 @@ object CompletionProvider {
         addClasspathMethods(rawType, ctx.compilationService)
 
         return false
+    }
+
+    /**
+     * Finds the enclosing block for the cursor position.
+     * Returns the method body block if inside a method, or the script's statement block.
+     */
+    private fun findEnclosingBlock(ctx: CompletionContext): BlockStatement? {
+        val moduleNode = ctx.moduleNode ?: return null
+
+        // Check if cursor is inside a class method
+        val classNode = moduleNode.classes.firstOrNull()
+        if (classNode != null) {
+            val method = classNode.methods.find { method ->
+                method.lineNumber <= ctx.line + 1 &&
+                    (method.lastLineNumber >= ctx.line + 1 || method.lastLineNumber <= 0)
+            }
+            if (method?.code is BlockStatement) {
+                return method.code as BlockStatement
+            }
+        }
+
+        // Fallback to script-level statement block
+        return moduleNode.statementBlock
+    }
+
+    /**
+     * Adds map literal key completions for a variable with map literal initializer.
+     */
+    private fun CompletionsBuilder.addMapLiteralKeyCompletions(
+        qualifierName: String,
+        ctx: CompletionContext,
+    ): Boolean {
+        val moduleNode = ctx.moduleNode ?: return false
+        val nativeContext = ctx.semanticResolver.semantics.getContext(moduleNode)
+            ?: return false
+
+        val block = findEnclosingBlock(ctx) ?: return false
+        val result = DeclarationWalker.walk(block, nativeContext, captureMapKeys = true)
+
+        val mapDecl = result.variables.find { it.name == qualifierName }
+        val mapKeys = mapDecl?.mapKeys
+
+        if (mapKeys.isNullOrEmpty()) return false
+
+        logger.debug { "Adding map literal keys for '$qualifierName': ${mapKeys.map { it.key }}" }
+
+        mapKeys.forEach { keyInfo ->
+            property(
+                name = keyInfo.key,
+                type = formatType(keyInfo.valueType),
+                doc = "Map key '${keyInfo.key}'",
+            )
+        }
+        return true
     }
 
     private fun CompletionsBuilder.addJenkinsGlobalVariablePropertyCompletions(globalVar: MergedGlobalVariable) {
