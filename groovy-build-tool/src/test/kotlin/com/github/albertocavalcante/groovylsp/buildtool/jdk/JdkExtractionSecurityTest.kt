@@ -200,9 +200,12 @@ class JdkExtractionSecurityTest {
             )
         } catch (e: UnsupportedOperationException) {
             // Symlinks not supported - skip
-        } catch (e: Exception) {
-            // Any exception other than infinite loop is acceptable
-            // StackOverflowError is an Error (not Exception), so won't be caught here
+        } catch (e: Throwable) {
+            // Any exception other than StackOverflowError is acceptable
+            // StackOverflowError would indicate infinite loop/recursion
+            if (e is StackOverflowError) {
+                throw AssertionError("Circular symlinks caused infinite recursion", e)
+            }
         }
     }
 
