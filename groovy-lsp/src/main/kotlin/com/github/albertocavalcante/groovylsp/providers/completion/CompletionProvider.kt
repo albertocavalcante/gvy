@@ -499,7 +499,7 @@ object CompletionProvider {
         val qualifierName = completionContext.qualifierName
 
         // Strategy 0: Map literal keys (check first - most specific)
-        if (rawType.contains("LinkedHashMap") && qualifierName != null) {
+        if (rawType.contains("Map") && qualifierName != null) {
             addMapLiteralKeyCompletions(qualifierName, ctx)
             // Don't return early - also add standard map methods below
         }

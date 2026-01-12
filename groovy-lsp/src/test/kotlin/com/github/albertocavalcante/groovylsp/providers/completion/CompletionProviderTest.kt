@@ -218,7 +218,7 @@ class CompletionProviderTest {
         // Should NOT have keywords
         assertTrue(
             completions.none { it.label == "abstract" },
-            "Should NOT suggest 'abstract' keyword for map member access",
+            "Should NOT suggest 'abstract' keyword when completing map literal keys",
         )
     }
 

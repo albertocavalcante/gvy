@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import org.codehaus.groovy.ast.expr.ClosureListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MapExpression
@@ -111,11 +112,9 @@ object DeclarationWalker {
                 // FOR_LOOP_DUMMY is a placeholder parameter when there's no loop variable
                 if (loopVar != null && loopVar !== ForStatement.FOR_LOOP_DUMMY && loopVar.name != null) {
                     val calculatedType = context.calculateType(loopVar)
-                    val varType = calculatedType as? SemanticType
-                        ?: SemanticType.Unknown("loop variable type inference")
                     out += DeclarationInfo(
                         name = loopVar.name,
-                        inferredType = varType,
+                        inferredType = calculatedType,
                         line = loopVar.lineNumber,
                         column = loopVar.columnNumber,
                     )
@@ -124,7 +123,7 @@ object DeclarationWalker {
                 // Handle C-style for loops: for (int i = 0; i < 10; i++)
                 // The 'int i = 0' is hidden inside collectionExpression which is a ClosureListExpression
                 val collectionExpr = stmt.collectionExpression
-                if (collectionExpr is org.codehaus.groovy.ast.expr.ClosureListExpression) {
+                if (collectionExpr is ClosureListExpression) {
                     collectionExpr.expressions.forEach { expr ->
                         if (expr is DeclarationExpression) {
                             out += extractDeclaration(expr, context, captureMapKeys)
@@ -139,7 +138,22 @@ object DeclarationWalker {
             is DoWhileStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
             is TryCatchStatement -> {
                 walkChild(stmt.tryStatement, context, captureMapKeys, out)
-                stmt.catchStatements.forEach { walkChild(it.code, context, captureMapKeys, out) }
+                stmt.catchStatements.forEach { catchStmt ->
+                    // Capture catch exception variable
+                    val catchVar = catchStmt.variable
+                    if (catchVar != null) {
+                        val calculatedType = context.calculateType(catchVar)
+                        val varType = calculatedType as? SemanticType
+                            ?: SemanticType.Unknown("catch variable type inference")
+                        out += DeclarationInfo(
+                            name = catchVar.name,
+                            inferredType = varType,
+                            line = catchVar.lineNumber,
+                            column = catchVar.columnNumber,
+                        )
+                    }
+                    walkChild(catchStmt.code, context, captureMapKeys, out)
+                }
                 stmt.finallyStatement?.let { walkChild(it, context, captureMapKeys, out) }
             }
 
