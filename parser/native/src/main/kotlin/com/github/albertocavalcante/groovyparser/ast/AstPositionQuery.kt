@@ -48,7 +48,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         val groovyLine = lspLine + 1
         val groovyCharacter = lspCharacter + 1
 
-        if (logger.isDebugEnabled) {
+        if (logger.isDebugEnabled()) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
             val classNodes = nodes.filterIsInstance<ClassNode>()
             logger.debug { "[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)" }
@@ -59,7 +59,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             }
         }
 
-        if (logger.isDebugEnabled) {
+        if (logger.isDebugEnabled()) {
             logger.debug { "Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes" }
             val constructorCalls = nodes.filterIsInstance<ConstructorCallExpression>()
             if (constructorCalls.isNotEmpty()) {
@@ -79,7 +79,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             }
         }
 
-        if (logger.isDebugEnabled && matchingNodes.isNotEmpty()) {
+        if (logger.isDebugEnabled() && matchingNodes.isNotEmpty()) {
             logger.debug { "Matching nodes:" }
             matchingNodes.forEach { node ->
                 logger.debug { "  - ${node.javaClass.simpleName} @ ${node.lineNumber}:${node.columnNumber}" }
@@ -112,7 +112,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             val filtered = candidatesWithoutStatements.filterNot { node ->
                 if (node is ClassNode) {
                     val isDecl = isClassDeclaration(node, matchingNodes)
-                    if (logger.isDebugEnabled) {
+                    if (logger.isDebugEnabled()) {
                         logger.debug {
                             "ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber} isDeclaration=$isDecl"
                         }
@@ -122,7 +122,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                     false
                 }
             }
-            if (logger.isDebugEnabled && filtered.size != candidatesWithoutStatements.size) {
+            if (logger.isDebugEnabled() && filtered.size != candidatesWithoutStatements.size) {
                 logger.debug {
                     "Filtered out ${candidatesWithoutStatements.size - filtered.size} ClassNode type references"
                 }
@@ -175,7 +175,7 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             },
         )
 
-        if (logger.isDebugEnabled && result != null) {
+        if (logger.isDebugEnabled() && result != null) {
             logger.debug {
                 "Selected node: ${result.javaClass.simpleName} at ${result.lineNumber}:${result.columnNumber}"
             }

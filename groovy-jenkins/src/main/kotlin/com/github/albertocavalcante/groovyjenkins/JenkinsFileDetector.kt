@@ -54,7 +54,7 @@ class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfi
             FileSystems.getDefault().getPathMatcher("glob:$pattern")
         } catch (e: Exception) {
             KotlinLogging.logger {}
-                .warn("Failed to compile glob pattern: $pattern", e)
+                .warn(e) { "Failed to compile glob pattern: $pattern" }
             null
         }
 

@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.github.groovylsp.bsp.maven.launcher
 
 import ch.epfl.scala.bsp4j.BuildClient
