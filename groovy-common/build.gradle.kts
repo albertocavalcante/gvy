@@ -20,6 +20,7 @@ dependencies {
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.kotlin.coroutines.test)
+    testImplementation(project(":parser:core")) // For Groovydoc tests
     testRuntimeOnly(libs.junit.platform.launcher)
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)

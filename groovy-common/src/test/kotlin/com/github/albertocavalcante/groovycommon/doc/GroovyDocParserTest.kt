@@ -9,6 +9,20 @@ import org.junit.jupiter.api.Test
 
 class GroovyDocParserTest {
 
+    /**
+     * Helper function to extract content from a Groovydoc comment.
+     * Removes the /** and */ delimiters and cleans up leading asterisks.
+     */
+    private fun extractContent(comment: String): String = comment
+        .trim()
+        .removePrefix("/**")
+        .removeSuffix("*/")
+        .lines()
+        .joinToString("\n") { line ->
+            line.trim().removePrefix("*").trimStart()
+        }
+        .trim()
+
     @Test
     fun `parse empty comment`() {
         val comment = """
@@ -16,9 +30,9 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("", result.description.toText())
+        assertEquals("", result.description.text)
         assertEquals(emptyList<Any>(), result.getParamTags())
         assertNull(result.getReturnTag())
         assertEquals(emptyList<Any>(), result.getThrowsTags())
@@ -36,9 +50,9 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("This is a simple description.", result.description.toText())
+        assertEquals("This is a simple description.", result.description.text)
         assertEquals(emptyList<Any>(), result.getParamTags())
         assertNull(result.getReturnTag())
     }
@@ -53,10 +67,10 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         val expected = "This is the first line of description.\nThis is the second line.\nAnd a third line."
-        assertEquals(expected, result.description.toText())
+        assertEquals(expected, result.description.text)
     }
 
     @Test
@@ -68,12 +82,12 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
+        assertEquals("Method description.", result.description.text)
         assertEquals(1, result.getParamTags().size)
         assertEquals("name", result.getParamTags()[0].name)
-        assertEquals("the name parameter", result.getParamTags()[0].content.toText())
+        assertEquals("the name parameter", result.getParamTags()[0].content.text)
     }
 
     @Test
@@ -87,16 +101,16 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method with multiple parameters.", result.description.toText())
+        assertEquals("Method with multiple parameters.", result.description.text)
         assertEquals(3, result.getParamTags().size)
         assertEquals("first", result.getParamTags()[0].name)
-        assertEquals("the first parameter", result.getParamTags()[0].content.toText())
+        assertEquals("the first parameter", result.getParamTags()[0].content.text)
         assertEquals("second", result.getParamTags()[1].name)
-        assertEquals("the second parameter", result.getParamTags()[1].content.toText())
+        assertEquals("the second parameter", result.getParamTags()[1].content.text)
         assertEquals("third", result.getParamTags()[2].name)
-        assertEquals("the third parameter", result.getParamTags()[2].content.toText())
+        assertEquals("the third parameter", result.getParamTags()[2].content.text)
     }
 
     @Test
@@ -109,11 +123,11 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(1, result.getParamTags().size)
         assertEquals("name", result.getParamTags()[0].name)
-        assertEquals("the name parameter with a multiline description", result.getParamTags()[0].content.toText())
+        assertEquals("the name parameter with a multiline description", result.getParamTags()[0].content.text)
     }
 
     @Test
@@ -125,15 +139,15 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
+        assertEquals("Method description.", result.description.text)
         assertNotNull(result.getReturnTag())
-        assertEquals("the result value", result.getReturnTag()?.content?.toText())
+        assertEquals("the result value", result.getReturnTag()?.content?.text)
     }
 
     @Test
-    fun `parse returns tag (alternative form)`() {
+    fun `parse returns tag (non-standard tag treated as unknown)`() {
         val comment = """
             /**
              * Method description.
@@ -141,10 +155,14 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertNotNull(result.getReturnTag())
-        assertEquals("the result value", result.getReturnTag()?.content?.toText())
+        // @returns is not a standard Javadoc/Groovydoc tag (it's JSDoc)
+        // The new parser treats it as an unknown tag, not as @return
+        assertNull(result.getReturnTag())
+        // Instead, it should be captured as an unknown block tag
+        assertEquals(1, result.blockTags.size)
+        assertEquals("returns", result.blockTags[0].tagName)
     }
 
     @Test
@@ -156,12 +174,12 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
+        assertEquals("Method description.", result.description.text)
         assertEquals(1, result.getThrowsTags().size)
         assertEquals("IllegalArgumentException", result.getThrowsTags()[0].name)
-        assertEquals("if argument is invalid", result.getThrowsTags()[0].content.toText())
+        assertEquals("if argument is invalid", result.getThrowsTags()[0].content.text)
     }
 
     @Test
@@ -173,11 +191,11 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(1, result.getThrowsTags().size)
         assertEquals("IOException", result.getThrowsTags()[0].name)
-        assertEquals("if IO error occurs", result.getThrowsTags()[0].content.toText())
+        assertEquals("if IO error occurs", result.getThrowsTags()[0].content.text)
     }
 
     @Test
@@ -191,7 +209,7 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(3, result.getThrowsTags().size)
         assertEquals("IllegalArgumentException", result.getThrowsTags()[0].name)
@@ -208,11 +226,11 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
+        assertEquals("Method description.", result.description.text)
         assertEquals(1, result.getSeeTags().size)
-        assertEquals("SomeOtherClass", result.getSeeTags()[0].content.toText())
+        assertEquals("SomeOtherClass", result.getSeeTags()[0].content.text)
     }
 
     @Test
@@ -226,12 +244,12 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(3, result.getSeeTags().size)
-        assertEquals("FirstClass", result.getSeeTags()[0].content.toText())
-        assertEquals("SecondClass#method()", result.getSeeTags()[1].content.toText())
-        assertEquals("<a href=\"http://example.com\">Example</a>", result.getSeeTags()[2].content.toText())
+        assertEquals("FirstClass", result.getSeeTags()[0].content.text)
+        assertEquals("SecondClass#method()", result.getSeeTags()[1].content.text)
+        assertEquals("<a href=\"http://example.com\">Example</a>", result.getSeeTags()[2].content.text)
     }
 
     @Test
@@ -243,10 +261,10 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
-        assertEquals("1.0", result.getSinceTag()?.content?.toText())
+        assertEquals("Method description.", result.description.text)
+        assertEquals("1.0", result.getSinceTag()?.content?.text)
     }
 
     @Test
@@ -258,10 +276,10 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
-        assertEquals("Use newMethod() instead", result.getDeprecatedTag()?.content?.toText())
+        assertEquals("Method description.", result.description.text)
+        assertEquals("Use newMethod() instead", result.getDeprecatedTag()?.content?.text)
     }
 
     @Test
@@ -273,10 +291,10 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("Method description.", result.description.toText())
-        assertEquals("John Doe", result.getAuthorTag()?.content?.toText())
+        assertEquals("Method description.", result.description.text)
+        assertEquals("John Doe", result.getAuthorTag()?.content?.text)
     }
 
     @Test
@@ -298,27 +316,27 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(
             "Processes the given input and returns a result.\nThis method performs complex operations.",
-            result.description.toText(),
+            result.description.text,
         )
         assertEquals(2, result.getParamTags().size)
         assertEquals("input", result.getParamTags()[0].name)
-        assertEquals("the input string to process", result.getParamTags()[0].content.toText())
+        assertEquals("the input string to process", result.getParamTags()[0].content.text)
         assertEquals("options", result.getParamTags()[1].name)
-        assertEquals("configuration options", result.getParamTags()[1].content.toText())
+        assertEquals("configuration options", result.getParamTags()[1].content.text)
         assertNotNull(result.getReturnTag())
-        assertEquals("the processed result", result.getReturnTag()?.content?.toText())
+        assertEquals("the processed result", result.getReturnTag()?.content?.text)
         assertEquals(2, result.getThrowsTags().size)
         assertEquals("IllegalArgumentException", result.getThrowsTags()[0].name)
         assertEquals("IOException", result.getThrowsTags()[1].name)
         assertEquals(1, result.getSeeTags().size)
-        assertEquals("ProcessorUtils", result.getSeeTags()[0].content.toText())
-        assertEquals("2.0", result.getSinceTag()?.content?.toText())
-        assertEquals("Use newProcess() instead", result.getDeprecatedTag()?.content?.toText())
-        assertEquals("Jane Smith", result.getAuthorTag()?.content?.toText())
+        assertEquals("ProcessorUtils", result.getSeeTags()[0].content.text)
+        assertEquals("2.0", result.getSinceTag()?.content?.text)
+        assertEquals("Use newProcess() instead", result.getDeprecatedTag()?.content?.text)
+        assertEquals("Jane Smith", result.getAuthorTag()?.content?.text)
     }
 
     @Test
@@ -330,9 +348,9 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertEquals("", result.description.toText())
+        assertEquals("", result.description.text)
         assertEquals(1, result.getParamTags().size)
         assertNotNull(result.getReturnTag())
     }
@@ -347,10 +365,10 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
-        assertTrue(result.description.toText().contains("First paragraph."))
-        assertTrue(result.description.toText().contains("Second paragraph after blank line."))
+        assertTrue(result.description.text.contains("First paragraph."))
+        assertTrue(result.description.text.contains("Second paragraph after blank line."))
     }
 
     @Test
@@ -362,11 +380,11 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(1, result.getParamTags().size)
         assertEquals("name", result.getParamTags()[0].name)
-        assertEquals("", result.getParamTags()[0].content.toText())
+        assertEquals("", result.getParamTags()[0].content.text)
     }
 
     @Test
@@ -378,17 +396,17 @@ class GroovyDocParserTest {
              */
         """.trimIndent()
 
-        val result = Groovydoc.parse(comment)
+        val result = Groovydoc.parse(extractContent(comment))
 
         assertEquals(1, result.getThrowsTags().size)
         assertEquals("IOException", result.getThrowsTags()[0].name)
-        assertEquals("", result.getThrowsTags()[0].content.toText())
+        assertEquals("", result.getThrowsTags()[0].content.text)
     }
 
     @Test
     fun `parse single line comment`() {
         val comment = "/** This is a single line comment. */"
-        val result = Groovydoc.parse(comment)
-        assertEquals("This is a single line comment.", result.description.toText())
+        val result = Groovydoc.parse(extractContent(comment))
+        assertEquals("This is a single line comment.", result.description.text)
     }
 }
