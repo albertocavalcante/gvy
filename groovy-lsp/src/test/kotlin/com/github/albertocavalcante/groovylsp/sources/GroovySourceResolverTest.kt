@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
@@ -296,12 +295,26 @@ class GroovySourceResolverTest {
         }
     }
 
+    /**
+     * Tests for Groovy version coordinate mapping.
+     *
+     * TODO(#831): These tests require version detection to be injectable for proper unit testing.
+     *   Current limitation: GroovySourceResolver.getGroovyMavenCoordinates() is private and
+     *   version detection is hardcoded to use GroovySystem.getVersion(). To test coordinate
+     *   mapping for Groovy 2.x/3.x/4.x versions, we would need either:
+     *   1. Make getGroovyMavenCoordinates() internal/protected and testable
+     *   2. Add a version parameter to initialize() or constructor
+     *   3. Use PowerMock to mock GroovySystem.getVersion()
+     *
+     * For now, we test what we can with the actual runtime Groovy version.
+     */
     @Nested
+    @EnabledIf("hasGroovy")
     inner class GroovyVersionCoordinatesTest {
 
         @Test
-        fun `should use apache groovy coordinates for Groovy 4_x`() = runBlocking {
-            // Given - mock resolver that returns null (we won't get to download)
+        fun `should use correct coordinates for current Groovy version`() = runBlocking {
+            // Given - mock resolver that captures coordinates
             val mockResolver = object : SourceArtifactResolver {
                 var capturedGroupId: String? = null
                 var capturedArtifactId: String? = null
@@ -318,87 +331,31 @@ class GroovySourceResolverTest {
                 override val cacheDir: Path = tempDir
             }
 
-            // Create resolver with mock that simulates Groovy 4.0.0
-            val resolver = TestableGroovySourceResolver(
+            val resolver = GroovySourceResolver(
                 groovySourceDir = groovySourceDir,
                 javaSourceInspector = javaSourceInspector,
                 sourceArtifactResolver = mockResolver,
-                groovyVersion = "4.0.0",
             )
 
-            // When - we initialize (will fail but we can check coordinates)
+            // When - we initialize (will fail due to null JAR but coordinates are captured)
             resolver.initialize()
 
-            // Then - should use Apache Groovy coordinates
-            assertThat(mockResolver.capturedGroupId).isEqualTo("org.apache.groovy")
+            // Then - coordinates should be captured
+            assertThat(mockResolver.capturedGroupId).isNotNull()
             assertThat(mockResolver.capturedArtifactId).isEqualTo("groovy")
-            assertThat(mockResolver.capturedVersion).isEqualTo("4.0.0")
-        }
+            assertThat(mockResolver.capturedVersion).isNotNull()
 
-        @Test
-        fun `should use codehaus groovy coordinates for Groovy 3_x`() = runBlocking {
-            // Given - mock resolver
-            val mockResolver = object : SourceArtifactResolver {
-                var capturedGroupId: String? = null
-                var capturedArtifactId: String? = null
-                var capturedVersion: String? = null
+            // Verify coordinate mapping based on actual runtime version
+            val groovyVersion = Class.forName("groovy.lang.GroovySystem")
+                .getMethod("getVersion")
+                .invoke(null) as String
+            val majorVersion = groovyVersion.split(".").firstOrNull()?.toIntOrNull() ?: 4
 
-                override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? {
-                    capturedGroupId = groupId
-                    capturedArtifactId = artifactId
-                    capturedVersion = version
-                    return null
-                }
-
-                override fun isSourcesCached(groupId: String, artifactId: String, version: String): Boolean = false
-                override val cacheDir: Path = tempDir
+            if (majorVersion >= 4) {
+                assertThat(mockResolver.capturedGroupId).isEqualTo("org.apache.groovy")
+            } else {
+                assertThat(mockResolver.capturedGroupId).isEqualTo("org.codehaus.groovy")
             }
-
-            // Create resolver with mock that simulates Groovy 3.0.0
-            val resolver = TestableGroovySourceResolver(
-                groovySourceDir = groovySourceDir,
-                javaSourceInspector = javaSourceInspector,
-                sourceArtifactResolver = mockResolver,
-                groovyVersion = "3.0.0",
-            )
-
-            // When - we initialize
-            resolver.initialize()
-
-            // Then - should use Codehaus coordinates
-            assertThat(mockResolver.capturedGroupId).isEqualTo("org.codehaus.groovy")
-            assertThat(mockResolver.capturedArtifactId).isEqualTo("groovy")
-            assertThat(mockResolver.capturedVersion).isEqualTo("3.0.0")
-        }
-
-        @Test
-        fun `should use codehaus groovy coordinates for Groovy 2_x`() = runBlocking {
-            // Given - mock resolver
-            val mockResolver = object : SourceArtifactResolver {
-                var capturedGroupId: String? = null
-
-                override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? {
-                    capturedGroupId = groupId
-                    return null
-                }
-
-                override fun isSourcesCached(groupId: String, artifactId: String, version: String): Boolean = false
-                override val cacheDir: Path = tempDir
-            }
-
-            // Create resolver with mock that simulates Groovy 2.5.0
-            val resolver = TestableGroovySourceResolver(
-                groovySourceDir = groovySourceDir,
-                javaSourceInspector = javaSourceInspector,
-                sourceArtifactResolver = mockResolver,
-                groovyVersion = "2.5.0",
-            )
-
-            // When - we initialize
-            resolver.initialize()
-
-            // Then - should use Codehaus coordinates
-            assertThat(mockResolver.capturedGroupId).isEqualTo("org.codehaus.groovy")
         }
     }
 
@@ -553,44 +510,6 @@ class GroovySourceResolverTest {
             assertThat(paramNames).isNotNull()
             assertThat(paramNames).isNotEmpty()
         }
-    }
-
-    /**
-     * Helper class to test Groovy version coordinate mapping.
-     *
-     * This subclass allows us to override the Groovy version detection
-     * to test the Maven coordinate mapping logic without requiring
-     * a specific Groovy runtime version.
-     */
-    private class TestableGroovySourceResolver(
-        groovySourceDir: Path,
-        javaSourceInspector: JavaSourceInspector,
-        sourceArtifactResolver: SourceArtifactResolver,
-        private val groovyVersion: String,
-    ) : GroovySourceResolver(groovySourceDir, javaSourceInspector, sourceArtifactResolver) {
-        // Override to simulate having a specific Groovy version
-        override suspend fun initialize(): Boolean {
-            // Simulate the coordinate mapping logic from the parent class
-            // This duplicates the logic from getGroovyMavenCoordinates to test it
-            val coordinates = getGroovyMavenCoordinatesForTesting(groovyVersion)
-            sourceArtifactResolver.resolveSourceJar(
-                coordinates.groupId,
-                coordinates.artifactId,
-                coordinates.version,
-            )
-            return false // Always return false since we're just testing coordinates
-        }
-
-        private fun getGroovyMavenCoordinatesForTesting(version: String): MavenCoordinates {
-            val majorVersion = version.split(".").firstOrNull()?.toIntOrNull() ?: 4
-            return if (majorVersion >= 4) {
-                MavenCoordinates("org.apache.groovy", "groovy", version)
-            } else {
-                MavenCoordinates("org.codehaus.groovy", "groovy", version)
-            }
-        }
-
-        private data class MavenCoordinates(val groupId: String, val artifactId: String, val version: String)
     }
 
     // Helper to create test source JARs

@@ -405,8 +405,7 @@ class JavaSourceInspector {
                     val baseType = param.typeAsString
                         .substringBefore('<') // Strip generic type parameters
                         .substringAfterLast('.')
-                    // Handle varargs: JavaParser represents "Object... args" as type "Object"
-                    // but reflection returns "Object[]" for varargs parameters
+                    // Normalize varargs to array notation to match reflection (Object... -> Object[])
                     if (param.isVarArgs) "$baseType[]" else baseType
                 }
                 val paramNames = method.parameters.map { it.nameAsString }

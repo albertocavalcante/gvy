@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
+import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,7 +24,7 @@ import java.util.jar.JarFile
 class GroovySourceResolver(
     private val groovySourceDir: Path = getDefaultGroovySourceDir(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
-    private val sourceArtifactResolver: MavenSourceArtifactResolver = MavenSourceArtifactResolver(),
+    private val sourceArtifactResolver: SourceArtifactResolver = MavenSourceArtifactResolver(),
 ) {
     private val logger = KotlinLogging.logger {}
 

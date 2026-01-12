@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
@@ -157,7 +158,10 @@ class GroovyGdkProviderTest {
     fun `should use mocked GroovySourceResolver parameter names when available`() {
         // Arrange: Create a mock resolver that returns known parameter names
         val mockResolver = mockk<GroovySourceResolver>()
-        every { mockResolver.initialize() } returns true
+        coEvery { mockResolver.initialize() } returns true
+        // Default: return null for unspecified methods (falls back to reflection)
+        every { mockResolver.getParameterNames(any(), any(), any()) } returns null
+        // Specific mocks for methods we want to test
         every {
             mockResolver.getParameterNames(
                 "DefaultGroovyMethods",
@@ -197,7 +201,7 @@ class GroovyGdkProviderTest {
     fun `should fallback to reflection when resolver returns null`() {
         // Arrange: Create a resolver that always returns null
         val nullResolver = mockk<GroovySourceResolver>()
-        every { nullResolver.initialize() } returns true
+        coEvery { nullResolver.initialize() } returns true
         every { nullResolver.getParameterNames(any(), any(), any()) } returns null
 
         // Act: Create provider with null-returning resolver
@@ -220,7 +224,10 @@ class GroovyGdkProviderTest {
     fun `should fallback to reflection when resolver initialization fails`() {
         // Arrange: Create a resolver that fails to initialize
         val failingResolver = mockk<GroovySourceResolver>()
-        every { failingResolver.initialize() } returns false
+        coEvery { failingResolver.initialize() } returns false
+        // Even when initialize fails, the provider still queries the resolver during indexing
+        // Mock it to return null (simulating no parameter names available)
+        every { failingResolver.getParameterNames(any(), any(), any()) } returns null
 
         // Act: Create provider with failing resolver
         val classpathService = ClasspathService()

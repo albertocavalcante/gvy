@@ -524,15 +524,15 @@ class JavaSourceInspectorTest {
 
         /**
          * Test 3: Varargs handling
-         * Test Object... args - document whether it becomes Object or Object[]
+         * Test Object... args - normalized to Object[] to match reflection.
          *
-         * DOCUMENTED BEHAVIOR: JavaParser represents varargs as the base type WITHOUT array notation.
-         * - Source: `void method(Object... args)` -> Signature: `method(Object)`
-         * - This differs from arrays: `void method(Object[] args)` -> Signature: `method(Object[])`
+         * DOCUMENTED BEHAVIOR: Varargs are normalized to array notation to match Java reflection.
+         * - Source: `void method(Object... args)` -> Signature: `method(Object[])`
+         * - Arrays: `void method(Object[] args)` -> Signature: `method(Object[])`
          *
-         * TODO(#830): Consider if varargs should be normalized to array notation for consistency
-         * with runtime signatures. This may affect method signature matching in GDK indexing.
-         * Currently varargs are represented as base type (e.g., "Object" not "Object[]").
+         * This ensures consistency with GroovyGdkProvider which uses reflection to get parameter types.
+         * When GroovyGdkProvider queries for parameter names using reflection-based types (Object[]),
+         * the lookup in GdkMethodIndex succeeds because JavaSourceInspector indexes with Object[] too.
          */
         @Test
         fun `handles varargs parameters`() {
@@ -549,12 +549,12 @@ class JavaSourceInspectorTest {
 
             assertEquals(2, result.size) { "Should extract 2 methods" }
 
-            // Varargs are represented as base type WITHOUT array notation
-            assertEquals(listOf("args"), result["varargMethod(Object)"]) {
-                "varargMethod(Object... args) should become varargMethod(Object)"
+            // Varargs are normalized to array notation to match reflection
+            assertEquals(listOf("args"), result["varargMethod(Object[])"]) {
+                "varargMethod(Object... args) should become varargMethod(Object[])"
             }
-            assertEquals(listOf("prefix", "args"), result["mixedMethod(String,Object)"]) {
-                "mixedMethod(String, Object... args) should become mixedMethod(String,Object)"
+            assertEquals(listOf("prefix", "args"), result["mixedMethod(String,Object[])"]) {
+                "mixedMethod(String, Object... args) should become mixedMethod(String,Object[])"
             }
         }
 
