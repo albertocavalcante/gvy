@@ -15,6 +15,7 @@ kt_library(
 kt_test(
     name = "openrewrite_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.gvy"],
     associates = [":openrewrite"],
     deps = [
         "@maven//:ch_qos_logback_logback_classic",

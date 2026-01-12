@@ -8,6 +8,7 @@ kt_test(
         "e2e/kotlin/**/*.kt",
         "lsp-client/kotlin/**/*.kt",
     ]),
+    test_packages = ["com.github.albertocavalcante.groovylsp"],
     tags = ["manual"],
     data = glob(
         [

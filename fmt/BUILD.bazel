@@ -14,6 +14,7 @@ kt_library(
 kt_test(
     name = "groovy-formatter_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovyformatter"],
     associates = [":groovy-formatter"],
     deps = [
         "@maven//:org_junit_jupiter_junit_jupiter_params",

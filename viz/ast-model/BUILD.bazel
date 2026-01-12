@@ -24,6 +24,7 @@ kt_test(
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",
     ]),
+    test_packages = ["com.github.albertocavalcante.gvy"],
     # Disabled: Requires Compose Multiplatform Bazel configuration
     tags = ["manual"],
     deps = [

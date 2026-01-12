@@ -62,7 +62,7 @@ building an automated migration tool.
 | Type     | Gradle                                      | Bazel                                                      |
 | -------- | ------------------------------------------- | ---------------------------------------------------------- |
 | External | `implementation(libs.arrow.core)`           | `"@maven//:io_arrow_kt_arrow_core"`                        |
-| Internal | `implementation(project(":groovy-common"))` | `"//dsl/dsld"`                                        |
+| Internal | `implementation(project(":groovy-common"))` | `"//dsl/dsld"`                                             |
 | Test     | `testImplementation(libs.kotlin.test)`      | Test target: `"@maven//:org_jetbrains_kotlin_kotlin_test"` |
 
 ### Build Targets

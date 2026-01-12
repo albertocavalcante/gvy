@@ -14,5 +14,6 @@ kt_library(
 kt_test(
     name = "core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovyparser", "com.github.albertocavalcante.groovylsp"],
     associates = [":core"],
 )

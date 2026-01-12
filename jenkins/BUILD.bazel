@@ -30,6 +30,7 @@ kt_library(
 kt_test(
     name = "groovy-jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     tags = ["manual"],
     deps = [
         ":groovy-jenkins",

@@ -13,6 +13,7 @@ kt_library(
 kt_test(
     name = "groovy-gdsl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovygdsl"],
     associates = [":groovy-gdsl"],
     deps = [
         "@maven//:io_mockk_mockk_jvm",

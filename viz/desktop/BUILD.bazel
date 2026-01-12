@@ -25,6 +25,7 @@ kt_test(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,
     ),
+    test_packages = [],
     # Disabled: Requires Compose Multiplatform Bazel configuration
     tags = ["manual"],
     deps = [

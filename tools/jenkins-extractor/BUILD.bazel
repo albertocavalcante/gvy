@@ -16,6 +16,7 @@ kt_library(
 kt_test(
     name = "jenkins-extractor_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     deps = [
         ":jenkins-extractor",
         "@maven//:org_junit_platform_junit_platform_launcher",

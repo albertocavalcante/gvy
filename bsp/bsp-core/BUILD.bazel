@@ -17,6 +17,7 @@ kt_library(
 kt_test(
     name = "bsp-core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.groovylsp.bsp"],
     associates = [":bsp-core"],
     deps = [
         "@maven//:io_mockk_mockk_jvm",

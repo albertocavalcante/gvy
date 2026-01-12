@@ -50,48 +50,85 @@ kt_library = macro(
     },
 )
 
-def _kt_test_impl(name, visibility, srcs, deps, associates, test_class, plugins, **kwargs):
+def _kt_test_impl(
+        name, visibility, srcs, deps, associates, test_class, test_packages, plugins,
+        resources, data, jvm_flags, env, tags, size, timeout, **kwargs):
     """Implementation for kt_test symbolic macro."""
     all_plugins = _DEFAULT_PLUGINS + plugins
 
-    # Merge runtime_deps from kwargs with our defaults
-    existing_runtime_deps = kwargs.pop("runtime_deps", None)
-    if existing_runtime_deps == None:
-        existing_runtime_deps = []
-    runtime_deps = existing_runtime_deps + [
+    # JUnit 6 Platform runtime dependencies
+    runtime_deps = [
         "@maven//:org_junit_jupiter_junit_jupiter_engine",
         "@maven//:org_junit_platform_junit_platform_launcher",
+        "@maven//:org_junit_platform_junit_platform_console",
+        "@maven//:org_junit_platform_junit_platform_reporting",
+        "@maven//:org_junit_platform_junit_platform_suite_api",
+        "@maven//:org_junit_platform_junit_platform_suite_engine",
     ]
 
-    kt_jvm_test(
-        name = name,
-        srcs = srcs,
-        deps = deps + [
+    # JUnit 6 Platform ConsoleLauncher args
+    # JUnit 6 changed CLI to use subcommands: `junit execute ...`
+    # --scan-classpath doesn't work reliably with Bazel, use --select-package instead
+    junit_args = [
+        "execute",
+        "--fail-if-no-tests",
+    ]
+
+    # Add package selectors for test discovery
+    # If no packages specified, use --scan-classpath as fallback
+    if len(test_packages) == 0:
+        junit_args.append("--scan-classpath")
+    else:
+        for pkg in test_packages:
+            junit_args.append("--select-package=" + pkg)
+
+    # Build kt_jvm_test kwargs
+    test_kwargs = {
+        "name": name,
+        "srcs": srcs,
+        "deps": deps + [
             "@maven//:org_jetbrains_kotlin_kotlin_test",
             "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
             "@maven//:org_junit_jupiter_junit_jupiter",
             "@maven//:org_junit_jupiter_junit_jupiter_api",
             "@maven//:org_assertj_assertj_core",
         ],
-        runtime_deps = runtime_deps,
-        associates = associates,
-        test_class = test_class,
-        visibility = visibility,
-        plugins = all_plugins,
-        **kwargs
-    )
+        "runtime_deps": runtime_deps,
+        "associates": associates,
+        "main_class": "org.junit.platform.console.ConsoleLauncher",
+        "args": junit_args,
+        "visibility": visibility,
+        "plugins": all_plugins,
+        "resources": resources,
+        "data": data,
+        "jvm_flags": jvm_flags,
+        "env": env,
+        "tags": tags,
+        "size": size,
+    }
+
+    # Only add timeout if specified
+    if timeout:
+        test_kwargs["timeout"] = timeout
+
+    # Use JUnit Platform ConsoleLauncher for test discovery
+    # This enables automatic discovery of @Test annotated methods
+    kt_jvm_test(**test_kwargs)
 
 kt_test = macro(
-    doc = """Kotlin test with JUnit 6 (Jupiter).
+    doc = """Kotlin test with JUnit 6 (Jupiter) and automatic test discovery.
 
     Provides:
     - JUnit 6 (Jupiter) dependencies automatically included
+    - JUnit Platform ConsoleLauncher for automatic test discovery
     - AssertJ for assertions
     - kotlinx-serialization plugin enabled by default
     - Typed attributes with validation
+
+    Tests are discovered via --select-package for each package in test_packages.
+    The test_packages attribute is REQUIRED to specify which packages to scan.
     """,
     implementation = _kt_test_impl,
-    inherit_attrs = kt_jvm_test,
     attrs = {
         "srcs": attr.label_list(
             doc = "Kotlin test source files (REQUIRED - no default glob)",
@@ -107,11 +144,48 @@ kt_test = macro(
             default = [],
         ),
         "test_class": attr.string(
-            doc = "Main test class (optional)",
+            doc = "Ignored - test discovery uses test_packages instead",
+        ),
+        "test_packages": attr.string_list(
+            doc = "Java packages to scan for tests (REQUIRED). Use base package to include subpackages.",
+            mandatory = True,
+            configurable = False,
         ),
         "plugins": attr.label_list(
             doc = "Additional compiler plugins (serialization included by default)",
             default = [],
+        ),
+        "resources": attr.label_list(
+            doc = "Resource files to include in the test JAR",
+            allow_files = True,
+            default = [],
+        ),
+        "data": attr.label_list(
+            doc = "Data files available at runtime",
+            allow_files = True,
+            default = [],
+        ),
+        "jvm_flags": attr.string_list(
+            doc = "JVM flags to pass to the test runner",
+            default = [],
+        ),
+        "env": attr.string_dict(
+            doc = "Environment variables to set for the test",
+            default = {},
+        ),
+        "tags": attr.string_list(
+            doc = "Tags for the test target",
+            default = [],
+            configurable = False,
+        ),
+        "size": attr.string(
+            doc = "Test size (small, medium, large, enormous)",
+            default = "medium",
+            configurable = False,
+        ),
+        "timeout": attr.string(
+            doc = "Test timeout (short, moderate, long, eternal)",
+            configurable = False,
         ),
     },
 )

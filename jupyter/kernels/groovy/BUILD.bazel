@@ -21,6 +21,7 @@ kt_test(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,
     ),
+    test_packages = [],
     deps = [
         ":groovy",
         "@maven//:org_junit_platform_junit_platform_launcher",

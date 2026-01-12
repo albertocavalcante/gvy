@@ -12,6 +12,7 @@ kt_library(
 kt_test(
     name = "markdown_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovylsp"],
     associates = [":markdown"],
     deps = [
         "@maven//:org_junit_platform_junit_platform_launcher",

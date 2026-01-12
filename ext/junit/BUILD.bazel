@@ -15,6 +15,7 @@ kt_library(
 kt_test(
     name = "groovy-junit_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovyjunit"],
     associates = [":groovy-junit"],
     deps = [
         "//testing",

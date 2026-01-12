@@ -20,6 +20,7 @@ kt_library(
 kt_test(
     name = "scip_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    test_packages = ["com.github.albertocavalcante.groovylsp"],
     tags = ["manual"],
     deps = [
         ":scip",
