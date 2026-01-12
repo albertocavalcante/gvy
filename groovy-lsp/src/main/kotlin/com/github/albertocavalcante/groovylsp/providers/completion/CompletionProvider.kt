@@ -546,7 +546,8 @@ object CompletionProvider {
         // Check if cursor is inside any class method
         for (classNode in moduleNode.classes) {
             val method = classNode.methods.find { method ->
-                method.lineNumber <= ctx.line + 1 &&
+                method.lineNumber > 0 &&
+                    method.lineNumber <= ctx.line + 1 &&
                     (method.lastLineNumber >= ctx.line + 1 || method.lastLineNumber <= 0)
             }
             if (method?.code is BlockStatement) {
