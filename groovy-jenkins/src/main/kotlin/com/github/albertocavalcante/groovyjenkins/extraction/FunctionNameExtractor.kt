@@ -149,8 +149,10 @@ class FunctionNameExtractor {
         }
 
         override fun visitInsn(opcode: Int) {
-            // When we see ARETURN, the last string constant was the return value
-            if (opcode == Opcodes.ARETURN && lastStringConstant != null) {
+            // When we see ARETURN, the last string constant was the return value.
+            // Capture only the first such value to avoid overwriting in methods with
+            // multiple constant returns.
+            if (opcode == Opcodes.ARETURN && lastStringConstant != null && functionName == null) {
                 functionName = lastStringConstant
             }
         }
