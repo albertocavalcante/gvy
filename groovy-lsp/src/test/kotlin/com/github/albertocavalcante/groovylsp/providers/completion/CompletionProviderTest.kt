@@ -179,42 +179,184 @@ class CompletionProviderTest {
         )
     }
 
+    // ========================================================================
+    // Map Literal Key Completion Tests
+    // ========================================================================
+
     @Test
-    fun `should suggest map methods for map literal variable - unmocked`() = runTest {
-        // Arrange - use real SemanticTypeResolver with a stub TypeSolver
+    fun `should suggest map literal keys for script-level declaration`() = runTest {
         val stubTypeSolver = object : TypeSolver {
             override var parent: TypeSolver? = null
             override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
         }
         val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
         val content = """
-            def p = [key1: 'value1', key2: 'value2']
-            p.
+            def config = [host: "localhost", port: 8080]
+            config.
         """.trimIndent()
         val uri = "file:///test.groovy"
 
-        // Act
         val completions = CompletionProvider.getContextualCompletions(
             uri,
             1, // Line 1 (0-indexed)
-            2, // After 'p.'
+            7, // After 'config.'
             compilationService,
             realSemanticResolver,
             content,
         )
 
-        // Assert - Should have map methods (from LinkedHashMap via classpath)
-        // Note: actual method availability depends on classpath configuration
-        // The primary assertion is that keywords should NOT appear
-
-        // Assert - Should NOT have keywords (proves context detection works)
+        // Should suggest map literal keys
         assertTrue(
-            completions.none { it.label == "abstract" },
-            "Should NOT suggest 'abstract' keyword for map member access",
+            completions.any { it.label == "host" },
+            "Should suggest 'host' map key. Found: ${completions.map { it.label }}",
         )
         assertTrue(
-            completions.none { it.label == "class" },
-            "Should NOT suggest 'class' keyword for map member access",
+            completions.any { it.label == "port" },
+            "Should suggest 'port' map key. Found: ${completions.map { it.label }}",
+        )
+
+        // Should NOT have keywords
+        assertTrue(
+            completions.none { it.label == "abstract" },
+            "Should NOT suggest 'abstract' keyword when completing map literal keys",
+        )
+    }
+
+    @Test
+    fun `should suggest map literal keys inside class method`() = runTest {
+        val stubTypeSolver = object : TypeSolver {
+            override var parent: TypeSolver? = null
+            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+        }
+        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val content = """
+            class MyService {
+                void configure() {
+                    def settings = [debug: true, timeout: 5000]
+                    settings.
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            3, // Line with 'settings.'
+            17, // After 'settings.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "debug" },
+            "Should suggest 'debug' map key inside class method. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "timeout" },
+            "Should suggest 'timeout' map key inside class method. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should suggest map literal keys inside if block`() = runTest {
+        val stubTypeSolver = object : TypeSolver {
+            override var parent: TypeSolver? = null
+            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+        }
+        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val content = """
+            class MyService {
+                void process() {
+                    if (true) {
+                        def opts = [retry: 3, verbose: false]
+                        opts.
+                    }
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            4, // Line with 'opts.'
+            17, // After 'opts.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "retry" },
+            "Should suggest 'retry' map key inside if block. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "verbose" },
+            "Should suggest 'verbose' map key inside if block. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should still suggest map methods alongside literal keys`() = runTest {
+        val stubTypeSolver = object : TypeSolver {
+            override var parent: TypeSolver? = null
+            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+        }
+        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val content = """
+            def m = [x: 1]
+            m.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1,
+            2,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should have map literal key
+        assertTrue(
+            completions.any { it.label == "x" },
+            "Should suggest 'x' map key. Found: ${completions.map { it.label }}",
+        )
+
+        // Should also have standard map methods
+        assertTrue(
+            completions.any { it.label == "get" || it.label == "size" || it.label == "put" },
+            "Should also suggest standard map methods. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should handle empty map gracefully`() = runTest {
+        val stubTypeSolver = object : TypeSolver {
+            override var parent: TypeSolver? = null
+            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+        }
+        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val content = """
+            def emptyMap = [:]
+            emptyMap.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1,
+            9,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should NOT crash, and should still have map methods
+        assertTrue(
+            completions.any { it.label == "get" || it.label == "size" || it.label == "isEmpty" },
+            "Empty map should still suggest standard map methods. Found: ${completions.map { it.label }}",
         )
     }
 
