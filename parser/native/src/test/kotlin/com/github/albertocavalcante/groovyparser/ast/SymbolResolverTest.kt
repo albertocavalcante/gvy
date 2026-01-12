@@ -120,8 +120,10 @@ class SymbolResolverTest {
         val symbolTable = result.symbolTable
 
         val declarationReference = findVariableReference(astModel, "x", 3)
+        val usageReference = findVariableReference(astModel, "x", 4)
 
         assertEquals(3, resolveDefinitionLine(symbolTable, astModel, declarationReference))
+        assertEquals(3, resolveDefinitionLine(symbolTable, astModel, usageReference))
     }
 
     private fun resolveMethodName(

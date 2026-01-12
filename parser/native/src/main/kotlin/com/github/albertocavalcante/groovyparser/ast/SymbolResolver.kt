@@ -43,6 +43,11 @@ class SymbolResolver(private val registry: SymbolRegistry) {
             return candidates.first()
         }
 
+        val directMatch = candidates.firstOrNull { it === node }
+        if (directMatch != null) {
+            return directMatch
+        }
+
         val scopeChain = buildScopeChain(node, visitor)
         val allCandidates = candidates.mapNotNull { candidate ->
             val candidateNode = candidate as? ASTNode ?: return@mapNotNull null
@@ -102,9 +107,9 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         return if (classDeclarations.isNotEmpty()) classDeclarations else null
     }
 
-    private fun isBeforeReference(candidate: ASTNode, reference: ASTNode): Boolean = candidate === reference ||
+    private fun isBeforeReference(candidate: ASTNode, reference: ASTNode): Boolean =
         candidate.lineNumber < reference.lineNumber ||
-        (candidate.lineNumber == reference.lineNumber && candidate.columnNumber < reference.columnNumber)
+            (candidate.lineNumber == reference.lineNumber && candidate.columnNumber < reference.columnNumber)
 
     private fun buildScopeChain(node: ASTNode, visitor: GroovyAstModel): List<ASTNode> {
         val scopes = mutableListOf<ASTNode>()
