@@ -225,7 +225,7 @@ class SignatureHelpProvider(
         // Refine type from initializer for def/Object variables
         val canRefine = (type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression
         if (canRefine) {
-            val initExpr = findInitializerExpression(objExpr as VariableExpression, astVisitor, symbolTable)
+            val initExpr = findInitializerExpression(objExpr, astVisitor, symbolTable)
             if (initExpr != null) {
                 // Handle ConstructorCallExpression specially - use .type directly
                 // (no semantic calculator exists for constructor calls)
@@ -284,7 +284,7 @@ class SignatureHelpProvider(
         while (current != null && current !is ClassNode) {
             current = astVisitor.getParent(current)
         }
-        return (current as? ClassNode)?.name ?: "groovy.lang.Script"
+        return current?.name ?: "groovy.lang.Script"
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {

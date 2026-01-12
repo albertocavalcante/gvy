@@ -75,7 +75,7 @@ class JavaSourceInspector {
     //   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
     fun inspectMethod(sourcePath: Path, className: String, methodName: String): InspectionResult? {
         if (!Files.exists(sourcePath)) {
-            logger.debug("Source file does not exist: {}", sourcePath)
+            logger.debug { "Source file does not exist: $sourcePath" }
             return null
         }
 
@@ -83,7 +83,7 @@ class JavaSourceInspector {
             val content = Files.readString(sourcePath)
             inspectMethodFromContent(content, className, methodName, sourcePath.toString())
         } catch (e: Exception) {
-            logger.warn("Failed to inspect method in Java source: $sourcePath", e)
+            logger.warn(e) { "Failed to inspect method in Java source: $sourcePath" }
             null
         }
     }
@@ -156,11 +156,10 @@ class JavaSourceInspector {
             val parseResult = parser.parse(content)
 
             if (!parseResult.isSuccessful) {
-                logger.debug(
-                    "Failed to parse Java source {}: {}",
-                    sourceName,
-                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
-                )
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
                 return null
             }
 
@@ -177,7 +176,7 @@ class JavaSourceInspector {
                 .firstOrNull { it.nameAsString == simpleClassName }
 
             if (classDecl == null) {
-                logger.debug("Could not find class {} in {}", className, sourceName)
+                logger.debug { "Could not find class $className in $sourceName" }
                 return null
             }
 
@@ -188,40 +187,33 @@ class JavaSourceInspector {
                 0 -> null
                 1 -> methodCandidates[0]
                 else -> {
-                    logger.debug(
-                        "Ambiguous method {}.{} ({} overloads) in {}",
-                        className,
-                        methodName,
-                        methodCandidates.size,
-                        sourceName,
-                    )
+                    logger.debug {
+                        "Ambiguous method $className.$methodName (${methodCandidates.size} overloads) in $sourceName"
+                    }
                     null
                 }
             }
 
             if (methodDecl == null) {
-                logger.debug("Could not find method {} in class {} in {}", methodName, className, sourceName)
+                logger.debug { "Could not find method $methodName in class $className in $sourceName" }
                 return null
             }
 
             val lineNumber = methodDecl.begin.map { it.line }.orElse(0)
             if (lineNumber <= 0) {
-                logger.debug(
-                    "Method {} in class {} found but has invalid line number in {}",
-                    methodName,
-                    className,
-                    sourceName,
-                )
+                logger.debug {
+                    "Method $methodName in class $className found but has invalid line number in $sourceName"
+                }
                 return null
             }
 
             // Extract Javadoc from method
             val documentation = extractMethodJavadoc(methodDecl)
 
-            logger.debug("Found method {}.{} at line {} in {}", className, methodName, lineNumber, sourceName)
+            logger.debug { "Found method $className.$methodName at line $lineNumber in $sourceName" }
             InspectionResult(lineNumber, documentation)
         } catch (e: Exception) {
-            logger.warn("Failed to inspect method $methodName in $className", e)
+            logger.warn(e) { "Failed to inspect method $methodName in $className" }
             null
         }
     }
@@ -344,7 +336,7 @@ class JavaSourceInspector {
      */
     fun extractAllMethodParameters(sourcePath: Path, className: String): Map<String, List<String>> {
         if (!Files.exists(sourcePath)) {
-            logger.debug("Source file does not exist: {}", sourcePath)
+            logger.debug { "Source file does not exist: $sourcePath" }
             return emptyMap()
         }
 
@@ -352,7 +344,7 @@ class JavaSourceInspector {
             val content = Files.readString(sourcePath)
             extractAllMethodParametersFromContent(content, className, sourcePath.toString())
         } catch (e: Exception) {
-            logger.warn("Failed to extract method parameters from Java source: $sourcePath", e)
+            logger.warn(e) { "Failed to extract method parameters from Java source: $sourcePath" }
             emptyMap()
         }
     }
@@ -370,11 +362,10 @@ class JavaSourceInspector {
             val parseResult = parser.parse(content)
 
             if (!parseResult.isSuccessful) {
-                logger.debug(
-                    "Failed to parse Java source {}: {}",
-                    sourceName,
-                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
-                )
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
                 return emptyMap()
             }
 
@@ -390,7 +381,7 @@ class JavaSourceInspector {
                 .firstOrNull { it.nameAsString == simpleClassName }
 
             if (classDecl == null) {
-                logger.debug("Could not find class {} in {}", className, sourceName)
+                logger.debug { "Could not find class $className in $sourceName" }
                 return emptyMap()
             }
 
@@ -416,10 +407,10 @@ class JavaSourceInspector {
                 }
             }
 
-            logger.debug("Extracted {} methods from class {} in {}", result.size, className, sourceName)
+            logger.debug { "Extracted ${result.size} methods from class $className in $sourceName" }
             result
         } catch (e: Exception) {
-            logger.warn("Failed to extract method parameters from $className", e)
+            logger.warn(e) { "Failed to extract method parameters from $className" }
             emptyMap()
         }
     }

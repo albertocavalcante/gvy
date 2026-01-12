@@ -122,7 +122,7 @@ class SourceNavigationService(
         className: String,
         methodName: String,
     ): SourceNavigator.SourceResult {
-        logger.debug("Navigating to method source for: {}.{} from {}", className, methodName, classpathUri)
+        logger.debug { "Navigating to method source for: $className.$methodName from $classpathUri" }
 
         // First, navigate to the class source
         val sourceLocation = when (val classResult = navigateToSource(classpathUri, className)) {
@@ -134,7 +134,7 @@ class SourceNavigationService(
         val sourcePath = try {
             Path.of(sourceLocation.uri)
         } catch (e: Exception) {
-            logger.debug("Cannot convert URI to Path: {}", sourceLocation.uri, e)
+            logger.debug(e) { "Cannot convert URI to Path: ${sourceLocation.uri}" }
             return sourceLocation // Fall back to class-level
         }
         val methodInspection = javaSourceInspector.inspectMethod(sourcePath, className, methodName)
@@ -148,11 +148,9 @@ class SourceNavigationService(
             )
         } else {
             // Method not found - fall back to class-level navigation
-            logger.debug(
-                "Method {} not found in class {}, falling back to class-level navigation",
-                methodName,
-                className,
-            )
+            logger.debug {
+                "Method $methodName not found in class $className, falling back to class-level navigation"
+            }
             sourceLocation
         }
     }

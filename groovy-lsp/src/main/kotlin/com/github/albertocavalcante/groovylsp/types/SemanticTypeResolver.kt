@@ -75,7 +75,7 @@ class SemanticTypeResolver(private val typeSolver: TypeSolver) {
     fun toSemanticType(classNode: ClassNode): SemanticType = when {
         ClassHelper.isPrimitiveType(classNode) -> classNodeToPrimitive(classNode)
         classNode.isArray -> SemanticType.Array(toSemanticType(classNode.componentType))
-        classNode == ClassHelper.DYNAMIC_TYPE -> SemanticType.Dynamic()
+        classNode == ClassHelper.dynamicType() -> SemanticType.Dynamic()
         classNode == ClassHelper.OBJECT_TYPE && classNode.name == "java.lang.Object" -> SemanticType.Dynamic()
         else -> SemanticType.Known(classNode.name)
     }
