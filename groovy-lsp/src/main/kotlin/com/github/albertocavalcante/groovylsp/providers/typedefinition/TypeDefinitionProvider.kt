@@ -57,7 +57,7 @@ class TypeDefinitionProvider(
         val context = contextProvider(uri) ?: return null
 
         // Inject module node for semantic analysis
-        context.moduleNode.let { semanticResolver.semantics.inject(it) }
+        semanticResolver.semantics.inject(context.moduleNode)
 
         // Find the AST node at the given position
         val node = context.astModel.getNodeAt(uri, position.toGroovyPosition()) ?: run {

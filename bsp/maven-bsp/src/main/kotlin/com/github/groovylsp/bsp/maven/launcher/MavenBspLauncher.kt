@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION")
-
 package com.github.groovylsp.bsp.maven.launcher
 
 import ch.epfl.scala.bsp4j.BuildClient
@@ -61,6 +59,7 @@ object MavenBspLauncher {
     /**
      * Creates the Aether RepositorySystem for dependency resolution.
      */
+    @Suppress("DEPRECATION")
     fun createRepositorySystem(): RepositorySystem {
         val locator = MavenRepositorySystemUtils.newServiceLocator()
 
