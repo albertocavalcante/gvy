@@ -62,8 +62,8 @@ object SymbolExtractor {
             }
 
             if (context != null) {
-                // Use DeclarationWalker for proper type inference
-                val result = DeclarationWalker.walk(code, context, captureMapKeys = true)
+                // Use DeclarationWalker for proper type inference (mapKeys not needed for VariableSymbol)
+                val result = DeclarationWalker.walk(code, context, captureMapKeys = false)
                 for (decl in result.variables) {
                     variables.add(
                         VariableSymbol(

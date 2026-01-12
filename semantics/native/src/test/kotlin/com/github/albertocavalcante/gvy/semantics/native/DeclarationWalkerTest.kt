@@ -177,7 +177,7 @@ class DeclarationWalkerTest {
 
             val result = DeclarationWalker.walk(block, context)
 
-            // This tests a GAP - the current implementation doesn't traverse IfStatement blocks!
+            // Regression test: ensure declarations inside IfStatement blocks are traversed and captured
             assertEquals(1, result.variables.size, "Declaration inside if block should be captured")
             assertEquals("inIf", result.variables[0].name)
         }
@@ -200,7 +200,7 @@ class DeclarationWalkerTest {
 
             val result = DeclarationWalker.walk(block, context)
 
-            // For loop variable 'i' and body variable 'loopVar' should both be captured
+            // Note: For loop variable 'i' is a Parameter, not a DeclarationExpression, so only 'loopVar' is captured
             assertTrue(
                 result.variables.any { it.name == "loopVar" },
                 "Declaration inside for loop body should be captured",

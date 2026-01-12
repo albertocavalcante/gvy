@@ -543,9 +543,8 @@ object CompletionProvider {
     private fun findEnclosingBlock(ctx: CompletionContext): BlockStatement? {
         val moduleNode = ctx.moduleNode ?: return null
 
-        // Check if cursor is inside a class method
-        val classNode = moduleNode.classes.firstOrNull()
-        if (classNode != null) {
+        // Check if cursor is inside any class method
+        for (classNode in moduleNode.classes) {
             val method = classNode.methods.find { method ->
                 method.lineNumber <= ctx.line + 1 &&
                     (method.lastLineNumber >= ctx.line + 1 || method.lastLineNumber <= 0)
