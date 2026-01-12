@@ -306,4 +306,48 @@ class TypeUsageCollectorTest {
         assertTrue(usedTypes.contains("Target"), "Should collect Target annotation type")
         assertTrue(usedTypes.contains("ElementType"), "Should collect ElementType from annotation parameter")
     }
+
+    @Test
+    fun `should collect type from class expression as constructor argument`() {
+        val ast = compile(
+            """
+            import java.util.Date
+            def mock = new Object(Date.class)
+            """.trimIndent(),
+        )
+
+        val usedTypes = TypeUsageCollector.collectUsedTypes(ast)
+
+        assertTrue(usedTypes.contains("Date"), "Should collect Date from .class in constructor argument")
+    }
+
+    @Test
+    fun `should collect type from class expression in StubFor pattern`() {
+        // Mirrors the real-world pattern from jenkins pipeline-library tests
+        val ast = compile(
+            """
+            import java.text.SimpleDateFormat
+            import groovy.mock.interceptor.StubFor
+
+            class Test {
+                def simpleDateMock
+
+                void setUp() {
+                    simpleDateMock = new StubFor(SimpleDateFormat.class)
+                    simpleDateMock.demand.with {
+                        format { "2022-02-02" }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val usedTypes = TypeUsageCollector.collectUsedTypes(ast)
+
+        assertTrue(
+            usedTypes.contains("SimpleDateFormat"),
+            "Should collect SimpleDateFormat from .class in StubFor constructor",
+        )
+        assertTrue(usedTypes.contains("StubFor"), "Should collect StubFor from constructor call")
+    }
 }

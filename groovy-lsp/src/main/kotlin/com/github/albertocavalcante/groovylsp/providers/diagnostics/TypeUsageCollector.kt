@@ -16,6 +16,7 @@ import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.syntax.Types
 
@@ -186,6 +187,9 @@ object TypeUsageCollector {
 
             override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
                 collectTypeReference(call.type)
+                // Explicitly traverse constructor arguments to collect types within them
+                // (Groovy's CodeVisitorSupport doesn't always traverse arguments in all contexts)
+                call.arguments?.visit(this)
                 super.visitConstructorCallExpression(call)
             }
 
@@ -217,11 +221,26 @@ object TypeUsageCollector {
             }
 
             override fun visitPropertyExpression(expression: PropertyExpression) {
-                // Handle Class.property access like TypeName.class
+                // Handle TypeName.class access patterns
                 val obj = expression.objectExpression
+                val prop = expression.propertyAsString
+
+                // Case 1: ClassExpression.class (e.g., Date.class in simple assignments)
                 if (obj is ClassExpression) {
                     collectTypeReference(obj.type)
                 }
+
+                // Case 2: VariableExpression.class where the variable name is a type
+                // In Groovy, "SimpleDateFormat.class" inside a method body is parsed as
+                // PropertyExpression(VariableExpression("SimpleDateFormat"), "class")
+                if (obj is VariableExpression && prop == "class") {
+                    val typeName = obj.name
+                    // Only collect if it looks like a type name (starts with uppercase)
+                    if (typeName.isNotEmpty() && typeName[0].isUpperCase()) {
+                        usedTypes.add(typeName)
+                    }
+                }
+
                 super.visitPropertyExpression(expression)
             }
 
