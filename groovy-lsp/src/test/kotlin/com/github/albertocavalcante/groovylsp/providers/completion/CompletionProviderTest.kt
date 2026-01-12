@@ -21,6 +21,22 @@ class CompletionProviderTest {
     private lateinit var semanticResolver: SemanticTypeResolver
     private lateinit var moduleNode: ModuleNode
 
+    /**
+     * Shared stub TypeSolver for map completion tests.
+     * Returns unsolved for all type resolution requests, allowing
+     * the semantic analysis to use AST-based type inference.
+     */
+    private val stubTypeSolver = object : TypeSolver {
+        override var parent: TypeSolver? = null
+        override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+    }
+
+    /**
+     * Creates a SemanticTypeResolver using the shared stubTypeSolver.
+     * Use this for tests that need real semantic analysis without mocking.
+     */
+    private fun createRealSemanticResolver() = SemanticTypeResolver(stubTypeSolver)
+
     @BeforeEach
     fun setUp() {
         compilationService = GroovyCompilationService()
@@ -185,11 +201,7 @@ class CompletionProviderTest {
 
     @Test
     fun `should suggest map literal keys for script-level declaration`() = runTest {
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def config = [host: "localhost", port: 8080]
             config.
@@ -224,11 +236,7 @@ class CompletionProviderTest {
 
     @Test
     fun `should suggest map literal keys inside class method`() = runTest {
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
             class MyService {
                 void configure() {
@@ -260,11 +268,7 @@ class CompletionProviderTest {
 
     @Test
     fun `should suggest map literal keys inside if block`() = runTest {
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
             class MyService {
                 void process() {
@@ -298,11 +302,7 @@ class CompletionProviderTest {
 
     @Test
     fun `should still suggest map methods alongside literal keys`() = runTest {
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def m = [x: 1]
             m.
@@ -333,11 +333,7 @@ class CompletionProviderTest {
 
     @Test
     fun `should handle empty map gracefully`() = runTest {
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def emptyMap = [:]
             emptyMap.
@@ -357,6 +353,95 @@ class CompletionProviderTest {
         assertTrue(
             completions.any { it.label == "get" || it.label == "size" || it.label == "isEmpty" },
             "Empty map should still suggest standard map methods. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should use inner declaration when variable is shadowed`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        // Use different variable names in nested scope to avoid Groovy redefinition error
+        val content = """
+class MyService {
+    void process() {
+        def outerConfig = [outer: "value"]
+        if (true) {
+            def innerConfig = [inner: "shadowed"]
+            innerConfig.
+        }
+    }
+}
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        // Line 5 is "            innerConfig." (0-indexed)
+        // Position after dot: "            innerConfig." = 12 + 12 = 24
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            5, // Line with 'innerConfig.'
+            24, // After 'innerConfig.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should suggest the inner map's key
+        assertTrue(
+            completions.any { it.label == "inner" },
+            "Should suggest 'inner' from inner map variable. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled(
+        "Multi-class map completion needs further investigation - see PR #839 review comments",
+    )
+    fun `should suggest map keys in second class of multi-class file`() = runTest {
+        // TODO(#839): Multi-class file support for map key completion
+        // The findEnclosingBlock iterates all classes, but map completion returns empty
+        // for methods in non-first classes. This test documents the expected behavior.
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """class FirstClass {
+    void first() {
+        def firstMap = [a: 1]
+        firstMap.
+    }
+}
+class SecondClass {
+    void second() {
+        def secondMap = [b: 2]
+        secondMap.
+    }
+}
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        // Lines (0-indexed):
+        // 0: class FirstClass {
+        // 1:     void first() {
+        // 2:         def firstMap = [a: 1]
+        // 3:         firstMap.
+        // 4:     }
+        // 5: }
+        // 6: class SecondClass {
+        // 7:     void second() {
+        // 8:         def secondMap = [b: 2]
+        // 9:         secondMap.
+        // 10:    }
+        // 11: }
+        // Position: "        secondMap." = 8 spaces + 10 chars = 18
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            9, // Line with 'secondMap.'
+            18, // After 'secondMap.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should suggest 'b' from secondMap, not fail silently
+        assertTrue(
+            completions.any { it.label == "b" },
+            "Should suggest 'b' from map in second class. Found: ${completions.map { it.label }}",
         )
     }
 

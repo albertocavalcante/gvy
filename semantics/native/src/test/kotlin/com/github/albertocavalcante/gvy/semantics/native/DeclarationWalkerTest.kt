@@ -268,6 +268,122 @@ class DeclarationWalkerTest {
                 "Declaration in catch block should be captured",
             )
         }
+
+        @Test
+        fun `catch exception variable should be captured`() {
+            val code = """
+                class Foo {
+                    def test() {
+                        try {
+                            throw new RuntimeException("test")
+                        } catch (Exception myException) {
+                            println myException.message
+                        }
+                    }
+                }
+            """.trimIndent()
+
+            val module = parse(code)
+            val context = getContext(module)
+            val block = getMethodBlock(module, "test")
+
+            val result = DeclarationWalker.walk(block, context)
+
+            assertTrue(
+                result.variables.any { it.name == "myException" },
+                "Catch exception variable 'myException' should be captured. Found: ${result.variables.map { it.name }}",
+            )
+        }
+
+        @Test
+        fun `declaration inside do-while loop should be captured`() {
+            val code = """
+                class Foo {
+                    def test() {
+                        do {
+                            def doWhileVar = 1
+                        } while (false)
+                    }
+                }
+            """.trimIndent()
+
+            val module = parse(code)
+            val context = getContext(module)
+            val block = getMethodBlock(module, "test")
+
+            val result = DeclarationWalker.walk(block, context)
+
+            assertEquals(1, result.variables.size, "Declaration inside do-while should be captured")
+            assertEquals("doWhileVar", result.variables[0].name)
+        }
+
+        @Test
+        fun `declaration inside switch case should be captured`() {
+            val code = """
+                class Foo {
+                    def test() {
+                        switch (1) {
+                            case 1:
+                                def caseVar = "one"
+                                break
+                            case 2:
+                                def case2Var = "two"
+                                break
+                            default:
+                                def defaultVar = "default"
+                        }
+                    }
+                }
+            """.trimIndent()
+
+            val module = parse(code)
+            val context = getContext(module)
+            val block = getMethodBlock(module, "test")
+
+            val result = DeclarationWalker.walk(block, context)
+
+            assertTrue(
+                result.variables.any { it.name == "caseVar" },
+                "Declaration inside switch case should be captured. Found: ${result.variables.map { it.name }}",
+            )
+            assertTrue(
+                result.variables.any { it.name == "case2Var" },
+                "Declaration inside second switch case should be captured",
+            )
+            assertTrue(
+                result.variables.any { it.name == "defaultVar" },
+                "Declaration inside switch default should be captured",
+            )
+        }
+
+        @Test
+        fun `for-each loop variable should be captured`() {
+            val code = """
+                class Foo {
+                    def test() {
+                        def items = [1, 2, 3]
+                        for (item in items) {
+                            def doubled = item * 2
+                        }
+                    }
+                }
+            """.trimIndent()
+
+            val module = parse(code)
+            val context = getContext(module)
+            val block = getMethodBlock(module, "test")
+
+            val result = DeclarationWalker.walk(block, context)
+
+            assertTrue(
+                result.variables.any { it.name == "item" },
+                "For-each loop variable 'item' should be captured. Found: ${result.variables.map { it.name }}",
+            )
+            assertTrue(
+                result.variables.any { it.name == "doubled" },
+                "Declaration inside for-each loop body should be captured",
+            )
+        }
     }
 
     // ==========================================
