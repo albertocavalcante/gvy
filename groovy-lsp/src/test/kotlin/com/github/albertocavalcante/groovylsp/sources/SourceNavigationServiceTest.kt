@@ -202,8 +202,8 @@ class SourceNavigationServiceTest {
                 "Expected SourceLocation but got: $result"
             }
             val location = result as SourceNavigator.SourceResult.SourceLocation
-            assertNotNull(location.lineNumber, "Should have line number for method")
-            assertTrue(location.lineNumber!! > 3, "Method should be after class declaration")
+            val lineNumber = assertNotNull(location.lineNumber, "Should have line number for method")
+            assertTrue(lineNumber > 3, "Method should be after class declaration")
         }
 
         @Test

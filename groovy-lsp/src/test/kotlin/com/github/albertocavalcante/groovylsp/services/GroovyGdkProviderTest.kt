@@ -65,11 +65,11 @@ class GroovyGdkProviderTest {
 
         // Find 'each' method - in GDK it's: each(List self, Closure closure)
         // After synthesis it should be: each(Closure closure)
-        val eachMethod = methods.find { it.name == "each" && it.parameters.size == 1 }
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
 
         assertThat(eachMethod).isNotNull
-        assertThat(eachMethod?.parameters).hasSize(1)
-        assertThat(eachMethod?.parameters?.get(0)).isEqualTo("Closure")
+        assertThat(eachMethod?.parameterTypes).hasSize(1)
+        assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
     }
 
     @Test
@@ -89,8 +89,8 @@ class GroovyGdkProviderTest {
     fun `should deduplicate methods by signature`() {
         val methods = gdkProvider.getMethodsForType("java.util.List")
 
-        // Count unique method signatures (name + parameters)
-        val signatures = methods.map { "${it.name}(${it.parameters.joinToString(",")})" }
+        // Count unique method signatures (name + parameterTypes)
+        val signatures = methods.map { "${it.name}(${it.parameterTypes.joinToString(",")})" }
 
         // No duplicate signatures should exist
         assertThat(signatures.size).isEqualTo(signatures.distinct().size)
@@ -100,7 +100,7 @@ class GroovyGdkProviderTest {
     fun `should include origin class in method info`() {
         val methods = gdkProvider.getMethodsForType("java.util.List")
 
-        val eachMethod = methods.find { it.name == "each" && it.parameters.size == 1 }
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
 
         assertThat(eachMethod).isNotNull
         assertThat(eachMethod?.originClass).isEqualTo("DefaultGroovyMethods")
