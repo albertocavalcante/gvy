@@ -102,9 +102,9 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         return if (classDeclarations.isNotEmpty()) classDeclarations else null
     }
 
-    private fun isBeforeReference(candidate: ASTNode, reference: ASTNode): Boolean =
+    private fun isBeforeReference(candidate: ASTNode, reference: ASTNode): Boolean = candidate === reference ||
         candidate.lineNumber < reference.lineNumber ||
-            (candidate.lineNumber == reference.lineNumber && candidate.columnNumber <= reference.columnNumber)
+        (candidate.lineNumber == reference.lineNumber && candidate.columnNumber < reference.columnNumber)
 
     private fun buildScopeChain(node: ASTNode, visitor: GroovyAstModel): List<ASTNode> {
         val scopes = mutableListOf<ASTNode>()

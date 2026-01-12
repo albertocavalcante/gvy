@@ -101,6 +101,26 @@ class SymbolResolverTest {
         assertTrue(outerScope is MethodNode, "Expected method parameter resolution outside closure")
     }
 
+    @Test
+    fun `resolveSymbol keeps declaration when shadowing a parameter`() {
+        val code = """
+            class Sample {
+                def method(x) {
+                    def x = 1
+                    println x
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(code)
+        val astModel = result.astModel
+        val symbolTable = result.symbolTable
+
+        val declarationReference = findVariableReference(astModel, "x", 3)
+
+        assertEquals(3, resolveDefinitionLine(symbolTable, astModel, declarationReference))
+    }
+
     private fun resolveMethodName(
         symbolTable: SymbolTable,
         astModel: GroovyAstModel,
