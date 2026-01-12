@@ -7,6 +7,7 @@ import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.test.assertNotNull
 
 /**
  * Unit tests for GroovyGdkProvider.
@@ -65,11 +66,13 @@ class GroovyGdkProviderTest {
 
         // Find 'each' method - in GDK it's: each(List self, Closure closure)
         // After synthesis it should be: each(Closure closure)
-        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+        val eachMethod = assertNotNull(
+            methods.find { it.name == "each" && it.parameterTypes.size == 1 },
+            "Should find 'each' method with single parameter",
+        )
 
-        assertThat(eachMethod).isNotNull
-        assertThat(eachMethod?.parameterTypes).hasSize(1)
-        assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
+        assertThat(eachMethod.parameterTypes).hasSize(1)
+        assertThat(eachMethod.parameterTypes[0]).isEqualTo("Closure")
     }
 
     @Test
@@ -100,10 +103,12 @@ class GroovyGdkProviderTest {
     fun `should include origin class in method info`() {
         val methods = gdkProvider.getMethodsForType("java.util.List")
 
-        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+        val eachMethod = assertNotNull(
+            methods.find { it.name == "each" && it.parameterTypes.size == 1 },
+            "Should find 'each' method with single parameter",
+        )
 
-        assertThat(eachMethod).isNotNull
-        assertThat(eachMethod?.originClass).isEqualTo("DefaultGroovyMethods")
+        assertThat(eachMethod.originClass).isEqualTo("DefaultGroovyMethods")
     }
 
     @Test
