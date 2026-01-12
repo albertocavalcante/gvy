@@ -42,7 +42,7 @@ class MethodResolutionStrategyTest {
     @Test
     fun `strategy is instantiated correctly`() {
         // Simple smoke test to verify the strategy can be instantiated
-        assertTrue(strategy is MethodResolutionStrategy)
+        assertNotNull(strategy)
     }
 
     @Test
