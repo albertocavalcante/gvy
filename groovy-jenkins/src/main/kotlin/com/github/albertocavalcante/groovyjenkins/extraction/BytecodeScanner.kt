@@ -46,6 +46,12 @@ data class ScannedStep(
  * 1. **Bytecode extraction**: Extract `getFunctionName()` return value from StepDescriptor bytecode (deterministic)
  * 2. **@Symbol annotation**: Fall back to @Symbol annotation value
  * 3. **Class name derivation**: Last resort - derive from class name (e.g., EchoStep → echo)
+ *
+ * Note: Bytecode extraction of `getFunctionName()` is only performed when scanning specific JAR
+ * files via [scanJar], which provides a concrete JAR path to [extractFunctionName]. When scanning
+ * the classpath via [scanClasspath], no JAR path is available (`jarPath` is null), so bytecode
+ * extraction is skipped and function names are resolved solely from @Symbol annotation or derived
+ * from the class name.
  */
 class BytecodeScanner {
 
@@ -57,6 +63,13 @@ class BytecodeScanner {
         private const val DATA_BOUND_CONSTRUCTOR = "org.kohsuke.stapler.DataBoundConstructor"
         private const val DATA_BOUND_SETTER = "org.kohsuke.stapler.DataBoundSetter"
         private const val SYMBOL_ANNOTATION = "org.jenkinsci.Symbol"
+
+        /**
+         * Check if a class name matches the Descriptor naming pattern
+         * (e.g., DescriptorImpl, MyDescriptorImpl, SomeDescriptor).
+         */
+        private fun isDescriptorClass(simpleName: String): Boolean =
+            simpleName.endsWith("DescriptorImpl") || simpleName.endsWith("Descriptor")
     }
 
     /**
@@ -184,7 +197,7 @@ class BytecodeScanner {
         // This is the same source of truth Jenkins uses at runtime.
         if (jarPath != null) {
             val descriptorClass = classInfo.innerClasses
-                .firstOrNull { it.simpleName == "DescriptorImpl" || it.simpleName.endsWith("Descriptor") }
+                .firstOrNull { isDescriptorClass(it.simpleName) }
 
             if (descriptorClass != null) {
                 val bytecodeResult = functionNameExtractor.extractFromJar(jarPath, descriptorClass.name)
@@ -208,9 +221,9 @@ class BytecodeScanner {
             }
         }
 
-        // Strategy 3: Look for inner DescriptorImpl class with @Symbol
+        // Strategy 3: Look for inner Descriptor class with @Symbol
         val descriptorClass = classInfo.innerClasses
-            .firstOrNull { it.simpleName == "DescriptorImpl" }
+            .firstOrNull { isDescriptorClass(it.simpleName) }
 
         if (descriptorClass != null) {
             val descSymbol = descriptorClass.annotationInfo
@@ -234,13 +247,13 @@ class BytecodeScanner {
     }
 
     private fun extractTakesBlock(classInfo: ClassInfo): Boolean {
-        // Look for inner DescriptorImpl class and check takesImplicitBlockArgument
+        // Look for inner Descriptor class and check takesImplicitBlockArgument
         // Heuristic: assumes presence of override means it returns true.
         // Limitation: false positives if the method overrides but returns false.
         // Static analysis cannot determine actual return value without code execution.
         // TODO(#XXX): Consider ASM-based constant analysis for better accuracy.
         val descriptorClass = classInfo.innerClasses
-            .firstOrNull { it.simpleName == "DescriptorImpl" }
+            .firstOrNull { isDescriptorClass(it.simpleName) }
             ?: return false
 
         // Check if the descriptor overrides takesImplicitBlockArgument
