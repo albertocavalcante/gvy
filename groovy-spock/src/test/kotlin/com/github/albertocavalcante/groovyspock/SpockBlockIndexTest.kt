@@ -24,7 +24,7 @@ class SpockBlockIndexTest {
                 compilePhase = org.codehaus.groovy.control.Phases.CONVERSION,
             ),
         )
-        val module = result.ast as? ModuleNode ?: return null
+        val module = result.ast ?: return null
         // Spock feature methods with string names are parsed with the literal string as the name
         // e.g. def "feature method"() { } has name = "feature method"
         return module.classes
