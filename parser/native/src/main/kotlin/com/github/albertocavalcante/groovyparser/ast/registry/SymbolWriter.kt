@@ -16,7 +16,9 @@ class SymbolWriter(private val storage: SymbolStorage) {
 
     fun addVariable(uri: URI, variable: Variable) {
         storage.variableDeclarations
-            .computeIfAbsent(uri) { ConcurrentHashMap() }[variable.name] = variable
+            .computeIfAbsent(uri) { ConcurrentHashMap() }
+            .computeIfAbsent(variable.name) { mutableListOf() }
+            .add(variable)
     }
 
     fun addMethod(uri: URI, method: MethodNode) {

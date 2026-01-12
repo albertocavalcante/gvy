@@ -34,13 +34,13 @@ class SymbolRegistry {
     fun addImportDeclaration(uri: URI, importNode: ImportNode) = writer.addImport(uri, importNode)
     fun addFieldDeclaration(classNode: ClassNode, name: String, node: ASTNode) = writer.addField(classNode, name, node)
 
-    fun findVariableDeclaration(uri: URI, name: String): Variable? = reader.findVariable(uri, name)
+    fun findVariableDeclarations(uri: URI, name: String): List<Variable> = reader.findVariables(uri, name)
     fun findMethodDeclarations(uri: URI, name: String): List<MethodNode> = reader.findMethods(uri, name)
     fun findClassDeclaration(uri: URI, name: String): ClassNode? = reader.findClass(uri, name)
     fun findImportDeclaration(uri: URI, name: String): ImportNode? = reader.findImport(uri, name)
     fun findFieldDeclaration(classNode: ClassNode, name: String): ASTNode? = reader.findField(classNode, name)
 
-    fun getVariableDeclarations(uri: URI): Map<String, Variable> = reader.getAllVariables(uri)
+    fun getVariableDeclarations(uri: URI): Map<String, List<Variable>> = reader.getAllVariables(uri)
     fun getMethodDeclarations(uri: URI): Map<String, List<MethodNode>> = reader.getAllMethods(uri)
     fun getClassDeclarations(uri: URI): Map<String, ClassNode> = reader.getAllClasses(uri)
     fun getImportDeclarations(uri: URI): Map<String, ImportNode> = reader.getAllImports(uri)

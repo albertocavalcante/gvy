@@ -13,7 +13,8 @@ import java.net.URI
  */
 class SymbolReader(private val storage: SymbolStorage) {
 
-    fun findVariable(uri: URI, name: String): Variable? = storage.variableDeclarations[uri]?.get(name)
+    fun findVariables(uri: URI, name: String): List<Variable> =
+        storage.variableDeclarations[uri]?.get(name) ?: emptyList()
 
     fun findMethods(uri: URI, name: String): List<MethodNode> =
         storage.methodDeclarations[uri]?.get(name) ?: emptyList()
@@ -24,7 +25,7 @@ class SymbolReader(private val storage: SymbolStorage) {
 
     fun findField(classNode: ClassNode, name: String): ASTNode? = storage.fieldDeclarations[classNode]?.get(name)
 
-    fun getAllVariables(uri: URI): Map<String, Variable> = storage.variableDeclarations[uri] ?: emptyMap()
+    fun getAllVariables(uri: URI): Map<String, List<Variable>> = storage.variableDeclarations[uri] ?: emptyMap()
 
     fun getAllMethods(uri: URI): Map<String, List<MethodNode>> = storage.methodDeclarations[uri] ?: emptyMap()
 
