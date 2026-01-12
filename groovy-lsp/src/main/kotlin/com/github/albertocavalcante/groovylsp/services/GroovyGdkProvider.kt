@@ -29,9 +29,12 @@ class GroovyGdkProvider(
      * Initializes the GDK index. Call this on startup.
      */
     fun initialize() {
-        if (isInitialized.get()) return
+        if (!isInitialized.compareAndSet(false, true)) return
 
         // Initialize source resolver if available
+        // Note: runBlocking is intentional here - GDK initialization is a one-time
+        // startup cost that must complete before the provider is usable.
+        // Moving to async would require significant refactoring of callers.
         groovySourceResolver?.let { resolver ->
             runBlocking {
                 val success = resolver.initialize()
@@ -54,7 +57,6 @@ class GroovyGdkProvider(
             indexGdkClass(className)
         }
 
-        isInitialized.set(true)
         logger.info { "Initialized GDK Provider with ${cache.size} target types" }
     }
 

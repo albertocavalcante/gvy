@@ -401,7 +401,10 @@ class JavaSourceInspector {
                 val methodName = method.nameAsString
                 val paramTypes = method.parameters.map { param ->
                     // Get simple type name (e.g., "Closure" instead of "groovy.lang.Closure")
-                    param.typeAsString.substringAfterLast('.')
+                    // Strip generic type parameters (e.g., "List<String>" becomes "List")
+                    param.typeAsString
+                        .substringBefore('<') // Strip generic type parameters
+                        .substringAfterLast('.')
                 }
                 val paramNames = method.parameters.map { it.nameAsString }
 

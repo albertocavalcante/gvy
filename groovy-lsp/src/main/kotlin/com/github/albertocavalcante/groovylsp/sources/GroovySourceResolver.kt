@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -25,9 +25,9 @@ class GroovySourceResolver(
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
     private val sourceArtifactResolver: MavenSourceArtifactResolver = MavenSourceArtifactResolver(),
 ) {
-    private val logger = LoggerFactory.getLogger(GroovySourceResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
-    // Thread-safe cache: className -> extracted source path
+    // Cache is bounded by GDK_CLASSES size (~8 classes), so no LRU eviction needed
     private val extractedSourceCache = ConcurrentHashMap<String, Path>()
 
     // Index mapping method signatures to parameter names
@@ -62,25 +62,22 @@ class GroovySourceResolver(
      * @return true if initialization succeeded, false otherwise
      */
     suspend fun initialize(): Boolean {
-        logger.info("Initializing Groovy source resolver...")
+        logger.info { "Initializing Groovy source resolver..." }
 
         // Detect Groovy version from classpath
         val groovyVersion = detectGroovyVersion()
         if (groovyVersion == null) {
-            logger.warn("Could not detect Groovy version from classpath")
+            logger.warn { "Could not detect Groovy version from classpath" }
             return false
         }
 
-        logger.info("Detected Groovy version: {}", groovyVersion)
+        logger.info { "Detected Groovy version: $groovyVersion" }
 
         // Determine Maven coordinates based on Groovy version
         val coordinates = getGroovyMavenCoordinates(groovyVersion)
-        logger.debug(
-            "Using Maven coordinates: {}:{}:{}",
-            coordinates.groupId,
-            coordinates.artifactId,
-            coordinates.version,
-        )
+        logger.debug {
+            "Using Maven coordinates: ${coordinates.groupId}:${coordinates.artifactId}:${coordinates.version}"
+        }
 
         // Download or locate sources JAR
         val sourcesJar = sourceArtifactResolver.resolveSourceJar(
@@ -90,11 +87,11 @@ class GroovySourceResolver(
         )
 
         if (sourcesJar == null) {
-            logger.warn("Could not resolve Groovy sources JAR for version {}", groovyVersion)
+            logger.warn { "Could not resolve Groovy sources JAR for version $groovyVersion" }
             return false
         }
 
-        logger.info("Resolved Groovy sources JAR: {}", sourcesJar)
+        logger.info { "Resolved Groovy sources JAR: $sourcesJar" }
 
         // Extract and index GDK source files
         return indexGdkSources(sourcesJar)
@@ -121,7 +118,7 @@ class GroovySourceResolver(
         val versionMethod = groovySystemClass.getMethod("getVersion")
         versionMethod.invoke(null) as? String
     } catch (e: Exception) {
-        logger.debug("Failed to detect Groovy version via GroovySystem.getVersion()", e)
+        logger.debug(e) { "Failed to detect Groovy version via GroovySystem.getVersion()" }
         null
     }
 
@@ -150,7 +147,7 @@ class GroovySourceResolver(
      */
     private fun indexGdkSources(sourcesJar: Path): Boolean {
         if (!Files.exists(sourcesJar)) {
-            logger.warn("Sources JAR does not exist: {}", sourcesJar)
+            logger.warn { "Sources JAR does not exist: $sourcesJar" }
             return false
         }
 
@@ -164,7 +161,7 @@ class GroovySourceResolver(
                     if (extractedPath != null) {
                         // Extract all method parameters from this GDK class
                         val methodParams = javaSourceInspector.extractAllMethodParameters(extractedPath, gdkClassName)
-                        logger.debug("Extracted {} methods from {}", methodParams.size, gdkClassName)
+                        logger.debug { "Extracted ${methodParams.size} methods from $gdkClassName" }
 
                         // Add to index
                         val simpleClassName = gdkClassName.substringAfterLast('.')
@@ -194,10 +191,10 @@ class GroovySourceResolver(
                 }
             }
 
-            logger.info("Successfully indexed {} GDK methods from sources", indexedCount)
+            logger.info { "Successfully indexed $indexedCount GDK methods from sources" }
             return indexedCount > 0
         } catch (e: Exception) {
-            logger.error("Failed to index GDK sources from JAR: {}", sourcesJar, e)
+            logger.error(e) { "Failed to index GDK sources from JAR: $sourcesJar" }
             return false
         }
     }
@@ -213,7 +210,7 @@ class GroovySourceResolver(
         // Check cache first
         extractedSourceCache[className]?.let { cachedPath ->
             if (Files.exists(cachedPath)) {
-                logger.debug("Found cached source for: {}", className)
+                logger.debug { "Found cached source for: $className" }
                 return cachedPath
             } else {
                 extractedSourceCache.remove(className)
@@ -224,7 +221,7 @@ class GroovySourceResolver(
 
         val entry = jar.getEntry(javaPath)
         if (entry == null || entry.isDirectory) {
-            logger.debug("Source file not found in JAR: {}", javaPath)
+            logger.debug { "Source file not found in JAR: $javaPath" }
             return null
         }
 
@@ -241,11 +238,11 @@ class GroovySourceResolver(
 
             // Cache the path
             extractedSourceCache[className] = outputPath
-            logger.debug("Extracted source: {} -> {}", className, outputPath)
+            logger.debug { "Extracted source: $className -> $outputPath" }
 
             return outputPath
         } catch (e: Exception) {
-            logger.error("Failed to extract source from JAR for {}: {}", className, e.message)
+            logger.error(e) { "Failed to extract source from JAR for $className" }
             return null
         }
     }
@@ -269,12 +266,12 @@ class GroovySourceResolver(
                     .sorted(Comparator.reverseOrder())
                     .forEach { Files.deleteIfExists(it) }
             } catch (e: Exception) {
-                logger.warn("Failed to delete Groovy source cache: {}", e.message)
+                logger.warn(e) { "Failed to delete Groovy source cache" }
             }
         }
         extractedSourceCache.clear()
         methodIndex.clear()
-        logger.info("Cleared Groovy source cache")
+        logger.info { "Cleared Groovy source cache" }
     }
 
     /**

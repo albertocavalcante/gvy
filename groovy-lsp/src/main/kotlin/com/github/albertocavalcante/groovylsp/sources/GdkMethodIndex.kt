@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -13,9 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Example: "DefaultGroovyMethods.each(Closure)" -> ["closure"]
  */
 class GdkMethodIndex {
-    private val logger = LoggerFactory.getLogger(GdkMethodIndex::class.java)
+    private val logger = KotlinLogging.logger {}
 
-    // Thread-safe map: method signature -> parameter names
+    // Cache is bounded by GDK_CLASSES size (~8 classes) * methods per class (~100), so no LRU eviction needed
     private val index = ConcurrentHashMap<String, List<String>>()
 
     /**
@@ -27,14 +27,17 @@ class GdkMethodIndex {
      * @param parameterNames Parameter names from source (e.g., ["closure"])
      */
     fun addMethod(className: String, methodName: String, parameterTypes: List<String>, parameterNames: List<String>) {
+        require(parameterTypes.size == parameterNames.size) {
+            "Parameter types and names must have same size for $className.$methodName"
+        }
         if (parameterNames.isEmpty()) {
-            logger.debug("Skipping method with no parameters: {}.{}", className, methodName)
+            logger.debug { "Skipping method with no parameters: $className.$methodName" }
             return
         }
 
         val signature = buildSignature(className, methodName, parameterTypes)
         index[signature] = parameterNames
-        logger.trace("Indexed: {} -> {}", signature, parameterNames)
+        logger.trace { "Indexed: $signature -> $parameterNames" }
     }
 
     /**
@@ -72,6 +75,6 @@ class GdkMethodIndex {
      */
     fun clear() {
         index.clear()
-        logger.info("Cleared GDK method index")
+        logger.info { "Cleared GDK method index" }
     }
 }
