@@ -41,10 +41,16 @@ data class ScannedStep(
  * that would occur if we tried to load Jenkins plugin classes without the full Jenkins runtime.
  *
  * The scanning is deterministic - same input always produces same output.
+ *
+ * Function name resolution priority:
+ * 1. **Bytecode extraction**: Extract `getFunctionName()` return value from StepDescriptor bytecode (deterministic)
+ * 2. **@Symbol annotation**: Fall back to @Symbol annotation value
+ * 3. **Class name derivation**: Last resort - derive from class name (e.g., EchoStep → echo)
  */
 class BytecodeScanner {
 
     private val logger = KotlinLogging.logger {}
+    private val functionNameExtractor = FunctionNameExtractor()
 
     companion object {
         private const val STEP_CLASS = "org.jenkinsci.plugins.workflow.steps.Step"
@@ -76,11 +82,18 @@ class BytecodeScanner {
      * @param jarPath Path to the JAR file to scan
      * @return List of ScannedStep objects found in the JAR
      */
-    fun scanJar(jarPath: Path): List<ScannedStep> = scan(STEP_CLASS) {
+    fun scanJar(jarPath: Path): List<ScannedStep> = scanWithJar(STEP_CLASS, jarPath) {
         overrideClasspath(jarPath.toString())
     }
 
-    private fun scan(superclassName: String, configure: ClassGraph.() -> Unit): List<ScannedStep> = runCatching {
+    private fun scan(superclassName: String, configure: ClassGraph.() -> Unit): List<ScannedStep> =
+        scanWithJar(superclassName, null, configure)
+
+    private fun scanWithJar(
+        superclassName: String,
+        jarPath: Path?,
+        configure: ClassGraph.() -> Unit,
+    ): List<ScannedStep> = runCatching {
         ClassGraph()
             .enableAllInfo()
             .apply(configure)
@@ -88,7 +101,7 @@ class BytecodeScanner {
             .use { scanResult ->
                 scanResult.getSubclasses(superclassName)
                     .filter { !it.isAbstract }
-                    .map { classInfo -> toScannedStep(classInfo) }
+                    .map { classInfo -> toScannedStep(classInfo, jarPath) }
                     .sortedBy { it.className }
             }
     }.onFailure { throwable ->
@@ -120,10 +133,10 @@ class BytecodeScanner {
         }.getOrDefault(emptyList())
     }
 
-    private fun toScannedStep(classInfo: ClassInfo): ScannedStep {
+    private fun toScannedStep(classInfo: ClassInfo, jarPath: Path? = null): ScannedStep {
         val constructorParams = extractDataBoundConstructorParams(classInfo)
         val setterParams = extractDataBoundSetterParams(classInfo)
-        val functionName = extractFunctionName(classInfo)
+        val functionName = extractFunctionName(classInfo, jarPath)
         val takesBlock = extractTakesBlock(classInfo)
 
         return ScannedStep(
@@ -165,19 +178,37 @@ class BytecodeScanner {
             .sortedBy { it.name } // Deterministic ordering
     }
 
-    private fun extractFunctionName(classInfo: ClassInfo): String? {
-        // Strategy 1: Look for @Symbol annotation
+    @Suppress("ReturnCount") // Multiple returns represent distinct resolution strategies
+    private fun extractFunctionName(classInfo: ClassInfo, jarPath: Path? = null): String? {
+        // Strategy 1: Extract getFunctionName() return value from bytecode (MOST RELIABLE)
+        // This is the same source of truth Jenkins uses at runtime.
+        if (jarPath != null) {
+            val descriptorClass = classInfo.innerClasses
+                .firstOrNull { it.simpleName == "DescriptorImpl" || it.simpleName.endsWith("Descriptor") }
+
+            if (descriptorClass != null) {
+                val bytecodeResult = functionNameExtractor.extractFromJar(jarPath, descriptorClass.name)
+                if (bytecodeResult != null) {
+                    logger.debug { "Extracted function name from bytecode: $bytecodeResult for ${classInfo.name}" }
+                    return bytecodeResult
+                }
+            }
+        }
+
+        // Strategy 2: Look for @Symbol annotation on Step class
         val symbolAnnotation = classInfo.annotationInfo
             .firstOrNull { it.name == SYMBOL_ANNOTATION }
 
         if (symbolAnnotation != null) {
             val value = symbolAnnotation.parameterValues.getValue("value")
             if (value is Array<*> && value.isNotEmpty()) {
-                return value[0].toString()
+                val result = value[0].toString()
+                logger.debug { "Extracted function name from @Symbol on Step: $result for ${classInfo.name}" }
+                return result
             }
         }
 
-        // Strategy 2: Look for inner DescriptorImpl class with @Symbol
+        // Strategy 3: Look for inner DescriptorImpl class with @Symbol
         val descriptorClass = classInfo.innerClasses
             .firstOrNull { it.simpleName == "DescriptorImpl" }
 
@@ -187,15 +218,19 @@ class BytecodeScanner {
             if (descSymbol != null) {
                 val value = descSymbol.parameterValues.getValue("value")
                 if (value is Array<*> && value.isNotEmpty()) {
-                    return value[0].toString()
+                    val result = value[0].toString()
+                    logger.debug { "Extracted function name from @Symbol on Descriptor: $result for ${classInfo.name}" }
+                    return result
                 }
             }
         }
 
-        // Fallback: Derive from class name
-        return classInfo.simpleName
+        // Strategy 4 (FALLBACK): Derive from class name
+        val derivedName = classInfo.simpleName
             .removeSuffix("Step")
             .replaceFirstChar { it.lowercase() }
+        logger.debug { "Derived function name from class name: $derivedName for ${classInfo.name}" }
+        return derivedName
     }
 
     private fun extractTakesBlock(classInfo: ClassInfo): Boolean {

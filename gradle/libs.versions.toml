@@ -37,6 +37,7 @@ jackson = "2.20.1"
 jqwik = "1.9.3"
 jsonPath = "2.10.0"
 classgraph = "4.8.184"
+asm = "9.7.1"
 dependencyAnalysis = "3.5.1"
 proguardGradle = "7.8.2"
 jna = "5.18.1"
@@ -128,6 +129,9 @@ jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-
 
 # Classpath Scanning
 classgraph = { module = "io.github.classgraph:classgraph", version.ref = "classgraph" }
+
+# Bytecode Analysis
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 proguard-gradle = { module = "com.guardsquare:proguard-gradle", version.ref = "proguardGradle" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
