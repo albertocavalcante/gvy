@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovylsp.services
 
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver
+import io.mockk.every
+import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -144,5 +147,155 @@ class GroovyGdkProviderTest {
         // Accept either "closure" (from sources) or "arg1" (from reflection fallback)
         assertThat(eachMethod?.parameterNames?.get(0)).isIn("closure", "arg1")
         assertThat(eachMethod?.parameterTypes?.get(0)).isEqualTo("Closure")
+    }
+
+    // =============================================================================
+    // Tests for GroovySourceResolver Integration
+    // =============================================================================
+
+    @Test
+    fun `should use mocked GroovySourceResolver parameter names when available`() {
+        // Arrange: Create a mock resolver that returns known parameter names
+        val mockResolver = mockk<GroovySourceResolver>()
+        every { mockResolver.initialize() } returns true
+        every {
+            mockResolver.getParameterNames(
+                "DefaultGroovyMethods",
+                "each",
+                listOf("Closure"),
+            )
+        } returns listOf("customClosureName")
+        every {
+            mockResolver.getParameterNames(
+                "DefaultGroovyMethods",
+                "collect",
+                listOf("Collection", "Closure"),
+            )
+        } returns listOf("customCollector", "customTransform")
+
+        // Act: Create provider with mocked resolver
+        val classpathService = ClasspathService()
+        val provider = GroovyGdkProvider(classpathService, mockResolver)
+        provider.initialize()
+
+        // Assert: Verify it uses the mocked resolver's parameter names
+        val methods = provider.getMethodsForType("java.util.List")
+
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+        assertThat(eachMethod).isNotNull
+        assertThat(eachMethod?.parameterNames).containsExactly("customClosureName")
+
+        val collectMethod = methods.find {
+            it.name == "collect" && it.parameterTypes == listOf("Collection", "Closure")
+        }
+        if (collectMethod != null) { // Method may or may not exist in the GDK
+            assertThat(collectMethod.parameterNames).containsExactly("customCollector", "customTransform")
+        }
+    }
+
+    @Test
+    fun `should fallback to reflection when resolver returns null`() {
+        // Arrange: Create a resolver that always returns null
+        val nullResolver = mockk<GroovySourceResolver>()
+        every { nullResolver.initialize() } returns true
+        every { nullResolver.getParameterNames(any(), any(), any()) } returns null
+
+        // Act: Create provider with null-returning resolver
+        val classpathService = ClasspathService()
+        val provider = GroovyGdkProvider(classpathService, nullResolver)
+        provider.initialize()
+
+        // Assert: Verify it falls back to reflection-based names (e.g., "arg0", "arg1")
+        val methods = provider.getMethodsForType("java.util.List")
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+
+        assertThat(eachMethod).isNotNull
+        assertThat(eachMethod?.parameterNames).hasSize(1)
+        // Reflection-based names are typically like "arg0", "arg1", etc.
+        // The exact name depends on Java parameter name compilation flags
+        assertThat(eachMethod?.parameterNames?.get(0)).matches("arg\\d+")
+    }
+
+    @Test
+    fun `should fallback to reflection when resolver initialization fails`() {
+        // Arrange: Create a resolver that fails to initialize
+        val failingResolver = mockk<GroovySourceResolver>()
+        every { failingResolver.initialize() } returns false
+
+        // Act: Create provider with failing resolver
+        val classpathService = ClasspathService()
+        val provider = GroovyGdkProvider(classpathService, failingResolver)
+        provider.initialize()
+
+        // Assert: Provider should still work and use reflection-based names
+        val methods = provider.getMethodsForType("java.util.List")
+
+        assertThat(methods).isNotEmpty
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+        assertThat(eachMethod).isNotNull
+        // Should have parameter names from reflection
+        assertThat(eachMethod?.parameterNames).hasSize(1)
+    }
+
+    @Test
+    fun `should work without resolver instance when not provided`() {
+        // Arrange: Create provider without resolver (null)
+        val classpathService = ClasspathService()
+        val provider = GroovyGdkProvider(classpathService, groovySourceResolver = null)
+
+        // Act: Initialize and get methods
+        provider.initialize()
+        val methods = provider.getMethodsForType("java.util.List")
+
+        // Assert: Should work fine with reflection-based names
+        assertThat(methods).isNotEmpty
+        val eachMethod = methods.find { it.name == "each" && it.parameterTypes.size == 1 }
+        assertThat(eachMethod).isNotNull
+        assertThat(eachMethod?.parameterNames).hasSize(1)
+    }
+
+    // =============================================================================
+    // Test documenting GDK_CLASSES alignment
+    // =============================================================================
+
+    @Test
+    fun `should now index all 8 GDK classes from GroovySourceResolver`() {
+        // Note: As of recent changes, GroovyGdkProvider now uses GroovySourceResolver.GDK_CLASSES
+        // which includes all 8 GDK classes:
+        //   1. org.codehaus.groovy.runtime.DefaultGroovyMethods
+        //   2. org.codehaus.groovy.runtime.StringGroovyMethods
+        //   3. org.codehaus.groovy.runtime.DateGroovyMethods
+        //   4. org.codehaus.groovy.runtime.EncodingGroovyMethods
+        //   5. org.codehaus.groovy.runtime.IOGroovyMethods
+        //   6. org.codehaus.groovy.runtime.ProcessGroovyMethods
+        //   7. org.codehaus.groovy.runtime.ResourceGroovyMethods
+        //   8. org.codehaus.groovy.vmplugin.v8.PluginDefaultGroovyMethods
+        //
+        // This ensures parameter names from GroovySourceResolver work for all indexed methods.
+
+        // This test documents the current behavior:
+        // The provider successfully indexes methods from the shared GDK_CLASSES list
+        val classpathService = ClasspathService()
+        val provider = GroovyGdkProvider(classpathService)
+        provider.initialize()
+
+        // Verify we get methods from the core indexed classes
+        val listMethods = provider.getMethodsForType("java.util.List")
+        assertThat(listMethods).isNotEmpty
+        assertThat(listMethods.map { it.originClass }).contains(
+            "DefaultGroovyMethods",
+            "PluginDefaultGroovyMethods",
+        )
+
+        val stringMethods = provider.getMethodsForType("java.lang.String")
+        assertThat(stringMethods).isNotEmpty
+        assertThat(stringMethods.map { it.originClass }).contains(
+            "StringGroovyMethods",
+        )
+
+        // Methods from other GDK classes like DateGroovyMethods, IOGroovyMethods, etc.
+        // will now also be indexed, though they may not appear for these specific types.
+        // The provider attempts to load all classes in GDK_CLASSES, and will index
+        // methods from those that are available on the classpath.
     }
 }

@@ -402,9 +402,12 @@ class JavaSourceInspector {
                 val paramTypes = method.parameters.map { param ->
                     // Get simple type name (e.g., "Closure" instead of "groovy.lang.Closure")
                     // Strip generic type parameters (e.g., "List<String>" becomes "List")
-                    param.typeAsString
+                    val baseType = param.typeAsString
                         .substringBefore('<') // Strip generic type parameters
                         .substringAfterLast('.')
+                    // Handle varargs: JavaParser represents "Object... args" as type "Object"
+                    // but reflection returns "Object[]" for varargs parameters
+                    if (param.isVarArgs) "$baseType[]" else baseType
                 }
                 val paramNames = method.parameters.map { it.nameAsString }
 

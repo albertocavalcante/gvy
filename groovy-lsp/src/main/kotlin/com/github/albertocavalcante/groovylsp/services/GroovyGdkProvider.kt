@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver.Companion.GDK_CLASSES
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
@@ -9,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
- * Scans DefaultGroovyMethods and StringGroovyMethods.
+ * Scans all GDK classes defined in [GroovySourceResolver.GDK_CLASSES].
  *
  * Now uses GroovySourceResolver to extract real parameter names from Groovy source JARs
  * instead of relying on reflection which provides synthetic names like "arg0", "arg1".
@@ -46,14 +47,9 @@ class GroovyGdkProvider(
             }
         }
 
-        // Common GDK classes in Groovy
-        val gdkClasses = listOf(
-            "org.codehaus.groovy.runtime.DefaultGroovyMethods",
-            "org.codehaus.groovy.runtime.StringGroovyMethods",
-            "org.codehaus.groovy.vmplugin.v8.PluginDefaultGroovyMethods",
-        )
-
-        gdkClasses.forEach { className ->
+        // Use the same GDK classes as GroovySourceResolver for consistency
+        // This ensures parameter names from sources match the methods we index
+        GDK_CLASSES.forEach { className ->
             indexGdkClass(className)
         }
 

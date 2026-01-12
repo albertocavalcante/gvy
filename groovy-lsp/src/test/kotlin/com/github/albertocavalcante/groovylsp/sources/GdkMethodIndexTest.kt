@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.sources
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
@@ -239,5 +240,239 @@ class GdkMethodIndexTest {
 
         val stats = index.getStatistics()
         assertThat(stats["indexedMethods"]).isEqualTo(0)
+    }
+
+    @Test
+    fun `should throw IllegalArgumentException when parameter types and names sizes mismatch`() {
+        // Given - mismatched parameter types and names
+        val className = "DefaultGroovyMethods"
+        val methodName = "testMethod"
+        val parameterTypes = listOf("String", "Integer")
+        val parameterNames = listOf("param1")
+
+        // When/Then - should throw IllegalArgumentException
+        assertThatThrownBy {
+            index.addMethod(
+                className = className,
+                methodName = methodName,
+                parameterTypes = parameterTypes,
+                parameterNames = parameterNames,
+            )
+        }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("Parameter types and names must have same size")
+            .hasMessageContaining("DefaultGroovyMethods.testMethod")
+    }
+
+    @Test
+    fun `should throw IllegalArgumentException when more names than types`() {
+        // Given - more parameter names than types
+        val className = "DefaultGroovyMethods"
+        val methodName = "testMethod"
+        val parameterTypes = listOf("String")
+        val parameterNames = listOf("param1", "param2", "param3")
+
+        // When/Then - should throw IllegalArgumentException
+        assertThatThrownBy {
+            index.addMethod(
+                className = className,
+                methodName = methodName,
+                parameterTypes = parameterTypes,
+                parameterNames = parameterNames,
+            )
+        }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("Parameter types and names must have same size")
+    }
+
+    @Test
+    fun `should handle empty class name`() {
+        // Given - empty class name
+        val className = ""
+        val methodName = "testMethod"
+        val parameterTypes = listOf("String")
+        val parameterNames = listOf("param")
+
+        // When - add method with empty class name
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should be able to retrieve by empty class name
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(listOf("param"))
+
+        // TODO: Consider validating that className is not empty for better error messages
+    }
+
+    @Test
+    fun `should handle empty method name`() {
+        // Given - empty method name
+        val className = "DefaultGroovyMethods"
+        val methodName = ""
+        val parameterTypes = listOf("String")
+        val parameterNames = listOf("param")
+
+        // When - add method with empty method name
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should be able to retrieve by empty method name
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(listOf("param"))
+
+        // TODO: Consider validating that methodName is not empty for better error messages
+    }
+
+    @Test
+    fun `should handle special characters in class and method names`() {
+        // Given - special characters in names
+        val className = "Test\$Inner.Class"
+        val methodName = "method\$with_special-chars"
+        val parameterTypes = listOf("String", "Integer")
+        val parameterNames = listOf("param\$1", "param_2")
+
+        // When - add method with special characters
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should be able to retrieve with special characters
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(listOf("param\$1", "param_2"))
+    }
+
+    @Test
+    fun `should handle special characters in parameter types`() {
+        // Given - special characters in parameter types (generics, arrays)
+        val className = "DefaultGroovyMethods"
+        val methodName = "complexMethod"
+        val parameterTypes = listOf("List<String>", "Map<String,Integer>", "String[]")
+        val parameterNames = listOf("list", "map", "array")
+
+        // When - add method with complex parameter types
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should be able to retrieve with complex parameter types
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(listOf("list", "map", "array"))
+    }
+
+    @Test
+    fun `should handle very long parameter lists`() {
+        // Given - method with 15 parameters
+        val className = "DefaultGroovyMethods"
+        val methodName = "methodWithManyParams"
+        val parameterTypes = (1..15).map { "Type$it" }
+        val parameterNames = (1..15).map { "param$it" }
+
+        // When - add method with many parameters
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should correctly store and retrieve all parameters
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(parameterNames)
+        assertThat(paramNames).hasSize(15)
+    }
+
+    @Test
+    fun `should handle parameter lists with exactly 10 parameters`() {
+        // Given - method with exactly 10 parameters
+        val className = "DefaultGroovyMethods"
+        val methodName = "methodWith10Params"
+        val parameterTypes = (1..10).map { "Type$it" }
+        val parameterNames = (1..10).map { "param$it" }
+
+        // When - add method with 10 parameters
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should correctly store and retrieve all parameters
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(parameterNames)
+        assertThat(paramNames).hasSize(10)
+    }
+
+    @Test
+    fun `should handle parameter lists with 20 parameters`() {
+        // Given - method with 20 parameters (stress test)
+        val className = "DefaultGroovyMethods"
+        val methodName = "methodWith20Params"
+        val parameterTypes = (1..20).map { "Type$it" }
+        val parameterNames = (1..20).map { "param$it" }
+
+        // When - add method with 20 parameters
+        index.addMethod(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+            parameterNames = parameterNames,
+        )
+
+        // Then - should correctly store and retrieve all parameters
+        val paramNames = index.getParameterNames(
+            className = className,
+            methodName = methodName,
+            parameterTypes = parameterTypes,
+        )
+
+        assertThat(paramNames).isEqualTo(parameterNames)
+        assertThat(paramNames).hasSize(20)
+
+        // TODO: Consider documenting maximum supported parameter count if there are practical limits
     }
 }
