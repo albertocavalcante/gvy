@@ -8,11 +8,14 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
+import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
+import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
@@ -21,6 +24,7 @@ import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
 import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -48,7 +52,7 @@ data class CompletionContext(
     val content: String,
     val semanticResolver: SemanticTypeResolver,
     val moduleNode: ModuleNode?,
-    val workspaceSymbolIndex: com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex? = null,
+    val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
 )
 
 /**
@@ -278,7 +282,7 @@ object CompletionProvider {
     }
 
     private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
-        context: com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext,
+        context: SymbolCompletionContext,
         isStrictDeclarative: Boolean,
     ) {
         if (isStrictDeclarative) {
@@ -370,13 +374,11 @@ object CompletionProvider {
      *
      * @param members List of member information from WorkspaceSymbolIndex
      */
-    private fun CompletionsBuilder.addWorkspaceMembers(
-        members: List<com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo>,
-    ) {
+    private fun CompletionsBuilder.addWorkspaceMembers(members: List<MemberInfo>) {
         members.forEach { member ->
             when (member.kind) {
-                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.FIELD,
-                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.PROPERTY,
+                SymbolKind.FIELD,
+                SymbolKind.PROPERTY,
                 -> {
                     field(
                         name = member.name,
@@ -385,7 +387,7 @@ object CompletionProvider {
                     )
                 }
 
-                com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD -> {
+                SymbolKind.METHOD -> {
                     method(
                         name = member.name,
                         returnType = member.type?.let { formatType(it) } ?: "def",
@@ -408,8 +410,7 @@ object CompletionProvider {
      * @param type The semantic type to format
      * @return A formatted type string
      */
-    private fun formatType(type: com.github.albertocavalcante.gvy.semantics.SemanticType): String =
-        SemanticTypeFormatter.formatForCompletion(type)
+    private fun formatType(type: SemanticType): String = SemanticTypeFormatter.formatForCompletion(type)
 
     /**
      * Parses a method signature into parameter strings for display.
@@ -982,7 +983,7 @@ object CompletionProvider {
      */
     private fun CompletionsBuilder.addAutoImportCompletions(
         prefix: String,
-        uri: java.net.URI,
+        uri: URI,
         content: String,
         compilationService: GroovyCompilationService,
     ) {
