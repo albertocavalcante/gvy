@@ -357,7 +357,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should use inner declaration when variable is shadowed`() = runTest {
+    fun `should suggest map keys from inner scoped variable`() = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
 class MyService {
