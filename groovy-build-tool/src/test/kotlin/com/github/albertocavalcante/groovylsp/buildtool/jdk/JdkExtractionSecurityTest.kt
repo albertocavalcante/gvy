@@ -202,7 +202,7 @@ class JdkExtractionSecurityTest {
             // Symlinks not supported - skip
         } catch (e: Exception) {
             // Any exception other than infinite loop is acceptable
-            assertTrue(e !is StackOverflowError)
+            // StackOverflowError is an Error (not Exception), so won't be caught here
         }
     }
 

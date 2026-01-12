@@ -26,7 +26,7 @@ class JUnit5TestDetectorTest {
                 compilePhase = Phases.CONVERSION,
             ),
         )
-        val module = result.ast as? ModuleNode
+        val module = result.ast
         val classNode = module?.classes?.find { it.name == className }
             ?: throw IllegalArgumentException("Class $className not found in source")
         return classNode to module

@@ -26,7 +26,7 @@ class SpockFeatureExtractorTest {
                 compilePhase = Phases.CONVERSION,
             ),
         )
-        val module = result.ast as? ModuleNode ?: return null
+        val module = result.ast ?: return null
         return module.classes.find { it.name == className }
     }
 

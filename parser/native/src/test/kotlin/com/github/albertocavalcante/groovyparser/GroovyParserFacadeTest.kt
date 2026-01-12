@@ -154,7 +154,7 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast, "AST should be populated even in MINIMAL mode")
 
         // Verify only Consumer class is in the AST (Dependency was not added)
-        val userClasses = result.ast!!.classes.filter { !it.name.contains("$") }
+        val userClasses = result.ast.classes.filter { !it.name.contains("$") }
         assertTrue(
             userClasses.all { it.nameWithoutPackage == "Consumer" },
             "Only Consumer class should be in AST when workspace sources are skipped",
@@ -457,7 +457,7 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast)
 
         // Verify AST structure
-        val classes = result.ast!!.classes
+        val classes = result.ast.classes
         assertTrue(classes.any { it.nameWithoutPackage == "Person" }, "Should find Person class")
 
         val personClass = classes.first { it.nameWithoutPackage == "Person" }

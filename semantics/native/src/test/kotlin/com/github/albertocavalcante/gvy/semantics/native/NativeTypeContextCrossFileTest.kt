@@ -172,7 +172,7 @@ class NativeTypeContextCrossFileTest {
 
             assertNotNull(fieldType)
             assertTrue(fieldType is SemanticType.Known)
-            assertEquals("Address", (fieldType as SemanticType.Known).fqn)
+            assertEquals("Address", fieldType.fqn)
         }
 
         @Test
@@ -406,7 +406,7 @@ class NativeTypeContextCrossFileTest {
 
             assertNotNull(returnType)
             assertTrue(returnType is SemanticType.Known)
-            assertEquals("Address", (returnType as SemanticType.Known).fqn)
+            assertEquals("Address", returnType.fqn)
         }
 
         @Test
