@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.sources
 
+import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -158,6 +160,34 @@ class SourceNavigationServiceTest {
             assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
                 "Expected SourceLocation but got: $result"
             }
+        }
+
+        @Test
+        fun `derives maven coordinates from gradle cache paths`() = runBlocking {
+            val resolver = RecordingSourceArtifactResolver()
+            val service = SourceNavigationService(sourceResolver = resolver)
+
+            val jarPath = Paths.get(
+                tempDir.toString(),
+                ".gradle",
+                "caches",
+                "modules-2",
+                "files-2.1",
+                "com.lesfurets.jenkins.unit",
+                "jenkins-pipeline-unit",
+                "1.9",
+                "abcdef",
+                "jenkins-pipeline-unit-1.9.jar",
+            )
+            val jarUri = URI.create(
+                "jar:file://${jarPath.toAbsolutePath()}!/com/lesfurets/jenkins/unit/DeclarativePipelineTest.class",
+            )
+
+            service.navigateToSource(jarUri, "com.lesfurets.jenkins.unit.declarative.DeclarativePipelineTest")
+
+            assertEquals("com.lesfurets.jenkins.unit", resolver.groupId)
+            assertEquals("jenkins-pipeline-unit", resolver.artifactId)
+            assertEquals("1.9", resolver.version)
         }
     }
 
@@ -343,5 +373,21 @@ class SourceNavigationServiceTest {
             jar.write(content.toByteArray())
             jar.closeEntry()
         }
+    }
+
+    private class RecordingSourceArtifactResolver : SourceArtifactResolver {
+        var groupId: String? = null
+        var artifactId: String? = null
+        var version: String? = null
+        override val cacheDir: Path = Paths.get(System.getProperty("java.io.tmpdir"))
+
+        override suspend fun resolveSourceJar(groupId: String, artifactId: String, version: String): Path? {
+            this.groupId = groupId
+            this.artifactId = artifactId
+            this.version = version
+            return null
+        }
+
+        override fun isSourcesCached(groupId: String, artifactId: String, version: String): Boolean = false
     }
 }

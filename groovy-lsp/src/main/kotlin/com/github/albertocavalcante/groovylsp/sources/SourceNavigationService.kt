@@ -261,24 +261,35 @@ class SourceNavigationService(
      * Extract coordinates from Maven repository path structure.
      */
     private fun extractFromMavenPath(jarPath: Path, fileName: String): MavenCoordinates? {
-        val parts = jarPath.toString().split("/")
-        val repoIndex = parts.indexOfFirst { it == "repository" || it == "caches" }
+        val parts = jarPath.normalize().map { it.toString() }
+        val repoIndex = parts.indexOfLast { it == "repository" || it == "caches" }
 
         if (repoIndex == -1 || repoIndex + MIN_MAVEN_COORDINATE_PARTS >= parts.size) {
             return extractFromFilename(fileName)
         }
 
-        // Maven layout: .../repository/group/parts/.../artifact/version/artifact-version.jar
-        // Find version directory (parent of JAR file)
-        val versionIndex = parts.size - 2
-        val version = parts[versionIndex]
+        val filenameCoords = extractFromFilename(fileName) ?: return null
+        val version = filenameCoords.version
+        val versionIndex = parts.indexOfLast { part -> part == version }
+        if (versionIndex == -1) {
+            return extractFromFilename(fileName)
+        }
 
-        // Find artifact directory (parent of version)
         val artifactIndex = versionIndex - 1
-        val artifactId = parts[artifactIndex]
+        val artifactId = parts.getOrNull(artifactIndex) ?: filenameCoords.artifactId
 
-        // Group is everything between repo and artifact
-        val groupParts = parts.subList(repoIndex + 1, artifactIndex)
+        var groupStartIndex = repoIndex + 1
+        if (parts.getOrNull(groupStartIndex) == "modules-2" &&
+            parts.getOrNull(groupStartIndex + 1)?.startsWith("files-") == true
+        ) {
+            groupStartIndex += 2
+        }
+
+        if (groupStartIndex >= artifactIndex) {
+            return filenameCoords
+        }
+
+        val groupParts = parts.subList(groupStartIndex, artifactIndex)
         val groupId = groupParts.joinToString(".")
 
         // Validate the extracted coordinates
