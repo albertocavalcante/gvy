@@ -108,6 +108,101 @@ class CompletionProviderTest {
         assertTrue(completions.isNotEmpty(), "Should return completions even without prior compilation")
     }
 
+    // ========================================================================
+    // Fallback Completion Tests (#854, #859)
+    // ========================================================================
+
+    @Test
+    fun `should provide fallback completions when file has syntax error`() = runTest {
+        // Arrange: File with broken syntax (missing closing brace)
+        val brokenContent = """
+            def x = {
+            // Missing closing brace - file cannot be parsed
+        """.trimIndent()
+        val uri = "file:///broken.groovy"
+
+        // Act
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1, // Empty line
+            0,
+            compilationService,
+            semanticResolver,
+            brokenContent,
+        )
+
+        // Assert - Should return fallback completions (keywords + basic snippets)
+        assertTrue(completions.isNotEmpty(), "Should return fallback completions for broken files")
+        assertTrue(
+            completions.any { it.label == "def" },
+            "Fallback should include 'def' keyword. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "class" },
+            "Fallback should include 'class' keyword. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should provide import completions even when file has syntax error elsewhere`() = runTest {
+        // Arrange: File with import line and syntax error elsewhere
+        val content = """
+            import java.util.L
+            
+            def x = {
+            // Missing closing brace
+        """.trimIndent()
+        val uri = "file:///import-in-broken.groovy"
+
+        // Act - Get completions at the import line
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            0, // import line
+            18, // After "import java.util.L"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Assert - Import completions should work even with syntax errors (#854)
+        assertTrue(
+            completions.any {
+                it.label?.startsWith("List") == true || it.label?.contains("List") == true
+            },
+            "Should suggest 'List' even with syntax errors. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should not have duplicate keyword completions`() = runTest {
+        // Arrange: Simple file that will trigger general completions
+        val content = """
+            // Empty line for completions
+            
+        """.trimIndent()
+        val uri = "file:///test-keywords.groovy"
+
+        // Act
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1, // Empty line
+            0,
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Assert - Keywords with snippets should not have duplicate plain versions (#857)
+        val defCount = completions.count { it.label == "def" }
+        assertTrue(defCount <= 1, "Should have at most 1 'def' (found $defCount)")
+
+        val classCount = completions.count { it.label == "class" }
+        assertTrue(classCount <= 1, "Should have at most 1 'class' (found $classCount)")
+
+        val ifCount = completions.count { it.label == "if" }
+        assertTrue(ifCount <= 1, "Should have at most 1 'if' (found $ifCount)")
+    }
+
     @Test
     fun `should suggest methods for inferred variable type`() = runTest {
         // Arrange

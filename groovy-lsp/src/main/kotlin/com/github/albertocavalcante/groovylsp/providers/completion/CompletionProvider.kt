@@ -1001,16 +1001,22 @@ object CompletionProvider {
         }
     }
 
+    /**
+     * Keywords that have snippet versions in GroovyCompletions.basic().
+     * These are excluded from addKeywords() to prevent duplicate completions (#857).
+     */
+    private val SNIPPET_KEYWORDS = setOf("def", "class", "interface", "enum", "if", "for", "while")
+
     private fun CompletionsBuilder.addKeywords() {
         val keywords = listOf(
-            // Types
-            "def", "void", "int", "boolean", "char", "byte",
+            // Types (def has snippet version)
+            "void", "int", "boolean", "char", "byte",
             "short", "long", "float", "double", "String", "Object",
-            // Control flow
-            "if", "else", "for", "while", "do", "switch", "case", "default",
+            // Control flow (if, for, while have snippet versions)
+            "else", "do", "switch", "case", "default",
             "break", "continue", "return", "try", "catch", "finally", "throw",
-            // Structure
-            "class", "interface", "trait", "enum", "package", "import",
+            // Structure (class, interface, enum have snippet versions)
+            "trait", "package", "import",
             // Modifiers
             "public", "protected", "private", "static", "final", "abstract",
             "synchronized", "transient", "volatile", "native",

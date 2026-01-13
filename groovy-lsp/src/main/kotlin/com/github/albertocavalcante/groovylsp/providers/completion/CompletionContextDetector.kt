@@ -139,7 +139,13 @@ internal object CompletionContextDetector {
             val importColumn = lineText.indexOf(IMPORT_KEYWORD)
             val isImportLine = isImportLine(beforeCursor, importColumn, safeChar)
             val offset = offsetAt(content, lines, line, character)
-            val isInCommentOrString = tokenIndex?.isInCommentOrString(offset) == true
+
+            // Use token index if available, otherwise fallback to text-based heuristic
+            val isInCommentOrString = if (tokenIndex != null) {
+                tokenIndex.isInCommentOrString(offset)
+            } else {
+                isInBlockCommentHeuristic(content, offset)
+            }
 
             if (!isImportLine || isInCommentOrString) {
                 null
@@ -152,6 +158,20 @@ internal object CompletionContextDetector {
                 )
             }
         }
+    }
+
+    /**
+     * Text-based heuristic to detect if offset is inside a block comment.
+     * Used when tokenIndex is unavailable (before compilation).
+     */
+    private fun isInBlockCommentHeuristic(content: String, offset: Int): Boolean {
+        val beforeOffset = content.substring(0, offset.coerceIn(0, content.length))
+        val lastOpenComment = beforeOffset.lastIndexOf("/*")
+        if (lastOpenComment == -1) return false
+
+        val lastCloseComment = beforeOffset.lastIndexOf("*/")
+        // We're inside a block comment if the last /* is after the last */
+        return lastOpenComment > lastCloseComment
     }
 
     fun isCommandExpression(content: String, line: Int, character: Int, methodName: String): Boolean {
