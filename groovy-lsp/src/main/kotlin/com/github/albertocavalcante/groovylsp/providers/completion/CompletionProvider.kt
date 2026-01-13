@@ -585,28 +585,19 @@ object CompletionProvider {
 
         val candidates = linkedSetOf<String>()
         val simpleName = rawType
-        val moduleNode = ctx.moduleNode
+        val importInfo = ctx.moduleNode?.let { moduleNode ->
+            TextImportInfo(
+                packageName = moduleNode.packageName,
+                explicitImports = moduleNode.imports.mapNotNull { it.className }.toSet(),
+                starImports = moduleNode.starImports.mapNotNull { it.packageName }.toSet(),
+            )
+        } ?: parseTextImportInfo(ctx.content)
 
-        if (moduleNode != null) {
-            moduleNode.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
-            moduleNode.imports.forEach { importNode ->
-                val className = importNode.className ?: return@forEach
-                if (className.substringAfterLast('.') == simpleName) {
-                    candidates.add(className)
-                }
-            }
-            moduleNode.starImports.forEach { importNode ->
-                val packageName = importNode.packageName ?: return@forEach
-                candidates.add("$packageName.$simpleName")
-            }
-        } else {
-            val info = parseTextImportInfo(ctx.content)
-            info.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
-            info.explicitImports
-                .filter { it.substringAfterLast('.') == simpleName }
-                .forEach { candidates.add(it) }
-            info.starImports.forEach { candidates.add("$it.$simpleName") }
-        }
+        importInfo.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
+        importInfo.explicitImports
+            .filter { it.substringAfterLast('.') == simpleName }
+            .forEach { candidates.add(it) }
+        importInfo.starImports.forEach { candidates.add("$it.$simpleName") }
 
         findWorkspaceClassFqnsBySimpleName(simpleName, ctx.compilationService)
             .forEach { candidates.add(it) }
