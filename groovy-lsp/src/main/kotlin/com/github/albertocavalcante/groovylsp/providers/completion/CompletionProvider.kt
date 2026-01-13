@@ -665,13 +665,20 @@ object CompletionProvider {
         return TextImportInfo(packageName, explicitImports, starImports)
     }
 
-    private fun isCodeDeclarationLine(trimmed: String): Boolean = trimmed.startsWith("class ") ||
-        trimmed.startsWith("interface ") ||
-        trimmed.startsWith("enum ") ||
-        trimmed.startsWith("trait ") ||
-        trimmed.startsWith("def ") ||
-        trimmed.startsWith("public class ") ||
-        trimmed.startsWith("abstract class ")
+    /**
+     * Matches Groovy code declarations with optional modifiers, such as:
+     *   class Foo
+     *   public class Foo
+     *   private static final class Foo
+     *   def bar()
+     *   public def bar()
+     */
+    private val CODE_DECLARATION_PATTERN =
+        Regex("""^(?:(?:public|protected|private|static|final|abstract)\s+)*(class|interface|enum|trait|def)\b""")
+
+    private fun isCodeDeclarationLine(trimmed: String): Boolean =
+        (trimmed.startsWith("@") && !trimmed.startsWith("@interface")) ||
+            CODE_DECLARATION_PATTERN.containsMatchIn(trimmed)
 
     /**
      * Finds the enclosing block for the cursor position.
