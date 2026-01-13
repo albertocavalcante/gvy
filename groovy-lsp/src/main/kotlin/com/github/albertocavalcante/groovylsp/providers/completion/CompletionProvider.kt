@@ -1009,9 +1009,9 @@ object CompletionProvider {
         )
 
         var added = false
+        val staticFieldNames = mutableSetOf<String>()
         classSymbols.forEach { classSymbol ->
             val qualifier = classSymbol.fullyQualifiedName.ifBlank { className }
-            val staticFieldNames = mutableSetOf<String>()
             classSymbol.methods
                 .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
                 .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
