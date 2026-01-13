@@ -322,6 +322,11 @@ object CompletionProvider {
         )
     }
 
+    // TODO(#864): Fix UnusedReceiverParameter warnings in CompletionsBuilder extensions.
+    //   Several extension functions below don't use `this` but are defined as extensions for
+    //   DSL consistency. Consider suppressing warnings or refactoring.
+    //   See: https://github.com/albertocavalcante/gvy/issues/864
+
     private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
         context: SymbolCompletionContext,
         isStrictDeclarative: Boolean,
