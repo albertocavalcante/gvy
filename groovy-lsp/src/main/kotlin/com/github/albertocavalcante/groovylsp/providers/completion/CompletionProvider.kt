@@ -322,6 +322,11 @@ object CompletionProvider {
         )
     }
 
+    // TODO(#864): Fix UnusedReceiverParameter warnings in CompletionsBuilder extensions.
+    //   Several extension functions below don't use `this` but are defined as extensions for
+    //   DSL consistency. Consider suppressing warnings or refactoring.
+    //   See: https://github.com/albertocavalcante/gvy/issues/864
+
     private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
         context: SymbolCompletionContext,
         isStrictDeclarative: Boolean,
@@ -1001,8 +1006,14 @@ object CompletionProvider {
         }
     }
 
+    /**
+     * Keywords that have snippet versions in GroovyCompletions.basic().
+     * These are excluded from addKeywords() to prevent duplicate completions (#857).
+     */
+    private val SNIPPET_KEYWORDS = setOf("def", "class", "interface", "enum", "if", "for", "while")
+
     private fun CompletionsBuilder.addKeywords() {
-        val keywords = listOf(
+        val allKeywords = listOf(
             // Types
             "def", "void", "int", "boolean", "char", "byte",
             "short", "long", "float", "double", "String", "Object",
@@ -1017,7 +1028,8 @@ object CompletionProvider {
             // Values/Other
             "true", "false", "null", "this", "super", "new", "in", "as", "assert",
         )
-        keywords.forEach { k ->
+        // Filter out keywords that have snippet versions in GroovyCompletions.basic()
+        allKeywords.filterNot { it in SNIPPET_KEYWORDS }.forEach { k ->
             keyword(
                 keyword = k,
                 doc = "Keyword/Type: $k",

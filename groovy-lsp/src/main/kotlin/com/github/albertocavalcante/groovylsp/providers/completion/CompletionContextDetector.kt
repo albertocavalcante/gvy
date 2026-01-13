@@ -139,7 +139,13 @@ internal object CompletionContextDetector {
             val importColumn = lineText.indexOf(IMPORT_KEYWORD)
             val isImportLine = isImportLine(beforeCursor, importColumn, safeChar)
             val offset = offsetAt(content, lines, line, character)
-            val isInCommentOrString = tokenIndex?.isInCommentOrString(offset) == true
+
+            // Use token index if available, otherwise fallback to text-based heuristic
+            val isInCommentOrString = if (tokenIndex != null) {
+                tokenIndex.isInCommentOrString(offset)
+            } else {
+                isInCommentOrStringHeuristic(content, offset)
+            }
 
             if (!isImportLine || isInCommentOrString) {
                 null
@@ -152,6 +158,68 @@ internal object CompletionContextDetector {
                 )
             }
         }
+    }
+
+    /**
+     * Text-based heuristic to detect if offset is inside a comment or string literal.
+     * Used when tokenIndex is unavailable (before compilation).
+     */
+    private fun isInCommentOrStringHeuristic(content: String, offset: Int): Boolean {
+        if (content.isEmpty()) return false
+
+        val safeOffset = offset.coerceIn(0, content.length)
+        val beforeOffset = content.substring(0, safeOffset)
+
+        // Block comment detection: check if the last /* is after the last */
+        val lastOpenComment = beforeOffset.lastIndexOf("/*")
+        val lastCloseComment = beforeOffset.lastIndexOf("*/")
+        val inBlockComment = lastOpenComment != -1 && lastOpenComment > lastCloseComment
+
+        // Line comment detection: look for // on the current line before the offset
+        val lineStart = content.lastIndexOf('\n', (safeOffset - 1).coerceAtLeast(0)).let {
+            if (it == -1) 0 else it + 1
+        }
+        val lineBeforeOffset = content.substring(lineStart, safeOffset)
+
+        val lastLineComment = lineBeforeOffset.lastIndexOf("//")
+        // Treat as line comment only if the // itself is not inside a string literal
+        val inLineComment =
+            lastLineComment != -1 && !isInStringLiteral(lineBeforeOffset, lastLineComment)
+
+        // String literal detection: check if we're currently inside a quoted string on this line
+        val inString = isInStringLiteral(lineBeforeOffset, lineBeforeOffset.length)
+
+        return inBlockComment || inLineComment || inString
+    }
+
+    /**
+     * Heuristic to determine if a given position in the text is inside a string literal.
+     * Scans from the start of the text up to position, toggling state on unescaped quotes.
+     */
+    private fun isInStringLiteral(text: String, position: Int): Boolean {
+        if (text.isEmpty() || position <= 0) return false
+
+        var inSingle = false
+        var inDouble = false
+        var i = 0
+        val end = position.coerceIn(0, text.length)
+
+        while (i < end) {
+            val c = text[i]
+            val prevIsEscape = i > 0 && text[i - 1] == '\\'
+            when (c) {
+                '\'' -> if (!inDouble && !prevIsEscape) {
+                    inSingle = !inSingle
+                }
+
+                '"' -> if (!inSingle && !prevIsEscape) {
+                    inDouble = !inDouble
+                }
+            }
+            i++
+        }
+
+        return inSingle || inDouble
     }
 
     fun isCommandExpression(content: String, line: Int, character: Int, methodName: String): Boolean {
