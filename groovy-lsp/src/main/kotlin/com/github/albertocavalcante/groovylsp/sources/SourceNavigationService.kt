@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import com.github.albertocavalcante.groovylsp.documentation.Documentation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
@@ -222,22 +223,113 @@ class SourceNavigationService(
     }
 
     private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =
-        if (sourcePath.extension.equals("java", ignoreCase = true)) {
-            javaSourceInspector.inspectClass(sourcePath, className)
-        } else {
-            logger.info { "Skipping Java inspection for non-Java source: $sourcePath" }
-            null
+        when {
+            sourcePath.extension.equals("java", ignoreCase = true) ->
+                javaSourceInspector.inspectClass(sourcePath, className)
+            sourcePath.extension.equals("groovy", ignoreCase = true) ->
+                inspectGroovyClassDefinition(sourcePath, className)
+            else -> {
+                logger.info { "Skipping Java inspection for non-Java source: $sourcePath" }
+                null
+            }
         }
 
     private fun inspectMethodDefinition(
         sourcePath: Path,
         className: String,
         methodName: String,
-    ): JavaSourceInspector.InspectionResult? = if (sourcePath.extension.equals("java", ignoreCase = true)) {
-        javaSourceInspector.inspectMethod(sourcePath, className, methodName)
-    } else {
-        logger.info { "Skipping Java method inspection for non-Java source: $sourcePath" }
-        null
+    ): JavaSourceInspector.InspectionResult? = when {
+        sourcePath.extension.equals("java", ignoreCase = true) ->
+            javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+        sourcePath.extension.equals("groovy", ignoreCase = true) ->
+            inspectGroovyMethodDefinition(sourcePath, className, methodName)
+        else -> {
+            logger.info { "Skipping Java method inspection for non-Java source: $sourcePath" }
+            null
+        }
+    }
+
+    private fun inspectGroovyClassDefinition(
+        sourcePath: Path,
+        className: String,
+    ): JavaSourceInspector.InspectionResult? {
+        val lineNumber = findGroovyClassLineNumber(sourcePath, className) ?: run {
+            logger.info { "Groovy class $className not found in $sourcePath" }
+            return null
+        }
+
+        logger.info { "Resolved Groovy class $className at $sourcePath:$lineNumber" }
+        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
+    }
+
+    private fun inspectGroovyMethodDefinition(
+        sourcePath: Path,
+        className: String,
+        methodName: String,
+    ): JavaSourceInspector.InspectionResult? {
+        val lineNumber = findGroovyMethodLineNumber(sourcePath, methodName) ?: return null
+        logger.info { "Resolved Groovy method $className.$methodName at $sourcePath:$lineNumber" }
+        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
+    }
+
+    private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
+        val simpleName = className.substringAfterLast('.').substringAfterLast('$')
+        val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$simpleName\b""")
+        val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
+        var inBlockComment = false
+
+        for ((index, line) in lines.withIndex()) {
+            var text = line
+            if (inBlockComment) {
+                val end = text.indexOf("*/")
+                if (end == -1) {
+                    continue
+                }
+                text = text.substring(end + 2)
+                inBlockComment = false
+            }
+
+            val blockStart = text.indexOf("/*")
+            if (blockStart != -1) {
+                val end = text.indexOf("*/", blockStart + 2)
+                text = if (end == -1) {
+                    inBlockComment = true
+                    text.substring(0, blockStart)
+                } else {
+                    text.removeRange(blockStart, end + 2)
+                }
+            }
+
+            if (text.trimStart().startsWith("//")) {
+                continue
+            }
+
+            if (pattern.containsMatchIn(text)) {
+                return index + 1
+            }
+        }
+
+        return null
+    }
+
+    private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
+        val pattern = Regex(
+            """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
+                """$methodName\s*\(""",
+        )
+        val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
+
+        for ((index, line) in lines.withIndex()) {
+            val text = line.trimStart()
+            if (text.startsWith("//")) {
+                continue
+            }
+            if (pattern.containsMatchIn(text)) {
+                return index + 1
+            }
+        }
+
+        return null
     }
 
     /**

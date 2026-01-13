@@ -192,6 +192,7 @@ class SourceNavigationServiceTest {
             }
             val location = result as SourceNavigator.SourceResult.SourceLocation
             assertTrue(location.uri.toString().endsWith("MyGroovy.groovy"))
+            assertEquals(3, location.lineNumber)
         }
 
         @Test
