@@ -6,6 +6,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.extension
 
 /**
  * Service for navigating to source code from binary class references.
@@ -57,7 +58,7 @@ class SourceNavigationService(
         val existingSource = sourceExtractor.findSourceForClass(className)
         if (existingSource != null) {
             logger.debug { "Found cached source for: $className" }
-            val inspection = javaSourceInspector.inspectClass(existingSource, className)
+            val inspection = inspectClassDefinition(existingSource, className)
             return SourceNavigator.SourceResult.SourceLocation(
                 uri = existingSource.toUri(),
                 className = className,
@@ -86,7 +87,7 @@ class SourceNavigationService(
         // Step 5: Find the specific source file
         val sourcePath = sourceExtractor.findSourceForClass(className)
         return if (sourcePath != null) {
-            val inspection = javaSourceInspector.inspectClass(sourcePath, className)
+            val inspection = inspectClassDefinition(sourcePath, className)
             SourceNavigator.SourceResult.SourceLocation(
                 uri = sourcePath.toUri(),
                 className = className,
@@ -137,7 +138,7 @@ class SourceNavigationService(
             logger.debug(e) { "Cannot convert URI to Path: ${sourceLocation.uri}" }
             return sourceLocation // Fall back to class-level
         }
-        val methodInspection = javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+        val methodInspection = inspectMethodDefinition(sourcePath, className, methodName)
 
         return if (methodInspection != null) {
             SourceNavigator.SourceResult.SourceLocation(
@@ -194,6 +195,9 @@ class SourceNavigationService(
     private suspend fun resolveSourceJar(binaryJarPath: Path): Path? {
         // Step 1: Try Maven coordinates derivation and download
         val coords = deriveCoordinates(binaryJarPath)
+        if (coords == null) {
+            logger.info { "Could not derive Maven coordinates from $binaryJarPath; skipping remote source lookup" }
+        }
         if (coords != null) {
             try {
                 val sourceJar = sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
@@ -213,8 +217,27 @@ class SourceNavigationService(
             return adjacentSource
         }
 
-        logger.debug { "No source JAR found for: $binaryJarPath" }
+        logger.info { "No source JAR found for: $binaryJarPath" }
         return null
+    }
+
+    private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =
+        if (sourcePath.extension.equals("java", ignoreCase = true)) {
+            javaSourceInspector.inspectClass(sourcePath, className)
+        } else {
+            logger.info { "Skipping Java inspection for non-Java source: $sourcePath" }
+            null
+        }
+
+    private fun inspectMethodDefinition(
+        sourcePath: Path,
+        className: String,
+        methodName: String,
+    ): JavaSourceInspector.InspectionResult? = if (sourcePath.extension.equals("java", ignoreCase = true)) {
+        javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+    } else {
+        logger.info { "Skipping Java method inspection for non-Java source: $sourcePath" }
+        null
     }
 
     /**

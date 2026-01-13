@@ -26,6 +26,8 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
     private val classToSourceCache = ConcurrentHashMap<String, Path>()
 
     companion object {
+        private val SUPPORTED_SOURCE_EXTENSIONS = setOf("java", "groovy")
+
         fun getDefaultExtractionDir(): Path {
             val home = System.getProperty("user.home")
             return Path.of(home, ".gls", "cache", "extracted-sources")
@@ -60,8 +62,13 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
         try {
             ZipFile(sourceJarPath.toFile()).use { zip ->
                 zip.entries().asSequence()
-                    .filter { !it.isDirectory && it.name.endsWith(".java") }
+                    .filter { !it.isDirectory }
                     .forEach { entry ->
+                        val extension = entry.name.substringAfterLast('.', "")
+                        if (extension !in SUPPORTED_SOURCE_EXTENSIONS) {
+                            return@forEach
+                        }
+
                         val outputPath = normalizedOutputDir.resolve(entry.name).normalize()
                         if (!outputPath.startsWith(normalizedOutputDir)) {
                             logger.warn { "Zip Slip attempt detected in source JAR: ${entry.name}" }
@@ -78,7 +85,7 @@ class SourceJarExtractor(private val extractionDir: Path = getDefaultExtractionD
 
                         // Index: convert path to class name
                         val className = entry.name
-                            .removeSuffix(".java")
+                            .removeSuffix(".$extension")
                             .replace('/', '.')
 
                         classToSource[className] = outputPath

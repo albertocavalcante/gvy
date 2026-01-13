@@ -163,6 +163,38 @@ class SourceNavigationServiceTest {
         }
 
         @Test
+        fun `returns SourceLocation for groovy sources`() = runBlocking {
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+
+            val binaryJar = libDir.resolve("mylib.jar")
+            val sourceJar = libDir.resolve("mylib-sources.jar")
+
+            createMinimalJar(binaryJar)
+
+            val groovySource = """
+                package com.example
+
+                class MyGroovy {
+                }
+            """.trimIndent()
+            createSourceJar(sourceJar, "com/example/MyGroovy.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            val service = SourceNavigationService(sourceExtractor = extractor)
+
+            val jarUri = URI.create("jar:file://${binaryJar.toAbsolutePath()}!/com/example/MyGroovy.class")
+            val result = service.navigateToSource(jarUri, "com.example.MyGroovy")
+
+            assertTrue(result is SourceNavigator.SourceResult.SourceLocation) {
+                "Expected SourceLocation but got: $result"
+            }
+            val location = result as SourceNavigator.SourceResult.SourceLocation
+            assertTrue(location.uri.toString().endsWith("MyGroovy.groovy"))
+        }
+
+        @Test
         fun `derives maven coordinates from gradle cache paths`() = runBlocking {
             val resolver = RecordingSourceArtifactResolver()
             val service = SourceNavigationService(sourceResolver = resolver)

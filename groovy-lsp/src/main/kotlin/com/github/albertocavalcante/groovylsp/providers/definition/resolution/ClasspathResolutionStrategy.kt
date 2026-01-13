@@ -30,7 +30,15 @@ class ClasspathResolutionStrategy(
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
         val importNode = context.targetNode as? ImportNode
         val className = getClassName(context.targetNode)
-            ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            ?: run {
+                if (importNode != null) {
+                    logger.info {
+                        "Classpath resolution skipped for import with no class name " +
+                            "(static=${importNode.isStatic}, field=${importNode.fieldName}, text=${importNode.text})"
+                    }
+                }
+                return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+            }
 
         val classpathUri = compilationService.findClasspathClass(className)
             ?: run {
