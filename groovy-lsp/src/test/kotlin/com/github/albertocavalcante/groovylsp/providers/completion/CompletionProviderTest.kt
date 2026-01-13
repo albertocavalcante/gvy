@@ -131,15 +131,16 @@ class CompletionProviderTest {
             brokenContent,
         )
 
-        // Assert - Should return fallback completions (keywords + basic snippets)
+        // Assert - Should return fallback completions (plain keywords from addKeywords() +
+        // keyword-like snippets from GroovyCompletions.basic(), e.g. "def" and "class")
         assertTrue(completions.isNotEmpty(), "Should return fallback completions for broken files")
         assertTrue(
             completions.any { it.label == "def" },
-            "Fallback should include 'def' keyword. Found: ${completions.map { it.label }}",
+            "Fallback should include 'def' completion. Found: ${completions.map { it.label }}",
         )
         assertTrue(
             completions.any { it.label == "class" },
-            "Fallback should include 'class' keyword. Found: ${completions.map { it.label }}",
+            "Fallback should include 'class' completion. Found: ${completions.map { it.label }}",
         )
     }
 
