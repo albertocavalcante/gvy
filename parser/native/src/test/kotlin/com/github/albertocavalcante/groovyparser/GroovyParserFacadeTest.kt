@@ -64,6 +64,30 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse retries at conversion when compilation fails without diagnostics`() {
+        val code = """
+            import com.lesfurets.jenkins.unit.declarative.DeclarativePipelineTest
+
+            class BaseTest extends DeclarativePipelineTest {
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///BaseTest.groovy"),
+                content = code,
+            ),
+        )
+
+        assertNotNull(result.ast)
+        assertTrue(
+            result.diagnostics.none { it.message.startsWith("Compilation failed:") },
+            "Expected retry to avoid generic compilation failure diagnostics",
+        )
+        assertTrue(result.ast.classes.any { it.nameWithoutPackage == "BaseTest" })
+    }
+
+    @Test
     fun `workspace sources are added to compilation unit`() {
         val extraSource = tempDir.resolve("Extra.groovy").toFile()
         extraSource.writeText(
