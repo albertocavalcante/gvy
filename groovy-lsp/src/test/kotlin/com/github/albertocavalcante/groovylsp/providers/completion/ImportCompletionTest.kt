@@ -137,24 +137,23 @@ class ImportCompletionTest {
 
     @Test
     fun `import static member completion replaces only qualified member`() {
+        val lineContent = "import static java.lang.Math."
         val code = """
-            import static java.lang.Math.PI
+            $lineContent
 
             class Sample {}
         """.trimIndent()
 
-        fixture.compile(code)
+        fixture.documentProvider.put(fixture.uri, code)
 
-        val lineText = "import static java.lang.Math.PI"
-        val cursor = lineText.indexOf("Math.") + "Math.".length
-        val items = completionsAt(0, cursor)
+        val items = completionsAt(0, lineContent.length)
         val piItem = items.find { it.label == "PI" }
         assertNotNull(piItem)
 
         val edit = piItem.textEdit?.left
         assertNotNull(edit)
         assertTrue(edit.newText == "java.lang.Math.PI")
-        assertTrue(edit.range.start.character == lineText.indexOf("java"))
-        assertTrue(edit.range.end.character == cursor)
+        assertTrue(edit.range.start.character == lineContent.indexOf("java"))
+        assertTrue(edit.range.end.character == lineContent.length)
     }
 }
