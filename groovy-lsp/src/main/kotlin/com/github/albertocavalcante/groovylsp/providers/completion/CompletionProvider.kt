@@ -1010,6 +1010,7 @@ object CompletionProvider {
 
         var added = false
         classSymbols.forEach { classSymbol ->
+            val qualifier = classSymbol.fullyQualifiedName.ifBlank { className }
             val staticFieldNames = mutableSetOf<String>()
             classSymbol.methods
                 .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
@@ -1023,7 +1024,7 @@ object CompletionProvider {
                             kind = CompletionItemKind.Method
                             detail = "$returnType ${method.name}($params)"
                             insertText = method.name
-                            textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${method.name}"))
                         },
                     )
                     added = true
@@ -1044,7 +1045,7 @@ object CompletionProvider {
                             }
                             detail = "$type ${field.name}"
                             insertText = field.name
-                            textEdit = Either.forLeft(TextEdit(range, "$className.${field.name}"))
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${field.name}"))
                         },
                     )
                     staticFieldNames.add(field.name)
@@ -1063,7 +1064,7 @@ object CompletionProvider {
                             kind = CompletionItemKind.Property
                             detail = "$type ${property.name}"
                             insertText = property.name
-                            textEdit = Either.forLeft(TextEdit(range, "$className.${property.name}"))
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${property.name}"))
                         },
                     )
                     added = true
