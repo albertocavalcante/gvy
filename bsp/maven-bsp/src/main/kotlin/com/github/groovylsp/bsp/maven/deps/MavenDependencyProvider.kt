@@ -1,6 +1,5 @@
 package com.github.groovylsp.bsp.maven.deps
 
-import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.DependencyModule
 import ch.epfl.scala.bsp4j.DependencyModulesItem
 import ch.epfl.scala.bsp4j.DependencyModulesResult

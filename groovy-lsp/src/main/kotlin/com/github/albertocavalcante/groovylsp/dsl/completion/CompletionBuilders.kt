@@ -384,5 +384,97 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         completions.add(FunctionCompletionBuilder().build(name, returnType, doc))
     }
 
-    override fun build(): List<CompletionItem> = completions.toList()
+    override fun build(): List<CompletionItem> = dedupeCompletions(completions)
+
+    private fun dedupeCompletions(items: List<CompletionItem>): List<CompletionItem> {
+        if (items.isEmpty()) return emptyList()
+
+        // TODO(#862): Prefer higher-quality completion items beyond snippet format.
+        //   See: https://github.com/albertocavalcante/gvy/issues/862
+        val result = mutableListOf<CompletionItem>()
+        val seen = mutableMapOf<DedupeKey, Int>()
+
+        items.forEach { item ->
+            val key = dedupeKey(item)
+            if (key == null) {
+                result.add(item)
+                return@forEach
+            }
+
+            val existingIndex = seen[key]
+            if (existingIndex == null) {
+                seen[key] = result.size
+                result.add(item)
+                return@forEach
+            }
+
+            val existing = result[existingIndex]
+            if (preferSnippet(item, existing)) {
+                result[existingIndex] = item
+            }
+        }
+
+        return result
+    }
+
+    private fun dedupeKey(item: CompletionItem): DedupeKey? {
+        val label = item.label ?: return null
+        return when (item.kind) {
+            CompletionItemKind.Keyword -> DedupeKey(label, item.kind, null)
+            CompletionItemKind.Method -> methodParamsKey(item)?.let { DedupeKey(label, item.kind, it) }
+            CompletionItemKind.Field,
+            CompletionItemKind.Property,
+            CompletionItemKind.Constant,
+            -> DedupeKey(label, item.kind, item.detail?.trim())
+            else -> null
+        }
+    }
+
+    private fun preferSnippet(candidate: CompletionItem, existing: CompletionItem): Boolean =
+        candidate.insertTextFormat == InsertTextFormat.Snippet &&
+            existing.insertTextFormat != InsertTextFormat.Snippet
+
+    private fun methodParamsKey(item: CompletionItem): String? {
+        val detail = item.detail ?: return null
+        val start = findParamsStart(detail) ?: return null
+        val end = findParamsEnd(detail, start) ?: return null
+        return detail.substring(start + 1, end).trim()
+    }
+
+    private fun findParamsStart(detail: String): Int? {
+        var angleDepth = 0
+        var parenDepth = 0
+        for (i in detail.indices) {
+            when (detail[i]) {
+                '<' -> angleDepth++
+                '>' -> if (angleDepth > 0) angleDepth--
+                '(' -> {
+                    if (angleDepth == 0 && parenDepth == 0) {
+                        return i
+                    }
+                    parenDepth++
+                }
+                ')' -> if (parenDepth > 0) parenDepth--
+            }
+        }
+        return null
+    }
+
+    private fun findParamsEnd(detail: String, startIndex: Int): Int? {
+        var parenDepth = 0
+        for (i in startIndex until detail.length) {
+            when (detail[i]) {
+                '(' -> parenDepth++
+                ')' -> {
+                    parenDepth--
+                    if (parenDepth == 0) {
+                        return i
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private data class DedupeKey(val label: String, val kind: CompletionItemKind?, val detail: String?)
 }

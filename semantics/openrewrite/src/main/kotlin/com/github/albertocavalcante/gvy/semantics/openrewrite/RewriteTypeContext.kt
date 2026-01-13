@@ -3,8 +3,6 @@ package com.github.albertocavalcante.gvy.semantics.openrewrite
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
-import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JavaType
 import org.openrewrite.java.tree.TypedTree
 
 /**

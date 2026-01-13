@@ -9,10 +9,8 @@ import org.junit.jupiter.api.Test
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.tree.G
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JavaType
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 

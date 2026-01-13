@@ -6,7 +6,6 @@ import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.codehaus.plexus.util.xml.Xpp3Dom
-import java.nio.file.Files
 import java.nio.file.Path
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.exists

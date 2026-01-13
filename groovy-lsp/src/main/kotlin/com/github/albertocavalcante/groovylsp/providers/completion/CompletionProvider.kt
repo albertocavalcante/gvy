@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.dsl.completion.completions
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.gvy.semantics.SemanticType
@@ -36,6 +37,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import java.lang.reflect.Modifier
 import java.net.URI
 
 /**
@@ -130,7 +132,13 @@ object CompletionProvider {
 
             // Fallback to result1 (simple insertion)
             if (ast1 == null) {
-                emptyList()
+                return buildFallbackCompletions(
+                    content = content,
+                    line = line,
+                    character = character,
+                    tokenIndex = result1.tokenIndex,
+                    compilationService = compilationService,
+                )
             } else {
                 val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result1)
                 buildCompletionsList(
@@ -153,7 +161,40 @@ object CompletionProvider {
         } catch (e: CompilationFailedException) {
             // If AST analysis fails, log and return empty list
             logger.debug { "AST analysis failed for completion at $line:$character: ${e.message}" }
-            emptyList()
+            buildFallbackCompletions(
+                content = content,
+                line = line,
+                character = character,
+                tokenIndex = null,
+                compilationService = compilationService,
+            )
+        }
+    }
+
+    /**
+     * Provides best-effort completions when compilation or AST extraction fails.
+     * This is intended for broken files (syntax errors, incomplete edits) so users
+     * still get import, keyword, and snippet suggestions.
+     */
+    private fun buildFallbackCompletions(
+        content: String,
+        line: Int,
+        character: Int,
+        tokenIndex: GroovyTokenIndex?,
+        compilationService: GroovyCompilationService,
+    ): List<CompletionItem> {
+        val importContext = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = line,
+            character = character,
+            tokenIndex = tokenIndex,
+        )
+        if (importContext != null) {
+            return completions { addImportCompletions(importContext, compilationService) }
+        }
+        return completions {
+            addKeywords()
+            GroovyCompletions.basic().forEach(::add)
         }
     }
 
@@ -517,9 +558,10 @@ object CompletionProvider {
 
         // Strategy 2: Workspace members (cross-file classes)
         ctx.workspaceSymbolIndex?.let { index ->
-            // Try to resolve as fully qualified name first
-            val classFqn = rawType.replace('.', '/')
-            val members = index.getAllMembers(classFqn, includeInherited = true)
+            val resolvedFqns = resolveWorkspaceClassFqns(rawType, ctx)
+            val members = resolvedFqns
+                .flatMap { fqn -> index.getAllMembers(fqn.replace('.', '/'), includeInherited = true) }
+                .distinctBy { it.symbolId }
             if (members.isNotEmpty()) {
                 logger.debug { "Adding workspace members for $rawType (found ${members.size} members)" }
                 addWorkspaceMembers(members)
@@ -536,6 +578,218 @@ object CompletionProvider {
 
         return false
     }
+
+    private data class TextImportInfo(
+        val packageName: String?,
+        val explicitImports: Set<String>,
+        val starImports: Set<String>,
+    )
+
+    /**
+     * Resolves workspace class candidates for a simple name using package/import
+     * context first, then falls back to a workspace-wide symbol scan.
+     *
+     * Order of candidates: same-package, explicit imports, star imports, workspace scan.
+     * Candidates from imports are not validated for existence; consumers must disambiguate.
+     */
+    private fun resolveWorkspaceClassFqns(rawType: String, ctx: CompletionContext): List<String> {
+        if (rawType.contains('.')) return listOf(rawType)
+
+        val candidates = linkedSetOf<String>()
+        val simpleName = rawType
+        val importInfo = ctx.moduleNode?.let { moduleNode ->
+            TextImportInfo(
+                packageName = moduleNode.packageName,
+                explicitImports = moduleNode.imports.mapNotNull { it.className }.toSet(),
+                starImports = moduleNode.starImports.mapNotNull { it.packageName }.toSet(),
+            )
+        } ?: parseTextImportInfo(ctx.content)
+
+        importInfo.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
+        importInfo.explicitImports
+            .filter { it.substringAfterLast('.') == simpleName }
+            .forEach { candidates.add(it) }
+        importInfo.starImports.forEach { candidates.add("$it.$simpleName") }
+
+        findWorkspaceClassFqnsBySimpleName(simpleName, ctx.compilationService)
+            .forEach { candidates.add(it) }
+
+        return candidates.toList()
+    }
+
+    /**
+     * Scans workspace symbols for class matches by simple name.
+     * This is a fallback for completion and may be costly without caching.
+     */
+    private fun findWorkspaceClassFqnsBySimpleName(
+        simpleName: String,
+        compilationService: GroovyCompilationService,
+    ): List<String> {
+        // TODO(#861): Cache workspace symbol lookups for completion.
+        //   See: https://github.com/albertocavalcante/gvy/issues/861
+        val matches = linkedSetOf<String>()
+        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
+            index.getSymbols(uri)
+                .filterIsInstance<Symbol.Class>()
+                .filter { it.name == simpleName }
+                .forEach { matches.add(it.fullyQualifiedName) }
+        }
+        return matches.toList()
+    }
+
+    /**
+     * Finds workspace class symbols by fully qualified name or simple name.
+     */
+    private fun findWorkspaceClassSymbols(
+        className: String,
+        compilationService: GroovyCompilationService,
+    ): List<Symbol.Class> {
+        val matches = mutableListOf<Symbol.Class>()
+        val isFqn = className.contains('.')
+        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
+            index.getSymbols(uri)
+                .filterIsInstance<Symbol.Class>()
+                .filter { symbol ->
+                    if (isFqn) symbol.fullyQualifiedName == className else symbol.name == className
+                }
+                .forEach { matches.add(it) }
+        }
+        return matches
+    }
+
+    /**
+     * Best-effort, line-based import parsing for fallback scenarios.
+     * Supports simple multi-line imports but does not handle full Groovy syntax.
+     */
+    private fun parseTextImportInfo(content: String): TextImportInfo {
+        var packageName: String? = null
+        val explicitImports = mutableSetOf<String>()
+        val starImports = mutableSetOf<String>()
+        var inBlockComment = false
+        var pendingImport: String? = null
+        var pendingImportIsStatic = false
+
+        for (line in content.lineSequence()) {
+            var trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+
+            if (inBlockComment) {
+                if (trimmed.contains("*/")) {
+                    trimmed = trimmed.substringAfter("*/").trim()
+                    inBlockComment = false
+                } else {
+                    continue
+                }
+            }
+
+            if (trimmed.contains("/*") && trimmed.contains("*/")) {
+                val before = trimmed.substringBefore("/*")
+                val after = trimmed.substringAfter("*/")
+                trimmed = "$before $after".trim()
+                if (trimmed.isBlank()) continue
+            }
+
+            if (trimmed.startsWith("/*")) {
+                if (!trimmed.contains("*/")) {
+                    inBlockComment = true
+                }
+                continue
+            }
+
+            if (trimmed.startsWith("//")) {
+                continue
+            }
+
+            if (pendingImport != null) {
+                if (trimmed.startsWith("package ") || trimmed.startsWith("import") || isCodeDeclarationLine(trimmed)) {
+                    if (!pendingImportIsStatic && pendingImport.isNotBlank() && !pendingImport.endsWith(".")) {
+                        recordImport(pendingImport, explicitImports, starImports)
+                    }
+                    pendingImport = null
+                    pendingImportIsStatic = false
+                } else {
+                    val separator = if (pendingImport.endsWith(".") || trimmed.startsWith(".")) "" else " "
+                    val combined = (pendingImport + separator + trimmed).trim()
+                    val cleaned = combined.substringBefore(";").trim()
+                    val hasSemicolon = combined.contains(";")
+                    val continues = isImportContinuation(cleaned)
+                    if (hasSemicolon || !continues) {
+                        if (!pendingImportIsStatic && cleaned.isNotBlank()) {
+                            recordImport(cleaned.removeSuffix("\\").trim(), explicitImports, starImports)
+                        }
+                        pendingImport = null
+                        pendingImportIsStatic = false
+                    } else {
+                        pendingImport = cleaned.removeSuffix("\\").trim()
+                    }
+                    continue
+                }
+            }
+
+            when {
+                trimmed.startsWith("package ") -> {
+                    packageName = trimmed.removePrefix("package ").removeSuffix(";").trim()
+                }
+
+                trimmed.startsWith("import") -> {
+                    val isStatic = trimmed.startsWith("import static")
+                    val importPrefix = if (isStatic) "import static" else "import"
+                    val value = trimmed.removePrefix(importPrefix).trim()
+                    if (value.isBlank()) {
+                        pendingImport = ""
+                        pendingImportIsStatic = isStatic
+                        continue
+                    }
+                    val cleaned = value.substringBefore(";").trim()
+                    val hasSemicolon = value.contains(";")
+                    val continues = isImportContinuation(cleaned)
+                    if (hasSemicolon || !continues) {
+                        if (!isStatic && cleaned.isNotBlank()) {
+                            recordImport(cleaned.removeSuffix("\\").trim(), explicitImports, starImports)
+                        }
+                    } else {
+                        pendingImport = cleaned.removeSuffix("\\").trim()
+                        pendingImportIsStatic = isStatic
+                    }
+                }
+
+                isCodeDeclarationLine(trimmed) -> break
+            }
+        }
+
+        if (pendingImport != null &&
+            !pendingImportIsStatic &&
+            pendingImport.isNotBlank() &&
+            !pendingImport.endsWith(".")
+        ) {
+            recordImport(pendingImport, explicitImports, starImports)
+        }
+
+        return TextImportInfo(packageName, explicitImports, starImports)
+    }
+
+    private fun recordImport(value: String, explicitImports: MutableSet<String>, starImports: MutableSet<String>) {
+        if (value.endsWith(".*")) {
+            starImports.add(value.removeSuffix(".*"))
+        } else {
+            explicitImports.add(value)
+        }
+    }
+
+    private fun isImportContinuation(value: String): Boolean = value.endsWith(".") || value.endsWith("\\")
+
+    /**
+     * Matches Groovy code declarations with optional modifiers, such as:
+     *   class Foo
+     *   public class Foo
+     *   private static final class Foo
+     *   def bar()
+     *   public def bar()
+     */
+    private val CODE_DECLARATION_PATTERN =
+        Regex("""^(?:(?:public|protected|private|static|final|abstract)\s+)*(class|interface|enum|trait|def)\b""")
+
+    private fun isCodeDeclarationLine(trimmed: String): Boolean = CODE_DECLARATION_PATTERN.containsMatchIn(trimmed)
 
     /**
      * Finds the enclosing block for the cursor position.
@@ -806,10 +1060,21 @@ object CompletionProvider {
             ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
             else -> null
         }
-        if (staticClassName != null && classpathService.loadClass(staticClassName) != null) {
-            addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-            addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-            return
+        if (staticClassName != null) {
+            val workspaceFound = addWorkspaceStaticMemberCompletions(
+                className = staticClassName,
+                compilationService = compilationService,
+                ctx = ctx,
+                memberPrefix = staticMemberPrefix,
+            )
+            val classpathFound = classpathService.loadClass(staticClassName) != null
+            if (classpathFound) {
+                addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+                addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+            }
+            if (workspaceFound || classpathFound) {
+                return
+            }
         }
         // If className is not found, fall through to normal class completion
         // (it's likely a package path, e.g., "import static org.junit.")
@@ -838,6 +1103,91 @@ object CompletionProvider {
                     },
                 )
             }
+    }
+
+    /**
+     * Adds static member completions for workspace-defined classes.
+     *
+     * @return true if any members were added.
+     */
+    private fun CompletionsBuilder.addWorkspaceStaticMemberCompletions(
+        className: String,
+        compilationService: GroovyCompilationService,
+        ctx: ImportCompletionContext,
+        memberPrefix: String?,
+    ): Boolean {
+        val classSymbols = findWorkspaceClassSymbols(className, compilationService)
+            .distinctBy { it.fullyQualifiedName.ifBlank { it.name } }
+        if (classSymbols.isEmpty()) return false
+
+        val range = Range(
+            Position(ctx.line, ctx.replaceStartCharacter),
+            Position(ctx.line, ctx.replaceEndCharacter),
+        )
+
+        var added = false
+        val staticFieldNames = mutableSetOf<String>()
+        classSymbols.forEach { classSymbol ->
+            val qualifier = classSymbol.fullyQualifiedName.ifBlank { className }
+            classSymbol.methods
+                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+                .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
+                .forEach { method ->
+                    val returnType = method.returnType?.nameWithoutPackage ?: "def"
+                    val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
+                    add(
+                        CompletionItem().apply {
+                            label = method.name
+                            kind = CompletionItemKind.Method
+                            detail = "$returnType ${method.name}($params)"
+                            insertText = method.name
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${method.name}"))
+                        },
+                    )
+                    added = true
+                }
+
+            classSymbol.fields
+                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+                .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
+                .forEach { field ->
+                    val type = field.type?.nameWithoutPackage ?: "def"
+                    add(
+                        CompletionItem().apply {
+                            label = field.name
+                            kind = if (Modifier.isFinal(field.modifiers)) {
+                                CompletionItemKind.Constant
+                            } else {
+                                CompletionItemKind.Field
+                            }
+                            detail = "$type ${field.name}"
+                            insertText = field.name
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${field.name}"))
+                        },
+                    )
+                    staticFieldNames.add(field.name)
+                    added = true
+                }
+
+            classSymbol.properties
+                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+                .filter { property -> property.name !in staticFieldNames }
+                .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
+                .forEach { property ->
+                    val type = property.type?.nameWithoutPackage ?: "def"
+                    add(
+                        CompletionItem().apply {
+                            label = property.name
+                            kind = CompletionItemKind.Property
+                            detail = "$type ${property.name}"
+                            insertText = property.name
+                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${property.name}"))
+                        },
+                    )
+                    added = true
+                }
+        }
+        return added
     }
 
     /**

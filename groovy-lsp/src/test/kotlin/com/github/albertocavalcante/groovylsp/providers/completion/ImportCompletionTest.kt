@@ -79,6 +79,23 @@ class ImportCompletionTest {
     }
 
     @Test
+    fun `import completion works with syntax errors elsewhere`() {
+        val lineContent = "import java.util.L"
+        val code = """
+            $lineContent
+
+            class Sample {
+                def x =
+            }
+        """.trimIndent()
+
+        fixture.documentProvider.put(fixture.uri, code)
+
+        val items = completionsAt(0, lineContent.length)
+        assertTrue(items.any { it.label == "java.util.List" })
+    }
+
+    @Test
     fun `import static completion omits static keyword and unrelated symbols`() {
         val code = """
             import static java.lang.Math.*
