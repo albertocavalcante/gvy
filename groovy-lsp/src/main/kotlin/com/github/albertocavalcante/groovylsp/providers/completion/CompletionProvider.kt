@@ -857,7 +857,7 @@ object CompletionProvider {
                     kind = CompletionItemKind.Method
                     detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
                     insertText = method.name
-                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${method.name}"))
+                    textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
                 },
             )
         }
@@ -885,7 +885,7 @@ object CompletionProvider {
                     label = field.name
                     kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
                     detail = "${field.type} ${field.name}"
-                    textEdit = Either.forLeft(TextEdit(range, "import static $className.${field.name}"))
+                    textEdit = Either.forLeft(TextEdit(range, "$className.${field.name}"))
                 },
             )
         }

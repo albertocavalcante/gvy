@@ -134,4 +134,27 @@ class ImportCompletionTest {
         val items = completionsAt(1, lineText.length)
         assertTrue(items.none { it.label == "java.util.List" })
     }
+
+    @Test
+    fun `import static member completion replaces only qualified member`() {
+        val code = """
+            import static java.lang.Math.PI
+
+            class Sample {}
+        """.trimIndent()
+
+        fixture.compile(code)
+
+        val lineText = "import static java.lang.Math.PI"
+        val cursor = lineText.indexOf("Math.") + "Math.".length
+        val items = completionsAt(0, cursor)
+        val piItem = items.find { it.label == "PI" }
+        assertNotNull(piItem)
+
+        val edit = piItem.textEdit?.left
+        assertNotNull(edit)
+        assertTrue(edit.newText == "java.lang.Math.PI")
+        assertTrue(edit.range.start.character == lineText.indexOf("java"))
+        assertTrue(edit.range.end.character == cursor)
+    }
 }
