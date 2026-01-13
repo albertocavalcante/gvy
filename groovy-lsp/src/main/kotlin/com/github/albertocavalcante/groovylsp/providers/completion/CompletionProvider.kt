@@ -796,17 +796,23 @@ object CompletionProvider {
 
         // Handle static member completion (e.g., "import static java.lang.Math.PI")
         // Only if we can actually find the class on the classpath
-        if (ctx.isStaticMemberCompletion) {
-            val className = ctx.staticClassName
-            // Try to load the class - if it succeeds, it's a real class; if null, it's a package
-            if (className != null && classpathService.loadClass(className) != null) {
-                addStaticMethodCompletions(className, compilationService, ctx)
-                addStaticFieldCompletions(className, compilationService, ctx)
-                return
-            }
-            // If className is not found, fall through to normal class completion
-            // (it's likely a package path, e.g., "import static org.junit.")
+        val staticClassName = when {
+            ctx.isStaticMemberCompletion -> ctx.staticClassName
+            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringBeforeLast('.')
+            else -> null
         }
+        val staticMemberPrefix = when {
+            ctx.isStaticMemberCompletion -> ""
+            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
+            else -> null
+        }
+        if (staticClassName != null && classpathService.loadClass(staticClassName) != null) {
+            addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+            addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+            return
+        }
+        // If className is not found, fall through to normal class completion
+        // (it's likely a package path, e.g., "import static org.junit.")
 
         val candidates = if (prefix.contains('.')) {
             classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
@@ -841,9 +847,11 @@ object CompletionProvider {
         className: String,
         compilationService: GroovyCompilationService,
         ctx: ImportCompletionContext,
+        memberPrefix: String? = null,
     ) {
         val methods = compilationService.classpathService.getMethods(className)
             .filter { it.isStatic && it.isPublic }
+            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
         val range = Range(
             Position(ctx.line, ctx.replaceStartCharacter),
@@ -870,9 +878,11 @@ object CompletionProvider {
         className: String,
         compilationService: GroovyCompilationService,
         ctx: ImportCompletionContext,
+        memberPrefix: String? = null,
     ) {
         val fields = compilationService.classpathService.getFields(className)
             .filter { it.isStatic && it.isPublic }
+            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
 
         val range = Range(
             Position(ctx.line, ctx.replaceStartCharacter),
