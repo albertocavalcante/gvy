@@ -6,7 +6,7 @@ import com.github.albertocavalcante.groovyparser.resolution.typesolvers.Reflecti
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import kotlin.io.path.createTempDirectory
+import org.junit.jupiter.api.io.TempDir
 import kotlin.io.path.div
 import kotlin.io.path.writeText
 import kotlin.test.assertTrue
@@ -15,13 +15,14 @@ class StaticImportWorkspaceCompletionTest {
 
     private lateinit var compilationService: GroovyCompilationService
     private lateinit var semanticResolver: SemanticTypeResolver
-    private lateinit var tempDir: java.nio.file.Path
+
+    @TempDir
+    lateinit var tempDir: java.nio.file.Path
 
     @BeforeEach
     fun setUp() {
         compilationService = GroovyCompilationService()
         semanticResolver = SemanticTypeResolver(ReflectionTypeSolver())
-        tempDir = createTempDirectory("static-import-workspace-test")
         compilationService.workspaceManager.initializeWorkspace(tempDir)
     }
 

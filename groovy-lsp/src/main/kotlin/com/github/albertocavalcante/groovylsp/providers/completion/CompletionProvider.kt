@@ -670,7 +670,6 @@ object CompletionProvider {
         trimmed.startsWith("enum ") ||
         trimmed.startsWith("trait ") ||
         trimmed.startsWith("def ") ||
-        (trimmed.startsWith("@") && !trimmed.startsWith("@interface")) ||
         trimmed.startsWith("public class ") ||
         trimmed.startsWith("abstract class ")
 
