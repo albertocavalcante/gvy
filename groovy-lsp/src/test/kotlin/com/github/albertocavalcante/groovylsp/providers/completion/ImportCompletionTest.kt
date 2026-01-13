@@ -137,6 +137,7 @@ class ImportCompletionTest {
 
     @Test
     fun `import static member completion replaces only qualified member`() {
+        val line = 0
         val lineContent = "import static java.lang.Math."
         val code = """
             $lineContent
@@ -146,19 +147,22 @@ class ImportCompletionTest {
 
         fixture.documentProvider.put(fixture.uri, code)
 
-        val items = completionsAt(0, lineContent.length)
+        val items = completionsAt(line, lineContent.length)
         val piItem = items.find { it.label == "PI" }
         assertNotNull(piItem)
 
         val edit = piItem.textEdit?.left
         assertNotNull(edit)
         assertTrue(edit.newText == "java.lang.Math.PI")
+        assertTrue(edit.range.start.line == line)
         assertTrue(edit.range.start.character == lineContent.indexOf("java"))
+        assertTrue(edit.range.end.line == line)
         assertTrue(edit.range.end.character == lineContent.length)
     }
 
     @Test
     fun `import static member completion includes static methods`() {
+        val line = 0
         val lineContent = "import static java.lang.Math."
         val code = """
             $lineContent
@@ -168,19 +172,22 @@ class ImportCompletionTest {
 
         fixture.documentProvider.put(fixture.uri, code)
 
-        val items = completionsAt(0, lineContent.length)
+        val items = completionsAt(line, lineContent.length)
         val maxItem = items.find { it.label == "max" }
         assertNotNull(maxItem)
 
         val edit = maxItem.textEdit?.left
         assertNotNull(edit)
         assertTrue(edit.newText == "java.lang.Math.max")
+        assertTrue(edit.range.start.line == line)
         assertTrue(edit.range.start.character == lineContent.indexOf("java"))
+        assertTrue(edit.range.end.line == line)
         assertTrue(edit.range.end.character == lineContent.length)
     }
 
     @Test
     fun `import static member completion supports partial prefix`() {
+        val line = 0
         val lineContent = "import static java.lang.Math.P"
         val code = """
             $lineContent
@@ -190,14 +197,16 @@ class ImportCompletionTest {
 
         fixture.documentProvider.put(fixture.uri, code)
 
-        val items = completionsAt(0, lineContent.length)
+        val items = completionsAt(line, lineContent.length)
         val piItem = items.find { it.label == "PI" }
         assertNotNull(piItem)
 
         val edit = piItem.textEdit?.left
         assertNotNull(edit)
         assertTrue(edit.newText == "java.lang.Math.PI")
+        assertTrue(edit.range.start.line == line)
         assertTrue(edit.range.start.character == lineContent.indexOf("java"))
+        assertTrue(edit.range.end.line == line)
         assertTrue(edit.range.end.character == lineContent.length)
     }
 }
