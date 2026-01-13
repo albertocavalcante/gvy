@@ -389,6 +389,8 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
     private fun dedupeCompletions(items: List<CompletionItem>): List<CompletionItem> {
         if (items.isEmpty()) return emptyList()
 
+        // TODO(#862): Prefer higher-quality completion items beyond snippet format.
+        //   See: https://github.com/albertocavalcante/gvy/issues/862
         val result = mutableListOf<CompletionItem>()
         val seen = mutableMapOf<DedupeKey, Int>()
 
@@ -419,7 +421,7 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         val label = item.label ?: return null
         return when (item.kind) {
             CompletionItemKind.Keyword -> DedupeKey(label, item.kind, null)
-            CompletionItemKind.Method -> DedupeKey(label, item.kind, methodParamsKey(item) ?: item.detail)
+            CompletionItemKind.Method -> methodParamsKey(item)?.let { DedupeKey(label, item.kind, it) }
             CompletionItemKind.Field,
             CompletionItemKind.Property,
             CompletionItemKind.Constant,
@@ -436,9 +438,7 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         val detail = item.detail ?: return null
         val start = detail.indexOf('(')
         val end = detail.lastIndexOf(')')
-        if (start < 0 || end <= start) {
-            return detail
-        }
+        if (start < 0 || end <= start) return null
         return detail.substring(start + 1, end).trim()
     }
 

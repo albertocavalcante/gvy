@@ -171,6 +171,11 @@ object CompletionProvider {
         }
     }
 
+    /**
+     * Provides best-effort completions when compilation or AST extraction fails.
+     * This is intended for broken files (syntax errors, incomplete edits) so users
+     * still get import, keyword, and snippet suggestions.
+     */
     private fun buildFallbackCompletions(
         content: String,
         line: Int,
@@ -580,6 +585,13 @@ object CompletionProvider {
         val starImports: Set<String>,
     )
 
+    /**
+     * Resolves workspace class candidates for a simple name using package/import
+     * context first, then falls back to a workspace-wide symbol scan.
+     *
+     * Order of candidates: same-package, explicit imports, star imports, workspace scan.
+     * This is a best-effort list; consumers are responsible for disambiguation.
+     */
     private fun resolveWorkspaceClassFqns(rawType: String, ctx: CompletionContext): List<String> {
         if (rawType.contains('.')) return listOf(rawType)
 
@@ -609,6 +621,8 @@ object CompletionProvider {
         simpleName: String,
         compilationService: GroovyCompilationService,
     ): List<String> {
+        // TODO(#861): Cache workspace symbol lookups for completion.
+        //   See: https://github.com/albertocavalcante/gvy/issues/861
         val matches = linkedSetOf<String>()
         compilationService.getAllSymbolStorages().forEach { (uri, index) ->
             index.getSymbols(uri)
@@ -636,13 +650,38 @@ object CompletionProvider {
         return matches
     }
 
+    /**
+     * Best-effort, line-based import parsing for fallback scenarios.
+     * Does not support multi-line import statements or full Groovy syntax.
+     */
     private fun parseTextImportInfo(content: String): TextImportInfo {
         var packageName: String? = null
         val explicitImports = mutableSetOf<String>()
         val starImports = mutableSetOf<String>()
+        var inBlockComment = false
 
         for (line in content.lineSequence()) {
             val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+
+            if (inBlockComment) {
+                if (trimmed.contains("*/")) {
+                    inBlockComment = false
+                }
+                continue
+            }
+
+            if (trimmed.startsWith("/*")) {
+                if (!trimmed.contains("*/")) {
+                    inBlockComment = true
+                }
+                continue
+            }
+
+            if (trimmed.startsWith("//")) {
+                continue
+            }
+
             when {
                 trimmed.startsWith("package ") -> {
                     packageName = trimmed.removePrefix("package ").removeSuffix(";").trim()
