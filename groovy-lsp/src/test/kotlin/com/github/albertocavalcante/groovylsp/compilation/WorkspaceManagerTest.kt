@@ -7,6 +7,7 @@ import java.nio.file.Path
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WorkspaceManagerTest {
@@ -120,5 +121,34 @@ class WorkspaceManagerTest {
         // Should still return the valid file that exists in workspace
         assertEquals(1, result.size)
         assertTrue(result.contains(validFile))
+    }
+
+    @Test
+    fun `initializeWorkspace includes test groovy and bare src for Jenkins layout`() {
+        val testDir = tempDir.resolve("test/groovy")
+        Files.createDirectories(testDir)
+        val srcDir = tempDir.resolve("src")
+        Files.createDirectories(srcDir)
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val sourceRoots = workspaceManager.getSourceRoots()
+        assertTrue(sourceRoots.contains(testDir))
+        assertTrue(sourceRoots.contains(srcDir))
+    }
+
+    @Test
+    fun `initializeWorkspace avoids bare src when structured roots exist`() {
+        val mainDir = tempDir.resolve("src/main/groovy")
+        Files.createDirectories(mainDir)
+        val testDir = tempDir.resolve("test/groovy")
+        Files.createDirectories(testDir)
+
+        workspaceManager.initializeWorkspace(tempDir)
+
+        val sourceRoots = workspaceManager.getSourceRoots()
+        assertTrue(sourceRoots.contains(mainDir))
+        assertTrue(sourceRoots.contains(testDir))
+        assertFalse(sourceRoots.contains(tempDir.resolve("src")))
     }
 }

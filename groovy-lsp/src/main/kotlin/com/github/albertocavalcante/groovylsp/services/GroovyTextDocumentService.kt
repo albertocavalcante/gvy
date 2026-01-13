@@ -1039,6 +1039,13 @@ class GroovyTextDocumentService(
 
                 // Combine all tokens and encode
                 val allTokens = combineTokens(groovyTokens, jenkinsTokens)
+                    .sortedWith(
+                        compareBy<JenkinsSemanticTokenProvider.SemanticToken> { it.line }
+                            .thenBy { it.startChar }
+                            .thenBy { it.length }
+                            .thenBy { it.tokenType }
+                            .thenBy { it.tokenModifiers },
+                    )
                 val encodedData = encodeSemanticTokens(allTokens)
 
                 logger.debug { "Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)" }

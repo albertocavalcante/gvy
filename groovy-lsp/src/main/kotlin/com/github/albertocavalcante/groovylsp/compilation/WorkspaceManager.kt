@@ -118,7 +118,16 @@ class WorkspaceManager {
 
         if (existingStandardDirs.isNotEmpty()) {
             existingStandardDirs.forEach(sourceRoots::add)
-        } else {
+        }
+
+        // Jenkins shared libraries and other layouts often use test/groovy directly.
+        val extraSourceDirs = listOf(
+            rootPath.resolve("test/groovy"),
+        ).filter { Files.exists(it) && Files.isDirectory(it) }
+
+        extraSourceDirs.forEach(sourceRoots::add)
+
+        if (existingStandardDirs.isEmpty()) {
             // Jenkins Shared Library structure: bare src/ directory
             // TODO(#701): Improve heuristics for detecting source roots in Light Mode
             //   See: https://github.com/albertocavalcante/gvy/issues/701
