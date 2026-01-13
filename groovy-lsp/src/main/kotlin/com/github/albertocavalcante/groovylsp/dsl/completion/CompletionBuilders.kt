@@ -425,7 +425,7 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
             CompletionItemKind.Field,
             CompletionItemKind.Property,
             CompletionItemKind.Constant,
-            -> DedupeKey(label, item.kind, item.detail)
+            -> DedupeKey(label, item.kind, item.detail?.trim())
             else -> null
         }
     }
@@ -436,10 +436,44 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
 
     private fun methodParamsKey(item: CompletionItem): String? {
         val detail = item.detail ?: return null
-        val start = detail.indexOf('(')
-        val end = detail.lastIndexOf(')')
-        if (start < 0 || end <= start) return null
+        val start = findParamsStart(detail) ?: return null
+        val end = findParamsEnd(detail, start) ?: return null
         return detail.substring(start + 1, end).trim()
+    }
+
+    private fun findParamsStart(detail: String): Int? {
+        var angleDepth = 0
+        var parenDepth = 0
+        for (i in detail.indices) {
+            when (detail[i]) {
+                '<' -> angleDepth++
+                '>' -> if (angleDepth > 0) angleDepth--
+                '(' -> {
+                    if (angleDepth == 0 && parenDepth == 0) {
+                        return i
+                    }
+                    parenDepth++
+                }
+                ')' -> if (parenDepth > 0) parenDepth--
+            }
+        }
+        return null
+    }
+
+    private fun findParamsEnd(detail: String, startIndex: Int): Int? {
+        var parenDepth = 0
+        for (i in startIndex until detail.length) {
+            when (detail[i]) {
+                '(' -> parenDepth++
+                ')' -> {
+                    parenDepth--
+                    if (parenDepth == 0) {
+                        return i
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private data class DedupeKey(val label: String, val kind: CompletionItemKind?, val detail: String?)
