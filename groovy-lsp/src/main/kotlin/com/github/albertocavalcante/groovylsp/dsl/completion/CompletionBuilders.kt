@@ -384,5 +384,63 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         completions.add(FunctionCompletionBuilder().build(name, returnType, doc))
     }
 
-    override fun build(): List<CompletionItem> = completions.toList()
+    override fun build(): List<CompletionItem> = dedupeCompletions(completions)
+
+    private fun dedupeCompletions(items: List<CompletionItem>): List<CompletionItem> {
+        if (items.isEmpty()) return emptyList()
+
+        val result = mutableListOf<CompletionItem>()
+        val seen = mutableMapOf<DedupeKey, Int>()
+
+        items.forEach { item ->
+            val key = dedupeKey(item)
+            if (key == null) {
+                result.add(item)
+                return@forEach
+            }
+
+            val existingIndex = seen[key]
+            if (existingIndex == null) {
+                seen[key] = result.size
+                result.add(item)
+                return@forEach
+            }
+
+            val existing = result[existingIndex]
+            if (preferSnippet(item, existing)) {
+                result[existingIndex] = item
+            }
+        }
+
+        return result
+    }
+
+    private fun dedupeKey(item: CompletionItem): DedupeKey? {
+        val label = item.label ?: return null
+        return when (item.kind) {
+            CompletionItemKind.Keyword -> DedupeKey(label, item.kind, null)
+            CompletionItemKind.Method -> DedupeKey(label, item.kind, methodParamsKey(item) ?: item.detail)
+            CompletionItemKind.Field,
+            CompletionItemKind.Property,
+            CompletionItemKind.Constant,
+            -> DedupeKey(label, item.kind, item.detail)
+            else -> null
+        }
+    }
+
+    private fun preferSnippet(candidate: CompletionItem, existing: CompletionItem): Boolean =
+        candidate.insertTextFormat == InsertTextFormat.Snippet &&
+            existing.insertTextFormat != InsertTextFormat.Snippet
+
+    private fun methodParamsKey(item: CompletionItem): String? {
+        val detail = item.detail ?: return null
+        val start = detail.indexOf('(')
+        val end = detail.lastIndexOf(')')
+        if (start < 0 || end <= start) {
+            return detail
+        }
+        return detail.substring(start + 1, end).trim()
+    }
+
+    private data class DedupeKey(val label: String, val kind: CompletionItemKind?, val detail: String?)
 }

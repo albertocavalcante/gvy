@@ -9,7 +9,6 @@ import ch.epfl.scala.bsp4j.BuildServer
 import ch.epfl.scala.bsp4j.InitializeBuildParams
 import com.github.groovylsp.bsp.client.BspCapabilities
 import com.github.groovylsp.bsp.client.BuildServerConnection
-import com.github.groovylsp.bsp.client.ConnectionConfig
 import com.github.groovylsp.bsp.model.BuildTargetCache
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException

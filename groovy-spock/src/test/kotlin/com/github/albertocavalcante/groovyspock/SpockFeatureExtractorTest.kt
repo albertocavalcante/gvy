@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovyspock
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

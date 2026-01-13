@@ -2,7 +2,6 @@ package com.github.albertocavalcante.gvy.semantics.openrewrite
 
 import com.github.albertocavalcante.gvy.semantics.PrimitiveKind
 import com.github.albertocavalcante.gvy.semantics.SemanticType
-import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test

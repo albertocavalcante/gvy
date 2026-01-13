@@ -52,7 +52,6 @@ class CrossFileMemberCompletionTest {
     inner class FieldCompletionTests {
 
         @Test
-        @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration in CompletionProvider")
         fun `should show field from class in another file`() = runBlocking {
             // Arrange: Create Person class in another file
             val personFile = tempDir / "Person.groovy"
@@ -379,7 +378,6 @@ class CrossFileMemberCompletionTest {
     inner class NoDuplicateCompletionsTests {
 
         @Test
-        @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration")
         fun `should not show duplicate completions from workspace and classpath`() = runBlocking {
             // Arrange: Create a class that has toString() method (inherited from Object)
             val personFile = tempDir / "Person.groovy"
