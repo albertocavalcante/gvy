@@ -10,6 +10,14 @@ internal fun getClassName(targetNode: ASTNode): String? = when (targetNode) {
     is ClassNode -> targetNode.name
     is ConstructorCallExpression -> targetNode.type.name
     is ClassExpression -> targetNode.type.name
-    is ImportNode -> targetNode.type?.name ?: targetNode.className
+    is ImportNode -> {
+        val rawName = targetNode.type?.name ?: targetNode.className ?: return null
+        val fieldName = targetNode.fieldName
+        if (fieldName != null && rawName.endsWith(".$fieldName")) {
+            rawName.substringBeforeLast(".")
+        } else {
+            rawName
+        }
+    }
     else -> null
 }

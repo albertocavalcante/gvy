@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ImportNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
@@ -27,13 +28,29 @@ class ClasspathResolutionStrategy(
 
     @Suppress("TooGenericExceptionCaught")
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
+        val importNode = context.targetNode as? ImportNode
         val className = getClassName(context.targetNode)
             ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
 
         val classpathUri = compilationService.findClasspathClass(className)
-            ?: return SymbolResolutionStrategy.notFound("Class $className not on classpath", STRATEGY_NAME)
+            ?: run {
+                if (importNode != null) {
+                    logger.info {
+                        "Classpath lookup failed for import $className " +
+                            "(static=${importNode.isStatic}, field=${importNode.fieldName}, deps=${compilationService.workspaceManager.getDependencyClasspath().size})"
+                    }
+                }
+                return SymbolResolutionStrategy.notFound("Class $className not on classpath", STRATEGY_NAME)
+            }
 
         logger.debug { "Found classpath class $className at $classpathUri" }
+
+        if (importNode != null && importNode.isStatic && importNode.fieldName != null) {
+            sourceNavigator?.let { navigator ->
+                navigateToStaticImportSource(navigator, classpathUri, className, importNode.fieldName)
+                    ?.let { return it }
+            }
+        }
 
         sourceNavigator?.let { navigator ->
             navigateToSourceIfPossible(navigator, classpathUri, className)
@@ -103,6 +120,34 @@ class ClasspathResolutionStrategy(
                 )
             }
         }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun navigateToStaticImportSource(
+        sourceNavigator: SourceNavigator,
+        classpathUri: URI,
+        className: String,
+        memberName: String,
+    ): ResolutionResult? = try {
+        when (val result = sourceNavigator.navigateToMethodSource(classpathUri, className, memberName)) {
+            is SourceNavigator.SourceResult.SourceLocation -> {
+                logger.debug { "Found source for $className.$memberName at ${result.uri}" }
+                val range = result.lineNumber?.let(::toZeroBasedLineRange)
+                SymbolResolutionStrategy.found(
+                    DefinitionResolver.DefinitionResult.Binary(result.uri, "$className.$memberName", range),
+                )
+            }
+
+            is SourceNavigator.SourceResult.BinaryOnly -> {
+                logger.debug { "No source available for $className.$memberName: ${result.reason}" }
+                null
+            }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.warn(e) { "Failed to navigate to source for $className.$memberName: ${e.message}" }
+        null
     }
 
     private fun toZeroBasedLineRange(oneBasedLine: Int): Range {
