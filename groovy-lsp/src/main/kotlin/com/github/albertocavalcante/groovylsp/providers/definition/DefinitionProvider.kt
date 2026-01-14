@@ -306,35 +306,8 @@ class DefinitionProvider(
             } else {
                 logger.debug { "No definition found at position" }
             }
-        } catch (e: GroovyLspException) {
-            logger.debug { "Definition resolution failed: ${e.message}" }
-            telemetrySink.report(
-                DefinitionTelemetryEvent(
-                    uri = uri,
-                    status = DefinitionStatus.RESOLUTION_FAILED,
-                    reason = e.message,
-                ),
-            )
-        } catch (e: IllegalArgumentException) {
-            logger.warn(e) { "Invalid arguments during definition resolution" }
-            telemetrySink.report(
-                DefinitionTelemetryEvent(
-                    uri = uri,
-                    status = DefinitionStatus.ERROR,
-                    reason = e.message,
-                ),
-            )
-        } catch (e: IllegalStateException) {
-            logger.warn(e) { "Invalid state during definition resolution" }
-            telemetrySink.report(
-                DefinitionTelemetryEvent(
-                    uri = uri,
-                    status = DefinitionStatus.ERROR,
-                    reason = e.message,
-                ),
-            )
         } catch (e: CancellationException) {
-            // Client cancelled the request - this is expected behavior, log at debug level
+            // Client cancelled the request - must rethrow to preserve coroutine cancellation
             logger.debug { "Definition resolution cancelled by client for: $uri" }
             telemetrySink.report(
                 DefinitionTelemetryEvent(
@@ -343,15 +316,9 @@ class DefinitionProvider(
                     reason = "Request cancelled by client",
                 ),
             )
+            throw e
         } catch (e: Exception) {
-            logger.warn(e) { "Unexpected error during definition resolution" }
-            telemetrySink.report(
-                DefinitionTelemetryEvent(
-                    uri = uri,
-                    status = DefinitionStatus.ERROR,
-                    reason = e.message,
-                ),
-            )
+            handleResolutionException(e, uri)
         }
 
         if (!definitionFound) {
@@ -362,6 +329,35 @@ class DefinitionProvider(
                 ),
             )
         }
+    }
+
+    /**
+     * Handle exceptions from definition resolution with appropriate logging and telemetry.
+     *
+     * Maps exception types to their corresponding status codes:
+     * - GroovyLspException → RESOLUTION_FAILED (debug log)
+     * - IllegalArgumentException, IllegalStateException → ERROR (warn log)
+     * - Other exceptions → ERROR (warn log)
+     */
+    private fun handleResolutionException(e: Exception, uri: String) {
+        val (status, logLevel) = when (e) {
+            is GroovyLspException -> DefinitionStatus.RESOLUTION_FAILED to "debug"
+            is IllegalArgumentException, is IllegalStateException -> DefinitionStatus.ERROR to "warn"
+            else -> DefinitionStatus.ERROR to "warn"
+        }
+
+        when (logLevel) {
+            "debug" -> logger.debug { "Definition resolution failed: ${e.message}" }
+            else -> logger.warn(e) { "Error during definition resolution: ${e.message}" }
+        }
+
+        telemetrySink.report(
+            DefinitionTelemetryEvent(
+                uri = uri,
+                status = status,
+                reason = e.message,
+            ),
+        )
     }
 
     private fun parseUriOrReport(uri: String): URI? = try {

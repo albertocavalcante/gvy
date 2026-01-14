@@ -605,6 +605,59 @@ class SourceNavigationServiceTest {
             }
             // Either finds line 7 (quoted method) or null (can't match quoted names) - both acceptable
         }
+
+        @Test
+        fun `findPatternInGroovySource handles multiple block comments on same line`() = runBlocking {
+            // Test case: Multiple block comments on the same line should ALL be stripped
+            // Bug scenario: `def x /* c1 */ = foo /* c2 */ bar` only removes first comment
+            val groovySource = """
+                package com.example
+
+                class TestClass {
+                    // This line has TWO block comments, second one contains the class name
+                    def x /* first comment */ = new /* TestClass */ Object()
+
+                    // Real class should be found here
+                    class InnerClass {
+                    }
+                }
+            """.trimIndent()
+
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+            val binaryJar = libDir.resolve("test.jar")
+            val sourceJar = libDir.resolve("test-sources.jar")
+            createMinimalJar(binaryJar)
+            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            extractor.extractAndIndex(sourceJar)
+            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
+
+            assertNotNull(sourcePath, "Source should be extracted")
+
+            val service = SourceNavigationService(sourceExtractor = extractor)
+            val findMethod = service.javaClass.getDeclaredMethod(
+                "findGroovyClassLineNumber",
+                Path::class.java,
+                String::class.java,
+            )
+            findMethod.isAccessible = true
+
+            // Looking for "TestClass" - with fix, should NOT match line 5 (inside second block comment)
+            // Should match line 1 (class TestClass) or line 8 (class InnerClass - though looking for TestClass)
+            val lineNumber = findMethod.invoke(service, sourcePath, "TestClass") as Int?
+
+            // FIXED: The search for TestClass should find line 3 (class TestClass {...})
+            // NOT line 5 (where TestClass appears inside /* TestClass */ block comment)
+            assertNotNull(lineNumber, "Should find class TestClass")
+            assertEquals(
+                3,
+                lineNumber,
+                "Should find TestClass on line 3 (class declaration), NOT line 5 (in block comment)",
+            )
+        }
     }
 
     private fun createMinimalJar(path: Path) {

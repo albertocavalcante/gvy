@@ -68,43 +68,22 @@ class ClasspathResolutionStrategy(
         return resolveBinaryFallback(classpathUri, className)
     }
 
-    @Suppress("TooGenericExceptionCaught")
     private suspend fun navigateToSourceIfPossible(
         sourceNavigator: SourceNavigator,
         classpathUri: URI,
         className: String,
-    ): ResolutionResult? = try {
-        when (val result = sourceNavigator.navigateToSource(classpathUri, className)) {
-            is SourceNavigator.SourceResult.SourceLocation -> {
-                logger.debug { "Found source for $className at ${result.uri}" }
-                val range = result.lineNumber?.let(::toZeroBasedLineRange)
-                SymbolResolutionStrategy.found(
-                    DefinitionResolver.DefinitionResult.Binary(result.uri, className, range),
-                )
-            }
-
-            is SourceNavigator.SourceResult.BinaryOnly -> {
-                logger.debug { "No source available for $className: ${result.reason}" }
-                null
-            }
-        }
-    } catch (e: CancellationException) {
-        throw e // Preserve coroutine cancellation
-    } catch (e: Exception) {
-        // NOTE: Source navigation is best-effort; resolution should still succeed with binaries when possible.
-        // TODO: Narrow the caught exception types once SourceNavigator exposes a more explicit error surface.
-        logger.warn(e) { "Failed to navigate to source for $className: ${e.message}" }
-        null
+    ): ResolutionResult? = withSourceNavigation(className) {
+        sourceNavigator.navigateToSource(classpathUri, className)
     }
 
     private fun resolveBinaryFallback(classpathUri: URI, className: String): ResolutionResult {
         // Only return binary result for URIs that VS Code can actually open
         return when (classpathUri.scheme) {
-            "file" -> SymbolResolutionStrategy.found(
+            SCHEME_FILE -> SymbolResolutionStrategy.found(
                 DefinitionResolver.DefinitionResult.Binary(classpathUri, className),
             )
 
-            "jrt" -> {
+            SCHEME_JRT -> {
                 logger.debug { "JDK source not available for $className" }
                 SymbolResolutionStrategy.notFound(
                     "JDK source not available (src.zip extraction failed)",
@@ -112,7 +91,7 @@ class ClasspathResolutionStrategy(
                 )
             }
 
-            "jar" -> {
+            SCHEME_JAR -> {
                 logger.debug { "No source available for $className - jar: URI not openable" }
                 SymbolResolutionStrategy.notFound(
                     "No source JAR available for dependency",
@@ -130,31 +109,51 @@ class ClasspathResolutionStrategy(
         }
     }
 
-    @Suppress("TooGenericExceptionCaught")
     private suspend fun navigateToStaticImportSource(
         sourceNavigator: SourceNavigator,
         classpathUri: URI,
         className: String,
         memberName: String,
+    ): ResolutionResult? = withSourceNavigation("$className.$memberName") {
+        sourceNavigator.navigateToMethodSource(classpathUri, className, memberName)
+    }
+
+    /**
+     * Execute a source navigation operation with proper error handling.
+     *
+     * This higher-order function handles the common pattern of:
+     * - Calling a SourceNavigator method
+     * - Converting SourceLocation to ResolutionResult
+     * - Returning null for BinaryOnly
+     * - Properly handling CancellationException and other exceptions
+     *
+     * @param symbolName The name to use for logging (e.g., "com.example.Foo" or "com.example.Foo.method")
+     * @param navigate The suspend function that performs the actual navigation
+     * @return ResolutionResult if source was found, null otherwise
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private suspend inline fun withSourceNavigation(
+        symbolName: String,
+        crossinline navigate: suspend () -> SourceNavigator.SourceResult,
     ): ResolutionResult? = try {
-        when (val result = sourceNavigator.navigateToMethodSource(classpathUri, className, memberName)) {
+        when (val result = navigate()) {
             is SourceNavigator.SourceResult.SourceLocation -> {
-                logger.debug { "Found source for $className.$memberName at ${result.uri}" }
+                logger.debug { "Found source for $symbolName at ${result.uri}" }
                 val range = result.lineNumber?.let(::toZeroBasedLineRange)
                 SymbolResolutionStrategy.found(
-                    DefinitionResolver.DefinitionResult.Binary(result.uri, "$className.$memberName", range),
+                    DefinitionResolver.DefinitionResult.Binary(result.uri, symbolName, range),
                 )
             }
-
             is SourceNavigator.SourceResult.BinaryOnly -> {
-                logger.debug { "No source available for $className.$memberName: ${result.reason}" }
+                logger.debug { "No source available for $symbolName: ${result.reason}" }
                 null
             }
         }
     } catch (e: CancellationException) {
-        throw e
+        throw e // Preserve coroutine cancellation
     } catch (e: Exception) {
-        logger.warn(e) { "Failed to navigate to source for $className.$memberName: ${e.message}" }
+        // NOTE: Source navigation is best-effort; resolution should still succeed with binaries when possible.
+        logger.warn(e) { "Failed to navigate to source for $symbolName: ${e.message}" }
         null
     }
 
@@ -165,5 +164,10 @@ class ClasspathResolutionStrategy(
 
     companion object {
         private const val STRATEGY_NAME = "Classpath"
+
+        // URI scheme constants for classpath resolution
+        internal const val SCHEME_FILE = "file"
+        internal const val SCHEME_JRT = "jrt"
+        internal const val SCHEME_JAR = "jar"
     }
 }
