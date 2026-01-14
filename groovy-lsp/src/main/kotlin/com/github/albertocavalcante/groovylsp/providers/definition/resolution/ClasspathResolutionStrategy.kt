@@ -32,7 +32,7 @@ class ClasspathResolutionStrategy(
         val className = getClassName(context.targetNode)
             ?: run {
                 if (importNode != null) {
-                    logger.info {
+                    logger.debug {
                         "Classpath resolution skipped for import with no class name " +
                             "(static=${importNode.isStatic}, field=${importNode.fieldName}, text=${importNode.text})"
                     }
@@ -43,7 +43,7 @@ class ClasspathResolutionStrategy(
         val classpathUri = compilationService.findClasspathClass(className)
             ?: run {
                 if (importNode != null) {
-                    logger.info {
+                    logger.debug {
                         "Classpath lookup failed for import $className " +
                             "(static=${importNode.isStatic}, field=${importNode.fieldName}, deps=${compilationService.workspaceManager.getDependencyClasspath().size})"
                     }

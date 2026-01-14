@@ -133,8 +133,10 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         private const val STRATEGY_NAME = "SemanticDB"
 
         /**
-         * Priority weight for multi-line occurrences (line count is more significant than column offset).
-         * Used in occurrence selection to differentiate multi-line ranges from single-line ranges.
+         * Priority weight for multi-line occurrences.
+         *
+         * NOTE: Value chosen to ensure any multi-line range is deprioritized
+         * compared to single-line ranges (max ~200 chars/line). 10000 >> 200.
          */
         private const val MULTI_LINE_PRIORITY_WEIGHT = 10000
     }

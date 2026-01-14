@@ -726,7 +726,7 @@ class GroovyTextDocumentService(
                         params.position,
                     ).toList()
                     if (links.isNotEmpty()) {
-                        logger.info {
+                        logger.debug {
                             "Returning ${links.size} definition links (first=${links.first().targetUri})"
                         }
                         return@future Either.forRight(links)
@@ -740,7 +740,7 @@ class GroovyTextDocumentService(
                 ).toList()
 
                 if (locations.isNotEmpty()) {
-                    logger.info { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
+                    logger.debug { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
                 } else {
                     logger.debug { "Found 0 definitions" }
                 }

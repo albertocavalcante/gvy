@@ -197,7 +197,7 @@ class SourceNavigationService(
         // Step 1: Try Maven coordinates derivation and download
         val coords = deriveCoordinates(binaryJarPath)
         if (coords == null) {
-            logger.info { "Could not derive Maven coordinates from $binaryJarPath; skipping remote source lookup" }
+            logger.debug { "Could not derive Maven coordinates from $binaryJarPath; skipping remote source lookup" }
         }
         if (coords != null) {
             try {
@@ -218,7 +218,7 @@ class SourceNavigationService(
             return adjacentSource
         }
 
-        logger.info { "No source JAR found for: $binaryJarPath" }
+        logger.debug { "No source JAR found for: $binaryJarPath" }
         return null
     }
 
@@ -229,7 +229,7 @@ class SourceNavigationService(
             sourcePath.extension.equals("groovy", ignoreCase = true) ->
                 inspectGroovyClassDefinition(sourcePath, className)
             else -> {
-                logger.info { "Skipping Java inspection for non-Java source: $sourcePath" }
+                logger.debug { "Skipping Java inspection for non-Java source: $sourcePath" }
                 null
             }
         }
@@ -244,7 +244,7 @@ class SourceNavigationService(
         sourcePath.extension.equals("groovy", ignoreCase = true) ->
             inspectGroovyMethodDefinition(sourcePath, className, methodName)
         else -> {
-            logger.info { "Skipping Java method inspection for non-Java source: $sourcePath" }
+            logger.debug { "Skipping Java method inspection for non-Java source: $sourcePath" }
             null
         }
     }
@@ -254,7 +254,7 @@ class SourceNavigationService(
         className: String,
     ): JavaSourceInspector.InspectionResult? {
         val lineNumber = findGroovyClassLineNumber(sourcePath, className) ?: run {
-            logger.info { "Groovy class $className not found in $sourcePath" }
+            logger.debug { "Groovy class $className not found in $sourcePath" }
             return null
         }
 
@@ -272,6 +272,10 @@ class SourceNavigationService(
         return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
     }
 
+    // TODO(#TBD): Replace regex-based Groovy parsing with AST-based approach for accuracy
+    //   Current implementation uses regex which can have false positives in strings/comments.
+    //   Consider using GroovyParser AST for precise class/method location detection.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/TBD
     private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
         val simpleName = className.substringAfterLast('.').substringAfterLast('$')
         val escapedName = Regex.escape(simpleName)
