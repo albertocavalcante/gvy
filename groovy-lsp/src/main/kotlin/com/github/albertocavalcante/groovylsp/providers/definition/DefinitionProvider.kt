@@ -144,11 +144,97 @@ class DefinitionProvider(
         }
     }
 
-    private fun computeOriginSelectionRange(originNode: ASTNode): Range? = when (originNode) {
-        is ImportNode -> computeImportSelectionRange(originNode) ?: originNode.toLspRange()
-        is MethodCallExpression -> originNode.method.toLspRange() ?: originNode.toLspRange()
-        is PropertyExpression -> originNode.property.toLspRange() ?: originNode.toLspRange()
-        else -> originNode.toLspRange()
+    private fun computeOriginSelectionRange(originNode: ASTNode): Range? {
+        logger.debug { "computeOriginSelectionRange: ${originNode.javaClass.simpleName}" }
+        return when (originNode) {
+            is ImportNode -> computeImportSelectionRange(originNode) ?: originNode.toLspRange()
+            is MethodCallExpression -> computeMethodCallSelectionRange(originNode) ?: originNode.toLspRange()
+            is PropertyExpression -> computePropertySelectionRange(originNode) ?: originNode.toLspRange()
+            else -> originNode.toLspRange()
+        }
+    }
+
+    /**
+     * Compute the selection range for a method call expression, highlighting only the method name.
+     * For `helper.registerMethod("test")`, returns the range of just `registerMethod`.
+     */
+    private fun computeMethodCallSelectionRange(node: MethodCallExpression): Range? {
+        // First try: use method expression's position directly if valid
+        node.method.toLspRange()?.let {
+            logger.debug { "MethodCall: using method.toLspRange()" }
+            return it
+        }
+
+        val methodName = node.methodAsString ?: return null
+        val line = (node.lineNumber - 1).takeIf { it >= 0 } ?: return null
+
+        // Second try: compute from objectExpression's end position
+        // For `obj.method()`, the method starts right after the dot
+        val objExpr = node.objectExpression
+        if (objExpr != null && !node.isImplicitThis && objExpr.lastColumnNumber > 0) {
+            // objExpr.lastColumnNumber is 1-based exclusive end, which equals the 0-based column of '.'
+            // Method name starts at the next column
+            val startCol = objExpr.lastColumnNumber
+            logger.debug { "MethodCall: computed from objectExpression end ($methodName at col $startCol)" }
+            return Range(Position(line, startCol), Position(line, startCol + methodName.length))
+        }
+
+        // Third try: use node text to find method name position
+        val nodeStartCol = (node.columnNumber - 1).takeIf { it >= 0 } ?: return null
+        val text = node.text
+        if (text != null) {
+            val methodOffset = text.lastIndexOf(methodName)
+            if (methodOffset >= 0) {
+                logger.debug { "MethodCall: computed from node text ($methodName at offset $methodOffset)" }
+                return Range(
+                    Position(line, nodeStartCol + methodOffset),
+                    Position(line, nodeStartCol + methodOffset + methodName.length),
+                )
+            }
+        }
+
+        logger.debug { "MethodCall: could not compute range for $methodName" }
+        return null
+    }
+
+    /**
+     * Compute the selection range for a property expression, highlighting only the property name.
+     * For `config.scriptRoot`, returns the range of just `scriptRoot`.
+     */
+    private fun computePropertySelectionRange(node: PropertyExpression): Range? {
+        // First try: use property expression's position directly if valid
+        node.property.toLspRange()?.let {
+            logger.debug { "Property: using property.toLspRange()" }
+            return it
+        }
+
+        val propertyName = node.propertyAsString ?: return null
+        val line = (node.lineNumber - 1).takeIf { it >= 0 } ?: return null
+
+        // Second try: compute from objectExpression's end position
+        val objExpr = node.objectExpression
+        if (objExpr != null && objExpr.lastColumnNumber > 0) {
+            val startCol = objExpr.lastColumnNumber
+            logger.debug { "Property: computed from objectExpression end ($propertyName at col $startCol)" }
+            return Range(Position(line, startCol), Position(line, startCol + propertyName.length))
+        }
+
+        // Third try: use node text to find property name position
+        val nodeStartCol = (node.columnNumber - 1).takeIf { it >= 0 } ?: return null
+        val text = node.text
+        if (text != null) {
+            val propertyOffset = text.lastIndexOf(propertyName)
+            if (propertyOffset >= 0) {
+                logger.debug { "Property: computed from node text ($propertyName at offset $propertyOffset)" }
+                return Range(
+                    Position(line, nodeStartCol + propertyOffset),
+                    Position(line, nodeStartCol + propertyOffset + propertyName.length),
+                )
+            }
+        }
+
+        logger.debug { "Property: could not compute range for $propertyName" }
+        return null
     }
 
     private fun computeImportSelectionRange(importNode: ImportNode): Range? {
