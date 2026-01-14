@@ -79,6 +79,10 @@ class DefinitionProvider(
             logger.debug { "No origin node found at position" }
             return@flow
         }
+        logger.debug {
+            "originNode for selectionRange: ${originNode.javaClass.simpleName} at " +
+                "${originNode.lineNumber}:${originNode.columnNumber}"
+        }
 
         val locationLink = resolveDefinitionLink(resolver, documentUri, position, originNode, context.visitor)
         if (locationLink != null) {
