@@ -235,4 +235,69 @@ class AstPositionQueryTest {
             "At method call position, should find a call-related node, but got ${node?.javaClass?.simpleName}",
         )
     }
+
+    @Test
+    fun `find method call with explicit receiver inside method body`() {
+        // This test case simulates the user's issue:
+        // helper.registerMethod("test") inside a method body
+        val code = """
+            class TestClass {
+                def helper = [:]
+
+                void setUp() {
+                    helper.registerMethod("test")
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        // Find the line containing the method call
+        val targetLine = code.lines().indexOfFirst { it.contains("registerMethod") }
+        assertTrue(targetLine >= 0, "Expected to find registerMethod line")
+
+        val lineContent = code.lines()[targetLine]
+        val methodNameCol = lineContent.indexOf("registerMethod")
+        assertTrue(methodNameCol >= 0, "Expected to find registerMethod in line")
+
+        // Manually verify AST structure to understand what Groovy produces
+        val classNode = result.ast!!.classes.find { it.name == "TestClass" }
+        assertNotNull(classNode, "TestClass should be parsed")
+
+        val setUpMethod = classNode!!.getDeclaredMethod("setUp", arrayOf())
+        assertNotNull(setUpMethod, "setUp method should exist")
+
+        val block = setUpMethod!!.code as? BlockStatement
+        assertNotNull(block, "setUp should have a block body")
+
+        val stmt = block!!.statements.firstOrNull() as? ExpressionStatement
+        assertNotNull(stmt, "Block should have a statement")
+
+        val methodCall = stmt!!.expression as? MethodCallExpression
+        assertNotNull(methodCall, "Statement should be a method call")
+
+        // Log position info for debugging
+        println("MethodCallExpression position info:")
+        println("  lineNumber: ${methodCall!!.lineNumber}")
+        println("  columnNumber: ${methodCall.columnNumber}")
+        println("  lastLineNumber: ${methodCall.lastLineNumber}")
+        println("  lastColumnNumber: ${methodCall.lastColumnNumber}")
+        println("  method.lineNumber: ${methodCall.method.lineNumber}")
+        println("  method.columnNumber: ${methodCall.method.columnNumber}")
+        println("  objectExpression.lineNumber: ${methodCall.objectExpression.lineNumber}")
+        println("  objectExpression.columnNumber: ${methodCall.objectExpression.columnNumber}")
+
+        // Query at the method name position
+        val node = visitor.getNodeAt(uri, targetLine, methodNameCol + 3)
+        assertNotNull(node, "Should find node at method name position")
+
+        // We expect MethodCallExpression, NOT MethodNode
+        assertTrue(
+            node is MethodCallExpression,
+            "Expected MethodCallExpression at method name position, but got ${node?.javaClass?.simpleName}",
+        )
+    }
 }
