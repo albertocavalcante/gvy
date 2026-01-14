@@ -457,4 +457,90 @@ class DefinitionProviderTest {
         }
         // If no links found, that's okay - test validates the fix doesn't crash
     }
+
+    @Test
+    fun `originSelectionRange for MethodCallExpression highlights only method name`() = runBlocking {
+        // Test that clicking on a method call highlights ONLY the method name, not the entire expression
+        val content = """
+            class Helper {
+                def registerMethod(String name) { println name }
+            }
+            class Test {
+                def run() {
+                    def helper = new Helper()
+                    helper.registerMethod("test")
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        // Click on "registerMethod" in the method call (line 6)
+        //         helper.registerMethod("test")
+        // columns: 01234567890123456789...
+        //                    111111111122
+        // "registerMethod" starts at column 15 (after 8 spaces + "helper.")
+        val links = definitionProvider.provideDefinitionLinks(uri.toString(), Position(6, 15)).toList()
+
+        if (links.isNotEmpty()) {
+            val link = links.first()
+            val originRange = link.originSelectionRange
+
+            assertNotNull(originRange, "Origin selection range should not be null")
+            assertEquals(6, originRange.start.line, "Should be on line 6")
+
+            // Should highlight ONLY "registerMethod" (14 chars), not "helper.registerMethod("test")"
+            val highlightLength = originRange.end.character - originRange.start.character
+            assertEquals(14, highlightLength, "Should highlight only 'registerMethod' (14 chars), not the entire call")
+
+            // The method name starts at column 15 (after 8 spaces + "helper.")
+            assertEquals(15, originRange.start.character, "Method name should start at column 15")
+        }
+    }
+
+    @Test
+    fun `originSelectionRange for PropertyExpression highlights only property name`() = runBlocking {
+        // Test that clicking on a property access highlights ONLY the property name
+        val content = """
+            class Config {
+                String scriptRoot = "/scripts"
+            }
+            class Test {
+                def run() {
+                    def config = new Config()
+                    println config.scriptRoot
+                }
+            }
+        """.trimIndent()
+
+        val uri = URI.create("file:///test.groovy")
+        compilationService.compile(uri, content)
+
+        // Click on "scriptRoot" in the property access (line 6)
+        //         println config.scriptRoot
+        // columns: 01234567890123456789012345678901
+        //                    111111111122222222223
+        // "scriptRoot" starts at column 23 (after 8 spaces + "println config.")
+        val links = definitionProvider.provideDefinitionLinks(uri.toString(), Position(6, 23)).toList()
+
+        if (links.isNotEmpty()) {
+            val link = links.first()
+            val originRange = link.originSelectionRange
+
+            assertNotNull(originRange, "Origin selection range should not be null")
+            assertEquals(6, originRange.start.line, "Should be on line 6")
+
+            // Should highlight ONLY "scriptRoot" (10 chars), not "config.scriptRoot"
+            val highlightLength = originRange.end.character - originRange.start.character
+            assertEquals(
+                10,
+                highlightLength,
+                "Should highlight only 'scriptRoot' (10 chars), not the entire expression",
+            )
+
+            // The property name starts at column 23
+            assertEquals(23, originRange.start.character, "Property name should start at column 23")
+        }
+    }
 }

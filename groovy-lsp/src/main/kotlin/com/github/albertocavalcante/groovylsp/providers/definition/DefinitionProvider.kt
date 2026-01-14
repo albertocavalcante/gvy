@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
@@ -144,6 +146,8 @@ class DefinitionProvider(
 
     private fun computeOriginSelectionRange(originNode: ASTNode): Range? = when (originNode) {
         is ImportNode -> computeImportSelectionRange(originNode) ?: originNode.toLspRange()
+        is MethodCallExpression -> originNode.method.toLspRange() ?: originNode.toLspRange()
+        is PropertyExpression -> originNode.property.toLspRange() ?: originNode.toLspRange()
         else -> originNode.toLspRange()
     }
 
