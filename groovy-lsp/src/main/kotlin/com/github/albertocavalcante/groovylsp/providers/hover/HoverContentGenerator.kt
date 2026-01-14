@@ -377,9 +377,14 @@ class HoverContentGenerator(
     private fun MarkdownBuilder.renderClosureExpression(node: ClosureExpression) {
         section("Closure") {
             code("groovy") { "{ ${node.parametersString()} -> ... }" }
+            val variablesInScope = node.variableScope
+                ?.declaredVariables
+                ?.keys
+                ?.joinToString(", ")
+                ?: ""
             keyValue(
                 "Parameters" to node.parametersString(),
-                "Variables in Scope" to node.variableScope.declaredVariables.keys.joinToString(", "),
+                "Variables in Scope" to variablesInScope,
             )
         }
     }

@@ -14,6 +14,7 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -270,5 +271,24 @@ class HoverContentGeneratorTest {
             generator.generateHover(varExpr, moduleNode)
         }
         assertEquals("Resolution failed", exception.message)
+    }
+
+    @Test
+    fun `generateHover for ClosureExpression with null variableScope does not throw NPE`() {
+        // ClosureExpression can have null variableScope when the closure is created
+        // but not fully resolved (e.g., in partially parsed or extracted source files)
+        val closureExpr = ClosureExpression(
+            arrayOf<Parameter>(),
+            BlockStatement(),
+        )
+        // Explicitly ensure variableScope is null (it's the default, but being explicit for the test)
+        // The variableScope is not set in the constructor, so it should be null
+
+        val result = generator.generateHover(closureExpr)
+
+        // Should succeed without NPE
+        assertTrue(result.isSuccess, "Should handle null variableScope gracefully")
+        val contents = result.getOrNull()!!.contents.right.value
+        assertTrue(contents.contains("Closure"), "Should have Closure section")
     }
 }
