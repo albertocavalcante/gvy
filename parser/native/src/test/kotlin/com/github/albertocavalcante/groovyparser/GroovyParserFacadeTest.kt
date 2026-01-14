@@ -442,6 +442,33 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse succeeds with unresolved superclass`() {
+        val code = """
+            import com.unknown.UnresolvedClass
+
+            class MyTest extends UnresolvedClass {
+                void testMethod() {
+                    println "hello"
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Test.groovy"),
+                content = code,
+            ),
+        )
+
+        assertTrue(result.isSuccessful, "Parsing should succeed even with unresolved imports")
+        assertNotNull(result.ast, "AST should be present")
+
+        val classNode = result.ast.classes.find { it.nameWithoutPackage == "MyTest" }
+        assertNotNull(classNode, "MyTest class should be in AST")
+        assertEquals("UnresolvedClass", classNode.superClass?.nameWithoutPackage)
+    }
+
+    @Test
     fun `parse maintains AST structure when transforms are filtered`() {
         // Verify that filtering AST transformations doesn't break the AST structure
         val classpathDir = tempDir.resolve("struct-test-classpath")

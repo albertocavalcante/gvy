@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.ast.symbols
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.collections.immutable.persistentListOf
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
@@ -173,8 +174,14 @@ class SymbolExtractionTest {
 
         val uri = URI.create("file:///src/impls/UserRepository.groovy")
 
-        // Act
-        val result = parser.parse(ParseRequest(uri = uri, content = content))
+        // Act - Use CANONICALIZATION phase to resolve imports to FQN
+        val result = parser.parse(
+            ParseRequest(
+                uri = uri,
+                content = content,
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
         val visitor = result.astModel
         assertNotNull(visitor, "Should have AST model")
 

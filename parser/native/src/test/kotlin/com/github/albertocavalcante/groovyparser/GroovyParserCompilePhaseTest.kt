@@ -38,7 +38,7 @@ class GroovyParserCompilePhaseTest {
     }
 
     @Test
-    fun `parse defaults compilePhase to canonicalization`() {
+    fun `parse defaults compilePhase to conversion`() {
         val code =
             """
             class Greeting {
@@ -52,7 +52,7 @@ class GroovyParserCompilePhaseTest {
                 content = code,
             )
 
-        assertEquals(Phases.CANONICALIZATION, request.compilePhase)
+        assertEquals(Phases.CONVERSION, request.compilePhase)
 
         val result = parser.parse(request)
         assertTrue(result.isSuccessful)

@@ -177,10 +177,11 @@ class NativeParserProviderTest {
         val source = "import org.missing.Lib; class Foo {}"
         val unit = provider.parse(source)
 
-        // Should have errors
-        assertTrue(unit.diagnostics().any { it.severity == Severity.ERROR }, "Should have resolution errors")
+        // With CONVERSION phase (default), unresolved imports don't cause errors
+        // The parser succeeds and builds the AST structure
+        assertTrue(unit.isSuccessful, "Parsing should succeed even with missing dependencies")
 
-        // But should still parse the class
+        // And should parse the class
         val symbols = unit.symbols()
         assertTrue(symbols.any { it.name == "Foo" && it.kind == SymbolKind.CLASS }, "Should still find class Foo")
     }

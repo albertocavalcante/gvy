@@ -48,7 +48,11 @@ class RecursiveVisitorTraversalTest {
             }
         """.trimIndent()
 
-        val result = fixture.parse(code, uri.toString())
+        val result = fixture.parse(
+            code,
+            uri.toString(),
+            compilePhase = org.codehaus.groovy.control.Phases.CANONICALIZATION,
+        )
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should be available")
 
@@ -145,7 +149,11 @@ class RecursiveVisitorTraversalTest {
             }
         """.trimIndent()
 
-        val result = fixture.parse(code, uri.toString())
+        val result = fixture.parse(
+            code,
+            uri.toString(),
+            compilePhase = org.codehaus.groovy.control.Phases.CANONICALIZATION,
+        )
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should be available")
 
