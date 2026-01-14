@@ -301,6 +301,19 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             // Match legacy delegate: track the call, but only visit argument elements (not the tuple itself).
+            if (logger.isDebugEnabled()) {
+                if (shouldTrack(call)) {
+                    logger.debug {
+                        "[visitMethodCallExpression] Tracking: ${call.methodAsString} " +
+                            "@ ${call.lineNumber}:${call.columnNumber}-${call.lastLineNumber}:${call.lastColumnNumber}"
+                    }
+                } else {
+                    logger.debug {
+                        "[visitMethodCallExpression] SKIPPED (invalid position): ${call.methodAsString} " +
+                            "@ ${call.lineNumber}:${call.columnNumber}"
+                    }
+                }
+            }
             track(call) {
                 val args = call.arguments
                 if (args is TupleExpression) {
@@ -330,6 +343,12 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
+            if (logger.isDebugEnabled() && !shouldTrack(expression)) {
+                logger.debug {
+                    "[visitPropertyExpression] SKIPPED (invalid position): ${expression.propertyAsString} " +
+                        "@ ${expression.lineNumber}:${expression.columnNumber}"
+                }
+            }
             visitWithTracking(expression) { super.visitPropertyExpression(it) }
         }
 
