@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ImportNode
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
@@ -112,23 +113,56 @@ class DefinitionProvider(
         originNode: ASTNode,
         visitor: GroovyAstModel,
     ): LocationLink {
-        val originRange = originNode.toLspRange() ?: EMPTY_RANGE
+        val originSelectionRange = computeOriginSelectionRange(originNode) ?: EMPTY_RANGE
 
         return when (result) {
             is DefinitionResolver.DefinitionResult.Source -> {
                 val targetUri = result.node.toLspLocation(visitor)?.uri ?: result.uri.toString()
                 val targetRange = result.node.toLspRange() ?: EMPTY_RANGE
-                LocationLink(targetUri, targetRange, targetRange, originRange).also {
+                LocationLink().apply {
+                    this.targetUri = targetUri
+                    this.targetRange = targetRange
+                    this.targetSelectionRange = targetRange
+                    this.originSelectionRange = originSelectionRange
+                }.also {
                     logger.debug { "Found definition link to ${it.targetUri}:${it.targetRange}" }
                 }
             }
             is DefinitionResolver.DefinitionResult.Binary -> {
                 val range = result.range ?: EMPTY_RANGE
-                LocationLink(result.uri.toString(), range, range, originRange).also {
+                LocationLink().apply {
+                    this.targetUri = result.uri.toString()
+                    this.targetRange = range
+                    this.targetSelectionRange = range
+                    this.originSelectionRange = originSelectionRange
+                }.also {
                     logger.debug { "Found binary definition link to ${it.targetUri}" }
                 }
             }
         }
+    }
+
+    private fun computeOriginSelectionRange(originNode: ASTNode): Range? = when (originNode) {
+        is ImportNode -> computeImportSelectionRange(originNode) ?: originNode.toLspRange()
+        else -> originNode.toLspRange()
+    }
+
+    private fun computeImportSelectionRange(importNode: ImportNode): Range? {
+        val line = (importNode.lineNumber - 1).takeIf { it >= 0 } ?: return null
+        val columnStart = (importNode.columnNumber - 1).coerceAtLeast(0)
+        val text = importNode.text ?: return null
+
+        val symbol = importNode.fieldName
+            ?: importNode.className?.substringAfterLast('.')
+            ?: importNode.type?.name?.substringAfterLast('.')
+            ?: return null
+
+        val symbolOffset = text.lastIndexOf(symbol)
+        if (symbolOffset < 0) return null
+
+        val start = columnStart + symbolOffset
+        val end = start + symbol.length
+        return Range(Position(line, start), Position(line, end))
     }
 
     /**

@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ImportNode
 
 /**
  * Resolves symbols using SemanticDB and WorkspaceSymbolIndex for full cross-file resolution.
@@ -28,6 +29,11 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
     @Suppress("ReturnCount") // Multiple validation checks require early returns
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
         logger.debug { "Attempting SemanticDB resolution at ${context.documentUri}:${context.position}" }
+
+        if (context.targetNode is ImportNode) {
+            logger.debug { "Skipping SemanticDB resolution for ImportNode" }
+            return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        }
 
         // 1. Get SemanticDocument for current file
         val document = workspaceSymbolIndex.getDocument(context.documentUri)

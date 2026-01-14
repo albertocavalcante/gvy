@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -215,6 +216,58 @@ class SemanticDBResolutionStrategyTest {
         val result = strategy.resolve(context)
 
         // Then: Should return notApplicable
+        assertTrue(result.isLeft(), "Expected Left (error), got Right")
+        result.fold(
+            ifLeft = { error -> assertEquals("SemanticDB", error.source) },
+            ifRight = { throw AssertionError("Expected Left, got Right") },
+        )
+    }
+
+    @Test
+    fun `should skip SemanticDB for import nodes`() = runBlocking {
+        val targetDoc = SemanticDocument(
+            uri = targetUri,
+            symbols = listOf(
+                SymbolInfo(
+                    symbol = "test/Target#",
+                    kind = SymbolKind.CLASS,
+                    range = Range(0, 0, 0, 12),
+                    name = "Target",
+                    owner = null,
+                ),
+            ),
+            occurrences = listOf(
+                SymbolOccurrence(
+                    symbol = "test/Target#",
+                    range = Range(0, 0, 0, 12),
+                    role = OccurrenceRole.DEFINITION,
+                ),
+            ),
+        )
+        semanticDb.updateDocument(targetUri, targetDoc)
+
+        val sourceDoc = SemanticDocument(
+            uri = sourceUri,
+            symbols = emptyList(),
+            occurrences = listOf(
+                SymbolOccurrence(
+                    symbol = "test/Target#",
+                    range = Range(1, 7, 1, 13),
+                    role = OccurrenceRole.REFERENCE,
+                ),
+            ),
+        )
+        semanticDb.updateDocument(sourceUri, sourceDoc)
+
+        val importNode = ImportNode(ClassNode("test.Target", 0, null), null)
+        val context = ResolutionContext(
+            targetNode = importNode,
+            documentUri = sourceUri,
+            position = Position(1, 9),
+        )
+
+        val result = strategy.resolve(context)
+
         assertTrue(result.isLeft(), "Expected Left (error), got Right")
         result.fold(
             ifLeft = { error -> assertEquals("SemanticDB", error.source) },

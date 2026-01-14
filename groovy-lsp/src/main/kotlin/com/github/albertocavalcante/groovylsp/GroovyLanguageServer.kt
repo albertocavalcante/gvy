@@ -214,6 +214,9 @@ class GroovyLanguageServer(
         savedInitParams = params
         clientCapabilities = params.capabilities
 
+        val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
+        textDocumentService.updateDefinitionLinkSupport(linkSupport)
+
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult()

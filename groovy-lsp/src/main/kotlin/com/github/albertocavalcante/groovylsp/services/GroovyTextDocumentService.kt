@@ -113,6 +113,7 @@ data class GroovyTextDocumentServiceOptions(
     val documentProvider: DocumentProvider = DocumentProvider(),
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
+    val definitionLinkSupport: Boolean = false,
 )
 
 class GroovyTextDocumentService(
@@ -126,8 +127,14 @@ class GroovyTextDocumentService(
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
+    private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
     private val logger = KotlinLogging.logger {}
+
+    fun updateDefinitionLinkSupport(supported: Boolean) {
+        definitionLinkSupport = supported
+        logger.info { "Definition link support set to $supported" }
+    }
 
     companion object {
         /**
@@ -711,13 +718,30 @@ class GroovyTextDocumentService(
                     telemetrySink = telemetrySink,
                 )
 
+                if (definitionLinkSupport) {
+                    val links = definitionProvider.provideDefinitionLinks(
+                        params.textDocument.uri,
+                        params.position,
+                    ).toList()
+                    if (links.isNotEmpty()) {
+                        logger.info {
+                            "Returning ${links.size} definition links (first=${links.first().targetUri})"
+                        }
+                        return@future Either.forRight(links)
+                    }
+                }
+
                 // Get definitions using Flow pattern
                 val locations = definitionProvider.provideDefinitions(
                     params.textDocument.uri,
                     params.position,
                 ).toList()
 
-                logger.debug { "Found ${locations.size} definitions" }
+                if (locations.isNotEmpty()) {
+                    logger.info { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
+                } else {
+                    logger.debug { "Found 0 definitions" }
+                }
 
                 Either.forLeft(locations)
             } catch (e: CancellationException) {
