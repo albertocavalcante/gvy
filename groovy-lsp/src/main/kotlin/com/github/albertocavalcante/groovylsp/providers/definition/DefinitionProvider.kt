@@ -149,7 +149,6 @@ class DefinitionProvider(
 
     private fun computeImportSelectionRange(importNode: ImportNode): Range? {
         val line = (importNode.lineNumber - 1).takeIf { it >= 0 } ?: return null
-        val columnStart = (importNode.columnNumber - 1).coerceAtLeast(0)
         val text = importNode.text ?: return null
 
         val symbol = importNode.fieldName
@@ -157,10 +156,14 @@ class DefinitionProvider(
             ?: importNode.type?.name?.substringAfterLast('.')
             ?: return null
 
+        // Find the symbol in the import text
+        // Use lastIndexOf to prefer the rightmost occurrence (for cases like com.Foo.Bar.Bar)
         val symbolOffset = text.lastIndexOf(symbol)
         if (symbolOffset < 0) return null
 
-        val start = columnStart + symbolOffset
+        // ImportNode.text appears to be the full import line starting from column 0
+        // so we can use symbolOffset directly as the column position
+        val start = symbolOffset
         val end = start + symbol.length
         return Range(Position(line, start), Position(line, end))
     }

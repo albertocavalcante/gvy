@@ -274,7 +274,8 @@ class SourceNavigationService(
 
     private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
         val simpleName = className.substringAfterLast('.').substringAfterLast('$')
-        val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$simpleName\b""")
+        val escapedName = Regex.escape(simpleName)
+        val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$escapedName\b""")
         val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
         var inBlockComment = false
 
@@ -313,9 +314,10 @@ class SourceNavigationService(
     }
 
     private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
+        val escapedMethodName = Regex.escape(methodName)
         val pattern = Regex(
             """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
-                """$methodName\s*\(""",
+                """$escapedMethodName\s*\(""",
         )
         val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
 

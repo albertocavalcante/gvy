@@ -14,7 +14,9 @@ internal fun getClassName(targetNode: ASTNode): String? = when (targetNode) {
         val rawName = targetNode.type?.name ?: targetNode.className ?: return null
         val fieldName = targetNode.fieldName
         if (fieldName != null && rawName.endsWith(".$fieldName")) {
-            rawName.substringBeforeLast(".")
+            val className = rawName.substringBeforeLast(".")
+            // Validate we didn't strip too much (ensure className is not empty)
+            if (className.isNotEmpty()) className else rawName
         } else {
             rawName
         }

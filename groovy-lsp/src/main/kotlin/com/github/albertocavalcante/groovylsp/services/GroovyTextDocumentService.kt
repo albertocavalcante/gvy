@@ -127,6 +127,8 @@ class GroovyTextDocumentService(
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
+
+    @Volatile
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
     private val logger = KotlinLogging.logger {}

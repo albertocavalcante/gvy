@@ -11,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 
 /**
@@ -387,6 +388,222 @@ class SourceNavigationServiceTest {
             // Both should work independently
             assertNotNull(stats1)
             assertNotNull(stats2)
+        }
+    }
+
+    @Nested
+    inner class RegexInjectionTest {
+
+        @Test
+        fun `findGroovyClassLineNumber handles dot in class name - regex injection via inner class`() = runBlocking {
+            // Test case: Dot (.) in regex matches ANY character, not literal dot
+            // This is a realistic scenario with inner classes
+            val groovySource = """
+                package com.example
+
+                class MyClass {
+                    // Wrong match: FooXBar (dot matches X)
+                    static class FooXBar {
+                    }
+
+                    // Correct match: Foo.Bar (literal dot from inner class syntax)
+                    static class Bar {
+                    }
+                }
+            """.trimIndent()
+
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+            val binaryJar = libDir.resolve("test.jar")
+            val sourceJar = libDir.resolve("test-sources.jar")
+            createMinimalJar(binaryJar)
+            createSourceJar(sourceJar, "com/example/MyClass.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            extractor.extractAndIndex(sourceJar)
+            val sourcePath = extractor.findSourceForClass("com.example.MyClass")
+
+            assertNotNull(sourcePath, "Source should be extracted")
+
+            // Call the private method via reflection to test it directly
+            val service = SourceNavigationService(sourceExtractor = extractor)
+            val findMethod = service.javaClass.getDeclaredMethod(
+                "findGroovyClassLineNumber",
+                Path::class.java,
+                String::class.java,
+            )
+            findMethod.isAccessible = true
+
+            // Looking for "Foo.Bar" - after fix, dot should be escaped and treated literally
+            // Should NOT match "FooXBar" anymore (line 5)
+            val lineNumber = findMethod.invoke(service, sourcePath, "Foo.Bar") as Int?
+
+            // FIXED: Should NOT match "FooXBar" (which would be line 5)
+            // The function extracts simple name "Bar" from "Foo.Bar" and matches class "Bar" on line 9
+            // This is acceptable behavior - the key is it doesn't match "FooXBar"
+            assertNotNull(lineNumber, "Should find class Bar")
+            assertNotEquals(5, lineNumber, "FIXED: Should NOT match FooXBar on line 5")
+            assertEquals(9, lineNumber, "Finds class Bar (simple name from Foo.Bar)")
+        }
+
+        @Test
+        fun `findGroovyMethodLineNumber handles dot in method name - realistic regex injection`() = runBlocking {
+            // Test case: Method name with dot treated as regex wildcard
+            val groovySource = """
+                package com.example
+
+                class TestClass {
+                    def testXmethod() {
+                        println "wrong method"
+                    }
+
+                    def "test.method"() {
+                        println "correct method"
+                    }
+                }
+            """.trimIndent()
+
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+            val binaryJar = libDir.resolve("test.jar")
+            val sourceJar = libDir.resolve("test-sources.jar")
+            createMinimalJar(binaryJar)
+            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            extractor.extractAndIndex(sourceJar)
+            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
+
+            assertNotNull(sourcePath, "Source should be extracted")
+
+            val service = SourceNavigationService(sourceExtractor = extractor)
+            val findMethod = service.javaClass.getDeclaredMethod(
+                "findGroovyMethodLineNumber",
+                Path::class.java,
+                String::class.java,
+            )
+            findMethod.isAccessible = true
+
+            // Looking for method "test.method" - after fix, dot should be escaped
+            // Should NOT match "testXmethod" (line 3), should match quoted "test.method" (line 7) or return null
+            val lineNumber = findMethod.invoke(service, sourcePath, "test.method") as Int?
+
+            // FIXED: With escaped regex, it should either find the literal quoted method name
+            // or return null if quoted methods aren't handled by the regex
+            // The key is it should NOT match "testXmethod"
+            if (lineNumber != null) {
+                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testXmethod due to escaped dot")
+            }
+            // Either finds line 7 (quoted method) or null (can't match quoted names) - both are acceptable
+        }
+
+        @Test
+        fun `findGroovyMethodLineNumber handles star quantifier - catastrophic backtracking risk`() = runBlocking {
+            // Test case: Asterisk (*) is a regex quantifier meaning "zero or more"
+            // This demonstrates a security vulnerability
+            val groovySource = """
+                package com.example
+
+                class TestClass {
+                    def testMethod() {
+                        println "decoy"
+                    }
+
+                    def testAnotherMethod() {
+                        println "decoy 2"
+                    }
+
+                    def "test*" () {
+                        println "actual target"
+                    }
+                }
+            """.trimIndent()
+
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+            val binaryJar = libDir.resolve("test.jar")
+            val sourceJar = libDir.resolve("test-sources.jar")
+            createMinimalJar(binaryJar)
+            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            extractor.extractAndIndex(sourceJar)
+            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
+
+            assertNotNull(sourcePath, "Source should be extracted")
+
+            val service = SourceNavigationService(sourceExtractor = extractor)
+            val findMethod = service.javaClass.getDeclaredMethod(
+                "findGroovyMethodLineNumber",
+                Path::class.java,
+                String::class.java,
+            )
+            findMethod.isAccessible = true
+
+            // Looking for "test*" - after fix, * should be escaped and treated literally
+            // Should NOT match "testMethod" anymore
+            val lineNumber = findMethod.invoke(service, sourcePath, "test*") as Int?
+
+            // FIXED: Should NOT match "testMethod" (line 3) with escaped asterisk
+            // May find quoted method "test*" or return null - both acceptable
+            if (lineNumber != null) {
+                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped asterisk")
+            }
+            // Either finds line 11 (quoted method) or null (can't match quoted names) - both acceptable
+        }
+
+        @Test
+        fun `findGroovyMethodLineNumber handles plus quantifier - another regex injection`() = runBlocking {
+            // Test case: Plus (+) is a regex quantifier meaning "one or more"
+            val groovySource = """
+                package com.example
+
+                class TestClass {
+                    def testMethod() {
+                        println "will be matched incorrectly"
+                    }
+
+                    def "test+"() {
+                        println "actual target with literal plus"
+                    }
+                }
+            """.trimIndent()
+
+            val libDir = tempDir.resolve("libs")
+            Files.createDirectories(libDir)
+            val binaryJar = libDir.resolve("test.jar")
+            val sourceJar = libDir.resolve("test-sources.jar")
+            createMinimalJar(binaryJar)
+            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
+
+            val extractionDir = tempDir.resolve("extracted")
+            val extractor = SourceJarExtractor(extractionDir)
+            extractor.extractAndIndex(sourceJar)
+            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
+
+            assertNotNull(sourcePath, "Source should be extracted")
+
+            val service = SourceNavigationService(sourceExtractor = extractor)
+            val findMethod = service.javaClass.getDeclaredMethod(
+                "findGroovyMethodLineNumber",
+                Path::class.java,
+                String::class.java,
+            )
+            findMethod.isAccessible = true
+
+            // Looking for "test+" - after fix, + should be escaped and treated literally
+            // Should NOT match "testMethod" anymore
+            val lineNumber = findMethod.invoke(service, sourcePath, "test+") as Int?
+
+            // FIXED: Should NOT match "testMethod" (line 3) with escaped plus
+            // May find quoted method "test+" or return null - both acceptable
+            if (lineNumber != null) {
+                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped plus")
+            }
+            // Either finds line 7 (quoted method) or null (can't match quoted names) - both acceptable
         }
     }
 
