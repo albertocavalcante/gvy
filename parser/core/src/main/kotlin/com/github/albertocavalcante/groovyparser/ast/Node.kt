@@ -47,6 +47,36 @@ abstract class Node {
     abstract fun getChildNodes(): List<Node>
 
     /**
+     * Finds the deepest node that contains the given range.
+     * Returns the most specific (deepest) node that fully contains the target range.
+     * This follows JavaParser's pattern of depth-first recursive search.
+     *
+     * @param targetRange The range to search for
+     * @return An Optional containing the deepest node that contains the range, or empty if not found
+     */
+    fun findByRange(targetRange: Range): Optional<Node> {
+        // Check if this node has a valid range
+        val nodeRange = range ?: return Optional.empty()
+
+        // Check if this node's range contains the target range
+        if (!nodeRange.contains(targetRange)) {
+            return Optional.empty()
+        }
+
+        // Recursively search children (depth-first)
+        // If any child contains the range, return that child's result (the deepest match)
+        for (child in getChildNodes()) {
+            val found = child.findByRange(targetRange)
+            if (found.isPresent) {
+                return found
+            }
+        }
+
+        // No child contains the range, so this node is the deepest match
+        return Optional.of(this)
+    }
+
+    /**
      * Adds an annotation to this node.
      */
     fun addAnnotation(annotation: AnnotationExpr) {
