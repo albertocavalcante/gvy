@@ -280,11 +280,36 @@ class SourceNavigationService(
         val simpleName = className.substringAfterLast('.').substringAfterLast('$')
         val escapedName = Regex.escape(simpleName)
         val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$escapedName\b""")
+        return findPatternInGroovySource(sourcePath, pattern)
+    }
+
+    private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
+        val escapedMethodName = Regex.escape(methodName)
+        val pattern = Regex(
+            """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
+                """$escapedMethodName\s*\(""",
+        )
+        return findPatternInGroovySource(sourcePath, pattern)
+    }
+
+    /**
+     * Find the first occurrence of a pattern in Groovy source, skipping comments.
+     *
+     * Handles both line comments (//) and block comments (slash-star ... star-slash).
+     * This shared logic ensures consistent comment handling across class and method detection.
+     *
+     * @param sourcePath Path to the Groovy source file
+     * @param pattern Regex pattern to search for
+     * @return 1-based line number where pattern is found, or null if not found
+     */
+    private fun findPatternInGroovySource(sourcePath: Path, pattern: Regex): Int? {
         val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
         var inBlockComment = false
 
         for ((index, line) in lines.withIndex()) {
             var text = line
+
+            // Handle continuation of multi-line block comment
             if (inBlockComment) {
                 val end = text.indexOf("*/")
                 if (end == -1) {
@@ -294,42 +319,26 @@ class SourceNavigationService(
                 inBlockComment = false
             }
 
+            // Handle block comments within the line
             val blockStart = text.indexOf("/*")
             if (blockStart != -1) {
                 val end = text.indexOf("*/", blockStart + 2)
                 text = if (end == -1) {
+                    // Block comment continues to next line
                     inBlockComment = true
                     text.substring(0, blockStart)
                 } else {
+                    // Block comment ends on same line
                     text.removeRange(blockStart, end + 2)
                 }
             }
 
+            // Skip line comments
             if (text.trimStart().startsWith("//")) {
                 continue
             }
 
-            if (pattern.containsMatchIn(text)) {
-                return index + 1
-            }
-        }
-
-        return null
-    }
-
-    private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
-        val escapedMethodName = Regex.escape(methodName)
-        val pattern = Regex(
-            """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
-                """$escapedMethodName\s*\(""",
-        )
-        val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
-
-        for ((index, line) in lines.withIndex()) {
-            val text = line.trimStart()
-            if (text.startsWith("//")) {
-                continue
-            }
+            // Check if pattern matches after removing comments
             if (pattern.containsMatchIn(text)) {
                 return index + 1
             }
