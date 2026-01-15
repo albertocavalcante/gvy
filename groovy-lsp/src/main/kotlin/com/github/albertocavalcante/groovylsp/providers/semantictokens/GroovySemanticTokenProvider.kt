@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
@@ -152,6 +153,7 @@ object GroovySemanticTokenProvider {
                 when (node) {
                     is VariableExpression -> visitVariableExpression(node, tokens)
                     is PropertyExpression -> visitPropertyExpression(node, tokens)
+                    is ClassExpression -> visitClassExpression(node, tokens)
                     is ClosureExpression -> visitClosureExpression(node, tokens)
                     is MethodCallExpression -> visitMethodCallExpression(node, tokens)
                     is StaticMethodCallExpression -> visitStaticMethodCallExpression(node, tokens)
@@ -278,6 +280,22 @@ object GroovySemanticTokenProvider {
         // Add token for class/interface/enum declaration
         addClassDeclarationToken(classNode, tokens)
 
+        // Tokenize class annotations (e.g., @Entity, @Service)
+        classNode.annotations?.forEach { annotation ->
+            if (annotation.lineNumber > 0 && annotation.columnNumber > 0) {
+                val annotationName = annotation.classNode?.nameWithoutPackage ?: return@forEach
+                tokens.add(
+                    SemanticToken(
+                        line = annotation.lineNumber - 1,
+                        startChar = annotation.columnNumber - 1,
+                        length = annotationName.length + 1, // +1 for @ symbol
+                        tokenType = TokenTypes.DECORATOR,
+                        tokenModifiers = 0,
+                    ),
+                )
+            }
+        }
+
         // Visit members
         visitClassMembers(classNode, tokens)
 
@@ -386,6 +404,23 @@ object GroovySemanticTokenProvider {
         // Calculate offset from declaration start to method name
         val nameOffset = calculateMethodNameOffset(method)
         addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
+
+        // Tokenize annotations (e.g., @Override, @Test)
+        method.annotations?.forEach { annotation ->
+            if (annotation.lineNumber > 0 && annotation.columnNumber > 0) {
+                val annotationName = annotation.classNode?.nameWithoutPackage ?: return@forEach
+                // Token starts at @ symbol, so use annotation's position directly
+                tokens.add(
+                    SemanticToken(
+                        line = annotation.lineNumber - 1,
+                        startChar = annotation.columnNumber - 1,
+                        length = annotationName.length + 1, // +1 for @ symbol
+                        tokenType = TokenTypes.DECORATOR,
+                        tokenModifiers = 0,
+                    ),
+                )
+            }
+        }
 
         // Visit parameters
         method.parameters.forEach { param ->
@@ -524,16 +559,125 @@ object GroovySemanticTokenProvider {
 
     /**
      * Visit a property expression (e.g., obj.property).
+     * Tokenizes both the receiver (obj) and the property.
      */
     private fun visitPropertyExpression(propExpr: PropertyExpression, tokens: MutableList<SemanticToken>) {
-        if (propExpr.property.lineNumber < 0) {
+        val propertyName = propExpr.propertyAsString
+
+        // Special case: Handle '.class' expressions like 'String.class', 'Map.class'
+        // In Groovy AST, 'String.class' is represented as:
+        //   PropertyExpression(objectExpression=VariableExpression("String"), property="class")
+        // The VariableExpression's name is the class name (e.g., "String", "Map", "List")
+        if (propertyName == "class") {
+            val receiver = propExpr.objectExpression
+            if (receiver is VariableExpression && receiver.lineNumber > 0) {
+                // Check if the variable name starts with uppercase (indicates a class reference)
+                val varName = receiver.name
+                if (varName.isNotEmpty() && varName[0].isUpperCase()) {
+                    // This is a class literal - tokenize the class name
+                    // Try to get type information if available
+                    val tokenType = if (receiver.type != null) {
+                        getTokenTypeForClassNode(receiver.type)
+                    } else {
+                        TokenTypes.CLASS // Default to CLASS type
+                    }
+                    addTokenForNode(receiver, varName.length, tokenType, 0, tokens)
+                }
+            } else if (receiver is ClassExpression) {
+                // Handle explicit ClassExpression (less common)
+                val classType = receiver.type
+                if (classType != null) {
+                    val className = classType.nameWithoutPackage
+                    if (className.isNotEmpty()) {
+                        if (receiver.lineNumber > 0 && receiver.columnNumber > 0) {
+                            tokens.add(
+                                SemanticToken(
+                                    line = receiver.lineNumber - 1,
+                                    startChar = receiver.columnNumber - 1,
+                                    length = className.length,
+                                    tokenType = getTokenTypeForClassNode(classType),
+                                    tokenModifiers = 0,
+                                ),
+                            )
+                        } else if (propExpr.lineNumber > 0 && propExpr.columnNumber > 0) {
+                            tokens.add(
+                                SemanticToken(
+                                    line = propExpr.lineNumber - 1,
+                                    startChar = propExpr.columnNumber - 1,
+                                    length = className.length,
+                                    tokenType = getTokenTypeForClassNode(classType),
+                                    tokenModifiers = 0,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Tokenize 'class' keyword
+            if (propExpr.property.lineNumber >= 0) {
+                addTokenForNode(propExpr.property, "class".length, TokenTypes.KEYWORD, 0, tokens)
+            }
             return
         }
 
-        // The property part (after the dot)
-        val propertyName = propExpr.propertyAsString ?: return
+        // Regular property expression handling
+        val receiver = propExpr.objectExpression
+        if (receiver is VariableExpression && !receiver.isThisExpression && !receiver.isSuperExpression) {
+            if (receiver.lineNumber > 0) {
+                val tokenType = when {
+                    receiver.accessedVariable is Parameter -> TokenTypes.PARAMETER
+                    receiver.accessedVariable is FieldNode -> TokenTypes.PROPERTY
+                    else -> TokenTypes.VARIABLE
+                }
+                addTokenForNode(receiver, receiver.name.length, tokenType, 0, tokens)
+            }
+        }
 
-        addTokenForNode(propExpr.property, propertyName.length, TokenTypes.PROPERTY, 0, tokens)
+        // Tokenize property
+        if (propExpr.property.lineNumber < 0) {
+            return
+        }
+        addTokenForNode(propExpr.property, propertyName?.length ?: 0, TokenTypes.PROPERTY, 0, tokens)
+    }
+
+    /**
+     * Visit a class expression (e.g., String.class).
+     * This handles class literals where the ClassExpression is directly in the AST.
+     */
+    private fun visitClassExpression(classExpr: ClassExpression, tokens: MutableList<SemanticToken>) {
+        // ClassExpression is used in .class literals like String.class, Map.class
+        if (classExpr.lineNumber > 0 && classExpr.columnNumber > 0) {
+            val classType = classExpr.type
+            if (classType != null) {
+                val className = classType.nameWithoutPackage
+                if (className.isNotEmpty()) {
+                    // For .class literals, always use CLASS token type regardless of whether
+                    // the type is actually a class, interface, or enum. This matches IDE conventions.
+                    tokens.add(
+                        SemanticToken(
+                            line = classExpr.lineNumber - 1,
+                            startChar = classExpr.columnNumber - 1,
+                            length = className.length,
+                            tokenType = TokenTypes.CLASS,
+                            tokenModifiers = 0,
+                        ),
+                    )
+
+                    // Also add a token for the '.class' keyword suffix
+                    // The 'class' keyword starts at: classNameStart + classNameLength + 1 (for the '.')
+                    tokens.add(
+                        SemanticToken(
+                            line = classExpr.lineNumber - 1,
+                            startChar = classExpr.columnNumber - 1 + className.length + 1,
+                            length = 5, // "class".length
+                            tokenType = TokenTypes.KEYWORD,
+                            tokenModifiers = 0,
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -548,8 +692,23 @@ object GroovySemanticTokenProvider {
 
     /**
      * Visit a method call expression (e.g., obj.method() or method()).
+     * Tokenizes both the receiver (obj) and the method name.
      */
     private fun visitMethodCallExpression(methodCall: MethodCallExpression, tokens: MutableList<SemanticToken>) {
+        // Tokenize receiver (e.g., 'binding' in 'binding.setVariable()')
+        val receiver = methodCall.objectExpression
+        if (receiver is VariableExpression && !receiver.isThisExpression && !receiver.isSuperExpression) {
+            if (receiver.lineNumber > 0) {
+                val tokenType = when {
+                    receiver.accessedVariable is Parameter -> TokenTypes.PARAMETER
+                    receiver.accessedVariable is FieldNode -> TokenTypes.PROPERTY
+                    else -> TokenTypes.VARIABLE
+                }
+                addTokenForNode(receiver, receiver.name.length, tokenType, 0, tokens)
+            }
+        }
+
+        // Tokenize method name
         val method = methodCall.method
         if (method.lineNumber < 0) {
             return

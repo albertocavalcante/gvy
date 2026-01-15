@@ -210,31 +210,69 @@
     ],
     "semanticTokenScopes": [
       {
-        "language": "jenkinsfile",
+        "language": "groovy",
         "scopes": {
-          "macro": [
-            "entity.name.tag.pipeline.jenkins"
-          ],
-          "decorator": [
-            "entity.name.function.decorator.jenkins"
-          ],
-          "*.unnecessary": [
-            "meta.unnecessary"
-          ]
+          "namespace": ["entity.name.namespace"],
+          "type": ["entity.name.type"],
+          "class": ["entity.name.type.class"],
+          "enum": ["entity.name.type.enum"],
+          "interface": ["entity.name.type.interface"],
+          "struct": ["entity.name.type.struct"],
+          "typeParameter": ["entity.name.type.parameter"],
+          "parameter": ["variable.parameter"],
+          "variable": ["variable.other"],
+          "property": ["variable.other.property"],
+          "enumMember": ["variable.other.enummember"],
+          "function": ["entity.name.function"],
+          "method": ["entity.name.function.member"],
+          "macro": ["entity.name.tag.pipeline.jenkins"],
+          "keyword": ["keyword"],
+          "modifier": ["storage.modifier"],
+          "comment": ["comment"],
+          "string": ["string"],
+          "number": ["constant.numeric"],
+          "regexp": ["string.regexp"],
+          "operator": ["keyword.operator"],
+          "decorator": ["entity.name.function.decorator"],
+          "*.declaration": ["entity.name.function.definition"],
+          "*.definition": ["entity.name.function.definition"],
+          "*.readonly": ["variable.other.constant"],
+          "*.static": ["entity.name.function.static"],
+          "*.deprecated": ["invalid.deprecated"],
+          "*.unnecessary": ["meta.unnecessary"]
         }
       },
       {
-        "language": "groovy",
+        "language": "jenkinsfile",
         "scopes": {
-          "macro": [
-            "entity.name.tag.pipeline.jenkins"
-          ],
-          "decorator": [
-            "entity.name.function.decorator.jenkins"
-          ],
-          "*.unnecessary": [
-            "meta.unnecessary"
-          ]
+          "namespace": ["entity.name.namespace"],
+          "type": ["entity.name.type"],
+          "class": ["entity.name.type.class"],
+          "enum": ["entity.name.type.enum"],
+          "interface": ["entity.name.type.interface"],
+          "struct": ["entity.name.type.struct"],
+          "typeParameter": ["entity.name.type.parameter"],
+          "parameter": ["variable.parameter"],
+          "variable": ["variable.other"],
+          "property": ["variable.other.property"],
+          "enumMember": ["variable.other.enummember"],
+          "function": ["entity.name.function"],
+          "method": ["entity.name.function.member"],
+          "macro": ["entity.name.tag.pipeline.jenkins"],
+          "keyword": ["keyword"],
+          "modifier": ["storage.modifier"],
+          "comment": ["comment"],
+          "string": ["string"],
+          "number": ["constant.numeric"],
+          "regexp": ["string.regexp"],
+          "operator": ["keyword.operator"],
+          "decorator": ["entity.name.function.decorator"],
+          "*.declaration": ["entity.name.function.definition"],
+          "*.definition": ["entity.name.function.definition"],
+          "*.readonly": ["variable.other.constant"],
+          "*.static": ["entity.name.function.static"],
+          "*.deprecated": ["invalid.deprecated"],
+          "*.unnecessary": ["meta.unnecessary"]
         }
       }
     ],
