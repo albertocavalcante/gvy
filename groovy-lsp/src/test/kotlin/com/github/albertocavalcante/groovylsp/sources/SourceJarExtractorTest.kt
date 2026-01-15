@@ -45,6 +45,22 @@ class SourceJarExtractorTest {
     }
 
     @Test
+    fun `extractAndIndex - extracts groovy files from source jar`() {
+        val sourceJar = createTestSourceJar(
+            "com/example/util/Helper.groovy" to "package com.example.util\nclass Helper {}",
+        )
+
+        val index = extractor.extractAndIndex(sourceJar)
+
+        assertEquals(1, index.size)
+        val helperPath = index["com.example.util.Helper"]
+        assertNotNull(helperPath)
+        assertTrue(helperPath.toString().endsWith("Helper.groovy"))
+        assertTrue(Files.exists(helperPath))
+        assertTrue(Files.readString(helperPath).contains("class Helper"))
+    }
+
+    @Test
     fun `extractAndIndex - caches results`() {
         val sourceJar = createTestSourceJar(
             "com/example/Test.java" to "package com.example; class Test {}",

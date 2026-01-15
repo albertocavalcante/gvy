@@ -113,6 +113,7 @@ data class GroovyTextDocumentServiceOptions(
     val documentProvider: DocumentProvider = DocumentProvider(),
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
+    val definitionLinkSupport: Boolean = false,
 )
 
 class GroovyTextDocumentService(
@@ -127,7 +128,15 @@ class GroovyTextDocumentService(
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
 
+    @Volatile
+    private var definitionLinkSupport: Boolean = options.definitionLinkSupport
+
     private val logger = KotlinLogging.logger {}
+
+    fun updateDefinitionLinkSupport(supported: Boolean) {
+        definitionLinkSupport = supported
+        logger.info { "Definition link support set to $supported" }
+    }
 
     companion object {
         /**
@@ -711,13 +720,30 @@ class GroovyTextDocumentService(
                     telemetrySink = telemetrySink,
                 )
 
+                if (definitionLinkSupport) {
+                    val links = definitionProvider.provideDefinitionLinks(
+                        params.textDocument.uri,
+                        params.position,
+                    ).toList()
+                    if (links.isNotEmpty()) {
+                        logger.debug {
+                            "Returning ${links.size} definition links (first=${links.first().targetUri})"
+                        }
+                        return@future Either.forRight(links)
+                    }
+                }
+
                 // Get definitions using Flow pattern
                 val locations = definitionProvider.provideDefinitions(
                     params.textDocument.uri,
                     params.position,
                 ).toList()
 
-                logger.debug { "Found ${locations.size} definitions" }
+                if (locations.isNotEmpty()) {
+                    logger.debug { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
+                } else {
+                    logger.debug { "Found 0 definitions" }
+                }
 
                 Either.forLeft(locations)
             } catch (e: CancellationException) {
@@ -1039,6 +1065,13 @@ class GroovyTextDocumentService(
 
                 // Combine all tokens and encode
                 val allTokens = combineTokens(groovyTokens, jenkinsTokens)
+                    .sortedWith(
+                        compareBy<JenkinsSemanticTokenProvider.SemanticToken> { it.line }
+                            .thenBy { it.startChar }
+                            .thenBy { it.length }
+                            .thenBy { it.tokenType }
+                            .thenBy { it.tokenModifiers },
+                    )
                 val encodedData = encodeSemanticTokens(allTokens)
 
                 logger.debug { "Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)" }

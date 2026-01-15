@@ -64,6 +64,30 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse retries at conversion when compilation fails without diagnostics`() {
+        val code = """
+            import com.lesfurets.jenkins.unit.declarative.DeclarativePipelineTest
+
+            class BaseTest extends DeclarativePipelineTest {
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///BaseTest.groovy"),
+                content = code,
+            ),
+        )
+
+        assertNotNull(result.ast)
+        assertTrue(
+            result.diagnostics.none { it.message.startsWith("Compilation failed:") },
+            "Expected retry to avoid generic compilation failure diagnostics",
+        )
+        assertTrue(result.ast.classes.any { it.nameWithoutPackage == "BaseTest" })
+    }
+
+    @Test
     fun `workspace sources are added to compilation unit`() {
         val extraSource = tempDir.resolve("Extra.groovy").toFile()
         extraSource.writeText(
@@ -415,6 +439,33 @@ class GroovyParserFacadeTest {
         assertTrue(result.isSuccessful, "Parse should succeed with multiple JARs containing transformation services")
         assertNotNull(result.ast, "AST should be populated")
         assertEquals(0, result.diagnostics.size, "No diagnostics expected")
+    }
+
+    @Test
+    fun `parse succeeds with unresolved superclass`() {
+        val code = """
+            import com.unknown.UnresolvedClass
+
+            class MyTest extends UnresolvedClass {
+                void testMethod() {
+                    println "hello"
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Test.groovy"),
+                content = code,
+            ),
+        )
+
+        assertTrue(result.isSuccessful, "Parsing should succeed even with unresolved imports")
+        assertNotNull(result.ast, "AST should be present")
+
+        val classNode = result.ast.classes.find { it.nameWithoutPackage == "MyTest" }
+        assertNotNull(classNode, "MyTest class should be in AST")
+        assertEquals("UnresolvedClass", classNode.superClass?.nameWithoutPackage)
     }
 
     @Test

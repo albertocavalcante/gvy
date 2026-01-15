@@ -1,0 +1,130 @@
+name: definition-crossfile-spock-baseclass
+description: Cross-file go-to-definition for Spock tests with a shared base class and local imports
+
+workspace:
+  fixture: empty-workspace
+
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.server.logLevel: DEBUG
+        groovy.engine.type: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  - openDocument:
+      path: test/groovy/com/example/BaseSpec.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        import spock.lang.Specification
+
+        class BaseSpec extends Specification {
+            protected String baseName() { "base" }
+        }
+
+  - openDocument:
+      path: test/groovy/mock/Infra.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package mock
+
+        class Infra {
+            String id() { "infra" }
+        }
+
+  - openDocument:
+      path: test/groovy/com/example/BuildPluginStepTests.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package com.example
+
+        import mock.Infra
+
+        class BuildPluginStepTests extends BaseSpec {
+            Infra infra = new Infra()
+
+            String value() {
+                return infra.id()
+            }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # TEST: Click on BaseSpec in class declaration
+  # Line 4: "class BuildPluginStepTests extends BaseSpec {"
+  #                                           ^-- char 35 is on 'B' of BaseSpec
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}test/groovy/com/example/BuildPluginStepTests.groovy"
+        position:
+          line: 4
+          character: 35
+      saveAs: baseClassResult
+
+  - assert:
+      source: baseClassResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "BaseSpec.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 4
+
+  # TEST: Click on Infra in constructor call
+  # Line 5: "    Infra infra = new Infra()"
+  #                           ^-- char 22 is on 'I' of Infra
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}test/groovy/com/example/BuildPluginStepTests.groovy"
+        position:
+          line: 5
+          character: 22
+      saveAs: importResult
+
+  - assert:
+      source: importResult
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.items[0].uri
+          expect:
+            type: CONTAINS
+            value: "Infra.groovy"
+        - jsonPath: $.items[0].range.start.line
+          expect:
+            type: EQUALS
+            value: 2
+
+  - shutdown: {}
+  - exit: {}

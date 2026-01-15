@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ImportNode
 
 /**
  * Resolves symbols using SemanticDB and WorkspaceSymbolIndex for full cross-file resolution.
@@ -28,6 +29,11 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
     @Suppress("ReturnCount") // Multiple validation checks require early returns
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
         logger.debug { "Attempting SemanticDB resolution at ${context.documentUri}:${context.position}" }
+
+        if (context.targetNode is ImportNode) {
+            logger.debug { "Skipping SemanticDB resolution for ImportNode" }
+            return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        }
 
         // 1. Get SemanticDocument for current file
         val document = workspaceSymbolIndex.getDocument(context.documentUri)
@@ -127,8 +133,10 @@ class SemanticDBResolutionStrategy(private val workspaceSymbolIndex: WorkspaceSy
         private const val STRATEGY_NAME = "SemanticDB"
 
         /**
-         * Priority weight for multi-line occurrences (line count is more significant than column offset).
-         * Used in occurrence selection to differentiate multi-line ranges from single-line ranges.
+         * Priority weight for multi-line occurrences.
+         *
+         * NOTE: Value chosen to ensure any multi-line range is deprioritized
+         * compared to single-line ranges (max ~200 chars/line). 10000 >> 200.
          */
         private const val MULTI_LINE_PRIORITY_WEIGHT = 10000
     }

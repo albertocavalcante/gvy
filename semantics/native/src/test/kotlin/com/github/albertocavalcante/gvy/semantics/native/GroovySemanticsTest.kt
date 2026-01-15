@@ -14,6 +14,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -135,8 +136,13 @@ class GroovySemanticsTest {
     }
 
     private fun parse(code: String): ModuleNode {
+        // Use CANONICALIZATION phase for proper type resolution (e.g., String -> java.lang.String)
         val request =
-            ParseRequest(URI.create("file:///Test.groovy"), code)
+            ParseRequest(
+                URI.create("file:///Test.groovy"),
+                code,
+                compilePhase = Phases.CANONICALIZATION,
+            )
         val result = parser.parse(request)
         if (!result.isSuccessful) {
             error("Parse failed: " + result.diagnostics)

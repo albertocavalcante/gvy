@@ -45,13 +45,14 @@ data class ParseRequest(
     /**
      * Groovy compilation phase to compile to.
      *
-     * Default is [Phases.CANONICALIZATION] to preserve current behavior.
+     * Default is [Phases.CONVERSION] for fault tolerance - this phase builds the AST
+     * without resolving types, allowing parsing to succeed even when imports are unresolved.
      *
      * This can be used to analyze source structure that may be rewritten by later compiler phases or AST transforms.
      * Example: Spock feature blocks are represented as Groovy statement labels and can be best observed before
      * `SEMANTIC_ANALYSIS` transforms run.
      */
-    val compilePhase: Int = Phases.CANONICALIZATION,
+    val compilePhase: Int = Phases.CONVERSION,
     /**
      * Parse mode controlling workspace source inclusion.
      *

@@ -148,6 +148,16 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     private fun visitMethod(methodNode: MethodNode) {
         track(methodNode) {
             visitAnnotations(methodNode)
+            // Track return type ClassNode so hover/definition works on return type references
+            // e.g., "String getName()" - hovering on "String" should show String class info
+            methodNode.returnType?.let { returnType ->
+                track(returnType) { /* no-op */ }
+            }
+            // Track throws clause type ClassNodes so hover/definition works on exception types
+            // e.g., "void foo() throws Exception" - hovering on "Exception" should show Exception class info
+            methodNode.exceptions?.forEach { exceptionType ->
+                track(exceptionType) { /* no-op */ }
+            }
             methodNode.parameters?.forEach { visitParameter(it) }
             methodNode.code?.visit(codeVisitor)
         }
@@ -156,6 +166,11 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     private fun visitField(fieldNode: FieldNode) {
         track(fieldNode) {
             visitAnnotations(fieldNode)
+            // Track field type ClassNode so hover/definition works on field type references
+            // e.g., "String name" - hovering on "String" should show String class info
+            fieldNode.type?.let { fieldType ->
+                track(fieldType) { /* no-op */ }
+            }
             fieldNode.initialExpression?.visit(codeVisitor)
         }
     }
@@ -170,6 +185,11 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
     private fun visitParameter(parameter: Parameter) {
         visitAnnotations(parameter)
+        // FIXME: Parameter type hover doesn't work - see https://github.com/albertocavalcante/gvy/issues/865
+        // We intentionally do NOT track parameter.type here because Groovy AST gives parameter types
+        // position info that overlaps with the parameter name (lastColumnNumber includes trailing whitespace).
+        // This causes position-based queries to return the type ClassNode instead of the Parameter when
+        // hovering on the parameter NAME. The Parameter node itself provides sufficient info for hover/definition.
         track(parameter) {}
     }
 
@@ -301,6 +321,19 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             // Match legacy delegate: track the call, but only visit argument elements (not the tuple itself).
+            if (logger.isDebugEnabled()) {
+                if (shouldTrack(call)) {
+                    logger.debug {
+                        "[visitMethodCallExpression] Tracking: ${call.methodAsString} " +
+                            "@ ${call.lineNumber}:${call.columnNumber}-${call.lastLineNumber}:${call.lastColumnNumber}"
+                    }
+                } else {
+                    logger.debug {
+                        "[visitMethodCallExpression] SKIPPED (invalid position): ${call.methodAsString} " +
+                            "@ ${call.lineNumber}:${call.columnNumber}"
+                    }
+                }
+            }
             track(call) {
                 val args = call.arguments
                 if (args is TupleExpression) {
@@ -330,6 +363,12 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
+            if (logger.isDebugEnabled() && !shouldTrack(expression)) {
+                logger.debug {
+                    "[visitPropertyExpression] SKIPPED (invalid position): ${expression.propertyAsString} " +
+                        "@ ${expression.lineNumber}:${expression.columnNumber}"
+                }
+            }
             visitWithTracking(expression) { super.visitPropertyExpression(it) }
         }
 

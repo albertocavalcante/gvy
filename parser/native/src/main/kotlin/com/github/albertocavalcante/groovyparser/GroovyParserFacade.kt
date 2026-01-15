@@ -33,6 +33,7 @@ import kotlin.io.path.isRegularFile
  */
 private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
 
 /**
  * A GroovyClassLoader that filters out AST transformation service discovery.
@@ -113,6 +114,11 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
         }
 
+        if (shouldRetryOnCompilationFailure(request, result)) {
+            logger.info { "Detected compilation failure for ${request.uri}, retrying at CONVERSION phase" }
+            return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
+        }
+
         return result
     }
 
@@ -184,6 +190,27 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         return shouldRetry
     }
 
+    private fun shouldRetryOnCompilationFailure(request: ParseRequest, result: ParseResult): Boolean {
+        if (request.compilePhase <= Phases.CONVERSION) {
+            logger.debug {
+                "shouldRetryOnCompilationFailure: false - already at CONVERSION or earlier (phase=${request.compilePhase})"
+            }
+            return false
+        }
+
+        val hasFallbackError = result.diagnostics.any { diagnostic ->
+            diagnostic.severity == ParserSeverity.ERROR &&
+                diagnostic.source == "GroovyParser" &&
+                diagnostic.message.startsWith(COMPILATION_FAILED_MESSAGE_PREFIX)
+        }
+
+        if (!hasFallbackError) {
+            logger.debug { "shouldRetryOnCompilationFailure: false - no fallback compilation error detected" }
+        }
+
+        return hasFallbackError
+    }
+
     private fun parseInternal(request: ParseRequest): ParseResult {
         // Collect all classpath entries for transformation scanning
         val allClasspath = request.classpath + request.sourceRoots
@@ -226,7 +253,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                 com.github.albertocavalcante.nativeapi.ParserDiagnostic(
                     range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
                     severity = ParserSeverity.ERROR,
-                    message = "Compilation failed: $errorMessage",
+                    message = "$COMPILATION_FAILED_MESSAGE_PREFIX $errorMessage",
                     source = "GroovyParser",
                 ),
             )

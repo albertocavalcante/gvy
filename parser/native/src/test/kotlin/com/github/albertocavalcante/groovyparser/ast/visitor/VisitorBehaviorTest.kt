@@ -261,7 +261,7 @@ class VisitorBehaviorTest {
             }
         """.trimIndent()
 
-        val result = fixture.parse(code)
+        val result = fixture.parse(code, compilePhase = org.codehaus.groovy.control.Phases.CANONICALIZATION)
         assertTrue(result.isSuccessful)
 
         val visitor = result.astModel
