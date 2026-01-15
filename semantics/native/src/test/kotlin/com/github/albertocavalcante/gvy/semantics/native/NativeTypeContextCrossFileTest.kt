@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -33,7 +34,12 @@ class NativeTypeContextCrossFileTest {
     }
 
     private fun parse(code: String): ModuleNode {
-        val request = ParseRequest(URI.create("file:///Test.groovy"), code)
+        // Use CANONICALIZATION phase for proper type resolution (e.g., String -> java.lang.String)
+        val request = ParseRequest(
+            URI.create("file:///Test.groovy"),
+            code,
+            compilePhase = Phases.CANONICALIZATION,
+        )
         val result = parser.parse(request)
         if (!result.isSuccessful) {
             error("Parse failed: " + result.diagnostics)
