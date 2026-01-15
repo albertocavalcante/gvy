@@ -216,8 +216,11 @@ class DefinitionProvider(
         val line = (node.lineNumber - 1).takeIf { it >= 0 } ?: return null
 
         // Second try: compute from objectExpression's end position
+        // For `obj.property`, the property starts right after the dot
         val objExpr = node.objectExpression
-        if (objExpr != null && objExpr.lastColumnNumber > 0) {
+        if (objExpr != null && !node.isImplicitThis && objExpr.lastColumnNumber > 0) {
+            // objExpr.lastColumnNumber is 1-based exclusive end, which equals the 0-based column of '.'
+            // Property name starts at the next column
             val startCol = objExpr.lastColumnNumber
             logger.debug { "Property: computed from objectExpression end ($propertyName at col $startCol)" }
             return Range(Position(line, startCol), Position(line, startCol + propertyName.length))
