@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38
+    - uses: googleapis/release-please-action@64d83e95d898ede84e4555719aba555c3244d469
       with:
         token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
         config-file: tools/release-please/config.json
