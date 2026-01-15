@@ -1,14 +1,18 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 
 class AstPositionQueryTest {
@@ -56,7 +60,7 @@ class AstPositionQueryTest {
     fun `find node at import class name`() {
         val code = """
             import org.junit.Test
-            
+
             class C { }
         """.trimIndent()
 
@@ -298,6 +302,246 @@ class AstPositionQueryTest {
         assertTrue(
             node is MethodCallExpression,
             "Expected MethodCallExpression at method name position, but got ${node?.javaClass?.simpleName}",
+        )
+    }
+
+    // =========================================================================
+    // Method signature type reference tests - these should return ClassNode
+    // =========================================================================
+
+    @Test
+    fun `find node at throws clause type - should return ClassNode not MethodNode`() {
+        // This is the exact bug reported: hovering on Exception shows method info
+        val code = """
+            class MyTest {
+                void setUp() throws Exception {
+                    println "setup"
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful, "Code should parse successfully")
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        // Find "Exception" position on the throws clause line
+        val throwsLine = code.lines().indexOfFirst { it.contains("throws Exception") }
+        assertTrue(throwsLine >= 0, "Expected to find throws clause line")
+
+        val lineContent = code.lines()[throwsLine]
+        val exceptionCol = lineContent.indexOf("Exception")
+        assertTrue(exceptionCol >= 0, "Expected to find Exception in throws clause")
+
+        // Query at "Exception" position (inside the identifier)
+        val node = visitor.getNodeAt(uri, throwsLine, exceptionCol + 3)
+        assertNotNull(node, "Should find node at throws clause type position")
+
+        // THIS IS THE BUG: We get MethodNode when we should get ClassNode
+        assertTrue(
+            node is ClassNode,
+            "Expected ClassNode at throws clause type, but got ${node?.javaClass?.simpleName}. " +
+                "Hovering on 'Exception' should show Exception class info, not the method info!",
+        )
+
+        // Verify it's the Exception type, not the containing class
+        if (node is ClassNode) {
+            assertTrue(
+                node.name.contains("Exception"),
+                "Expected Exception ClassNode but got ${node.name}",
+            )
+        }
+    }
+
+    @Test
+    fun `find node at return type - should return ClassNode not MethodNode`() {
+        val code = """
+            class MyClass {
+                String getName() {
+                    return "test"
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        // Find "String" return type position
+        val methodLine = code.lines().indexOfFirst { it.contains("String getName") }
+        assertTrue(methodLine >= 0, "Expected to find method declaration line")
+
+        val lineContent = code.lines()[methodLine]
+        val stringCol = lineContent.indexOf("String")
+        assertTrue(stringCol >= 0, "Expected to find String return type")
+
+        // Query at "String" position
+        val node = visitor.getNodeAt(uri, methodLine, stringCol + 2)
+        assertNotNull(node, "Should find node at return type position")
+
+        // We want ClassNode for "String", not MethodNode for "getName"
+        assertTrue(
+            node is ClassNode,
+            "Expected ClassNode at return type, but got ${node?.javaClass?.simpleName}. " +
+                "Hovering on return type should show type info!",
+        )
+    }
+
+    // TODO: Fix parameter type position overlap - see https://github.com/albertocavalcante/gvy/issues/865
+    // Groovy AST reports parameter type positions that overlap with parameter names,
+    // causing position-based queries to return the wrong node (Parameter instead of ClassNode).
+    @Disabled("Parameter type positions overlap with parameter names in Groovy AST - see issue #865")
+    @Test
+    fun `find node at parameter type - should return ClassNode not Parameter`() {
+        val code = """
+            class MyClass {
+                void process(String input, Integer count) {
+                    println input
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        // Find parameter types
+        val methodLine = code.lines().indexOfFirst { it.contains("void process") }
+        assertTrue(methodLine >= 0, "Expected to find method declaration line")
+
+        val lineContent = code.lines()[methodLine]
+
+        // Test first parameter type: String
+        val stringCol = lineContent.indexOf("String")
+        assertTrue(stringCol >= 0, "Expected to find String parameter type")
+
+        val stringNode = visitor.getNodeAt(uri, methodLine, stringCol + 2)
+        assertNotNull(stringNode, "Should find node at String parameter type position")
+        assertTrue(
+            stringNode is ClassNode,
+            "Expected ClassNode at parameter type 'String', but got ${stringNode?.javaClass?.simpleName}",
+        )
+
+        // Test second parameter type: Integer
+        val integerCol = lineContent.indexOf("Integer")
+        assertTrue(integerCol >= 0, "Expected to find Integer parameter type")
+
+        val integerNode = visitor.getNodeAt(uri, methodLine, integerCol + 2)
+        assertNotNull(integerNode, "Should find node at Integer parameter type position")
+        assertTrue(
+            integerNode is ClassNode,
+            "Expected ClassNode at parameter type 'Integer', but got ${integerNode?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
+    fun `find node at parameter name - should return Parameter not ClassNode`() {
+        // Counterpart test: when hovering on parameter NAME, we want Parameter node
+        val code = """
+            class MyClass {
+                void process(String input) {
+                    println input
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        val methodLine = code.lines().indexOfFirst { it.contains("void process") }
+        val lineContent = code.lines()[methodLine]
+
+        // Find "input" parameter name (after "String ")
+        val inputCol = lineContent.indexOf("input")
+        assertTrue(inputCol >= 0, "Expected to find 'input' parameter name")
+
+        val node = visitor.getNodeAt(uri, methodLine, inputCol + 2)
+        assertNotNull(node, "Should find node at parameter name position")
+
+        // At parameter name, we want Parameter or VariableExpression, not ClassNode
+        assertTrue(
+            node is org.codehaus.groovy.ast.Parameter,
+            "Expected Parameter at parameter name 'input', but got ${node?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
+    fun `find node at multiple throws clause types`() {
+        val code = """
+            import java.io.IOException
+
+            class MyClass {
+                void riskyMethod() throws IOException, IllegalArgumentException {
+                    throw new IOException()
+                }
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        val methodLine = code.lines().indexOfFirst { it.contains("throws IOException") }
+        val lineContent = code.lines()[methodLine]
+
+        // Test first exception type: IOException
+        val ioCol = lineContent.indexOf("IOException")
+        assertTrue(ioCol >= 0, "Expected to find IOException")
+
+        val ioNode = visitor.getNodeAt(uri, methodLine, ioCol + 3)
+        assertNotNull(ioNode, "Should find node at IOException position")
+        assertTrue(
+            ioNode is ClassNode,
+            "Expected ClassNode at 'IOException', but got ${ioNode?.javaClass?.simpleName}",
+        )
+
+        // Test second exception type: IllegalArgumentException
+        val illegalCol = lineContent.indexOf("IllegalArgumentException")
+        assertTrue(illegalCol >= 0, "Expected to find IllegalArgumentException")
+
+        val illegalNode = visitor.getNodeAt(uri, methodLine, illegalCol + 5)
+        assertNotNull(illegalNode, "Should find node at IllegalArgumentException position")
+        assertTrue(
+            illegalNode is ClassNode,
+            "Expected ClassNode at 'IllegalArgumentException', but got ${illegalNode?.javaClass?.simpleName}",
+        )
+    }
+
+    @Test
+    fun `find node at field type - should return ClassNode not FieldNode`() {
+        val code = """
+            class MyClass {
+                String name
+                Integer count
+            }
+        """.trimIndent()
+
+        val result = fixture.parse(code)
+        assertTrue(result.isSuccessful)
+        val visitor = result.astModel
+        val uri = java.net.URI.create("file:///Test.groovy")
+
+        // Find String field type
+        val fieldLine = code.lines().indexOfFirst { it.contains("String name") }
+        assertTrue(fieldLine >= 0, "Expected to find field declaration line")
+
+        val lineContent = code.lines()[fieldLine]
+        val stringCol = lineContent.indexOf("String")
+        assertTrue(stringCol >= 0, "Expected to find String field type")
+
+        val node = visitor.getNodeAt(uri, fieldLine, stringCol + 2)
+        assertNotNull(node, "Should find node at field type position")
+
+        // We want ClassNode for "String", not FieldNode
+        assertTrue(
+            node is ClassNode,
+            "Expected ClassNode at field type 'String', but got ${node?.javaClass?.simpleName}. " +
+                "Hovering on field type should show type info!",
         )
     }
 }

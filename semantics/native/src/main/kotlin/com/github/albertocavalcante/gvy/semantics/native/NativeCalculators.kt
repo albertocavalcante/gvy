@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.calculator.impl.ListExpression
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.MapExpressionCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.MethodCallCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.impl.PropertyAccessCalculator
+import com.github.albertocavalcante.gvy.semantics.native.adapters.ClassNodeCalculator
 import com.github.albertocavalcante.gvy.semantics.native.adapters.ClosureExpressionAdapter
 import com.github.albertocavalcante.gvy.semantics.native.adapters.DeclarationExpressionAdapter
 import com.github.albertocavalcante.gvy.semantics.native.adapters.FieldNodeCalculator
@@ -34,6 +35,7 @@ object NativeCalculators {
 
     fun createRegistry(): TypeCalculatorRegistry = TypeCalculatorRegistry.builder()
         // Direct node type calculators (highest priority)
+        .register(ClassNodeCalculator)
         .register(FieldNodeCalculator)
         .register(MethodNodeCalculator)
         .register(ParameterCalculator)
