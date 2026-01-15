@@ -19,6 +19,29 @@ import com.github.albertocavalcante.groovyparser.ast.ImportDeclaration
 import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.PackageDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
+import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.ListExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MapExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
+import com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.IfStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.SwitchStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement
+import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
 import java.nio.file.Path
 
 class CoreParseUnit(
@@ -121,48 +144,48 @@ class CoreParseUnit(
     }
 
     private fun mapNodeKind(node: Node): NodeKind = when (node) {
-        is com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration -> {
+        is ClassDeclaration -> {
             if (node.isInterface) NodeKind.INTERFACE else NodeKind.CLASS
         }
-        is com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration -> NodeKind.METHOD
-        is com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration -> NodeKind.CONSTRUCTOR
-        is com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration -> NodeKind.FIELD
-        is com.github.albertocavalcante.groovyparser.ast.body.Parameter -> NodeKind.PARAMETER
-        is com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr -> NodeKind.VARIABLE_REFERENCE
-        is com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr -> NodeKind.METHOD_CALL
-        is com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr -> NodeKind.PROPERTY_ACCESS
-        is com.github.albertocavalcante.groovyparser.ast.expr.ClosureExpr -> NodeKind.CLOSURE
-        is com.github.albertocavalcante.groovyparser.ast.expr.ListExpr -> NodeKind.LIST
-        is com.github.albertocavalcante.groovyparser.ast.expr.MapExpr -> NodeKind.MAP
-        is com.github.albertocavalcante.groovyparser.ast.expr.RangeExpr -> NodeKind.RANGE
-        is com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr -> NodeKind.BINARY_EXPRESSION
-        is com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr -> NodeKind.UNARY_EXPRESSION
-        is com.github.albertocavalcante.groovyparser.ast.expr.ConstantExpr -> NodeKind.LITERAL
-        is com.github.albertocavalcante.groovyparser.ast.stmt.IfStatement -> NodeKind.IF
-        is com.github.albertocavalcante.groovyparser.ast.stmt.ForStatement -> NodeKind.FOR
-        is com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement -> NodeKind.WHILE
-        is com.github.albertocavalcante.groovyparser.ast.stmt.SwitchStatement -> NodeKind.SWITCH
-        is com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement -> NodeKind.TRY
-        is com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement -> NodeKind.RETURN
-        is com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement -> NodeKind.THROW
-        is com.github.albertocavalcante.groovyparser.ast.stmt.AssertStatement -> NodeKind.ASSERT
-        is com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement -> NodeKind.BLOCK
-        is com.github.albertocavalcante.groovyparser.ast.ImportDeclaration -> NodeKind.IMPORT
-        is com.github.albertocavalcante.groovyparser.ast.PackageDeclaration -> NodeKind.PACKAGE
-        is com.github.albertocavalcante.groovyparser.ast.AnnotationExpr -> NodeKind.ANNOTATION
-        is com.github.albertocavalcante.groovyparser.ast.Comment -> NodeKind.COMMENT
+        is MethodDeclaration -> NodeKind.METHOD
+        is ConstructorDeclaration -> NodeKind.CONSTRUCTOR
+        is FieldDeclaration -> NodeKind.FIELD
+        is Parameter -> NodeKind.PARAMETER
+        is VariableExpr -> NodeKind.VARIABLE_REFERENCE
+        is MethodCallExpr -> NodeKind.METHOD_CALL
+        is PropertyExpr -> NodeKind.PROPERTY_ACCESS
+        is ClosureExpr -> NodeKind.CLOSURE
+        is ListExpr -> NodeKind.LIST
+        is MapExpr -> NodeKind.MAP
+        is RangeExpr -> NodeKind.RANGE
+        is BinaryExpr -> NodeKind.BINARY_EXPRESSION
+        is UnaryExpr -> NodeKind.UNARY_EXPRESSION
+        is ConstantExpr -> NodeKind.LITERAL
+        is IfStatement -> NodeKind.IF
+        is ForStatement -> NodeKind.FOR
+        is WhileStatement -> NodeKind.WHILE
+        is SwitchStatement -> NodeKind.SWITCH
+        is TryCatchStatement -> NodeKind.TRY
+        is ReturnStatement -> NodeKind.RETURN
+        is ThrowStatement -> NodeKind.THROW
+        is AssertStatement -> NodeKind.ASSERT
+        is BlockStatement -> NodeKind.BLOCK
+        is ImportDeclaration -> NodeKind.IMPORT
+        is PackageDeclaration -> NodeKind.PACKAGE
+        is AnnotationExpr -> NodeKind.ANNOTATION
+        is Comment -> NodeKind.COMMENT
         else -> NodeKind.UNKNOWN
     }
 
     private fun extractNodeName(node: Node): String? = when (node) {
-        is com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration -> node.name
-        is com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration -> node.name
-        is com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration -> node.name
-        is com.github.albertocavalcante.groovyparser.ast.body.Parameter -> node.name
-        is com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr -> node.name
-        is com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr -> node.methodName
-        is com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr -> node.propertyName
-        is com.github.albertocavalcante.groovyparser.ast.PackageDeclaration -> node.name
+        is ClassDeclaration -> node.name
+        is MethodDeclaration -> node.name
+        is FieldDeclaration -> node.name
+        is Parameter -> node.name
+        is VariableExpr -> node.name
+        is MethodCallExpr -> node.methodName
+        is PropertyExpr -> node.propertyName
+        is PackageDeclaration -> node.name
         else -> null
     }
 
