@@ -150,6 +150,35 @@ For Jenkins shared libraries:
 }
 ```
 
+### Semantic Token Customization
+
+You can customize the colors of different code elements, including import statements:
+
+```json
+{
+  // Customize semantic token colors for Groovy
+  "editor.semanticTokenColorCustomizations": {
+    "[Default Dark+]": {
+      "rules": {
+        // Make import class names more visible (yellow-ish)
+        "class.declaration:groovy": "#DCDCAA",
+
+        // Or customize all classes
+        "class:groovy": "#4EC9B0",
+
+        // Customize other tokens
+        "method:groovy": "#C586C0",
+        "property:groovy": "#9CDCFE"
+      }
+    }
+  }
+}
+```
+
+**Note**: Import class names use the `class.declaration` token type, which allows them to be styled distinctly from
+other class references. The extension provides multiple TextMate scope fallbacks to ensure good visibility across
+different themes.
+
 ### Update Checking
 
 The extension periodically checks for new Groovy Language Server releases.

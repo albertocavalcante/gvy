@@ -218,7 +218,8 @@ object GroovySemanticTokenProvider {
             importNode.alias ?: importNode.type?.nameWithoutPackage ?: return
         }
 
-        var modifiers = 0
+        // Mark imports with DECLARATION modifier for distinct styling
+        var modifiers = TokenModifiers.DECLARATION
         if (importNode in unusedImports) {
             modifiers = modifiers or TokenModifiers.UNNECESSARY
         }

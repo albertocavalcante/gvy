@@ -371,14 +371,20 @@ object CompletionProvider {
 
             addJenkinsGlobalVariables(metadata, ctx.compilationService.workspaceManager.getJenkinsCapabilities())
 
+            // Only add block-level completions when cursor is at block level (not inside method call args)
+            val cursorContext = detectCursorPositionContext(nodeAtCursor, ctx.astModel)
+            val isBlockLevel = cursorContext is CursorPositionContext.BlockLevel
+
             jenkinsContext.blockCategories?.let { categories ->
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE)) {
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE) && isBlockLevel) {
                     addJenkinsAgentTypeCompletions()
                 }
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION)) {
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION) &&
+                    isBlockLevel
+                ) {
                     addJenkinsDeclarativeOptions(metadata)
                 }
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION)) {
+                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION) && isBlockLevel) {
                     addJenkinsPostConditionCompletions()
                 }
             }

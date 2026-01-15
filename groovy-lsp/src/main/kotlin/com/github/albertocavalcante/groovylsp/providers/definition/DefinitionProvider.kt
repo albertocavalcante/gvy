@@ -16,8 +16,10 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
@@ -154,6 +156,8 @@ class DefinitionProvider(
             is ImportNode -> computeImportSelectionRange(originNode) ?: originNode.toLspRange()
             is MethodCallExpression -> computeMethodCallSelectionRange(originNode) ?: originNode.toLspRange()
             is PropertyExpression -> computePropertySelectionRange(originNode) ?: originNode.toLspRange()
+            is VariableExpression -> computeVariableSelectionRange(originNode) ?: originNode.toLspRange()
+            is ConstantExpression -> computeConstantSelectionRange(originNode) ?: originNode.toLspRange()
             else -> originNode.toLspRange()
         }
     }
@@ -242,6 +246,32 @@ class DefinitionProvider(
 
         logger.debug { "Property: could not compute range for $propertyName" }
         return null
+    }
+
+    /**
+     * Compute the selection range for a variable expression.
+     * For `myVariable`, returns the range of exactly `myVariable`.
+     */
+    private fun computeVariableSelectionRange(node: VariableExpression): Range? {
+        if (node.lineNumber < 0 || node.columnNumber < 0) return null
+        val line = node.lineNumber - 1 // Convert to 0-based
+        val col = node.columnNumber - 1 // Convert to 0-based
+        val length = node.name.length
+        logger.debug { "VariableExpression: ${node.name} at line $line, col $col, length $length" }
+        return Range(Position(line, col), Position(line, col + length))
+    }
+
+    /**
+     * Compute the selection range for a constant expression.
+     * For string/number constants, returns the exact range.
+     */
+    private fun computeConstantSelectionRange(node: ConstantExpression): Range? {
+        if (node.lineNumber < 0 || node.columnNumber < 0) return null
+        val text = node.text ?: return null
+        val line = node.lineNumber - 1
+        val col = node.columnNumber - 1
+        logger.debug { "ConstantExpression: '$text' at line $line, col $col" }
+        return Range(Position(line, col), Position(line, col + text.length))
     }
 
     private fun computeImportSelectionRange(importNode: ImportNode): Range? {
