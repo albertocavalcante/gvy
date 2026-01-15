@@ -409,9 +409,6 @@ class DefinitionProviderTest {
             val link = links.first()
             val originRange = link.originSelectionRange
 
-            // BUG: The calculation uses text.lastIndexOf which will find "ArrayList"
-            // but then adds it to columnStart, causing wrong position
-
             assertNotNull(originRange, "Origin selection range should not be null")
             assertEquals(0, originRange.start.line, "Should be on line 0")
 

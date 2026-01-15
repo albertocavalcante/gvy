@@ -170,7 +170,11 @@ class CoreParseUnit(
         val range = node.range ?: return null
         // Extract text from source using the node's range
         val lines = source.lines()
-        if (range.begin.line > lines.size || range.end.line > lines.size) {
+        // Validate line numbers are within bounds (1-based line numbers)
+        if (lines.isEmpty() ||
+            range.begin.line < 1 || range.begin.line > lines.size ||
+            range.end.line < 1 || range.end.line > lines.size
+        ) {
             return null
         }
         return if (range.begin.line == range.end.line) {

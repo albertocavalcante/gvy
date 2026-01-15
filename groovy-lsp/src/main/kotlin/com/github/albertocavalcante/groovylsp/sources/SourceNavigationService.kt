@@ -275,10 +275,10 @@ class SourceNavigationService(
         return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
     }
 
-    // TODO(#TBD): Replace regex-based Groovy parsing with AST-based approach for accuracy
+    // TODO(#867): Replace regex-based Groovy parsing with AST-based approach for accuracy
     //   Current implementation uses regex which can have false positives in strings/comments.
     //   Consider using GroovyParser AST for precise class/method location detection.
-    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/TBD
+    //   See: https://github.com/albertocavalcante/gvy/issues/867
     private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
         val simpleName = className.substringAfterLast('.').substringAfterLast('$')
         val escapedName = Regex.escape(simpleName)
@@ -286,6 +286,8 @@ class SourceNavigationService(
         return findPatternInGroovySource(sourcePath, pattern)
     }
 
+    // Note: This regex won't match Groovy's quoted method names (e.g., def "test method"()).
+    // This limitation is tracked in issue #867 along with the broader AST migration.
     private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
         val escapedMethodName = Regex.escape(methodName)
         val pattern = Regex(

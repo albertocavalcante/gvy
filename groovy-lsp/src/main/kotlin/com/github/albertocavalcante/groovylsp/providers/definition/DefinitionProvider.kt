@@ -255,9 +255,11 @@ class DefinitionProvider(
         val symbolOffset = text.lastIndexOf(symbol)
         if (symbolOffset < 0) return null
 
-        // ImportNode.text appears to be the full import line starting from column 0
-        // so we can use symbolOffset directly as the column position
-        val start = symbolOffset
+        // ImportNode.text is relative to the import node's position, so we need to add
+        // the node's column offset to get the absolute column position in the source file.
+        // This is consistent with GroovySemanticTokenProvider and UnusedImportDiagnosticProvider.
+        val columnOffset = (importNode.columnNumber - 1).coerceAtLeast(0)
+        val start = columnOffset + symbolOffset
         val end = start + symbol.length
         return Range(Position(line, start), Position(line, end))
     }
