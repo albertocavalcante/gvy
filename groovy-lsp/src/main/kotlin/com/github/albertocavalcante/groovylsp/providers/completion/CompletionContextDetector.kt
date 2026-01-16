@@ -477,3 +477,97 @@ private fun offsetAt(content: String, lines: List<String>, line: Int, character:
     offset += safeChar.coerceIn(0, lineText.length)
     return offset.coerceIn(0, content.length)
 }
+
+/**
+ * Represents the cursor position context for completion filtering.
+ */
+sealed class CursorPositionContext {
+    /** Cursor is at block level (not inside any method call arguments) */
+    object BlockLevel : CursorPositionContext()
+
+    /** Cursor is inside a method call's argument list */
+    data class InsideMethodCall(val methodName: String) : CursorPositionContext()
+}
+
+/**
+ * Detect if the cursor is at block level or inside a method call's argument list.
+ * This is used to filter completions appropriately.
+ *
+ * Block level means: cursor is inside a closure body or at the top level.
+ * Inside method call means: cursor is in the argument list (map arguments, positional arguments),
+ * but NOT inside a closure that's passed as an argument.
+ *
+ * Strategy: Walk up the AST. The FIRST context we encounter determines the result:
+ * - If we hit a closure's code block first: Block Level
+ * - If we hit method call arguments first (before any closure): Inside Method Call
+ */
+@Suppress("ReturnCount", "NestedBlockDepth") // AST traversal requires nested checks for different node types
+fun detectCursorPositionContext(nodeAtCursor: ASTNode?, astModel: GroovyAstModel): CursorPositionContext {
+    var current: ASTNode? = nodeAtCursor
+
+    while (current != null) {
+        val parent = astModel.getParent(current)
+
+        // Check if current node is a BlockStatement inside a ClosureExpression
+        if (current is org.codehaus.groovy.ast.stmt.BlockStatement) {
+            val blockParent = parent
+            if (blockParent is org.codehaus.groovy.ast.expr.ClosureExpression) {
+                // We're inside the code block of a closure - this is block level
+                return CursorPositionContext.BlockLevel
+            }
+        }
+
+        // Check if we're inside a closure expression at all
+        if (current is org.codehaus.groovy.ast.expr.ClosureExpression) {
+            // We're at or inside a closure - block level
+            return CursorPositionContext.BlockLevel
+        }
+
+        // Check if parent is a MethodCallExpression and current is in its arguments
+        if (parent is MethodCallExpression) {
+            val arguments = parent.arguments
+
+            // Check various ways we might be in the arguments
+            if (arguments === current) {
+                // Don't treat closure arguments as "inside method call"
+                if (current is org.codehaus.groovy.ast.expr.ClosureExpression) {
+                    return CursorPositionContext.BlockLevel
+                }
+                return CursorPositionContext.InsideMethodCall(parent.methodAsString ?: "")
+            }
+
+            // Check if we're inside a tuple/map/named argument list
+            if (arguments is org.codehaus.groovy.ast.expr.TupleExpression) {
+                val isInNonClosureArg = arguments.expressions.any { expr ->
+                    if (expr is org.codehaus.groovy.ast.expr.ClosureExpression) {
+                        false // Skip closures
+                    } else {
+                        isNodeOrDescendant(current, expr, astModel)
+                    }
+                }
+                if (isInNonClosureArg) {
+                    return CursorPositionContext.InsideMethodCall(parent.methodAsString ?: "")
+                }
+            }
+        }
+
+        current = parent
+    }
+
+    return CursorPositionContext.BlockLevel
+}
+
+/**
+ * Check if targetNode is the same as or a descendant of potentialAncestor.
+ */
+private fun isNodeOrDescendant(targetNode: ASTNode?, potentialAncestor: ASTNode?, astModel: GroovyAstModel): Boolean {
+    if (targetNode == null || potentialAncestor == null) return false
+    if (targetNode === potentialAncestor) return true
+
+    var current: ASTNode? = targetNode
+    while (current != null) {
+        if (current === potentialAncestor) return true
+        current = astModel.getParent(current)
+    }
+    return false
+}
