@@ -986,19 +986,17 @@ class Calculator {
 
         // The key assertion: we should get a hover even though JenkinsStepHoverStrategy
         // is first in the strategy list and returns null for non-Jenkins files
-        if (hover != null) {
-            assertNotNull(hover, "Hover should not be null - fallback strategy should handle it")
-            assertTrue(hover.contents.isRight, "Expected MarkupContent")
-            val content = hover.contents.right.value
+        assertNotNull(hover, "Hover should not be null - fallback strategy should handle it")
+        assertTrue(hover.contents.isRight, "Expected MarkupContent")
+        val content = hover.contents.right.value
 
-            // Verify we got meaningful hover content from the fallback strategy
-            // (not just an empty or "no info" response)
-            assertTrue(
-                content.contains("greet") || content.contains("Method") || content.contains("def"),
-                "Hover should contain method information from fallback strategy. Got: $content",
-            )
+        // Verify we got meaningful hover content from the fallback strategy
+        // (not just an empty or "no info" response)
+        assertTrue(
+            content.contains("greet") || content.contains("Method") || content.contains("def"),
+            "Hover should contain method information from fallback strategy. Got: $content",
+        )
 
-            logger.debug { "Fallback hover test succeeded. Content: $content" }
-        }
+        logger.debug { "Fallback hover test succeeded. Content: $content" }
     }
 }
