@@ -26,6 +26,10 @@ import { registerFormatting } from "./features/formatting/formatter";
 import { replService } from "./features/repl";
 import { registerGradleFeatures } from "./features/gradle";
 import { registerTestingFeatures } from "./features/testing";
+import {
+  DependencyService,
+  DependencyTreeProvider,
+} from "./features/dependencies";
 import { LSPToolService } from "./features/ai/LSPToolService";
 import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
@@ -99,6 +103,39 @@ export async function activate(context: vscode.ExtensionContext) {
 
     registerGradleFeatures(context);
     registerTestingFeatures(context, testOutputChannel);
+
+    // Register Dependency Tree View
+    const client = getClient();
+    if (client) {
+      const dependencyService = new DependencyService(client);
+      const dependencyTreeProvider = new DependencyTreeProvider(
+        dependencyService,
+      );
+
+      context.subscriptions.push(
+        vscode.window.registerTreeDataProvider(
+          "groovyDependencies",
+          dependencyTreeProvider,
+        ),
+        vscode.commands.registerCommand("groovy.dependencies.refresh", () => {
+          dependencyTreeProvider.refresh();
+        }),
+        vscode.commands.registerCommand(
+          "groovy.dependencies.copyCoordinate",
+          (item) => {
+            if (item?.coordinate) {
+              vscode.env.clipboard.writeText(item.coordinate);
+              vscode.window.showInformationMessage(
+                `Copied: ${item.coordinate}`,
+              );
+            }
+          },
+        ),
+      );
+
+      // Set context for view visibility
+      vscode.commands.executeCommand("setContext", "groovy.hasProject", true);
+    }
 
     // AI Tools Integration
     const lspToolService = new LSPToolService(vscode, getClient);
