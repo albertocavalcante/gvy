@@ -36,19 +36,12 @@ internal class WorkspaceIndexer(
     fun startIndexing(client: LanguageClient?, onStatusUpdate: StatusUpdateCallback, strategyInitJobs: List<Job>) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
-            logger.debug { "No workspace sources to index" }
-            // No files to index, signal ready after making sure strategy init is done
-            coroutineScope.launch(indexingDispatcher) {
-                strategyInitJobs.forEach { it.join() }
-                onStatusUpdate(Health.Ok, true, "Ready", null, null, null, null)
-            }
+            handleEmptyWorkspace(strategyInitJobs, onStatusUpdate)
             return
         }
 
         val total = sourceUris.size
         logger.info { "Starting workspace indexing: $total files" }
-
-        // Send initial indexing status with file counts
         onStatusUpdate(Health.Ok, false, "Indexing $total files...", 0, total, null, null)
 
         val indexingProgressReporter = ProgressReporter(client)
@@ -59,53 +52,66 @@ internal class WorkspaceIndexer(
 
         coroutineScope.launch(indexingDispatcher) {
             runCatching {
-                var lastStatusUpdate = System.currentTimeMillis()
-                compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
-                    val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
-                    indexingProgressReporter.updateProgress("Indexed $indexed/$totalFiles files", percentage)
-                    // Throttle status updates to avoid excessive notifications
-                    val now = System.currentTimeMillis()
-                    if (now - lastStatusUpdate >= STATUS_UPDATE_INTERVAL_MS || indexed == totalFiles) {
-                        onStatusUpdate(
-                            Health.Ok,
-                            false,
-                            "Indexing $indexed/$totalFiles files",
-                            indexed,
-                            totalFiles,
-                            null,
-                            null,
-                        )
-                        lastStatusUpdate = now
-                    }
-                }
-                indexingProgressReporter.complete("✅ Indexed $total files")
-                logger.info { "Workspace indexing complete: $total files" }
-
-                // Trigger workspace compilation for cross-file semantic resolution
-                logger.info { "Starting workspace compilation for cross-file resolution" }
-                onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
-                val workspaceCompiler = compilationService.getWorkspaceCompiler()
-                val compilationResult = workspaceCompiler.compileWorkspace()
-                logger.info {
-                    "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
-                        "${compilationResult.errors.size} errors"
-                }
-                if (!compilationResult.success) {
-                    logger.warn { "Workspace compilation had errors, but proceeding with partial results" }
-                }
-
-                // Ensure strategy initialization is also complete before signaling ready
+                performIndexing(sourceUris, total, indexingProgressReporter, onStatusUpdate)
+                performCompilation(onStatusUpdate)
                 strategyInitJobs.forEach { it.join() }
-
-                // Signal ready after indexing completes
                 onStatusUpdate(Health.Ok, true, "Ready", total, total, null, null)
             }.onFailure { throwable ->
-                rethrowIfCancellationOrError(throwable)
-                logger.error(throwable) { "Workspace indexing failed" }
-                indexingProgressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
-                // Signal warning state but still quiescent
-                onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null, null, null)
+                handleIndexingFailure(throwable, indexingProgressReporter, onStatusUpdate)
             }
         }
+    }
+
+    private fun handleEmptyWorkspace(strategyInitJobs: List<Job>, onStatusUpdate: StatusUpdateCallback) {
+        logger.debug { "No workspace sources to index" }
+        coroutineScope.launch(indexingDispatcher) {
+            strategyInitJobs.forEach { it.join() }
+            onStatusUpdate(Health.Ok, true, "Ready", null, null, null, null)
+        }
+    }
+
+    private suspend fun performIndexing(
+        sourceUris: List<java.net.URI>,
+        total: Int,
+        progressReporter: ProgressReporter,
+        onStatusUpdate: StatusUpdateCallback,
+    ) {
+        var lastStatusUpdate = System.currentTimeMillis()
+        compilationService.indexAllWorkspaceSources(sourceUris) { indexed, totalFiles ->
+            val percentage = if (totalFiles > 0) (indexed * PERCENTAGE_MULTIPLIER / totalFiles) else 0
+            progressReporter.updateProgress("Indexed $indexed/$totalFiles files", percentage)
+            val now = System.currentTimeMillis()
+            if (now - lastStatusUpdate >= STATUS_UPDATE_INTERVAL_MS || indexed == totalFiles) {
+                onStatusUpdate(Health.Ok, false, "Indexing $indexed/$totalFiles files", indexed, totalFiles, null, null)
+                lastStatusUpdate = now
+            }
+        }
+        progressReporter.complete("✅ Indexed $total files")
+        logger.info { "Workspace indexing complete: $total files" }
+    }
+
+    private suspend fun performCompilation(onStatusUpdate: StatusUpdateCallback) {
+        logger.info { "Starting workspace compilation for cross-file resolution" }
+        onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
+        val workspaceCompiler = compilationService.getWorkspaceCompiler()
+        val compilationResult = workspaceCompiler.compileWorkspace()
+        logger.info {
+            "Workspace compilation complete: ${compilationResult.modules.size} modules, " +
+                "${compilationResult.errors.size} errors"
+        }
+        if (!compilationResult.success) {
+            logger.warn { "Workspace compilation had errors, but proceeding with partial results" }
+        }
+    }
+
+    private fun handleIndexingFailure(
+        throwable: Throwable,
+        progressReporter: ProgressReporter,
+        onStatusUpdate: StatusUpdateCallback,
+    ) {
+        rethrowIfCancellationOrError(throwable)
+        logger.error(throwable) { "Workspace indexing failed" }
+        progressReporter.completeWithError("Failed to index workspace: ${throwable.message}")
+        onStatusUpdate(Health.Warning, true, "Indexing failed: ${throwable.message}", null, null, null, null)
     }
 }

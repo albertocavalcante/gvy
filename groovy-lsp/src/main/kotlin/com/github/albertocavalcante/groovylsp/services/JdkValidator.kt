@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
 import com.github.albertocavalcante.groovylsp.buildtool.jdk.ProjectJdkValidator
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.MessageParams
@@ -141,23 +140,5 @@ internal object JdkValidator {
         )
 
         return PreflightResult.Continue
-    }
-
-    /**
-     * Converts a ResolutionStatus.Failed to ErrorDetails for JDK-related errors.
-     *
-     * This is used to convert build tool error statuses into structured error details
-     * that can be sent to the client.
-     *
-     * @param status The failed resolution status.
-     * @return ErrorDetails if the status is JDK-related, null otherwise.
-     */
-    fun convertToErrorDetails(status: ResolutionStatus.Failed): ErrorDetails? = when (status.code) {
-        ResolutionCodes.PROJECT_JDK_INCOMPATIBLE -> {
-            // This case is already handled by performPreflightCheck
-            // but included here for completeness
-            null
-        }
-        else -> null
     }
 }
