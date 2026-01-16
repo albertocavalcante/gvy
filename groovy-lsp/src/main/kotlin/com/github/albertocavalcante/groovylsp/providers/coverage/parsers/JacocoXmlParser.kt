@@ -29,6 +29,7 @@ import javax.xml.parsers.DocumentBuilderFactory
  * </report>
  * ```
  */
+@Suppress("TooManyFunctions") // Cohesive coverage parsing
 object JacocoXmlParser {
     private val logger = KotlinLogging.logger {}
 

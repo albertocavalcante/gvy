@@ -139,6 +139,7 @@ private fun isSyntheticPropertyAccessor(method: MethodNode, propertyNames: Set<S
 /**
  * Extension to convert ClassNode to [UnifiedSymbol] with children.
  */
+@Suppress("CyclomaticComplexMethod") // Complexity 15 - symbol type mapping requires branching
 internal fun ClassNode.toUnifiedSymbol(): UnifiedSymbol {
     val children = mutableListOf<UnifiedSymbol>()
 

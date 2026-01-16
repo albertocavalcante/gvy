@@ -48,6 +48,7 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
         }
     }
 
+    @Suppress("CyclomaticComplexMethod") // Complexity 15 - diagnostic creation with edge cases
     private fun createDiagnostic(importNode: ImportNode): Diagnostic {
         // Defensive guard: Groovy AST uses 1-based line/column numbers; 0 or negative means "unknown position"
         if (importNode.lineNumber <= 0 || importNode.columnNumber <= 0 ||

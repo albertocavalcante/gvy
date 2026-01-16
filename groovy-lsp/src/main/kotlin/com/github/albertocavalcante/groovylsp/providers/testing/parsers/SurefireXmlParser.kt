@@ -6,7 +6,6 @@ import com.github.albertocavalcante.groovylsp.providers.testing.TestResultSummar
 import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.w3c.dom.Element
-import org.w3c.dom.NodeList
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.roundToLong

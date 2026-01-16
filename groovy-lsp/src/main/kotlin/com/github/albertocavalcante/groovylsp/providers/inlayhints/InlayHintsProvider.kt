@@ -431,6 +431,7 @@ class InlayHintsProvider(
 //   See: https://github.com/albertocavalcante/gvy/issues/651
 // TODO(#650): resolveReceiverType() overlaps with SignatureHelpProvider - extract shared utility.
 //   See: https://github.com/albertocavalcante/gvy/issues/650
+@Suppress("TooManyFunctions") // Private helper class
 private object InlayHintsCandidates {
     fun resolveFromCandidates(
         argumentTypes: List<String?>,
