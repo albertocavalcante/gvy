@@ -4,6 +4,10 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
+import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.groovylsp.providers.coverage.parsers.JacocoXmlParser
+import com.github.albertocavalcante.groovylsp.providers.testing.parsers.SurefireXmlParser
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +16,8 @@ import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import java.io.File
+import java.net.URI
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -143,6 +149,45 @@ class TestRequestDelegate(
                 supportsDebug = supportsDebug,
                 supportsCoverage = supportsCoverage,
             )
+        }
+    }
+
+    /**
+     * Returns parsed test results from Surefire/Failsafe XML reports.
+     */
+    fun getTestResults(params: GetTestResultsParams): CompletableFuture<TestResultsResponse> {
+        logger.info { "Received groovy/getTestResults request for: ${params.workspaceUri}" }
+
+        return coroutineScope.future {
+            withContext(ioDispatcher) {
+                val workspaceRoot = resolveWorkspaceRoot(params.workspaceUri)
+                SurefireXmlParser.parseWorkspace(workspaceRoot)
+            }
+        }
+    }
+
+    /**
+     * Returns parsed coverage data from JaCoCo XML reports.
+     */
+    fun getCoverage(params: GetCoverageParams): CompletableFuture<CoverageResponse> {
+        logger.info { "Received groovy/getCoverage request for: ${params.workspaceUri}" }
+
+        return coroutineScope.future {
+            withContext(ioDispatcher) {
+                val workspaceRoot = resolveWorkspaceRoot(params.workspaceUri)
+                JacocoXmlParser.parseWorkspace(workspaceRoot)
+            }
+        }
+    }
+
+    /**
+     * Resolve workspace URI to a File.
+     */
+    private fun resolveWorkspaceRoot(workspaceUri: String): File {
+        return if (workspaceUri.startsWith("file://")) {
+            File(URI(workspaceUri))
+        } else {
+            File(workspaceUri)
         }
     }
 

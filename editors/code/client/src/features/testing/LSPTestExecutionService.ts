@@ -4,7 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
-import { TestService, TestCommand } from "./TestService";
+import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 
 export class LSPTestExecutionService implements ITestExecutionService {
@@ -56,12 +56,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
       // or try to batch them.
       // For now, let's implement the loop:
 
+      // Get workspace URI for LSP requests
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const workspaceUri = workspaceFolder?.uri.toString() || "";
+
       for (const item of testsToRun) {
         if (token.isCancellationRequested) break;
 
         // Parse suite/test from Item ID
-        // ID format: "fully.qualified.ClassName" (Suite) or "fully.qualified.ClassName.methodName" (Test)
-        // We need to pass URI, SuiteName, TestName (optional) to LSP.
         const uri = item.uri?.toString();
         if (!uri) {
           this.logger.appendLine(
@@ -70,24 +72,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        // Metadata is stored in map in Controller, but we don't have access to it here easily.
-        // We'll infer from ID and children.
-        // Suite: ID has no parent, or check children count
-        // Actually, GroovyTestController uses `item.id` as the Suite/Test name.
-
         let suiteName: string;
         let testName: string | undefined;
 
         // Heuristic: If item has children, it's a suite. If not, it's a test method (leaves).
-        // Or check ID structure.
-        // Controller logic: Suite ID = FQN. Test ID = FQN.methodName
-        // But Test ID is created as `${suiteName}.${test.test}`
-
-        // We can just rely on the test service to figure it out if we pass the right names.
-        // Let's assume the ID *is* the name we want to run, mostly.
-        // But we need to split it.
-
-        // If it's a leaf (test method)
         const isSuite = item.children.size > 0;
 
         if (isSuite) {
@@ -117,20 +105,137 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        await this.executeCommand(
-          command,
-          consumer,
-          token,
-          isSuite ? "gradle" : undefined,
-        );
-        // Note: 'isSuite' check for gradle is just a placeholder,
-        // determining build tool type from command is better.
+        // Execute the test command
+        const isMaven = command.executable.includes("mvn");
+        await this.executeCommand(command, consumer, token);
+
+        // For Maven, fetch and apply Surefire results from LSP
+        if (isMaven && !token.isCancellationRequested) {
+          await this.applyTestResults(
+            workspaceUri,
+            run,
+            testsToRun,
+            consumer,
+          );
+        }
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
     } finally {
       run.end();
     }
+  }
+
+  /**
+   * Fetch test results from LSP (Surefire XML parsing) and apply to TestRun.
+   */
+  private async applyTestResults(
+    workspaceUri: string,
+    run: vscode.TestRun,
+    testsToRun: readonly vscode.TestItem[],
+    _consumer: TestEventConsumer,
+  ): Promise<void> {
+    try {
+      const results = await this.testService.getTestResults(workspaceUri);
+      if (results.results.length === 0) {
+        this.logger.appendLine("[LSP] No test results found in Surefire reports");
+        return;
+      }
+
+      this.logger.appendLine(
+        `[LSP] Retrieved ${results.results.length} test results from Surefire XML`,
+      );
+
+      // Build a map of testId -> result for quick lookup
+      const resultMap = new Map<string, TestResultItem>();
+      for (const result of results.results) {
+        resultMap.set(result.testId, result);
+        // Also map by just the test name for looser matching
+        if (result.className) {
+          resultMap.set(`${result.className}.${result.name}`, result);
+        }
+      }
+
+      // Apply results to test items
+      for (const item of testsToRun) {
+        const result = resultMap.get(item.id);
+        if (result) {
+          this.applyResultToItem(run, item, result);
+        } else {
+          // Try to find by traversing children
+          this.applyResultsToChildren(run, item, resultMap);
+        }
+      }
+    } catch (error) {
+      this.logger.appendLine(`[LSP] Error fetching test results: ${error}`);
+    }
+  }
+
+  /**
+   * Apply a single test result to a test item.
+   */
+  private applyResultToItem(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    result: TestResultItem,
+  ): void {
+    // Append output if available (CRLF required for VS Code Test Results panel)
+    if (result.output) {
+      const formattedOutput = result.output.replace(/\r?\n/g, "\r\n");
+      run.appendOutput(`--- Output for ${result.name} ---\r\n`);
+      run.appendOutput(formattedOutput + "\r\n", undefined, item);
+    }
+
+    // Report status
+    switch (result.status) {
+      case "SUCCESS":
+        run.passed(item, result.durationMs);
+        break;
+      case "FAILURE":
+        {
+          const message = new vscode.TestMessage(
+            result.failureMessage || "Test failed",
+          );
+          if (result.stackTrace) {
+            message.message = `${result.failureMessage || "Test failed"}\n\n${result.stackTrace}`;
+          }
+          run.failed(item, message, result.durationMs);
+        }
+        break;
+      case "SKIPPED":
+        run.skipped(item);
+        break;
+      case "ERROR":
+        {
+          const errorMessage = new vscode.TestMessage(
+            result.failureMessage || "Test error",
+          );
+          if (result.stackTrace) {
+            errorMessage.message = `${result.failureMessage || "Test error"}\n\n${result.stackTrace}`;
+          }
+          run.errored(item, errorMessage, result.durationMs);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Recursively apply results to children of a test item.
+   */
+  private applyResultsToChildren(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    resultMap: Map<string, TestResultItem>,
+  ): void {
+    item.children.forEach((child) => {
+      const result = resultMap.get(child.id);
+      if (result) {
+        this.applyResultToItem(run, child, result);
+      } else {
+        // Recurse into children
+        this.applyResultsToChildren(run, child, resultMap);
+      }
+    });
   }
 
   async debugTests(
@@ -153,7 +258,6 @@ export class LSPTestExecutionService implements ITestExecutionService {
     cmd: TestCommand,
     consumer: TestEventConsumer,
     token: vscode.CancellationToken,
-    _hint?: string,
   ): Promise<void> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
