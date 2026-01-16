@@ -53,7 +53,7 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
     codeLenses.push(
       new vscode.CodeLens(classRange, {
-        title: "Run All Tests",
+        title: "$(play) Run All Tests",
         command: "groovy.test.run",
         arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
       }),
@@ -61,8 +61,16 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
     codeLenses.push(
       new vscode.CodeLens(classRange, {
-        title: "Debug All Tests",
+        title: "$(debug) Debug All Tests",
         command: "groovy.test.debug",
+        arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
+      }),
+    );
+
+    codeLenses.push(
+      new vscode.CodeLens(classRange, {
+        title: "$(beaker) Coverage",
+        command: "groovy.test.runWithCoverage",
         arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
       }),
     );
@@ -74,7 +82,7 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       codeLenses.push(
         new vscode.CodeLens(testRange, {
-          title: "Run Test",
+          title: "$(play) Run",
           command: "groovy.test.run",
           arguments: [
             { uri: document.uri.toString(), suite: fqn, test: test.name },
@@ -84,8 +92,18 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       codeLenses.push(
         new vscode.CodeLens(testRange, {
-          title: "Debug Test",
+          title: "$(debug) Debug",
           command: "groovy.test.debug",
+          arguments: [
+            { uri: document.uri.toString(), suite: fqn, test: test.name },
+          ],
+        }),
+      );
+
+      codeLenses.push(
+        new vscode.CodeLens(testRange, {
+          title: "$(beaker) Coverage",
+          command: "groovy.test.runWithCoverage",
           arguments: [
             { uri: document.uri.toString(), suite: fqn, test: test.name },
           ],

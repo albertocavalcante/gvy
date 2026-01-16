@@ -6,6 +6,7 @@ import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
+import { CoverageService } from "./CoverageService";
 
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
@@ -118,6 +119,109 @@ export class LSPTestExecutionService implements ITestExecutionService {
             consumer,
           );
         }
+      }
+    } catch (error) {
+      this.logger.appendLine(`Test execution error: ${error}`);
+    } finally {
+      run.end();
+    }
+  }
+
+  async runTestsWithCoverage(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    testController: vscode.TestController,
+    coverageService: CoverageService,
+  ): Promise<void> {
+    const run = testController.createTestRun(request);
+    const consumer = new TestEventConsumer(run, this.logger, testController);
+    const testsToRun = request.include ?? [];
+
+    // Register items with consumer
+    for (const item of testsToRun) {
+      consumer.registerTestItem(item.id, item);
+      run.enqueued(item);
+    }
+
+    try {
+      // Get workspace URI for LSP requests
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const workspaceUri = workspaceFolder?.uri.toString() || "";
+
+      for (const item of testsToRun) {
+        if (token.isCancellationRequested) break;
+
+        // Parse suite/test from Item ID
+        const uri = item.uri?.toString();
+        if (!uri) {
+          this.logger.appendLine(
+            `[Error] Test item ${item.id} has no URI. Skipping.`,
+          );
+          continue;
+        }
+
+        let suiteName: string;
+        let testName: string | undefined;
+
+        // Heuristic: If item has children, it's a suite. If not, it's a test method (leaves).
+        const isSuite = item.children.size > 0;
+
+        if (isSuite) {
+          suiteName = item.id;
+          testName = undefined;
+        } else {
+          // It's a method
+          const lastDot = item.id.lastIndexOf(".");
+          if (lastDot > 0) {
+            suiteName = item.id.substring(0, lastDot);
+            testName = item.id.substring(lastDot + 1);
+          } else {
+            suiteName = item.id;
+          }
+        }
+
+        const command = await this.testService.getTestCommand(
+          uri,
+          suiteName,
+          testName,
+        );
+
+        if (!command) {
+          this.logger.appendLine(
+            `[Testing] LSP returned no command for ${item.id}. Build tool may not support test execution.`,
+          );
+          continue;
+        }
+
+        // Execute the test command with coverage
+        const isGradle = command.executable.includes("gradle");
+        const isMaven = command.executable.includes("mvn");
+
+        // Append JaCoCo report generation
+        if (isGradle) {
+          command.args.push("jacocoTestReport");
+        } else if (isMaven) {
+          // For Maven, add jacoco:report goal after test
+          // Requires jacoco-maven-plugin in pom.xml
+          command.args.push("jacoco:report");
+        }
+
+        await this.executeCommand(command, consumer, token);
+
+        // For Maven, fetch and apply Surefire results from LSP
+        if (isMaven && !token.isCancellationRequested) {
+          await this.applyTestResults(
+            workspaceUri,
+            run,
+            testsToRun,
+            consumer,
+          );
+        }
+      }
+
+      // After all tests complete, fetch and add coverage
+      if (!token.isCancellationRequested) {
+        await coverageService.addCoverageToRun(run, workspaceUri);
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
