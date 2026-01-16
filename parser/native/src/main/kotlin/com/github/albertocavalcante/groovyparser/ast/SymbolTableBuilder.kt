@@ -23,12 +23,20 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
     fun buildFromVisitor(visitor: GroovyAstModel) {
         val allNodes = visitor.getAllNodes()
 
+        // Collect all primary class nodes (actual class definitions, not type references)
+        // Type references (e.g., String in "String name" or int in "int compute()") are tracked
+        // by the visitor for hover/definition support but should NOT be included in document symbols.
+        // Use identity-based set to handle ClassNode correctly (may override equals/hashCode).
+        val primaryClassNodes = visitor.getAllClassNodes().toCollection(
+            java.util.Collections.newSetFromMap(java.util.IdentityHashMap()),
+        )
+
         // Group nodes by URI for efficient processing
         val nodesByUri = allNodes.groupBy { visitor.getUri(it) }
 
         nodesByUri.forEach { (uri, nodes) ->
             if (uri != null) {
-                processNodes(nodes, uri)
+                processNodes(nodes, uri, primaryClassNodes)
             }
         }
     }
@@ -36,23 +44,28 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
     /**
      * Process nodes for a specific URI.
      */
-    private fun processNodes(nodes: List<ASTNode>, uri: URI) {
+    private fun processNodes(nodes: List<ASTNode>, uri: URI, primaryClassNodes: Set<ClassNode>) {
         nodes.forEach { node ->
             when (node) {
                 is MethodNode -> registry.addMethodDeclaration(uri, node)
                 is ClassNode -> {
-                    registry.addClassDeclaration(uri, node)
-                    // NOTE: Decompiled classpath nodes may throw linkage errors when resolving members.
-                    runCatching { node.fields }
-                        .getOrNull()
-                        ?.forEach { field ->
-                            registry.addFieldDeclaration(node, field.name, field)
-                        }
-                    runCatching { node.properties }
-                        .getOrNull()
-                        ?.forEach { property ->
-                            registry.addFieldDeclaration(node, property.name, property)
-                        }
+                    // Only add class declarations for primary class nodes (actual definitions),
+                    // not type reference nodes (e.g., String, int used in field/method types).
+                    // Fixes: document-symbol-basic test was reporting type references as Class symbols.
+                    if (node in primaryClassNodes) {
+                        registry.addClassDeclaration(uri, node)
+                        // NOTE: Decompiled classpath nodes may throw linkage errors when resolving members.
+                        runCatching { node.fields }
+                            .getOrNull()
+                            ?.forEach { field ->
+                                registry.addFieldDeclaration(node, field.name, field)
+                            }
+                        runCatching { node.properties }
+                            .getOrNull()
+                            ?.forEach { property ->
+                                registry.addFieldDeclaration(node, property.name, property)
+                            }
+                    }
                 }
 
                 is FieldNode -> {

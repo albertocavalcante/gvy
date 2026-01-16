@@ -220,12 +220,10 @@ object SurefireXmlParser {
     /**
      * Parse Surefire time attribute (seconds as decimal) to milliseconds.
      */
-    private fun parseTimeToMs(timeStr: String): Long {
-        return try {
-            (timeStr.toDouble() * 1000).roundToLong()
-        } catch (e: NumberFormatException) {
-            0L
-        }
+    private fun parseTimeToMs(timeStr: String): Long = try {
+        (timeStr.toDouble() * 1000).roundToLong()
+    } catch (e: NumberFormatException) {
+        0L
     }
 
     /**

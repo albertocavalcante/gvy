@@ -183,12 +183,10 @@ class TestRequestDelegate(
     /**
      * Resolve workspace URI to a File.
      */
-    private fun resolveWorkspaceRoot(workspaceUri: String): File {
-        return if (workspaceUri.startsWith("file://")) {
-            File(URI(workspaceUri))
-        } else {
-            File(workspaceUri)
-        }
+    private fun resolveWorkspaceRoot(workspaceUri: String): File = if (workspaceUri.startsWith("file://")) {
+        File(URI(workspaceUri))
+    } else {
+        File(workspaceUri)
     }
 
     private fun createError(code: ResponseErrorCode, message: String): ResponseErrorException =
