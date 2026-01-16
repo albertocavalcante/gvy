@@ -41,14 +41,13 @@ internal object TextImportParser {
         var trimmed = line.trim()
         if (trimmed.isBlank()) return true
 
+        // Strip inline line comments first
+        trimmed = trimmed.substringBefore("//").trim()
+        if (trimmed.isBlank()) return true
+
         // Handle block comments
         val afterBlockComment = stripBlockComment(trimmed, state) ?: return true
         trimmed = afterBlockComment
-
-        // Skip line comments
-        if (trimmed.startsWith("//")) {
-            return true
-        }
 
         // Handle pending multi-line import
         if (state.pendingImport != null) {
@@ -76,20 +75,20 @@ internal object TextImportParser {
             }
         }
 
-        // Handle inline block comments (/* ... */ on same line)
-        if (result.contains("/*") && result.contains("*/")) {
+        // Handle inline block comments (/* ... */ on same line) - loop to handle multiple occurrences
+        while (result.contains("/*") && result.contains("*/")) {
             val before = result.substringBefore("/*")
             val after = result.substringAfter("*/")
             result = "$before $after".trim()
-            if (result.isBlank()) return null
         }
+        if (result.isBlank()) return null
 
-        // Handle start of block comment
-        if (result.startsWith("/*")) {
-            if (!result.contains("*/")) {
-                state.inBlockComment = true
-            }
-            return null
+        // Handle start of block comment (anywhere in the line)
+        val startIdx = result.indexOf("/*")
+        if (startIdx >= 0) {
+            val before = result.substring(0, startIdx).trim()
+            state.inBlockComment = true
+            return if (before.isBlank()) null else before
         }
 
         return result
