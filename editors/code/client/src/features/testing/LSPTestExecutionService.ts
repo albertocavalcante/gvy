@@ -6,6 +6,12 @@ import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
+import { CoverageService } from "./CoverageService";
+
+interface TestRunOptions {
+  withCoverage?: boolean;
+  coverageService?: CoverageService;
+}
 
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
@@ -26,6 +32,27 @@ export class LSPTestExecutionService implements ITestExecutionService {
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
     testController: vscode.TestController,
+  ): Promise<void> {
+    return this.runTestsInternal(request, token, testController, {});
+  }
+
+  async runTestsWithCoverage(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    testController: vscode.TestController,
+    coverageService: CoverageService,
+  ): Promise<void> {
+    return this.runTestsInternal(request, token, testController, {
+      withCoverage: true,
+      coverageService,
+    });
+  }
+
+  private async runTestsInternal(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    testController: vscode.TestController,
+    options: TestRunOptions = {},
   ): Promise<void> {
     const run = testController.createTestRun(request);
     const consumer = new TestEventConsumer(run, this.logger, testController);
@@ -75,8 +102,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
         let suiteName: string;
         let testName: string | undefined;
 
-        // Heuristic: If item has children, it's a suite. If not, it's a test method (leaves).
-        const isSuite = item.children.size > 0;
+        // Heuristic: If the item ID contains a dot, it's a test method (ClassName.methodName). Otherwise, it's a suite.
+        const isSuite = !item.id.includes(".");
 
         if (isSuite) {
           suiteName = item.id;
@@ -105,19 +132,46 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        // Execute the test command
-        const isMaven = command.executable.includes("mvn");
-        await this.executeCommand(command, consumer, token);
+        // Execute the test command with optional coverage
+        const executableName = path.basename(command.executable);
+        const isGradle = executableName.startsWith("gradle");
+        const isMaven =
+          executableName === "mvn" ||
+          executableName === "mvnw" ||
+          executableName.startsWith("mvn.");
+
+        // Clone command.args to avoid mutation
+        const coverageArgs = [...command.args];
+        if (options.withCoverage) {
+          // Append JaCoCo report generation
+          if (isGradle) {
+            coverageArgs.push("jacocoTestReport");
+          } else if (isMaven) {
+            // For Maven, add jacoco:report goal after test
+            // Requires jacoco-maven-plugin in pom.xml
+            coverageArgs.push("jacoco:report");
+          }
+        }
+
+        await this.executeCommand(
+          { ...command, args: coverageArgs },
+          consumer,
+          token,
+        );
 
         // For Maven, fetch and apply Surefire results from LSP
         if (isMaven && !token.isCancellationRequested) {
-          await this.applyTestResults(
-            workspaceUri,
-            run,
-            testsToRun,
-            consumer,
-          );
+          await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
         }
+      }
+
+      // After all tests complete, fetch and add coverage if requested
+      if (
+        options.withCoverage &&
+        options.coverageService &&
+        !token.isCancellationRequested
+      ) {
+        await options.coverageService.addCoverageToRun(run, workspaceUri);
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
@@ -138,7 +192,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     try {
       const results = await this.testService.getTestResults(workspaceUri);
       if (results.results.length === 0) {
-        this.logger.appendLine("[LSP] No test results found in Surefire reports");
+        this.logger.appendLine(
+          "[LSP] No test results found in Surefire reports",
+        );
         return;
       }
 
@@ -279,9 +335,13 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
 
     // Detect Build Tool by executable name
-    const isGradle = executable.includes("gradle");
-    const isMaven = executable.includes("mvn");
-    const isMavenWrapper = isMaven && executable.includes("mvnw");
+    const executableName = path.basename(executable);
+    const isGradle = executableName.startsWith("gradle");
+    const isMaven =
+      executableName === "mvn" ||
+      executableName === "mvnw" ||
+      executableName.startsWith("mvn.");
+    const isMavenWrapper = isMaven && executableName === "mvnw";
 
     let finalArgs = [...args];
 

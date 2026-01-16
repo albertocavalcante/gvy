@@ -103,6 +103,11 @@
         "icon": "$(testing-run-icon)"
       },
       {
+        "command": "groovy.test.runWithCoverage",
+        "title": "Groovy: Run Tests with Coverage",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "groovy.repl.sendFile",
         "title": "Groovy: Send File to REPL"
       },

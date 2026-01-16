@@ -119,17 +119,17 @@ describe("TestCodeLensProvider", () => {
       provider = new TestCodeLensProvider(testServiceMock);
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
-      // Should have CodeLens for class (Run All | Debug All) and test method (Run Test | Debug Test)
+      // Should have CodeLens for class (Run All | Debug All | Coverage) and test method (Run | Debug | Coverage)
       assert.ok(
-        codeLenses.length >= 2,
-        `Expected at least 2 CodeLenses, got ${codeLenses.length}`,
+        codeLenses.length >= 3,
+        `Expected at least 3 CodeLenses, got ${codeLenses.length}`,
       );
 
-      // Check class-level CodeLens
+      // Check class-level CodeLens (with codicons)
       const classLens = codeLenses.find(
         (lens: any) =>
-          lens.command?.title === "Run All Tests" ||
-          lens.command?.title === "Debug All Tests",
+          lens.command?.title === "$(play) Run All Tests" ||
+          lens.command?.title === "$(debug) Debug All Tests",
       );
       assert.ok(classLens, "Should have class-level CodeLens");
     });
@@ -152,19 +152,19 @@ describe("TestCodeLensProvider", () => {
       provider = new TestCodeLensProvider(testServiceMock);
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
-      // Should have at least 4 CodeLenses: 2 for class (Run All, Debug All) + 2*2 for methods (Run, Debug each)
+      // Should have at least 6 CodeLenses: 3 for class (Run All, Debug All, Coverage) + 3*2 for methods (Run, Debug, Coverage each)
       assert.ok(
-        codeLenses.length >= 4,
-        `Expected at least 4 CodeLenses, got ${codeLenses.length}`,
+        codeLenses.length >= 6,
+        `Expected at least 6 CodeLenses, got ${codeLenses.length}`,
       );
 
-      // Check for "Run Test" CodeLenses
+      // Check for "Run" CodeLenses (with codicon)
       const runTestLenses = codeLenses.filter(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(
         runTestLenses.length >= 2,
-        `Expected at least 2 "Run Test" CodeLenses, got ${runTestLenses.length}`,
+        `Expected at least 2 "$(play) Run" CodeLenses, got ${runTestLenses.length}`,
       );
     });
 
@@ -191,9 +191,9 @@ describe("TestCodeLensProvider", () => {
       );
 
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
-      assert.ok(runTestLens, 'Should have "Run Test" CodeLens for JUnit test');
+      assert.ok(runTestLens, 'Should have "$(play) Run" CodeLens for JUnit test');
     });
 
     it("should have correct command IDs for test methods", async () => {
@@ -210,14 +210,14 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       const debugLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Debug Test",
+        (lens: any) => lens.command?.title === "$(debug) Debug",
       );
 
-      assert.ok(runLens, "Should have Run Test CodeLens");
-      assert.ok(debugLens, "Should have Debug Test CodeLens");
+      assert.ok(runLens, "Should have $(play) Run CodeLens");
+      assert.ok(debugLens, "Should have $(debug) Debug CodeLens");
 
       assert.strictEqual(runLens.command.command, "groovy.test.run");
       assert.strictEqual(debugLens.command.command, "groovy.test.debug");
@@ -238,10 +238,10 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
 
-      assert.ok(runLens, "Should have Run Test CodeLens");
+      assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(runLens.command.arguments, "Command should have arguments");
       assert.strictEqual(
         runLens.command.arguments.length,
@@ -280,7 +280,7 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runLens, "Should have CodeLens for single-quoted test name");
 
@@ -331,8 +331,8 @@ describe("TestCodeLensProvider", () => {
       // Check that CodeLens is on MyTest class line (line 4), not UtilityClass (line 0)
       const classLens = codeLenses.find(
         (lens: any) =>
-          lens.command?.title === "Run All Tests" ||
-          lens.command?.title === "Debug All Tests",
+          lens.command?.title === "$(play) Run All Tests" ||
+          lens.command?.title === "$(debug) Debug All Tests",
       );
       assert.ok(classLens, "Should have class-level CodeLens");
       assert.strictEqual(
@@ -361,7 +361,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for test with parameters",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test with parameters");
     });
@@ -383,7 +383,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for inline test",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test on same line as method");
     });

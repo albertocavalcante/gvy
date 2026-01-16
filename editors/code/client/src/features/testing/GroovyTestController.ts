@@ -146,6 +146,9 @@ export class GroovyTestController {
       vscode.commands.registerCommand("groovy.test.debug", (args) =>
         this.runTestCommand(args, true),
       ),
+      vscode.commands.registerCommand("groovy.test.runWithCoverage", (args) =>
+        this.runTestCommand(args, false, true),
+      ),
       vscode.commands.registerCommand("groovy.test.runAll", () =>
         this.runAllTests(),
       ),
@@ -319,10 +322,29 @@ export class GroovyTestController {
     // Store metadata
     dataCache.set(suiteItem, { kind: "suite", suiteName: suite.suite });
 
-    // Add child test items
+    // Add child test items first to determine suite range
+    let minLine = Number.MAX_SAFE_INTEGER;
     for (const test of suite.tests) {
       const testItem = this.createTestItem(test, suite.suite, uri);
       suiteItem.children.add(testItem);
+      if (test.line < minLine) {
+        minLine = test.line;
+      }
+    }
+
+    // Set suite range: estimate class declaration is a few lines before first test
+    // Use line 0 as minimum to avoid negative values
+    const ESTIMATED_LINES_ABOVE_FIRST_TEST = 5;
+    const APPROXIMATE_LINE_LENGTH = 100;
+    if (minLine !== Number.MAX_SAFE_INTEGER && minLine >= 0) {
+      const estimatedClassLine = Math.max(
+        0,
+        minLine - ESTIMATED_LINES_ABOVE_FIRST_TEST,
+      );
+      suiteItem.range = new vscode.Range(
+        new vscode.Position(estimatedClassLine, 0),
+        new vscode.Position(estimatedClassLine, APPROXIMATE_LINE_LENGTH),
+      );
     }
 
     return suiteItem;
@@ -384,6 +406,7 @@ export class GroovyTestController {
   private async runTestCommand(
     args: { suite: string; test: string; uri?: string },
     debug: boolean,
+    withCoverage: boolean = false,
   ) {
     // Validate suite name
     if (!args.suite || args.suite.trim() === "") {
@@ -412,7 +435,7 @@ export class GroovyTestController {
     if (isWildcard) {
       const suiteItem = this.ctrl.items.get(args.suite);
       if (suiteItem) {
-        await this.runTestItem(suiteItem, debug);
+        await this.runTestItem(suiteItem, debug, withCoverage);
         return;
       }
       // If suite not found, discovery might be needed
@@ -431,7 +454,7 @@ export class GroovyTestController {
         // Retry finding suite
         const retrySuiteItem = this.ctrl.items.get(args.suite);
         if (retrySuiteItem) {
-          await this.runTestItem(retrySuiteItem, debug);
+          await this.runTestItem(retrySuiteItem, debug, withCoverage);
           return;
         }
       } else {
@@ -468,16 +491,31 @@ export class GroovyTestController {
     }
 
     if (item) {
-      await this.runTestItem(item, debug);
+      await this.runTestItem(item, debug, withCoverage);
     }
   }
 
-  private async runTestItem(item: vscode.TestItem, debug: boolean) {
+  private async runTestItem(
+    item: vscode.TestItem,
+    debug: boolean,
+    withCoverage: boolean = false,
+  ) {
     const request = new vscode.TestRunRequest([item]);
     const tokenSource = new vscode.CancellationTokenSource();
     try {
       if (debug) {
         await this.executionService.debugTests(request, tokenSource.token);
+      } else if (
+        withCoverage &&
+        this.executionService.runTestsWithCoverage &&
+        this.coverageService
+      ) {
+        await this.executionService.runTestsWithCoverage(
+          request,
+          tokenSource.token,
+          this.ctrl,
+          this.coverageService,
+        );
       } else {
         await this.executionService.runTests(
           request,
