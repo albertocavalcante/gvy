@@ -100,12 +100,12 @@ internal object TextImportParser {
      * Returns false if we should stop processing lines.
      */
     private fun handlePendingImport(trimmed: String, state: ParserState, result: ParseResult): Boolean {
+        val pendingImport = state.pendingImport ?: return true // Should not happen given the check in processLine
+
         // If we hit a new statement, finalize the pending import
         if (trimmed.startsWith("package ") || trimmed.startsWith("import") || isCodeDeclarationLine(trimmed)) {
-            if (!state.pendingImportIsStatic && state.pendingImport!!.isNotBlank() &&
-                !state.pendingImport!!.endsWith(".")
-            ) {
-                recordImport(state.pendingImport!!, result)
+            if (!state.pendingImportIsStatic && pendingImport.isNotBlank() && !pendingImport.endsWith(".")) {
+                recordImport(pendingImport, result)
             }
             state.pendingImport = null
             state.pendingImportIsStatic = false
@@ -114,8 +114,8 @@ internal object TextImportParser {
         }
 
         // Continue building the multi-line import
-        val separator = if (state.pendingImport!!.endsWith(".") || trimmed.startsWith(".")) "" else " "
-        val combined = (state.pendingImport + separator + trimmed).trim()
+        val separator = if (pendingImport.endsWith(".") || trimmed.startsWith(".")) "" else " "
+        val combined = (pendingImport + separator + trimmed).trim()
         val cleaned = combined.substringBefore(";").trim()
         val hasSemicolon = combined.contains(";")
         val continues = isImportContinuation(cleaned)
