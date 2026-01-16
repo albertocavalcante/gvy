@@ -28,7 +28,6 @@ import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDeleg
 import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
-import com.github.albertocavalcante.groovylsp.services.ErrorDetails
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentServiceOptions
@@ -176,35 +175,14 @@ class GroovyLanguageServer(
      * Provides explicit server status updates for clients to track server state.
      * Based on rust-analyzer's `experimental/serverStatus` notification pattern.
      *
-     * @param health Server functional state (ok, warning, error)
-     * @param quiescent Whether there is any pending background work (false = busy, true = idle)
-     * @param message Optional human-readable message
-     * @param filesIndexed Current number of files indexed (for progress display)
-     * @param filesTotal Total number of files to index (for progress display)
-     * @param errorCode Machine-readable error code for structured error handling
-     * @param errorDetails Structured error information for actionable error display
+     * @param notification The status notification to send to the client.
      */
-    internal fun sendStatus(
-        health: Health = Health.Ok,
-        quiescent: Boolean = true,
-        message: String? = null,
-        filesIndexed: Int? = null,
-        filesTotal: Int? = null,
-        errorCode: String? = null,
-        errorDetails: ErrorDetails? = null,
-    ) {
-        val notification = StatusNotification(
-            health = health,
-            quiescent = quiescent,
-            message = message,
-            filesIndexed = filesIndexed,
-            filesTotal = filesTotal,
-            errorCode = errorCode,
-            errorDetails = errorDetails,
-        )
+    internal fun sendStatus(notification: StatusNotification = StatusNotification()) {
         try {
             groovyClient?.groovyStatus(notification)
-            logger.debug { "Sent status notification: health=$health, quiescent=$quiescent, message=$message" }
+            logger.debug {
+                "Sent status notification: health=${notification.health}, quiescent=${notification.quiescent}, message=${notification.message}"
+            }
         } catch (e: Exception) {
             logger.debug { "Could not send status notification: ${e.message}" }
         }
@@ -253,7 +231,7 @@ class GroovyLanguageServer(
         logger.info { "Server initialized - starting async dependency resolution" }
 
         // Send starting status before async work begins
-        sendStatus(health = Health.Ok, quiescent = false, message = "Initializing workspace...")
+        sendStatus(StatusNotification(health = Health.Ok, quiescent = false, message = "Initializing workspace..."))
 
         startupManager.registerFileWatchers(baseClient, clientCapabilities)
 
@@ -270,7 +248,9 @@ class GroovyLanguageServer(
             initOptionsMap = savedInitOptionsMap,
             textDocumentServiceRefresh = { textDocumentService.refreshOpenDocuments() },
             onStatusUpdate = { health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails ->
-                sendStatus(health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails)
+                sendStatus(
+                    StatusNotification(health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails),
+                )
             },
         )
     }

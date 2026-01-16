@@ -26,6 +26,7 @@ import java.util.Properties
  * - When a node does not have usable position metadata (rare in production; common in tests), we fall back
  *   to best-effort GroovyDocParser lookup.
  */
+@Suppress("TooManyFunctions") // Cohesive documentation extraction
 object DocExtractor {
     private val logger = KotlinLogging.logger {}
 

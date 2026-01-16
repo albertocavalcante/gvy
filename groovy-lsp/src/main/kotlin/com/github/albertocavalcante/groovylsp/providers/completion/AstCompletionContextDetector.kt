@@ -31,6 +31,7 @@ import org.codehaus.groovy.ast.stmt.BlockStatement
  * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/completion">
  * IntelliJ Groovy Completion</a>
  */
+@Suppress("TooManyFunctions") // Cohesive context detection
 object AstCompletionContextDetector {
 
     /**
