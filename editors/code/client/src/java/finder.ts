@@ -30,17 +30,19 @@ export interface JavaResolution {
  * Falls back to login shell for lazy-loading shell functions (SDKMAN, etc.)
  *
  * Search priority:
- * 1. groovy.java.home setting (user-configured path)
+ * 1. groovy.languageServer.javaHome setting (user-configured path, with fallback to deprecated groovy.java.home)
  * 2. jdk-utils detection (JAVA_HOME, PATH, SDKMAN, jEnv, jabba, asdf, common paths)
  * 3. Login shell fallback (handles lazy-loaded shell functions)
  *
  * @returns JavaResolution with path, version, and source, or null if no Java found
  */
 export async function findJava(): Promise<JavaResolution | null> {
-  // 1. Check groovy.java.home setting first (highest priority)
-  const configuredHome = workspace
-    .getConfiguration("groovy")
-    .get<string>("java.home");
+  // 1. Check groovy.languageServer.javaHome setting first (highest priority)
+  // Falls back to deprecated groovy.java.home for backward compatibility
+  const config = workspace.getConfiguration("groovy");
+  const configuredHome =
+    config.get<string>("languageServer.javaHome") ||
+    config.get<string>("java.home");
   if (configuredHome) {
     const expandedPath = expandHomeDir(configuredHome);
     const runtime = await getRuntime(expandedPath, { withVersion: true });
@@ -112,7 +114,7 @@ export async function findJava(): Promise<JavaResolution | null> {
 
 /**
  * Legacy function for backward compatibility - returns just the Java executable path.
- * Synchronously searches for Java in groovy.java.home setting, then JAVA_HOME, then PATH.
+ * Synchronously searches for Java in groovy.languageServer.javaHome setting, then JAVA_HOME, then PATH.
  *
  * @deprecated Use findJava() instead for comprehensive detection with version info
  * @returns Path to java executable (e.g., "/path/to/jdk/bin/java" or "java")
@@ -120,10 +122,11 @@ export async function findJava(): Promise<JavaResolution | null> {
 export function findJavaSync(): string {
   const executableFile = process.platform === "win32" ? "java.exe" : "java";
 
-  // 1. Check configuration setting first
-  const javaHome = workspace
-    .getConfiguration("groovy")
-    .get<string>("java.home");
+  // 1. Check configuration setting first (with backward compatibility fallback)
+  const config = workspace.getConfiguration("groovy");
+  const javaHome =
+    config.get<string>("languageServer.javaHome") ||
+    config.get<string>("java.home");
   if (javaHome) {
     const javaPath = path.join(expandHomeDir(javaHome), "bin", executableFile);
     return javaPath;

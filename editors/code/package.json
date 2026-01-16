@@ -212,69 +212,191 @@
       {
         "language": "groovy",
         "scopes": {
-          "namespace": ["entity.name.namespace"],
-          "type": ["entity.name.type"],
-          "class": ["entity.name.type.class", "support.class"],
-          "enum": ["entity.name.type.enum"],
-          "interface": ["entity.name.type.interface"],
-          "struct": ["entity.name.type.struct"],
-          "typeParameter": ["entity.name.type.parameter"],
-          "parameter": ["variable.parameter"],
-          "variable": ["variable.other"],
-          "property": ["variable.other.property"],
-          "enumMember": ["variable.other.enummember"],
-          "function": ["entity.name.function"],
-          "method": ["entity.name.function.member"],
-          "macro": ["entity.name.tag.pipeline.jenkins"],
-          "keyword": ["keyword"],
-          "modifier": ["storage.modifier"],
-          "comment": ["comment"],
-          "string": ["string"],
-          "number": ["constant.numeric"],
-          "regexp": ["string.regexp"],
-          "operator": ["keyword.operator"],
-          "decorator": ["entity.name.function.decorator"],
-          "class.declaration": ["entity.name.type.class.declaration", "support.class", "entity.name.type"],
-          "*.declaration": ["entity.name.function.definition"],
-          "*.definition": ["entity.name.function.definition"],
-          "*.readonly": ["variable.other.constant"],
-          "*.static": ["entity.name.function.static"],
-          "*.deprecated": ["invalid.deprecated"],
-          "*.unnecessary": ["meta.unnecessary"]
+          "namespace": [
+            "entity.name.namespace"
+          ],
+          "type": [
+            "entity.name.type"
+          ],
+          "class": [
+            "entity.name.type.class",
+            "support.class"
+          ],
+          "enum": [
+            "entity.name.type.enum"
+          ],
+          "interface": [
+            "entity.name.type.interface"
+          ],
+          "struct": [
+            "entity.name.type.struct"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ],
+          "parameter": [
+            "variable.parameter"
+          ],
+          "variable": [
+            "variable.other"
+          ],
+          "property": [
+            "variable.other.property"
+          ],
+          "enumMember": [
+            "variable.other.enummember"
+          ],
+          "function": [
+            "entity.name.function"
+          ],
+          "method": [
+            "entity.name.function.member"
+          ],
+          "macro": [
+            "entity.name.tag.pipeline.jenkins"
+          ],
+          "keyword": [
+            "keyword"
+          ],
+          "modifier": [
+            "storage.modifier"
+          ],
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.function.decorator"
+          ],
+          "class.declaration": [
+            "entity.name.type.class.declaration",
+            "support.class",
+            "entity.name.type"
+          ],
+          "*.declaration": [
+            "entity.name.function.definition"
+          ],
+          "*.definition": [
+            "entity.name.function.definition"
+          ],
+          "*.readonly": [
+            "variable.other.constant"
+          ],
+          "*.static": [
+            "entity.name.function.static"
+          ],
+          "*.deprecated": [
+            "invalid.deprecated"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
+          ]
         }
       },
       {
         "language": "jenkinsfile",
         "scopes": {
-          "namespace": ["entity.name.namespace"],
-          "type": ["entity.name.type"],
-          "class": ["entity.name.type.class", "support.class"],
-          "enum": ["entity.name.type.enum"],
-          "interface": ["entity.name.type.interface"],
-          "struct": ["entity.name.type.struct"],
-          "typeParameter": ["entity.name.type.parameter"],
-          "parameter": ["variable.parameter"],
-          "variable": ["variable.other"],
-          "property": ["variable.other.property"],
-          "enumMember": ["variable.other.enummember"],
-          "function": ["entity.name.function"],
-          "method": ["entity.name.function.member"],
-          "macro": ["entity.name.tag.pipeline.jenkins"],
-          "keyword": ["keyword"],
-          "modifier": ["storage.modifier"],
-          "comment": ["comment"],
-          "string": ["string"],
-          "number": ["constant.numeric"],
-          "regexp": ["string.regexp"],
-          "operator": ["keyword.operator"],
-          "decorator": ["entity.name.function.decorator"],
-          "class.declaration": ["entity.name.type.class.declaration", "support.class", "entity.name.type"],
-          "*.declaration": ["entity.name.function.definition"],
-          "*.definition": ["entity.name.function.definition"],
-          "*.readonly": ["variable.other.constant"],
-          "*.static": ["entity.name.function.static"],
-          "*.deprecated": ["invalid.deprecated"],
-          "*.unnecessary": ["meta.unnecessary"]
+          "namespace": [
+            "entity.name.namespace"
+          ],
+          "type": [
+            "entity.name.type"
+          ],
+          "class": [
+            "entity.name.type.class",
+            "support.class"
+          ],
+          "enum": [
+            "entity.name.type.enum"
+          ],
+          "interface": [
+            "entity.name.type.interface"
+          ],
+          "struct": [
+            "entity.name.type.struct"
+          ],
+          "typeParameter": [
+            "entity.name.type.parameter"
+          ],
+          "parameter": [
+            "variable.parameter"
+          ],
+          "variable": [
+            "variable.other"
+          ],
+          "property": [
+            "variable.other.property"
+          ],
+          "enumMember": [
+            "variable.other.enummember"
+          ],
+          "function": [
+            "entity.name.function"
+          ],
+          "method": [
+            "entity.name.function.member"
+          ],
+          "macro": [
+            "entity.name.tag.pipeline.jenkins"
+          ],
+          "keyword": [
+            "keyword"
+          ],
+          "modifier": [
+            "storage.modifier"
+          ],
+          "comment": [
+            "comment"
+          ],
+          "string": [
+            "string"
+          ],
+          "number": [
+            "constant.numeric"
+          ],
+          "regexp": [
+            "string.regexp"
+          ],
+          "operator": [
+            "keyword.operator"
+          ],
+          "decorator": [
+            "entity.name.function.decorator"
+          ],
+          "class.declaration": [
+            "entity.name.type.class.declaration",
+            "support.class",
+            "entity.name.type"
+          ],
+          "*.declaration": [
+            "entity.name.function.definition"
+          ],
+          "*.definition": [
+            "entity.name.function.definition"
+          ],
+          "*.readonly": [
+            "variable.other.constant"
+          ],
+          "*.static": [
+            "entity.name.function.static"
+          ],
+          "*.deprecated": [
+            "invalid.deprecated"
+          ],
+          "*.unnecessary": [
+            "meta.unnecessary"
+          ]
         }
       }
     ],
@@ -289,9 +411,19 @@
     "configuration": {
       "title": "Groovy Language Server",
       "properties": {
+        "groovy.languageServer.javaHome": {
+          "type": "string",
+          "description": "Path to Java home for running the Groovy Language Server (requires Java 17+). If not set, auto-detected."
+        },
         "groovy.java.home": {
           "type": "string",
-          "description": "Path to Java home (requires Java 17+)"
+          "deprecationMessage": "Use 'groovy.languageServer.javaHome' instead. This setting will be removed in a future version.",
+          "description": "DEPRECATED: Use groovy.languageServer.javaHome"
+        },
+        "groovy.project.javaHome": {
+          "type": "string",
+          "scope": "resource",
+          "description": "Path to Java home for project build/test execution (Maven, Gradle). If not set, uses system JAVA_HOME."
         },
         "groovy.jdk.suppressMismatchWarning": {
           "type": "boolean",

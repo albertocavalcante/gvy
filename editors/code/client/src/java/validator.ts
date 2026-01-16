@@ -83,9 +83,10 @@ export async function showJavaError(
   }
 
   // Configured path is invalid
-  const settingsJavaHome = workspace
-    .getConfiguration("groovy")
-    .get<string>("java.home");
+  const config = workspace.getConfiguration("groovy");
+  const settingsJavaHome =
+    config.get<string>("languageServer.javaHome") ||
+    config.get<string>("java.home");
   if (settingsJavaHome && result.error) {
     await showConfiguredPathError(settingsJavaHome, result.error);
     return;
@@ -108,7 +109,7 @@ async function showLoginShellMessage(
     "VS Code cannot access it directly without configuration.",
     "",
     'To fix this permanently, click "Use This Path" to set:',
-    `  groovy.java.home = "${resolution.path}"`,
+    `  groovy.languageServer.javaHome = "${resolution.path}"`,
   ].join("\n");
 
   const selection = await window.showWarningMessage(
@@ -121,9 +122,9 @@ async function showLoginShellMessage(
   if (selection === "Use This Path") {
     await workspace
       .getConfiguration("groovy")
-      .update("java.home", resolution.path, true);
+      .update("languageServer.javaHome", resolution.path, true);
     const reloadSelection = await window.showInformationMessage(
-      `groovy.java.home set to "${resolution.path}". Reload window to apply?`,
+      `groovy.languageServer.javaHome set to "${resolution.path}". Reload window to apply?`,
       "Reload Now",
       "Later",
     );
@@ -133,7 +134,7 @@ async function showLoginShellMessage(
   } else if (selection === "Open Settings") {
     commands.executeCommand(
       "workbench.action.openSettings",
-      "groovy.java.home",
+      "groovy.languageServer.javaHome",
     );
   }
 }
@@ -156,7 +157,7 @@ async function showVersionError(
     "Update your Java installation:",
     ...installHints,
     "",
-    `Or configure a different Java in Settings → groovy.java.home`,
+    `Or configure a different Java in Settings → groovy.languageServer.javaHome`,
   ].join("\n");
 
   const selection = await window.showErrorMessage(
@@ -170,7 +171,7 @@ async function showVersionError(
 }
 
 /**
- * Shows error when configured groovy.java.home path is invalid
+ * Shows error when configured groovy.languageServer.javaHome path is invalid
  */
 async function showConfiguredPathError(
   configuredPath: string,
@@ -179,7 +180,7 @@ async function showConfiguredPathError(
   const message = `The configured Java path is invalid`;
 
   const detail = [
-    `groovy.java.home is set to: ${configuredPath}`,
+    `groovy.languageServer.javaHome is set to: ${configuredPath}`,
     "",
     `Error: ${error}`,
     "",
@@ -211,7 +212,7 @@ async function showNotFoundError(platform: string): Promise<void> {
     "",
     "After installing, either:",
     "  • Restart VS Code, or",
-    "  • Set the path in Settings → groovy.java.home",
+    "  • Set the path in Settings → groovy.languageServer.javaHome",
   ].join("\n");
 
   const selection = await window.showErrorMessage(
@@ -259,7 +260,7 @@ function getInstallHints(platform: string): string[] {
 function getSourceHint(resolution: JavaResolution): string {
   switch (resolution.source) {
     case "setting":
-      return `Found via groovy.java.home setting: ${resolution.path}`;
+      return `Found via groovy.languageServer.javaHome setting: ${resolution.path}`;
     case "java_home":
       return `Found via JAVA_HOME: ${resolution.path}`;
     case "jdk_manager":
@@ -279,7 +280,7 @@ function handleErrorAction(selection: string | undefined): void {
   if (selection === "Open Settings") {
     commands.executeCommand(
       "workbench.action.openSettings",
-      "groovy.java.home",
+      "groovy.languageServer.javaHome",
     );
   } else if (selection === "Download Java") {
     commands.executeCommand("vscode.open", "https://adoptium.net/");
