@@ -5,10 +5,16 @@ import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.GroovyMode
+import com.github.albertocavalcante.groovylsp.config.ModeResolver
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
-import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.CompletionStrategy
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.CompletionStrategyContext
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.GroovyCompletionStrategy
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.JenkinsBlockContext
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.JenkinsCompletionStrategy
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
@@ -17,16 +23,11 @@ import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
-import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
-import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
-import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
-import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
-import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
-import com.github.albertocavalcante.gvy.semantics.native.VariableSymbol
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -73,7 +74,9 @@ object CompletionProvider {
     /**
      * Get basic Groovy language completion items using DSL.
      */
-    fun getBasicCompletions(): List<CompletionItem> = GroovyCompletions.basic()
+    fun getBasicCompletions(): List<CompletionItem> = completions {
+        com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions.basic().forEach(::add)
+    }
 
     /**
      * Get contextual completions based on AST analysis.
@@ -194,7 +197,7 @@ object CompletionProvider {
         }
         return completions {
             addKeywords()
-            GroovyCompletions.basic().forEach(::add)
+            com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions.basic().forEach(::add)
         }
     }
 
@@ -219,15 +222,25 @@ object CompletionProvider {
 
     private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
         ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
+
+        // Extract symbol context
         val symbolContext = SymbolExtractor.extractCompletionSymbols(
             ctx.ast,
             ctx.line,
             ctx.character,
             ctx.semanticResolver.semantics,
         )
-        val isJenkinsFile =
-            ctx.compilationService.workspaceManager.getJenkinsCapabilities()?.isJenkinsFile(ctx.uri) ?: false
 
+        // Get Jenkins capabilities and create mode resolver
+        val jenkinsCapabilities = ctx.compilationService.workspaceManager.getJenkinsCapabilities()
+        val modeResolver = ModeResolver(
+            configuredMode = GroovyMode.AUTO, // TODO: Get from ServerConfiguration once available
+            jenkinsCapabilities = jenkinsCapabilities,
+        )
+        val mode = modeResolver.resolveMode(ctx.uri)
+        val isJenkinsFile = jenkinsCapabilities?.isJenkinsFile(ctx.uri) ?: false
+
+        // Handle import completions (early return)
         val importContext = CompletionContextDetector.detectImportCompletionContext(
             content = ctx.content,
             line = ctx.line,
@@ -238,6 +251,7 @@ object CompletionProvider {
             return completions { addImportCompletions(importContext, ctx.compilationService) }
         }
 
+        // Detect completion context
         val nodeAtCursor = CompletionContextDetector.findNodeAtOrBefore(
             ctx.astModel,
             ctx.uri,
@@ -254,68 +268,65 @@ object CompletionProvider {
                 ctx.moduleNode,
             )
 
-        val jenkinsContext = resolveJenkinsContext(ctx, isJenkinsFile)
-        val metadata = jenkinsContext.metadata
+        // Build strategy context
+        val jenkinsMetadata = if (isJenkinsFile) jenkinsCapabilities?.getAllMetadata() else null
+        val jenkinsBlockContext = buildJenkinsBlockContext(ctx, isJenkinsFile)
+
+        val strategyContext = CompletionStrategyContext(
+            baseContext = ctx,
+            symbolContext = symbolContext,
+            nodeAtCursor = nodeAtCursor,
+            contextType = completionContext,
+            mode = mode,
+            isJenkinsFile = isJenkinsFile,
+            jenkinsMetadata = jenkinsMetadata,
+            jenkinsBlockContext = jenkinsBlockContext,
+        )
 
         return completions {
+            // Spock block labels (keep existing logic)
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
 
-            // For member access context (e.g., "p."), only add member completions
-            // Skip local symbols, keywords, etc. as they are not relevant for member completion
+            // Handle member access context (special case - keep existing)
             if (completionContext is ContextType.MemberAccess) {
-                handleMemberAccessContext(completionContext, ctx, metadata)
+                handleMemberAccessContext(completionContext, ctx, jenkinsMetadata)
                 return@completions
             }
 
-            addLocalSymbolsIfApplicable(symbolContext, jenkinsContext.isStrictDeclarative)
+            // Use strategies for general completions
+            val strategies = buildStrategies(mode)
+            val strategyItems = runBlocking {
+                CompletionStrategy.aggregate(strategies).complete(strategyContext).fold(
+                    ifLeft = { emptyList() },
+                    ifRight = { it },
+                )
+            }
+            strategyItems.forEach(::add)
 
-            addJenkinsCompletionsIfApplicable(
-                jenkinsContext = jenkinsContext,
-                ctx = ctx,
-                nodeAtCursor = nodeAtCursor,
-            )
-
-            if (handleContextualCompletions(completionContext, ctx, metadata)) {
+            // Handle contextual completions (TypeParameter - keep existing)
+            if (handleContextualCompletions(completionContext, ctx, jenkinsMetadata)) {
                 return@completions
             }
         }
     }
 
-    private data class JenkinsContext(
-        val metadata: MergedJenkinsMetadata?,
-        val blockCategories: Set<DeclarativePipelineSchema.CompletionCategory>?,
-        val innerInstructions: Set<String>?,
-        val isStrictDeclarative: Boolean,
-    )
+    private fun buildStrategies(mode: GroovyMode): List<CompletionStrategy> = when (mode) {
+        GroovyMode.GROOVY -> listOf(GroovyCompletionStrategy())
+        GroovyMode.JENKINS -> listOf(JenkinsCompletionStrategy(), GroovyCompletionStrategy())
+        GroovyMode.AUTO -> listOf(JenkinsCompletionStrategy(), GroovyCompletionStrategy())
+    }
 
-    private fun resolveJenkinsContext(ctx: CompletionContext, isJenkinsFile: Boolean): JenkinsContext {
-        if (!isJenkinsFile) {
-            return JenkinsContext(
-                metadata = null,
-                blockCategories = null,
-                innerInstructions = null,
-                isStrictDeclarative = false,
-            )
-        }
+    private fun buildJenkinsBlockContext(ctx: CompletionContext, isJenkinsFile: Boolean): JenkinsBlockContext? {
+        if (!isJenkinsFile) return null
 
-        // Use text-based context detection (more robust during editing) instead of AST traversal.
-        val detected = JenkinsContextDetector.detectFromDocument(
-            ctx.content.lines(),
-            ctx.line,
-            ctx.character,
-        )
-        val metadata = ctx.compilationService.workspaceManager.getJenkinsCapabilities()?.getAllMetadata()
-
+        val detected = JenkinsContextDetector.detectFromDocument(ctx.content.lines(), ctx.line, ctx.character)
         val currentBlock = detected.currentBlock
-        val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories)
-        val innerInstructions = currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions)
-        val isStrictDeclarative =
-            detected.isDeclarativePipeline &&
-                currentBlock != null &&
-                currentBlock != "script"
+        val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories) ?: emptySet()
+        val innerInstructions = currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions) ?: emptySet()
+        val isStrictDeclarative = detected.isDeclarativePipeline && currentBlock != null && currentBlock != "script"
 
-        return JenkinsContext(
-            metadata = metadata,
+        return JenkinsBlockContext(
+            currentBlock = currentBlock,
             blockCategories = blockCategories,
             innerInstructions = innerInstructions,
             isStrictDeclarative = isStrictDeclarative,
@@ -326,81 +337,6 @@ object CompletionProvider {
     //   Several extension functions below don't use `this` but are defined as extensions for
     //   DSL consistency. Consider suppressing warnings or refactoring.
     //   See: https://github.com/albertocavalcante/gvy/issues/864
-
-    private fun CompletionsBuilder.addLocalSymbolsIfApplicable(
-        context: SymbolCompletionContext,
-        isStrictDeclarative: Boolean,
-    ) {
-        if (isStrictDeclarative) {
-            return
-        }
-
-        addClasses(context.classes)
-        addMethods(context.methods)
-        addFields(context.fields)
-        addVariables(context.variables)
-        addImports(context.imports)
-        addKeywords()
-
-        // Add basic Groovy snippet completions (println, print, etc.)
-        GroovyCompletions.basic().forEach(::add)
-    }
-
-    private fun CompletionsBuilder.addJenkinsCompletionsIfApplicable(
-        jenkinsContext: JenkinsContext,
-        ctx: CompletionContext,
-        nodeAtCursor: ASTNode?,
-    ) {
-        val metadata = jenkinsContext.metadata ?: return
-
-        with(JenkinsCompletionProvider) {
-            // Suggest parameter map keys so we can complete named parameters
-            addJenkinsMapKeyCompletions(ctx, nodeAtCursor, ctx.astModel, metadata)
-
-            // Lenient step allowance: allow steps if not in a strict declarative block,
-            // or if the block explicitly allows steps.
-            val allowSteps =
-                !jenkinsContext.isStrictDeclarative ||
-                    jenkinsContext.blockCategories
-                        ?.contains(DeclarativePipelineSchema.CompletionCategory.STEP) == true
-
-            if (allowSteps) {
-                // TODO(#657): Refactor to use a determined JenkinsCompletionStrategy.
-                addJenkinsStepCompletions(metadata)
-            }
-
-            addJenkinsGlobalVariables(metadata, ctx.compilationService.workspaceManager.getJenkinsCapabilities())
-
-            // Only add block-level completions when cursor is at block level (not inside method call args)
-            val cursorContext = detectCursorPositionContext(nodeAtCursor, ctx.astModel)
-            val isBlockLevel = cursorContext is CursorPositionContext.BlockLevel
-
-            jenkinsContext.blockCategories?.let { categories ->
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE) && isBlockLevel) {
-                    addJenkinsAgentTypeCompletions()
-                }
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION) &&
-                    isBlockLevel
-                ) {
-                    addJenkinsDeclarativeOptions(metadata)
-                }
-                if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION) && isBlockLevel) {
-                    addJenkinsPostConditionCompletions()
-                }
-            }
-        }
-
-        // Add inner instructions (sub-blocks) from schema
-        jenkinsContext.innerInstructions?.forEach { instruction ->
-            completion {
-                label(instruction)
-                kind(CompletionItemKind.Keyword)
-                detail("Declarative directive")
-                insertText("$instruction {")
-                sortText("0-directive-$instruction")
-            }
-        }
-    }
 
     @Suppress("UnusedParameter", "FunctionParameterNaming") // TODO: Use _metadata for Jenkins-specific completions
     private fun CompletionsBuilder.handleContextualCompletions(
@@ -951,65 +887,6 @@ object CompletionProvider {
          */
         data class MemberAccess(val qualifierType: String, val qualifierName: String? = null) : ContextType
         data class TypeParameter(val prefix: String) : ContextType
-    }
-
-    private fun CompletionsBuilder.addClasses(classes: List<ClassSymbol>) {
-        classes.forEach { classSymbol ->
-            clazz(
-                name = classSymbol.name,
-                packageName = classSymbol.packageName,
-                doc = "Class: ${classSymbol.name}",
-            )
-        }
-    }
-
-    private fun CompletionsBuilder.addMethods(methods: List<MethodSymbol>) {
-        methods.forEach { methodSymbol ->
-            val paramSignatures = methodSymbol.parameters.map { "${it.type} ${it.name}" }
-            method(
-                name = methodSymbol.name,
-                returnType = methodSymbol.returnType,
-                parameters = paramSignatures,
-                doc = "Method: ${methodSymbol.name}",
-            )
-        }
-    }
-
-    private fun CompletionsBuilder.addFields(fields: List<FieldSymbol>) {
-        fields.forEach { fieldSymbol ->
-            field(
-                name = fieldSymbol.name,
-                type = fieldSymbol.type,
-                doc = "Field: ${fieldSymbol.type} ${fieldSymbol.name}",
-            )
-        }
-    }
-
-    private fun CompletionsBuilder.addVariables(variables: List<VariableSymbol>) {
-        variables.forEach { varSymbol ->
-            val kind = varSymbol.kind.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
-            val docString = "$kind: ${varSymbol.type} ${varSymbol.name}"
-            variable(
-                name = varSymbol.name,
-                type = varSymbol.type,
-                doc = docString,
-            )
-        }
-    }
-
-    private fun CompletionsBuilder.addImports(imports: List<ImportSymbol>) {
-        imports.forEach { importSymbol ->
-            if (!importSymbol.isStarImport) {
-                val name = importSymbol.className
-                    ?: importSymbol.packageName.substringAfterLast('.')
-
-                clazz(
-                    name = name,
-                    packageName = importSymbol.packageName,
-                    doc = "Imported: ${importSymbol.packageName}.$name",
-                )
-            }
-        }
     }
 
     /**

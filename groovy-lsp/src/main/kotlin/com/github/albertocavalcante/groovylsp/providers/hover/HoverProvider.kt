@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.GroovyMode
+import com.github.albertocavalcante.groovylsp.config.ModeResolver
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.documentation.DocFormatter
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
@@ -10,9 +12,6 @@ import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
-import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
-import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
-import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClassDeclarationHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClosureHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ConstructorCallHoverStrategy
@@ -20,6 +19,7 @@ import com.github.albertocavalcante.groovylsp.providers.hover.strategies.Declara
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.FieldDeclarationHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.GenericHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ImportHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.JenkinsStepHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.LiteralHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodCallHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodDeclarationHoverStrategy
@@ -45,7 +45,6 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import java.io.IOException
 import java.net.URI
@@ -69,21 +68,36 @@ class HoverProvider(
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
+    // Create mode resolver lazily
+    // Note: Uses AUTO mode since we don't have direct access to ServerConfiguration from compilation service
+    // AUTO mode will auto-detect based on JenkinsCapabilities, which is the desired behavior
+    private val modeResolver: ModeResolver by lazy {
+        ModeResolver(
+            configuredMode = GroovyMode.AUTO,
+            jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities(),
+        )
+    }
+
     // Strategies for handling different node types (order matters - more specific first)
-    private val strategies: List<HoverStrategy> = listOf(
-        MethodDeclarationHoverStrategy(),
-        ClassDeclarationHoverStrategy(),
-        FieldDeclarationHoverStrategy(),
-        ImportHoverStrategy(),
-        DeclarationExpressionHoverStrategy(),
-        VariableExpressionHoverStrategy(),
-        MethodCallHoverStrategy(),
-        ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
-        PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
-        ClosureHoverStrategy(), // Phase 4: Closure expressions
-        LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
-        GenericHoverStrategy(), // Fallback - must be last
-    )
+    private val strategies: List<HoverStrategy> by lazy {
+        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+        listOfNotNull(
+            // Jenkins step hover has high priority for method calls in Jenkins files
+            jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
+            MethodDeclarationHoverStrategy(),
+            ClassDeclarationHoverStrategy(),
+            FieldDeclarationHoverStrategy(),
+            ImportHoverStrategy(),
+            DeclarationExpressionHoverStrategy(),
+            VariableExpressionHoverStrategy(),
+            MethodCallHoverStrategy(),
+            ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
+            PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
+            ClosureHoverStrategy(), // Phase 4: Closure expressions
+            LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
+            GenericHoverStrategy(), // Fallback - must be last
+        )
+    }
 
     /**
      * Provide hover information for the symbol at the given position.
@@ -286,9 +300,6 @@ class HoverProvider(
      * Create hover content using the strategy pattern with documentation enhancement.
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
-        // Check if this is a Jenkins step and we have metadata for it
-        tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
-
         val module = compilationService.getAst(documentUri) as? ModuleNode
         val context = HoverContext(
             moduleNode = module,
@@ -337,120 +348,6 @@ class HoverProvider(
 
         // Enhance hover with documentation
         return enhanceHoverWithDocumentation(baseHover, doc)
-    }
-
-    /**
-     * Try to create a hover for a Jenkins step from bundled metadata.
-     * Also checks for vars/ global variables with .txt documentation.
-     */
-    private fun tryCreateJenkinsStepHover(node: ASTNode, documentUri: URI): Hover? {
-        // Only check for Jenkins files
-        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
-        if (jenkinsCapabilities?.isJenkinsFile(documentUri) != true) {
-            return null
-        }
-
-        // Only for method calls
-        if (node !is MethodCallExpression) {
-            return null
-        }
-
-        val stepName = node.methodAsString ?: return null
-
-        // First, check if this is a vars/ global variable call
-        val varsHover = tryCreateVarsGlobalVariableHover(stepName, node, jenkinsCapabilities)
-        if (varsHover != null) {
-            return varsHover
-        }
-        val metadata = jenkinsCapabilities.getAllMetadata() ?: return null
-        val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
-
-        // Build rich hover content for Jenkins step
-        val markdownContent = markdown {
-            h2("Jenkins Step: `$stepName`")
-
-            stepMetadata.documentation?.let { doc ->
-                text(doc)
-            }
-
-            stepMetadata.plugin?.let { plugin ->
-                text("**Plugin:** $plugin")
-            }
-
-            // Use namedParams instead of parameters for MergedStepMetadata
-            if (stepMetadata.namedParams.isNotEmpty()) {
-                h3("Parameters")
-                list(
-                    stepMetadata.namedParams.map { (name, param) ->
-                        val required = if (param.required) " *(required)*" else ""
-                        val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
-                        val base = "**`$name`**: `${param.type}`$required$defaultVal"
-                        param.description?.let { desc -> "$base\n  - $desc" } ?: base
-                    },
-                )
-            }
-        }
-
-        val markupContent = MarkupContent().apply {
-            kind = MarkupKind.MARKDOWN
-            value = markdownContent
-        }
-
-        // Build hover range from the method call expression
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
-        )
-
-        return Hover().apply {
-            contents = Either.forRight(markupContent)
-            range = hoverRange
-        }
-    }
-
-    /**
-     * Try to create a hover for a vars/ global variable call.
-     * Shows the documentation from the companion .txt file if available.
-     */
-    private fun tryCreateVarsGlobalVariableHover(
-        varName: String,
-        node: MethodCallExpression,
-        jenkinsCapabilities: JenkinsCapabilities,
-    ): Hover? {
-        val globalVariables = jenkinsCapabilities.getGlobalVariables()
-        val globalVar = globalVariables.find { it.name == varName } ?: return null
-
-        // Build hover content
-        val markdownContent = markdown {
-            h2("Jenkins Shared Library: `$varName`")
-
-            if (globalVar.documentation.isNotEmpty()) {
-                text(globalVar.documentation)
-            } else {
-                text(italic("No documentation available. Add a `vars/$varName.txt` file to provide documentation."))
-            }
-
-            text("**Source:** `${globalVar.path.fileName}`")
-        }
-
-        val markupContent = MarkupContent().apply {
-            kind = MarkupKind.MARKDOWN
-            value = markdownContent
-        }
-
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
-        )
-
-        return Hover().apply {
-            contents = Either.forRight(markupContent)
-            range = hoverRange
-        }
     }
 
     /**
