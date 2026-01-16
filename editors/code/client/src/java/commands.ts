@@ -168,17 +168,7 @@ async function configureProjectJava(minimumVersion?: number): Promise<boolean> {
     return false;
   }
 
-  const config = vscode.workspace.getConfiguration("groovy");
-  await config.update(
-    "project.javaHome",
-    jdk.path,
-    vscode.ConfigurationTarget.Workspace,
-  );
-
-  vscode.window.showInformationMessage(
-    `Project build JDK set to Java ${jdk.version}. Tests will use this JDK.`,
-  );
-  return true;
+  return await setProjectJavaHome(jdk.path, jdk.version);
 }
 
 /**
@@ -271,17 +261,7 @@ async function browseAndSetProjectJavaHome(): Promise<boolean> {
       return false;
     }
 
-    const config = vscode.workspace.getConfiguration("groovy");
-    await config.update(
-      "project.javaHome",
-      runtime.homedir,
-      vscode.ConfigurationTarget.Workspace,
-    );
-
-    vscode.window.showInformationMessage(
-      `Project build JDK set to Java ${runtime.version.major}. Tests will use this JDK.`,
-    );
-    return true;
+    return await setProjectJavaHome(runtime.homedir, runtime.version.major);
   } catch (error) {
     vscode.window.showErrorMessage(
       `Failed to validate JDK at ${jdkPath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -319,6 +299,31 @@ async function setLspJavaHomeAndRestart(
     await vscode.commands.executeCommand("groovy.restartServer");
   }
 
+  return true;
+}
+
+/**
+ * Sets the Project Build Java home in workspace settings.
+ * Updates groovy.project.javaHome in .vscode/settings.json (workspace scope).
+ *
+ * @param jdkPath Absolute path to the JDK home directory
+ * @param version Major Java version number
+ * @returns true if settings were updated successfully
+ */
+async function setProjectJavaHome(
+  jdkPath: string,
+  version: number,
+): Promise<boolean> {
+  const config = vscode.workspace.getConfiguration("groovy");
+  await config.update(
+    "project.javaHome",
+    jdkPath,
+    vscode.ConfigurationTarget.Workspace,
+  );
+
+  vscode.window.showInformationMessage(
+    `Project build JDK set to Java ${version}. Tests will use this JDK.`,
+  );
   return true;
 }
 

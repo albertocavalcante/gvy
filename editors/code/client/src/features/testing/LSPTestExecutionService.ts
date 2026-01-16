@@ -169,7 +169,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       resolvedEnv = {
         ...resolvedEnv,
         JAVA_HOME: projectJavaHome,
-        PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH}`,
+        PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
       };
       this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
     }
