@@ -53,6 +53,9 @@ data class ServerConfiguration(
     // Gradle Build Strategy - controls how Gradle projects resolve dependencies
     // See: https://devblogs.microsoft.com/java/new-build-server-for-gradle/
     val gradleBuildStrategy: GradleBuildStrategy = GradleBuildStrategy.AUTO,
+
+    // Language mode - controls which framework-specific features are enabled
+    val groovyMode: GroovyMode = GroovyMode.AUTO,
 ) {
 
     enum class CompilationMode {
@@ -154,6 +157,9 @@ data class ServerConfiguration(
                     gradleBuildStrategy = GradleBuildStrategy.fromString(
                         map["groovy.gradle.buildStrategy"] as? String,
                     ),
+
+                    // Language mode
+                    groovyMode = GroovyMode.fromString(map["groovy.mode"] as? String),
                 )
             } catch (e: Exception) {
                 logger.warn(e) { "Error parsing configuration, using defaults" }
@@ -179,7 +185,8 @@ data class ServerConfiguration(
             val logLevelString = rawValue as? String
             // Log at INFO level so this is ALWAYS visible before level is changed
             logger.info {
-                "Parsing logLevel from initOptions: raw='$rawValue', type=${rawValue?.javaClass?.simpleName ?: "null"}, parsed=$logLevelString"
+                val rawType = rawValue?.javaClass?.simpleName ?: "null"
+                "Parsing logLevel from initOptions: raw='$rawValue', type=$rawType, parsed=$logLevelString"
             }
             val parsed = LogLevel.fromString(logLevelString)
             logger.info { "LogLevel parsed as: ${parsed.name}" }
