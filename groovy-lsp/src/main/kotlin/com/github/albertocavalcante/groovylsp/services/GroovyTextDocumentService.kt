@@ -330,90 +330,136 @@ class GroovyTextDocumentService(
      * - Exception handling: Catches compilation failures to avoid retry loops
      */
     private suspend fun ensureAllOpenDocumentsCompiled() {
-        // PERFORMANCE OPTIMIZATION: Check if all documents are already compiled
-        // This avoids unnecessary blocking when all documents are already compiled
-        val currentJob = currentCoroutineContext()[Job]
-        val hasPendingJobs = diagnosticJobs.values.any { it != currentJob && it.isActive }
+        CompilationEnsurer().ensureAllCompiled()
+    }
 
-        // Check if all open documents are already compiled
-        val allDocumentsCompiled = try {
-            documentProvider.getAllUris().all { uri ->
-                compilationService.getSymbolStorage(uri) != null
+    /**
+     * Helper class that encapsulates the logic for ensuring all open documents are compiled.
+     * Extracted from ensureAllOpenDocumentsCompiled to reduce complexity.
+     *
+     * This class manages the compilation process with multiple safeguards to prevent
+     * infinite loops and timeouts.
+     */
+    private inner class CompilationEnsurer(
+        private val maxTimeMs: Long = MAX_COMPILATION_TIMEOUT_MS,
+        private val maxIterations: Int = MAX_COMPILATION_ITERATIONS,
+    ) {
+        private val failedUris = mutableSetOf<URI>()
+
+        suspend fun ensureAllCompiled() {
+            val startTime = System.currentTimeMillis()
+
+            // Initial check for pending jobs and compilation status
+            if (!hasWorkToDo()) return
+
+            var iterations = 0
+            var compiledAny = true
+
+            while (compiledAny) {
+                if (!checkSafeguards(iterations++, System.currentTimeMillis() - startTime)) {
+                    return
+                }
+
+                // Wait for pending diagnostic jobs
+                val currentJob = currentCoroutineContext()[Job]
+                val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
+                if (pendingJobs.isNotEmpty()) {
+                    waitForPendingJobs(pendingJobs, iterations, System.currentTimeMillis() - startTime)
+                }
+
+                // Compile unindexed URIs
+                compiledAny = compileUnindexedUris(startTime, iterations) ?: return
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.debug(e) { "ensureAllOpenDocumentsCompiled: Error checking compilation status" }
-            false
+
+            val completionElapsedMs = System.currentTimeMillis() - startTime
+            logger.debug {
+                "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
+                    "(${completionElapsedMs}ms)"
+            }
         }
 
-        if (!hasPendingJobs && allDocumentsCompiled) {
-            logger.debug { "ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping" }
-            return
+        private suspend fun hasWorkToDo(): Boolean {
+            // PERFORMANCE OPTIMIZATION: Check if all documents are already compiled
+            // This avoids unnecessary blocking when all documents are already compiled
+            val currentJob = currentCoroutineContext()[Job]
+            val hasPendingJobs = diagnosticJobs.values.any { it != currentJob && it.isActive }
+
+            // Check if all open documents are already compiled
+            val allDocumentsCompiled = try {
+                documentProvider.getAllUris().all { uri ->
+                    compilationService.getSymbolStorage(uri) != null
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.debug(e) { "ensureAllOpenDocumentsCompiled: Error checking compilation status" }
+                false
+            }
+
+            if (!hasPendingJobs && allDocumentsCompiled) {
+                logger.debug { "ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping" }
+                return false
+            }
+
+            return true
         }
 
-        var iterations = 0
-        val startTime = System.currentTimeMillis()
+        private suspend fun checkSafeguards(iterations: Int, elapsedMs: Long): Boolean {
+            // SAFEGUARD 1: Check coroutine cancellation
+            currentCoroutineContext().ensureActive()
 
-        // Loop until all open documents are compiled and indexed.
-        // This handles the race condition where new documents might be opened
-        // or new diagnostic jobs might be started during the process.
-        // Track failed URIs to avoid retrying them in subsequent iterations
-        val failedUris = mutableSetOf<URI>()
-
-        while (true) {
-            // SAFEGUARD 1: Check iteration limit to prevent infinite loops
-            if (iterations >= MAX_COMPILATION_ITERATIONS) {
+            // SAFEGUARD 2: Check iteration limit to prevent infinite loops
+            if (iterations >= maxIterations) {
                 logger.warn {
-                    "ensureAllOpenDocumentsCompiled: Reached max iterations ($MAX_COMPILATION_ITERATIONS). " +
+                    "ensureAllOpenDocumentsCompiled: Reached max iterations ($maxIterations). " +
                         "Some documents may not be fully compiled. This may indicate a compilation loop or " +
                         "excessive file churn."
                 }
-                break
+                return false
             }
-            iterations++
 
-            // SAFEGUARD 2: Check overall timeout to prevent indefinite blocking
-            var elapsedMs = System.currentTimeMillis() - startTime
-            if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
+            // SAFEGUARD 3: Check overall timeout to prevent indefinite blocking
+            if (elapsedMs > maxTimeMs) {
                 logger.warn {
                     "ensureAllOpenDocumentsCompiled: Timeout after ${elapsedMs}ms " +
-                        "(limit: ${MAX_COMPILATION_TIMEOUT_MS}ms). " +
+                        "(limit: ${maxTimeMs}ms). " +
                         "Some documents may not be fully compiled."
                 }
-                break
+                return false
             }
 
-            // SAFEGUARD 3: Check if coroutine was cancelled
-            currentCoroutineContext().ensureActive()
+            return true
+        }
 
-            // Wait for all pending diagnostic jobs (which include compilation)
-            // SAFEGUARD 4: Filter out current job to prevent deadlock
-            val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
+        private suspend fun waitForPendingJobs(pendingJobs: List<Job>, iterations: Int, elapsedMs: Long) {
+            logger.debug {
+                "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
+                    "Waiting for ${pendingJobs.size} pending compilation jobs " +
+                    "(elapsed: ${elapsedMs}ms)"
+            }
 
-            if (pendingJobs.isNotEmpty()) {
-                logger.debug {
-                    "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
-                        "Waiting for ${pendingJobs.size} pending compilation jobs " +
-                        "(elapsed: ${elapsedMs}ms)"
-                }
-
-                // SAFEGUARD 5: Timeout on joinAll to prevent indefinite blocking
-                val joinResult = withTimeoutOrNull(MAX_JOB_WAIT_TIMEOUT_MS) {
+            // SAFEGUARD 4: Timeout on joinAll to prevent indefinite blocking
+            // Cap wait time by remaining overall timeout to avoid overshooting the hard limit
+            val remainingMs = (maxTimeMs - elapsedMs).coerceAtLeast(0)
+            val waitMs = minOf(MAX_JOB_WAIT_TIMEOUT_MS, remainingMs)
+            val joinResult = if (waitMs > 0) {
+                withTimeoutOrNull(waitMs) {
                     pendingJobs.joinAll()
                 }
-
-                if (joinResult == null) {
-                    logger.warn {
-                        "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
-                            "after ${MAX_JOB_WAIT_TIMEOUT_MS}ms. Proceeding anyway."
-                    }
-                }
+            } else {
+                null
             }
 
-            var compiledAny = false
+            if (joinResult == null) {
+                logger.warn {
+                    "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
+                        "after ${waitMs}ms. Proceeding anyway."
+                }
+            }
+        }
 
-            // Also ensure any documents without pending jobs are compiled
+        @Suppress("NestedBlockDepth") // Complexity inherited from original implementation
+        private suspend fun compileUnindexedUris(startTime: Long, iterations: Int): Boolean? {
             // Take a snapshot to avoid concurrent modification issues
             val urisSnapshot = try {
                 documentProvider.getAllUris().toList()
@@ -421,26 +467,27 @@ class GroovyTextDocumentService(
                 throw e
             } catch (e: Exception) {
                 logger.error(e) { "ensureAllOpenDocumentsCompiled: Error getting URIs snapshot" }
-                emptyList()
+                return false
             }
 
             logger.debug {
-                "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
-                    "Processing ${urisSnapshot.size} open documents"
+                "ensureAllOpenDocumentsCompiled: Iteration $iterations - Processing ${urisSnapshot.size} open documents"
             }
 
+            var compiledAny = false
+
             for (uri in urisSnapshot) {
-                // SAFEGUARD 6: Check timeout inside loop to prevent long-running iterations
-                elapsedMs = System.currentTimeMillis() - startTime
-                if (elapsedMs > MAX_COMPILATION_TIMEOUT_MS) {
+                // SAFEGUARD 5: Check timeout inside loop to prevent long-running iterations
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed > maxTimeMs) {
                     logger.warn {
-                        "ensureAllOpenDocumentsCompiled: Timeout during compilation loop after ${elapsedMs}ms. " +
+                        "ensureAllOpenDocumentsCompiled: Timeout during compilation loop after ${elapsed}ms. " +
                             "Stopping mid-iteration."
                     }
-                    return
+                    return null // Signal early termination due to timeout
                 }
 
-                // Check cancellation in loop
+                // SAFEGUARD 6: Check cancellation in loop
                 currentCoroutineContext().ensureActive()
 
                 // Skip URIs that failed in previous iterations
@@ -473,17 +520,7 @@ class GroovyTextDocumentService(
                 }
             }
 
-            if (!compiledAny) {
-                // No new documents were compiled in this iteration, so all open documents
-                // should now be compiled and indexed.
-                // Recalculate elapsed time for accurate logging
-                val completionElapsedMs = System.currentTimeMillis() - startTime
-                logger.debug {
-                    "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
-                        "(${completionElapsedMs}ms)"
-                }
-                break
-            }
+            return compiledAny
         }
     }
 
