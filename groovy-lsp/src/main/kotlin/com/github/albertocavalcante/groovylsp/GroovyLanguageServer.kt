@@ -17,11 +17,15 @@ import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
+import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
 import com.github.albertocavalcante.groovylsp.providers.testing.BuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.GetBuildToolInfoParams
+import com.github.albertocavalcante.groovylsp.providers.testing.GetTestResultsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
+import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.ErrorDetails
@@ -327,6 +331,14 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/ast")
     fun getAst(params: AstParams): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
+
+    @JsonRequest("groovy/getTestResults")
+    fun getTestResults(params: GetTestResultsParams): CompletableFuture<TestResultsResponse> =
+        testRequestDelegate.getTestResults(params)
+
+    @JsonRequest("groovy/getCoverage")
+    fun getCoverage(params: GetCoverageParams): CompletableFuture<CoverageResponse> =
+        testRequestDelegate.getCoverage(params)
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)

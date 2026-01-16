@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.MySpec" time="4.662" tests="3" errors="1" skipped="1" failures="1">
+  <testcase name="testSuccess" classname="com.example.MySpec" time="0.123">
+    <system-out><![CDATA[Test output here]]></system-out>
+  </testcase>
+  <testcase name="testFailure" classname="com.example.MySpec" time="0.456">
+    <failure message="Expected true but was false" type="org.opentest4j.AssertionFailedError">
+org.opentest4j.AssertionFailedError: Expected true but was false
+    at com.example.MySpec.testFailure(MySpec.groovy:15)
+    </failure>
+    <system-out><![CDATA[Failure output]]></system-out>
+  </testcase>
+  <testcase name="testSkipped" classname="com.example.MySpec" time="0.000">
+    <skipped message="Test disabled"/>
+  </testcase>
+  <testcase name="testError" classname="com.example.MySpec" time="0.234">
+    <error message="NullPointerException" type="java.lang.NullPointerException">
+java.lang.NullPointerException
+    at com.example.MySpec.testError(MySpec.groovy:25)
+    </error>
+  </testcase>
+</testsuite>
