@@ -949,8 +949,8 @@ object CompletionProvider {
             .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
             .forEach { method ->
-                val returnType = method.returnType?.name?.substringAfterLast('.') ?: "def"
-                val params = method.parameters.joinToString(", ") { it.type.name.substringAfterLast('.') }
+                val returnType = method.returnType?.nameWithoutPackage ?: "def"
+                val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
                 add(
                     CompletionItem().apply {
                         label = method.name
@@ -982,7 +982,7 @@ object CompletionProvider {
             .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
             .forEach { field ->
-                val type = field.type?.name?.substringAfterLast('.') ?: "def"
+                val type = field.type?.nameWithoutPackage ?: "def"
                 add(
                     CompletionItem().apply {
                         label = field.name
@@ -1020,7 +1020,7 @@ object CompletionProvider {
             .filter { property -> property.name !in staticFieldNames }
             .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
             .forEach { property ->
-                val type = property.type?.name?.substringAfterLast('.') ?: "def"
+                val type = property.type?.nameWithoutPackage ?: "def"
                 add(
                     CompletionItem().apply {
                         label = property.name

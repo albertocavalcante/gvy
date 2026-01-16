@@ -211,7 +211,7 @@ class DependencyGraph {
 
         // Extract dependencies from star imports
         moduleNode.starImports.forEach { importNode ->
-            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
+            processStarImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from static imports
@@ -267,7 +267,25 @@ class DependencyGraph {
     }
 
     /**
-     * Process a simple import (star import or static import) and extract dependencies.
+     * Process a star import and extract dependencies on all classes in the package.
+     */
+    private fun processStarImport(
+        packageName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (packageName == null) return
+
+        workspaceIndex.forEach { (className, uri) ->
+            // Check if the class is directly in the package (not a subpackage)
+            if (className.startsWith("$packageName.") && !className.substringAfter("$packageName.").contains('.')) {
+                dependencies.add(uri)
+            }
+        }
+    }
+
+    /**
+     * Process a static or static-star import and extract dependencies.
      *
      * Only tries the exact class name without FQN resolution.
      */
