@@ -182,7 +182,7 @@ export class LanguageStatusManager implements vscode.Disposable {
     this.javaRuntimeItem.command = {
       title: "Configure Java",
       command: "workbench.action.openSettings",
-      arguments: ["groovy.java.home"],
+      arguments: ["groovy.languageServer.javaHome"],
     };
   }
 
@@ -192,7 +192,7 @@ export class LanguageStatusManager implements vscode.Disposable {
   private getJavaSourceDetail(resolution: JavaResolution): string {
     switch (resolution.source) {
       case "setting":
-        return `From groovy.java.home: ${resolution.path}`;
+        return `From groovy.languageServer.javaHome: ${resolution.path}`;
       case "java_home":
         return `From JAVA_HOME: ${resolution.path}`;
       case "jdk_manager":

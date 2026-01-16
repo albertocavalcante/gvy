@@ -144,6 +144,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
     );
   }
 
+  private getProjectJavaHome(): string | undefined {
+    const config = vscode.workspace.getConfiguration("groovy");
+    return config.get<string>("project.javaHome");
+  }
+
   private async executeCommand(
     cmd: TestCommand,
     consumer: TestEventConsumer,
@@ -154,6 +159,20 @@ export class LSPTestExecutionService implements ITestExecutionService {
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
     );
+
+    // Get project build JDK from settings
+    const projectJavaHome = this.getProjectJavaHome();
+
+    // Build environment with explicit JAVA_HOME if configured
+    let resolvedEnv = { ...process.env, ...env };
+    if (projectJavaHome) {
+      resolvedEnv = {
+        ...resolvedEnv,
+        JAVA_HOME: projectJavaHome,
+        PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
+      };
+      this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
+    }
 
     // Detect Build Tool by executable name
     const isGradle = executable.includes("gradle");
@@ -186,7 +205,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     return new Promise((resolve) => {
       const proc = cp.spawn(executable, finalArgs, {
         cwd,
-        env: { ...process.env, ...env },
+        env: resolvedEnv,
         // Shell usage:
         // - Maven Wrapper (mvnw): shell: false (executable script)
         // - Global Maven (mvn): shell: true (needed for Windows batch/cmd shims)

@@ -34,15 +34,60 @@ const KOTLIN_PLUGIN_PATTERN = new RegExp(
 /**
  * Command: groovy.configureJava
  *
- * Shows a picker with detected JDKs and allows manual path selection.
- * Sets the selected JDK path in the workspace settings (.vscode/settings.json).
+ * Main entry point for Java configuration. Shows a purpose picker to let the user
+ * choose between configuring LSP Runtime (Java 17+ for language server) or
+ * Project Build JDK (for Maven/Gradle test execution).
  *
  * @param requiredVersion Optional version to prioritize (e.g., from toolchain error)
+ * @param purpose Optional purpose to skip picker ("lsp" or "project")
  * @returns true if a JDK was selected and configured, false otherwise
  */
 export async function configureJava(
   requiredVersion?: number,
+  purpose?: "lsp" | "project",
 ): Promise<boolean> {
+  if (!purpose) {
+    const picked = await vscode.window.showQuickPick(
+      [
+        {
+          label: "$(server) Language Server Runtime",
+          description: "Java for running the Groovy LSP (requires 17+)",
+          detail: "Sets groovy.languageServer.javaHome",
+          purpose: "lsp" as const,
+        },
+        {
+          label: "$(tools) Project Build JDK",
+          description: "Java for Maven/Gradle test and build execution",
+          detail: "Sets groovy.project.javaHome",
+          purpose: "project" as const,
+        },
+      ],
+      {
+        title: "Configure Java Runtime",
+        placeHolder: "What do you want to configure?",
+      },
+    );
+
+    if (!picked) return false;
+    purpose = picked.purpose;
+  }
+
+  if (purpose === "lsp") {
+    return await configureLspJava(requiredVersion);
+  } else {
+    return await configureProjectJava(requiredVersion);
+  }
+}
+
+/**
+ * Configures the Language Server runtime Java.
+ * Shows a picker with detected JDKs and allows manual path selection.
+ * Sets the selected JDK path in workspace settings (groovy.languageServer.javaHome).
+ *
+ * @param requiredVersion Optional version to prioritize (e.g., from toolchain error)
+ * @returns true if a JDK was selected and configured, false otherwise
+ */
+async function configureLspJava(requiredVersion?: number): Promise<boolean> {
   // Find all JDKs with progress indicator
   const jdks = await vscode.window.withProgress(
     {
@@ -61,7 +106,7 @@ export async function configureJava(
     placeHolder: requiredVersion
       ? `Select a JDK (LSP needs 17+, project targets Java ${requiredVersion})`
       : `Select a JDK for the Groovy Language Server (requires Java ${MINIMUM_JAVA_VERSION}+)`,
-    title: "Configure Java Runtime",
+    title: "Configure Language Server Runtime",
   });
 
   if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {
@@ -70,7 +115,7 @@ export async function configureJava(
 
   // Handle browse action
   if (selected.action === "browse") {
-    return await browseAndSetJavaHome();
+    return await browseAndSetLspJavaHome();
   }
 
   // Handle JDK selection
@@ -79,16 +124,60 @@ export async function configureJava(
     return false;
   }
 
-  return await setJavaHomeAndRestart(jdk.path, jdk.version);
+  return await setLspJavaHomeAndRestart(jdk.path, jdk.version);
 }
 
 /**
- * Opens a folder browser for manual JDK selection.
+ * Configures the Project Build JDK.
+ * Shows all detected JDKs without LSP filtering - any JDK version can be used
+ * for project builds. Sets groovy.project.javaHome in workspace settings.
+ *
+ * @param minimumVersion Optional minimum version required by the project
+ * @returns true if a JDK was selected and configured, false otherwise
+ */
+async function configureProjectJava(minimumVersion?: number): Promise<boolean> {
+  const jdks = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Detecting JDKs...",
+    },
+    () => findAllJdks(),
+  );
+
+  const items = buildProjectJdkItems(jdks, minimumVersion);
+
+  const selected = await vscode.window.showQuickPick(items, {
+    title: "Select Project Build JDK",
+    placeHolder: minimumVersion
+      ? `Project requires at least Java ${minimumVersion}`
+      : "Select JDK for Maven/Gradle execution",
+  });
+
+  if (!selected || selected.kind === vscode.QuickPickItemKind.Separator) {
+    return false;
+  }
+
+  // Handle browse action
+  if (selected.action === "browse") {
+    return await browseAndSetProjectJavaHome();
+  }
+
+  // Handle JDK selection
+  const jdk = selected.jdk;
+  if (!jdk) {
+    return false;
+  }
+
+  return await setProjectJavaHome(jdk.path, jdk.version);
+}
+
+/**
+ * Opens a folder browser for manual LSP JDK selection.
  * Validates the selected path is a valid JDK and warns if below minimum version.
  *
  * @returns true if a valid JDK was selected and configured, false otherwise
  */
-async function browseAndSetJavaHome(): Promise<boolean> {
+async function browseAndSetLspJavaHome(): Promise<boolean> {
   const { getRuntime } = await import("jdk-utils");
 
   const selected = await vscode.window.showOpenDialog({
@@ -96,7 +185,7 @@ async function browseAndSetJavaHome(): Promise<boolean> {
     canSelectFolders: true,
     canSelectMany: false,
     openLabel: "Select JDK",
-    title: "Select Java Home Directory",
+    title: "Select Language Server Java Home",
   });
 
   if (!selected || selected.length === 0) {
@@ -127,7 +216,10 @@ async function browseAndSetJavaHome(): Promise<boolean> {
       }
     }
 
-    return await setJavaHomeAndRestart(runtime.homedir, runtime.version.major);
+    return await setLspJavaHomeAndRestart(
+      runtime.homedir,
+      runtime.version.major,
+    );
   } catch (error) {
     vscode.window.showErrorMessage(
       `Failed to validate JDK at ${jdkPath}: ${error instanceof Error ? error.message : String(error)}`,
@@ -137,27 +229,69 @@ async function browseAndSetJavaHome(): Promise<boolean> {
 }
 
 /**
- * Sets the Java home in workspace settings and offers to restart the server.
- * Updates groovy.java.home in .vscode/settings.json (workspace scope).
+ * Opens a folder browser for manual Project Build JDK selection.
+ * Validates the selected path is a valid JDK (any version).
+ *
+ * @returns true if a valid JDK was selected and configured, false otherwise
+ */
+async function browseAndSetProjectJavaHome(): Promise<boolean> {
+  const { getRuntime } = await import("jdk-utils");
+
+  const selected = await vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: "Select JDK",
+    title: "Select Project Build Java Home",
+  });
+
+  if (!selected || selected.length === 0) {
+    return false;
+  }
+
+  const jdkPath = selected[0].fsPath;
+
+  // Validate the selected path is a valid JDK
+  try {
+    const runtime = await getRuntime(jdkPath, { withVersion: true });
+    if (!runtime?.version?.major) {
+      vscode.window.showErrorMessage(
+        `The selected folder is not a valid JDK: ${jdkPath}`,
+      );
+      return false;
+    }
+
+    return await setProjectJavaHome(runtime.homedir, runtime.version.major);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Failed to validate JDK at ${jdkPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Sets the LSP Java home in workspace settings and offers to restart the server.
+ * Updates groovy.languageServer.javaHome in .vscode/settings.json (workspace scope).
  *
  * @param jdkPath Absolute path to the JDK home directory
  * @param version Major Java version number
  * @returns true if settings were updated successfully
  */
-async function setJavaHomeAndRestart(
+async function setLspJavaHomeAndRestart(
   jdkPath: string,
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
   await config.update(
-    "java.home",
+    "languageServer.javaHome",
     jdkPath,
     vscode.ConfigurationTarget.Workspace,
   );
 
   const restartAction = "Restart Server";
   const result = await vscode.window.showInformationMessage(
-    `Java home set to Java ${version} in workspace settings. Restart the server to apply.`,
+    `Language Server Java set to Java ${version} in workspace settings. Restart the server to apply.`,
     restartAction,
   );
 
@@ -165,6 +299,31 @@ async function setJavaHomeAndRestart(
     await vscode.commands.executeCommand("groovy.restartServer");
   }
 
+  return true;
+}
+
+/**
+ * Sets the Project Build Java home in workspace settings.
+ * Updates groovy.project.javaHome in .vscode/settings.json (workspace scope).
+ *
+ * @param jdkPath Absolute path to the JDK home directory
+ * @param version Major Java version number
+ * @returns true if settings were updated successfully
+ */
+async function setProjectJavaHome(
+  jdkPath: string,
+  version: number,
+): Promise<boolean> {
+  const config = vscode.workspace.getConfiguration("groovy");
+  await config.update(
+    "project.javaHome",
+    jdkPath,
+    vscode.ConfigurationTarget.Workspace,
+  );
+
+  vscode.window.showInformationMessage(
+    `Project build JDK set to Java ${version}. Tests will use this JDK.`,
+  );
   return true;
 }
 
@@ -330,6 +489,75 @@ function createJdkItem(
 }
 
 /**
+ * Builds QuickPick items for Project Build JDK selection.
+ * Groups JDKs into two sections: those meeting minimum version (if specified)
+ * and those below minimum. Shows all JDKs regardless of version since any
+ * JDK can be used for project builds (unlike LSP which requires Java 17+).
+ *
+ * @param jdks Array of detected JDKs
+ * @param minimumVersion Optional minimum version required by the project
+ * @returns Array of QuickPickItem including separators and browse option
+ */
+function buildProjectJdkItems(
+  jdks: JavaResolutionExtended[],
+  minimumVersion?: number,
+): QuickPickItem[] {
+  const items: QuickPickItem[] = [];
+
+  // Group JDKs: meets minimum vs below minimum
+  const meetsMinimum = minimumVersion
+    ? jdks.filter((j) => j.version >= minimumVersion)
+    : jdks;
+  const belowMinimum = minimumVersion
+    ? jdks.filter((j) => j.version < minimumVersion)
+    : [];
+
+  if (meetsMinimum.length > 0) {
+    if (minimumVersion) {
+      items.push({
+        label: `Meets Project Requirement (Java ${minimumVersion}+)`,
+        kind: vscode.QuickPickItemKind.Separator,
+      });
+    }
+    for (const jdk of meetsMinimum) {
+      items.push({
+        label: `$(coffee) Java ${jdk.version}`,
+        description: jdk.path,
+        detail: `From: ${jdk.sourceDescription}`,
+        jdk,
+      });
+    }
+  }
+
+  if (belowMinimum.length > 0) {
+    items.push({
+      label: `Below Project Minimum (Java < ${minimumVersion})`,
+      kind: vscode.QuickPickItemKind.Separator,
+    });
+    for (const jdk of belowMinimum) {
+      items.push({
+        label: `$(coffee) Java ${jdk.version} $(warning)`,
+        description: jdk.path,
+        detail: `From: ${jdk.sourceDescription} - Below project minimum`,
+        jdk,
+      });
+    }
+  }
+
+  // Browse option
+  if (items.length > 0) {
+    items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+  }
+  items.push({
+    label: "$(folder) Browse...",
+    detail: "Select a JDK folder manually",
+    action: "browse",
+  });
+
+  return items;
+}
+
+/**
  * Command: groovy.addFoojayResolver
  *
  * Adds the foojay-resolver plugin to settings.gradle(.kts) to enable
@@ -485,7 +713,8 @@ export function registerJavaCommands(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "groovy.configureJava",
-      (requiredVersion?: number) => configureJava(requiredVersion),
+      (requiredVersion?: number, purpose?: "lsp" | "project") =>
+        configureJava(requiredVersion, purpose),
     ),
   );
 

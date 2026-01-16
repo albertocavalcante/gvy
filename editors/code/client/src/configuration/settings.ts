@@ -14,7 +14,9 @@ export function getConfiguration(): GroovyConfiguration {
   const config = workspace.getConfiguration("groovy");
 
   return {
-    javaHome: config.get<string>("java.home"),
+    javaHome:
+      config.get<string>("languageServer.javaHome") ||
+      config.get<string>("java.home"),
     traceServer: config.get<"off" | "messages" | "verbose">(
       "trace.server",
       "off",
@@ -40,7 +42,10 @@ export function affectsConfiguration(
 export function affectsJavaConfiguration(
   event: ConfigurationChangeEvent,
 ): boolean {
-  return affectsConfiguration(event, "java.home");
+  return (
+    affectsConfiguration(event, "languageServer.javaHome") ||
+    affectsConfiguration(event, "java.home")
+  );
 }
 
 /**
