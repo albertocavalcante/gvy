@@ -4,12 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
-import {
-  TestService,
-  TestCommand,
-  TestResultItem,
-  TestResultsResponse,
-} from "./TestService";
+import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 
 export class LSPTestExecutionService implements ITestExecutionService {
@@ -138,7 +133,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     workspaceUri: string,
     run: vscode.TestRun,
     testsToRun: readonly vscode.TestItem[],
-    consumer: TestEventConsumer,
+    _consumer: TestEventConsumer,
   ): Promise<void> {
     try {
       const results = await this.testService.getTestResults(workspaceUri);

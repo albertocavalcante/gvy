@@ -1,10 +1,5 @@
 import * as vscode from "vscode";
-import {
-  TestService,
-  FileCoverageData,
-  LineCoverage,
-  CoverageResponse,
-} from "./TestService";
+import { TestService, FileCoverageData } from "./TestService";
 
 /**
  * Provides coverage data to VS Code by delegating to the Groovy LSP.
