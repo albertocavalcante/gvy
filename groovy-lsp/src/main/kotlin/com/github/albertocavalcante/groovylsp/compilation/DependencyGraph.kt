@@ -206,54 +206,21 @@ class DependencyGraph {
 
         // Extract dependencies from imports
         moduleNode.imports.forEach { importNode ->
-            val importedClassName = importNode.className ?: importNode.type?.name
-            if (importedClassName != null) {
-                logger.trace {
-                    "Processing import: className=$importedClassName, available keys=${workspaceIndex.keys}"
-                }
-                // Try both fully qualified name and simple name
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                    logger.trace { "Found dependency for $importedClassName: $dependencyUri" }
-                }
-                // Also try extracting simple name from FQN
-                val simpleName = importedClassName.substringAfterLast('.')
-                if (simpleName != importedClassName) {
-                    workspaceIndex[simpleName]?.let { dependencyUri ->
-                        newDependencies.add(dependencyUri)
-                        logger.trace { "Found dependency for simple name $simpleName: $dependencyUri" }
-                    }
-                }
-            }
+            processImportNode(importNode.className ?: importNode.type?.name, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from star imports
         moduleNode.starImports.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from static imports
         moduleNode.staticImports.values.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         moduleNode.staticStarImports.values.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from classes in the module
@@ -265,6 +232,55 @@ class DependencyGraph {
         setDependencies(uri, newDependencies)
 
         logger.debug { "Updated dependencies for $uri: ${newDependencies.size} dependencies" }
+    }
+
+    /**
+     * Process an import node and extract dependencies.
+     *
+     * Tries both fully qualified name and simple name to find dependencies.
+     */
+    private fun processImportNode(
+        importedClassName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (importedClassName == null) return
+
+        logger.trace {
+            "Processing import: className=$importedClassName, available keys=${workspaceIndex.keys}"
+        }
+
+        // Try both fully qualified name and simple name
+        workspaceIndex[importedClassName]?.let { dependencyUri ->
+            dependencies.add(dependencyUri)
+            logger.trace { "Found dependency for $importedClassName: $dependencyUri" }
+        }
+
+        // Also try extracting simple name from FQN
+        val simpleName = importedClassName.substringAfterLast('.')
+        if (simpleName != importedClassName) {
+            workspaceIndex[simpleName]?.let { dependencyUri ->
+                dependencies.add(dependencyUri)
+                logger.trace { "Found dependency for simple name $simpleName: $dependencyUri" }
+            }
+        }
+    }
+
+    /**
+     * Process a simple import (star import or static import) and extract dependencies.
+     *
+     * Only tries the exact class name without FQN resolution.
+     */
+    private fun processSimpleImport(
+        importedClassName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (importedClassName == null) return
+
+        workspaceIndex[importedClassName]?.let { dependencyUri ->
+            dependencies.add(dependencyUri)
+        }
     }
 
     /**

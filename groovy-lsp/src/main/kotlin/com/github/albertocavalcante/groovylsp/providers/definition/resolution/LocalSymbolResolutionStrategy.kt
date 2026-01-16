@@ -97,89 +97,7 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
         }
 
         // Filter out non-definition nodes
-        val filteredDefinition = when (definition) {
-            is ConstantExpression -> null // String literals aren't definitions
-            is ClassNode -> {
-                // NOTE: Groovy resolution sometimes returns a ClassNode that points at the reference site
-                // (e.g. `new Foo()`) rather than the declaration. Prefer the redirected (canonical) node when it
-                // looks locally declared, otherwise fall back to our visitor-tracked class declarations.
-                // NOTE: ModuleNode-backed lookups are handled by GlobalClassResolutionStrategy; this strategy stays
-                // local-only and uses the visitor model for locally-defined classes.
-                // For cross-file resolution, if the class is NOT in the current document, return null
-                // so the pipeline continues to SemanticDB or GlobalClass strategies.
-                logger.debug {
-                    "Attempting to resolve ClassNode locally: ${definition.name} (from ${context.targetNode.javaClass.simpleName})"
-                }
-                logger.debug {
-                    "ClassNode URI: ${astVisitor.getUri(definition)}, Current document: ${context.documentUri}"
-                }
-                logger.debug { "ClassNode position: ${definition.lineNumber}:${definition.columnNumber}" }
-                if (!isLocallyDefinedClass(definition, context.documentUri)) {
-                    logger.debug {
-                        "ClassNode ${definition.name} is not in current document ${context.documentUri}, deferring to other strategies"
-                    }
-                    null
-                } else {
-                    logger.debug { "ClassNode ${definition.name} IS local, resolving locally" }
-                    resolveLocalClassDefinition(definition, context.documentUri)
-                }
-            }
-
-            is FieldNode, is PropertyNode -> {
-                // CRITICAL: Field and property access can resolve to definitions in external classes.
-                // For example, `calc.value` where calc is a Calculator instance should resolve to
-                // the field definition in Calculator.groovy, not Main.groovy.
-                // Check if this field/property is defined in the current document or externally.
-                val definitionUri = astVisitor.getUri(definition)
-                logger.debug {
-                    "Attempting to resolve ${definition.javaClass.simpleName} locally (from ${context.targetNode.javaClass.simpleName})"
-                }
-                logger.debug {
-                    "Field/Property URI: $definitionUri, Current document: ${context.documentUri}"
-                }
-
-                // Check the declaring class to determine if this field/property is local
-                val declaringClass = when (definition) {
-                    is FieldNode -> definition.declaringClass
-                    is PropertyNode -> definition.declaringClass
-                    else -> null
-                }
-                logger.debug {
-                    "Field/Property declaring class: ${declaringClass?.name}"
-                }
-
-                if (declaringClass != null) {
-                    // Use isLocallyDefinedClass to check if the declaring class is in the current document
-                    // This handles the case where the PropertyNode/FieldNode might not have a URI tracked,
-                    // but we can determine locality by checking its declaring class
-                    val isDeclaringClassLocal = isLocallyDefinedClass(declaringClass, context.documentUri)
-                    logger.debug {
-                        "Field/Property declaring class '${declaringClass.name}' is local to current document: $isDeclaringClassLocal"
-                    }
-                    if (!isDeclaringClassLocal) {
-                        // Field/property's declaring class is in a different file - not local
-                        logger.debug {
-                            "Field/Property's declaring class is not local (current: ${context.documentUri}), deferring to other strategies"
-                        }
-                        null
-                    } else {
-                        // Field/property's declaring class is local to this document
-                        definition
-                    }
-                } else if (definitionUri != null && definitionUri != context.documentUri) {
-                    // Field/property is defined in a different file - not local
-                    logger.debug {
-                        "Field/Property is defined in $definitionUri (current: ${context.documentUri}), deferring to other strategies"
-                    }
-                    null
-                } else {
-                    // Field/property is local to this document or we can't determine - treat as local
-                    definition
-                }
-            }
-
-            else -> definition
-        }
+        val filteredDefinition = definition?.let { filterDefinitionByType(it, context) }
 
         if (filteredDefinition == null) {
             return SymbolResolutionStrategy.notFound("No local definition found", STRATEGY_NAME)
@@ -200,6 +118,103 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
         return SymbolResolutionStrategy.found(
             DefinitionResolver.DefinitionResult.Source(filteredDefinition, context.documentUri),
         )
+    }
+
+    /**
+     * Filter definition nodes by type, ensuring they are local to the current document.
+     *
+     * This helper extracts the complex branching logic for different AST node types.
+     * Returns null for nodes that should not be resolved locally.
+     */
+    private fun filterDefinitionByType(definition: ASTNode, context: ResolutionContext): ASTNode? = when (definition) {
+        is ConstantExpression -> null // String literals aren't definitions
+        is ClassNode -> {
+            // NOTE: Groovy resolution sometimes returns a ClassNode that points at the reference site
+            // (e.g. `new Foo()`) rather than the declaration. Prefer the redirected (canonical) node when it
+            // looks locally declared, otherwise fall back to our visitor-tracked class declarations.
+            // NOTE: ModuleNode-backed lookups are handled by GlobalClassResolutionStrategy; this strategy stays
+            // local-only and uses the visitor model for locally-defined classes.
+            // For cross-file resolution, if the class is NOT in the current document, return null
+            // so the pipeline continues to SemanticDB or GlobalClass strategies.
+            logger.debug {
+                "Attempting to resolve ClassNode locally: ${definition.name} (from ${context.targetNode.javaClass.simpleName})"
+            }
+            logger.debug {
+                "ClassNode URI: ${astVisitor.getUri(definition)}, Current document: ${context.documentUri}"
+            }
+            logger.debug { "ClassNode position: ${definition.lineNumber}:${definition.columnNumber}" }
+            if (!isLocallyDefinedClass(definition, context.documentUri)) {
+                logger.debug {
+                    "ClassNode ${definition.name} is not in current document ${context.documentUri}, deferring to other strategies"
+                }
+                null
+            } else {
+                logger.debug { "ClassNode ${definition.name} IS local, resolving locally" }
+                resolveLocalClassDefinition(definition, context.documentUri)
+            }
+        }
+
+        is FieldNode, is PropertyNode -> filterFieldOrPropertyDefinition(definition, context)
+
+        else -> definition
+    }
+
+    /**
+     * Filter field or property definitions to ensure they are local to the current document.
+     *
+     * This helper handles the complexity of checking declaring classes for field/property locality.
+     */
+    private fun filterFieldOrPropertyDefinition(definition: ASTNode, context: ResolutionContext): ASTNode? {
+        // CRITICAL: Field and property access can resolve to definitions in external classes.
+        // For example, `calc.value` where calc is a Calculator instance should resolve to
+        // the field definition in Calculator.groovy, not Main.groovy.
+        // Check if this field/property is defined in the current document or externally.
+        val definitionUri = astVisitor.getUri(definition)
+        logger.debug {
+            "Attempting to resolve ${definition.javaClass.simpleName} locally (from ${context.targetNode.javaClass.simpleName})"
+        }
+        logger.debug {
+            "Field/Property URI: $definitionUri, Current document: ${context.documentUri}"
+        }
+
+        // Check the declaring class to determine if this field/property is local
+        val declaringClass = when (definition) {
+            is FieldNode -> definition.declaringClass
+            is PropertyNode -> definition.declaringClass
+            else -> null
+        }
+        logger.debug {
+            "Field/Property declaring class: ${declaringClass?.name}"
+        }
+
+        if (declaringClass != null) {
+            // Use isLocallyDefinedClass to check if the declaring class is in the current document
+            // This handles the case where the PropertyNode/FieldNode might not have a URI tracked,
+            // but we can determine locality by checking its declaring class
+            val isDeclaringClassLocal = isLocallyDefinedClass(declaringClass, context.documentUri)
+            logger.debug {
+                "Field/Property declaring class '${declaringClass.name}' is local to current document: $isDeclaringClassLocal"
+            }
+            if (!isDeclaringClassLocal) {
+                // Field/property's declaring class is in a different file - not local
+                logger.debug {
+                    "Field/Property's declaring class is not local (current: ${context.documentUri}), deferring to other strategies"
+                }
+                return null
+            } else {
+                // Field/property's declaring class is local to this document
+                return definition
+            }
+        } else if (definitionUri != null && definitionUri != context.documentUri) {
+            // Field/property is defined in a different file - not local
+            logger.debug {
+                "Field/Property is defined in $definitionUri (current: ${context.documentUri}), deferring to other strategies"
+            }
+            return null
+        } else {
+            // Field/property is local to this document or we can't determine - treat as local
+            return definition
+        }
     }
 
     /**
