@@ -6,6 +6,7 @@ describe("CoverageService", () => {
   let CoverageService: any;
   let coverageService: any;
   let loggerMock: any;
+  let testServiceMock: any;
   let fsMock: any;
   let vscodeMock: any;
 
@@ -16,6 +17,10 @@ describe("CoverageService", () => {
         file: (path: string) => ({
           fsPath: path,
           toString: () => `file://${path}`,
+        }),
+        parse: (path: string) => ({
+          fsPath: path,
+          toString: () => path,
         }),
       },
       Position: class {
@@ -57,6 +62,11 @@ describe("CoverageService", () => {
       appendLine: sinon.stub(),
     };
 
+    // Mock TestService
+    testServiceMock = {
+      getCoverage: sinon.stub(),
+    };
+
     // Load CoverageService with mocks
     // Load CoverageService with mocks
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,27 +78,39 @@ describe("CoverageService", () => {
       },
     );
     CoverageService = module.CoverageService;
-    coverageService = new CoverageService(loggerMock);
+    coverageService = new CoverageService(testServiceMock, loggerMock);
   });
 
   it("should correctly create multiple branch coverage entries for cb/mb counts", async () => {
     const workspacePath = "/workspace";
-    const reportPath =
-      "/workspace/build/reports/jacoco/test/jacocoTestReport.xml";
 
-    // Mock finding report and source files
-    fsMock.existsSync.returns(true);
-
-    const xmlContent = `
-            <report>
-                <package name="com/example">
-                    <sourcefile name="MyClass.groovy">
-                        <line nr="1" mi="0" ci="3" mb="1" cb="2"/>
-                    </sourcefile>
-                </package>
-            </report>
-        `;
-    fsMock.promises.readFile.resolves(xmlContent);
+    // Mock LSP response with coverage data
+    testServiceMock.getCoverage.resolves({
+      files: [
+        {
+          uri: "file:///workspace/src/com/example/MyClass.groovy",
+          lines: [
+            {
+              line: 1,
+              covered: true,
+              hitCount: 3,
+              branchInfo: {
+                covered: 2,
+                total: 3,
+              },
+            },
+          ],
+        },
+      ],
+      summary: {
+        linesTotal: 1,
+        linesCovered: 1,
+        lineCoveragePercent: 100,
+        branchesTotal: 3,
+        branchesCovered: 2,
+        branchCoveragePercent: 66.67,
+      },
+    });
 
     // Mock TestRun
     const testRunMock = {
@@ -126,22 +148,30 @@ describe("CoverageService", () => {
 
   it("should handle lines with no branches", async () => {
     const workspacePath = "/workspace";
-    const reportPath =
-      "/workspace/build/reports/jacoco/test/jacocoTestReport.xml";
 
-    // Mock finding report and source files - simplify to avoid OS path issues
-    fsMock.existsSync.returns(true);
-
-    const xmlContent = `
-            <report>
-                <package name="com/example">
-                    <sourcefile name="MyClass.groovy">
-                        <line nr="2" mi="0" ci="3" mb="0" cb="0"/>
-                    </sourcefile>
-                </package>
-            </report>
-        `;
-    fsMock.promises.readFile.resolves(xmlContent);
+    // Mock LSP response with line that has no branches
+    testServiceMock.getCoverage.resolves({
+      files: [
+        {
+          uri: "file:///workspace/src/com/example/MyClass.groovy",
+          lines: [
+            {
+              line: 2,
+              covered: true,
+              hitCount: 3,
+            },
+          ],
+        },
+      ],
+      summary: {
+        linesTotal: 1,
+        linesCovered: 1,
+        lineCoveragePercent: 100,
+        branchesTotal: 0,
+        branchesCovered: 0,
+        branchCoveragePercent: 0,
+      },
+    });
 
     const testRunMock = {
       addCoverage: sinon.spy(),
@@ -161,24 +191,39 @@ describe("CoverageService", () => {
   it("should handle multiple packages correctly (regex lastIndex reset)", async () => {
     const workspacePath = "/workspace";
 
-    fsMock.existsSync.returns(true);
-
-    // Two packages: first one matches, second one processes correctly
-    const xmlContent = `
-            <report>
-                <package name="com/example/pkg1">
-                    <sourcefile name="Class1.groovy">
-                        <line nr="1" mi="0" ci="1" mb="0" cb="0"/>
-                    </sourcefile>
-                </package>
-                <package name="com/example/pkg2">
-                    <sourcefile name="Class2.groovy">
-                        <line nr="5" mi="0" ci="1" mb="0" cb="0"/>
-                    </sourcefile>
-                </package>
-            </report>
-        `;
-    fsMock.promises.readFile.resolves(xmlContent);
+    // Mock LSP response with multiple files
+    testServiceMock.getCoverage.resolves({
+      files: [
+        {
+          uri: "file:///workspace/src/com/example/pkg1/Class1.groovy",
+          lines: [
+            {
+              line: 1,
+              covered: true,
+              hitCount: 1,
+            },
+          ],
+        },
+        {
+          uri: "file:///workspace/src/com/example/pkg2/Class2.groovy",
+          lines: [
+            {
+              line: 5,
+              covered: true,
+              hitCount: 1,
+            },
+          ],
+        },
+      ],
+      summary: {
+        linesTotal: 2,
+        linesCovered: 2,
+        lineCoveragePercent: 100,
+        branchesTotal: 0,
+        branchesCovered: 0,
+        branchCoveragePercent: 0,
+      },
+    });
 
     const testRunMock = {
       addCoverage: sinon.spy(),
@@ -194,9 +239,9 @@ describe("CoverageService", () => {
     );
 
     const firstCall = testRunMock.addCoverage.getCall(0).args[0];
-    assert.ok(firstCall.uri.fsPath.includes("Class1.groovy"));
+    assert.ok(firstCall.uri.toString().includes("Class1.groovy"));
 
     const secondCall = testRunMock.addCoverage.getCall(1).args[0];
-    assert.ok(secondCall.uri.fsPath.includes("Class2.groovy"));
+    assert.ok(secondCall.uri.toString().includes("Class2.groovy"));
   });
 });
