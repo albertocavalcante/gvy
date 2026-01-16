@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
+import com.github.albertocavalcante.groovylsp.buildtool.DependencyMetadata
 import com.github.albertocavalcante.groovylsp.buildtool.NativeGradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.gradle.tooling.model.idea.IdeaProject
+import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -101,5 +104,159 @@ class GradleBuildTool(
             args = args,
             cwd = workspaceRoot.toString(),
         )
+    }
+
+    /**
+     * Retrieves rich dependency metadata for all dependencies in the workspace.
+     * This provides Maven coordinates, scope, and path information suitable for
+     * UI display (e.g., VS Code dependency tree view).
+     *
+     * @param workspaceRoot The root directory of the Gradle project
+     * @return List of dependency metadata, or empty list on failure
+     */
+    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> {
+        logger.info { "Extracting dependency metadata from Gradle project: $workspaceRoot" }
+
+        return try {
+            val connection = connectionFactory.getConnection(workspaceRoot, null)
+            val ideaProject = connection.model(IdeaProject::class.java).get()
+
+            val dependencies = mutableListOf<DependencyMetadata>()
+
+            ideaProject.modules.forEach { module ->
+                logger.debug { "Processing module: ${module.name}" }
+
+                module.dependencies
+                    .filterIsInstance<IdeaSingleEntryLibraryDependency>()
+                    .forEach { dependency ->
+                        val jarPath = dependency.file.toPath()
+                        if (jarPath.exists()) {
+                            val depMetadata = extractDependencyMetadata(dependency, jarPath)
+                            dependencies.add(depMetadata)
+                            logger.debug { "Found dependency: ${depMetadata.name}" }
+                        } else {
+                            logger.warn { "Dependency JAR not found: $jarPath" }
+                        }
+                    }
+            }
+
+            logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
+
+            // Remove duplicates across modules and aggregate scopes if the same dependency appears with different scopes
+            dependencies
+                .groupBy { it.path }
+                .map { (_, depsWithSamePath) ->
+                    val first = depsWithSamePath.first()
+                    val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
+                    val combinedScope = distinctScopes.joinToString(",")
+
+                    if (combinedScope == first.scope) {
+                        first
+                    } else {
+                        DependencyMetadata(
+                            name = first.name,
+                            version = first.version,
+                            scope = combinedScope,
+                            path = first.path,
+                            isTransitive = first.isTransitive,
+                        )
+                    }
+                }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Extracts dependency metadata from an IdeaSingleEntryLibraryDependency.
+     */
+    private fun extractDependencyMetadata(
+        dependency: IdeaSingleEntryLibraryDependency,
+        jarPath: Path,
+    ): DependencyMetadata {
+        // Try to extract name and version from the JAR file name
+        // Format is typically: name-version.jar (e.g., commons-lang3-3.12.0.jar)
+        val fileName = jarPath.fileName.toString()
+        val (parsedName, parsedVersion) = parseJarFileName(fileName)
+
+        // Prefer Gradle's module coordinates when available
+        val gradleModuleVersion = try {
+            dependency.gradleModuleVersion
+        } catch (e: Exception) {
+            logger.debug { "Could not extract Gradle module version from dependency: ${e.message}" }
+            null
+        }
+
+        val name: String
+        val version: String
+
+        if (gradleModuleVersion != null &&
+            !gradleModuleVersion.group.isNullOrBlank() &&
+            !gradleModuleVersion.name.isNullOrBlank()
+        ) {
+            // Use Maven-style coordinates: group:artifact
+            name = "${gradleModuleVersion.group}:${gradleModuleVersion.name}"
+            // Prefer the version from the Gradle model, fall back to the parsed one if necessary
+            version = if (!gradleModuleVersion.version.isNullOrBlank()) {
+                gradleModuleVersion.version
+            } else {
+                parsedVersion
+            }
+        } else {
+            // Fall back to the artifact name and version parsed from the JAR filename
+            name = parsedName
+            version = parsedVersion
+        }
+
+        // Try to get scope from the dependency
+        val scope = try {
+            dependency.scope?.scope?.lowercase() ?: "compile"
+        } catch (e: Exception) {
+            logger.debug { "Could not extract scope from dependency: ${e.message}" }
+            "compile"
+        }
+
+        // Normalize scope to standard values
+        val normalizedScope = DependencyMetadata.normalizeScope(scope)
+
+        // For now, we cannot reliably determine if a dependency is transitive from the Gradle model
+        // This would require additional resolution data. Setting to false as a conservative default.
+        val isTransitive = false
+
+        return DependencyMetadata(
+            name = name,
+            version = version,
+            scope = normalizedScope,
+            path = jarPath.toUri().toString(),
+            isTransitive = isTransitive,
+        )
+    }
+
+    /**
+     * Parses a JAR file name to extract the name and version.
+     * Examples:
+     * - commons-lang3-3.12.0.jar -> ("commons-lang3", "3.12.0")
+     * - groovy-all-2.5.14.jar -> ("groovy-all", "2.5.14")
+     * - junit-4.13.jar -> ("junit", "4.13")
+     * - slf4j-api-2.0.0-SNAPSHOT.jar -> ("slf4j-api", "2.0.0-SNAPSHOT")
+     */
+    private fun parseJarFileName(fileName: String): Pair<String, String> {
+        // Remove .jar extension
+        val baseName = fileName.removeSuffix(".jar")
+
+        // Try to find the last occurrence of a version pattern (e.g., -3.12.0, -2.5.14, -1.0.0-SNAPSHOT)
+        // Version pattern: dash followed by digits, then dots/digits and optional alphanumeric qualifiers
+        val versionRegex = Regex("(.+?)-(\\d+[.\\d\\-+a-zA-Z]*)$")
+        val match = versionRegex.find(baseName)
+
+        return if (match != null) {
+            val name = match.groupValues[1]
+            val version = match.groupValues[2]
+            Pair(name, version)
+        } else {
+            // Could not parse version, return the whole name
+            Pair(baseName, "unknown")
+        }
     }
 }
