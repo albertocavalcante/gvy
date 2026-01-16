@@ -129,7 +129,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage(
                   `Copied: ${item.coordinate}`,
                 );
-              } catch (error) {
+              } catch {
                 vscode.window.showErrorMessage(
                   "Failed to copy dependency coordinate to clipboard.",
                 );
