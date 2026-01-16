@@ -8,6 +8,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovylsp.config.GroovyMode
 import com.github.albertocavalcante.groovylsp.config.ModeResolver
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
+import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
 import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.CompletionStrategy
@@ -27,7 +28,6 @@ import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -74,9 +74,7 @@ object CompletionProvider {
     /**
      * Get basic Groovy language completion items using DSL.
      */
-    fun getBasicCompletions(): List<CompletionItem> = completions {
-        com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions.basic().forEach(::add)
-    }
+    fun getBasicCompletions(): List<CompletionItem> = GroovyCompletions.basic()
 
     /**
      * Get contextual completions based on AST analysis.
@@ -197,7 +195,7 @@ object CompletionProvider {
         }
         return completions {
             addKeywords()
-            com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions.basic().forEach(::add)
+            GroovyCompletions.basic().forEach(::add)
         }
     }
 
@@ -220,7 +218,7 @@ object CompletionProvider {
         return emptyList()
     }
 
-    private fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
+    private suspend fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
         ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
 
         // Extract symbol context
@@ -283,6 +281,13 @@ object CompletionProvider {
             jenkinsBlockContext = jenkinsBlockContext,
         )
 
+        // Use strategies for general completions (call suspend function outside of completions builder)
+        val strategies = buildStrategies(mode)
+        val strategyItems = CompletionStrategy.aggregate(strategies).complete(strategyContext).fold(
+            ifLeft = { emptyList() },
+            ifRight = { it },
+        )
+
         return completions {
             // Spock block labels (keep existing logic)
             addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
@@ -293,14 +298,7 @@ object CompletionProvider {
                 return@completions
             }
 
-            // Use strategies for general completions
-            val strategies = buildStrategies(mode)
-            val strategyItems = runBlocking {
-                CompletionStrategy.aggregate(strategies).complete(strategyContext).fold(
-                    ifLeft = { emptyList() },
-                    ifRight = { it },
-                )
-            }
+            // Add strategy items
             strategyItems.forEach(::add)
 
             // Handle contextual completions (TypeParameter - keep existing)

@@ -44,6 +44,13 @@ class JenkinsVarsDefinitionIntegrationTest {
         }
         serverHandle!!.server.initialize(initParams).get()
         serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+
+        // Wait for workspace initialization to complete.
+        // The initialized() call triggers startAsyncDependencyResolution() which runs
+        // initializeWorkspaces() synchronously to set up project strategies (including
+        // Jenkins strategy). The server sends groovy/status notifications with quiescent=true
+        // when all background initialization (including strategy setup) is complete.
+        serverHandle!!.client.awaitQuiescentStatus()
     }
 
     @AfterEach

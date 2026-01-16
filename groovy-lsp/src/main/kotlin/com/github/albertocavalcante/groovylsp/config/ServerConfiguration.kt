@@ -266,7 +266,7 @@ data class ServerConfiguration(
      */
     fun isWorkspaceTooLarge(fileCount: Int): Boolean = fileCount > maxWorkspaceFiles
 
-    override fun toString(): String = "ServerConfiguration(mode=$compilationMode, incremental=$incrementalThreshold, " +
-        "maxFiles=$maxWorkspaceFiles, maxProblems=$maxNumberOfProblems, " +
+    override fun toString(): String = "ServerConfiguration(mode=$compilationMode, groovyMode=$groovyMode, " +
+        "incremental=$incrementalThreshold, maxFiles=$maxWorkspaceFiles, maxProblems=$maxNumberOfProblems, " +
         "languageVersion=$groovyLanguageVersion, repl=$replEnabled)"
 }

@@ -360,6 +360,54 @@ class JenkinsStepHoverStrategyTest {
         return methodCall
     }
 
+    @Test
+    fun `should return Jenkins hover for non-Jenkinsfile when mode is explicitly JENKINS`() {
+        // Test for JENKINS mode on a regular .groovy file (not a Jenkinsfile)
+        // This documents the expected behavior when mode wiring is implemented
+        val regularGroovyFileUri = URI.create("file:///workspace/src/main/groovy/MyScript.groovy")
+        val contextForGroovyFile = HoverContext(
+            moduleNode = null,
+            contentGenerator = mockk(relaxed = true),
+            documentUri = regularGroovyFileUri,
+        )
+
+        val node = createMethodCallExpression("echo")
+        val metadata = createMockMetadata(
+            stepName = "echo",
+            stepDoc = "Prints a message to the console.",
+            plugin = "workflow-basic-steps",
+            params = mapOf(
+                "message" to MergedParameter(
+                    name = "message",
+                    type = "String",
+                    defaultValue = null,
+                    description = "The message to print",
+                    required = true,
+                    validValues = null,
+                    examples = emptyList(),
+                ),
+            ),
+        )
+
+        // Mock the mode resolver to return true (simulating JENKINS mode explicitly set)
+        every { modeResolver.isJenkinsModeEnabled(regularGroovyFileUri) } returns true
+        every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
+        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+
+        val result = strategy.generateHover(node, contextForGroovyFile)
+
+        // Should show Jenkins step hover when mode is explicitly JENKINS
+        assertThat(result).isNotNull()
+        val markupContent = result!!.contents.right
+        assertThat(markupContent.kind).isEqualTo(MarkupKind.MARKDOWN)
+        assertThat(markupContent.value).contains("Jenkins Step: `echo`")
+        assertThat(markupContent.value).contains("Prints a message to the console")
+        assertThat(markupContent.value).contains("**Plugin:** workflow-basic-steps")
+        assertThat(markupContent.value).contains("### Parameters")
+        assertThat(markupContent.value).contains("**`message`**: `String` *(required)*")
+        assertThat(markupContent.value).contains("The message to print")
+    }
+
     // Helper function to create mock MergedJenkinsMetadata
     private fun createMockMetadata(
         stepName: String,
