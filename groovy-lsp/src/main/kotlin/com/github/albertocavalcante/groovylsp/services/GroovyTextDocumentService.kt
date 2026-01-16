@@ -368,7 +368,7 @@ class GroovyTextDocumentService(
                 }
 
                 // Compile unindexed URIs
-                compiledAny = compileUnindexedUris(startTime) ?: return
+                compiledAny = compileUnindexedUris(startTime, iterations) ?: return
             }
 
             val completionElapsedMs = System.currentTimeMillis() - startTime
@@ -439,20 +439,27 @@ class GroovyTextDocumentService(
             }
 
             // SAFEGUARD 4: Timeout on joinAll to prevent indefinite blocking
-            val joinResult = withTimeoutOrNull(MAX_JOB_WAIT_TIMEOUT_MS) {
-                pendingJobs.joinAll()
+            // Cap wait time by remaining overall timeout to avoid overshooting the hard limit
+            val remainingMs = (maxTimeMs - elapsedMs).coerceAtLeast(0)
+            val waitMs = minOf(MAX_JOB_WAIT_TIMEOUT_MS, remainingMs)
+            val joinResult = if (waitMs > 0) {
+                withTimeoutOrNull(waitMs) {
+                    pendingJobs.joinAll()
+                }
+            } else {
+                null
             }
 
             if (joinResult == null) {
                 logger.warn {
                     "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
-                        "after ${MAX_JOB_WAIT_TIMEOUT_MS}ms. Proceeding anyway."
+                        "after ${waitMs}ms. Proceeding anyway."
                 }
             }
         }
 
         @Suppress("NestedBlockDepth") // Complexity inherited from original implementation
-        private suspend fun compileUnindexedUris(startTime: Long): Boolean? {
+        private suspend fun compileUnindexedUris(startTime: Long, iterations: Int): Boolean? {
             // Take a snapshot to avoid concurrent modification issues
             val urisSnapshot = try {
                 documentProvider.getAllUris().toList()
@@ -464,7 +471,7 @@ class GroovyTextDocumentService(
             }
 
             logger.debug {
-                "ensureAllOpenDocumentsCompiled: Iteration - Processing ${urisSnapshot.size} open documents"
+                "ensureAllOpenDocumentsCompiled: Iteration $iterations - Processing ${urisSnapshot.size} open documents"
             }
 
             var compiledAny = false
