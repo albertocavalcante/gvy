@@ -18,6 +18,9 @@ import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
 import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
 import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.groovylsp.providers.dependencies.DependenciesResult
+import com.github.albertocavalcante.groovylsp.providers.dependencies.DependencyRequestHandler
+import com.github.albertocavalcante.groovylsp.providers.dependencies.GetDependenciesParams
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.BuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
@@ -136,6 +139,12 @@ class GroovyLanguageServer(
             coroutineScope,
             compilationService,
             buildToolManagerProvider = { startupManager.buildToolManager },
+        )
+    private val dependencyRequestHandler =
+        DependencyRequestHandler(
+            coroutineScope,
+            buildToolManagerProvider = { startupManager.buildToolManager },
+            workspaceRootProvider = { savedInitParams?.let { startupManager.getWorkspaceRoot(it) } },
         )
     private val indexExportService = IndexExportService { startupManager.buildToolManager }
     private val astRequestHandler = AstRequestHandler(
@@ -319,6 +328,10 @@ class GroovyLanguageServer(
     @JsonRequest("groovy/getCoverage")
     fun getCoverage(params: GetCoverageParams): CompletableFuture<CoverageResponse> =
         testRequestDelegate.getCoverage(params)
+
+    @JsonRequest("groovy/workspace/dependencies")
+    fun getDependencies(params: GetDependenciesParams): CompletableFuture<DependenciesResult> =
+        dependencyRequestHandler.getDependencies(params)
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)

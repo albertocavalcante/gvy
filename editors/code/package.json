@@ -151,8 +151,43 @@
         "command": "groovy.addFoojayResolver",
         "title": "Groovy: Add Foojay Resolver Plugin",
         "icon": "$(add)"
+      },
+      {
+        "command": "groovy.dependencies.refresh",
+        "title": "Groovy: Refresh Dependencies",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "groovy.dependencies.copyCoordinate",
+        "title": "Copy Dependency Coordinate"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "groovyDependencies",
+          "name": "Groovy Dependencies",
+          "icon": "$(package)",
+          "contextualTitle": "Dependencies",
+          "when": "groovy.hasProject"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "groovy.dependencies.refresh",
+          "when": "view == groovyDependencies",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "groovy.dependencies.copyCoordinate",
+          "when": "view == groovyDependencies && viewItem == dependency"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "groovy.ast.show",
