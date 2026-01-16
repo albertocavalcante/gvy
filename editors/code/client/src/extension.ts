@@ -122,12 +122,18 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand(
           "groovy.dependencies.copyCoordinate",
-          (item) => {
+          async (item) => {
             if (item?.coordinate) {
-              vscode.env.clipboard.writeText(item.coordinate);
-              vscode.window.showInformationMessage(
-                `Copied: ${item.coordinate}`,
-              );
+              try {
+                await vscode.env.clipboard.writeText(item.coordinate);
+                vscode.window.showInformationMessage(
+                  `Copied: ${item.coordinate}`,
+                );
+              } catch (error) {
+                vscode.window.showErrorMessage(
+                  "Failed to copy dependency coordinate to clipboard.",
+                );
+              }
             }
           },
         ),

@@ -114,7 +114,26 @@ class DependencyRequestHandler(
             }
 
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
-            dependencies.distinctBy { it.path } // Remove duplicates across modules
+            // Remove duplicates across modules and aggregate scopes if the same dependency appears in multiple scopes
+            dependencies
+                .groupBy { it.path }
+                .map { (_, depsWithSamePath) ->
+                    val first = depsWithSamePath.first()
+                    val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
+                    val combinedScope = distinctScopes.joinToString(",")
+
+                    if (combinedScope == first.scope) {
+                        first
+                    } else {
+                        DependencyInfo(
+                            name = first.name,
+                            version = first.version,
+                            scope = combinedScope,
+                            path = first.path,
+                            isTransitive = first.isTransitive,
+                        )
+                    }
+                }
         } catch (e: Exception) {
             logger.error(e) { "Failed to extract Gradle dependencies: ${e.message}" }
             emptyList()
@@ -128,7 +147,36 @@ class DependencyRequestHandler(
         // Try to extract name and version from the JAR file name
         // Format is typically: name-version.jar (e.g., commons-lang3-3.12.0.jar)
         val fileName = jarPath.fileName.toString()
-        val (name, version) = parseJarFileName(fileName)
+        val (parsedName, parsedVersion) = parseJarFileName(fileName)
+
+        // Prefer Gradle's module coordinates when available
+        val gradleModuleVersion = try {
+            dependency.gradleModuleVersion
+        } catch (e: Exception) {
+            logger.debug { "Could not extract Gradle module version from dependency: ${e.message}" }
+            null
+        }
+
+        val name: String
+        val version: String
+
+        if (gradleModuleVersion != null &&
+            !gradleModuleVersion.group.isNullOrBlank() &&
+            !gradleModuleVersion.name.isNullOrBlank()
+        ) {
+            // Use Maven-style coordinates: group:artifact
+            name = "${gradleModuleVersion.group}:${gradleModuleVersion.name}"
+            // Prefer the version from the Gradle model, fall back to the parsed one if necessary
+            version = if (!gradleModuleVersion.version.isNullOrBlank()) {
+                gradleModuleVersion.version
+            } else {
+                parsedVersion
+            }
+        } else {
+            // Fall back to the artifact name and version parsed from the JAR filename
+            name = parsedName
+            version = parsedVersion
+        }
 
         // Try to get scope from the dependency
         // The IdeaDependency interface has a scope property
@@ -149,8 +197,8 @@ class DependencyRequestHandler(
         }
 
         // For now, we cannot reliably determine if a dependency is transitive from the Gradle model
-        // This would require additional resolution data. Setting to true (most are transitive).
-        val isTransitive = true
+        // This would require additional resolution data. Setting to false as a conservative default.
+        val isTransitive = false
 
         return DependencyInfo(
             name = name,
@@ -167,14 +215,15 @@ class DependencyRequestHandler(
      * - commons-lang3-3.12.0.jar -> ("commons-lang3", "3.12.0")
      * - groovy-all-2.5.14.jar -> ("groovy-all", "2.5.14")
      * - junit-4.13.jar -> ("junit", "4.13")
+     * - slf4j-api-2.0.0-SNAPSHOT.jar -> ("slf4j-api", "2.0.0-SNAPSHOT")
      */
     private fun parseJarFileName(fileName: String): Pair<String, String> {
         // Remove .jar extension
         val baseName = fileName.removeSuffix(".jar")
 
-        // Try to find the last occurrence of a version pattern (e.g., -3.12.0, -2.5.14)
-        // Version pattern: dash followed by digits
-        val versionRegex = Regex("(.+?)-(\\d+[.\\d]*.*?)$")
+        // Try to find the last occurrence of a version pattern (e.g., -3.12.0, -2.5.14, -1.0.0-SNAPSHOT)
+        // Version pattern: dash followed by digits, then dots/digits and optional alphanumeric qualifiers
+        val versionRegex = Regex("(.+?)-(\\d+[.\\d\\-+a-zA-Z]*)$")
         val match = versionRegex.find(baseName)
 
         return if (match != null) {

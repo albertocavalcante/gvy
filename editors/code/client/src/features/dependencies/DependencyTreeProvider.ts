@@ -34,6 +34,8 @@ export class DependencyItem extends vscode.TreeItem {
 export class DependencyTreeProvider
   implements vscode.TreeDataProvider<DependencyItem>
 {
+  private static readonly SCOPE_ORDER = ["compile", "runtime", "test", "provided"];
+
   private _onDidChangeTreeData: vscode.EventEmitter<
     DependencyItem | undefined | null | void
   > = new vscode.EventEmitter<DependencyItem | undefined | null | void>();
@@ -107,7 +109,9 @@ export class DependencyTreeProvider
         );
 
         if (!result || !result.dependencies || result.dependencies.length === 0) {
-          // No dependencies found for this workspace
+          // No dependencies found for this workspace - this is expected for non-Groovy projects
+          // The LSP server returns empty dependencies with buildTool="unknown" for such cases
+          console.debug(`No dependencies found for ${workspaceFolder.name}`);
           continue;
         }
 
@@ -119,14 +123,20 @@ export class DependencyTreeProvider
         this.dependenciesCache.set(cacheKey, scopeItems);
         allItems.push(...scopeItems);
       } catch (error) {
+        // Log the error for debugging but don't show popup for expected scenarios
         console.error(
           `Failed to fetch dependencies for ${workspaceFolder.name}:`,
           error,
         );
-        // Show error message to user
-        vscode.window.showErrorMessage(
-          `Failed to fetch dependencies for ${workspaceFolder.name}: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
+        // Only show popup for genuine errors (not network timeouts or missing projects)
+        if (error instanceof Error &&
+            !error.message.includes("timeout") &&
+            !error.message.includes("not found") &&
+            !error.message.includes("No build tool")) {
+          vscode.window.showErrorMessage(
+            `Failed to fetch dependencies for ${workspaceFolder.name}: ${error.message}`,
+          );
+        }
       }
     }
 
@@ -162,10 +172,9 @@ export class DependencyTreeProvider
     const scopeItems: DependencyItem[] = [];
 
     // Sort scopes in a logical order
-    const scopeOrder = ["compile", "implementation", "api", "runtime", "runtimeOnly", "test", "testImplementation", "testRuntime", "provided", "compileOnly"];
     const sortedScopes = Array.from(scopeMap.keys()).sort((a, b) => {
-      const aIndex = scopeOrder.indexOf(a);
-      const bIndex = scopeOrder.indexOf(b);
+      const aIndex = DependencyTreeProvider.SCOPE_ORDER.indexOf(a);
+      const bIndex = DependencyTreeProvider.SCOPE_ORDER.indexOf(b);
       if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
       if (aIndex === -1) return 1;
       if (bIndex === -1) return -1;

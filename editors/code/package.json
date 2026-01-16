@@ -159,7 +159,7 @@
       },
       {
         "command": "groovy.dependencies.copyCoordinate",
-        "title": "Copy Maven Coordinate"
+        "title": "Copy Dependency Coordinate"
       }
     ],
     "views": {
