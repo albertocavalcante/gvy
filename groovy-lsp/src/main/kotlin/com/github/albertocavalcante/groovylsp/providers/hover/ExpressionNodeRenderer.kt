@@ -38,12 +38,9 @@ internal object ExpressionNodeRenderer {
         }
 
         val displayType = if (node.type.isDynamic()) {
-            if (type is SemanticType.Dynamic ||
-                type is SemanticType.Unknown
-            ) {
-                "def"
-            } else {
-                semanticResolver.formatSemanticType(type)
+            when (type) {
+                is SemanticType.Dynamic, is SemanticType.Unknown -> "def"
+                else -> semanticResolver.formatSemanticType(type)
             }
         } else {
             node.type.nameWithoutPackage

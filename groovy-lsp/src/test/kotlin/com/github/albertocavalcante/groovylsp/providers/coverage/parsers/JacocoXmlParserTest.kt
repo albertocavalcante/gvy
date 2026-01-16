@@ -47,8 +47,8 @@ class JacocoXmlParserTest {
         assertTrue(line12!!.covered)
         assertEquals(2, line12.hitCount)
         assertNotNull(line12.branchInfo)
-        assertEquals(1, line12.branchInfo.covered)
-        assertEquals(3, line12.branchInfo.total) // mb + cb = 2 + 1
+        assertEquals(1, line12.branchInfo!!.covered)
+        assertEquals(3, line12.branchInfo!!.total) // mb + cb = 2 + 1
 
         // Line 13: covered with branches (ci=1, mb=0, cb=2)
         val line13 = myClass.lines.find { it.line == 13 }
@@ -56,8 +56,8 @@ class JacocoXmlParserTest {
         assertTrue(line13!!.covered)
         assertEquals(1, line13.hitCount)
         assertNotNull(line13.branchInfo)
-        assertEquals(2, line13.branchInfo.covered)
-        assertEquals(2, line13.branchInfo.total)
+        assertEquals(2, line13.branchInfo!!.covered)
+        assertEquals(2, line13.branchInfo!!.total)
 
         // Check summary for MyClass
         assertEquals(4, myClass.summary.linesTotal)
