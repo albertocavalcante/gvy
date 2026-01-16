@@ -169,14 +169,7 @@ class InlayHintsProvider(
 
             is MethodCallExpression -> {
                 if (config.parameterHints) {
-                    collectParameterHints(
-                        node,
-                        context.astModel,
-                        context.moduleNode,
-                        context.symbolTable,
-                        context.workspaceSymbols,
-                        context.hints,
-                    )
+                    collectParameterHints(node, context)
                 }
             }
 
@@ -240,14 +233,7 @@ class InlayHintsProvider(
      *
      * Shows parameter names at call sites for positional arguments.
      */
-    private fun collectParameterHints(
-        call: MethodCallExpression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        symbolTable: SymbolTable?,
-        workspaceSymbols: List<Symbol>,
-        hints: MutableList<InlayHint>,
-    ) {
+    private fun collectParameterHints(call: MethodCallExpression, context: NodeProcessingContext) {
         val arguments = call.arguments as? ArgumentListExpression ?: return
 
         if (arguments.expressions.isEmpty()) {
@@ -255,7 +241,14 @@ class InlayHintsProvider(
         }
 
         // Try to resolve the method to get parameter names
-        val parameterNames = resolveMethodParameterNames(call, astModel, moduleNode, symbolTable, workspaceSymbols)
+        val parameterNames =
+            resolveMethodParameterNames(
+                call,
+                context.astModel,
+                context.moduleNode,
+                context.symbolTable,
+                context.workspaceSymbols,
+            )
         if (parameterNames.isEmpty()) {
             return
         }
@@ -276,7 +269,7 @@ class InlayHintsProvider(
                 arg.columnNumber - 1,
             )
 
-            hints.add(
+            context.hints.add(
                 InlayHint(position, Either.forLeft("$paramName:")).apply {
                     kind = InlayHintKind.Parameter
                     paddingRight = true
@@ -350,8 +343,9 @@ class InlayHintsProvider(
         val argCount = arguments.expressions.size
         val argumentTypes =
             InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, semanticResolver, moduleNode)
+        val receiverContext = ReceiverResolutionContext(astModel, moduleNode, symbolTable, semanticResolver, logger)
         val receiverType =
-            InlayHintsCandidates.resolveReceiverType(call, astModel, moduleNode, symbolTable, semanticResolver, logger)
+            InlayHintsCandidates.resolveReceiverType(call, receiverContext)
         val isStaticCall = call.objectExpression is ClassExpression
 
         // Resolution order:
@@ -427,6 +421,17 @@ class InlayHintsProvider(
     }
 }
 
+/**
+ * Context for receiver type resolution operations.
+ */
+private data class ReceiverResolutionContext(
+    val astModel: GroovyAstModel,
+    val moduleNode: ModuleNode?,
+    val symbolTable: SymbolTable?,
+    val semanticResolver: SemanticTypeResolver,
+    val logger: KLogger,
+)
+
 // TODO(#651): Consolidate InlayHintsCandidates and InlayHintsTypes into single helper.
 //   See: https://github.com/albertocavalcante/gvy/issues/651
 // TODO(#650): resolveReceiverType() overlaps with SignatureHelpProvider - extract shared utility.
@@ -448,31 +453,27 @@ private object InlayHintsCandidates {
         return ResolutionResult.NotFound
     }
 
-    fun resolveReceiverType(
-        call: MethodCallExpression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        symbolTable: SymbolTable?,
-        semanticResolver: SemanticTypeResolver,
-        logger: KLogger,
-    ): String? {
+    fun resolveReceiverType(call: MethodCallExpression, context: ReceiverResolutionContext): String? {
         if (call.isImplicitThis) {
-            return resolveImplicitThisReceiverType(call, astModel)
+            return resolveImplicitThisReceiverType(call, context.astModel)
         }
 
         val objectExpr = call.objectExpression ?: return null
         val directType = (objectExpr as? ClassExpression)?.type?.name
         val type =
-            directType ?: resolveExpressionTypeSafely(objectExpr, moduleNode, semanticResolver, "receiver", logger)
+            directType
+                ?: resolveExpressionTypeSafely(
+                    objectExpr,
+                    context.moduleNode,
+                    context.semanticResolver,
+                    "receiver",
+                    context.logger,
+                )
 
         return refineReceiverTypeWithSymbolTable(
             type,
             objectExpr,
-            astModel,
-            moduleNode,
-            symbolTable,
-            semanticResolver,
-            logger,
+            context,
         )
             ?.takeUnless { InlayHintsTypes.isDynamicType(it) || it == "java.lang.Class" }
     }
@@ -504,11 +505,7 @@ private object InlayHintsCandidates {
     fun refineReceiverTypeWithSymbolTable(
         inferredType: String?,
         objectExpr: Expression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        symbolTable: SymbolTable?,
-        semanticResolver: SemanticTypeResolver,
-        logger: KLogger,
+        context: ReceiverResolutionContext,
     ): String? {
         if (inferredType != "java.lang.Object" && inferredType != "java.lang.Class") {
             return inferredType
@@ -516,18 +513,24 @@ private object InlayHintsCandidates {
         if (objectExpr !is VariableExpression) {
             return inferredType
         }
-        if (symbolTable == null) {
+        if (context.symbolTable == null) {
             return inferredType
         }
 
-        val resolvedVar = symbolTable.resolveSymbol(objectExpr, astModel) ?: return inferredType
+        val resolvedVar = context.symbolTable.resolveSymbol(objectExpr, context.astModel) ?: return inferredType
         if (!resolvedVar.hasInitialExpression()) {
             return inferredType
         }
 
         val initExpr = resolvedVar.initialExpression ?: return inferredType
         val refined =
-            resolveExpressionTypeSafely(initExpr, moduleNode, semanticResolver, "receiver initializer", logger)
+            resolveExpressionTypeSafely(
+                initExpr,
+                context.moduleNode,
+                context.semanticResolver,
+                "receiver initializer",
+                context.logger,
+            )
                 ?: return inferredType
         return refined.takeUnless { it == "java.lang.Object" } ?: inferredType
     }
