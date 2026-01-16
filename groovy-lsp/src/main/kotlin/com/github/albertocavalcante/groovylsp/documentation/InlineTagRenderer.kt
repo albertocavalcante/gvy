@@ -61,38 +61,68 @@ object InlineTagRenderer {
             // Append text before tag
             result.append(text.substring(pos, tagStart))
 
-            // Extract tag name
-            val tagNameStart = tagStart + 2
-            val tagNameEnd = text.indexOfAny(charArrayOf(' ', '\t', '\n', '}'), tagNameStart)
-            if (tagNameEnd == -1) {
+            // Process the tag and get the new position
+            val tagResult = processInlineTag(text, tagStart)
+            if (tagResult == null) {
+                // Failed to parse tag, append rest and break
                 result.append(text.substring(tagStart))
                 break
             }
 
-            val tagName = text.substring(tagNameStart, tagNameEnd)
-
-            // Find matching closing brace with proper balance
-            val contentStart = if (text[tagNameEnd] == '}') tagNameEnd else tagNameEnd + 1
-            val closingBrace = findClosingBrace(text, contentStart)
-            if (closingBrace == -1) {
-                result.append(text.substring(tagStart))
-                break
-            }
-
-            val content = text.substring(contentStart, closingBrace).trim()
-            val rendered = when (tagName) {
-                "code" -> renderCode(content)
-                "link" -> renderLink(content)
-                "linkplain" -> renderLinkPlain(content)
-                "literal" -> renderLiteral(content)
-                "value" -> renderValue(content)
-                else -> if (content.isEmpty()) "{@$tagName}" else "{@$tagName $content}" // Unknown tag, keep as-is
-            }
-            result.append(rendered)
-            pos = closingBrace + 1
+            result.append(tagResult.rendered)
+            pos = tagResult.nextPosition
         }
 
         return result.toString()
+    }
+
+    /**
+     * Result of processing an inline tag.
+     */
+    private data class TagProcessingResult(val rendered: String, val nextPosition: Int)
+
+    /**
+     * Process a single inline tag starting at the given position.
+     *
+     * This helper extracts the tag parsing and rendering logic to reduce complexity.
+     *
+     * @return TagProcessingResult with rendered text and next position, or null if parsing failed
+     */
+    private fun processInlineTag(text: String, tagStart: Int): TagProcessingResult? {
+        // Extract tag name
+        val tagNameStart = tagStart + 2
+        val tagNameEnd = text.indexOfAny(charArrayOf(' ', '\t', '\n', '}'), tagNameStart)
+        if (tagNameEnd == -1) {
+            return null
+        }
+
+        val tagName = text.substring(tagNameStart, tagNameEnd)
+
+        // Find matching closing brace with proper balance
+        val contentStart = if (text[tagNameEnd] == '}') tagNameEnd else tagNameEnd + 1
+        val closingBrace = findClosingBrace(text, contentStart)
+        if (closingBrace == -1) {
+            return null
+        }
+
+        val content = text.substring(contentStart, closingBrace).trim()
+        val rendered = renderByTagName(tagName, content)
+
+        return TagProcessingResult(rendered, closingBrace + 1)
+    }
+
+    /**
+     * Render content based on tag name.
+     *
+     * This helper extracts the tag type branching logic.
+     */
+    private fun renderByTagName(tagName: String, content: String): String = when (tagName) {
+        "code" -> renderCode(content)
+        "link" -> renderLink(content)
+        "linkplain" -> renderLinkPlain(content)
+        "literal" -> renderLiteral(content)
+        "value" -> renderValue(content)
+        else -> if (content.isEmpty()) "{@$tagName}" else "{@$tagName $content}" // Unknown tag, keep as-is
     }
 
     /**

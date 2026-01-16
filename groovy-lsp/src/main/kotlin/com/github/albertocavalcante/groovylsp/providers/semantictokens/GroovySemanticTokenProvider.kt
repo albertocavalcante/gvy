@@ -543,55 +543,7 @@ object GroovySemanticTokenProvider {
         //   PropertyExpression(objectExpression=VariableExpression("String"), property="class")
         // The VariableExpression's name is the class name (e.g., "String", "Map", "List")
         if (propertyName == "class") {
-            val receiver = propExpr.objectExpression
-            if (receiver is VariableExpression && receiver.lineNumber > 0) {
-                // Check if the variable name starts with uppercase (indicates a class reference)
-                val varName = receiver.name
-                if (varName.firstOrNull()?.isUpperCase() == true) {
-                    // This is a class literal - tokenize the class name
-                    // Try to get type information if available
-                    val tokenType = if (receiver.type != null) {
-                        getTokenTypeForClassNode(receiver.type)
-                    } else {
-                        TokenTypes.CLASS // Default to CLASS type
-                    }
-                    addTokenForNode(receiver, varName.length, tokenType, 0, tokens)
-                }
-            } else if (receiver is ClassExpression) {
-                // Handle explicit ClassExpression (less common)
-                val classType = receiver.type
-                if (classType != null) {
-                    val className = classType.nameWithoutPackage
-                    if (className.isNotEmpty()) {
-                        if (receiver.lineNumber > 0 && receiver.columnNumber > 0) {
-                            tokens.add(
-                                SemanticToken(
-                                    line = receiver.lineNumber - 1,
-                                    startChar = receiver.columnNumber - 1,
-                                    length = className.length,
-                                    tokenType = getTokenTypeForClassNode(classType),
-                                    tokenModifiers = 0,
-                                ),
-                            )
-                        } else if (receiver.lineNumber > 0 && receiver.columnNumber > 0) {
-                            tokens.add(
-                                SemanticToken(
-                                    line = receiver.lineNumber - 1,
-                                    startChar = receiver.columnNumber - 1,
-                                    length = className.length,
-                                    tokenType = getTokenTypeForClassNode(classType),
-                                    tokenModifiers = 0,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Tokenize 'class' keyword
-            if (propExpr.property.lineNumber >= 0) {
-                addTokenForNode(propExpr.property, "class".length, TokenTypes.KEYWORD, 0, tokens)
-            }
+            handleClassLiteralExpression(propExpr, tokens)
             return
         }
 
@@ -605,6 +557,52 @@ object GroovySemanticTokenProvider {
         }
         val propertyLength = propertyName?.length ?: return
         addTokenForNode(propExpr.property, propertyLength, TokenTypes.PROPERTY, 0, tokens)
+    }
+
+    /**
+     * Handle class literal expressions like 'String.class', 'Map.class'.
+     *
+     * This helper extracts the complex logic for tokenizing class literals with different receiver types.
+     */
+    private fun handleClassLiteralExpression(propExpr: PropertyExpression, tokens: MutableList<SemanticToken>) {
+        val receiver = propExpr.objectExpression
+
+        if (receiver is VariableExpression && receiver.lineNumber > 0) {
+            // Check if the variable name starts with uppercase (indicates a class reference)
+            val varName = receiver.name
+            if (varName.firstOrNull()?.isUpperCase() == true) {
+                // This is a class literal - tokenize the class name
+                // Try to get type information if available
+                val tokenType = if (receiver.type != null) {
+                    getTokenTypeForClassNode(receiver.type)
+                } else {
+                    TokenTypes.CLASS // Default to CLASS type
+                }
+                addTokenForNode(receiver, varName.length, tokenType, 0, tokens)
+            }
+        } else if (receiver is ClassExpression) {
+            // Handle explicit ClassExpression (less common)
+            val classType = receiver.type
+            if (classType != null) {
+                val className = classType.nameWithoutPackage
+                if (className.isNotEmpty() && receiver.lineNumber > 0 && receiver.columnNumber > 0) {
+                    tokens.add(
+                        SemanticToken(
+                            line = receiver.lineNumber - 1,
+                            startChar = receiver.columnNumber - 1,
+                            length = className.length,
+                            tokenType = getTokenTypeForClassNode(classType),
+                            tokenModifiers = 0,
+                        ),
+                    )
+                }
+            }
+        }
+
+        // Tokenize 'class' keyword
+        if (propExpr.property.lineNumber >= 0) {
+            addTokenForNode(propExpr.property, "class".length, TokenTypes.KEYWORD, 0, tokens)
+        }
     }
 
     /**

@@ -423,6 +423,15 @@ object CompletionProvider {
         if (params.isEmpty()) return emptyList()
 
         // Split by comma while respecting angle brackets for generics
+        return parseParametersWithGenerics(params)
+    }
+
+    /**
+     * Parse comma-separated parameters while respecting angle brackets for generics.
+     *
+     * This helper extracts the complex bracket-tracking logic from parseSignatureToParams.
+     */
+    private fun parseParametersWithGenerics(params: String): List<String> {
         val result = mutableListOf<String>()
         val currentParam = StringBuilder()
         var bracketDepth = 0
@@ -808,32 +817,8 @@ object CompletionProvider {
         val classpathService = compilationService.classpathService
 
         // Handle static member completion (e.g., "import static java.lang.Math.PI")
-        // Only if we can actually find the class on the classpath
-        val staticClassName = when {
-            ctx.isStaticMemberCompletion -> ctx.staticClassName
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringBeforeLast('.')
-            else -> null
-        }
-        val staticMemberPrefix = when {
-            ctx.isStaticMemberCompletion -> ""
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
-            else -> null
-        }
-        if (staticClassName != null) {
-            val workspaceFound = addWorkspaceStaticMemberCompletions(
-                className = staticClassName,
-                compilationService = compilationService,
-                ctx = ctx,
-                memberPrefix = staticMemberPrefix,
-            )
-            val classpathFound = classpathService.loadClass(staticClassName) != null
-            if (classpathFound) {
-                addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-                addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-            }
-            if (workspaceFound || classpathFound) {
-                return
-            }
+        if (tryAddStaticMemberCompletions(ctx, compilationService)) {
+            return
         }
         // If className is not found, fall through to normal class completion
         // (it's likely a package path, e.g., "import static org.junit.")
@@ -865,6 +850,50 @@ object CompletionProvider {
     }
 
     /**
+     * Try to add static member completions for import statements.
+     *
+     * This helper extracts the logic for handling static imports like "import static java.lang.Math.PI".
+     *
+     * @return true if static member completions were added (indicating no need for further processing)
+     */
+    private fun CompletionsBuilder.tryAddStaticMemberCompletions(
+        ctx: ImportCompletionContext,
+        compilationService: GroovyCompilationService,
+    ): Boolean {
+        // Only if we can actually find the class on the classpath
+        val staticClassName = when {
+            ctx.isStaticMemberCompletion -> ctx.staticClassName
+            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringBeforeLast('.')
+            else -> null
+        }
+        val staticMemberPrefix = when {
+            ctx.isStaticMemberCompletion -> ""
+            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
+            else -> null
+        }
+
+        if (staticClassName == null) {
+            return false
+        }
+
+        val workspaceFound = addWorkspaceStaticMemberCompletions(
+            className = staticClassName,
+            compilationService = compilationService,
+            ctx = ctx,
+            memberPrefix = staticMemberPrefix,
+        )
+
+        val classpathService = compilationService.classpathService
+        val classpathFound = classpathService.loadClass(staticClassName) != null
+        if (classpathFound) {
+            addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+            addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
+        }
+
+        return workspaceFound || classpathFound
+    }
+
+    /**
      * Adds static member completions for workspace-defined classes.
      *
      * @return true if any members were added.
@@ -888,69 +917,126 @@ object CompletionProvider {
         val staticFieldNames = mutableSetOf<String>()
         classSymbols.forEach { classSymbol ->
             val qualifier = classSymbol.fullyQualifiedName.ifBlank { className }
-            classSymbol.methods
-                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-                .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-                .forEach { method ->
-                    val returnType = method.returnType?.nameWithoutPackage ?: "def"
-                    val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
-                    add(
-                        CompletionItem().apply {
-                            label = method.name
-                            kind = CompletionItemKind.Method
-                            detail = "$returnType ${method.name}($params)"
-                            insertText = method.name
-                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${method.name}"))
-                        },
-                    )
-                    added = true
-                }
 
-            classSymbol.fields
-                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-                .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-                .forEach { field ->
-                    val type = field.type?.nameWithoutPackage ?: "def"
-                    add(
-                        CompletionItem().apply {
-                            label = field.name
-                            kind = if (Modifier.isFinal(field.modifiers)) {
-                                CompletionItemKind.Constant
-                            } else {
-                                CompletionItemKind.Field
-                            }
-                            detail = "$type ${field.name}"
-                            insertText = field.name
-                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${field.name}"))
-                        },
-                    )
-                    staticFieldNames.add(field.name)
-                    added = true
-                }
+            if (addStaticMethodCompletions(classSymbol, qualifier, memberPrefix, range)) {
+                added = true
+            }
 
-            classSymbol.properties
-                .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-                .filter { property -> property.name !in staticFieldNames }
-                .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
-                .forEach { property ->
-                    val type = property.type?.nameWithoutPackage ?: "def"
-                    add(
-                        CompletionItem().apply {
-                            label = property.name
-                            kind = CompletionItemKind.Property
-                            detail = "$type ${property.name}"
-                            insertText = property.name
-                            textEdit = Either.forLeft(TextEdit(range, "$qualifier.${property.name}"))
-                        },
-                    )
-                    added = true
-                }
+            if (addStaticFieldCompletions(classSymbol, qualifier, memberPrefix, range, staticFieldNames)) {
+                added = true
+            }
+
+            if (addStaticPropertyCompletions(classSymbol, qualifier, memberPrefix, range, staticFieldNames)) {
+                added = true
+            }
         }
         return added
     }
 
     /**
-     * Adds completions for static methods when completing static imports.
+     * Add static method completions for a workspace class symbol.
+     *
+     * @return true if any completions were added
+     */
+    private fun CompletionsBuilder.addStaticMethodCompletions(
+        classSymbol: Symbol.Class,
+        qualifier: String,
+        memberPrefix: String?,
+        range: Range,
+    ): Boolean {
+        var added = false
+        classSymbol.methods
+            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
+            .forEach { method ->
+                val returnType = method.returnType?.nameWithoutPackage ?: "def"
+                val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
+                add(
+                    CompletionItem().apply {
+                        label = method.name
+                        kind = CompletionItemKind.Method
+                        detail = "$returnType ${method.name}($params)"
+                        insertText = method.name
+                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${method.name}"))
+                    },
+                )
+                added = true
+            }
+        return added
+    }
+
+    /**
+     * Add static field completions for a workspace class symbol.
+     *
+     * @return true if any completions were added
+     */
+    private fun CompletionsBuilder.addStaticFieldCompletions(
+        classSymbol: Symbol.Class,
+        qualifier: String,
+        memberPrefix: String?,
+        range: Range,
+        staticFieldNames: MutableSet<String>,
+    ): Boolean {
+        var added = false
+        classSymbol.fields
+            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
+            .forEach { field ->
+                val type = field.type?.nameWithoutPackage ?: "def"
+                add(
+                    CompletionItem().apply {
+                        label = field.name
+                        kind = if (Modifier.isFinal(field.modifiers)) {
+                            CompletionItemKind.Constant
+                        } else {
+                            CompletionItemKind.Field
+                        }
+                        detail = "$type ${field.name}"
+                        insertText = field.name
+                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${field.name}"))
+                    },
+                )
+                staticFieldNames.add(field.name)
+                added = true
+            }
+        return added
+    }
+
+    /**
+     * Add static property completions for a workspace class symbol.
+     *
+     * @return true if any completions were added
+     */
+    private fun CompletionsBuilder.addStaticPropertyCompletions(
+        classSymbol: Symbol.Class,
+        qualifier: String,
+        memberPrefix: String?,
+        range: Range,
+        staticFieldNames: Set<String>,
+    ): Boolean {
+        var added = false
+        classSymbol.properties
+            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
+            .filter { property -> property.name !in staticFieldNames }
+            .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
+            .forEach { property ->
+                val type = property.type?.nameWithoutPackage ?: "def"
+                add(
+                    CompletionItem().apply {
+                        label = property.name
+                        kind = CompletionItemKind.Property
+                        detail = "$type ${property.name}"
+                        insertText = property.name
+                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${property.name}"))
+                    },
+                )
+                added = true
+            }
+        return added
+    }
+
+    /**
+     * Adds completions for static methods when completing static imports (classpath version).
      */
     private fun CompletionsBuilder.addStaticMethodCompletions(
         className: String,

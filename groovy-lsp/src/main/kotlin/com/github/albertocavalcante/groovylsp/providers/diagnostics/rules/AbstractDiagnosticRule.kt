@@ -137,25 +137,46 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             while (true) {
                 val match = pattern.find(line, searchFrom) ?: break
 
-                var shouldExclude = false
+                val shouldInclude = shouldIncludeMatch(
+                    match = match,
+                    line = line,
+                    commentIndex = commentIndex,
+                    excludeComments = excludeComments,
+                    excludeStrings = excludeStrings,
+                )
 
-                // Check if match is in a single-line comment
-                if (excludeComments && commentIndex != -1 && match.range.first > commentIndex) {
-                    shouldExclude = true
-                }
-
-                // Check if match is in a string literal
-                if (!shouldExclude && excludeStrings && isInString(line, match.range.first)) {
-                    shouldExclude = true
-                }
-
-                if (!shouldExclude) {
+                if (shouldInclude) {
                     yield(LineMatch(lineIndex, match, line))
                 }
 
                 searchFrom = match.range.last + 1
             }
         }
+    }
+
+    /**
+     * Determine if a regex match should be included in results.
+     *
+     * This helper extracts the match filtering logic to reduce complexity.
+     */
+    private fun shouldIncludeMatch(
+        match: MatchResult,
+        line: String,
+        commentIndex: Int,
+        excludeComments: Boolean,
+        excludeStrings: Boolean,
+    ): Boolean {
+        // Check if match is in a single-line comment
+        if (excludeComments && commentIndex != -1 && match.range.first > commentIndex) {
+            return false
+        }
+
+        // Check if match is in a string literal
+        if (excludeStrings && isInString(line, match.range.first)) {
+            return false
+        }
+
+        return true
     }
 
     /**
