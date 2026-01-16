@@ -48,6 +48,11 @@ class SignatureHelpProvider(
 
     private val logger = KotlinLogging.logger {}
 
+    companion object {
+        /** Regex pattern to match synthetic parameter names like arg0, arg1, etc. */
+        private val SYNTHETIC_PARAM_PATTERN = Regex("arg\\d+")
+    }
+
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
         ensureAstPrepared(documentUri)
@@ -413,7 +418,7 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
 private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
     val paramsInfo = parameterTypes.mapIndexed { i, type ->
         val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-        val paramLabel = if (paramName.matches(Regex("arg\\d+"))) {
+        val paramLabel = if (paramName.matches(SYNTHETIC_PARAM_PATTERN)) {
             type
         } else {
             "$type $paramName"
@@ -428,7 +433,7 @@ private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
         append(
             parameterTypes.mapIndexed { i, type ->
                 val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-                if (paramName.matches(Regex("arg\\d+"))) {
+                if (paramName.matches(SYNTHETIC_PARAM_PATTERN)) {
                     type
                 } else {
                     "$type $paramName"
