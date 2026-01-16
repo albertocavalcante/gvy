@@ -21,17 +21,29 @@ object DocFormatter {
             return ""
         }
 
+        val hasContentAbove = hasContentAbove(doc)
+        val hasDocSections = hasDocSections(doc, includeParams, includeReturn)
+
         return markdown {
             addDeprecationSection(doc)
             addSummarySection(doc)
-            addSeparatorIfNeeded(doc, includeParams, includeReturn)
+            addSeparatorIfNeeded(hasContentAbove, hasDocSections)
             addParametersSection(doc, includeParams)
             addReturnsSection(doc, includeReturn)
             addThrowsSection(doc)
             addSeeAlsoSection(doc)
-            addMetadataFooter(doc, includeParams, includeReturn)
+            addMetadataFooter(doc, hasContentAbove, hasDocSections)
         }
     }
+
+    private fun hasContentAbove(doc: Documentation): Boolean =
+        doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
+
+    private fun hasDocSections(doc: Documentation, includeParams: Boolean, includeReturn: Boolean): Boolean =
+        (includeParams && doc.params.isNotEmpty()) ||
+            (includeReturn && doc.returnDoc.isNotBlank()) ||
+            doc.throws.isNotEmpty() ||
+            doc.see.isNotEmpty()
 
     private fun MarkdownBuilder.addDeprecationSection(doc: Documentation) {
         if (doc.deprecated.isNotBlank()) {
@@ -49,14 +61,7 @@ object DocFormatter {
         }
     }
 
-    private fun MarkdownBuilder.addSeparatorIfNeeded(
-        doc: Documentation,
-        includeParams: Boolean,
-        includeReturn: Boolean,
-    ) {
-        val hasContentAbove = hasContentAbove(doc)
-        val hasDocSections = hasDocSections(doc, includeParams, includeReturn)
-
+    private fun MarkdownBuilder.addSeparatorIfNeeded(hasContentAbove: Boolean, hasDocSections: Boolean) {
         if (hasContentAbove && hasDocSections) {
             markdown("---")
         }
@@ -102,13 +107,16 @@ object DocFormatter {
         list(doc.see.map { InlineTagRenderer.render(it) })
     }
 
-    private fun MarkdownBuilder.addMetadataFooter(doc: Documentation, includeParams: Boolean, includeReturn: Boolean) {
+    private fun MarkdownBuilder.addMetadataFooter(
+        doc: Documentation,
+        hasContentAbove: Boolean,
+        hasDocSections: Boolean,
+    ) {
         val hasMetadata = doc.since.isNotBlank() || doc.author.isNotBlank()
         if (!hasMetadata) return
 
         // Only add separator if there's content above the metadata footer
-        val hasContentAboveFooter = hasContentAbove(doc) || hasDocSections(doc, includeParams, includeReturn)
-
+        val hasContentAboveFooter = hasContentAbove || hasDocSections
         if (hasContentAboveFooter) {
             markdown("---")
         }
@@ -123,15 +131,6 @@ object DocFormatter {
 
         text(metadataParts.joinToString(" · "))
     }
-
-    private fun hasContentAbove(doc: Documentation): Boolean =
-        doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
-
-    private fun hasDocSections(doc: Documentation, includeParams: Boolean, includeReturn: Boolean): Boolean =
-        (includeParams && doc.params.isNotEmpty()) ||
-            (includeReturn && doc.returnDoc.isNotBlank()) ||
-            doc.throws.isNotEmpty() ||
-            doc.see.isNotEmpty()
 
     /**
      * Get a concise summary suitable for signature help.
