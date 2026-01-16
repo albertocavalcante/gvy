@@ -40,6 +40,9 @@ import java.lang.reflect.Modifier
 import java.net.URI
 import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
 
+/** Regex pattern to match synthetic parameter names like arg0, arg1, etc. */
+private val SYNTHETIC_PARAM_PATTERN = Regex("arg\\d+")
+
 class SignatureHelpProvider(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
@@ -47,11 +50,6 @@ class SignatureHelpProvider(
 ) {
 
     private val logger = KotlinLogging.logger {}
-
-    companion object {
-        /** Regex pattern to match synthetic parameter names like arg0, arg1, etc. */
-        private val SYNTHETIC_PARAM_PATTERN = Regex("arg\\d+")
-    }
 
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
