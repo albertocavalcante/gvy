@@ -24,19 +24,19 @@ import org.eclipse.lsp4j.CompletionItem
 internal class GroovyCompletionStrategy : CompletionStrategy {
 
     override suspend fun complete(context: CompletionStrategyContext): CompletionResult {
-        // Skip local symbols in strict declarative Jenkins mode
-        // (only declarative directives allowed)
-        val skipLocalSymbols = context.jenkinsBlockContext?.isStrictDeclarative == true
+        // Skip Groovy completions in strict declarative Jenkins mode
+        // (only declarative directives allowed - this also skips keywords and snippets)
+        val skipGroovyCompletions = context.jenkinsBlockContext?.isStrictDeclarative == true
 
-        val items = buildGroovyCompletions(context, skipLocalSymbols)
+        val items = buildGroovyCompletions(context, skipGroovyCompletions)
         return CompletionStrategy.found(items)
     }
 
     private fun buildGroovyCompletions(
         context: CompletionStrategyContext,
-        skipLocalSymbols: Boolean,
+        skipGroovyCompletions: Boolean,
     ): List<CompletionItem> = completions {
-        if (!skipLocalSymbols) {
+        if (!skipGroovyCompletions) {
             addClasses(context.symbolContext.classes)
             addMethods(context.symbolContext.methods)
             addFields(context.symbolContext.fields)

@@ -303,7 +303,7 @@ class CompletionStrategyTest {
     fun `strategy can use suspend functions`() {
         val context = mockk<CompletionStrategyContext>(relaxed = true)
 
-        val suspendingStrategy = CompletionStrategy { ctx ->
+        val suspendingStrategy = CompletionStrategy { _ ->
             // Simulate async operation
             kotlinx.coroutines.delay(10)
             CompletionStrategy.found(listOf(CompletionItem().apply { label = "async-item" }))

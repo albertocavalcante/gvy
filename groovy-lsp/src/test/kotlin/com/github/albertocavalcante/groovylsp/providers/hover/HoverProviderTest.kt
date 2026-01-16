@@ -955,4 +955,48 @@ class Calculator {
             "Expected hover to contain Javadoc from source navigation service. Actual: ${content.value}",
         )
     }
+
+    @Test
+    fun `provideHover falls back to next strategy when first returns null`() = runTest {
+        // This test verifies the critical fallback behavior:
+        // When JenkinsStepHoverStrategy (first for MethodCallExpression) returns null
+        // because the file is not a Jenkins file, the hover should fall back to
+        // MethodCallHoverStrategy and still provide useful information.
+
+        val groovyCode = """
+            class TestClass {
+                def greet() {
+                    println "Hello, World!"
+                    return "greeting"
+                }
+
+                def test() {
+                    greet()
+                }
+            }
+        """.trimIndent()
+
+        // Use a non-Jenkins file URI (no Jenkinsfile pattern)
+        val uri = URI.create("file:///src/main/groovy/TestClass.groovy")
+        compilationService.compile(uri, groovyCode)
+
+        // Hover over the method call "greet()" - JenkinsStepHoverStrategy should
+        // return null (not a Jenkins file), and MethodCallHoverStrategy should handle it
+        val hover = hoverProvider.provideHover(uri.toString(), Position(7, 8)) // On "greet()"
+
+        // The key assertion: we should get a hover even though JenkinsStepHoverStrategy
+        // is first in the strategy list and returns null for non-Jenkins files
+        assertNotNull(hover, "Hover should not be null - fallback strategy should handle it")
+        assertTrue(hover.contents.isRight, "Expected MarkupContent")
+        val content = hover.contents.right.value
+
+        // Verify we got meaningful hover content from the fallback strategy
+        // (not just an empty or "no info" response)
+        assertTrue(
+            content.contains("greet") || content.contains("Method") || content.contains("def"),
+            "Hover should contain method information from fallback strategy. Got: $content",
+        )
+
+        logger.debug { "Fallback hover test succeeded. Content: $content" }
+    }
 }

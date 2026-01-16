@@ -102,13 +102,16 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 }
 
                 // Add inner instructions (sub-blocks) from schema
-                blockContext?.innerInstructions?.forEach { instruction ->
-                    completion {
-                        label(instruction)
-                        kind(CompletionItemKind.Keyword)
-                        detail("Declarative directive")
-                        insertText("$instruction {")
-                        sortText("0-directive-$instruction")
+                // Only add when cursor is at block level (consistent with other declarative completions)
+                if (isBlockLevel) {
+                    blockContext?.innerInstructions?.forEach { instruction ->
+                        completion {
+                            label(instruction)
+                            kind(CompletionItemKind.Keyword)
+                            detail("Declarative directive")
+                            insertText("$instruction {")
+                            sortText("0-directive-$instruction")
+                        }
                     }
                 }
             }

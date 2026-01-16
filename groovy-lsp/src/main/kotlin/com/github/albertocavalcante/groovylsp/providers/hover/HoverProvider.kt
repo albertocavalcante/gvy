@@ -308,9 +308,14 @@ class HoverProvider(
         )
 
         // Use strategy pattern to generate base hover
+        // Iterate through all matching strategies until one returns a non-null hover
+        // This allows fallback when a strategy returns null (e.g., JenkinsStepHoverStrategy
+        // returns null for non-Jenkins files, falling back to MethodCallHoverStrategy)
         val baseHover = strategies
-            .firstOrNull { it.canHandle(node) }
-            ?.generateHover(node, context)
+            .asSequence()
+            .filter { it.canHandle(node) }
+            .mapNotNull { it.generateHover(node, context) }
+            .firstOrNull()
             ?: return null
 
         logger.debug { "Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}" }
