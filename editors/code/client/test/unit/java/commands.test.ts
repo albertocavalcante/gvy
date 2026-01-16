@@ -100,7 +100,42 @@ describe("Java Commands", () => {
   });
 
   describe("configureJava", () => {
-    describe("JDK detection and picker display", () => {
+    describe("Purpose picker", () => {
+      it("should show purpose picker when no purpose provided", async () => {
+        mockVscode.window.showQuickPick.resolves(undefined); // User cancels
+
+        await commandsModule.configureJava();
+
+        assert.isTrue(mockVscode.window.showQuickPick.calledOnce);
+        const options = mockVscode.window.showQuickPick.firstCall.args[1];
+        assert.equal(options.title, "Configure Java Runtime");
+        assert.equal(options.placeHolder, "What do you want to configure?");
+      });
+
+      it("should skip purpose picker when purpose='lsp' provided", async () => {
+        mockFinder.findAllJdks.resolves([]);
+        mockVscode.window.showQuickPick.resolves(undefined);
+
+        await commandsModule.configureJava(undefined, "lsp");
+
+        // First call should be JDK picker, not purpose picker
+        const options = mockVscode.window.showQuickPick.firstCall.args[1];
+        assert.equal(options.title, "Configure Language Server Runtime");
+      });
+
+      it("should skip purpose picker when purpose='project' provided", async () => {
+        mockFinder.findAllJdks.resolves([]);
+        mockVscode.window.showQuickPick.resolves(undefined);
+
+        await commandsModule.configureJava(undefined, "project");
+
+        // First call should be project JDK picker
+        const options = mockVscode.window.showQuickPick.firstCall.args[1];
+        assert.equal(options.title, "Select Project Build JDK");
+      });
+    });
+
+    describe("JDK detection and picker display (LSP mode)", () => {
       it("should show progress notification while detecting JDKs", async () => {
         mockFinder.findAllJdks.resolves([
           {
@@ -112,7 +147,7 @@ describe("Java Commands", () => {
         ]);
         mockVscode.window.showQuickPick.resolves(undefined); // User cancels
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockVscode.window.withProgress.calledOnce);
         const progressOptions =
@@ -128,7 +163,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockFinder.findAllJdks.calledOnce);
       });
@@ -137,7 +172,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava(21);
+        await commandsModule.configureJava(21, "lsp");
 
         assert.isTrue(mockFinder.findAllJdks.calledWith(undefined, 21));
       });
@@ -160,7 +195,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockVscode.window.showQuickPick.calledOnce);
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
@@ -173,7 +208,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const browseItem = items.find((item: any) => item.action === "browse");
@@ -185,7 +220,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava(21);
+        await commandsModule.configureJava(21, "lsp");
 
         const options = mockVscode.window.showQuickPick.firstCall.args[1];
         assert.include(
@@ -198,14 +233,14 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         const options = mockVscode.window.showQuickPick.firstCall.args[1];
         assert.include(options.placeHolder, "requires Java 17+");
       });
     });
 
-    describe("JDK grouping and sections", () => {
+    describe("JDK grouping and sections (LSP mode)", () => {
       it("should group JDKs into LSP Compatible section (>=17)", async () => {
         const mockJdks = [
           {
@@ -224,7 +259,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
@@ -254,7 +289,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
@@ -284,7 +319,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava(21);
+        await commandsModule.configureJava(21, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
@@ -315,7 +350,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava(8);
+        await commandsModule.configureJava(8, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
@@ -339,7 +374,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava(21);
+        await commandsModule.configureJava(21, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const jdkItems = items.filter((item: any) => item.jdk !== undefined);
@@ -361,7 +396,7 @@ describe("Java Commands", () => {
         mockFinder.findAllJdks.resolves(mockJdks);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const jdkItems = items.filter((item: any) => item.jdk !== undefined);
@@ -371,12 +406,12 @@ describe("Java Commands", () => {
       });
     });
 
-    describe("User selection handling", () => {
+    describe("User selection handling (LSP mode)", () => {
       it("should return false when user cancels picker", async () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves(undefined);
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
       });
@@ -387,7 +422,7 @@ describe("Java Commands", () => {
           kind: mockVscode.QuickPickItemKind.Separator,
         });
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
       });
@@ -410,7 +445,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showInformationMessage.resolves(undefined);
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(result);
         assert.isTrue(
@@ -419,7 +454,7 @@ describe("Java Commands", () => {
         const config = mockVscode.workspace.getConfiguration.returnValues[0];
         assert.isTrue(
           config.update.calledWith(
-            "java.home",
+            "languageServer.javaHome",
             "/jdk17",
             mockVscode.ConfigurationTarget.Workspace,
           ),
@@ -442,12 +477,12 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showInformationMessage.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockVscode.window.showInformationMessage.calledOnce);
         const message =
           mockVscode.window.showInformationMessage.firstCall.args[0];
-        assert.include(message, "Java home set to Java 17");
+        assert.include(message, "Language Server Java set to Java 17");
         assert.include(message, "Restart the server");
       });
 
@@ -467,7 +502,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showInformationMessage.resolves("Restart Server");
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(
           mockVscode.commands.executeCommand.calledWith("groovy.restartServer"),
@@ -490,13 +525,13 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showInformationMessage.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(mockVscode.commands.executeCommand.called);
       });
     });
 
-    describe("Browse functionality", () => {
+    describe("Browse functionality (LSP mode)", () => {
       it("should open folder browser when Browse option selected", async () => {
         mockFinder.findAllJdks.resolves([]);
         mockVscode.window.showQuickPick.resolves({
@@ -505,7 +540,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showOpenDialog.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockVscode.window.showOpenDialog.calledOnce);
         const options = mockVscode.window.showOpenDialog.firstCall.args[0];
@@ -522,7 +557,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showOpenDialog.resolves(undefined);
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
       });
@@ -542,7 +577,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showInformationMessage.resolves(undefined);
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(result);
         assert.isTrue(mockJdkUtils.getRuntime.calledWith("/selected/jdk"));
@@ -562,7 +597,7 @@ describe("Java Commands", () => {
           version: null, // Invalid JDK
         });
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
         assert.isTrue(mockVscode.window.showErrorMessage.calledOnce);
@@ -583,7 +618,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showWarningMessage.resolves(undefined);
 
-        await commandsModule.configureJava();
+        await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(mockVscode.window.showWarningMessage.calledOnce);
         const warningMsg =
@@ -607,7 +642,7 @@ describe("Java Commands", () => {
         mockVscode.window.showWarningMessage.resolves("Yes, use anyway");
         mockVscode.window.showInformationMessage.resolves(undefined);
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isTrue(result);
       });
@@ -625,7 +660,7 @@ describe("Java Commands", () => {
         });
         mockVscode.window.showWarningMessage.resolves("No, choose another");
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
       });
@@ -639,7 +674,7 @@ describe("Java Commands", () => {
         mockVscode.window.showOpenDialog.resolves([{ fsPath: "/bad/path" }]);
         mockJdkUtils.getRuntime.rejects(new Error("Failed to read JDK"));
 
-        const result = await commandsModule.configureJava();
+        const result = await commandsModule.configureJava(undefined, "lsp");
 
         assert.isFalse(result);
         assert.isTrue(mockVscode.window.showErrorMessage.calledOnce);
@@ -971,7 +1006,12 @@ describe("Java Commands", () => {
 
       // Setup mocks to track the call
       mockFinder.findAllJdks.resolves([]);
-      mockVscode.window.showQuickPick.resolves(undefined);
+      // First call: purpose picker - select LSP
+      // Second call: JDK picker - cancel
+      mockVscode.window.showQuickPick
+        .onFirstCall()
+        .resolves({ purpose: "lsp" });
+      mockVscode.window.showQuickPick.onSecondCall().resolves(undefined);
 
       // Execute the registered handler with a required version
       await handler(21);
