@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.createIdentitySet
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import com.github.albertocavalcante.groovyparser.errors.symbolNotFoundError
 import com.github.albertocavalcante.groovyparser.errors.toGroovyParserResult
@@ -292,10 +293,7 @@ fun SymbolIndex.buildFromVisitor(visitor: GroovyAstModel): SymbolIndex {
     // Collect all primary class nodes (actual class definitions, not type references)
     // Type references (e.g., String in "String name" or int in "int compute()") are tracked
     // by the visitor for hover/definition support but should NOT be included in document symbols.
-    // Use identity-based set to handle ClassNode correctly (may override equals/hashCode).
-    val primaryClassNodes = visitor.getAllClassNodes().toCollection(
-        java.util.Collections.newSetFromMap(java.util.IdentityHashMap()),
-    )
+    val primaryClassNodes = createIdentitySet(visitor.getAllClassNodes())
 
     visitor.getAllNodes().forEach { node ->
         val uri = visitor.getUri(node) ?: return@forEach

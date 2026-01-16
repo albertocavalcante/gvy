@@ -26,10 +26,7 @@ class SymbolTableBuilder(private val registry: SymbolRegistry) {
         // Collect all primary class nodes (actual class definitions, not type references)
         // Type references (e.g., String in "String name" or int in "int compute()") are tracked
         // by the visitor for hover/definition support but should NOT be included in document symbols.
-        // Use identity-based set to handle ClassNode correctly (may override equals/hashCode).
-        val primaryClassNodes = visitor.getAllClassNodes().toCollection(
-            java.util.Collections.newSetFromMap(java.util.IdentityHashMap()),
-        )
+        val primaryClassNodes = createIdentitySet(visitor.getAllClassNodes())
 
         // Group nodes by URI for efficient processing
         val nodesByUri = allNodes.groupBy { visitor.getUri(it) }
