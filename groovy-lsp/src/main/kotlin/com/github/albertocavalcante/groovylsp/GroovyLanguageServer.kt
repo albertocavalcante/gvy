@@ -16,9 +16,9 @@ import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
-import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
 import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.BuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.GetBuildToolInfoParams

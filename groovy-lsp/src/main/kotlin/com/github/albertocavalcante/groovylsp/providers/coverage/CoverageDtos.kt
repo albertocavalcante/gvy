@@ -13,10 +13,7 @@ data class GetCoverageParams(val workspaceUri: String)
  * @property covered Number of covered branches
  * @property total Total number of branches
  */
-data class BranchInfo(
-    val covered: Int,
-    val total: Int,
-)
+data class BranchInfo(val covered: Int, val total: Int)
 
 /**
  * Line coverage information.
@@ -55,11 +52,7 @@ data class FileCoverageSummary(
  * @property lines Per-line coverage information
  * @property summary Aggregate coverage summary for this file
  */
-data class FileCoverageData(
-    val uri: String,
-    val lines: List<LineCoverage>,
-    val summary: FileCoverageSummary,
-)
+data class FileCoverageData(val uri: String, val lines: List<LineCoverage>, val summary: FileCoverageSummary)
 
 /**
  * Overall coverage summary.
@@ -86,7 +79,4 @@ data class CoverageSummary(
  * @property files Per-file coverage data
  * @property summary Overall coverage summary
  */
-data class CoverageResponse(
-    val files: List<FileCoverageData>,
-    val summary: CoverageSummary,
-)
+data class CoverageResponse(val files: List<FileCoverageData>, val summary: CoverageSummary)

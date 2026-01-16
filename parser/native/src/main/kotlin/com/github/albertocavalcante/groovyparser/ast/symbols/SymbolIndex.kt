@@ -289,6 +289,14 @@ fun buildSymbols(uri: URI, block: SymbolBuilder.() -> Unit): List<Symbol> = Symb
 fun SymbolIndex.buildFromVisitor(visitor: GroovyAstModel): SymbolIndex {
     var index = this
 
+    // Collect all primary class nodes (actual class definitions, not type references)
+    // Type references (e.g., String in "String name" or int in "int compute()") are tracked
+    // by the visitor for hover/definition support but should NOT be included in document symbols.
+    // Use identity-based set to handle ClassNode correctly (may override equals/hashCode).
+    val primaryClassNodes = visitor.getAllClassNodes().toCollection(
+        java.util.Collections.newSetFromMap(java.util.IdentityHashMap()),
+    )
+
     visitor.getAllNodes().forEach { node ->
         val uri = visitor.getUri(node) ?: return@forEach
 
@@ -296,7 +304,16 @@ fun SymbolIndex.buildFromVisitor(visitor: GroovyAstModel): SymbolIndex {
             is MethodNode -> Symbol.Method.from(node, uri)
             is FieldNode -> Symbol.Field.from(node, uri)
             is PropertyNode -> Symbol.Property.from(node, uri)
-            is ClassNode -> Symbol.Class.from(node, uri)
+            is ClassNode -> {
+                // Only create symbols for primary class nodes (actual definitions),
+                // not type reference nodes (e.g., String, int used in field/method types).
+                // Fixes: document-symbol-basic test was reporting type references as Class symbols.
+                if (node in primaryClassNodes) {
+                    Symbol.Class.from(node, uri)
+                } else {
+                    null
+                }
+            }
             is Variable -> Symbol.Variable.from(node, uri)
             is ImportNode -> {
                 if (node.isStatic) {

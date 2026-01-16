@@ -203,11 +203,7 @@ object JacocoXmlParser {
     /**
      * Parse a single sourcefile element.
      */
-    private fun parseSourceFile(
-        sourceFile: Element,
-        packageName: String,
-        workspaceRoot: File,
-    ): FileCoverageData? {
+    private fun parseSourceFile(sourceFile: Element, packageName: String, workspaceRoot: File): FileCoverageData? {
         val fileName = sourceFile.getAttribute("name") // e.g., "MyClass.groovy"
         if (fileName.isEmpty()) return null
 
@@ -418,17 +414,15 @@ object JacocoXmlParser {
     /**
      * Return an empty coverage response.
      */
-    private fun emptyCoverageResponse(): CoverageResponse {
-        return CoverageResponse(
-            files = emptyList(),
-            summary = CoverageSummary(
-                lineCoveragePercent = 0.0,
-                branchCoveragePercent = 0.0,
-                linesCovered = 0,
-                linesTotal = 0,
-                branchesCovered = 0,
-                branchesTotal = 0,
-            ),
-        )
-    }
+    private fun emptyCoverageResponse(): CoverageResponse = CoverageResponse(
+        files = emptyList(),
+        summary = CoverageSummary(
+            lineCoveragePercent = 0.0,
+            branchCoveragePercent = 0.0,
+            linesCovered = 0,
+            linesTotal = 0,
+            branchesCovered = 0,
+            branchesTotal = 0,
+        ),
+    )
 }

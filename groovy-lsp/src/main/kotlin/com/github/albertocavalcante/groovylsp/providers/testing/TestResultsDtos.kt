@@ -65,7 +65,4 @@ data class TestResultSummary(
  * @property results List of individual test results
  * @property summary Aggregate summary of test execution
  */
-data class TestResultsResponse(
-    val results: List<TestResultItem>,
-    val summary: TestResultSummary,
-)
+data class TestResultsResponse(val results: List<TestResultItem>, val summary: TestResultSummary)

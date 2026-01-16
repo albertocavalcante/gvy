@@ -9,7 +9,9 @@ import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import java.net.URI
@@ -123,6 +125,59 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
                 }
             }
 
+            is FieldNode, is PropertyNode -> {
+                // CRITICAL: Field and property access can resolve to definitions in external classes.
+                // For example, `calc.value` where calc is a Calculator instance should resolve to
+                // the field definition in Calculator.groovy, not Main.groovy.
+                // Check if this field/property is defined in the current document or externally.
+                val definitionUri = astVisitor.getUri(definition)
+                logger.debug {
+                    "Attempting to resolve ${definition.javaClass.simpleName} locally (from ${context.targetNode.javaClass.simpleName})"
+                }
+                logger.debug {
+                    "Field/Property URI: $definitionUri, Current document: ${context.documentUri}"
+                }
+
+                // Check the declaring class to determine if this field/property is local
+                val declaringClass = when (definition) {
+                    is FieldNode -> definition.declaringClass
+                    is PropertyNode -> definition.declaringClass
+                    else -> null
+                }
+                logger.debug {
+                    "Field/Property declaring class: ${declaringClass?.name}"
+                }
+
+                if (declaringClass != null) {
+                    // Use isLocallyDefinedClass to check if the declaring class is in the current document
+                    // This handles the case where the PropertyNode/FieldNode might not have a URI tracked,
+                    // but we can determine locality by checking its declaring class
+                    val isDeclaringClassLocal = isLocallyDefinedClass(declaringClass, context.documentUri)
+                    logger.debug {
+                        "Field/Property declaring class '${declaringClass.name}' is local to current document: $isDeclaringClassLocal"
+                    }
+                    if (!isDeclaringClassLocal) {
+                        // Field/property's declaring class is in a different file - not local
+                        logger.debug {
+                            "Field/Property's declaring class is not local (current: ${context.documentUri}), deferring to other strategies"
+                        }
+                        null
+                    } else {
+                        // Field/property's declaring class is local to this document
+                        definition
+                    }
+                } else if (definitionUri != null && definitionUri != context.documentUri) {
+                    // Field/property is defined in a different file - not local
+                    logger.debug {
+                        "Field/Property is defined in $definitionUri (current: ${context.documentUri}), deferring to other strategies"
+                    }
+                    null
+                } else {
+                    // Field/property is local to this document or we can't determine - treat as local
+                    definition
+                }
+            }
+
             else -> definition
         }
 
@@ -193,28 +248,30 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
         logger.info { "Current document URI: $currentUri" }
         logger.info { "ClassNode identity hash: ${System.identityHashCode(classNode)}" }
 
-        // CRITICAL: If we can't find the URI, it means this ClassNode is not tracked in our AST model,
-        // which means it's NOT locally defined. Don't proceed to fallback checks - just return false.
+        // CRITICAL: If we can't find the URI, it means this ClassNode is not tracked in our AST model.
+        // This could mean:
+        // 1. It's an external class (from classpath/JRT) - NOT locally defined
+        // 2. It's a class reference that hasn't been fully resolved yet
+        //
+        // We should check if there's a class with this name defined in the current document by searching
+        // getAllClassNodes(), but ONLY if we can find it by instance identity (not just by name).
         if (classUri == null) {
             logger.debug {
-                "ClassNode ${classNode.name} has no URI in AST model, not local to $currentUri"
+                "ClassNode ${classNode.name} has no URI in AST model"
             }
-            // ONLY proceed if classNode is a reference type (no source location)
-            // Check the final fallback: search by name in current document
-            // CRITICAL FIX: Only consider ClassNodes that are actual class DEFINITIONS (with valid position),
-            // not ClassNode references from constructor calls or variable declarations.
-            // Without this filter, we might find the ClassNode reference from `new Calculator(10)` which
-            // is tracked in Main.groovy's AST, causing us to incorrectly think Calculator is defined locally.
-            val localClasses = astVisitor.getAllClassNodes()
-            val foundLocally = localClasses.any { localClass ->
-                localClass.name == classNode.name &&
-                    astVisitor.getUri(localClass) == currentUri &&
-                    hasValidPosition(localClass) // Must be an actual class definition, not a reference
+            // Try to find this class by checking if it (or its redirect) matches any class definition
+            // by instance identity. Name matching alone is insufficient because it would match references.
+            val redirectedClassNode = classNode.redirect()
+            val allClassNodes = astVisitor.getAllClassNodes()
+            val foundByIdentity = allClassNodes.any { localClass ->
+                val matchesCurrent = astVisitor.getUri(localClass) == currentUri
+                val matchesIdentity = localClass === classNode || localClass === redirectedClassNode
+                matchesCurrent && matchesIdentity
             }
             logger.debug {
-                "ClassNode ${classNode.name} foundLocally=$foundLocally in $currentUri (fallback search)"
+                "ClassNode ${classNode.name} foundByIdentity=$foundByIdentity in $currentUri (fallback search)"
             }
-            return foundLocally
+            return foundByIdentity
         }
 
         if (classUri != currentUri) {
@@ -228,24 +285,47 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
         // CRITICAL FIX: Even if the URI matches, we must verify this is an actual class DEFINITION
         // (from ModuleNode.classes), not just a ClassNode reference from a constructor call or variable declaration.
         // The RecursiveAstVisitor tracks ClassNode references (e.g., `new Calculator(10)`) with the current URI,
-        // but these are NOT class definitions. We must check if the class is in getAllClassNodes() which
-        // only returns actual class definitions from ModuleNode.classes.
+        // but these are NOT class definitions.
+        //
+        // The issue: When `new Calculator(10)` is in Main.groovy, astVisitor.getUri(classNode) returns Main.groovy
+        // (the location of the REFERENCE), not Calculator.groovy (where Calculator is DEFINED).
+        // So we can't trust that classUri == currentUri means the class is defined here.
+        //
+        // Solution: Check if there's a class with this name in getAllClassNodes() that:
+        // 1. Is tracked with the current URI (meaning it's defined in this file)
+        // 2. Matches by instance identity (to ensure it's the actual definition, not a reference)
+        //
+        // But wait - the ClassNode from `new Calculator(10)` should NOT have currentUri if Calculator
+        // is defined in Calculator.groovy. If it does, that's the bug we're trying to fix.
+        //
+        // Actually, the real fix is simpler: We should check if this ClassNode is from ModuleNode.classes
+        // of the current document. Since getAllClassNodes() returns classes from all ModuleNodes, we need
+        // to filter to only those from the current document.
         val allClassNodes = astVisitor.getAllClassNodes()
         logger.info { "All class nodes in AST model: ${allClassNodes.map { it.name }}" }
-        val isActualDefinition = allClassNodes.any { localClass ->
-            val match = localClass === classNode || // Same instance
-                (localClass.name == classNode.name && astVisitor.getUri(localClass) == currentUri)
+
+        // Find all class definitions that are actually in the current document
+        val classesInCurrentDoc = allClassNodes.filter { astVisitor.getUri(it) == currentUri }
+        logger.info { "Classes in current document: ${classesInCurrentDoc.map { it.name }}" }
+
+        // Get the canonical (redirected) form of the classNode
+        val redirectedClassNode = classNode.redirect()
+        logger.info { "Checking if classNode or its redirect matches any class definition in current document" }
+
+        // Check if this classNode (or its redirect) matches any class definition in the current document
+        val isActualDefinition = classesInCurrentDoc.any { localClass ->
+            val match = localClass === classNode || localClass === redirectedClassNode
             if (match) {
                 logger.info {
-                    "Found matching class definition: ${localClass.name} (identity match: ${localClass === classNode})"
+                    "Found matching class definition by instance identity: ${localClass.name}"
                 }
             }
             match
         }
-        logger.info { "Is actual definition: $isActualDefinition" }
+        logger.info { "Is actual definition in current document: $isActualDefinition" }
         if (!isActualDefinition) {
             logger.info {
-                "ClassNode ${classNode.name} has URI $classUri but is not a class definition (just a tracked reference)"
+                "ClassNode ${classNode.name} has URI $classUri but is not a class definition in $currentUri"
             }
             return false
         }

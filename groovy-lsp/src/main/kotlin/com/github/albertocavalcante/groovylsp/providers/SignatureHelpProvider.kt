@@ -413,7 +413,12 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
 private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
     val paramsInfo = parameterTypes.mapIndexed { i, type ->
         val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-        ParameterInformation().apply { label = Either.forLeft("$type $paramName") }
+        val paramLabel = if (paramName.matches(Regex("arg\\d+"))) {
+            type
+        } else {
+            "$type $paramName"
+        }
+        ParameterInformation().apply { label = Either.forLeft(paramLabel) }
     }
 
     val label = buildString {
@@ -423,7 +428,11 @@ private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
         append(
             parameterTypes.mapIndexed { i, type ->
                 val paramName = parameterNames.getOrNull(i) ?: "arg$i"
-                "$type $paramName"
+                if (paramName.matches(Regex("arg\\d+"))) {
+                    type
+                } else {
+                    "$type $paramName"
+                }
             }.joinToString(", "),
         )
         append(")")
