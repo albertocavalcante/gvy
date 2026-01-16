@@ -54,12 +54,8 @@ object DocFormatter {
         includeParams: Boolean,
         includeReturn: Boolean,
     ) {
-        val hasContentAbove =
-            doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
-        val hasDocSections = (includeParams && doc.params.isNotEmpty()) ||
-            (includeReturn && doc.returnDoc.isNotBlank()) ||
-            doc.throws.isNotEmpty() ||
-            doc.see.isNotEmpty()
+        val hasContentAbove = hasContentAbove(doc)
+        val hasDocSections = hasDocSections(doc, includeParams, includeReturn)
 
         if (hasContentAbove && hasDocSections) {
             markdown("---")
@@ -111,13 +107,7 @@ object DocFormatter {
         if (!hasMetadata) return
 
         // Only add separator if there's content above the metadata footer
-        val hasContentAbove =
-            doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
-        val hasDocSections = (includeParams && doc.params.isNotEmpty()) ||
-            (includeReturn && doc.returnDoc.isNotBlank()) ||
-            doc.throws.isNotEmpty() ||
-            doc.see.isNotEmpty()
-        val hasContentAboveFooter = hasContentAbove || hasDocSections
+        val hasContentAboveFooter = hasContentAbove(doc) || hasDocSections(doc, includeParams, includeReturn)
 
         if (hasContentAboveFooter) {
             markdown("---")
@@ -133,6 +123,15 @@ object DocFormatter {
 
         text(metadataParts.joinToString(" · "))
     }
+
+    private fun hasContentAbove(doc: Documentation): Boolean =
+        doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
+
+    private fun hasDocSections(doc: Documentation, includeParams: Boolean, includeReturn: Boolean): Boolean =
+        (includeParams && doc.params.isNotEmpty()) ||
+            (includeReturn && doc.returnDoc.isNotBlank()) ||
+            doc.throws.isNotEmpty() ||
+            doc.see.isNotEmpty()
 
     /**
      * Get a concise summary suitable for signature help.
