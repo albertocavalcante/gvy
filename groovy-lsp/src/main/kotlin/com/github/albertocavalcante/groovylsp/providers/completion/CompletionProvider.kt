@@ -524,12 +524,6 @@ object CompletionProvider {
         return false
     }
 
-    private data class TextImportInfo(
-        val packageName: String?,
-        val explicitImports: Set<String>,
-        val starImports: Set<String>,
-    )
-
     /**
      * Resolves workspace class candidates for a simple name using package/import
      * context first, then falls back to a workspace-wide symbol scan.
@@ -606,135 +600,7 @@ object CompletionProvider {
      * Best-effort, line-based import parsing for fallback scenarios.
      * Supports simple multi-line imports but does not handle full Groovy syntax.
      */
-    private fun parseTextImportInfo(content: String): TextImportInfo {
-        var packageName: String? = null
-        val explicitImports = mutableSetOf<String>()
-        val starImports = mutableSetOf<String>()
-        var inBlockComment = false
-        var pendingImport: String? = null
-        var pendingImportIsStatic = false
-
-        for (line in content.lineSequence()) {
-            var trimmed = line.trim()
-            if (trimmed.isBlank()) continue
-
-            if (inBlockComment) {
-                if (trimmed.contains("*/")) {
-                    trimmed = trimmed.substringAfter("*/").trim()
-                    inBlockComment = false
-                } else {
-                    continue
-                }
-            }
-
-            if (trimmed.contains("/*") && trimmed.contains("*/")) {
-                val before = trimmed.substringBefore("/*")
-                val after = trimmed.substringAfter("*/")
-                trimmed = "$before $after".trim()
-                if (trimmed.isBlank()) continue
-            }
-
-            if (trimmed.startsWith("/*")) {
-                if (!trimmed.contains("*/")) {
-                    inBlockComment = true
-                }
-                continue
-            }
-
-            if (trimmed.startsWith("//")) {
-                continue
-            }
-
-            if (pendingImport != null) {
-                if (trimmed.startsWith("package ") || trimmed.startsWith("import") || isCodeDeclarationLine(trimmed)) {
-                    if (!pendingImportIsStatic && pendingImport.isNotBlank() && !pendingImport.endsWith(".")) {
-                        recordImport(pendingImport, explicitImports, starImports)
-                    }
-                    pendingImport = null
-                    pendingImportIsStatic = false
-                } else {
-                    val separator = if (pendingImport.endsWith(".") || trimmed.startsWith(".")) "" else " "
-                    val combined = (pendingImport + separator + trimmed).trim()
-                    val cleaned = combined.substringBefore(";").trim()
-                    val hasSemicolon = combined.contains(";")
-                    val continues = isImportContinuation(cleaned)
-                    if (hasSemicolon || !continues) {
-                        if (!pendingImportIsStatic && cleaned.isNotBlank()) {
-                            recordImport(cleaned.removeSuffix("\\").trim(), explicitImports, starImports)
-                        }
-                        pendingImport = null
-                        pendingImportIsStatic = false
-                    } else {
-                        pendingImport = cleaned.removeSuffix("\\").trim()
-                    }
-                    continue
-                }
-            }
-
-            when {
-                trimmed.startsWith("package ") -> {
-                    packageName = trimmed.removePrefix("package ").removeSuffix(";").trim()
-                }
-
-                trimmed.startsWith("import") -> {
-                    val isStatic = trimmed.startsWith("import static")
-                    val importPrefix = if (isStatic) "import static" else "import"
-                    val value = trimmed.removePrefix(importPrefix).trim()
-                    if (value.isBlank()) {
-                        pendingImport = ""
-                        pendingImportIsStatic = isStatic
-                        continue
-                    }
-                    val cleaned = value.substringBefore(";").trim()
-                    val hasSemicolon = value.contains(";")
-                    val continues = isImportContinuation(cleaned)
-                    if (hasSemicolon || !continues) {
-                        if (!isStatic && cleaned.isNotBlank()) {
-                            recordImport(cleaned.removeSuffix("\\").trim(), explicitImports, starImports)
-                        }
-                    } else {
-                        pendingImport = cleaned.removeSuffix("\\").trim()
-                        pendingImportIsStatic = isStatic
-                    }
-                }
-
-                isCodeDeclarationLine(trimmed) -> break
-            }
-        }
-
-        if (pendingImport != null &&
-            !pendingImportIsStatic &&
-            pendingImport.isNotBlank() &&
-            !pendingImport.endsWith(".")
-        ) {
-            recordImport(pendingImport, explicitImports, starImports)
-        }
-
-        return TextImportInfo(packageName, explicitImports, starImports)
-    }
-
-    private fun recordImport(value: String, explicitImports: MutableSet<String>, starImports: MutableSet<String>) {
-        if (value.endsWith(".*")) {
-            starImports.add(value.removeSuffix(".*"))
-        } else {
-            explicitImports.add(value)
-        }
-    }
-
-    private fun isImportContinuation(value: String): Boolean = value.endsWith(".") || value.endsWith("\\")
-
-    /**
-     * Matches Groovy code declarations with optional modifiers, such as:
-     *   class Foo
-     *   public class Foo
-     *   private static final class Foo
-     *   def bar()
-     *   public def bar()
-     */
-    private val CODE_DECLARATION_PATTERN =
-        Regex("""^(?:(?:public|protected|private|static|final|abstract)\s+)*(class|interface|enum|trait|def)\b""")
-
-    private fun isCodeDeclarationLine(trimmed: String): Boolean = CODE_DECLARATION_PATTERN.containsMatchIn(trimmed)
+    private fun parseTextImportInfo(content: String): TextImportInfo = TextImportParser.parse(content)
 
     /**
      * Finds the enclosing block for the cursor position.
