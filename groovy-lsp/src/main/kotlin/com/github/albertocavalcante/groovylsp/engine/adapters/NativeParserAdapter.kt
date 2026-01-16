@@ -120,31 +120,20 @@ private fun ASTNode.toRange(): Range? {
 private fun isSyntheticPropertyAccessor(method: MethodNode, propertyNames: Set<String>): Boolean {
     val methodName = method.name
 
-    // Check for getter pattern: getName() with no parameters
-    if (methodName.startsWith("get") && methodName.length > 3 && method.parameters.isEmpty()) {
-        val propertyName = methodName.substring(3).replaceFirstChar { it.lowercase() }
-        if (propertyName in propertyNames) {
-            return true
-        }
+    val propertyName = when {
+        methodName.startsWith("get") && methodName.length > 3 && method.parameters.isEmpty() ->
+            methodName.substring(3).replaceFirstChar { it.lowercaseChar() }
+
+        methodName.startsWith("set") && methodName.length > 3 && method.parameters.size == 1 ->
+            methodName.substring(3).replaceFirstChar { it.lowercaseChar() }
+
+        methodName.startsWith("is") && methodName.length > 2 && method.parameters.isEmpty() ->
+            methodName.substring(2).replaceFirstChar { it.lowercaseChar() }
+
+        else -> null
     }
 
-    // Check for setter pattern: setName(value) with exactly one parameter
-    if (methodName.startsWith("set") && methodName.length > 3 && method.parameters.size == 1) {
-        val propertyName = methodName.substring(3).replaceFirstChar { it.lowercase() }
-        if (propertyName in propertyNames) {
-            return true
-        }
-    }
-
-    // Check for boolean getter pattern: isName() with no parameters
-    if (methodName.startsWith("is") && methodName.length > 2 && method.parameters.isEmpty()) {
-        val propertyName = methodName.substring(2).replaceFirstChar { it.lowercase() }
-        if (propertyName in propertyNames) {
-            return true
-        }
-    }
-
-    return false
+    return propertyName != null && propertyName in propertyNames
 }
 
 /**
