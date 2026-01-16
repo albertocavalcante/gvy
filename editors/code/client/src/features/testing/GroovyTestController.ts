@@ -334,11 +334,16 @@ export class GroovyTestController {
 
     // Set suite range: estimate class declaration is a few lines before first test
     // Use line 0 as minimum to avoid negative values
-    if (minLine !== Number.MAX_SAFE_INTEGER && minLine > 0) {
-      const estimatedClassLine = Math.max(0, minLine - 5); // Rough estimate
+    const ESTIMATED_LINES_ABOVE_FIRST_TEST = 5;
+    const APPROXIMATE_LINE_LENGTH = 100;
+    if (minLine !== Number.MAX_SAFE_INTEGER && minLine >= 0) {
+      const estimatedClassLine = Math.max(
+        0,
+        minLine - ESTIMATED_LINES_ABOVE_FIRST_TEST,
+      );
       suiteItem.range = new vscode.Range(
         new vscode.Position(estimatedClassLine, 0),
-        new vscode.Position(estimatedClassLine, 100),
+        new vscode.Position(estimatedClassLine, APPROXIMATE_LINE_LENGTH),
       );
     }
 
@@ -490,13 +495,21 @@ export class GroovyTestController {
     }
   }
 
-  private async runTestItem(item: vscode.TestItem, debug: boolean, withCoverage: boolean = false) {
+  private async runTestItem(
+    item: vscode.TestItem,
+    debug: boolean,
+    withCoverage: boolean = false,
+  ) {
     const request = new vscode.TestRunRequest([item]);
     const tokenSource = new vscode.CancellationTokenSource();
     try {
       if (debug) {
         await this.executionService.debugTests(request, tokenSource.token);
-      } else if (withCoverage && this.executionService.runTestsWithCoverage && this.coverageService) {
+      } else if (
+        withCoverage &&
+        this.executionService.runTestsWithCoverage &&
+        this.coverageService
+      ) {
         await this.executionService.runTestsWithCoverage(
           request,
           tokenSource.token,
