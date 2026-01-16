@@ -343,9 +343,9 @@ class InlayHintsProvider(
         val argCount = arguments.expressions.size
         val argumentTypes =
             InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, semanticResolver, moduleNode)
-        val receiverContext = ReceiverResolutionContext(astModel, moduleNode, symbolTable, semanticResolver, logger)
+        val resolutionContext = ReceiverResolutionContext(astModel, moduleNode, symbolTable, semanticResolver, logger)
         val receiverType =
-            InlayHintsCandidates.resolveReceiverType(call, receiverContext)
+            InlayHintsCandidates.resolveReceiverType(call, resolutionContext)
         val isStaticCall = call.objectExpression is ClassExpression
 
         // Resolution order:
