@@ -96,7 +96,8 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
 
         // Extract variable name from message: "The variable [varName] in class X is not used"
         val varName = extractBracketedValue(violation.message, "variable") ?: return null
-        val variable = nodeFinder.findVariableAtLine(lineNumber, varName) ?: return null
+        // Verify the variable exists at this line before highlighting
+        nodeFinder.findVariableAtLine(lineNumber, varName) ?: return null
 
         // Variable found - search for its name in the source line
         return findIdentifierInLine(sourceLine, varName)

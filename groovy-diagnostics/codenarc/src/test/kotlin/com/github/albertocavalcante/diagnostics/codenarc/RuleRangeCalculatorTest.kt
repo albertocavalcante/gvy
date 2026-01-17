@@ -837,16 +837,4 @@ class RuleRangeCalculatorTest {
             "Range ($start, $end) should highlight '$expectedText' but got '$actualText'\nSource: $sourceLine",
         )
     }
-
-    /**
-     * Assert that the calculated range contains the expected text (case-insensitive).
-     * Useful when the exact text might have variations.
-     */
-    private fun assertRangeContains(sourceLine: String, range: Pair<Int, Int>, expectedSubstring: String) {
-        val (start, end) = range
-        val actualText = sourceLine.substring(start, end)
-        assert(actualText.contains(expectedSubstring, ignoreCase = true)) {
-            "Range ($start, $end) highlighting '$actualText' should contain '$expectedSubstring'\nSource: $sourceLine"
-        }
-    }
 }
