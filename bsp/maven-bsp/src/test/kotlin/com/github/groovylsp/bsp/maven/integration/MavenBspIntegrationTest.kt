@@ -165,7 +165,6 @@ class MavenBspIntegrationTest {
                 .resolve("dev/refs/pipeline-library")
 
             if (!pipelineLibPath.toFile().exists()) {
-                println("Skipping: pipeline-library not found at $pipelineLibPath")
                 return
             }
 
@@ -176,10 +175,6 @@ class MavenBspIntegrationTest {
 
             // Then
             assertThat(targets.targets).isNotEmpty
-            println("Found ${targets.targets.size} targets in pipeline-library")
-            targets.targets.forEach { target ->
-                println("  - ${target.id.uri}")
-            }
         }
     }
 
