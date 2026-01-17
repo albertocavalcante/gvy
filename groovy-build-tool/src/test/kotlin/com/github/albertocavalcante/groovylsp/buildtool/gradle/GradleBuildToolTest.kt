@@ -101,4 +101,63 @@ class GradleBuildToolTest {
         assertTrue(command.args.contains("com.example.Test"), "Command should target suite")
         assertTrue(command.args.contains("jacocoTestReport"), "Command should include jacocoTestReport task")
     }
+
+    @Test
+    fun `getDependencyMetadata should return dependencies with metadata`() {
+        val tool = GradleBuildTool()
+        val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
+
+        val metadata = tool.getDependencyMetadata(testProjectPath)
+
+        // Should have some dependencies
+        assertTrue(metadata.isNotEmpty(), "Should extract at least some dependency metadata from test project")
+
+        // Check that metadata has expected fields
+        val firstDep = metadata.first()
+        assertTrue(firstDep.name.isNotEmpty(), "Dependency should have a name")
+        assertTrue(firstDep.version.isNotEmpty(), "Dependency should have a version")
+        assertTrue(firstDep.scope.isNotEmpty(), "Dependency should have a scope")
+        assertTrue(firstDep.path.startsWith("file://"), "Dependency path should be a file URI")
+
+        // Verify scopes are normalized to standard values
+        val scopes = metadata.map { it.scope }.distinct()
+        scopes.forEach { scope ->
+            assertTrue(
+                scope in listOf("compile", "runtime", "test", "provided"),
+                "Scope should be normalized to standard value, got: $scope",
+            )
+        }
+
+        println("Extracted ${metadata.size} dependencies with metadata:")
+        metadata.take(5).forEach { dep ->
+            println("  - ${dep.name}:${dep.version} (${dep.scope}) isTransitive=${dep.isTransitive}")
+        }
+    }
+
+    @Test
+    fun `getDependencyMetadata should handle non-gradle project`() {
+        val tool = GradleBuildTool()
+        val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
+
+        val metadata = tool.getDependencyMetadata(nonGradleProject)
+
+        assertTrue(metadata.isEmpty(), "Should return empty list for non-Gradle project")
+    }
+
+    @Test
+    fun `getDependencyMetadata should deduplicate dependencies across modules`() {
+        val tool = GradleBuildTool()
+        val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
+
+        val metadata = tool.getDependencyMetadata(testProjectPath)
+
+        // Check for duplicates by path
+        val paths = metadata.map { it.path }
+        val uniquePaths = paths.distinct()
+
+        assertTrue(
+            paths.size == uniquePaths.size,
+            "Should not have duplicate dependencies. Found ${paths.size} deps but ${uniquePaths.size} unique paths",
+        )
+    }
 }
