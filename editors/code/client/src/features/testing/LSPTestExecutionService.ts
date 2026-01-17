@@ -13,6 +13,9 @@ interface TestRunOptions {
   coverageService?: CoverageService;
 }
 
+// Note: kept at module scope for potential reuse by other test-related utilities
+// in this module. If it remains used only by LSPTestExecutionService long-term,
+// it could be moved into the class as a private static helper.
 function normalizeTestId(id: string): string {
   return (
     id
