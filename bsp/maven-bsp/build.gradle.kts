@@ -71,6 +71,9 @@ tasks.register<Jar>("fatJar") {
 
 // Maven Central publishing configuration
 publishing {
+    val repoPath = "albertocavalcante/gvy"
+    val repoUrl = "https://github.com/$repoPath"
+
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
@@ -78,7 +81,7 @@ publishing {
             pom {
                 name.set("Maven BSP Server")
                 description.set(project.description)
-                url.set("https://github.com/albertocavalcante/gvy")
+                url.set(repoUrl)
 
                 licenses {
                     license {
@@ -95,9 +98,9 @@ publishing {
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/albertocavalcante/gvy.git")
-                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/gvy.git")
-                    url.set("https://github.com/albertocavalcante/gvy")
+                    connection.set("scm:git:git://github.com/$repoPath.git")
+                    developerConnection.set("scm:git:ssh://github.com/$repoPath.git")
+                    url.set(repoUrl)
                 }
             }
         }
