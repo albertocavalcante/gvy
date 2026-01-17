@@ -19,7 +19,7 @@ import org.codehaus.groovy.ast.expr.ClosureExpression
  *
  * @see <a href="https://groovy-lang.org/closures.html#_delegation_strategy">
  *     Groovy Delegation Strategy</a>
- * @see <a href="https://github.com/JetBrains/intellij-community/blob/master/plugins/groovy">
+ * @see <a href="https://github.com/JetBrains/intellij-community/tree/master/plugins/groovy/groovy-psi/src/org/jetbrains/plugins/groovy/lang/resolve/delegatesTo">
  *     IntelliJ delegatesTo</a>
  */
 class DelegationResolver {
@@ -106,11 +106,11 @@ class DelegationResolver {
 
     /**
      * Extracts @DelegatesTo annotation from closure parameter.
-     *
-     * TODO(#638): Implement @DelegatesTo extraction - closure parameter will be used.
      */
+    // TODO(#638): Implement @DelegatesTo extraction - closure parameter will be used.
+    //   See: https://github.com/albertocavalcante/gvy/issues/638
     @Suppress("FunctionOnlyReturningConstant", "UnusedParameter")
-    private fun extractDelegatesToAnnotation(@Suppress("UNUSED_PARAMETER") closure: ClosureExpression): ClassNode? {
+    private fun extractDelegatesToAnnotation(closure: ClosureExpression): ClassNode? {
         // TODO(#638): Implement @DelegatesTo extraction
         // 1. Find the method parameter this closure is passed to
         // 2. Check for @DelegatesTo(SomeClass.class) annotation

@@ -147,7 +147,7 @@ class SarifWriter(
     /**
      * Rule descriptions are provided by SarifRuleRegistry, not from individual diagnostics.
      */
-    @Suppress("UnusedPrivateMember", "FunctionOnlyReturningConstant")
+    @Suppress("FunctionOnlyReturningConstant")
     private fun createRuleDescription(): SarifMessage? = null
 
     companion object {
