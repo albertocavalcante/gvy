@@ -100,21 +100,26 @@ class TokenEditDistance private constructor(
         return if (start < end) Pair(line.substring(start, end), start) else null
     }
 
-    // TODO: Optimize with binary search for O(log n) performance instead of O(n) linear scan.
-    //   The mapping keys are sorted (from LCS), so we could use binarySearch to find
-    //   the insertion point and compare adjacent keys. Current linear scan is acceptable
-    //   for typical file sizes but could be improved for very large documents.
     private fun findClosestMappedLine(line: Int, mapping: Map<Int, Int>, targetLines: List<String>): Int {
         if (mapping.isEmpty()) return line.coerceIn(0, (targetLines.size - 1).coerceAtLeast(0))
 
-        var closest = mapping.keys.first()
-        var minDistance = kotlin.math.abs(line - closest)
+        val sortedKeys = mapping.keys.sorted()
+        val idx = sortedKeys.binarySearch(line)
 
-        for (key in mapping.keys) {
-            val distance = kotlin.math.abs(line - key)
-            if (distance < minDistance) {
-                minDistance = distance
-                closest = key
+        val closest = if (idx >= 0) {
+            // Exact match found
+            sortedKeys[idx]
+        } else {
+            // Not found - idx is -(insertion point) - 1
+            val insertionPoint = -idx - 1
+            when {
+                insertionPoint == 0 -> sortedKeys[0]
+                insertionPoint >= sortedKeys.size -> sortedKeys.last()
+                else -> {
+                    val before = sortedKeys[insertionPoint - 1]
+                    val after = sortedKeys[insertionPoint]
+                    if (line - before <= after - line) before else after
+                }
             }
         }
 

@@ -14,7 +14,10 @@ import kotlin.reflect.KClass
  *
  * Thread-safe after initialization.
  */
-class TypeCalculatorRegistry private constructor(private val calculators: Map<KClass<*>, List<TypeCalculator<*>>>) {
+class TypeCalculatorRegistry private constructor(
+    private val calculators: Map<KClass<*>, List<TypeCalculator<*>>>,
+    private val superclassCache: Map<KClass<*>, List<KClass<*>>>,
+) {
 
     private val calculatorCache = ConcurrentHashMap<KClass<*>, List<TypeCalculator<*>>>()
 
@@ -68,10 +71,11 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
             // Check exact match first
             calculators[nodeClass]?.let { return@getOrPut it }
 
-            // Check superclasses and interfaces
-            calculators.entries
-                .filter { (key, _) -> key.java.isAssignableFrom(nodeClass.java) }
-                .flatMap { it.value }
+            // Use pre-computed superclass hierarchy
+            val hierarchy = superclassCache[nodeClass] ?: emptyList()
+            hierarchy
+                .mapNotNull { calculators[it] }
+                .flatten()
                 .sortedByDescending { it.priority }
         }
 
@@ -96,7 +100,32 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
             val grouped = calculators
                 .groupBy { it.nodeType }
                 .mapValues { (_, calcs) -> calcs.sortedByDescending { it.priority } }
-            return TypeCalculatorRegistry(grouped)
+
+            // Pre-compute superclass hierarchy for all registered types
+            val superclassCache = mutableMapOf<KClass<*>, List<KClass<*>>>()
+            val allTypes = grouped.keys.toSet()
+
+            for (type in allTypes) {
+                val hierarchy = mutableListOf<KClass<*>>()
+                collectSuperclasses(type, allTypes, hierarchy)
+                if (hierarchy.isNotEmpty()) {
+                    superclassCache[type] = hierarchy
+                }
+            }
+
+            return TypeCalculatorRegistry(grouped, superclassCache)
+        }
+
+        private fun collectSuperclasses(
+            type: KClass<*>,
+            registeredTypes: Set<KClass<*>>,
+            result: MutableList<KClass<*>>,
+        ) {
+            for (registeredType in registeredTypes) {
+                if (registeredType != type && registeredType.java.isAssignableFrom(type.java)) {
+                    result.add(registeredType)
+                }
+            }
         }
     }
 

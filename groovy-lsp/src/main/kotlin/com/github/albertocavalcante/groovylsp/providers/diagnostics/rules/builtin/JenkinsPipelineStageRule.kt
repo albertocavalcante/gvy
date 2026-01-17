@@ -23,6 +23,7 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
         private const val RANGE_END_OFFSET = 1
         private val STEPS_BLOCK_PATTERN = Regex("""\bsteps\s*\{""")
         private val SCRIPT_BLOCK_PATTERN = Regex("""\bscript\s*\{""")
+        private val STAGE_PATTERN = Regex("""stage\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\{""")
     }
 
     override val id = "jenkins-stage-structure"
@@ -46,9 +47,6 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
         val diagnostics = mutableListOf<Diagnostic>()
         val lines = content.lines()
 
-        // Find stage declarations
-        val stagePattern = Regex("""stage\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\{""")
-
         lines.forEachIndexed { lineIndex, line ->
             val trimmedLine = line.trimStart()
             if (
@@ -59,12 +57,12 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
                 return@forEachIndexed
             }
 
-            val match = stagePattern.find(line)
+            val match = STAGE_PATTERN.find(line)
             if (match != null) {
                 val stageName = match.groupValues[1]
 
                 // Check if the stage has steps (simple heuristic)
-                val blockContent = collectStageBlockContent(lines, lineIndex, stagePattern)
+                val blockContent = collectStageBlockContent(lines, lineIndex, STAGE_PATTERN)
 
                 val hasStepsBlock = STEPS_BLOCK_PATTERN.containsMatchIn(blockContent)
                 val hasScriptBlock = SCRIPT_BLOCK_PATTERN.containsMatchIn(blockContent)

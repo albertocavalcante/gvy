@@ -1,15 +1,29 @@
 package com.github.albertocavalcante.gvy.semantics.calculator
 
+import java.lang.reflect.Field
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
+
 internal object ReflectionAccess {
 
+    private val methodCache = ConcurrentHashMap<Pair<Class<*>, String>, Method?>()
+    private val fieldCache = ConcurrentHashMap<Pair<Class<*>, String>, Field?>()
+
     fun invokeNoArg(target: Any, methodName: String): Any? = runCatching {
-        val method = target::class.java.getMethod(methodName)
+        val method = methodCache.getOrPut(target::class.java to methodName) {
+            runCatching { target::class.java.getMethod(methodName) }.getOrNull()
+        } ?: return null
         method.invoke(target)
     }.getOrNull()
 
     fun getField(target: Any, fieldName: String): Any? = runCatching {
-        val field = target::class.java.getDeclaredField(fieldName)
-        field.isAccessible = true
+        val field = fieldCache.getOrPut(target::class.java to fieldName) {
+            runCatching {
+                val f = target::class.java.getDeclaredField(fieldName)
+                f.isAccessible = true
+                f
+            }.getOrNull()
+        } ?: return null
         field.get(target)
     }.getOrNull()
 
