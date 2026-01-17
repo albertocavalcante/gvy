@@ -168,7 +168,7 @@ class CheckCommand : CliktCommand(name = "check") {
         val writer = SarifWriter(
             toolName = "groovy-lsp",
             toolVersion = getVersion(),
-            toolUri = "https://github.com/GroovyLanguageServer/groovy-language-server",
+            toolUri = "https://github.com/albertocavalcante/gvy",
         )
 
         // Register known rules

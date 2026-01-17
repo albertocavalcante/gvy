@@ -17,7 +17,7 @@ import java.io.OutputStream
 class SarifWriter(
     private val toolName: String = "groovy-lsp",
     private val toolVersion: String? = null,
-    private val toolUri: String = "https://github.com/GroovyLanguageServer/groovy-language-server",
+    private val toolUri: String = "https://github.com/albertocavalcante/gvy",
 ) {
     private val results = mutableListOf<SarifResult>()
     private val rules = mutableMapOf<String, SarifRule>()
