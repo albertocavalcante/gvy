@@ -155,6 +155,7 @@ class WorkspaceManager {
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
             Files.walk(sourceRoot).use { stream ->
                 stream.filter { Files.isRegularFile(it) && it.extension.equals("groovy", ignoreCase = true) }
+                    .sorted()
                     .toList()
             }
         }

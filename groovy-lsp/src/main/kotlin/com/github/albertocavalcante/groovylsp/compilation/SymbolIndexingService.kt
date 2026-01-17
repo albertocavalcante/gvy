@@ -80,22 +80,27 @@ class SymbolIndexingService(
     /**
      * Gets all symbol indices from both caches.
      * Workspace index entries take precedence over LRU cache in case of conflicts.
+     * Returns map in deterministic order (sorted by URI).
      *
      * @return Map of URI to SymbolIndex for all indexed files
      */
     fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
         val cacheSnapshot = symbolStorageCache.snapshot()
         val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
-        val allStorages = cacheSnapshot.toMutableMap()
+        val allStorages = LinkedHashMap<URI, SymbolIndex>()
 
-        workspaceSnapshot.forEach { (uri, index) ->
-            val existing = allStorages[uri]
-            if (existing != null && existing !== index) {
+        // Add entries in sorted order for deterministic iteration
+        (cacheSnapshot.keys + workspaceSnapshot.keys).sorted().forEach { uri ->
+            val workspaceIndex = workspaceSnapshot[uri]
+            val cacheIndex = cacheSnapshot[uri]
+
+            if (workspaceIndex != null && cacheIndex != null && workspaceIndex !== cacheIndex) {
                 logger.warn {
                     "Duplicate SymbolIndex for $uri found in cache and workspace index. Using workspace index value."
                 }
             }
-            allStorages[uri] = index
+
+            allStorages[uri] = workspaceIndex ?: (cacheIndex ?: error("URI $uri not found in either cache"))
         }
 
         return allStorages
