@@ -46,7 +46,7 @@ publishing {
             pom {
                 name.set("BSP Core")
                 description.set(project.description)
-                url.set("https://github.com/GroovyLanguageServer/groovy-language-server")
+                url.set("https://github.com/albertocavalcante/gvy")
 
                 licenses {
                     license {
@@ -57,15 +57,15 @@ publishing {
 
                 developers {
                     developer {
-                        id.set("groovylsp")
-                        name.set("Groovy Language Server Contributors")
+                        id.set("albertocavalcante")
+                        name.set("Alberto Cavalcante")
                     }
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/GroovyLanguageServer/groovy-language-server.git")
-                    developerConnection.set("scm:git:ssh://github.com/GroovyLanguageServer/groovy-language-server.git")
-                    url.set("https://github.com/GroovyLanguageServer/groovy-language-server")
+                    connection.set("scm:git:git://github.com/albertocavalcante/gvy.git")
+                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/gvy.git")
+                    url.set("https://github.com/albertocavalcante/gvy")
                 }
             }
         }
