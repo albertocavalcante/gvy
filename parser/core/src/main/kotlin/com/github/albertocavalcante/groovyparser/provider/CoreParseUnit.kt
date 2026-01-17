@@ -52,7 +52,7 @@ class CoreParseUnit(
 
     override val isSuccessful: Boolean = result.isSuccessful
 
-    private val lineCache by lazy { source.split('\n') }
+    private val lineCache by lazy { source.lines() }
 
     override fun nodeAt(position: Position): NodeInfo? {
         val unit = result.result.orElse(null) ?: return null

@@ -149,6 +149,7 @@ class SemanticCache(private val cacheDir: Path) {
         try {
             val cacheFile = getCacheFile(uri)
             if (cacheFile.deleteIfExists()) {
+                uriHashCache.remove(uri.toString())
                 logger.debug { "Invalidated cache for: $uri" }
             }
         } catch (e: Exception) {

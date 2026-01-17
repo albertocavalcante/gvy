@@ -100,7 +100,7 @@ class SymbolIndexingService(
                 }
             }
 
-            allStorages[uri] = workspaceIndex ?: cacheIndex!!
+            allStorages[uri] = workspaceIndex ?: (cacheIndex ?: error("URI $uri not found in either cache"))
         }
 
         return allStorages
