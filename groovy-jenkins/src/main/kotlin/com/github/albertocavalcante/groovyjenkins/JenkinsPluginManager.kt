@@ -57,7 +57,7 @@ class JenkinsPluginManager(
     ) {
         override fun removeEldestEntry(
             eldest: MutableMap.MutableEntry<String, Map<String, JenkinsStepMetadata>>?,
-        ): Boolean = size > 100
+        ): Boolean = size > MAX_CACHE_SIZE
     }
     private val cacheMutex = Mutex()
 
@@ -70,16 +70,24 @@ class JenkinsPluginManager(
     ) {
         override fun removeEldestEntry(
             eldest: MutableMap.MutableEntry<Path, List<JenkinsPluginConfiguration.PluginEntry>>?,
-        ): Boolean = size > 100
+        ): Boolean = size > MAX_CACHE_SIZE
     }
     private val userConfigMutex = Mutex()
 
     // Cache for downloaded plugin JARs
     // Using LRU cache to prevent unbounded growth
     private val downloadedPluginCache = object : LinkedHashMap<String, Path>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Path>?): Boolean = size > 100
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Path>?): Boolean = size > MAX_CACHE_SIZE
     }
     private val downloadedPluginMutex = Mutex()
+
+    companion object {
+        /**
+         * Maximum size for LRU caches to prevent unbounded growth.
+         * Applied to metadata, user config, and downloaded plugin caches.
+         */
+        private const val MAX_CACHE_SIZE = 100
+    }
 
     // Cache for registered static metadata
     private var staticMetadataCache: BundledJenkinsMetadata? = null

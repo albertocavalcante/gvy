@@ -38,6 +38,26 @@ class LspCommand : CliktCommand(name = "lsp") {
 
     private val clientExecutor = Executors.newFixedThreadPool(10)
 
+    init {
+        // Ensure executor is shut down gracefully on application exit
+        Runtime.getRuntime().addShutdownHook(
+            Thread {
+                try {
+                    logger.info { "Shutting down client executor" }
+                    clientExecutor.shutdown()
+                    if (!clientExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                        logger.warn { "Executor did not terminate in time, forcing shutdown" }
+                        clientExecutor.shutdownNow()
+                    }
+                } catch (e: InterruptedException) {
+                    logger.error(e) { "Interrupted while shutting down executor" }
+                    clientExecutor.shutdownNow()
+                    Thread.currentThread().interrupt()
+                }
+            },
+        )
+    }
+
     override fun run() {
         when (mode) {
             "stdio" -> runStdio()
@@ -109,12 +129,18 @@ class LspCommand : CliktCommand(name = "lsp") {
 
     private fun handleClientConnection(socket: Socket) {
         clientExecutor.submit {
-            socket.use {
-                try {
-                    startServer(it.getInputStream(), it.getOutputStream())
-                } catch (e: IOException) {
-                    logger.error(e) { "Error handling client connection" }
+            val originalName = Thread.currentThread().name
+            Thread.currentThread().name = "gls-client-${socket.inetAddress}"
+            try {
+                socket.use {
+                    try {
+                        startServer(it.getInputStream(), it.getOutputStream())
+                    } catch (e: IOException) {
+                        logger.error(e) { "Error handling client connection" }
+                    }
                 }
+            } finally {
+                Thread.currentThread().name = originalName
             }
         }
     }
