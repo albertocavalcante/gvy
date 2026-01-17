@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovycommon.text
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * Text analysis utilities for cursor position calculations.
  *
@@ -7,6 +9,22 @@ package com.github.albertocavalcante.groovycommon.text
  * to work with line/character positions in source code.
  */
 object TextIndex {
+
+    private val lineBreakCache = ConcurrentHashMap<String, IntArray>()
+
+    /**
+     * Build an array of line break positions (indices of '\n' characters).
+     * Uses caching for better performance on repeated queries.
+     */
+    private fun getLineBreaks(content: String): IntArray = lineBreakCache.getOrPut(content) {
+        val breaks = mutableListOf<Int>()
+        for (i in content.indices) {
+            if (content[i] == '\n') {
+                breaks.add(i)
+            }
+        }
+        breaks.toIntArray()
+    }
 
     /**
      * Convert (line, character) position to absolute byte offset.
@@ -44,14 +62,27 @@ object TextIndex {
      */
     fun positionAt(content: String, offset: Int): Pair<Int, Int> {
         val safeOffset = offset.coerceIn(0, content.length)
-        var line = 0
-        var lineStart = 0
+        val lineBreaks = getLineBreaks(content)
 
-        for (i in 0 until safeOffset) {
-            if (content[i] == '\n') {
-                line++
-                lineStart = i + 1
-            }
+        if (lineBreaks.isEmpty()) {
+            return 0 to safeOffset
+        }
+
+        // Binary search to find which line the offset is on
+        val idx = lineBreaks.binarySearch(safeOffset)
+
+        val line: Int
+        val lineStart: Int
+
+        if (idx >= 0) {
+            // Offset is exactly at a line break
+            line = idx + 1
+            lineStart = lineBreaks[idx] + 1
+        } else {
+            // Not at a line break - idx is -(insertion point) - 1
+            val insertionPoint = -idx - 1
+            line = insertionPoint
+            lineStart = if (insertionPoint > 0) lineBreaks[insertionPoint - 1] + 1 else 0
         }
 
         return line to (safeOffset - lineStart)
