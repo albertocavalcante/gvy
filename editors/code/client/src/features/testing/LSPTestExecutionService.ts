@@ -200,12 +200,20 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
   /**
    * Collect all test items recursively from a list of items.
+   * Includes cycle detection to prevent stack overflow from circular references.
    */
   private collectAllTestItems(
     items: readonly vscode.TestItem[],
   ): vscode.TestItem[] {
     const result: vscode.TestItem[] = [];
+    const visited = new Set<vscode.TestItem>();
+
     const collect = (item: vscode.TestItem) => {
+      if (visited.has(item)) {
+        // Protect against potential cycles in the test item graph
+        return;
+      }
+      visited.add(item);
       result.push(item);
       item.children.forEach((child) => collect(child));
     };
