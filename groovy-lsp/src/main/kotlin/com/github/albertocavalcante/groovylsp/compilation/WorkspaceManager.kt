@@ -66,15 +66,17 @@ class WorkspaceManager {
 
     fun updateDependencies(newDependencies: List<Path>): Boolean {
         var changed = false
-        if (newDependencies.size != dependencyClasspath.size ||
-            newDependencies.toSet() != dependencyClasspath.toSet()
-        ) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(newDependencies)
-            changed = true
-            logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
-        } else {
-            logger.debug { "Dependencies unchanged" }
+        synchronized(dependencyClasspath) {
+            if (newDependencies.size != dependencyClasspath.size ||
+                newDependencies.toSet() != dependencyClasspath.toSet()
+            ) {
+                dependencyClasspath.clear()
+                dependencyClasspath.addAll(newDependencies)
+                changed = true
+                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+            } else {
+                logger.debug { "Dependencies unchanged" }
+            }
         }
         return changed
     }
@@ -82,14 +84,18 @@ class WorkspaceManager {
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean {
         this.workspaceRoot = workspaceRoot
 
-        val depsChanged = dependencies.toSet() != dependencyClasspath.toSet()
-        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
-        if (depsChanged) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(dependencies)
-            logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+        val depsChanged = synchronized(dependencyClasspath) {
+            val changed =
+                dependencies.size != dependencyClasspath.size || dependencies.toSet() != dependencyClasspath.toSet()
+            if (changed) {
+                dependencyClasspath.clear()
+                dependencyClasspath.addAll(dependencies)
+                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+            }
+            changed
         }
 
+        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
         if (sourceDirectories.isNotEmpty()) {
             sourceRoots.clear()
             sourceDirectories.forEach(sourceRoots::add)

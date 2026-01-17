@@ -30,6 +30,12 @@ class BuildTargetCache {
     private val logger = KotlinLogging.logger {}
 
     /**
+     * Dedicated lock for source mapping operations.
+     * Protects compound operations on both targetSources and sourceToTarget.
+     */
+    private val sourcesLock = Any()
+
+    /**
      * Map of target ID to full BuildTarget.
      */
     private val targets = ConcurrentHashMap<BuildTargetIdentifier, BuildTarget>()
@@ -143,14 +149,16 @@ class BuildTargetCache {
     fun updateSources(targetId: BuildTargetIdentifier, sources: List<Path>) {
         logger.debug { "Updating sources for target ${targetId.uri}: ${sources.size} files" }
 
-        // Remove old reverse mappings for this target
-        val oldSources = targetSources[targetId] ?: emptyList()
-        oldSources.forEach { sourceToTarget.remove(it) }
+        synchronized(sourcesLock) {
+            // Remove old reverse mappings for this target
+            val oldSources = targetSources[targetId] ?: emptyList()
+            oldSources.forEach { sourceToTarget.remove(it) }
 
-        // Add new sources and rebuild reverse index
-        targetSources[targetId] = sources
-        sources.forEach { source ->
-            sourceToTarget[source] = targetId
+            // Add new sources and rebuild reverse index
+            targetSources[targetId] = sources
+            sources.forEach { source ->
+                sourceToTarget[source] = targetId
+            }
         }
 
         logger.trace { "Updated sources for ${targetId.uri}: ${sources.size} files" }
@@ -197,9 +205,11 @@ class BuildTargetCache {
 
         targets.remove(targetId)
 
-        // Remove source mappings
-        val sources = targetSources.remove(targetId) ?: emptyList()
-        sources.forEach { sourceToTarget.remove(it) }
+        // Remove source mappings atomically
+        synchronized(sourcesLock) {
+            val sources = targetSources.remove(targetId) ?: emptyList()
+            sources.forEach { sourceToTarget.remove(it) }
+        }
 
         // Remove classpath
         targetClasspath.remove(targetId)
@@ -213,8 +223,10 @@ class BuildTargetCache {
     fun clear() {
         logger.info { "Clearing build target cache" }
         targets.clear()
-        sourceToTarget.clear()
-        targetSources.clear()
+        synchronized(sourcesLock) {
+            sourceToTarget.clear()
+            targetSources.clear()
+        }
         targetClasspath.clear()
     }
 
