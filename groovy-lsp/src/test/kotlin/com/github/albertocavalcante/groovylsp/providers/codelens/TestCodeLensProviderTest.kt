@@ -37,12 +37,6 @@ class TestCodeLensProviderTest {
         val provider = TestCodeLensProvider(mockService)
         val codeLenses = provider.provideCodeLenses(uri)
 
-        // Debug: print what we actually got
-        println("Got ${codeLenses.size} CodeLenses")
-        codeLenses.forEachIndexed { i, lens ->
-            println("  [$i] ${lens.command.title} -> ${lens.command.command}")
-        }
-
         // Should have CodeLenses (the exact count depends on if we're generating class-level too)
         assertTrue(codeLenses.isNotEmpty(), "Expected at least some CodeLenses but got none")
 
