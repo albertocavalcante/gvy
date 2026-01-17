@@ -52,6 +52,8 @@ class CoreParseUnit(
 
     override val isSuccessful: Boolean = result.isSuccessful
 
+    private val lineCache by lazy { source.split('\n') }
+
     override fun nodeAt(position: Position): NodeInfo? {
         val unit = result.result.orElse(null) ?: return null
 
@@ -192,7 +194,7 @@ class CoreParseUnit(
     private fun extractNodeText(node: Node): String? {
         val range = node.range ?: return null
         // Extract text from source using the node's range
-        val lines = source.lines()
+        val lines = lineCache
         // Validate line numbers are within bounds (1-based line numbers)
         if (lines.isEmpty() ||
             range.begin.line < 1 || range.begin.line > lines.size ||

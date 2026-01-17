@@ -51,7 +51,7 @@ object GradleConnectionPool : GradleConnectionFactory {
     // Generic exception handling removed
     fun closeConnection(projectDir: Path) {
         val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
-        val keys = connections.keys.filter { it.projectDir == normalizedProjectDir }
+        val keys = connections.keys.asSequence().filter { it.projectDir == normalizedProjectDir }.toList()
         keys.forEach { key ->
             closeConnection(key)
         }

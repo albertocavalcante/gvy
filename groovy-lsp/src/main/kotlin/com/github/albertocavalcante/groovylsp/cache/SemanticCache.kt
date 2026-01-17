@@ -16,6 +16,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -40,6 +41,7 @@ class SemanticCache(private val cacheDir: Path) {
         prettyPrint = false
         ignoreUnknownKeys = true
     }
+    private val uriHashCache = ConcurrentHashMap<String, String>()
 
     init {
         // Ensure cache directory exists
@@ -174,8 +176,9 @@ class SemanticCache(private val cacheDir: Path) {
      * Get cache file path for a URI.
      */
     private fun getCacheFile(uri: URI): Path {
-        // Create a safe filename from URI
-        val hash = sha256(uri.toString())
+        // Create a safe filename from URI, using cached hash
+        val uriString = uri.toString()
+        val hash = uriHashCache.getOrPut(uriString) { sha256(uriString) }
         return cacheDir.resolve("$hash.json")
     }
 
