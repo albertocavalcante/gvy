@@ -51,7 +51,9 @@ internal object ParserDiagnosticConverter {
         val start = maxOf(0, syntaxException.startColumn - 1)
         val end = maxOf(start, syntaxException.endColumn - 1)
         logger.debug {
-            "Syntax diagnostic from '${syntaxException.sourceLocator}': ${syntaxException.originalMessage} at line ${syntaxException.line}, columns ${syntaxException.startColumn}-${syntaxException.endColumn}"
+            "Syntax diagnostic from '${syntaxException.sourceLocator}': " +
+                "${syntaxException.originalMessage} at line ${syntaxException.line}, " +
+                "columns ${syntaxException.startColumn}-${syntaxException.endColumn}"
         }
         return ParserDiagnostic(
             range = ParserRange.singleLine(line, start, end),

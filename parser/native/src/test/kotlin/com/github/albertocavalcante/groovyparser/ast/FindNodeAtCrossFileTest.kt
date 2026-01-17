@@ -48,7 +48,8 @@ class FindNodeAtCrossFileTest {
         val calculatorUri = URI.create("file:///test/Calculator.groovy")
         val mainUri = URI.create("file:///test/Main.groovy")
 
-        val calculatorAst = parserFacade.parse(ParseRequest(calculatorUri, calculatorCode)).ast as ModuleNode
+        // Parse Calculator to populate type information (result not directly used in assertions)
+        parserFacade.parse(ParseRequest(calculatorUri, calculatorCode))
         val mainAst = parserFacade.parse(ParseRequest(mainUri, mainCode)).ast as ModuleNode
 
         // Position at "Calculator" in "new Calculator(10)" - line 4, character 26

@@ -557,7 +557,8 @@ class SemanticDocumentBuilderTest {
             // CRITICAL: The symbol should reference Calculator, not Main
             assertTrue(
                 valueRef!!.symbol.contains("Calculator"),
-                "Property access symbol should reference the declared type Calculator, not Main. Got: ${valueRef.symbol}",
+                "Property access symbol should reference the declared type Calculator, " +
+                    "not Main. Got: ${valueRef.symbol}",
             )
         }
     }

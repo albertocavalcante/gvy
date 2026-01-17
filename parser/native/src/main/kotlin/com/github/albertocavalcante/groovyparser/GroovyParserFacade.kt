@@ -193,7 +193,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     private fun shouldRetryOnCompilationFailure(request: ParseRequest, result: ParseResult): Boolean {
         if (request.compilePhase <= Phases.CONVERSION) {
             logger.debug {
-                "shouldRetryOnCompilationFailure: false - already at CONVERSION or earlier (phase=${request.compilePhase})"
+                "shouldRetryOnCompilationFailure: false - already at CONVERSION or earlier " +
+                    "(phase=${request.compilePhase})"
             }
             return false
         }

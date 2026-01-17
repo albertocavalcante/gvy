@@ -68,7 +68,8 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 logger.debug { "ConstructorCallExpressions tracked:" }
                 constructorCalls.forEach { call ->
                     logger.debug {
-                        "- ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} (last: ${call.lastLineNumber}:${call.lastColumnNumber})"
+                        "- ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} " +
+                            "(last: ${call.lastLineNumber}:${call.lastColumnNumber})"
                     }
                 }
             }
@@ -150,7 +151,8 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                     val isPropName = propExprs.any { prop -> prop.property === node }
                     if (logger.isDebugEnabled() && (isMethodName || isPropName)) {
                         logger.debug {
-                            "Filtering ConstantExpression '${node.text}' (isMethodName=$isMethodName, isPropName=$isPropName)"
+                            "Filtering ConstantExpression '${node.text}' " +
+                                "(isMethodName=$isMethodName, isPropName=$isPropName)"
                         }
                     }
                     isMethodName || isPropName

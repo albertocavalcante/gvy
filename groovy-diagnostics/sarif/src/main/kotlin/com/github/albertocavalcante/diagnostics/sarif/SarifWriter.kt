@@ -134,7 +134,7 @@ class SarifWriter(
         val rule = SarifRule(
             id = ruleId,
             name = ruleId,
-            shortDescription = createRuleDescription(diagnostic),
+            shortDescription = createRuleDescription(),
             defaultConfiguration = SarifRuleConfiguration(
                 level = diagnostic.severity.toSarifLevel(),
             ),
@@ -144,11 +144,11 @@ class SarifWriter(
         return ruleIndices[ruleId]
     }
 
-    private fun createRuleDescription(diagnostic: Diagnostic): SarifMessage? {
-        // For now, we don't have detailed rule descriptions from the diagnostic
-        // The SarifRuleRegistry will provide these
-        return null
-    }
+    /**
+     * Rule descriptions are provided by SarifRuleRegistry, not from individual diagnostics.
+     */
+    @Suppress("UnusedPrivateMember", "FunctionOnlyReturningConstant")
+    private fun createRuleDescription(): SarifMessage? = null
 
     companion object {
         @OptIn(ExperimentalSerializationApi::class)

@@ -240,8 +240,7 @@ object JacocoXmlParser {
     private fun parseLineElement(lineEl: Element): LineCoverage? {
         val lineNum = lineEl.getAttribute("nr").toIntOrNull() ?: return null
 
-        // mi = missed instructions, ci = covered instructions
-        val mi = lineEl.getAttribute("mi").toIntOrNull() ?: 0
+        // ci = covered instructions (mi = missed instructions, not used for coverage status)
         val ci = lineEl.getAttribute("ci").toIntOrNull() ?: 0
 
         // mb = missed branches, cb = covered branches
