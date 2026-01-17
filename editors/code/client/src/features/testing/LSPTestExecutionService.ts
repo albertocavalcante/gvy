@@ -256,18 +256,39 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const resultMap = new Map<string, TestResultItem>();
       for (const result of results.results) {
         // Add exact testId
+        if (resultMap.has(result.testId)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for testId "${result.testId}". Later result will overwrite earlier one.`,
+          );
+        }
         resultMap.set(result.testId, result);
 
         // Add className.name combination
         if (result.className) {
-          resultMap.set(`${result.className}.${result.name}`, result);
+          const classNameKey = `${result.className}.${result.name}`;
+          if (resultMap.has(classNameKey)) {
+            this.logger.appendLine(
+              `[WARN] Collision detected for className.name "${classNameKey}". Later result will overwrite earlier one.`,
+            );
+          }
+          resultMap.set(classNameKey, result);
         }
 
         // Add normalized testId (spaces replaced with underscores)
         const normalized = normalizeTestId(result.testId);
+        if (resultMap.has(normalized)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for normalized ID "${normalized}". Later result will overwrite earlier one.`,
+          );
+        }
         resultMap.set(normalized, result);
 
         // Add just the test name for loose matching
+        if (resultMap.has(result.name)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for test name "${result.name}". Later result will overwrite earlier one. Consider using more specific matching keys.`,
+          );
+        }
         resultMap.set(result.name, result);
       }
 
