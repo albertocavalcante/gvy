@@ -103,7 +103,7 @@ class TokenEditDistance private constructor(
     private fun findClosestMappedLine(line: Int, mapping: Map<Int, Int>, targetLines: List<String>): Int {
         if (mapping.isEmpty()) return line.coerceIn(0, (targetLines.size - 1).coerceAtLeast(0))
 
-        val sortedKeys = mapping.keys.sorted()
+        val sortedKeys = mapping.keys.toList()
         val idx = sortedKeys.binarySearch(line)
 
         val closest = if (idx >= 0) {
