@@ -569,9 +569,8 @@ class GroovyTextDocumentService(
         val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
 
-        // Cancel any running diagnostics for this file
-        diagnosticJobs[uri]?.cancel()
-        diagnosticJobs.remove(uri)
+        // Cancel and remove any running diagnostics for this file atomically
+        diagnosticJobs.remove(uri)?.cancel()
 
         // Clear diagnostics for closed document
         publishDiagnostics(params.textDocument.uri, emptyList())

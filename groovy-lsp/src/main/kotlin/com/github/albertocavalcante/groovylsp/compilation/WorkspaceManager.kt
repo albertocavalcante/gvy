@@ -85,7 +85,8 @@ class WorkspaceManager {
         this.workspaceRoot = workspaceRoot
 
         val depsChanged = synchronized(dependencyClasspath) {
-            val changed = dependencies.toSet() != dependencyClasspath.toSet()
+            val changed =
+                dependencies.size != dependencyClasspath.size || dependencies.toSet() != dependencyClasspath.toSet()
             if (changed) {
                 dependencyClasspath.clear()
                 dependencyClasspath.addAll(dependencies)

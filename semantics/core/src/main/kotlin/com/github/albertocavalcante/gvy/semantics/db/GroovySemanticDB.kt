@@ -108,14 +108,17 @@ class GroovySemanticDB {
     /**
      * Find all definitions of a symbol (handles duplicate symbols across files if they exist)
      */
-    fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> =
-        symbolIndex[symbolId]?.toList() ?: emptyList()
+    fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> = symbolIndex[symbolId]?.let { list ->
+        synchronized(list) { list.toList() }
+    } ?: emptyList()
 
     /**
      * Find all occurrences of a symbol across all files
      */
     fun findAllOccurrences(symbolId: String): List<Pair<URI, SymbolOccurrence>> =
-        occurrenceIndex[symbolId]?.toList() ?: emptyList()
+        occurrenceIndex[symbolId]?.let { list ->
+            synchronized(list) { list.toList() }
+        } ?: emptyList()
 
     /**
      * Find all symbols in a file by kind
@@ -207,21 +210,26 @@ class GroovySemanticDB {
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {
         // Remove symbols from index and cache
         doc.symbols.forEach { symbol ->
-            symbolIndex[symbol.symbol]?.removeIf { it.first == uri }
-            if (symbolIndex[symbol.symbol]?.isEmpty() == true) {
-                symbolIndex.remove(symbol.symbol)
-                // Also remove from cache as it's no longer valid
-                cacheLock.write {
-                    symbolCache.remove(symbol.symbol)
+            symbolIndex[symbol.symbol]?.let { list ->
+                synchronized(list) {
+                    list.removeIf { it.first == uri }
+                    if (list.isEmpty()) {
+                        symbolIndex.remove(symbol.symbol, list)
+                        cacheLock.write { symbolCache.remove(symbol.symbol) }
+                    }
                 }
             }
         }
 
         // Remove occurrences from index
         doc.occurrences.forEach { occurrence ->
-            occurrenceIndex[occurrence.symbol]?.removeIf { it.first == uri }
-            if (occurrenceIndex[occurrence.symbol]?.isEmpty() == true) {
-                occurrenceIndex.remove(occurrence.symbol)
+            occurrenceIndex[occurrence.symbol]?.let { list ->
+                synchronized(list) {
+                    list.removeIf { it.first == uri }
+                    if (list.isEmpty()) {
+                        occurrenceIndex.remove(occurrence.symbol, list)
+                    }
+                }
             }
         }
     }
