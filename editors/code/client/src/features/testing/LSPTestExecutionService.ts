@@ -133,12 +133,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
         if (!command) {
           this.logger.appendLine(
-            `[Testing] LSP returned no command for ${item.id}. Build tool may not support test execution.`,
+            `[Testing] LSP returned no test execution command for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
           );
           run.errored(
             item,
             new vscode.TestMessage(
-              "Build tool does not support test execution",
+              `No test execution command was returned for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
             ),
           );
           continue;
