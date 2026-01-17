@@ -26,8 +26,6 @@ class VarsGlobalVariableProviderTest {
         val provider = VarsGlobalVariableProvider(tempDir)
         val vars = provider.getGlobalVariables()
 
-        println("Detected vars: $vars")
-
         assertEquals(2, vars.size)
         assertTrue(vars.any { it.name == "log" })
         assertTrue(vars.any { it.name == "Utils" })

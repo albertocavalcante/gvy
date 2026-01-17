@@ -16,15 +16,6 @@ class GradleBuildToolTest {
         val dependencies = resolution.dependencies
         val sourceDirs = resolution.sourceDirectories
 
-        println("Resolved ${dependencies.size} dependencies from test project:")
-        dependencies.forEach { dep ->
-            println("  - ${dep.fileName}")
-        }
-        println("Resolved ${sourceDirs.size} source directories:")
-        sourceDirs.forEach { dir ->
-            println("  - $dir")
-        }
-
         // Should find at least some dependencies (groovy, commons-lang3)
         assertTrue(dependencies.isNotEmpty(), "Should resolve at least some dependencies from test project")
 
@@ -126,11 +117,6 @@ class GradleBuildToolTest {
                 scope in listOf("compile", "runtime", "test", "provided"),
                 "Scope should be normalized to standard value, got: $scope",
             )
-        }
-
-        println("Extracted ${metadata.size} dependencies with metadata:")
-        metadata.take(5).forEach { dep ->
-            println("  - ${dep.name}:${dep.version} (${dep.scope}) isTransitive=${dep.isTransitive}")
         }
     }
 

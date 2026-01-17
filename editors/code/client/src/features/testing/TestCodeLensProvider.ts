@@ -30,6 +30,12 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
       return codeLenses;
     }
 
+    // Check CodeLens source setting
+    const codeLensSource = config.get<string>("codelens.test.source", "lsp");
+    if (codeLensSource === "lsp") {
+      return codeLenses; // Let LSP provide CodeLens
+    }
+
     const text = document.getText();
 
     if (!text || text.trim() === "") {
@@ -174,7 +180,7 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Check for @Test annotation (not inside strings)
       // Simple heuristic: if the line contains @Test and doesn't have quotes before it
-      if (trimmed.match(/^\s*@Test(\s*\(.*?\))?\s*(void|def)?/)) {
+      if (trimmed.match(/^\s*@Test(\s*\([^)]*\))?\s*(void|def)?/)) {
         return true;
       }
     }
@@ -211,8 +217,10 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Check for @Test annotation (with or without parameters)
       // Pattern: @Test or @Test(timeout = 1000) or @Test void inlineTest()
+      // Note: The regex [^)]* prevents catastrophic backtracking but does not handle
+      // nested parentheses in annotations (e.g., @Test(expected = Exception.class, timeout = timeout()))
       const testAnnotationMatch = trimmed.match(
-        /^\s*@Test(\s*\(.*?\))?(\s+(void|def)\s+(\w+)\s*\()?/,
+        /^\s*@Test(\s*\([^)]*\))?(\s+(void|def)\s+(\w+)\s*\()?/,
       );
       if (testAnnotationMatch) {
         hasTestAnnotation = true;

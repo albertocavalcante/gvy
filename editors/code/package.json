@@ -763,6 +763,21 @@
           "type": "boolean",
           "default": true,
           "description": "Enable CodeLens for test Run/Debug buttons"
+        },
+        "groovy.codelens.test.source": {
+          "type": "string",
+          "enum": [
+            "lsp",
+            "extension",
+            "both"
+          ],
+          "default": "lsp",
+          "enumDescriptions": [
+            "Use Language Server CodeLens (AST-based, more accurate)",
+            "Use traditional Extension CodeLens (fallback mode)",
+            "Show CodeLens from both sources"
+          ],
+          "description": "Source for test Run/Debug/Coverage CodeLens"
         }
       }
     },

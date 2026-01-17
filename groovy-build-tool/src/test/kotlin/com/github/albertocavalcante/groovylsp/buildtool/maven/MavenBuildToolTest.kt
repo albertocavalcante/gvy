@@ -105,13 +105,6 @@ class MavenBuildToolTest {
             // Verify we have both direct and potentially transitive dependencies
             val directDeps = metadata.filter { !it.isTransitive }
             val transitiveDeps = metadata.filter { it.isTransitive }
-
-            println("Extracted ${metadata.size} Maven dependencies:")
-            println("  Direct: ${directDeps.size}")
-            println("  Transitive: ${transitiveDeps.size}")
-            metadata.take(5).forEach { dep ->
-                println("  - ${dep.name}:${dep.version} (${dep.scope}) isTransitive=${dep.isTransitive}")
-            }
         }
     }
 
