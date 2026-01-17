@@ -143,14 +143,16 @@ class BuildTargetCache {
     fun updateSources(targetId: BuildTargetIdentifier, sources: List<Path>) {
         logger.debug { "Updating sources for target ${targetId.uri}: ${sources.size} files" }
 
-        // Remove old reverse mappings for this target
-        val oldSources = targetSources[targetId] ?: emptyList()
-        oldSources.forEach { sourceToTarget.remove(it) }
+        synchronized(targetSources) {
+            // Remove old reverse mappings for this target
+            val oldSources = targetSources[targetId] ?: emptyList()
+            oldSources.forEach { sourceToTarget.remove(it) }
 
-        // Add new sources and rebuild reverse index
-        targetSources[targetId] = sources
-        sources.forEach { source ->
-            sourceToTarget[source] = targetId
+            // Add new sources and rebuild reverse index
+            targetSources[targetId] = sources
+            sources.forEach { source ->
+                sourceToTarget[source] = targetId
+            }
         }
 
         logger.trace { "Updated sources for ${targetId.uri}: ${sources.size} files" }

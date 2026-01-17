@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import java.net.URI
+import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -189,13 +190,13 @@ class GroovySemanticDB {
     private fun buildIndexes(uri: URI, doc: SemanticDocument) {
         // Index symbols
         doc.symbols.forEach { symbol ->
-            symbolIndex.computeIfAbsent(symbol.symbol) { mutableListOf() }
+            symbolIndex.computeIfAbsent(symbol.symbol) { Collections.synchronizedList(mutableListOf()) }
                 .add(uri to symbol)
         }
 
         // Index occurrences
         doc.occurrences.forEach { occurrence ->
-            occurrenceIndex.computeIfAbsent(occurrence.symbol) { mutableListOf() }
+            occurrenceIndex.computeIfAbsent(occurrence.symbol) { Collections.synchronizedList(mutableListOf()) }
                 .add(uri to occurrence)
         }
     }

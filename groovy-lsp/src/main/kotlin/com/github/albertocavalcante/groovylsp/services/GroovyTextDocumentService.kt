@@ -584,9 +584,6 @@ class GroovyTextDocumentService(
 
     @Suppress("TooGenericExceptionCaught")
     private fun triggerDiagnostics(uri: URI, content: String) {
-        // Cancel any existing diagnostic job for this URI
-        diagnosticJobs[uri]?.cancel()
-
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
             try {
@@ -635,7 +632,11 @@ class GroovyTextDocumentService(
             }
         }
 
-        diagnosticJobs[uri] = job
+        // Atomically cancel existing job and register new one
+        diagnosticJobs.compute(uri) { _, existingJob ->
+            existingJob?.cancel()
+            job
+        }
     }
 
     /**
