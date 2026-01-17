@@ -10,22 +10,6 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object TextIndex {
 
-    private data class LineBreakCache(val content: String, val lineBreaks: IntArray) {
-        override fun equals(other: Any?): Boolean {
-            if (this === other) return true
-            if (other !is LineBreakCache) return false
-            if (content != other.content) return false
-            if (!lineBreaks.contentEquals(other.lineBreaks)) return false
-            return true
-        }
-
-        override fun hashCode(): Int {
-            var result = content.hashCode()
-            result = 31 * result + lineBreaks.contentHashCode()
-            return result
-        }
-    }
-
     private val lineBreakCache = ConcurrentHashMap<String, IntArray>()
 
     /**
