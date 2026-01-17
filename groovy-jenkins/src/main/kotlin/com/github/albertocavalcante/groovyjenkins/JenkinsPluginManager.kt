@@ -49,16 +49,45 @@ class JenkinsPluginManager(
     private var bundledMetadataCache: BundledJenkinsMetadata? = null
 
     // Cache for extracted metadata from JARs (Jar Path -> Map<StepName, Step>)
-    private val extractedMetadataCache = mutableMapOf<String, Map<String, JenkinsStepMetadata>>()
+    // Using LRU cache to prevent unbounded growth
+    private val extractedMetadataCache = object : LinkedHashMap<String, Map<String, JenkinsStepMetadata>>(
+        16,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, Map<String, JenkinsStepMetadata>>?,
+        ): Boolean = size > MAX_CACHE_SIZE
+    }
     private val cacheMutex = Mutex()
 
     // Cache for user-configured plugins (by workspace)
-    private val userConfigCache = mutableMapOf<Path, List<JenkinsPluginConfiguration.PluginEntry>>()
+    // Using LRU cache to prevent unbounded growth
+    private val userConfigCache = object : LinkedHashMap<Path, List<JenkinsPluginConfiguration.PluginEntry>>(
+        16,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<Path, List<JenkinsPluginConfiguration.PluginEntry>>?,
+        ): Boolean = size > MAX_CACHE_SIZE
+    }
     private val userConfigMutex = Mutex()
 
     // Cache for downloaded plugin JARs
-    private val downloadedPluginCache = mutableMapOf<String, Path>()
+    // Using LRU cache to prevent unbounded growth
+    private val downloadedPluginCache = object : LinkedHashMap<String, Path>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Path>?): Boolean = size > MAX_CACHE_SIZE
+    }
     private val downloadedPluginMutex = Mutex()
+
+    companion object {
+        /**
+         * Maximum size for LRU caches to prevent unbounded growth.
+         * Applied to metadata, user config, and downloaded plugin caches.
+         */
+        private const val MAX_CACHE_SIZE = 100
+    }
 
     // Cache for registered static metadata
     private var staticMetadataCache: BundledJenkinsMetadata? = null

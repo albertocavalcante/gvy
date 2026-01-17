@@ -18,6 +18,7 @@ import java.io.OutputStream
 import java.net.BindException
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.Executors
 
 private val logger = KotlinLogging.logger {}
 private const val DEFAULT_PORT = 8080
@@ -34,6 +35,28 @@ class LspCommand : CliktCommand(name = "lsp") {
     private val port by option("-p", "--port")
         .int()
         .default(DEFAULT_PORT)
+
+    private val clientExecutor = Executors.newFixedThreadPool(10)
+
+    init {
+        // Ensure executor is shut down gracefully on application exit
+        Runtime.getRuntime().addShutdownHook(
+            Thread {
+                try {
+                    logger.info { "Shutting down client executor" }
+                    clientExecutor.shutdown()
+                    if (!clientExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                        logger.warn { "Executor did not terminate in time, forcing shutdown" }
+                        clientExecutor.shutdownNow()
+                    }
+                } catch (e: InterruptedException) {
+                    logger.error(e) { "Interrupted while shutting down executor" }
+                    clientExecutor.shutdownNow()
+                    Thread.currentThread().interrupt()
+                }
+            },
+        )
+    }
 
     override fun run() {
         when (mode) {
@@ -105,15 +128,21 @@ class LspCommand : CliktCommand(name = "lsp") {
     }
 
     private fun handleClientConnection(socket: Socket) {
-        Thread({
-            socket.use {
-                try {
-                    startServer(it.getInputStream(), it.getOutputStream())
-                } catch (e: IOException) {
-                    logger.error(e) { "Error handling client connection" }
+        clientExecutor.submit {
+            val originalName = Thread.currentThread().name
+            Thread.currentThread().name = "gls-client-${socket.inetAddress}"
+            try {
+                socket.use {
+                    try {
+                        startServer(it.getInputStream(), it.getOutputStream())
+                    } catch (e: IOException) {
+                        logger.error(e) { "Error handling client connection" }
+                    }
                 }
+            } finally {
+                Thread.currentThread().name = originalName
             }
-        }, "gls-client-${socket.inetAddress}").start()
+        }
     }
 
     private fun startServer(input: InputStream, output: OutputStream) {

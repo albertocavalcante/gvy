@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.Closeable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.jar.JarFile
@@ -11,13 +12,22 @@ import java.util.jar.JarFile
 /**
  * Loads and extracts source files from Jenkins shared library source JARs.
  * Extracts sources to a temporary directory for compilation and navigation.
+ *
+ * ## Resource Cleanup
+ * This class implements [Closeable] for optional explicit cleanup of the temporary extraction directory.
+ * However, the primary cleanup mechanism is a JVM shutdown hook registered in [init], which ensures
+ * resources are freed when the application terminates normally.
+ *
+ * Consumers of this class (e.g., [JenkinsWorkspaceManager]) are not required to call [close] explicitly,
+ * as the shutdown hook provides automatic cleanup. The [Closeable] implementation is provided for cases
+ * where explicit, early cleanup is desired (e.g., in tests or when creating multiple instances).
  */
-class LibrarySourceLoader {
+class LibrarySourceLoader : Closeable {
     private val logger = KotlinLogging.logger {}
     private val extractionDir: Path = Files.createTempDirectory("jenkins-lib-sources")
 
     init {
-        // Clean up on JVM shutdown
+        // Clean up on JVM shutdown - this is the primary cleanup mechanism
         Runtime.getRuntime().addShutdownHook(
             Thread {
                 cleanupExtractionDirectory()
@@ -29,6 +39,15 @@ class LibrarySourceLoader {
         safeDeleteDirectory(extractionDir) { e ->
             logger.warn(e) { "Failed to clean up library source extraction directory" }
         }
+    }
+
+    /**
+     * Implements Closeable for optional explicit cleanup of temporary directory.
+     * Note: The shutdown hook registered in init() is the primary cleanup mechanism.
+     * This method is provided for cases where early cleanup is desired.
+     */
+    override fun close() {
+        cleanupExtractionDirectory()
     }
 
     /**
