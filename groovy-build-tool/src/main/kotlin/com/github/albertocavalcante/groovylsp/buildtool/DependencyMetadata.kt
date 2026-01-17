@@ -68,5 +68,36 @@ data class DependencyMetadata(
             // Pass through unknown scopes as-is
             else -> scope.lowercase()
         }
+
+        /**
+         * Parses a JAR file name to extract the artifact name and version.
+         *
+         * Examples:
+         * - commons-lang3-3.12.0.jar -> ("commons-lang3", "3.12.0")
+         * - groovy-all-2.5.14.jar -> ("groovy-all", "2.5.14")
+         * - junit-4.13.jar -> ("junit", "4.13")
+         * - slf4j-api-2.0.0-SNAPSHOT.jar -> ("slf4j-api", "2.0.0-SNAPSHOT")
+         *
+         * @param fileName The JAR file name (e.g., "commons-lang3-3.12.0.jar")
+         * @return Pair of (artifact name, version), or (baseName, "unknown") if parsing fails
+         */
+        fun parseJarFileName(fileName: String): Pair<String, String> {
+            // Remove .jar extension
+            val baseName = fileName.removeSuffix(".jar")
+
+            // Try to find the last occurrence of a version pattern (e.g., -3.12.0, -2.5.14, -1.0.0-SNAPSHOT)
+            // Version pattern: dash followed by digits, then dots/digits and optional alphanumeric qualifiers
+            val versionRegex = Regex("(.+?)-(\\d+[.\\d\\-+a-zA-Z]*)$")
+            val match = versionRegex.find(baseName)
+
+            return if (match != null) {
+                val name = match.groupValues[1]
+                val version = match.groupValues[2]
+                Pair(name, version)
+            } else {
+                // Could not parse version, return the whole name
+                Pair(baseName, "unknown")
+            }
+        }
     }
 }

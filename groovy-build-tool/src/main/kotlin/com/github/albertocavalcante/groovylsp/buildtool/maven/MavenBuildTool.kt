@@ -251,16 +251,10 @@ class MavenBuildTool : BuildTool {
             // 1. Parse POM to get declared (direct) dependencies with their metadata
             val model = parsePomForMetadata(pomPath) ?: return null
 
-            // 2. Build set of direct dependency coordinates for transitivity check
-            val directCoords = model.dependencies
-                .filter { !it.version.isNullOrBlank() }
-                .map { "${it.groupId}:${it.artifactId}" }
-                .toSet()
-
-            // 3. Resolve all dependencies (including transitives) via existing resolver
+            // 2. Resolve all dependencies (including transitives) via existing resolver
             val resolvedJars = dependencyResolver.resolveDependencies(pomPath)
 
-            // 4. Build metadata list from declared dependencies
+            // 3. Build metadata list from declared dependencies
             val metadataList = mutableListOf<DependencyMetadata>()
 
             // Add direct dependencies from POM (we have full metadata)
@@ -268,9 +262,12 @@ class MavenBuildTool : BuildTool {
                 if (dep.version.isNullOrBlank()) return@forEach
 
                 val coord = "${dep.groupId}:${dep.artifactId}"
+                // Match JARs more precisely using artifactId-version prefix to avoid false matches
+                // (e.g., prevents "commons-lang" from matching "commons-lang3-3.12.0.jar")
+                val expectedPrefix = "${dep.artifactId}-${dep.version}"
                 val jarPath = resolvedJars.find { jar ->
                     val fileName = jar.fileName.toString()
-                    fileName.startsWith(dep.artifactId) && fileName.endsWith(".jar")
+                    fileName.startsWith(expectedPrefix) && fileName.endsWith(".jar")
                 }
 
                 if (jarPath != null) {
@@ -291,7 +288,7 @@ class MavenBuildTool : BuildTool {
             resolvedJars.forEach { jarPath ->
                 val pathUri = jarPath.toUri().toString()
                 if (pathUri !in addedPaths) {
-                    val (name, version) = parseJarFileName(jarPath.fileName.toString())
+                    val (name, version) = DependencyMetadata.parseJarFileName(jarPath.fileName.toString())
                     metadataList.add(
                         DependencyMetadata(
                             name = name,
@@ -326,16 +323,5 @@ class MavenBuildTool : BuildTool {
     } catch (e: Exception) {
         logger.error { "Failed to parse POM for metadata: ${e.message}" }
         null
-    }
-
-    private fun parseJarFileName(fileName: String): Pair<String, String> {
-        val baseName = fileName.removeSuffix(".jar")
-        val versionRegex = Regex("(.+?)-(\\d+[.\\d\\-+a-zA-Z]*)$")
-        val match = versionRegex.find(baseName)
-        return if (match != null) {
-            Pair(match.groupValues[1], match.groupValues[2])
-        } else {
-            Pair(baseName, "unknown")
-        }
     }
 }

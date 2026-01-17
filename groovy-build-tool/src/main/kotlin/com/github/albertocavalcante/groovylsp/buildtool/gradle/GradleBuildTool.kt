@@ -142,24 +142,37 @@ class GradleBuildTool(
 
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
 
-            // Remove duplicates across modules and aggregate scopes if the same dependency appears with different scopes
+            // Remove duplicates across modules, using scope precedence when same dependency appears with different scopes
+            // Precedence: compile > runtime > provided > test
             dependencies
                 .groupBy { it.path }
                 .map { (_, depsWithSamePath) ->
                     val first = depsWithSamePath.first()
-                    val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
-                    val combinedScope = distinctScopes.joinToString(",")
-
-                    if (combinedScope == first.scope) {
+                    if (depsWithSamePath.size == 1) {
                         first
                     } else {
-                        DependencyMetadata(
-                            name = first.name,
-                            version = first.version,
-                            scope = combinedScope,
-                            path = first.path,
-                            isTransitive = first.isTransitive,
-                        )
+                        val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
+                        val selectedScope = when {
+                            DependencyMetadata.SCOPE_COMPILE in distinctScopes -> DependencyMetadata.SCOPE_COMPILE
+                            DependencyMetadata.SCOPE_RUNTIME in distinctScopes -> DependencyMetadata.SCOPE_RUNTIME
+                            DependencyMetadata.SCOPE_PROVIDED in distinctScopes -> DependencyMetadata.SCOPE_PROVIDED
+                            DependencyMetadata.SCOPE_TEST in distinctScopes -> DependencyMetadata.SCOPE_TEST
+                            else -> first.scope
+                        }
+                        // Merge isTransitive: if any is direct (false), the dependency is considered direct
+                        val isTransitive = depsWithSamePath.all { it.isTransitive }
+
+                        if (selectedScope == first.scope && isTransitive == first.isTransitive) {
+                            first
+                        } else {
+                            DependencyMetadata(
+                                name = first.name,
+                                version = first.version,
+                                scope = selectedScope,
+                                path = first.path,
+                                isTransitive = isTransitive,
+                            )
+                        }
                     }
                 }
         } catch (e: Exception) {
@@ -178,7 +191,7 @@ class GradleBuildTool(
         // Try to extract name and version from the JAR file name
         // Format is typically: name-version.jar (e.g., commons-lang3-3.12.0.jar)
         val fileName = jarPath.fileName.toString()
-        val (parsedName, parsedVersion) = parseJarFileName(fileName)
+        val (parsedName, parsedVersion) = DependencyMetadata.parseJarFileName(fileName)
 
         // Prefer Gradle's module coordinates when available
         val gradleModuleVersion = try {
@@ -231,32 +244,5 @@ class GradleBuildTool(
             path = jarPath.toUri().toString(),
             isTransitive = isTransitive,
         )
-    }
-
-    /**
-     * Parses a JAR file name to extract the name and version.
-     * Examples:
-     * - commons-lang3-3.12.0.jar -> ("commons-lang3", "3.12.0")
-     * - groovy-all-2.5.14.jar -> ("groovy-all", "2.5.14")
-     * - junit-4.13.jar -> ("junit", "4.13")
-     * - slf4j-api-2.0.0-SNAPSHOT.jar -> ("slf4j-api", "2.0.0-SNAPSHOT")
-     */
-    private fun parseJarFileName(fileName: String): Pair<String, String> {
-        // Remove .jar extension
-        val baseName = fileName.removeSuffix(".jar")
-
-        // Try to find the last occurrence of a version pattern (e.g., -3.12.0, -2.5.14, -1.0.0-SNAPSHOT)
-        // Version pattern: dash followed by digits, then dots/digits and optional alphanumeric qualifiers
-        val versionRegex = Regex("(.+?)-(\\d+[.\\d\\-+a-zA-Z]*)$")
-        val match = versionRegex.find(baseName)
-
-        return if (match != null) {
-            val name = match.groupValues[1]
-            val version = match.groupValues[2]
-            Pair(name, version)
-        } else {
-            // Could not parse version, return the whole name
-            Pair(baseName, "unknown")
-        }
     }
 }
