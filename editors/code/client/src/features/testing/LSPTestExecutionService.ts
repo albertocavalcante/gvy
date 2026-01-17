@@ -14,7 +14,13 @@ interface TestRunOptions {
 }
 
 function normalizeTestId(id: string): string {
-  return id.replace(/\s+/g, "_").replace(/[^\w.]/g, "_");
+  return (
+    id
+      // Replace one or more invalid characters with a single underscore
+      .replace(/[^\w.]+/g, "_")
+      // Remove leading or trailing underscores
+      .replace(/^_+|_+$/g, "")
+  );
 }
 
 export class LSPTestExecutionService implements ITestExecutionService {
