@@ -217,6 +217,8 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Check for @Test annotation (with or without parameters)
       // Pattern: @Test or @Test(timeout = 1000) or @Test void inlineTest()
+      // Note: The regex [^)]* prevents catastrophic backtracking but does not handle
+      // nested parentheses in annotations (e.g., @Test(expected = Exception.class, timeout = timeout()))
       const testAnnotationMatch = trimmed.match(
         /^\s*@Test(\s*\([^)]*\))?(\s+(void|def)\s+(\w+)\s*\()?/,
       );
