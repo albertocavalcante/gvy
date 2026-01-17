@@ -43,6 +43,26 @@ export class TestEventConsumer {
   }
 
   /**
+   * Clear all registered test items to prevent memory leaks.
+   * Should be called when the consumer is done processing test events.
+   */
+  public clear(): void {
+    this.testItems.clear();
+  }
+
+  /**
+   * Find a test item by name when exact ID match fails.
+   */
+  private findItemByName(name: string): vscode.TestItem | undefined {
+    for (const [id, item] of this.testItems) {
+      if (item.label.endsWith(name) || id.endsWith(name)) {
+        return item;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Process a single line of output from Gradle.
    * Returns true if the line was a valid JSON event, false otherwise.
    */
@@ -67,6 +87,11 @@ export class TestEventConsumer {
 
   private handleEvent(event: TestEvent): void {
     let item = this.testItems.get(event.id);
+
+    // Fallback: try to find by name if exact ID match fails
+    if (!item && event.name) {
+      item = this.findItemByName(event.name);
+    }
 
     // For Spock @Unroll: dynamically create subtest if not found
     if (!item && event.parent && this.testController) {

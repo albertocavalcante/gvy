@@ -13,6 +13,10 @@ interface TestRunOptions {
   coverageService?: CoverageService;
 }
 
+function normalizeTestId(id: string): string {
+  return id.replace(/\s+/g, "_").replace(/[^\w.]/g, "_");
+}
+
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
 
@@ -87,6 +91,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
+      let isMavenExecution = false;
+
       for (const item of testsToRun) {
         if (token.isCancellationRequested) break;
 
@@ -129,6 +135,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
           this.logger.appendLine(
             `[Testing] LSP returned no command for ${item.id}. Build tool may not support test execution.`,
           );
+          run.errored(
+            item,
+            new vscode.TestMessage(
+              "Build tool does not support test execution",
+            ),
+          );
           continue;
         }
 
@@ -139,6 +151,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
           executableName === "mvn" ||
           executableName === "mvnw" ||
           executableName.startsWith("mvn.");
+
+        // Track if any Maven execution occurred
+        if (isMaven) {
+          isMavenExecution = true;
+        }
 
         // Clone command.args to avoid mutation
         const coverageArgs = [...command.args];
@@ -158,11 +175,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
           consumer,
           token,
         );
+      }
 
-        // For Maven, fetch and apply Surefire results from LSP
-        if (isMaven && !token.isCancellationRequested) {
-          await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
-        }
+      // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
+      if (isMavenExecution && !token.isCancellationRequested) {
+        await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
       }
 
       // After all tests complete, fetch and add coverage if requested
@@ -176,8 +193,24 @@ export class LSPTestExecutionService implements ITestExecutionService {
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
     } finally {
+      consumer.clear();
       run.end();
     }
+  }
+
+  /**
+   * Collect all test items recursively from a list of items.
+   */
+  private collectAllTestItems(
+    items: readonly vscode.TestItem[],
+  ): vscode.TestItem[] {
+    const result: vscode.TestItem[] = [];
+    const collect = (item: vscode.TestItem) => {
+      result.push(item);
+      item.children.forEach((child) => collect(child));
+    };
+    items.forEach(collect);
+    return result;
   }
 
   /**
@@ -202,24 +235,51 @@ export class LSPTestExecutionService implements ITestExecutionService {
         `[LSP] Retrieved ${results.results.length} test results from Surefire XML`,
       );
 
-      // Build a map of testId -> result for quick lookup
+      // Collect all test items (including children) for matching
+      const allTestItems = this.collectAllTestItems(testsToRun);
+
+      // Build a map with multiple lookup keys for robust matching
       const resultMap = new Map<string, TestResultItem>();
       for (const result of results.results) {
+        // Add exact testId
         resultMap.set(result.testId, result);
-        // Also map by just the test name for looser matching
+
+        // Add className.name combination
         if (result.className) {
           resultMap.set(`${result.className}.${result.name}`, result);
         }
+
+        // Add normalized testId (spaces replaced with underscores)
+        const normalized = normalizeTestId(result.testId);
+        resultMap.set(normalized, result);
+
+        // Add just the test name for loose matching
+        resultMap.set(result.name, result);
       }
 
-      // Apply results to test items
-      for (const item of testsToRun) {
-        const result = resultMap.get(item.id);
+      // Apply results to test items using smart matching
+      for (const item of allTestItems) {
+        // Try multiple matching strategies
+        let result = resultMap.get(item.id);
+
+        // If not found, try normalized ID
+        if (!result) {
+          result = resultMap.get(normalizeTestId(item.id));
+        }
+
+        // If not found, try matching by label/name
+        if (!result) {
+          result = resultMap.get(item.label);
+        }
+
+        // If not found, try extracting just the method name from ID
+        if (!result && item.id.includes(".")) {
+          const methodName = item.id.substring(item.id.lastIndexOf(".") + 1);
+          result = resultMap.get(methodName);
+        }
+
         if (result) {
           this.applyResultToItem(run, item, result);
-        } else {
-          // Try to find by traversing children
-          this.applyResultsToChildren(run, item, resultMap);
         }
       }
     } catch (error) {
@@ -310,6 +370,26 @@ export class LSPTestExecutionService implements ITestExecutionService {
     return config.get<string>("project.javaHome");
   }
 
+  private isValidJavaHome(javaHome: string): boolean {
+    // Must be absolute path
+    if (!path.isAbsolute(javaHome)) {
+      this.logger.appendLine(
+        `[Security] Invalid JAVA_HOME: path must be absolute (${javaHome})`,
+      );
+      return false;
+    }
+    // Must exist and contain bin/java (or bin/java.exe on Windows)
+    const javaExecutable = process.platform === "win32" ? "java.exe" : "java";
+    const javaPath = path.join(javaHome, "bin", javaExecutable);
+    if (!fs.existsSync(javaPath)) {
+      this.logger.appendLine(
+        `[Security] Invalid JAVA_HOME: java executable not found at ${javaPath}`,
+      );
+      return false;
+    }
+    return true;
+  }
+
   private async executeCommand(
     cmd: TestCommand,
     consumer: TestEventConsumer,
@@ -326,12 +406,19 @@ export class LSPTestExecutionService implements ITestExecutionService {
     // Build environment with explicit JAVA_HOME if configured
     let resolvedEnv = { ...process.env, ...env };
     if (projectJavaHome) {
-      resolvedEnv = {
-        ...resolvedEnv,
-        JAVA_HOME: projectJavaHome,
-        PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
-      };
-      this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
+      // Validate JAVA_HOME for security
+      if (this.isValidJavaHome(projectJavaHome)) {
+        resolvedEnv = {
+          ...resolvedEnv,
+          JAVA_HOME: projectJavaHome,
+          PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
+        };
+        this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
+      } else {
+        this.logger.appendLine(
+          `[Test] Ignoring invalid JAVA_HOME configuration: ${projectJavaHome}`,
+        );
+      }
     }
 
     // Detect Build Tool by executable name
