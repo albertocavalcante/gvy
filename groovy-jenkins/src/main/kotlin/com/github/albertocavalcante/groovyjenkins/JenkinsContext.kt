@@ -99,10 +99,11 @@ class JenkinsContext(
             }
 
             // Find the latest version directory (prefer semantic versioning)
-            val versionDir = Files.list(jenkinsCorePath)
-                .filter { Files.isDirectory(it) }
-                .max { p1, p2 -> compareVersions(p1.fileName.toString(), p2.fileName.toString()) }
-                .orElse(null)
+            val versionDir = Files.list(jenkinsCorePath).use { stream ->
+                stream.filter { Files.isDirectory(it) }
+                    .max { p1, p2 -> compareVersions(p1.fileName.toString(), p2.fileName.toString()) }
+                    .orElse(null)
+            }
 
             if (versionDir == null) {
                 logger.warn { "No version directories found in $jenkinsCorePath" }
@@ -111,16 +112,17 @@ class JenkinsContext(
             logger.info { "Selected jenkins-core version: ${versionDir.fileName}" }
 
             // Find the main jar (not sources/javadoc)
-            val jar = Files.list(versionDir)
-                .filter { path ->
+            val jar = Files.list(versionDir).use { stream ->
+                stream.filter { path ->
                     val name = path.fileName.toString()
                     name.endsWith(".jar") &&
                         !name.endsWith("-sources.jar") &&
                         !name.endsWith("-javadoc.jar") &&
                         !name.endsWith("-tests.jar")
                 }
-                .findFirst()
-                .orElse(null)
+                    .findFirst()
+                    .orElse(null)
+            }
 
             if (jar == null) {
                 logger.warn { "No JAR found in $versionDir" }

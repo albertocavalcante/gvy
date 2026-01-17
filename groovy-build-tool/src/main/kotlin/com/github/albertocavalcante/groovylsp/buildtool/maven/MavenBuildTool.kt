@@ -160,24 +160,28 @@ class MavenBuildTool : BuildTool {
 
             val process = processBuilder.start()
 
-            // Read output to log it (and avoid blocking if buffer fills)
-            val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                reader.readText()
-            }
+            try {
+                // Read output to log it (and avoid blocking if buffer fills)
+                val output = BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                    reader.readText()
+                }
 
-            val exitCode = process.waitFor()
+                val exitCode = process.waitFor()
 
-            if (exitCode != 0) {
-                logger.error { "Maven CLI dependency resolution failed. Output:\n$output" }
-            } else {
-                val classpathString = Files.readString(cpFile)
-                result = classpathString
-                    .split(File.pathSeparator)
-                    .mapNotNull { entry ->
-                        runCatching { Paths.get(entry.trim()) }
-                            .getOrNull()
-                            ?.takeIf { it.exists() }
-                    }
+                if (exitCode != 0) {
+                    logger.error { "Maven CLI dependency resolution failed. Output:\n$output" }
+                } else {
+                    val classpathString = Files.readString(cpFile)
+                    result = classpathString
+                        .split(File.pathSeparator)
+                        .mapNotNull { entry ->
+                            runCatching { Paths.get(entry.trim()) }
+                                .getOrNull()
+                                ?.takeIf { it.exists() }
+                        }
+                }
+            } finally {
+                process.destroyForcibly()
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()

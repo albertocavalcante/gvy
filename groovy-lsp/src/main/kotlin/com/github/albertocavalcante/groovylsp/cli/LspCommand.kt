@@ -18,6 +18,7 @@ import java.io.OutputStream
 import java.net.BindException
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.Executors
 
 private val logger = KotlinLogging.logger {}
 private const val DEFAULT_PORT = 8080
@@ -34,6 +35,8 @@ class LspCommand : CliktCommand(name = "lsp") {
     private val port by option("-p", "--port")
         .int()
         .default(DEFAULT_PORT)
+
+    private val clientExecutor = Executors.newFixedThreadPool(10)
 
     override fun run() {
         when (mode) {
@@ -105,7 +108,7 @@ class LspCommand : CliktCommand(name = "lsp") {
     }
 
     private fun handleClientConnection(socket: Socket) {
-        Thread({
+        clientExecutor.submit {
             socket.use {
                 try {
                     startServer(it.getInputStream(), it.getOutputStream())
@@ -113,7 +116,7 @@ class LspCommand : CliktCommand(name = "lsp") {
                     logger.error(e) { "Error handling client connection" }
                 }
             }
-        }, "gls-client-${socket.inetAddress}").start()
+        }
     }
 
     private fun startServer(input: InputStream, output: OutputStream) {

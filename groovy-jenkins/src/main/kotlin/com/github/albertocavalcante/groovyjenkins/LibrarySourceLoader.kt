@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.Closeable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.jar.JarFile
@@ -12,7 +13,7 @@ import java.util.jar.JarFile
  * Loads and extracts source files from Jenkins shared library source JARs.
  * Extracts sources to a temporary directory for compilation and navigation.
  */
-class LibrarySourceLoader {
+class LibrarySourceLoader : Closeable {
     private val logger = KotlinLogging.logger {}
     private val extractionDir: Path = Files.createTempDirectory("jenkins-lib-sources")
 
@@ -29,6 +30,13 @@ class LibrarySourceLoader {
         safeDeleteDirectory(extractionDir) { e ->
             logger.warn(e) { "Failed to clean up library source extraction directory" }
         }
+    }
+
+    /**
+     * Implements Closeable for proper cleanup of temporary directory.
+     */
+    override fun close() {
+        cleanupExtractionDirectory()
     }
 
     /**
