@@ -2,9 +2,14 @@ package com.github.albertocavalcante.groovylsp.buildtool.maven
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
 import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
+import com.github.albertocavalcante.groovylsp.buildtool.DependencyMetadata
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.apache.maven.model.Model
+import org.apache.maven.model.building.DefaultModelBuilderFactory
+import org.apache.maven.model.building.DefaultModelBuildingRequest
+import org.apache.maven.model.building.ModelBuildingRequest
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -236,5 +241,87 @@ class MavenBuildTool : BuildTool {
             args = args,
             cwd = workspaceRoot.toString(),
         )
+    }
+
+    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata>? {
+        val pomPath = workspaceRoot.resolve("pom.xml")
+        if (!pomPath.exists()) return null
+
+        return try {
+            // 1. Parse POM to get declared (direct) dependencies with their metadata
+            val model = parsePomForMetadata(pomPath) ?: return null
+
+            // 2. Resolve all dependencies (including transitives) via existing resolver
+            val resolvedJars = dependencyResolver.resolveDependencies(pomPath)
+
+            // 3. Build metadata list from declared dependencies
+            val metadataList = mutableListOf<DependencyMetadata>()
+
+            // Add direct dependencies from POM (we have full metadata)
+            model.dependencies.forEach { dep ->
+                if (dep.version.isNullOrBlank()) return@forEach
+
+                val coord = "${dep.groupId}:${dep.artifactId}"
+                // Match JARs more precisely using artifactId-version prefix to avoid false matches
+                // (e.g., prevents "commons-lang" from matching "commons-lang3-3.12.0.jar")
+                val expectedPrefix = "${dep.artifactId}-${dep.version}"
+                val jarPath = resolvedJars.find { jar ->
+                    val fileName = jar.fileName.toString()
+                    fileName.startsWith(expectedPrefix) && fileName.endsWith(".jar")
+                }
+
+                if (jarPath != null) {
+                    metadataList.add(
+                        DependencyMetadata(
+                            name = coord,
+                            version = dep.version,
+                            scope = DependencyMetadata.normalizeScope(dep.scope),
+                            path = jarPath.toUri().toString(),
+                            isTransitive = false,
+                        ),
+                    )
+                }
+            }
+
+            // Add transitive dependencies (JARs not matching direct deps)
+            val addedPaths = metadataList.map { it.path }.toSet()
+            resolvedJars.forEach { jarPath ->
+                val pathUri = jarPath.toUri().toString()
+                if (pathUri !in addedPaths) {
+                    val (name, version) = DependencyMetadata.parseJarFileName(jarPath.fileName.toString())
+                    metadataList.add(
+                        DependencyMetadata(
+                            name = name,
+                            version = version,
+                            scope = DependencyMetadata.SCOPE_RUNTIME, // Transitives are typically runtime
+                            path = pathUri,
+                            isTransitive = true,
+                        ),
+                    )
+                }
+            }
+
+            // Deduplicate by path
+            metadataList.distinctBy { it.path }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to extract Maven dependency metadata: ${e.message}" }
+            null
+        }
+    }
+
+    private fun parsePomForMetadata(pomPath: Path): Model? = try {
+        val factory = DefaultModelBuilderFactory()
+        val builder = factory.newInstance()
+        val request = DefaultModelBuildingRequest().apply {
+            pomFile = pomPath.toFile()
+            validationLevel = ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL
+            isProcessPlugins = false
+            isTwoPhaseBuilding = false
+            systemProperties = System.getProperties()
+        }
+        builder.build(request).effectiveModel
+    } catch (e: Exception) {
+        logger.error { "Failed to parse POM for metadata: ${e.message}" }
+        null
     }
 }

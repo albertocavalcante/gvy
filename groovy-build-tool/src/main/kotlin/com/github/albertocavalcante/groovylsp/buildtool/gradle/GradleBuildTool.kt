@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
 import com.github.albertocavalcante.groovylsp.buildtool.BuildExecutableResolver
+import com.github.albertocavalcante.groovylsp.buildtool.DependencyMetadata
 import com.github.albertocavalcante.groovylsp.buildtool.NativeGradleBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.gradle.tooling.model.idea.IdeaProject
+import org.gradle.tooling.model.idea.IdeaSingleEntryLibraryDependency
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -100,6 +103,146 @@ class GradleBuildTool(
             executable = BuildExecutableResolver.resolveGradle(workspaceRoot),
             args = args,
             cwd = workspaceRoot.toString(),
+        )
+    }
+
+    /**
+     * Retrieves rich dependency metadata for all dependencies in the workspace.
+     * This provides Maven coordinates, scope, and path information suitable for
+     * UI display (e.g., VS Code dependency tree view).
+     *
+     * @param workspaceRoot The root directory of the Gradle project
+     * @return List of dependency metadata, or empty list on failure
+     */
+    override fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata> {
+        logger.info { "Extracting dependency metadata from Gradle project: $workspaceRoot" }
+
+        return try {
+            val connection = connectionFactory.getConnection(workspaceRoot, null)
+            val ideaProject = connection.model(IdeaProject::class.java).get()
+
+            val dependencies = mutableListOf<DependencyMetadata>()
+
+            ideaProject.modules.forEach { module ->
+                logger.debug { "Processing module: ${module.name}" }
+
+                module.dependencies
+                    .filterIsInstance<IdeaSingleEntryLibraryDependency>()
+                    .forEach { dependency ->
+                        val jarPath = dependency.file.toPath()
+                        if (jarPath.exists()) {
+                            val depMetadata = extractDependencyMetadata(dependency, jarPath)
+                            dependencies.add(depMetadata)
+                            logger.debug { "Found dependency: ${depMetadata.name}" }
+                        } else {
+                            logger.warn { "Dependency JAR not found: $jarPath" }
+                        }
+                    }
+            }
+
+            logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
+
+            // Remove duplicates across modules, using scope precedence when same dependency appears with different scopes
+            // Precedence: compile > runtime > provided > test
+            dependencies
+                .groupBy { it.path }
+                .map { (_, depsWithSamePath) ->
+                    val first = depsWithSamePath.first()
+                    if (depsWithSamePath.size == 1) {
+                        first
+                    } else {
+                        val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
+                        val selectedScope = when {
+                            DependencyMetadata.SCOPE_COMPILE in distinctScopes -> DependencyMetadata.SCOPE_COMPILE
+                            DependencyMetadata.SCOPE_RUNTIME in distinctScopes -> DependencyMetadata.SCOPE_RUNTIME
+                            DependencyMetadata.SCOPE_PROVIDED in distinctScopes -> DependencyMetadata.SCOPE_PROVIDED
+                            DependencyMetadata.SCOPE_TEST in distinctScopes -> DependencyMetadata.SCOPE_TEST
+                            else -> first.scope
+                        }
+                        // Merge isTransitive: if any is direct (false), the dependency is considered direct
+                        val isTransitive = depsWithSamePath.all { it.isTransitive }
+
+                        if (selectedScope == first.scope && isTransitive == first.isTransitive) {
+                            first
+                        } else {
+                            DependencyMetadata(
+                                name = first.name,
+                                version = first.version,
+                                scope = selectedScope,
+                                path = first.path,
+                                isTransitive = isTransitive,
+                            )
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Extracts dependency metadata from an IdeaSingleEntryLibraryDependency.
+     */
+    private fun extractDependencyMetadata(
+        dependency: IdeaSingleEntryLibraryDependency,
+        jarPath: Path,
+    ): DependencyMetadata {
+        // Try to extract name and version from the JAR file name
+        // Format is typically: name-version.jar (e.g., commons-lang3-3.12.0.jar)
+        val fileName = jarPath.fileName.toString()
+        val (parsedName, parsedVersion) = DependencyMetadata.parseJarFileName(fileName)
+
+        // Prefer Gradle's module coordinates when available
+        val gradleModuleVersion = try {
+            dependency.gradleModuleVersion
+        } catch (e: Exception) {
+            logger.debug { "Could not extract Gradle module version from dependency: ${e.message}" }
+            null
+        }
+
+        val name: String
+        val version: String
+
+        if (gradleModuleVersion != null &&
+            !gradleModuleVersion.group.isNullOrBlank() &&
+            !gradleModuleVersion.name.isNullOrBlank()
+        ) {
+            // Use Maven-style coordinates: group:artifact
+            name = "${gradleModuleVersion.group}:${gradleModuleVersion.name}"
+            // Prefer the version from the Gradle model, fall back to the parsed one if necessary
+            version = if (!gradleModuleVersion.version.isNullOrBlank()) {
+                gradleModuleVersion.version
+            } else {
+                parsedVersion
+            }
+        } else {
+            // Fall back to the artifact name and version parsed from the JAR filename
+            name = parsedName
+            version = parsedVersion
+        }
+
+        // Try to get scope from the dependency
+        val scope = try {
+            dependency.scope?.scope?.lowercase() ?: "compile"
+        } catch (e: Exception) {
+            logger.debug { "Could not extract scope from dependency: ${e.message}" }
+            "compile"
+        }
+
+        // Normalize scope to standard values
+        val normalizedScope = DependencyMetadata.normalizeScope(scope)
+
+        // For now, we cannot reliably determine if a dependency is transitive from the Gradle model
+        // This would require additional resolution data. Setting to false as a conservative default.
+        val isTransitive = false
+
+        return DependencyMetadata(
+            name = name,
+            version = version,
+            scope = normalizedScope,
+            path = jarPath.toUri().toString(),
+            isTransitive = isTransitive,
         )
     }
 }

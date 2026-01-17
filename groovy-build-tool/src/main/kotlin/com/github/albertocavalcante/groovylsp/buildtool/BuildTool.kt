@@ -59,6 +59,18 @@ interface BuildTool {
      * @return A [TestCommand] that the client can execute, or null if coverage is not supported.
      */
     fun getCoverageCommand(workspaceRoot: Path, suite: String, test: String? = null): TestCommand? = null
+
+    /**
+     * Returns detailed dependency metadata for UI display purposes.
+     *
+     * This provides richer information than [resolve] which only returns JAR paths.
+     * Use this for features like dependency tree views that need names, versions,
+     * scopes, and transitivity information.
+     *
+     * @param workspaceRoot The root directory of the workspace
+     * @return List of dependency metadata, or null if not supported by this build tool
+     */
+    fun getDependencyMetadata(workspaceRoot: Path): List<DependencyMetadata>? = null
 }
 
 /**
