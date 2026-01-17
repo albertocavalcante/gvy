@@ -371,23 +371,59 @@ export class LSPTestExecutionService implements ITestExecutionService {
   }
 
   private isValidJavaHome(javaHome: string): boolean {
-    // Must be absolute path
-    if (!path.isAbsolute(javaHome)) {
+    try {
+      // Must be absolute path
+      if (!path.isAbsolute(javaHome)) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: path must be absolute (${javaHome})`,
+        );
+        return false;
+      }
+
+      // Normalize and resolve symlinks in JAVA_HOME
+      const normalizedJavaHome = path.normalize(javaHome);
+      const realJavaHome = fs.realpathSync(normalizedJavaHome);
+      const javaHomeStat = fs.statSync(realJavaHome);
+      if (!javaHomeStat.isDirectory()) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: not a directory (${realJavaHome})`,
+        );
+        return false;
+      }
+
+      // Must exist and contain bin/java (or bin/java.exe on Windows)
+      const javaExecutable = process.platform === "win32" ? "java.exe" : "java";
+      const javaPath = path.join(realJavaHome, "bin", javaExecutable);
+
+      // Resolve symlinks for the java executable
+      const realJavaPath = fs.realpathSync(javaPath);
+
+      // Ensure the resolved java executable is within the resolved JAVA_HOME directory
+      const relativeToHome = path.relative(realJavaHome, realJavaPath);
+      if (relativeToHome.startsWith("..") || path.isAbsolute(relativeToHome)) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: java executable resolves outside JAVA_HOME (${realJavaPath})`,
+        );
+        return false;
+      }
+
+      const javaPathStat = fs.statSync(realJavaPath);
+      if (!javaPathStat.isFile()) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: java executable is not a file (${realJavaPath})`,
+        );
+        return false;
+      }
+
+      return true;
+    } catch (err) {
       this.logger.appendLine(
-        `[Security] Invalid JAVA_HOME: path must be absolute (${javaHome})`,
+        `[Security] Invalid JAVA_HOME: error while validating (${javaHome}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
       return false;
     }
-    // Must exist and contain bin/java (or bin/java.exe on Windows)
-    const javaExecutable = process.platform === "win32" ? "java.exe" : "java";
-    const javaPath = path.join(javaHome, "bin", javaExecutable);
-    if (!fs.existsSync(javaPath)) {
-      this.logger.appendLine(
-        `[Security] Invalid JAVA_HOME: java executable not found at ${javaPath}`,
-      );
-      return false;
-    }
-    return true;
   }
 
   private async executeCommand(
