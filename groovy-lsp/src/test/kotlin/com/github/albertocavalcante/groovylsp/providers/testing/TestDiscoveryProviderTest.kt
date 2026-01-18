@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.WorkspaceManager
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import io.mockk.coEvery
@@ -43,7 +44,7 @@ class TestDiscoveryProviderTest {
         val parseResult = realService.getParseResult(uri)!!
 
         val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<com.github.albertocavalcante.groovylsp.compilation.WorkspaceManager>()
+        val mockWorkspaceManager = mockk<WorkspaceManager>()
 
         every { mockService.workspaceManager } returns mockWorkspaceManager
         every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
@@ -115,7 +116,7 @@ class TestDiscoveryProviderTest {
         val parseResult = realService.getParseResult(uri)!!
 
         val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<com.github.albertocavalcante.groovylsp.compilation.WorkspaceManager>()
+        val mockWorkspaceManager = mockk<WorkspaceManager>()
 
         every { mockService.workspaceManager } returns mockWorkspaceManager
         every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
