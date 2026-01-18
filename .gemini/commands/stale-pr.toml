@@ -2,7 +2,7 @@ description = "Review a potentially stale PR and decide whether to close, supers
 prompt = """
 You are executing a STRICT, DETERMINISTIC workflow for reviewing stale PRs.
 
-ARGUMENT: $input should be the PR number (e.g., 123 or #123)
+ARGUMENT: {{args}} should be the PR number (e.g., 123 or #123)
 
 RULES (MUST FOLLOW):
 1. NEVER CLOSE WITHOUT ANALYSIS - Every PR must go through the full decision tree
