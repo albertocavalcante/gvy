@@ -2,8 +2,12 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
 
+interface MockFileSystemErrorConstructor {
+  new (message: string, code: string): Error & { code: string };
+}
+
 interface MockVscode {
-  FileSystemError: typeof Error;
+  FileSystemError: MockFileSystemErrorConstructor;
   workspace: {
     fs: {
       stat: sinon.SinonStub;
@@ -38,6 +42,7 @@ interface MockSpockGenerator {
 
 interface TestFeatureModule {
   registerTestFeature: (context: { subscriptions: unknown[] }) => void;
+  TestFeature: new () => unknown;
 }
 
 describe("TestFeature", () => {
