@@ -120,14 +120,19 @@ gh api repos/{owner}/{repo}/contents/{file_path}?ref=main --jq '.name' 2>/dev/nu
 ### 1.3 Compare Key Files (for small PRs)
 
 ```bash
+# Create temp files safely
+PR_FILE=$(mktemp)
+MAIN_FILE=$(mktemp)
+trap 'rm -f "$PR_FILE" "$MAIN_FILE"' EXIT
+
 # Get file content from PR branch
-gh api repos/{owner}/{repo}/contents/{file_path}?ref={pr_branch} --jq '.content' | base64 -d > /tmp/pr-version.txt
+gh api repos/{owner}/{repo}/contents/{file_path}?ref={pr_branch} --jq '.content' | base64 -d > "$PR_FILE"
 
 # Get file content from main
-gh api repos/{owner}/{repo}/contents/{file_path}?ref=main --jq '.content' | base64 -d > /tmp/main-version.txt
+gh api repos/{owner}/{repo}/contents/{file_path}?ref=main --jq '.content' | base64 -d > "$MAIN_FILE"
 
 # Compare
-diff /tmp/pr-version.txt /tmp/main-version.txt
+diff "$PR_FILE" "$MAIN_FILE"
 ```
 
 ### 1.4 Quick Architecture Check
@@ -160,10 +165,9 @@ wt
 # Create worktree for review
 wt new pr-<PR_NUMBER>-review
 
-# Checkout the PR branch
+# Checkout the PR using gh (handles forks and detached HEADs correctly)
 cd w<N>
-git fetch origin <pr_branch>
-git checkout <pr_branch>
+gh pr checkout <PR_NUMBER>
 ```
 
 ### 2.2 Measure Divergence Locally
@@ -175,8 +179,9 @@ git rev-list --count HEAD..main
 # Commits PR is ahead of merge-base
 git rev-list --count $(git merge-base HEAD main)..HEAD
 
-# Files that would conflict on merge
-git merge-tree $(git merge-base HEAD main) HEAD main 2>&1 | grep -c "CONFLICT" || echo "0"
+# Files that would conflict on merge (dry-run)
+git merge --no-commit --no-ff main 2>&1 | grep -c "CONFLICT" || echo "0"
+git merge --abort 2>/dev/null || true
 ```
 
 ### 2.3 Compare Architecture
@@ -287,7 +292,10 @@ Categories to check:
 Use the `/defer` workflow pattern:
 
 ```bash
-cat > /tmp/issue-body.md << 'EOF'
+ISSUE_BODY=$(mktemp)
+trap 'rm -f "$ISSUE_BODY"' EXIT
+
+cat > "$ISSUE_BODY" << 'EOF'
 ## Summary
 [What the concept/feature is]
 
@@ -306,10 +314,8 @@ EOF
 
 gh issue create -R {owner}/{repo} \
   --title "[area] Brief description of concept" \
-  --body-file /tmp/issue-body.md \
+  --body-file "$ISSUE_BODY" \
   --label "enhancement" --label "extracted-from-pr"
-
-rm /tmp/issue-body.md
 ```
 
 ### 4.3 Track Created Issues
@@ -366,8 +372,12 @@ Thank you for the work on this PR! [Specific acknowledgment of what was valuable
 ### 5.2 Close the PR
 
 ```bash
-# First, create the comment file from the template above
-cat > /tmp/pr-comment.md << 'EOF'
+# Create temp file safely
+PR_COMMENT=$(mktemp)
+trap 'rm -f "$PR_COMMENT"' EXIT
+
+# Create the comment file from the template above
+cat > "$PR_COMMENT" << 'EOF'
 ## Closing as Stale
 
 This PR is **[N] commits behind main** and the codebase has evolved significantly since [date].
@@ -396,11 +406,8 @@ Thank you for the work on this PR! [Specific acknowledgment of what was valuable
 EOF
 
 # Post the comment and close the PR
-gh pr comment <PR_NUMBER> --body-file /tmp/pr-comment.md
+gh pr comment <PR_NUMBER> --body-file "$PR_COMMENT"
 gh pr close <PR_NUMBER>
-
-# Clean up temp file
-rm /tmp/pr-comment.md
 ```
 
 ### 5.3 Cleanup
