@@ -39,6 +39,8 @@ interface VscodeMock {
   Position: new (line: number, character: number) => { line: number; character: number };
   Uri: { parse: (str: string) => { toString: () => string } };
   TestRunProfileKind: { Run: number; Debug: number; Coverage: number };
+  TestRunRequest: new (include: unknown[]) => { include: unknown[] };
+  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
 }
 
 interface TestControllerMock {
@@ -313,7 +315,8 @@ describe("GroovyTestController", () => {
       const runTestCall = registerCommandCalls.find(
         (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
+      assert.ok(runTestCall, "groovy.test.run command should be registered");
+      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -352,7 +355,8 @@ describe("GroovyTestController", () => {
       const runTestCall = registerCommandCalls.find(
         (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
+      assert.ok(runTestCall, "groovy.test.run command should be registered");
+      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -434,7 +438,8 @@ describe("GroovyTestController", () => {
       const runTestCall = registerCommandCalls.find(
         (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
+      assert.ok(runTestCall, "groovy.test.run command should be registered");
+      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -498,6 +503,7 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
+      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
       await testControllerMock.resolveHandler(undefined);
 
       // Reset the mock to track only the run call
@@ -558,6 +564,7 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
+      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
       await testControllerMock.resolveHandler(undefined);
 
       // Act: Run specific test
@@ -611,6 +618,7 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
+      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
       await testControllerMock.resolveHandler(undefined);
 
       // Get the suite item
@@ -649,6 +657,7 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
+      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
       await testControllerMock.resolveHandler(undefined);
 
       // Get the test item
