@@ -7,8 +7,7 @@ kt_library(
     deps = [
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
     ],
 )
 

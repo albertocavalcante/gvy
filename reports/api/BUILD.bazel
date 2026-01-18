@@ -1,19 +1,20 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
-    name = "core",
+    name = "api",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//parser/api",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
-        "@maven//:org_apache_groovy_groovy",
     ],
 )
 
 kt_test(
-    name = "core_test",
+    name = "api_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyparser", "com.github.albertocavalcante.groovylsp"],
-    associates = [":core"],
+    test_packages = ["com.github.albertocavalcante.reports"],
+    associates = [":api"],
+    deps = [
+        "@maven//:io_mockk_mockk_jvm",
+    ],
 )

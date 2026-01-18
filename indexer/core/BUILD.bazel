@@ -7,9 +7,9 @@ kt_library(
     deps = [
         "//parser/core",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
 
