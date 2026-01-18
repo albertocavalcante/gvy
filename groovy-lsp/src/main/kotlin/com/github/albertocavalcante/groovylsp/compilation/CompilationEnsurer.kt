@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - ensureActive(): Checks for coroutine cancellation
  * - Exception handling: Catches compilation failures to avoid retry loops
  */
+@Suppress("TooGenericExceptionCaught") // Generic exception handling is intentional for robustness
 class CompilationEnsurer(
     private val documentProvider: DocumentProvider,
     private val compilationService: GroovyCompilationService,
