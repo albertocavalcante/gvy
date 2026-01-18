@@ -281,7 +281,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
     /**
      * Visit a parameter.
      */
-    fun visitParameter(param: Parameter, tokens: MutableList<SemanticToken>) {
+    private fun visitParameter(param: Parameter, tokens: MutableList<SemanticToken>) {
         if (param.lineNumber < 0) {
             return
         }
@@ -604,7 +604,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
      * Tokenize annotations with robust length calculation.
      */
     @Suppress("NestedBlockDepth") // Necessary for annotation position validation
-    fun tokenizeAnnotations(annotations: List<AnnotationNode>?, tokens: MutableList<SemanticToken>) {
+    private fun tokenizeAnnotations(annotations: List<AnnotationNode>?, tokens: MutableList<SemanticToken>) {
         annotations?.forEach { annotation ->
             if (annotation.lineNumber > 0 && annotation.columnNumber > 0) {
                 val length = if (annotation.lastLineNumber == annotation.lineNumber &&
