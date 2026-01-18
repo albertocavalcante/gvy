@@ -34,7 +34,9 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4
         with:
-          languages: java-kotlin, javascript-typescript
+          # Temporarily disabled kotlin due to CodeQL not supporting Kotlin 2.3.0
+          # CodeQL currently only supports Kotlin versions below 2.2.30
+          languages: javascript-typescript
           config-file: .github/codeql/codeql-config.yml
 
       - name: Autobuild
