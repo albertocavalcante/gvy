@@ -27,7 +27,6 @@ import com.github.albertocavalcante.groovylsp.providers.testing.GetBuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.GetTestResultsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
@@ -44,6 +43,7 @@ import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
+import com.github.albertocavalcante.reports.results.model.TestResultsResponse
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging

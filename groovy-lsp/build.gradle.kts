@@ -124,6 +124,7 @@ dependencies {
     implementation(project(":semantics:core"))
     implementation(project(":semantics-native"))
     implementation(project(":reports:coverage"))
+    implementation(project(":reports:results"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
