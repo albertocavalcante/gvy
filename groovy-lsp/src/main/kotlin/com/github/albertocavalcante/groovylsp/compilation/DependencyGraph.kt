@@ -30,13 +30,13 @@ class DependencyGraph {
          *
          * This helper maintains map hygiene by removing empty sets, which is important
          * for both memory efficiency and correct behavior of methods like hasInfo().
+         *
+         * Uses computeIfPresent for atomic updates on ConcurrentHashMap.
          */
         private fun <K, V> removeFromSetMap(map: MutableMap<K, MutableSet<V>>, key: K, value: V) {
-            map[key]?.let { set ->
+            map.computeIfPresent(key) { _, set ->
                 set.remove(value)
-                if (set.isEmpty()) {
-                    map.remove(key)
-                }
+                set.ifEmpty { null }
             }
         }
     }
