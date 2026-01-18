@@ -87,6 +87,20 @@ private sealed class ResolutionResult {
 private data class CallableSignature(val parameterNames: List<String>, val parameterTypes: List<String>)
 
 /**
+ * Context for processing AST nodes during inlay hint generation.
+ */
+private data class NodeProcessingContext(
+    val range: org.eclipse.lsp4j.Range,
+    val astModel: GroovyAstModel,
+    val moduleNode: ModuleNode?,
+    val symbolTable: SymbolTable?,
+    val workspaceSymbols: List<Symbol>,
+    val hints: MutableList<InlayHint>,
+    val semanticResolver: SemanticTypeResolver,
+    val logger: KLogger,
+)
+
+/**
  * Provides LSP Inlay Hints for Groovy source files.
  * Supports type hints for `def` variables and parameter hints for method/constructor calls.
  *
@@ -100,17 +114,6 @@ class InlayHintsProvider(
     private val config: InlayHintsConfiguration = InlayHintsConfiguration(),
 ) {
     private val logger = KotlinLogging.logger {}
-
-    private data class NodeProcessingContext(
-        val range: org.eclipse.lsp4j.Range,
-        val astModel: GroovyAstModel,
-        val moduleNode: ModuleNode?,
-        val symbolTable: SymbolTable?,
-        val workspaceSymbols: List<Symbol>,
-        val hints: MutableList<InlayHint>,
-        val semanticResolver: SemanticTypeResolver,
-        val logger: KLogger,
-    )
 
     /**
      * Provides a list of inlay hints for the given document and range.
@@ -327,15 +330,8 @@ class InlayHintsProvider(
                 context.semanticResolver,
                 context.moduleNode,
             )
-        val resolutionContext = ReceiverResolutionContext(
-            context.astModel,
-            context.moduleNode,
-            context.symbolTable,
-            context.semanticResolver,
-            context.logger,
-        )
         val receiverType =
-            InlayHintsCandidates.resolveReceiverType(call, resolutionContext)
+            InlayHintsCandidates.resolveReceiverType(call, context)
         val isStaticCall = call.objectExpression is ClassExpression
 
         // Resolution order:
@@ -413,17 +409,6 @@ class InlayHintsProvider(
     }
 }
 
-/**
- * Context for receiver type resolution operations.
- */
-private data class ReceiverResolutionContext(
-    val astModel: GroovyAstModel,
-    val moduleNode: ModuleNode?,
-    val symbolTable: SymbolTable?,
-    val semanticResolver: SemanticTypeResolver,
-    val logger: KLogger,
-)
-
 // TODO(#651): Consolidate InlayHintsCandidates and InlayHintsTypes into single helper.
 //   See: https://github.com/albertocavalcante/gvy/issues/651
 // TODO(#650): resolveReceiverType() overlaps with SignatureHelpProvider - extract shared utility.
@@ -445,7 +430,7 @@ private object InlayHintsCandidates {
         return ResolutionResult.NotFound
     }
 
-    fun resolveReceiverType(call: MethodCallExpression, context: ReceiverResolutionContext): String? {
+    fun resolveReceiverType(call: MethodCallExpression, context: NodeProcessingContext): String? {
         if (call.isImplicitThis) {
             return resolveImplicitThisReceiverType(call, context.astModel)
         }
@@ -456,10 +441,8 @@ private object InlayHintsCandidates {
             directType
                 ?: resolveExpressionTypeSafely(
                     objectExpr,
-                    context.moduleNode,
-                    context.semanticResolver,
+                    context,
                     "receiver",
-                    context.logger,
                 )
 
         return refineReceiverTypeWithSymbolTable(
@@ -497,7 +480,7 @@ private object InlayHintsCandidates {
     fun refineReceiverTypeWithSymbolTable(
         inferredType: String?,
         objectExpr: Expression,
-        context: ReceiverResolutionContext,
+        context: NodeProcessingContext,
     ): String? {
         if (inferredType != "java.lang.Object" && inferredType != "java.lang.Class") {
             return inferredType
@@ -518,10 +501,8 @@ private object InlayHintsCandidates {
         val refined =
             resolveExpressionTypeSafely(
                 initExpr,
-                context.moduleNode,
-                context.semanticResolver,
+                context,
                 "receiver initializer",
-                context.logger,
             )
                 ?: return inferredType
         return refined.takeUnless { it == "java.lang.Object" } ?: inferredType
@@ -540,15 +521,13 @@ private object InlayHintsCandidates {
 
     fun resolveExpressionTypeSafely(
         expression: Expression,
-        moduleNode: ModuleNode?,
-        semanticResolver: SemanticTypeResolver,
-        context: String,
-        logger: KLogger,
+        context: NodeProcessingContext,
+        contextDescription: String,
     ): String? = runCatching {
-        val type = semanticResolver.resolveType(expression, moduleNode)
-        semanticResolver.formatSemanticType(type)
+        val type = context.semanticResolver.resolveType(expression, context.moduleNode)
+        context.semanticResolver.formatSemanticType(type)
     }
-        .onFailure { logger.debug(it) { "Type resolution failed for $context" } }
+        .onFailure { context.logger.debug(it) { "Type resolution failed for $contextDescription" } }
         .getOrNull()
 
     fun findMethodCandidatesInAst(
