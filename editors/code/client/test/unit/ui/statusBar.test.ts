@@ -2,12 +2,81 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface StatusBarItem {
+  text: string;
+  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string } | undefined;
+  backgroundColor: { id: string } | undefined;
+  color: unknown;
+  command: unknown;
+  name: string;
+  show: sinon.SinonStub;
+  hide: sinon.SinonStub;
+  dispose: sinon.SinonStub;
+}
+
+interface MockVscode {
+  window: {
+    createStatusBarItem: sinon.SinonStub;
+    onDidChangeActiveTextEditor: sinon.SinonStub;
+    showQuickPick: sinon.SinonStub;
+    activeTextEditor: unknown;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+    onDidChangeConfiguration: sinon.SinonStub;
+  };
+  languages: {
+    match: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+  };
+  StatusBarAlignment: {
+    Left: number;
+    Right: number;
+  };
+  QuickPickItemKind: {
+    Separator: number;
+  };
+  ThemeColor: sinon.SinonStub;
+  MarkdownString: sinon.SinonStub;
+}
+
+interface MockLanguageClient {
+  State: {
+    Stopped: number;
+    Starting: number;
+    Running: number;
+  };
+  ProgressType: sinon.SinonStub;
+}
+
+interface ClientStub {
+  state: number;
+  onDidChangeState: sinon.SinonStub;
+  onProgress: sinon.SinonStub;
+  onNotification: sinon.SinonStub;
+}
+
+interface StatusBarModule {
+  registerStatusBarItem: (client?: unknown, version?: string) => { dispose: () => void };
+  setClient: (client: unknown) => void;
+}
+
+interface StatusNotification {
+  health: string;
+  quiescent: boolean;
+  message?: string;
+  filesIndexed?: number;
+  filesTotal?: number;
+}
+
 describe("StatusBar", () => {
-  let mockVscode: any;
-  let mockLanguageClient: any;
-  let statusBarModule: any;
-  let statusBarItemStub: any;
-  let clientStub: any;
+  let mockVscode: MockVscode;
+  let mockLanguageClient: MockLanguageClient;
+  let statusBarModule: StatusBarModule;
+  let statusBarItemStub: StatusBarItem;
+  let clientStub: ClientStub;
 
   beforeEach(() => {
     // Create fresh mocks for each test
@@ -36,7 +105,7 @@ describe("StatusBar", () => {
         getConfiguration: sinon.stub().returns({
           get: sinon
             .stub()
-            .callsFake((key: string, defaultValue: any) => defaultValue),
+            .callsFake((key: string, defaultValue: unknown) => defaultValue),
         }),
         onDidChangeConfiguration: sinon
           .stub()
@@ -114,7 +183,7 @@ describe("StatusBar", () => {
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
-    });
+    }) as StatusBarModule;
   });
 
   afterEach(() => {
@@ -220,7 +289,7 @@ describe("StatusBar", () => {
   });
 
   describe("progress notification handling", () => {
-    let progressHandler: any;
+    let progressHandler: (notification: { kind: string; title?: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -296,7 +365,7 @@ describe("StatusBar", () => {
   });
 
   describe("state inference from messages", () => {
-    let progressHandler: any;
+    let progressHandler: (notification: { kind: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -379,7 +448,7 @@ describe("StatusBar", () => {
   });
 
   describe("client state transitions", () => {
-    let stateChangeHandler: any;
+    let stateChangeHandler: (event: { newState: number }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -429,7 +498,7 @@ describe("StatusBar", () => {
   });
 
   describe("background colors", () => {
-    let progressHandler: any;
+    let progressHandler: (notification: { kind: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -471,7 +540,7 @@ describe("StatusBar", () => {
   describe("smart visibility settings", () => {
     it('should always show when setting is "always"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.show") return "always";
           return defaultValue;
         }),
@@ -485,7 +554,7 @@ describe("StatusBar", () => {
 
     it('should never show when setting is "never"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.show") return "never";
           return defaultValue;
         }),
@@ -501,7 +570,7 @@ describe("StatusBar", () => {
 
     it('should only show on Groovy files when setting is "onGroovyFile"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.show") return "onGroovyFile";
           return defaultValue;
         }),
@@ -518,7 +587,7 @@ describe("StatusBar", () => {
   describe("click action settings", () => {
     it('should set menu command when clickAction is "menu"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.clickAction") return "menu";
           return defaultValue;
         }),
@@ -531,7 +600,7 @@ describe("StatusBar", () => {
 
     it('should set logs command when clickAction is "logs"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.clickAction") return "logs";
           return defaultValue;
         }),
@@ -544,7 +613,7 @@ describe("StatusBar", () => {
 
     it('should set restart command when clickAction is "restart"', () => {
       mockVscode.workspace.getConfiguration.returns({
-        get: sinon.stub().callsFake((key: string, defaultValue: any) => {
+        get: sinon.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "statusBar.clickAction") return "restart";
           return defaultValue;
         }),
@@ -557,7 +626,7 @@ describe("StatusBar", () => {
   });
 
   describe("tooltip content", () => {
-    let stateChangeHandler: any;
+    let stateChangeHandler: (event: { newState: number }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem(undefined, "0.4.8");
@@ -584,6 +653,7 @@ describe("StatusBar", () => {
       });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "Downloading dependencies");
     });
 
@@ -591,6 +661,7 @@ describe("StatusBar", () => {
       stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "groovy.restartServer");
     });
 
@@ -598,21 +669,22 @@ describe("StatusBar", () => {
       stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       // New tooltip has Reload instead of check for updates inline
       assert.include(tooltip.value, "groovy.gradle.refresh");
     });
   });
 
   describe("groovy/status notification handling", () => {
-    let statusHandler: any;
+    let statusHandler: (notification: StatusNotification) => void;
 
     beforeEach(() => {
       // Add onNotification mock to client
       clientStub.onNotification = sinon
         .stub()
-        .callsFake((method: string, handler: any) => {
+        .callsFake((method: string, handler: unknown) => {
           if (method === "groovy/status") {
-            statusHandler = handler;
+            statusHandler = handler as (notification: StatusNotification) => void;
           }
           return { dispose: sinon.stub() };
         });
@@ -744,6 +816,7 @@ describe("StatusBar", () => {
       });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "Indexing workspace files");
     });
 

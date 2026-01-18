@@ -5,18 +5,25 @@ import {
   GradleTask,
 } from "../../../../src/features/gradle/GradleService";
 import { RequestType } from "vscode-languageserver-protocol";
+import type { LanguageClient } from "vscode-languageclient/node";
+
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
 
 describe("GradleService", () => {
   let sandbox: sinon.SinonSandbox;
   let gradleService: GradleService;
-  let mockLanguageClient: any;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    gradleService = new GradleService(mockLanguageClient);
+    gradleService = new GradleService(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {
@@ -38,7 +45,7 @@ describe("GradleService", () => {
     const args = mockLanguageClient.sendRequest.firstCall.args;
 
     // Check request type/method name
-    const requestType = args[0] as RequestType<any, any, any>;
+    const requestType = args[0] as RequestType<unknown, unknown, unknown>;
     expect(requestType.method).to.equal("groovy/gradleTasks");
 
     // Check request parameters
@@ -56,8 +63,8 @@ describe("GradleService", () => {
     try {
       await gradleService.getTasks(workspaceUri);
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
-      expect(e.message).to.equal("LSP Gradle Error");
+    } catch (e) {
+      expect((e as Error).message).to.equal("LSP Gradle Error");
     }
   });
 

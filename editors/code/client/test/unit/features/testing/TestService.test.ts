@@ -5,18 +5,25 @@ import {
   TestSuite,
 } from "../../../../src/features/testing/TestService";
 import { RequestType } from "vscode-languageserver-protocol";
+import type { LanguageClient } from "vscode-languageclient/node";
+
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
 
 describe("TestService", () => {
   let sandbox: sinon.SinonSandbox;
   let testService: TestService;
-  let mockLanguageClient: any;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    testService = new TestService(mockLanguageClient);
+    testService = new TestService(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {
@@ -41,7 +48,7 @@ describe("TestService", () => {
     expect(mockLanguageClient.sendRequest.calledOnce).to.be.true;
     const args = mockLanguageClient.sendRequest.firstCall.args;
 
-    const requestType = args[0] as RequestType<any, any, any>;
+    const requestType = args[0] as RequestType<unknown, unknown, unknown>;
     expect(requestType.method).to.equal("groovy/discoverTests");
 
     expect(args[1]).to.deep.equal({ workspaceUri });
@@ -58,8 +65,8 @@ describe("TestService", () => {
     try {
       await testService.discoverTestsInWorkspace(workspaceUri);
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
-      expect(e.message).to.equal("LSP Test Discovery Error");
+    } catch (e) {
+      expect((e as Error).message).to.equal("LSP Test Discovery Error");
     }
   });
 

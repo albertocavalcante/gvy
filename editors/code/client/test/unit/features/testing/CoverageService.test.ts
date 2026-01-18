@@ -2,13 +2,51 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface VscodeMock {
+  Uri: {
+    file: (path: string) => { fsPath: string; toString: () => string };
+    parse: (path: string) => { fsPath: string; toString: () => string };
+  };
+  Position: new (line: number, character: number) => { line: number; character: number };
+  BranchCoverage: new (executed: number | boolean, location: unknown, label?: string) => unknown;
+  StatementCoverage: new (executed: number | boolean, location: unknown, branches?: unknown[]) => unknown;
+  FileCoverage: {
+    fromDetails: (uri: unknown, details: unknown[]) => { uri: unknown; details: unknown[] };
+  };
+  OutputChannel: new () => unknown;
+}
+
+interface FsMock {
+  existsSync: sinon.SinonStub;
+  promises: {
+    readFile: sinon.SinonStub;
+  };
+}
+
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface TestServiceMock {
+  getCoverage: sinon.SinonStub;
+}
+
+interface CoverageServiceInstance {
+  loadCoverage: (coverageFilePath: string) => Promise<unknown>;
+  addCoverageToRun: (testRun: unknown, workspacePath: string) => Promise<void>;
+}
+
+interface CoverageServiceClass {
+  new (testService: TestServiceMock, logger: LoggerMock): CoverageServiceInstance;
+}
+
 describe("CoverageService", () => {
-  let CoverageService: any;
-  let coverageService: any;
-  let loggerMock: any;
-  let testServiceMock: any;
-  let fsMock: any;
-  let vscodeMock: any;
+  let CoverageService: CoverageServiceClass;
+  let coverageService: CoverageServiceInstance;
+  let loggerMock: LoggerMock;
+  let testServiceMock: TestServiceMock;
+  let fsMock: FsMock;
+  let vscodeMock: VscodeMock;
 
   beforeEach(() => {
     // Mock VS Code API
@@ -32,19 +70,19 @@ describe("CoverageService", () => {
       BranchCoverage: class {
         constructor(
           public executed: number | boolean,
-          public location: any,
+          public location: unknown,
           public label?: string,
         ) {}
       },
       StatementCoverage: class {
         constructor(
           public executed: number | boolean,
-          public location: any,
-          public branches?: any[],
+          public location: unknown,
+          public branches?: unknown[],
         ) {}
       },
       FileCoverage: {
-        fromDetails: (uri: any, details: any[]) => ({ uri, details }),
+        fromDetails: (uri: unknown, details: unknown[]) => ({ uri, details }),
       },
       OutputChannel: class {},
     };
@@ -68,9 +106,7 @@ describe("CoverageService", () => {
     };
 
     // Load CoverageService with mocks
-    // Load CoverageService with mocks
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { CoverageService: CoverageServiceClass } }).noCallThru()(
       "../../../../src/features/testing/CoverageService",
       {
         vscode: vscodeMock,
@@ -138,11 +174,11 @@ describe("CoverageService", () => {
     );
 
     // Verify Covered Branches (cb=2)
-    const coveredBranches = line.branches.filter((b: any) => b.executed === 1);
+    const coveredBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 1);
     assert.equal(coveredBranches.length, 2, "Should have 2 covered branches");
 
     // Verify Missed Branches (mb=1)
-    const missedBranches = line.branches.filter((b: any) => b.executed === 0);
+    const missedBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 0);
     assert.equal(missedBranches.length, 1, "Should have 1 missed branch");
   });
 

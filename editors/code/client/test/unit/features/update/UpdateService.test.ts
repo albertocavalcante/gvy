@@ -3,18 +3,35 @@ import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 import { createMementoStub, sampleRelease } from "./testUtils";
 
+interface MockWindow {
+  showInformationMessage: sinon.SinonStub;
+  showWarningMessage: sinon.SinonStub;
+}
+
+interface MockWorkspace {
+  getConfiguration: sinon.SinonStub;
+}
+
+interface MockEnv {
+  openExternal: sinon.SinonStub;
+}
+
+interface MockUri {
+  parse: sinon.SinonStub;
+}
+
 describe("UpdateService", () => {
-  let mockWindow: any;
-  let mockWorkspace: any;
-  let mockEnv: any;
-  let mockUri: any;
+  let mockWindow: MockWindow;
+  let mockWorkspace: MockWorkspace;
+  let mockEnv: MockEnv;
+  let mockUri: MockUri;
   let checkForUpdateStub: sinon.SinonStub;
   let checkForUpdateNowStub: sinon.SinonStub;
   let getUpdateConfigurationStub: sinon.SinonStub;
 
   function createUpdateService(
     overrides: {
-      checkNowResult?: any;
+      checkNowResult?: unknown;
       showInfoResponse?: string;
     } = {},
   ) {

@@ -2,13 +2,55 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface TestEventConsumerClass {
+  new (run: unknown, logger: unknown, testController: unknown): TestEventConsumerInstance;
+}
+
+interface TestEventConsumerInstance {
+  registerTestItem: (id: string, item: unknown) => void;
+  clear: () => void;
+  processLine: (line: string) => boolean;
+  getAllRegisteredItems: () => unknown[];
+  markPassed: (item: unknown) => void;
+  markFailed: (item: unknown, message: string) => void;
+}
+
+interface RunMock {
+  started: sinon.SinonStub;
+  passed: sinon.SinonStub;
+  failed: sinon.SinonStub;
+  skipped: sinon.SinonStub;
+  errored: sinon.SinonStub;
+  enqueued: sinon.SinonStub;
+}
+
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface TestControllerMock {
+  createTestItem: sinon.SinonStub;
+}
+
+interface VscodeMock {
+  TestMessage: new (message: string) => { message: string };
+}
+
+interface ProxyquireModule {
+  TestEventConsumer: TestEventConsumerClass;
+}
+
+type ProxyquireNoCallThru = {
+  noCallThru: () => (path: string, stubs: unknown) => ProxyquireModule;
+};
+
 describe("TestEventConsumer", () => {
-  let TestEventConsumer: any;
-  let consumer: any;
-  let runMock: any;
-  let loggerMock: any;
-  let testControllerMock: any;
-  let vscodeMock: any;
+  let TestEventConsumer: TestEventConsumerClass;
+  let consumer: TestEventConsumerInstance;
+  let runMock: RunMock;
+  let loggerMock: LoggerMock;
+  let testControllerMock: TestControllerMock;
+  let vscodeMock: VscodeMock;
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -40,7 +82,7 @@ describe("TestEventConsumer", () => {
     testControllerMock = {
       createTestItem: sandbox
         .stub()
-        .callsFake((id: string, label: string, uri: any) => ({
+        .callsFake((id: string, label: string, uri: unknown) => ({
           id,
           label,
           uri,
@@ -51,7 +93,7 @@ describe("TestEventConsumer", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as ProxyquireNoCallThru).noCallThru()(
       "../../../../src/features/testing/TestEventConsumer",
       {
         vscode: vscodeMock,
@@ -549,7 +591,7 @@ describe("TestEventConsumer", () => {
 
       // Verify prototype was not polluted
       assert.strictEqual(
-        (Object.prototype as any).polluted,
+        (Object.prototype as Record<string, unknown>).polluted,
         undefined,
         "Prototype should not be polluted",
       );
@@ -602,11 +644,11 @@ describe("TestEventConsumer", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
       // Create deeply nested JSON (100+ levels)
-      const nested: any = { event: "testStarted", id: "test", name: "test" };
-      let current = nested;
+      const nested: { event: string; id: string; name: string; nested?: Record<string, unknown> } = { event: "testStarted", id: "test", name: "test" };
+      let current: Record<string, unknown> = nested;
       for (let i = 0; i < 100; i++) {
         current.nested = { level: i };
-        current = current.nested;
+        current = current.nested as Record<string, unknown>;
       }
 
       const deepJSON = JSON.stringify(nested);

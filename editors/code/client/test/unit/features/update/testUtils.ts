@@ -20,7 +20,7 @@ export function createMementoStub(
   const memento: Memento = {
     keys: () => Array.from(store.keys()),
     get,
-    update: async (key: string, value: any): Promise<void> => {
+    update: async (key: string, value: unknown): Promise<void> => {
       if (value === undefined) {
         store.delete(key);
         return;

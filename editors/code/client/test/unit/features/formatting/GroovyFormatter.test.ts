@@ -2,18 +2,24 @@ import { expect } from "chai";
 import * as sinon from "sinon";
 import { DocumentFormattingRequest } from "vscode-languageserver-protocol";
 import { GroovyFormatter } from "../../../../src/features/formatting/GroovyFormatter";
+import type { LanguageClient } from "vscode-languageclient/node";
+
+// Mock client interface matching LanguageClient's sendRequest
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
 
 describe("GroovyFormatter", () => {
   let sandbox: sinon.SinonSandbox;
   let formatter: GroovyFormatter;
-  let mockClient: any;
+  let mockClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockClient = {
       sendRequest: sandbox.stub(),
     };
-    formatter = new GroovyFormatter(mockClient);
+    formatter = new GroovyFormatter(mockClient as unknown as LanguageClient);
   });
 
   afterEach(() => {
@@ -57,8 +63,8 @@ describe("GroovyFormatter", () => {
         insertSpaces: true,
       });
       expect.fail("Should have thrown an error");
-    } catch (error: any) {
-      expect(error.message).to.equal("LSP Error");
+    } catch (error) {
+      expect((error as Error).message).to.equal("LSP Error");
     }
   });
 });

@@ -12,18 +12,18 @@ export class MockShellExecution {
 }
 
 export class MockTask {
-  public definition: any;
-  public scope: any;
+  public definition: unknown;
+  public scope: unknown;
   public name: string;
   public source: string;
-  public execution: any;
+  public execution: unknown;
 
   constructor(
-    definition: any,
-    scope: any,
+    definition: unknown,
+    scope: unknown,
     name: string,
     source: string,
-    execution: any,
+    execution: unknown,
   ) {
     this.definition = definition;
     this.scope = scope;

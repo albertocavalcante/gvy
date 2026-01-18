@@ -1,18 +1,25 @@
 import { expect } from "chai";
 import * as sinon from "sinon";
 import { GroovyReplClient } from "../../../../src/features/repl/GroovyReplClient";
+import type { LanguageClient } from "vscode-languageclient/node";
+
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
 
 describe("GroovyReplClient", () => {
   let sandbox: sinon.SinonSandbox;
   let replClient: GroovyReplClient;
-  let mockLanguageClient: any;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    replClient = new GroovyReplClient(mockLanguageClient);
+    replClient = new GroovyReplClient(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {
@@ -41,8 +48,8 @@ describe("GroovyReplClient", () => {
     try {
       await replClient.evaluate("invalid code");
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
-      expect(e.message).to.equal("Compilation Error");
+    } catch (e) {
+      expect((e as Error).message).to.equal("Compilation Error");
     }
   });
 });

@@ -2,11 +2,66 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface MockVscode {
+  window: {
+    showQuickPick: sinon.SinonStub;
+    showOpenDialog: sinon.SinonStub;
+    showInformationMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    showErrorMessage: sinon.SinonStub;
+    withProgress: sinon.SinonStub;
+    showTextDocument: sinon.SinonStub;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+    workspaceFolders?: unknown[];
+    findFiles: sinon.SinonStub;
+    openTextDocument: sinon.SinonStub;
+    applyEdit: sinon.SinonStub;
+    asRelativePath: sinon.SinonStub;
+    getWorkspaceFolder: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+    registerCommand: sinon.SinonStub;
+  };
+  Uri: {
+    joinPath: sinon.SinonStub;
+  };
+  QuickPickItemKind: {
+    Separator: number;
+  };
+  ConfigurationTarget: {
+    Workspace: number;
+  };
+  ProgressLocation: {
+    Notification: number;
+  };
+  Position: sinon.SinonStub;
+  WorkspaceEdit: sinon.SinonStub;
+}
+
+interface MockFinder {
+  findAllJdks: sinon.SinonStub;
+  MINIMUM_JAVA_VERSION: number;
+  JavaResolutionExtended: Record<string, unknown>;
+}
+
+interface MockJdkUtils {
+  getRuntime: sinon.SinonStub;
+}
+
+interface CommandsModule {
+  configureJava: (requiredVersion?: number, purpose?: string) => Promise<boolean>;
+  addFoojayResolver: () => Promise<boolean>;
+  registerJavaCommands: (context: unknown) => void;
+}
+
 describe("Java Commands", () => {
-  let mockVscode: any;
-  let mockFinder: any;
-  let mockJdkUtils: any;
-  let commandsModule: any;
+  let mockVscode: MockVscode;
+  let mockFinder: MockFinder;
+  let mockJdkUtils: MockJdkUtils;
+  let commandsModule: CommandsModule;
 
   beforeEach(() => {
     // Mock vscode module
@@ -38,8 +93,8 @@ describe("Java Commands", () => {
           getText: sinon.stub().returns(""),
         }),
         applyEdit: sinon.stub().resolves(true),
-        asRelativePath: sinon.stub().callsFake((uri: any) => uri.path),
-        getWorkspaceFolder: sinon.stub().callsFake((uri: any) => ({
+        asRelativePath: sinon.stub().callsFake((uri: { path: string }) => uri.path),
+        getWorkspaceFolder: sinon.stub().callsFake((uri: unknown) => ({
           name: "test-workspace",
           uri,
         })),
@@ -92,7 +147,7 @@ describe("Java Commands", () => {
       vscode: mockVscode,
       "./finder": mockFinder,
       "jdk-utils": mockJdkUtils,
-    });
+    }) as CommandsModule;
   });
 
   afterEach(() => {
@@ -211,9 +266,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const browseItem = items.find((item: any) => item.action === "browse");
+        const browseItem = items.find((item: unknown) => (item as { action?: string }).action === "browse");
         assert.isDefined(browseItem);
-        assert.include(browseItem.label, "Browse");
+        assert.include((browseItem as { label: string }).label, "Browse");
       });
 
       it("should set appropriate placeholder when requiredVersion provided", async () => {
@@ -263,10 +318,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: any) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
-        const lspCompatible = separators.find((s: any) =>
-          s.label.includes("LSP Compatible"),
+        const lspCompatible = separators.find((s: unknown) =>
+          (s as { label: string }).label.includes("LSP Compatible"),
         );
         assert.isDefined(lspCompatible);
       });
@@ -293,10 +348,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: any) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
-        const cannotRunLsp = separators.find((s: any) =>
-          s.label.includes("Cannot Run LSP"),
+        const cannotRunLsp = separators.find((s: unknown) =>
+          (s as { label: string }).label.includes("Cannot Run LSP"),
         );
         assert.isDefined(cannotRunLsp);
       });
@@ -323,13 +378,13 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: any) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
-        const bestMatch = separators.find((s: any) =>
-          s.label.includes("Best Match"),
+        const bestMatch = separators.find((s: unknown) =>
+          (s as { label: string }).label.includes("Best Match"),
         );
         assert.isDefined(bestMatch);
-        assert.include(bestMatch.label, "Java 21");
+        assert.include((bestMatch as { label: string }).label, "Java 21");
       });
 
       it("should show Project Target Only section when requiredVersion matches but cannot run LSP", async () => {
@@ -354,10 +409,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: any) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
-        const projectOnly = separators.find((s: any) =>
-          s.label.includes("Project Target Only"),
+        const projectOnly = separators.find((s: unknown) =>
+          (s as { label: string }).label.includes("Project Target Only"),
         );
         assert.isDefined(projectOnly);
       });
@@ -377,9 +432,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(21, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: any) => item.jdk !== undefined);
-        const recommendedItem = jdkItems.find((item: any) =>
-          item.label.includes("$(star-full)"),
+        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
+        const recommendedItem = jdkItems.find((item: unknown) =>
+          (item as { label: string }).label.includes("$(star-full)"),
         );
         assert.isDefined(recommendedItem);
       });
@@ -399,8 +454,8 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: any) => item.jdk !== undefined);
-        const incompatibleItem = jdkItems[0];
+        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
+        const incompatibleItem = jdkItems[0] as { detail: string };
         assert.include(incompatibleItem.detail, "$(error)");
         assert.include(incompatibleItem.detail, "Cannot run LSP");
       });
@@ -933,7 +988,7 @@ describe("Java Commands", () => {
 
         // Should have two information messages: one for creation confirmation
         const calls = mockVscode.window.showInformationMessage.getCalls();
-        const successMessage = calls.find((call: any) =>
+        const successMessage = calls.find((call: sinon.SinonSpyCall) =>
           call.args[0].includes("Created settings.gradle"),
         );
         assert.isDefined(successMessage);
@@ -995,7 +1050,7 @@ describe("Java Commands", () => {
       // Get the registered handler
       const registerCall = mockVscode.commands.registerCommand
         .getCalls()
-        .find((call: any) => call.args[0] === "groovy.configureJava");
+        .find((call: sinon.SinonSpyCall) => call.args[0] === "groovy.configureJava");
 
       assert.isDefined(
         registerCall,

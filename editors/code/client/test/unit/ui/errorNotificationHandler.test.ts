@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
+import type { OutputChannel } from "vscode";
 import {
   GradleJdkIncompatibleError,
   GroovyJdkIncompatibleError,
@@ -8,6 +9,32 @@ import {
   GenericError,
   ProjectJdkNewerWarning,
 } from "../../../src/ui/statusUtils";
+
+interface MockVscode {
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    showInformationMessage: sinon.SinonStub;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+  };
+  env: {
+    openExternal: sinon.SinonStub;
+    clipboard: {
+      writeText: sinon.SinonStub;
+    };
+  };
+  Uri: {
+    parse: sinon.SinonStub;
+  };
+  ConfigurationTarget: {
+    Workspace: number;
+  };
+}
 
 describe("Error Notification Handler", () => {
   let showErrorMessageStub: sinon.SinonStub;
@@ -17,7 +44,7 @@ describe("Error Notification Handler", () => {
   let getConfigurationStub: sinon.SinonStub;
   let configUpdateStub: sinon.SinonStub;
   let showErrorNotification: typeof import("../../../src/ui/errorNotificationHandler").showErrorNotification;
-  let mockVscode: any;
+  let mockVscode: MockVscode;
 
   beforeEach(() => {
     showErrorMessageStub = sinon.stub();
@@ -368,7 +395,7 @@ describe("Error Notification Handler", () => {
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
         errorDetails,
-        mockOutputChannel as any,
+        mockOutputChannel as unknown as OutputChannel,
         undefined,
       );
 

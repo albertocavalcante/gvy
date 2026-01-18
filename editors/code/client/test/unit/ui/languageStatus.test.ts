@@ -2,12 +2,45 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface LanguageStatusItem {
+  name: string;
+  text: string;
+  detail: string;
+  severity: number;
+  command: { command: string } | undefined;
+  dispose: sinon.SinonStub;
+}
+
+interface MockVscode {
+  languages: {
+    createLanguageStatusItem: sinon.SinonStub;
+  };
+  LanguageStatusSeverity: {
+    Information: number;
+    Warning: number;
+    Error: number;
+  };
+}
+
+interface LanguageStatusManager {
+  updateServerStatus: (state: string, version: string, message?: string, filesIndexed?: number, filesTotal?: number) => void;
+  updateJavaRuntime: (resolution: { path: string; version: number; source: string } | undefined) => void;
+  updateBuildTool: (buildTool: { type: string; buildFile: string } | undefined) => void;
+  dispose: () => void;
+}
+
+interface LanguageStatusModule {
+  createLanguageStatusManager: () => LanguageStatusManager;
+  getLanguageStatusManager: () => LanguageStatusManager | undefined;
+  disposeLanguageStatusManager: () => void;
+}
+
 describe("LanguageStatus", () => {
-  let mockVscode: any;
-  let languageStatusModule: any;
-  let serverStatusItemStub: any;
-  let javaRuntimeItemStub: any;
-  let buildToolItemStub: any;
+  let mockVscode: MockVscode;
+  let languageStatusModule: LanguageStatusModule;
+  let serverStatusItemStub: LanguageStatusItem;
+  let javaRuntimeItemStub: LanguageStatusItem;
+  let buildToolItemStub: LanguageStatusItem;
   let createLanguageStatusItemStub: sinon.SinonStub;
 
   beforeEach(() => {
@@ -84,7 +117,7 @@ describe("LanguageStatus", () => {
         "./statusBar": mockStatusBar,
         "../java/finder": mockFinder,
       },
-    );
+    ) as LanguageStatusModule;
   });
 
   afterEach(() => {
@@ -242,6 +275,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("stopped", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "groovy.restartServer",
@@ -252,6 +286,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("degraded", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "workbench.action.problems.focus",
@@ -262,6 +297,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("ready", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "groovy.showStatusMenu",

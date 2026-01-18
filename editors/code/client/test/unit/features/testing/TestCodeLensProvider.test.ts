@@ -2,12 +2,35 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface CodeLensType {
+  range: { start: { line: number }; end: { line: number } };
+  command?: { title: string; command: string; arguments?: unknown[] };
+}
+
+interface TestCodeLensProviderType {
+  new (testService: unknown): { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
+}
+
+type ProxyquireNoCallThru = {
+  noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType };
+};
+
 describe("TestCodeLensProvider", () => {
-  let TestCodeLensProvider: any;
-  let provider: any;
-  let testServiceMock: any;
-  let vscodeMock: any;
-  let documentMock: any;
+  let TestCodeLensProvider: TestCodeLensProviderType;
+  let provider: { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
+  let testServiceMock: { discoverTestsInWorkspace: sinon.SinonStub };
+  let vscodeMock: {
+    Range: new (start: unknown, end: unknown) => unknown;
+    Position: new (line: number, character: number) => unknown;
+    CodeLens: new (range: unknown, command?: unknown) => unknown;
+    Uri: { parse: sinon.SinonStub };
+    workspace: { getConfiguration: sinon.SinonStub };
+  };
+  let documentMock: {
+    uri: { toString: () => string; fsPath: string };
+    getText: sinon.SinonStub;
+    lineAt: sinon.SinonStub;
+  };
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -17,8 +40,8 @@ describe("TestCodeLensProvider", () => {
     vscodeMock = {
       Range: class Range {
         constructor(
-          public start: any,
-          public end: any,
+          public start: unknown,
+          public end: unknown,
         ) {}
       },
       Position: class Position {
@@ -29,8 +52,8 @@ describe("TestCodeLensProvider", () => {
       },
       CodeLens: class CodeLens {
         constructor(
-          public range: any,
-          public command?: any,
+          public range: unknown,
+          public command?: unknown,
         ) {}
       },
       Uri: {
@@ -41,7 +64,7 @@ describe("TestCodeLensProvider", () => {
       },
       workspace: {
         getConfiguration: sandbox.stub().callsFake((_section: string) => ({
-          get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+          get: sandbox.stub().callsFake((key: string, defaultValue: unknown) => {
             // Override codelens.test.source to "extension" so tests work with the new logic
             if (key === "codelens.test.source") {
               return "extension";
@@ -68,7 +91,7 @@ describe("TestCodeLensProvider", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as ProxyquireNoCallThru).noCallThru()(
       "../../../../src/features/testing/TestCodeLensProvider",
       {
         vscode: vscodeMock,
@@ -131,7 +154,7 @@ describe("TestCodeLensProvider", () => {
 
       // Check class-level CodeLens (with codicons)
       const classLens = codeLenses.find(
-        (lens: any) =>
+        (lens: CodeLensType) =>
           lens.command?.title === "$(play) Run All Tests" ||
           lens.command?.title === "$(debug) Debug All Tests",
       );
@@ -164,7 +187,7 @@ describe("TestCodeLensProvider", () => {
 
       // Check for "Run" CodeLenses (with codicon)
       const runTestLenses = codeLenses.filter(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(
         runTestLenses.length >= 2,
@@ -195,7 +218,7 @@ describe("TestCodeLensProvider", () => {
       );
 
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(
         runTestLens,
@@ -217,17 +240,29 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       const debugLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(debug) Debug",
+        (lens: CodeLensType) => lens.command?.title === "$(debug) Debug",
       );
 
       assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(debugLens, "Should have $(debug) Debug CodeLens");
 
-      assert.strictEqual(runLens.command.command, "groovy.test.run");
-      assert.strictEqual(debugLens.command.command, "groovy.test.debug");
+      assert.ok(
+        runLens && runLens.command,
+        "Should have $(play) Run CodeLens with command",
+      );
+      assert.ok(
+        debugLens && debugLens.command,
+        "Should have $(debug) Debug CodeLens with command",
+      );
+
+      const runCommand = runLens.command!;
+      const debugCommand = debugLens.command!;
+
+      assert.strictEqual(runCommand.command, "groovy.test.run");
+      assert.strictEqual(debugCommand.command, "groovy.test.debug");
     });
 
     it("should pass correct arguments to test commands", async () => {
@@ -245,18 +280,21 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
 
       assert.ok(runLens, "Should have $(play) Run CodeLens");
+      assert.ok(runLens.command, "Run lens should have command");
       assert.ok(runLens.command.arguments, "Command should have arguments");
+
+      const runCommand = runLens.command!;
       assert.strictEqual(
-        runLens.command.arguments.length,
+        runCommand.arguments!.length,
         1,
         "Should have one argument object",
       );
 
-      const args = runLens.command.arguments[0];
+      const args = runCommand.arguments![0] as { uri?: string; suite?: string; test?: string };
       assert.ok(args.uri, "Arguments should include uri");
       assert.ok(args.suite, "Arguments should include suite (class name)");
       assert.ok(args.test, "Arguments should include test (method name)");
@@ -287,11 +325,14 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runLens, "Should have CodeLens for single-quoted test name");
+      assert.ok(runLens.command, "Run lens should have command");
+      assert.ok(runLens.command.arguments, "Command should have arguments");
 
-      const args = runLens.command.arguments[0];
+      const runCommand = runLens.command!;
+      const args = runCommand.arguments![0] as { test?: string };
       assert.strictEqual(args.test, "test with single quotes");
     });
 
@@ -337,7 +378,7 @@ describe("TestCodeLensProvider", () => {
 
       // Check that CodeLens is on MyTest class line (line 4), not UtilityClass (line 0)
       const classLens = codeLenses.find(
-        (lens: any) =>
+        (lens: CodeLensType) =>
           lens.command?.title === "$(play) Run All Tests" ||
           lens.command?.title === "$(debug) Debug All Tests",
       );
@@ -368,7 +409,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for test with parameters",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test with parameters");
     });
@@ -390,7 +431,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for inline test",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test on same line as method");
     });
@@ -446,7 +487,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as any).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -476,7 +517,7 @@ describe("TestCodeLensProvider", () => {
     it("should show CodeLens when codelens.test.enabled config setting is enabled", async () => {
       // Mock workspace configuration
       const configMock = {
-        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+        get: sandbox.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "codelens.test.enabled") {
             return true;
           }
@@ -491,7 +532,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as any).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -520,7 +561,7 @@ describe("TestCodeLensProvider", () => {
     it("should return empty array when codelens.test.source is set to 'lsp'", async () => {
       // Mock workspace configuration
       const configMock = {
-        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+        get: sandbox.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "codelens.test.enabled") {
             return true;
           }
@@ -535,7 +576,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as any).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -611,7 +652,7 @@ describe("TestCodeLensProvider", () => {
       assert.ok(codeLenses.length >= 3, "Should handle Unicode test names");
 
       const runLenses = codeLenses.filter(
-        (lens: any) => lens.command?.title === "$(play) Run",
+        (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(
         runLenses.length >= 3,
@@ -640,7 +681,7 @@ describe("TestCodeLensProvider", () => {
     it("should handle codelens.test.source set to invalid value", async () => {
       // Mock workspace configuration with invalid value
       const configMock = {
-        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+        get: sandbox.stub().callsFake((key: string, defaultValue: unknown) => {
           if (key === "codelens.test.enabled") {
             return true;
           }
@@ -655,7 +696,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as any).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
