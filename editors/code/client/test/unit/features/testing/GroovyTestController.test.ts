@@ -8,6 +8,7 @@ interface GroovyTestControllerType {
 
 interface ExecutionServiceMock {
   runTests: sinon.SinonStub;
+  debugTests: sinon.SinonStub;
 }
 
 interface TestServiceMock {
@@ -30,11 +31,14 @@ interface VscodeMock {
   workspace: {
     workspaceFolders: { uri: { toString: () => string }; name: string; index: number }[];
     getWorkspaceFolder: sinon.SinonStub;
+    createFileSystemWatcher: sinon.SinonStub;
+    onDidOpenTextDocument: sinon.SinonStub;
+    onDidSaveTextDocument: sinon.SinonStub;
   };
   Range: new (start: unknown, end: unknown) => { start: unknown; end: unknown };
   Position: new (line: number, character: number) => { line: number; character: number };
   Uri: { parse: (str: string) => { toString: () => string } };
-  TestRunProfileKind: { Run: number; Debug: number };
+  TestRunProfileKind: { Run: number; Debug: number; Coverage: number };
 }
 
 interface TestControllerMock {
@@ -46,8 +50,8 @@ interface TestControllerMock {
     replace: sinon.SinonStub;
   };
   createRunProfile: sinon.SinonStub;
-  resolveHandler: unknown;
-  refreshHandler: unknown;
+  resolveHandler?: (item: unknown) => Promise<void>;
+  refreshHandler?: () => void;
 }
 
 describe("GroovyTestController", () => {
@@ -307,9 +311,9 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: unknown) => call.args[0] === "groovy.test.run",
+        (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall.args[1];
+      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -346,9 +350,9 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: sinon.SinonSpyCall) => call.args[0] === "groovy.test.run",
+        (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall.args[1];
+      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -428,9 +432,9 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: sinon.SinonSpyCall) => call.args[0] === "groovy.test.run",
+        (call) => call.args[0] === "groovy.test.run",
       );
-      const runTestHandler = runTestCall.args[1];
+      const runTestHandler = runTestCall?.args[1] as (args: unknown) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -501,8 +505,8 @@ describe("GroovyTestController", () => {
 
       // Act: Run with wildcard (simulating CodeLens "Run All Tests" click)
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: [string, unknown]) => args[0] === "groovy.test.run",
-      );
+        (args: unknown[]) => args[0] === "groovy.test.run",
+      ) as [string, (args: unknown) => Promise<void>] | undefined;
       assert.ok(runCommand, "groovy.test.run command should be registered");
 
       if (runCommand && runCommand[1]) {
@@ -558,8 +562,8 @@ describe("GroovyTestController", () => {
 
       // Act: Run specific test
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: [string, unknown]) => args[0] === "groovy.test.run",
-      );
+        (args: unknown[]) => args[0] === "groovy.test.run",
+      ) as [string, (args: unknown) => Promise<void>] | undefined;
       if (runCommand && runCommand[1]) {
         await runCommand[1]({
           suite: suiteName,
