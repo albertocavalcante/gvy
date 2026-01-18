@@ -275,6 +275,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("stopped", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "groovy.restartServer",
@@ -285,6 +286,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("degraded", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "workbench.action.problems.focus",
