@@ -2,12 +2,31 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
 
+// Type definitions for mocks
+interface MockConfig {
+  get: sinon.SinonStub;
+}
+
+interface MockVscode {
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+  };
+}
+
+interface ToolRegistryClass {
+  new (): { isToolEnabled(name: string): boolean };
+}
+
+interface ToolRegistryModuleType {
+  ToolRegistry: ToolRegistryClass;
+}
+
 describe("ToolRegistry", () => {
   let sandbox: sinon.SinonSandbox;
-  let mockVscode: unknown;
-  let mockConfig: unknown;
+  let mockVscode: MockVscode;
+  let mockConfig: MockConfig;
   let getConfigurationStub: sinon.SinonStub;
-  let ToolRegistryModule: unknown;
+  let ToolRegistryModule: ToolRegistryModuleType;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -32,7 +51,7 @@ describe("ToolRegistry", () => {
       {
         vscode: mockVscode,
       },
-    );
+    ) as ToolRegistryModuleType;
   });
 
   afterEach(() => {
