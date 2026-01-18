@@ -55,9 +55,7 @@ import org.codehaus.groovy.ast.expr.VariableExpression
  * Handles ~420 lines of expression conversion logic.
  */
 @Suppress("TooManyFunctions") // Converter pattern requires one function per expression type
-internal class ExpressionConverter(
-    private val setRange: (Node, ASTNode) -> Unit,
-) {
+internal class ExpressionConverter(private val setRange: (Node, ASTNode) -> Unit) {
 
     /**
      * Converts a Groovy method call expression.

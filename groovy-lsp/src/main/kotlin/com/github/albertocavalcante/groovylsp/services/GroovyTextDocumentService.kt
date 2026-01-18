@@ -758,7 +758,7 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             logger.debug { "Semantic tokens requested for ${params.textDocument.uri}" }
             val uri = URI.create(params.textDocument.uri)
-            semanticTokensHandler.getSemanticTokens(uri) ?: SemanticTokens(emptyList())
+            semanticTokensHandler.getSemanticTokens(uri)
         }
 
     private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =

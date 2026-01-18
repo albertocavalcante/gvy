@@ -33,10 +33,10 @@ class SemanticTokensHandler(
      * Generate semantic tokens for a document.
      *
      * @param uri Document URI
-     * @return Encoded semantic tokens for LSP transmission, or null if compilation failed
+     * @return Encoded semantic tokens for LSP transmission. Returns an empty token set if compilation fails or no AST is available.
      */
     @Suppress("ReturnCount") // Early returns for error cases improve readability
-    suspend fun getSemanticTokens(uri: URI): SemanticTokens? {
+    suspend fun getSemanticTokens(uri: URI): SemanticTokens {
         @Suppress("TooGenericExceptionCaught") // Catch all exceptions to prevent LSP crashes
         try {
             // Ensure document is compiled
