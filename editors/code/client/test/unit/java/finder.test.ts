@@ -379,8 +379,9 @@ describe("JDK Finder Module - Public API", () => {
           "Should have sourceDescription",
         );
         assert.strictEqual(typeof result[0].sourceDescription, "string");
+        assert.ok(result[0].sourceDescription, "sourceDescription should be defined");
         assert.ok(
-          result[0].sourceDescription.length > 0,
+          result[0].sourceDescription!.length > 0,
           "sourceDescription should not be empty",
         );
       });
