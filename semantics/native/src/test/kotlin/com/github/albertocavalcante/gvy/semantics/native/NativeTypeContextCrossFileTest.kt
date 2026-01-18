@@ -501,7 +501,7 @@ class NativeTypeContextCrossFileTest {
         @Suppress("UNCHECKED_CAST")
         val cache = contextCacheField.get(
             semantics,
-        ) as java.util.concurrent.ConcurrentHashMap<ModuleNode, NativeTypeContext>
+        ) as Map<ModuleNode, NativeTypeContext>
         cache[module] ?: throw IllegalStateException("Context not found for module after injection")
     } catch (e: NoSuchFieldException) {
         throw IllegalStateException("Could not access contextCache field", e)

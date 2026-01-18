@@ -14,7 +14,8 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
+import java.util.WeakHashMap
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -33,8 +34,8 @@ class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
-    // Thread-safe cache of contexts per module
-    private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
+    // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
+    private val contextCache = Collections.synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
     // Current module for single-parameter API compatibility
     private var currentModule: ModuleNode? = null
