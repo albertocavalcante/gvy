@@ -189,7 +189,6 @@ class BspSession(
         logger.info { "Closing BSP session" }
         closed = true
         @Suppress("TooGenericExceptionCaught") // Cleanup resilience
-
         try {
             client.clearListeners()
             connection.close()

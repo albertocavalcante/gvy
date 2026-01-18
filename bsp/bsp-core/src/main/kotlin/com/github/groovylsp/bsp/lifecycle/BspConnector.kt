@@ -92,7 +92,6 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
     ): Either<BspConnectionError, Pair<BuildServer, Pair<Process, BspClientHandler>>> {
         logger.info { "Launching BSP server: ${details.argv.joinToString(" ")}" }
         @Suppress("TooGenericExceptionCaught") // Process launch can fail with IOException, SecurityException, etc.
-
         val process = try {
             ProcessBuilder(details.argv)
                 .directory(workspace.toFile())
@@ -115,7 +114,6 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         val client = BspClientHandler()
 
         @Suppress("TooGenericExceptionCaught") // LSP4J launcher creation can fail with various exceptions
-
         val launcher = try {
             Launcher.Builder<BuildServer>()
                 .setRemoteInterface(BuildServer::class.java)
@@ -132,8 +130,8 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
         val server = launcher.remoteProxy
 
         // Start listening for messages in background
+        @Suppress("TooGenericExceptionCaught") // BSP protocol errors
         CompletableFuture.runAsync {
-            @Suppress("TooGenericExceptionCaught") // BSP protocol errors
             try {
                 launcher.startListening().get()
             } catch (e: Exception) {
@@ -190,7 +188,6 @@ class BspConnector(private val workspace: Path, private val config: BspConnector
             BuildClientCapabilities(config.supportedLanguages),
         )
         @Suppress("TooGenericExceptionCaught") // BSP initialization failures: timeout, protocol mismatch, etc.
-
         return try {
             // Initialize the server
             val initResult = server.buildInitialize(params).await()
