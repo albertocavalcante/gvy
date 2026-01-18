@@ -7,6 +7,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.ast.stmt.DoWhileStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.ast.stmt.ForStatement
@@ -94,76 +95,128 @@ object DeclarationWalker {
         out: MutableList<DeclarationInfo>,
     ) {
         when (stmt) {
-            is ExpressionStatement -> {
-                (stmt.expression as? DeclarationExpression)?.let { decl ->
-                    out += extractDeclaration(decl, context, captureMapKeys)
-                }
-            }
-
+            is ExpressionStatement -> walkExpressionStatement(stmt, context, captureMapKeys, out)
             is BlockStatement -> walkBlock(stmt, context, captureMapKeys, out)
-            is IfStatement -> {
-                walkChild(stmt.ifBlock, context, captureMapKeys, out)
-                walkChild(stmt.elseBlock, context, captureMapKeys, out)
-            }
-
-            is ForStatement -> {
-                // Capture the loop variable declaration (e.g., 'i' in 'for (int i = 0; ...)' or 'item' in 'for (item in list)')
-                val loopVar = stmt.variable
-                // FOR_LOOP_DUMMY is a placeholder parameter when there's no loop variable
-                if (loopVar != null && loopVar !== ForStatement.FOR_LOOP_DUMMY && loopVar.name != null) {
-                    val calculatedType = context.calculateType(loopVar)
-                    out += DeclarationInfo(
-                        name = loopVar.name,
-                        inferredType = calculatedType,
-                        line = loopVar.lineNumber,
-                        column = loopVar.columnNumber,
-                    )
-                }
-
-                // Handle C-style for loops: for (int i = 0; i < 10; i++)
-                // The 'int i = 0' is hidden inside collectionExpression which is a ClosureListExpression
-                val collectionExpr = stmt.collectionExpression
-                if (collectionExpr is ClosureListExpression) {
-                    collectionExpr.expressions.forEach { expr ->
-                        if (expr is DeclarationExpression) {
-                            out += extractDeclaration(expr, context, captureMapKeys)
-                        }
-                    }
-                }
-
-                walkChild(stmt.loopBlock, context, captureMapKeys, out)
-            }
-
+            is IfStatement -> walkIfStatement(stmt, context, captureMapKeys, out)
+            is ForStatement -> walkForStatement(stmt, context, captureMapKeys, out)
             is WhileStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
             is DoWhileStatement -> walkChild(stmt.loopBlock, context, captureMapKeys, out)
-            is TryCatchStatement -> {
-                walkChild(stmt.tryStatement, context, captureMapKeys, out)
-                stmt.catchStatements.forEach { catchStmt ->
-                    // Capture catch exception variable
-                    val catchVar = catchStmt.variable
-                    if (catchVar != null) {
-                        val calculatedType = context.calculateType(catchVar)
-                        val varType = calculatedType as? SemanticType
-                            ?: SemanticType.Unknown("catch variable type inference")
-                        out += DeclarationInfo(
-                            name = catchVar.name,
-                            inferredType = varType,
-                            line = catchVar.lineNumber,
-                            column = catchVar.columnNumber,
-                        )
-                    }
-                    walkChild(catchStmt.code, context, captureMapKeys, out)
-                }
-                stmt.finallyStatement?.let { walkChild(it, context, captureMapKeys, out) }
-            }
-
-            is SwitchStatement -> {
-                stmt.caseStatements.forEach { walkChild(it.code, context, captureMapKeys, out) }
-                stmt.defaultStatement?.let { walkChild(it, context, captureMapKeys, out) }
-            }
-
+            is TryCatchStatement -> walkTryCatchStatement(stmt, context, captureMapKeys, out)
+            is SwitchStatement -> walkSwitchStatement(stmt, context, captureMapKeys, out)
             is SynchronizedStatement -> walkChild(stmt.code, context, captureMapKeys, out)
         }
+    }
+
+    private fun walkExpressionStatement(
+        stmt: ExpressionStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        (stmt.expression as? DeclarationExpression)?.let { decl ->
+            out += extractDeclaration(decl, context, captureMapKeys)
+        }
+    }
+
+    private fun walkIfStatement(
+        stmt: IfStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        walkChild(stmt.ifBlock, context, captureMapKeys, out)
+        walkChild(stmt.elseBlock, context, captureMapKeys, out)
+    }
+
+    private fun walkForStatement(
+        stmt: ForStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        // Capture the loop variable declaration
+        extractForLoopVariable(stmt, context, out)
+
+        // Handle C-style for loops
+        extractCStyleForDeclarations(stmt, context, captureMapKeys, out)
+
+        walkChild(stmt.loopBlock, context, captureMapKeys, out)
+    }
+
+    private fun extractForLoopVariable(
+        stmt: ForStatement,
+        context: NativeTypeContext,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        val loopVar = stmt.variable
+        // FOR_LOOP_DUMMY is a placeholder parameter when there's no loop variable
+        if (loopVar != null && loopVar !== ForStatement.FOR_LOOP_DUMMY && loopVar.name != null) {
+            val calculatedType = context.calculateType(loopVar)
+            out += DeclarationInfo(
+                name = loopVar.name,
+                inferredType = calculatedType,
+                line = loopVar.lineNumber,
+                column = loopVar.columnNumber,
+            )
+        }
+    }
+
+    private fun extractCStyleForDeclarations(
+        stmt: ForStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        // The 'int i = 0' is hidden inside collectionExpression which is a ClosureListExpression
+        val collectionExpr = stmt.collectionExpression
+        if (collectionExpr is ClosureListExpression) {
+            collectionExpr.expressions.forEach { expr ->
+                if (expr is DeclarationExpression) {
+                    out += extractDeclaration(expr, context, captureMapKeys)
+                }
+            }
+        }
+    }
+
+    private fun walkTryCatchStatement(
+        stmt: TryCatchStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        walkChild(stmt.tryStatement, context, captureMapKeys, out)
+        stmt.catchStatements.forEach { catchStmt ->
+            extractCatchVariable(catchStmt, context, out)
+            walkChild(catchStmt.code, context, captureMapKeys, out)
+        }
+        stmt.finallyStatement?.let { walkChild(it, context, captureMapKeys, out) }
+    }
+
+    private fun extractCatchVariable(
+        catchStmt: CatchStatement,
+        context: NativeTypeContext,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        val catchVar = catchStmt.variable ?: return
+        val calculatedType = context.calculateType(catchVar)
+        val varType = calculatedType as? SemanticType
+            ?: SemanticType.Unknown("catch variable type inference")
+        out += DeclarationInfo(
+            name = catchVar.name,
+            inferredType = varType,
+            line = catchVar.lineNumber,
+            column = catchVar.columnNumber,
+        )
+    }
+
+    private fun walkSwitchStatement(
+        stmt: SwitchStatement,
+        context: NativeTypeContext,
+        captureMapKeys: Boolean,
+        out: MutableList<DeclarationInfo>,
+    ) {
+        stmt.caseStatements.forEach { walkChild(it.code, context, captureMapKeys, out) }
+        stmt.defaultStatement?.let { walkChild(it, context, captureMapKeys, out) }
     }
 
     /**

@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
@@ -44,45 +45,53 @@ class GroovySemantics(
      */
     fun inject(module: ModuleNode) {
         currentModule = module
-        if (!contextCache.containsKey(module)) {
-            val scope = buildRootScope(module)
-            val context = NativeTypeContext(
-                typeSolver = typeSolver,
-                calculatorRegistry = calculatorRegistry,
-                scope = scope,
-                isStaticCompilation = hasCompileStatic(module),
-            )
+        if (contextCache.containsKey(module)) return
 
-            // Populate script variables from top-level declarations
-            module.statementBlock?.statements?.forEach { stmt ->
-                if (stmt is ExpressionStatement &&
-                    stmt.expression is DeclarationExpression
-                ) {
-                    val decl = stmt.expression as DeclarationExpression
-                    val name = decl.variableExpression.name
-                    val type = calculatorRegistry.calculate(decl, context)
-                    scope.defineVariable(name, type)
-                }
+        val scope = buildRootScope(module)
+        val context = NativeTypeContext(
+            typeSolver = typeSolver,
+            calculatorRegistry = calculatorRegistry,
+            scope = scope,
+            isStaticCompilation = hasCompileStatic(module),
+        )
+
+        populateScriptVariables(module, scope, context)
+        populateClassMethodVariables(module, scope, context)
+
+        contextCache[module] = context
+    }
+
+    private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
+        module.statementBlock?.statements?.forEach { stmt ->
+            if (stmt is ExpressionStatement && stmt.expression is DeclarationExpression) {
+                val decl = stmt.expression as DeclarationExpression
+                val name = decl.variableExpression.name
+                val type = calculatorRegistry.calculate(decl, context)
+                scope.defineVariable(name, type)
             }
+        }
+    }
 
-            // Populate method parameters and local variables
-            for (classNode in module.classes) {
-                for (method in classNode.methods) {
-                    // Register method parameters
-                    for (param in method.parameters) {
-                        val paramType = NativeTypeContext.fromClassNode(param.type)
-                        scope.defineVariable(param.name, paramType)
-                    }
-
-                    // Traverse method body and register declarations
-                    val code = method.code
-                    if (code is BlockStatement) {
-                        populateScopeFromBlock(code, scope, context)
-                    }
-                }
+    private fun populateClassMethodVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
+        for (classNode in module.classes) {
+            for (method in classNode.methods) {
+                registerMethodParameters(method, scope)
+                registerMethodLocalVariables(method, scope, context)
             }
+        }
+    }
 
-            contextCache[module] = context
+    private fun registerMethodParameters(method: MethodNode, scope: NativeScope) {
+        for (param in method.parameters) {
+            val paramType = NativeTypeContext.fromClassNode(param.type)
+            scope.defineVariable(param.name, paramType)
+        }
+    }
+
+    private fun registerMethodLocalVariables(method: MethodNode, scope: NativeScope, context: NativeTypeContext) {
+        val code = method.code
+        if (code is BlockStatement) {
+            populateScopeFromBlock(code, scope, context)
         }
     }
 
