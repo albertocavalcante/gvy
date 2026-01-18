@@ -48,19 +48,8 @@ object ProjectDiscovery {
      * @param workspaceRoot The root directory of the workspace
      * @return List of directories containing Gradle build files
      */
-    fun findGradleSubprojects(workspaceRoot: File): List<File> {
-        val subprojects = mutableListOf<File>()
-
-        workspaceRoot.listFiles()?.forEach { dir ->
-            if (dir.isDirectory && dir.name != "build" && dir.name != ".gradle") {
-                val hasBuildGradle = File(dir, "build.gradle").exists() ||
-                    File(dir, "build.gradle.kts").exists()
-                if (hasBuildGradle) {
-                    subprojects.add(dir)
-                }
-            }
-        }
-
-        return subprojects
-    }
+    fun findGradleSubprojects(workspaceRoot: File): List<File> = workspaceRoot.listFiles()
+        ?.filter { it.isDirectory && it.name !in setOf("build", ".gradle") }
+        ?.filter { File(it, "build.gradle").exists() || File(it, "build.gradle.kts").exists() }
+        ?: emptyList()
 }
