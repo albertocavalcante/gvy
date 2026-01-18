@@ -5,6 +5,7 @@ import {
   TestSuite,
 } from "../../../../src/features/testing/TestService";
 import { RequestType } from "vscode-languageserver-protocol";
+import type { LanguageClient } from "vscode-languageclient/node";
 
 interface MockLanguageClient {
   sendRequest: sinon.SinonStub;
@@ -20,7 +21,9 @@ describe("TestService", () => {
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    testService = new TestService(mockLanguageClient);
+    testService = new TestService(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {

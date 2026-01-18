@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import * as sinon from "sinon";
 import { GroovyReplClient } from "../../../../src/features/repl/GroovyReplClient";
+import type { LanguageClient } from "vscode-languageclient/node";
 
 interface MockLanguageClient {
   sendRequest: sinon.SinonStub;
@@ -16,7 +17,9 @@ describe("GroovyReplClient", () => {
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    replClient = new GroovyReplClient(mockLanguageClient);
+    replClient = new GroovyReplClient(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {
