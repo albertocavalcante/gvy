@@ -41,6 +41,7 @@ const MockSymbolKind = {
 };
 
 // Type for the VS Code mock used in tests
+// This is intentionally incomplete to only include what's needed for testing
 interface MockVscodeType {
   Uri: typeof MockUri;
   Position: typeof MockPosition;
@@ -77,7 +78,8 @@ describe("LSPToolService", () => {
       },
     };
 
-    service = new LSPToolService(mockVscode as typeof import("vscode"), getClientStub);
+    // Cast through unknown to bypass type checking for the incomplete mock
+    service = new LSPToolService(mockVscode as never, getClientStub);
   });
 
   afterEach(() => {
