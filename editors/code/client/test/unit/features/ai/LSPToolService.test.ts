@@ -77,8 +77,7 @@ describe("LSPToolService", () => {
       },
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    service = new LSPToolService(mockVscode as any, getClientStub);
+    service = new LSPToolService(mockVscode as typeof import("vscode"), getClientStub);
   });
 
   afterEach(() => {
