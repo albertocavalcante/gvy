@@ -77,7 +77,7 @@ jobs:
               echo "### Execution Details"
               echo '```json'
               if jq -e . "$LOG_FILE" >/dev/null 2>&1; then
-                jq -r 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' "$LOG_FILE" | head -200
+                jq 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' "$LOG_FILE" | head -200
               else
                 echo "# Warning: Log is not valid JSON, showing raw content:"
                 head -200 "$LOG_FILE"
