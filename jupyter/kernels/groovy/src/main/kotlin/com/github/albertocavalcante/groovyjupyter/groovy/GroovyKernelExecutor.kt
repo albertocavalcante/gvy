@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.groovy
 import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteResult
 import com.github.albertocavalcante.groovyjupyter.kernel.core.GroovyKernelExecutorAdapter
 import com.github.albertocavalcante.groovyjupyter.kernel.core.KernelExecutor
-import com.github.albertocavalcante.groovyrepl.GroovyExecutor
+import com.github.albertocavalcante.gvy.repl.GroovyExecutor
 import io.github.oshai.kotlinlogging.KotlinLogging
 
 class GroovyKernelExecutor : KernelExecutor {

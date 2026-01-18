@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovyjupyter.kernel.core.GroovyKernelExecut
 import com.github.albertocavalcante.groovyjupyter.protocol.Header
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
-import com.github.albertocavalcante.groovyrepl.GroovyExecutor
+import com.github.albertocavalcante.gvy.repl.GroovyExecutor
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -2,7 +2,7 @@ package com.github.albertocavalcante.groovyjupyter.kernel.core
 
 import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteResult
 import com.github.albertocavalcante.groovyjupyter.handlers.ExecuteStatus
-import com.github.albertocavalcante.groovyrepl.GroovyExecutor
+import com.github.albertocavalcante.gvy.repl.GroovyExecutor
 
 /**
  * Adapter that adapts [GroovyExecutor] to [KernelExecutor].
