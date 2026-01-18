@@ -65,7 +65,7 @@ describe("LSPToolService", () => {
       },
     };
 
-    service = new LSPToolService(mockVscode, getClientStub);
+    service = new LSPToolService(mockVscode as any, getClientStub);
   });
 
   afterEach(() => {
