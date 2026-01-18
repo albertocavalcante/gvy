@@ -4,7 +4,7 @@ import * as proxyquire from "proxyquire";
 
 interface StatusBarItem {
   text: string;
-  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string };
+  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string } | undefined;
   backgroundColor: { id: string } | undefined;
   color: unknown;
   command: unknown;
