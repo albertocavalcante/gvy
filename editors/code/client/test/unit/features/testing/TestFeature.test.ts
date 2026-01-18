@@ -36,7 +36,18 @@ describe("TestFeature", () => {
       encode: (text: string) => Buffer.from(text, "utf-8"),
     };
 
+    // Mock FileSystemError
+    class MockFileSystemError extends Error {
+      code: string;
+      constructor(message: string, code: string) {
+        super(message);
+        this.code = code;
+        this.name = "FileSystemError";
+      }
+    }
+
     mockVscode = {
+      FileSystemError: MockFileSystemError,
       workspace: {
         fs: {
           stat: fsStatStub,
@@ -108,8 +119,12 @@ describe("TestFeature", () => {
         getText: () => "package com.example\nclass MyClass {}",
       };
 
-      // Mock fs.stat to throw (file doesn't exist)
-      fsStatStub.rejects(new Error("File not found"));
+      // Mock fs.stat to throw FileNotFound (file doesn't exist)
+      const fileNotFoundError = new mockVscode.FileSystemError(
+        "File not found",
+        "FileNotFound",
+      );
+      fsStatStub.rejects(fileNotFoundError);
 
       // Mock document symbol provider
       executeCommandStub
@@ -163,8 +178,12 @@ describe("TestFeature", () => {
         getText: () => "package com.example\nclass MyClass {}",
       };
 
-      // Mock fs.stat to throw (file doesn't exist)
-      fsStatStub.rejects(new Error("File not found"));
+      // Mock fs.stat to throw FileNotFound (file doesn't exist)
+      const fileNotFoundError = new mockVscode.FileSystemError(
+        "File not found",
+        "FileNotFound",
+      );
+      fsStatStub.rejects(fileNotFoundError);
 
       // Mock document symbol provider
       executeCommandStub
@@ -212,8 +231,12 @@ describe("TestFeature", () => {
         getText: () => "package com.example\nclass MyClass {}",
       };
 
-      // Mock fs.stat to throw (file doesn't exist)
-      fsStatStub.rejects(new Error("File not found"));
+      // Mock fs.stat to throw FileNotFound (file doesn't exist)
+      const fileNotFoundError = new mockVscode.FileSystemError(
+        "File not found",
+        "FileNotFound",
+      );
+      fsStatStub.rejects(fileNotFoundError);
 
       // Mock document symbol provider
       executeCommandStub
@@ -315,8 +338,12 @@ describe("TestFeature", () => {
         getText: () => "package com.example\nclass MyClass {}",
       };
 
-      // Mock fs.stat to throw (file doesn't exist)
-      fsStatStub.rejects(new Error("File not found"));
+      // Mock fs.stat to throw FileNotFound (file doesn't exist)
+      const fileNotFoundError = new mockVscode.FileSystemError(
+        "File not found",
+        "FileNotFound",
+      );
+      fsStatStub.rejects(fileNotFoundError);
 
       // Mock fs.createDirectory to throw
       fsCreateDirectoryStub.rejects(new Error("Permission denied"));
@@ -491,8 +518,12 @@ describe("TestFeature", () => {
       };
       const generatedTestDoc = { uri: generatedTestUri };
 
-      // Mock fs.stat to throw (file doesn't exist)
-      fsStatStub.rejects(new Error("File not found"));
+      // Mock fs.stat to throw FileNotFound (file doesn't exist)
+      const fileNotFoundError = new mockVscode.FileSystemError(
+        "File not found",
+        "FileNotFound",
+      );
+      fsStatStub.rejects(fileNotFoundError);
 
       // Mock document symbol provider
       executeCommandStub

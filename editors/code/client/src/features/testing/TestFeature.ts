@@ -85,8 +85,16 @@ export class TestFeature implements vscode.Disposable {
         );
         // TODO: V2 - Prompt to overwrite or merge
         return;
-      } catch {
-        // File doesn't exist, which is what we want
+      } catch (error) {
+        if (
+          error instanceof vscode.FileSystemError &&
+          error.code === "FileNotFound"
+        ) {
+          // File doesn't exist, which is what we want. Continue.
+        } else {
+          // Re-throw other unexpected errors to be caught by the outer try-catch block.
+          throw error;
+        }
       }
 
       // Ensure directory exists using async API

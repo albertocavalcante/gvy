@@ -125,12 +125,12 @@ describe("GitHubReleaseProvider", () => {
       const provider = new GitHubReleaseProvider();
       await provider.fetchLatestRelease();
 
-      const [, _options] = fetchStub.firstCall.args;
+      const [, options] = fetchStub.firstCall.args;
       assert.strictEqual(
-        _options.headers["Accept"],
+        options.headers["Accept"],
         "application/vnd.github.v3+json",
       );
-      assert.strictEqual(_options.headers["User-Agent"], "gvy-ide-extension");
+      assert.strictEqual(options.headers["User-Agent"], "gvy-ide-extension");
     });
 
     it("uses AbortController signal for timeout", async () => {
