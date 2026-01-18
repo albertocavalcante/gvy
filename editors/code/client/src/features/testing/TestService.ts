@@ -9,6 +9,8 @@ export interface Test {
 export interface TestSuite {
   uri: string;
   suite: string;
+  /** 1-indexed line number where the test class is declared */
+  line: number;
   tests: Test[];
 }
 
