@@ -18,9 +18,15 @@ object XmlUtils {
      * @return A configured DocumentBuilder instance
      */
     fun createSecureDocumentBuilder(): DocumentBuilder {
-        val dbFactory = DocumentBuilderFactory.newInstance()
-        // Disable external entities for security (XXE protection)
-        dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        val dbFactory = DocumentBuilderFactory.newInstance().apply {
+            // Apply recommended security settings for XXE protection, following OWASP guidelines.
+            setFeature("http://javax.xml.XMLConstants/feature/secure-processing", true)
+            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+            setFeature("http://xml.org/sax/features/external-general-entities", false)
+            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+            isXIncludeAware = false
+            isExpandEntityReferences = false
+        }
         return dbFactory.newDocumentBuilder()
     }
 }
