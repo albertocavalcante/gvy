@@ -19,10 +19,15 @@ class MockFileSystem implements IFileSystem {
   }
 }
 
+// Mock extension context interface
+interface MockExtensionContext {
+  asAbsolutePath: (p: string) => string;
+}
+
 describe("ServerResolver", () => {
   let resolver: ServerResolver;
   let mockFs: MockFileSystem;
-  let mockContext: unknown;
+  let mockContext: MockExtensionContext;
 
   beforeEach(() => {
     mockFs = new MockFileSystem();
@@ -50,8 +55,8 @@ describe("ServerResolver", () => {
     try {
       await resolver.resolve(mockContext, { serverPath: customPath });
       expect.fail("Should have thrown an error");
-    } catch (error: unknown) {
-      expect(error.message).to.contain("Custom server path not found");
+    } catch (error) {
+      expect((error as Error).message).to.contain("Custom server path not found");
     }
   });
 
@@ -73,8 +78,8 @@ describe("ServerResolver", () => {
     try {
       await resolver.resolve(mockContext, { serverPath: undefined });
       expect.fail("Should have thrown an error");
-    } catch (error: unknown) {
-      expect(error.message).to.contain("Groovy Language Server JAR not found");
+    } catch (error) {
+      expect((error as Error).message).to.contain("Groovy Language Server JAR not found");
     }
   });
 });
