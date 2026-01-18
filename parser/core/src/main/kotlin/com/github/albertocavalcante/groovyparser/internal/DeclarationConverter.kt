@@ -19,13 +19,9 @@ import java.lang.reflect.Modifier
 /**
  * Converts class, method, field, and constructor declarations.
  *
- * Handles ~150 lines of declaration conversion logic.
+ * Handles ~190 lines of declaration conversion logic.
  */
-internal class DeclarationConverter(
-    private val setRange: (Node, ASTNode) -> Unit,
-    @Suppress("UnusedPrivateProperty") // Reserved for future internal comment attachment logic
-    private val commentAttacher: (Node, ASTNode) -> Unit,
-) {
+internal class DeclarationConverter(private val setRange: (Node, ASTNode) -> Unit) {
 
     /**
      * Converts a Groovy ClassNode to a ClassDeclaration.

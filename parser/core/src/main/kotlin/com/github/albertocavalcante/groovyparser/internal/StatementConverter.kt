@@ -38,7 +38,7 @@ import org.codehaus.groovy.ast.stmt.WhileStatement as GroovyWhileStatement
 /**
  * Converts control flow statements (if, for, while, try, switch, etc.).
  *
- * Handles ~200 lines of statement conversion logic.
+ * Handles ~280 lines of statement conversion logic.
  */
 internal class StatementConverter(private val setRange: (Node, ASTNode) -> Unit) {
 

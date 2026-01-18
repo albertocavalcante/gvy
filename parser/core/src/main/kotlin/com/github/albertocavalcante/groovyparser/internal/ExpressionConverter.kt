@@ -52,16 +52,11 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 /**
  * Converts binary, unary, ternary, and other complex expressions.
  *
- * Handles ~250 lines of expression conversion logic.
+ * Handles ~420 lines of expression conversion logic.
  */
 @Suppress("TooManyFunctions") // Converter pattern requires one function per expression type
 internal class ExpressionConverter(
     private val setRange: (Node, ASTNode) -> Unit,
-    @Suppress("UnusedPrivateProperty") // Used for future annotation conversion within expressions
-    private val convertAnnotations: (
-        List<org.codehaus.groovy.ast.AnnotationNode>?,
-        com.github.albertocavalcante.groovyparser.ast.Node,
-    ) -> Unit,
 ) {
 
     /**

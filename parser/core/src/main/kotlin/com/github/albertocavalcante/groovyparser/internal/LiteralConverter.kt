@@ -20,7 +20,7 @@ import org.codehaus.groovy.ast.expr.RangeExpression
 /**
  * Converts literal value expressions (strings, numbers, lists, maps, ranges).
  *
- * Handles ~130 lines of literal-specific conversion logic.
+ * Handles 120 lines of literal-specific conversion logic.
  */
 internal class LiteralConverter(private val setRange: (Node, ASTNode) -> Unit) {
 
@@ -76,7 +76,10 @@ internal class LiteralConverter(private val setRange: (Node, ASTNode) -> Unit) {
     /**
      * Converts a Groovy map expression.
      */
-    fun convertMap(expr: MapExpression, convertExpr: (org.codehaus.groovy.ast.expr.Expression) -> Expression): MapExpr {
+    fun convertMap(
+        expr: MapExpression,
+        convertExpr: (org.codehaus.groovy.ast.expr.Expression) -> Expression,
+    ): MapExpr {
         val map = MapExpr()
         expr.mapEntryExpressions?.forEach { entry ->
             val key = convertExpr(entry.keyExpression)

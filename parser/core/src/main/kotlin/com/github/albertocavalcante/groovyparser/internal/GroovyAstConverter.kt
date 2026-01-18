@@ -68,12 +68,10 @@ internal class GroovyAstConverter {
     private val literalConverter = LiteralConverter(setRange = ::setRange)
     private val expressionConverter = ExpressionConverter(
         setRange = ::setRange,
-        convertAnnotations = ::convertAnnotations,
     )
     private val statementConverter = StatementConverter(setRange = ::setRange)
     private val declarationConverter = DeclarationConverter(
         setRange = ::setRange,
-        commentAttacher = ::attachLeadingComment,
     )
 
     /**
