@@ -40,6 +40,10 @@ interface ProxyquireModule {
   TestEventConsumer: TestEventConsumerClass;
 }
 
+type ProxyquireNoCallThru = {
+  noCallThru: () => (path: string, stubs: unknown) => ProxyquireModule;
+};
+
 describe("TestEventConsumer", () => {
   let TestEventConsumer: TestEventConsumerClass;
   let consumer: TestEventConsumerInstance;
@@ -89,7 +93,7 @@ describe("TestEventConsumer", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => ProxyquireModule }).noCallThru()(
+    const module = (proxyquire as ProxyquireNoCallThru).noCallThru()(
       "../../../../src/features/testing/TestEventConsumer",
       {
         vscode: vscodeMock,
