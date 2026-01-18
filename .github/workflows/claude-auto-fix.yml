@@ -40,6 +40,7 @@ jobs:
         uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             ISSUE NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
@@ -90,6 +91,6 @@ jobs:
           # Allow: Read/write code, run tests/build, create PR, comment on issue
           # Prevent: Dangerous operations (git add ., push --force, rm -rf)
           claude_args: |
-            --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add :*),Bash(git commit:*),Bash(git push:*),Bash(gh pr :*),Bash(gh issue comment:*)"
-            --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(rm -rf:*)"
+            --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh :*)"
+            --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(git push -f:*),Bash(rm -rf:*)"
             --max-turns 15
