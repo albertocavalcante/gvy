@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.compilation.WorkspaceManager
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,8 +19,12 @@ class GroovyTextDocumentServiceTest {
     @Test
     fun `test definition returns empty list when compilation fails or is missing`() = runBlocking {
         // Mock dependencies
-        val compilationService = mockk<GroovyCompilationService>()
+        val compilationService = mockk<GroovyCompilationService>(relaxed = true)
+        val workspaceManager = mockk<WorkspaceManager>(relaxed = true)
         val scope = CoroutineScope(Dispatchers.Unconfined)
+
+        // Mock workspaceManager property which is accessed by CompilationEnsurer
+        every { compilationService.workspaceManager } returns workspaceManager
 
         // Create service under test
         val service = GroovyTextDocumentService(

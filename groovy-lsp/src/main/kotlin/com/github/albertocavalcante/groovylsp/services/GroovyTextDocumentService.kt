@@ -3,7 +3,6 @@ package com.github.albertocavalcante.groovylsp.services
 import com.github.albertocavalcante.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
-import com.github.albertocavalcante.groovylsp.compilation.CompilationEnsurer
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -14,17 +13,14 @@ import com.github.albertocavalcante.groovylsp.providers.callhierarchy.CallHierar
 import com.github.albertocavalcante.groovylsp.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.groovylsp.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider
-import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
-import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
+import com.github.albertocavalcante.groovylsp.providers.crossfile.CrossFileOperationsHandler
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.UnusedImportDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.groovylsp.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.groovylsp.providers.highlight.DocumentHighlightProvider
-import com.github.albertocavalcante.groovylsp.providers.implementation.ImplementationProvider
 import com.github.albertocavalcante.groovylsp.providers.inlayhints.InlayHintsProvider
-import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
@@ -36,9 +32,7 @@ import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
@@ -237,6 +231,18 @@ class GroovyTextDocumentService(
         SemanticTokensHandler(compilationService, documentProvider)
     }
 
+    private val crossFileOperationsHandler by lazy {
+        CrossFileOperationsHandler(
+            compilationService = compilationService,
+            documentProvider = documentProvider,
+            sourceNavigator = sourceNavigator,
+            diagnosticsOrchestrator = diagnosticsOrchestrator,
+            definitionLinkSupport = { definitionLinkSupport },
+            clientTelemetry = { event -> client()?.telemetryEvent(event) },
+            coroutineScope = coroutineScope,
+        )
+    }
+
     override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
         coroutineScope.future {
             logger.debug { "Prepare call hierarchy requested for ${params.textDocument.uri}" }
@@ -267,29 +273,6 @@ class GroovyTextDocumentService(
                 "${params.position.line}:${params.position.character}"
         }
         signatureHelpProvider.provideSignatureHelp(params.textDocument.uri, params.position)
-    }
-
-    /**
-     * Ensures all open documents are compiled and indexed.
-     * Critical for cross-file features (definition, references, implementation) that depend on
-     * the symbol index containing all relevant files.
-     *
-     * Fixes #749: Race condition where cross-file resolution fails when files are opened
-     * via didOpen and definition request arrives before all files finish compiling.
-     *
-     * SAFEGUARDS (to prevent infinite loops and timeouts):
-     * - MAX_COMPILATION_ITERATIONS: Limits loop iterations
-     * - MAX_COMPILATION_TIMEOUT_MS: Overall timeout for the entire process
-     * - MAX_JOB_WAIT_TIMEOUT_MS: Timeout for waiting on diagnostic jobs
-     * - ensureActive(): Checks for coroutine cancellation
-     * - Exception handling: Catches compilation failures to avoid retry loops
-     */
-    private suspend fun ensureAllOpenDocumentsCompiled() {
-        CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticsOrchestrator.getDiagnosticJobsMap(),
-        ).ensureAllCompiled()
     }
 
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
@@ -436,119 +419,17 @@ class GroovyTextDocumentService(
         }
     }
 
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
         coroutineScope.future {
-            logger.debug {
-                "Definition requested for ${params.textDocument.uri} at " +
-                    "${params.position.line}:${params.position.character}"
-            }
-
-            val uri = URI.create(params.textDocument.uri)
-
-            val telemetrySink = DefinitionTelemetrySink { event ->
-                client()?.telemetryEvent(event)
-            }
-
-            try {
-                // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-                // Fixes #749: Race condition where target file may not be indexed yet
-                ensureAllOpenDocumentsCompiled()
-
-                // CRITICAL: Ensure compilation completes before proceeding
-                val compilationResult = ensureCompiledOrCompileNow(uri)
-                if (compilationResult == null) {
-                    logger.warn { "Document $uri not compiled, cannot provide definitions" }
-                    return@future Either.forLeft(emptyList())
-                }
-                // Create definition provider with source navigation support
-                val definitionProvider = DefinitionProvider(
-                    compilationService = compilationService,
-                    sourceNavigator = sourceNavigator,
-                    telemetrySink = telemetrySink,
-                )
-
-                if (definitionLinkSupport) {
-                    val links = definitionProvider.provideDefinitionLinks(
-                        params.textDocument.uri,
-                        params.position,
-                    ).toList()
-                    if (links.isNotEmpty()) {
-                        logger.debug {
-                            "Returning ${links.size} definition links (first=${links.first().targetUri})"
-                        }
-                        return@future Either.forRight(links)
-                    }
-                }
-
-                // Get definitions using Flow pattern
-                val locations = definitionProvider.provideDefinitions(
-                    params.textDocument.uri,
-                    params.position,
-                ).toList()
-
-                if (locations.isNotEmpty()) {
-                    logger.debug { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
-                } else {
-                    logger.debug { "Found 0 definitions" }
-                }
-
-                Either.forLeft(locations)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IllegalArgumentException) {
-                logger.error(e) { "Invalid arguments finding definitions" }
-                Either.forLeft(emptyList())
-            } catch (e: IllegalStateException) {
-                logger.error(e) { "Invalid state finding definitions" }
-                Either.forLeft(emptyList())
-            } catch (e: Exception) {
-                logger.error(e) { "Unexpected error finding definitions" }
-                Either.forLeft(emptyList())
-            }
+            crossFileOperationsHandler.getDefinitions(params.textDocument.uri, params.position)
         }
 
-    @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - LSP service final fallback
     override fun references(params: ReferenceParams): CompletableFuture<List<Location>> = coroutineScope.future {
-        logger.debug {
-            "References requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}"
-        }
-
-        try {
-            val uri = URI.create(params.textDocument.uri)
-
-            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-            // Fixes #749: Race condition where target file may not be indexed yet
-            ensureAllOpenDocumentsCompiled()
-
-            val compilationResult = ensureCompiledOrCompileNow(uri)
-            if (compilationResult == null) {
-                logger.warn { "Document $uri not compiled, cannot provide references" }
-                return@future emptyList()
-            }
-
-            val referenceProvider = ReferenceProvider(compilationService)
-            val locations = referenceProvider.provideReferences(
-                params.textDocument.uri,
-                params.position,
-                params.context.isIncludeDeclaration,
-            ).toList()
-
-            logger.debug { "Found ${locations.size} references" }
-            locations
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments finding references" }
-            emptyList()
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state finding references" }
-            emptyList()
-        } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding references" }
-            emptyList()
-        }
+        crossFileOperationsHandler.getReferences(
+            params.textDocument.uri,
+            params.position,
+            params.context.isIncludeDeclaration,
+        )
     }
 
     override fun typeDefinition(
@@ -568,50 +449,10 @@ class GroovyTextDocumentService(
         }
     }
 
-    private val implementationProvider by lazy {
-        ImplementationProvider(compilationService)
-    }
-
     override fun implementation(
         params: ImplementationParams,
     ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
-        logger.debug {
-            "Implementation requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}"
-        }
-
-        try {
-            val uri = URI.create(params.textDocument.uri)
-
-            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-            // Fixes #749: Race condition where target file may not be indexed yet
-            ensureAllOpenDocumentsCompiled()
-
-            val compilationResult = ensureCompiledOrCompileNow(uri)
-            if (compilationResult == null) {
-                logger.warn { "Document $uri not compiled, cannot provide implementations" }
-                return@future Either.forLeft(emptyList())
-            }
-
-            val locations = implementationProvider.provideImplementations(
-                params.textDocument.uri,
-                params.position,
-            ).toList()
-
-            logger.debug { "Found ${locations.size} implementations" }
-            Either.forLeft(locations)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments finding implementations" }
-            Either.forLeft(emptyList())
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state finding implementations" }
-            Either.forLeft(emptyList())
-        } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding implementations" }
-            Either.forLeft(emptyList())
-        }
+        crossFileOperationsHandler.getImplementations(params.textDocument.uri, params.position)
     }
 
     override fun documentHighlight(params: DocumentHighlightParams): CompletableFuture<List<DocumentHighlight>> =
