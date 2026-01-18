@@ -5,7 +5,7 @@ import { GroovyReplClient } from "../../../../src/features/repl/GroovyReplClient
 describe("GroovyReplClient", () => {
   let sandbox: sinon.SinonSandbox;
   let replClient: GroovyReplClient;
-  let mockLanguageClient: any;
+  let mockLanguageClient: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -41,7 +41,7 @@ describe("GroovyReplClient", () => {
     try {
       await replClient.evaluate("invalid code");
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
+    } catch (e: unknown) {
       expect(e.message).to.equal("Compilation Error");
     }
   });

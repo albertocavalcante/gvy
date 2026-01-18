@@ -17,10 +17,10 @@ describe("JDK Finder Module - Public API", () => {
   let getSourcesStub: sinon.SinonStub;
   let getConfigurationStub: sinon.SinonStub;
   let execAsyncStub: sinon.SinonStub;
-  let findJava: any;
-  let findAllJdks: any;
+  let findJava: unknown;
+  let findAllJdks: unknown;
   let MINIMUM_JAVA_VERSION: number;
-  let mockVscode: any;
+  let mockVscode: unknown;
 
   beforeEach(() => {
     // Create stubs for jdk-utils
@@ -35,7 +35,7 @@ describe("JDK Finder Module - Public API", () => {
 
     // Default: no configured java.home or configuration.runtimes
     const mockConfig = {
-      get: sinon.stub().callsFake((key: string, defaultValue?: any) => {
+      get: sinon.stub().callsFake((key: string, defaultValue?: unknown) => {
         if (key === "configuration.runtimes") {
           return defaultValue ?? [];
         }
@@ -53,7 +53,7 @@ describe("JDK Finder Module - Public API", () => {
 
     // Mock util.promisify to return our execAsyncStub
     const mockUtil = {
-      promisify: sinon.stub().callsFake((fn: any) => {
+      promisify: sinon.stub().callsFake((fn: unknown) => {
         // Check if this is the exec function being promisified by comparing to the actual exec function
         if (fn === exec) {
           return execAsyncStub;
@@ -94,7 +94,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should return JDK from groovy.java.home setting if configured", async () => {
         // Configure mock to return configured java.home
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, defaultValue?: unknown) => {
             if (key === "java.home") return "/opt/configured-java";
             if (key === "configuration.runtimes") return defaultValue ?? [];
             return undefined;
@@ -122,7 +122,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should prioritize groovy.java.home over auto-detected JDKs", async () => {
         // Configure mock to return configured java.home
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, defaultValue?: unknown) => {
             if (key === "java.home") return "/opt/configured-java";
             if (key === "configuration.runtimes") return defaultValue ?? [];
             return undefined;
@@ -720,7 +720,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should include user-configured runtimes from groovy.configuration.runtimes", async () => {
         // Configure mock to return configured runtimes
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, _defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, _defaultValue?: unknown) => {
             if (key === "configuration.runtimes") {
               return [
                 {
@@ -765,7 +765,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should deduplicate configured runtimes with auto-detected JDKs", async () => {
         // Configure mock to return configured runtime that matches auto-detected
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, _defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, _defaultValue?: unknown) => {
             if (key === "configuration.runtimes") {
               return [
                 {

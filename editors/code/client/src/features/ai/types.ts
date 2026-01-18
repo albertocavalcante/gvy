@@ -63,8 +63,7 @@ export interface ILSPToolService {
 export interface ToolDefinition {
   name: string;
   command: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handler: (service: ILSPToolService, params: any) => Promise<any>;
+  handler: (service: ILSPToolService, params: unknown) => Promise<unknown>;
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [

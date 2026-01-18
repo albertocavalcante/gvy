@@ -4,10 +4,10 @@ import * as proxyquire from "proxyquire";
 
 describe("ToolRegistry", () => {
   let sandbox: sinon.SinonSandbox;
-  let mockVscode: any;
-  let mockConfig: any;
+  let mockVscode: unknown;
+  let mockConfig: unknown;
   let getConfigurationStub: sinon.SinonStub;
-  let ToolRegistryModule: any;
+  let ToolRegistryModule: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();

@@ -45,7 +45,7 @@ describe("LSPToolService", () => {
   let executeCommandStub: sinon.SinonStub;
   let getClientStub: sinon.SinonStub;
   let service: LSPToolService;
-  let mockVscode: any;
+  let mockVscode: unknown;
 
   const mockUri = MockUri.parse("file:///test/project/MyClass.groovy");
 

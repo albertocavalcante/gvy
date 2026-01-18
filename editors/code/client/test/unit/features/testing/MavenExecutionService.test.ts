@@ -3,13 +3,13 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("MavenExecutionService", () => {
-  let MavenExecutionService: any;
-  let service: any;
-  let loggerMock: any;
+  let MavenExecutionService: unknown;
+  let service: unknown;
+  let loggerMock: unknown;
   let sandbox: sinon.SinonSandbox;
 
-  let vscodeMock: any;
-  let readlineMock: any;
+  let vscodeMock: unknown;
+  let readlineMock: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -30,7 +30,7 @@ describe("MavenExecutionService", () => {
         showWarningMessage: sandbox.stub(),
       },
       TestRunRequest: class {
-        constructor(public include: any[]) {}
+        constructor(public include: unknown[]) {}
       },
       CancellationTokenSource: class {
         token = {};
@@ -41,8 +41,8 @@ describe("MavenExecutionService", () => {
       },
       Location: class {
         constructor(
-          public uri: any,
-          public range: any,
+          public uri: unknown,
+          public range: unknown,
         ) {}
       },
       Uri: {
@@ -56,8 +56,8 @@ describe("MavenExecutionService", () => {
       },
       Range: class {
         constructor(
-          public start: any,
-          public end: any,
+          public start: unknown,
+          public end: unknown,
         ) {}
       },
       TestRunProfileKind: { Run: 1 },
@@ -82,14 +82,14 @@ describe("MavenExecutionService", () => {
       }),
     };
 
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as unknown).noCallThru()(
       "../../../../src/features/testing/MavenExecutionService",
       {
         vscode: vscodeMock,
         child_process: cpMock,
         fs: fsMock,
         readline: readlineMock,
-        "./TestEventConsumer": (proxyquire as any).noCallThru()(
+        "./TestEventConsumer": (proxyquire as unknown).noCallThru()(
           "../../../../src/features/testing/TestEventConsumer",
           { vscode: vscodeMock },
         ),
@@ -98,8 +98,8 @@ describe("MavenExecutionService", () => {
     MavenExecutionService = module.MavenExecutionService;
     service = new MavenExecutionService(loggerMock);
     // Expose mocks for tests
-    (service as any).cpMock = cpMock;
-    (service as any).fsMock = fsMock;
+    (service as unknown).cpMock = cpMock;
+    (service as unknown).fsMock = fsMock;
   });
 
   afterEach(() => {
@@ -113,7 +113,7 @@ describe("MavenExecutionService", () => {
         children: { size: 0 },
       };
       const request = { include: [mockItem] };
-      const filter = (service as any).buildTestFilter(request);
+      const filter = (service as unknown).buildTestFilter(request);
       assert.ok(filter[0].includes('"'));
     });
   });
@@ -129,7 +129,7 @@ describe("MavenExecutionService", () => {
         on: sandbox.stub(),
         kill: sandbox.stub(),
       };
-      (service as any).cpMock.spawn.returns(proc);
+      (service as unknown).cpMock.spawn.returns(proc);
 
       const consumerMock = {
         processLine: sandbox.stub(),
@@ -144,7 +144,7 @@ describe("MavenExecutionService", () => {
           .returns({ dispose: sandbox.stub() }),
       };
 
-      const promise = (service as any).spawnMaven(
+      const promise = (service as unknown).spawnMaven(
         "/cwd",
         [],
         consumerMock,
@@ -183,7 +183,7 @@ describe("MavenExecutionService", () => {
         on: sandbox.stub(),
         kill: sandbox.stub(),
       };
-      (service as any).cpMock.spawn.returns(proc);
+      (service as unknown).cpMock.spawn.returns(proc);
 
       const consumerMock = {
         processLine: sandbox.stub(),
@@ -199,15 +199,15 @@ describe("MavenExecutionService", () => {
       };
 
       // Setup readline mock to capture listener
-      let lineListener: any;
+      let lineListener: unknown;
       readlineMock.createInterface.returns({
-        on: (event: string, listener: any) => {
+        on: (event: string, listener: unknown) => {
           if (event === "line") lineListener = listener;
         },
         close: sandbox.stub(),
       });
 
-      const promise = (service as any).spawnMaven(
+      const promise = (service as unknown).spawnMaven(
         "/cwd",
         [],
         consumerMock,

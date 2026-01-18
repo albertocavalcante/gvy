@@ -9,7 +9,7 @@ import { RequestType } from "vscode-languageserver-protocol";
 describe("TestService", () => {
   let sandbox: sinon.SinonSandbox;
   let testService: TestService;
-  let mockLanguageClient: any;
+  let mockLanguageClient: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -41,7 +41,7 @@ describe("TestService", () => {
     expect(mockLanguageClient.sendRequest.calledOnce).to.be.true;
     const args = mockLanguageClient.sendRequest.firstCall.args;
 
-    const requestType = args[0] as RequestType<any, any, any>;
+    const requestType = args[0] as RequestType<unknown, unknown, unknown>;
     expect(requestType.method).to.equal("groovy/discoverTests");
 
     expect(args[1]).to.deep.equal({ workspaceUri });
@@ -58,7 +58,7 @@ describe("TestService", () => {
     try {
       await testService.discoverTestsInWorkspace(workspaceUri);
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
+    } catch (e: unknown) {
       expect(e.message).to.equal("LSP Test Discovery Error");
     }
   });

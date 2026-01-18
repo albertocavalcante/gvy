@@ -2,18 +2,73 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface LSPTestExecutionServiceType {
+  new (testService: unknown, logger: unknown, extensionPath: string): unknown;
+}
+
+interface TestServiceMock {
+  getTestCommand: sinon.SinonStub;
+  getTestResults: sinon.SinonStub;
+}
+
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface VscodeMock {
+  workspace: {
+    workspaceFolders: Array<{ uri: { toString: () => string } }>;
+    getConfiguration: sinon.SinonStub;
+  };
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+  };
+  TestRunRequest: new (include: unknown[]) => unknown;
+  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
+  TestMessage: new (message: string) => unknown;
+  Location: new (uri: unknown, range: unknown) => unknown;
+  Uri: { parse: (s: string) => unknown };
+  Position: new (line: number, character: number) => unknown;
+  Range: new (start: unknown, end: unknown) => unknown;
+  TestRunProfileKind: { Run: number; Coverage: number };
+}
+
+interface CpMock {
+  spawn: sinon.SinonStub;
+}
+
+interface FsMock {
+  existsSync: sinon.SinonStub;
+  statSync: sinon.SinonStub;
+  realpathSync: sinon.SinonStub;
+}
+
+interface ReadlineMock {
+  createInterface: sinon.SinonStub;
+}
+
+interface PathMock {
+  join: (...args: string[]) => string;
+  basename: (p: string) => string;
+  normalize: (p: string) => string;
+  isAbsolute: (p: string) => boolean;
+  relative: (from: string, to: string) => string;
+  delimiter: string;
+}
+
 describe("LSPTestExecutionService", () => {
-  let LSPTestExecutionService: any;
-  let service: any;
-  let testServiceMock: any;
-  let loggerMock: any;
+  let LSPTestExecutionService: LSPTestExecutionServiceType;
+  let service: unknown;
+  let testServiceMock: TestServiceMock;
+  let loggerMock: LoggerMock;
   let sandbox: sinon.SinonSandbox;
 
-  let vscodeMock: any;
-  let cpMock: any;
-  let fsMock: any;
-  let readlineMock: any;
-  let pathMock: any;
+  let vscodeMock: VscodeMock;
+  let cpMock: CpMock;
+  let fsMock: FsMock;
+  let readlineMock: ReadlineMock;
+  let pathMock: PathMock;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -42,7 +97,7 @@ describe("LSPTestExecutionService", () => {
         showWarningMessage: sandbox.stub(),
       },
       TestRunRequest: class {
-        constructor(public include: any[]) {}
+        constructor(public include: unknown[]) {}
       },
       CancellationTokenSource: class {
         token = {
@@ -56,8 +111,8 @@ describe("LSPTestExecutionService", () => {
       },
       Location: class {
         constructor(
-          public uri: any,
-          public range: any,
+          public uri: unknown,
+          public range: unknown,
         ) {}
       },
       Uri: {
@@ -71,8 +126,8 @@ describe("LSPTestExecutionService", () => {
       },
       Range: class {
         constructor(
-          public start: any,
-          public end: any,
+          public start: unknown,
+          public end: unknown,
         ) {}
       },
       TestRunProfileKind: { Run: 1, Coverage: 3 },
@@ -119,7 +174,8 @@ describe("LSPTestExecutionService", () => {
       delimiter: ":",
     };
 
-    const module = (proxyquire as any).noCallThru()(
+    const proxyquireNoCallThru = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { LSPTestExecutionService: LSPTestExecutionServiceType } }).noCallThru();
+    const module = proxyquireNoCallThru(
       "../../../../src/features/testing/LSPTestExecutionService",
       {
         vscode: vscodeMock,
@@ -127,7 +183,7 @@ describe("LSPTestExecutionService", () => {
         fs: fsMock,
         readline: readlineMock,
         path: pathMock,
-        "./TestEventConsumer": (proxyquire as any).noCallThru()(
+        "./TestEventConsumer": (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => unknown }).noCallThru()(
           "../../../../src/features/testing/TestEventConsumer",
           { vscode: vscodeMock },
         ),
@@ -146,10 +202,21 @@ describe("LSPTestExecutionService", () => {
   });
 
   describe("runTestsWithCoverage", () => {
-    let testControllerMock: any;
-    let testRunMock: any;
-    let coverageServiceMock: any;
-    let tokenMock: any;
+    let testControllerMock: { createTestRun: sinon.SinonStub };
+    let testRunMock: {
+      enqueued: sinon.SinonStub;
+      passed: sinon.SinonStub;
+      failed: sinon.SinonStub;
+      skipped: sinon.SinonStub;
+      errored: sinon.SinonStub;
+      appendOutput: sinon.SinonStub;
+      end: sinon.SinonStub;
+    };
+    let coverageServiceMock: { addCoverageToRun: sinon.SinonStub };
+    let tokenMock: {
+      isCancellationRequested: boolean;
+      onCancellationRequested: sinon.SinonStub;
+    };
 
     beforeEach(() => {
       testRunMock = {
@@ -183,7 +250,7 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: any) => {
+        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
           if (event === "close") {
             setTimeout(() => callback(0), 0);
           }
@@ -467,9 +534,20 @@ describe("LSPTestExecutionService", () => {
   });
 
   describe("runTests", () => {
-    let testControllerMock: any;
-    let testRunMock: any;
-    let tokenMock: any;
+    let testControllerMock: { createTestRun: sinon.SinonStub };
+    let testRunMock: {
+      enqueued: sinon.SinonStub;
+      passed: sinon.SinonStub;
+      failed: sinon.SinonStub;
+      skipped: sinon.SinonStub;
+      errored: sinon.SinonStub;
+      appendOutput: sinon.SinonStub;
+      end: sinon.SinonStub;
+    };
+    let tokenMock: {
+      isCancellationRequested: boolean;
+      onCancellationRequested: sinon.SinonStub;
+    };
 
     beforeEach(() => {
       testRunMock = {
@@ -499,7 +577,7 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: any) => {
+        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
           if (event === "close") {
             setTimeout(() => callback(0), 0);
           }
@@ -551,7 +629,7 @@ describe("LSPTestExecutionService", () => {
     it("should reject relative paths", () => {
       const relativePath = "./some/relative/path";
 
-      const result = (service as any).isValidJavaHome(relativePath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(relativePath);
 
       assert.strictEqual(
         result,
@@ -569,7 +647,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.statSync.returns({ isFile: () => false, isDirectory: () => true });
       fsMock.realpathSync = sandbox.stub().returns("/etc/passwd");
 
-      const result = (service as any).isValidJavaHome(traversalPath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(traversalPath);
 
       // Should fail because realpath resolves to /etc/passwd which won't have bin/java
       assert.strictEqual(
@@ -584,7 +662,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.existsSync.returns(true);
       fsMock.realpathSync = sandbox.stub().throws(new Error("Invalid path"));
 
-      const result = (service as any).isValidJavaHome(maliciousPath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(maliciousPath);
 
       assert.strictEqual(
         result,
@@ -616,7 +694,7 @@ describe("LSPTestExecutionService", () => {
         isDirectory: () => false,
       });
 
-      const result = (service as any).isValidJavaHome(symlinkPath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(symlinkPath);
 
       assert.strictEqual(
         result,
@@ -631,7 +709,7 @@ describe("LSPTestExecutionService", () => {
         .stub()
         .throws(new Error("ENOENT: no such file or directory"));
 
-      const result = (service as any).isValidJavaHome(nonExistentPath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(nonExistentPath);
 
       assert.strictEqual(
         result,
@@ -645,7 +723,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.realpathSync = sandbox.stub().returns(filePath);
       fsMock.statSync.returns({ isFile: () => true, isDirectory: () => false });
 
-      const result = (service as any).isValidJavaHome(filePath);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(filePath);
 
       assert.strictEqual(
         result,
@@ -662,7 +740,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.realpathSync.onSecondCall().returns(maliciousJavaPath);
       fsMock.statSync.returns({ isFile: () => false, isDirectory: () => true });
 
-      const result = (service as any).isValidJavaHome(javaHome);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(javaHome);
 
       assert.strictEqual(
         result,
@@ -693,7 +771,7 @@ describe("LSPTestExecutionService", () => {
         isDirectory: () => false,
       });
 
-      const result = (service as any).isValidJavaHome(validJavaHome);
+      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(validJavaHome);
 
       assert.strictEqual(result, true, "Should accept valid JAVA_HOME");
     });
@@ -702,17 +780,21 @@ describe("LSPTestExecutionService", () => {
   describe("collectAllTestItems cycle detection", () => {
     it("should handle circular references without infinite loop", () => {
       // Create a circular reference in test items
-      const item1: any = {
+      type TestItemType = {
+        id: string;
+        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+      };
+      const item1: TestItemType = {
         id: "item1",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
-      const item2: any = {
+      const item2: TestItemType = {
         id: "item2",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
-      const item3: any = {
+      const item3: TestItemType = {
         id: "item3",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
 
       // Create circular reference: item1 -> item2 -> item3 -> item1
@@ -721,18 +803,18 @@ describe("LSPTestExecutionService", () => {
       item3.children.set("item1", item1);
 
       // Mock forEach on children
-      item1.children.forEach = function (callback: any) {
+      item1.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(item2);
       };
-      item2.children.forEach = function (callback: any) {
+      item2.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(item3);
       };
-      item3.children.forEach = function (callback: any) {
+      item3.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(item1);
       };
 
       // This should not stack overflow
-      const result = (service as any).collectAllTestItems([item1]);
+      const result = (service as { collectAllTestItems: (items: unknown[]) => unknown[] }).collectAllTestItems([item1]);
 
       assert.ok(result.length >= 1, "Should collect at least one item");
       assert.ok(
@@ -743,21 +825,25 @@ describe("LSPTestExecutionService", () => {
 
     it("should not visit same item twice", () => {
       // Create a diamond structure where one item is reachable via two paths
-      const root: any = {
+      type TestItemType = {
+        id: string;
+        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+      };
+      const root: TestItemType = {
         id: "root",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
-      const left: any = {
+      const left: TestItemType = {
         id: "left",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
-      const right: any = {
+      const right: TestItemType = {
         id: "right",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
-      const shared: any = {
+      const shared: TestItemType = {
         id: "shared",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
 
       root.children.set("left", left);
@@ -766,23 +852,23 @@ describe("LSPTestExecutionService", () => {
       right.children.set("shared", shared);
 
       // Mock forEach
-      root.children.forEach = function (callback: any) {
+      root.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(left);
         callback(right);
       };
-      left.children.forEach = function (callback: any) {
+      left.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(shared);
       };
-      right.children.forEach = function (callback: any) {
+      right.children.forEach = function (callback: (item: TestItemType) => void) {
         callback(shared);
       };
-      shared.children.forEach = function (_callback: any) {};
+      shared.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
-      const result = (service as any).collectAllTestItems([root]);
+      const result = (service as { collectAllTestItems: (items: unknown[]) => TestItemType[] }).collectAllTestItems([root]);
 
       // Count occurrences of shared item
       const sharedCount = result.filter(
-        (item: any) => item.id === "shared",
+        (item: TestItemType) => item.id === "shared",
       ).length;
       assert.strictEqual(
         sharedCount,
@@ -793,27 +879,31 @@ describe("LSPTestExecutionService", () => {
 
     it("should handle deeply nested trees", () => {
       // Create a deeply nested tree (100 levels)
-      let current: any = {
+      type TestItemType = {
+        id: string;
+        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+      };
+      let current: TestItemType = {
         id: "item0",
-        children: new Map(),
+        children: new Map() as TestItemType["children"],
       };
       const root = current;
 
       for (let i = 1; i < 100; i++) {
-        const child: any = {
+        const child: TestItemType = {
           id: `item${i}`,
-          children: new Map(),
+          children: new Map() as TestItemType["children"],
         };
         current.children.set(child.id, child);
-        current.children.forEach = function (callback: any) {
+        current.children.forEach = function (callback: (item: TestItemType) => void) {
           callback(child);
         };
         current = child;
       }
-      current.children.forEach = function (_callback: any) {};
+      current.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
       // Should not stack overflow
-      const result = (service as any).collectAllTestItems([root]);
+      const result = (service as { collectAllTestItems: (items: unknown[]) => unknown[] }).collectAllTestItems([root]);
 
       assert.strictEqual(result.length, 100, "Should collect all 100 items");
     });
@@ -916,9 +1006,20 @@ describe("LSPTestExecutionService", () => {
   });
 
   describe("result map collision handling", () => {
-    let testRunMock: any;
-    let testControllerMock: any;
-    let tokenMock: any;
+    let testRunMock: {
+      enqueued: sinon.SinonStub;
+      passed: sinon.SinonStub;
+      failed: sinon.SinonStub;
+      skipped: sinon.SinonStub;
+      errored: sinon.SinonStub;
+      appendOutput: sinon.SinonStub;
+      end: sinon.SinonStub;
+    };
+    let testControllerMock: { createTestRun: sinon.SinonStub };
+    let tokenMock: {
+      isCancellationRequested: boolean;
+      onCancellationRequested: sinon.SinonStub;
+    };
 
     beforeEach(() => {
       testRunMock = {
@@ -984,7 +1085,7 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: any) => {
+        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
           if (event === "close") {
             setTimeout(() => callback(0), 0);
           }
@@ -1048,7 +1149,7 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: any) => {
+        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
           if (event === "close") {
             setTimeout(() => callback(0), 0);
           }

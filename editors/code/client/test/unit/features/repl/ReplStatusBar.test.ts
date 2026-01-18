@@ -1,11 +1,11 @@
 import { expect } from "chai";
-import proxyquire = require("proxyquire");
+import proxyquire from "proxyquire";
 import { vscode } from "../../mocks/vscode";
 
 // Import the type separately for static analysis
 import type { ReplStatusBarLogic as ReplStatusBarLogicType } from "../../../../src/features/repl/ReplStatusBar";
 
-const { ReplStatusBarLogic } = proxyquire.noCallThru()(
+const { ReplStatusBarLogic } = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { ReplStatusBarLogic: typeof ReplStatusBarLogicType } }).noCallThru()(
   "../../../../src/features/repl/ReplStatusBar",
   {
     vscode: vscode,

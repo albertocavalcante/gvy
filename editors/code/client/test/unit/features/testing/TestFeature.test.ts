@@ -4,9 +4,9 @@ import * as proxyquire from "proxyquire";
 
 describe("TestFeature", () => {
   let sandbox: sinon.SinonSandbox;
-  let mockVscode: any;
-  let mockSpockGenerator: any;
-  let TestFeatureModule: any;
+  let mockVscode: unknown;
+  let mockSpockGenerator: unknown;
+  let TestFeatureModule: unknown;
   let fsStatStub: sinon.SinonStub;
   let fsCreateDirectoryStub: sinon.SinonStub;
   let fsWriteFileStub: sinon.SinonStub;

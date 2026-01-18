@@ -63,7 +63,7 @@ describe("StatusBar Error Handling", () => {
 
       // Since handleGroovyStatus is private, we'll test the integration by verifying
       // that showErrorNotification is called with correct parameters when status changes
-      (statusBarManager as any).handleGroovyStatus(params);
+      (statusBarManager as unknown).handleGroovyStatus(params);
 
       assert.ok(showErrorNotificationStub.calledOnce);
       assert.ok(
@@ -82,7 +82,7 @@ describe("StatusBar Error Handling", () => {
         // errorDetails is intentionally missing
       };
 
-      (statusBarManager as any).handleGroovyStatus(params);
+      (statusBarManager as unknown).handleGroovyStatus(params);
 
       assert.ok(showErrorNotificationStub.notCalled);
     });
@@ -102,7 +102,7 @@ describe("StatusBar Error Handling", () => {
         } as GradleJdkIncompatibleError,
       };
 
-      (statusBarManager as any).handleGroovyStatus(params);
+      (statusBarManager as unknown).handleGroovyStatus(params);
 
       assert.ok(showErrorNotificationStub.notCalled);
     });
@@ -114,7 +114,7 @@ describe("StatusBar Error Handling", () => {
         message: "All good",
       };
 
-      (statusBarManager as any).handleGroovyStatus(params);
+      (statusBarManager as unknown).handleGroovyStatus(params);
 
       assert.ok(showErrorNotificationStub.notCalled);
     });
@@ -133,7 +133,7 @@ describe("StatusBar Error Handling", () => {
         } as ToolchainProvisioningError,
       };
 
-      (statusBarManager as any).handleGroovyStatus(params);
+      (statusBarManager as unknown).handleGroovyStatus(params);
 
       // Verify state is set to error
       assert.strictEqual(statusBarManager.getState(), "error");

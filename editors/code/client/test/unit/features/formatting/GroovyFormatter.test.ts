@@ -6,7 +6,7 @@ import { GroovyFormatter } from "../../../../src/features/formatting/GroovyForma
 describe("GroovyFormatter", () => {
   let sandbox: sinon.SinonSandbox;
   let formatter: GroovyFormatter;
-  let mockClient: any;
+  let mockClient: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -57,7 +57,7 @@ describe("GroovyFormatter", () => {
         insertSpaces: true,
       });
       expect.fail("Should have thrown an error");
-    } catch (error: any) {
+    } catch (error: unknown) {
       expect(error.message).to.equal("LSP Error");
     }
   });

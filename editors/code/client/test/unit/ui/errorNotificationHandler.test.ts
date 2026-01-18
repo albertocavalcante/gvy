@@ -17,7 +17,7 @@ describe("Error Notification Handler", () => {
   let getConfigurationStub: sinon.SinonStub;
   let configUpdateStub: sinon.SinonStub;
   let showErrorNotification: typeof import("../../../src/ui/errorNotificationHandler").showErrorNotification;
-  let mockVscode: any;
+  let mockVscode: unknown;
 
   beforeEach(() => {
     showErrorMessageStub = sinon.stub();
@@ -368,7 +368,7 @@ describe("Error Notification Handler", () => {
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
         errorDetails,
-        mockOutputChannel as any,
+        mockOutputChannel as unknown,
         undefined,
       );
 

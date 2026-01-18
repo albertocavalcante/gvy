@@ -3,11 +3,11 @@ import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
 describe("LanguageStatus", () => {
-  let mockVscode: any;
-  let languageStatusModule: any;
-  let serverStatusItemStub: any;
-  let javaRuntimeItemStub: any;
-  let buildToolItemStub: any;
+  let mockVscode: unknown;
+  let languageStatusModule: unknown;
+  let serverStatusItemStub: unknown;
+  let javaRuntimeItemStub: unknown;
+  let buildToolItemStub: unknown;
   let createLanguageStatusItemStub: sinon.SinonStub;
 
   beforeEach(() => {

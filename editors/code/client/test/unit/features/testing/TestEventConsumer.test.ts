@@ -3,12 +3,12 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("TestEventConsumer", () => {
-  let TestEventConsumer: any;
-  let consumer: any;
-  let runMock: any;
-  let loggerMock: any;
-  let testControllerMock: any;
-  let vscodeMock: any;
+  let TestEventConsumer: unknown;
+  let consumer: unknown;
+  let runMock: unknown;
+  let loggerMock: unknown;
+  let testControllerMock: unknown;
+  let vscodeMock: unknown;
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -40,7 +40,7 @@ describe("TestEventConsumer", () => {
     testControllerMock = {
       createTestItem: sandbox
         .stub()
-        .callsFake((id: string, label: string, uri: any) => ({
+        .callsFake((id: string, label: string, uri: unknown) => ({
           id,
           label,
           uri,
@@ -51,7 +51,7 @@ describe("TestEventConsumer", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as unknown).noCallThru()(
       "../../../../src/features/testing/TestEventConsumer",
       {
         vscode: vscodeMock,
@@ -549,7 +549,7 @@ describe("TestEventConsumer", () => {
 
       // Verify prototype was not polluted
       assert.strictEqual(
-        (Object.prototype as any).polluted,
+        (Object.prototype as unknown).polluted,
         undefined,
         "Prototype should not be polluted",
       );
@@ -602,7 +602,7 @@ describe("TestEventConsumer", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
       // Create deeply nested JSON (100+ levels)
-      const nested: any = { event: "testStarted", id: "test", name: "test" };
+      const nested: unknown = { event: "testStarted", id: "test", name: "test" };
       let current = nested;
       for (let i = 0; i < 100; i++) {
         current.nested = { level: i };

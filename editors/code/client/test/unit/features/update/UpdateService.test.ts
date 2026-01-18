@@ -4,17 +4,17 @@ import * as proxyquire from "proxyquire";
 import { createMementoStub, sampleRelease } from "./testUtils";
 
 describe("UpdateService", () => {
-  let mockWindow: any;
-  let mockWorkspace: any;
-  let mockEnv: any;
-  let mockUri: any;
+  let mockWindow: unknown;
+  let mockWorkspace: unknown;
+  let mockEnv: unknown;
+  let mockUri: unknown;
   let checkForUpdateStub: sinon.SinonStub;
   let checkForUpdateNowStub: sinon.SinonStub;
   let getUpdateConfigurationStub: sinon.SinonStub;
 
   function createUpdateService(
     overrides: {
-      checkNowResult?: any;
+      checkNowResult?: unknown;
       showInfoResponse?: string;
     } = {},
   ) {

@@ -2,13 +2,17 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface GroovyTestControllerType {
+  new (context: unknown, executionService: unknown, testService: unknown): { dispose: () => void };
+}
+
 describe("GroovyTestController", () => {
-  let GroovyTestController: any;
-  let contextMock: any;
-  let executionServiceMock: any;
-  let testServiceMock: any;
-  let vscodeMock: any;
-  let testControllerMock: any;
+  let GroovyTestController: GroovyTestControllerType;
+  let contextMock: { subscriptions: { push: sinon.SinonStub } };
+  let executionServiceMock: unknown;
+  let testServiceMock: unknown;
+  let vscodeMock: unknown;
+  let testControllerMock: unknown;
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -21,7 +25,7 @@ describe("GroovyTestController", () => {
     testControllerMock = {
       createTestItem: sandbox
         .stub()
-        .callsFake((id: string, label: string, uri?: any) => {
+        .callsFake((id: string, label: string, uri?: unknown) => {
           const childrenMap = new Map();
           return {
             id,
@@ -29,7 +33,7 @@ describe("GroovyTestController", () => {
             uri,
             range: undefined,
             children: {
-              add: sandbox.stub().callsFake((item: any) => {
+              add: sandbox.stub().callsFake((item: { id: string }) => {
                 childrenMap.set(item.id, item);
               }),
               get: sandbox
@@ -40,7 +44,7 @@ describe("GroovyTestController", () => {
           };
         }),
       items: {
-        add: sandbox.stub().callsFake((item: any) => {
+        add: sandbox.stub().callsFake((item: { id: string }) => {
           testItemsMock.set(item.id, item);
         }),
         get: sandbox.stub().callsFake((id: string) => testItemsMock.get(id)),
@@ -67,7 +71,7 @@ describe("GroovyTestController", () => {
       commands: {
         registerCommand: sandbox
           .stub()
-          .callsFake((_command: string, _handler: any) => {
+          .callsFake((_command: string, _handler: unknown) => {
             // Store the handler for testing
             return { dispose: sandbox.stub() };
           }),
@@ -86,7 +90,7 @@ describe("GroovyTestController", () => {
           },
         ],
         // Mock getWorkspaceFolder to return undefined for external URIs
-        getWorkspaceFolder: sandbox.stub().callsFake((uri: any) => {
+        getWorkspaceFolder: sandbox.stub().callsFake((uri: { toString: () => string }) => {
           const uriStr = uri.toString();
           if (uriStr.startsWith("file:///workspace")) {
             return {
@@ -123,8 +127,8 @@ describe("GroovyTestController", () => {
       },
       Range: class {
         constructor(
-          public start: any,
-          public end: any,
+          public start: unknown,
+          public end: unknown,
         ) {}
       },
       Position: class {
@@ -134,7 +138,7 @@ describe("GroovyTestController", () => {
         ) {}
       },
       TestRunRequest: class {
-        constructor(public include: any[]) {}
+        constructor(public include: unknown[]) {}
       },
       CancellationTokenSource: class {
         token = {};
@@ -161,7 +165,7 @@ describe("GroovyTestController", () => {
     };
 
     // Load GroovyTestController with mocks
-    const module = (proxyquire as any).noCallThru()(
+    const module = (proxyquire as unknown).noCallThru()(
       "../../../../src/features/testing/GroovyTestController",
       {
         vscode: vscodeMock,
@@ -175,7 +179,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with external files", () => {
-    let _controller: any;
+    let _controller: unknown;
 
     it("should show warning for external file and not run test", async () => {
       // Arrange
@@ -199,7 +203,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: any) => call.args[0] === "groovy.test.run",
+        (call: unknown) => call.args[0] === "groovy.test.run",
       );
       assert.ok(runTestCall, "groovy.test.run command should be registered");
       const runTestHandler = runTestCall.args[1];
@@ -259,7 +263,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: any) => call.args[0] === "groovy.test.run",
+        (call: unknown) => call.args[0] === "groovy.test.run",
       );
       const runTestHandler = runTestCall.args[1];
 
@@ -298,7 +302,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: any) => call.args[0] === "groovy.test.run",
+        (call: unknown) => call.args[0] === "groovy.test.run",
       );
       const runTestHandler = runTestCall.args[1];
 
@@ -380,7 +384,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: any) => call.args[0] === "groovy.test.run",
+        (call: unknown) => call.args[0] === "groovy.test.run",
       );
       const runTestHandler = runTestCall.args[1];
 
@@ -421,7 +425,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with wildcard", () => {
-    let _controller: any;
+    let _controller: unknown;
 
     it('should run entire suite when test is "*" (wildcard)', async () => {
       // Arrange: Set up a suite with tests discovered
@@ -453,7 +457,7 @@ describe("GroovyTestController", () => {
 
       // Act: Run with wildcard (simulating CodeLens "Run All Tests" click)
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: any[]) => args[0] === "groovy.test.run",
+        (args: unknown[]) => args[0] === "groovy.test.run",
       );
       assert.ok(runCommand, "groovy.test.run command should be registered");
 
@@ -510,7 +514,7 @@ describe("GroovyTestController", () => {
 
       // Act: Run specific test
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: any[]) => args[0] === "groovy.test.run",
+        (args: unknown[]) => args[0] === "groovy.test.run",
       );
       if (runCommand && runCommand[1]) {
         await runCommand[1]({
@@ -529,7 +533,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("suite range positioning (gutter icon location)", () => {
-    let _controller: any;
+    let _controller: unknown;
 
     it("should position suite gutter icon at actual class line, not estimated from test methods", async () => {
       // Regression test for gutter icon positioning bug

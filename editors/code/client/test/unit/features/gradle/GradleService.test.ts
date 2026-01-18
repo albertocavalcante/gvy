@@ -9,7 +9,7 @@ import { RequestType } from "vscode-languageserver-protocol";
 describe("GradleService", () => {
   let sandbox: sinon.SinonSandbox;
   let gradleService: GradleService;
-  let mockLanguageClient: any;
+  let mockLanguageClient: unknown;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -38,7 +38,7 @@ describe("GradleService", () => {
     const args = mockLanguageClient.sendRequest.firstCall.args;
 
     // Check request type/method name
-    const requestType = args[0] as RequestType<any, any, any>;
+    const requestType = args[0] as RequestType<unknown, unknown, unknown>;
     expect(requestType.method).to.equal("groovy/gradleTasks");
 
     // Check request parameters
@@ -56,7 +56,7 @@ describe("GradleService", () => {
     try {
       await gradleService.getTasks(workspaceUri);
       expect.fail("Should have thrown an error");
-    } catch (e: any) {
+    } catch (e: unknown) {
       expect(e.message).to.equal("LSP Gradle Error");
     }
   });
