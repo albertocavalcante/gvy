@@ -349,26 +349,25 @@ class GroovySemanticsTest {
     // WeakHashMap cache regression tests
 
     @Test
-    fun `cache implementation uses WeakHashMap for memory leak prevention`() {
+    fun `cache implementation uses synchronized WeakHashMap wrapper`() {
         val semantics = GroovySemantics(stubSolver)
 
-        // Use reflection to verify the cache is implemented with WeakHashMap
+        // Use reflection to verify the cache is implemented with a synchronized wrapper
         val contextCacheField = GroovySemantics::class.java.getDeclaredField("contextCache")
         contextCacheField.isAccessible = true
         val cache = contextCacheField.get(semantics)
 
-        // Verify it's a synchronized wrapper around WeakHashMap
-        assertTrue(cache is java.util.Collections.SynchronizedMap<*, *>, "Cache should be a SynchronizedMap")
-
-        // Access the underlying map via reflection
-        val mapField = cache.javaClass.getDeclaredField("m")
-        mapField.isAccessible = true
-        val underlyingMap = mapField.get(cache)
-
+        // Verify it's a synchronized wrapper (Collections.synchronizedMap returns SynchronizedMap)
+        // Note: SynchronizedMap is a private inner class, so we check the class name
+        val className = cache?.javaClass?.name ?: ""
         assertTrue(
-            underlyingMap is java.util.WeakHashMap<*, *>,
-            "Underlying map should be WeakHashMap for GC-based cache eviction",
+            className.contains("SynchronizedMap"),
+            "Cache should be a SynchronizedMap but was $className",
         )
+
+        // The WeakHashMap behavior is verified by the GC test below
+        // We don't verify the underlying map type via reflection because
+        // Java module system restricts access to private fields in java.util
     }
 
     @Test

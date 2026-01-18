@@ -140,6 +140,7 @@ class GroovySemantics(
         "Use resolveType(expression, module) for multi-document safety",
         ReplaceWith("resolveType(expression, module)"),
     )
+    @Suppress("DEPRECATION")
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
 
     /**
