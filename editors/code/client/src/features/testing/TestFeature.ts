@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { SpockGenerator } from "./SpockGenerator";
-import * as fs from "fs";
 import * as path from "path";
 
 export class TestFeature implements vscode.Disposable {
@@ -78,19 +77,25 @@ export class TestFeature implements vscode.Disposable {
       }
       const testUri = vscode.Uri.file(testPath);
 
-      if (fs.existsSync(testUri.fsPath)) {
+      // Check if file already exists using async API
+      try {
+        await vscode.workspace.fs.stat(testUri);
         vscode.window.showWarningMessage(
           `Test file already exists: ${path.basename(testUri.fsPath)}`,
         );
         // TODO: V2 - Prompt to overwrite or merge
         return;
+      } catch {
+        // File doesn't exist, which is what we want
       }
 
-      // Ensure directory exists
-      fs.mkdirSync(path.dirname(testUri.fsPath), { recursive: true });
+      // Ensure directory exists using async API
+      const dirUri = vscode.Uri.file(path.dirname(testUri.fsPath));
+      await vscode.workspace.fs.createDirectory(dirUri);
 
-      // Write file
-      fs.writeFileSync(testUri.fsPath, content);
+      // Write file using async API
+      const contentBytes = new TextEncoder().encode(content);
+      await vscode.workspace.fs.writeFile(testUri, contentBytes);
 
       // Open file
       const doc = await vscode.workspace.openTextDocument(testUri);

@@ -882,7 +882,7 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
     "check-types": "tsc --noEmit --project client/tsconfig.json",
-    "lint": "eslint client/src/**/*.ts",
+    "lint": "eslint \"client/src/**/*.ts\" \"client/test/**/*.ts\"",
     "format": "prettier --write \"**/*.{ts,js,json,css,md,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,css,md,yaml,yml}\"",
     "package": "vsce package --no-dependencies",

@@ -145,9 +145,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // AI Tools Integration
     const lspToolService = new LSPToolService(vscode, getClient);
-    const toolRegistry = new ToolRegistry(
-      vscode.workspace.getConfiguration("groovy"),
-    );
+    const toolRegistry = new ToolRegistry();
 
     // Register Adapters
     const lmToolProvider = new LMToolProvider(lspToolService, toolRegistry);
@@ -171,8 +169,11 @@ export async function activate(context: vscode.ExtensionContext) {
   } catch (error) {
     const message = `Error activating Groovy Language Extension: ${error instanceof Error ? error.message : "Unknown error"}`;
     console.error(message);
-    // Don't show error message to user during activation, as it might be transient
-    // The individual components will show their own error messages as needed
+    // Show error to user and rethrow to let VSCode know activation failed
+    vscode.window.showErrorMessage(
+      `Failed to activate Groovy extension: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+    throw error;
   }
 }
 

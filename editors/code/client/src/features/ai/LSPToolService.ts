@@ -12,6 +12,12 @@ export class LSPToolService implements ILSPToolService {
    * Finds symbols in the workspace matching the query.
    */
   public async findWorkspaceSymbol(query: string): Promise<AISymbolInfo[]> {
+    // Check if LSP client is available for better error messaging
+    const client = this.getClient();
+    if (!client) {
+      throw new Error("Language Server client is not available");
+    }
+
     // Use VS Code's commands which route to the LSP
     const symbols = await this.vscode.commands.executeCommand<
       vscodeType.SymbolInformation[]
@@ -34,6 +40,12 @@ export class LSPToolService implements ILSPToolService {
     line: number,
     character: number,
   ): Promise<AILocation[]> {
+    // Check if LSP client is available for better error messaging
+    const client = this.getClient();
+    if (!client) {
+      throw new Error("Language Server client is not available");
+    }
+
     const uri = this.vscode.Uri.parse(uriStr);
     const position = new this.vscode.Position(line, character);
 
@@ -56,6 +68,12 @@ export class LSPToolService implements ILSPToolService {
     line: number,
     character: number,
   ): Promise<AILocation | null> {
+    // Check if LSP client is available for better error messaging
+    const client = this.getClient();
+    if (!client) {
+      throw new Error("Language Server client is not available");
+    }
+
     const uri = this.vscode.Uri.parse(uriStr);
     const position = new this.vscode.Position(line, character);
 

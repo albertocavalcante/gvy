@@ -109,7 +109,7 @@ describe("GitHubReleaseProvider", () => {
       await provider.fetchLatestRelease();
 
       assert.isTrue(fetchStub.calledOnce);
-      const [url, options] = fetchStub.firstCall.args;
+      const [url] = fetchStub.firstCall.args;
       assert.include(url, "api.github.com");
       assert.include(url, "GroovyLanguageServer/groovy-lsp");
       assert.include(url, "releases/latest");
@@ -125,12 +125,12 @@ describe("GitHubReleaseProvider", () => {
       const provider = new GitHubReleaseProvider();
       await provider.fetchLatestRelease();
 
-      const [, options] = fetchStub.firstCall.args;
+      const [, _options] = fetchStub.firstCall.args;
       assert.strictEqual(
-        options.headers["Accept"],
+        _options.headers["Accept"],
         "application/vnd.github.v3+json",
       );
-      assert.strictEqual(options.headers["User-Agent"], "gvy-ide-extension");
+      assert.strictEqual(_options.headers["User-Agent"], "gvy-ide-extension");
     });
 
     it("uses AbortController signal for timeout", async () => {
