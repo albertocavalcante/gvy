@@ -132,8 +132,11 @@ grep -rn "\.use\s*{" --include="*.kt" | wc -l
 ### 3.3 Error Handling
 
 ```bash
-# Find empty catch blocks (single-line)
+# Find empty catch blocks (single-line only)
 grep -rnE 'catch\s*\([^)]*\)\s*\{\s*\}' --include="*.kt" | head -20
+
+# For multi-line empty catch blocks, use ast-grep (more reliable):
+# ast-grep --pattern 'catch ($_) { }' --lang kotlin | head -20
 
 # Find catch-all patterns
 grep -rn "catch\s*(\s*e\s*:\s*Exception\s*)" --include="*.kt" | head -20
