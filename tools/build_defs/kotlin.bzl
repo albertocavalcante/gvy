@@ -64,6 +64,9 @@ def _kt_test_impl(
         "@maven//:org_junit_platform_junit_platform_reporting",
         "@maven//:org_junit_platform_junit_platform_suite_api",
         "@maven//:org_junit_platform_junit_platform_suite_engine",
+        # Logging runtime - required by kotlin-logging-jvm used in many modules
+        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:ch_qos_logback_logback_classic",
     ]
 
     # JUnit 6 Platform ConsoleLauncher args

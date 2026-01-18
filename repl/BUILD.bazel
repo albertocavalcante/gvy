@@ -9,6 +9,10 @@ kt_library(
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
+    # Ivy is needed for Grape dependency resolution at runtime
+    runtime_deps = [
+        "@maven//:org_apache_ivy_ivy",
+    ],
 )
 
 kt_test(

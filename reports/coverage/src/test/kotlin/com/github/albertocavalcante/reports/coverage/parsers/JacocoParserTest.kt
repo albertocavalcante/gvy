@@ -14,12 +14,14 @@ import java.nio.file.Path
 class JacocoParserTest {
 
     @Test
-    fun `should parse valid JaCoCo XML report`() {
-        val xmlFile = File(
-            javaClass.classLoader.getResource("jacoco/jacoco.xml")?.file
-                ?: error("Test resource not found"),
-        )
-        val workspaceRoot = xmlFile.parentFile.parentFile.parentFile // resources dir parent
+    fun `should parse valid JaCoCo XML report`(@TempDir tempDir: Path) {
+        val testXmlContent = javaClass.classLoader.getResource("jacoco/jacoco.xml")
+            ?.readText() ?: error("Test resource not found")
+        val jacocoDir = File(tempDir.toFile(), "target/site/jacoco")
+        jacocoDir.mkdirs()
+        val xmlFile = File(jacocoDir, "jacoco.xml")
+        xmlFile.writeText(testXmlContent)
+        val workspaceRoot = tempDir.toFile()
 
         val results = JacocoParser.parseReportFile(xmlFile, workspaceRoot)
 
@@ -69,12 +71,14 @@ class JacocoParserTest {
     }
 
     @Test
-    fun `should compute overall coverage summary correctly`() {
-        val xmlFile = File(
-            javaClass.classLoader.getResource("jacoco/jacoco.xml")?.file
-                ?: error("Test resource not found"),
-        )
-        val workspaceRoot = xmlFile.parentFile.parentFile.parentFile
+    fun `should compute overall coverage summary correctly`(@TempDir tempDir: Path) {
+        val testXmlContent = javaClass.classLoader.getResource("jacoco/jacoco.xml")
+            ?.readText() ?: error("Test resource not found")
+        val jacocoDir = File(tempDir.toFile(), "target/site/jacoco")
+        jacocoDir.mkdirs()
+        val xmlFile = File(jacocoDir, "jacoco.xml")
+        xmlFile.writeText(testXmlContent)
+        val workspaceRoot = tempDir.toFile()
 
         val response = JacocoParser.parseReportFile(xmlFile, workspaceRoot)
         val coverage = CoverageResponse(
