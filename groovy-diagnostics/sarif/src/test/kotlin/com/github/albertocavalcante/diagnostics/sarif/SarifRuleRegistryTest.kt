@@ -278,18 +278,28 @@ class SarifRuleRegistryTest {
 
     @Test
     fun `concurrent access to getRule should be thread safe`() {
-        val threads = (1..10).map { threadNum ->
+        val exceptions = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+
+        val threads = (1..10).map { _ ->
             Thread {
-                repeat(100) {
-                    val rule = SarifRuleRegistry.getRule("EmptyClass")
-                    assertNotNull(rule)
-                    assertEquals("EmptyClass", rule.id)
+                try {
+                    repeat(100) {
+                        val rule = SarifRuleRegistry.getRule("EmptyClass")
+                        assertNotNull(rule)
+                        assertEquals("EmptyClass", rule.id)
+                    }
+                } catch (e: Throwable) {
+                    exceptions.add(e)
                 }
             }
         }
 
         threads.forEach { it.start() }
         threads.forEach { it.join() }
+
+        if (exceptions.isNotEmpty()) {
+            throw AssertionError("Thread safety test failed with ${exceptions.size} error(s)", exceptions.first())
+        }
     }
 
     @Test
