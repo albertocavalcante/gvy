@@ -7,6 +7,7 @@ kt_library(
     deps = [
         "@maven//:ch_epfl_scala_bsp4j",
         "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",

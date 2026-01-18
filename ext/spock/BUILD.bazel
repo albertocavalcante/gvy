@@ -7,6 +7,7 @@ kt_library(
     deps = [
         "//dsl/dsld",
         "//parser/native",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_slf4j_slf4j_api",
     ],
 )

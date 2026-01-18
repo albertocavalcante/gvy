@@ -6,6 +6,7 @@ kt_library(
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_slf4j_slf4j_api",
     ],

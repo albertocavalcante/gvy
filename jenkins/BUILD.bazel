@@ -19,6 +19,7 @@ kt_library(
         "@maven//:io_ktor_ktor_io_jvm",
         "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
         "@maven//:io_ktor_ktor_utils_jvm",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",

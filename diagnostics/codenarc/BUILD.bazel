@@ -8,6 +8,7 @@ kt_library(
     deps = [
         "//diagnostics/api",
         "//parser/native",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_apache_groovy_groovy_json",
         "@maven//:org_codenarc_CodeNarc",
