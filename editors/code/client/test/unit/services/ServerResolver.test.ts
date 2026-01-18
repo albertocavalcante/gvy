@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import * as path from "path";
+import type { ExtensionContext } from "vscode";
 import { ServerResolver } from "../../../src/services/ServerResolver";
 import { IFileSystem } from "../../../src/services/FileSystem";
 
@@ -41,7 +42,7 @@ describe("ServerResolver", () => {
     const customPath = "/custom/path/to/server.jar";
     mockFs.setExists(customPath, true);
 
-    const result = await resolver.resolve(mockContext as never, {
+    const result = await resolver.resolve(mockContext as unknown as ExtensionContext, {
       serverPath: customPath,
     });
 
@@ -53,7 +54,7 @@ describe("ServerResolver", () => {
     mockFs.setExists(customPath, false);
 
     try {
-      await resolver.resolve(mockContext as never, { serverPath: customPath });
+      await resolver.resolve(mockContext as unknown as ExtensionContext, { serverPath: customPath });
       expect.fail("Should have thrown an error");
     } catch (error) {
       expect((error as Error).message).to.contain("Custom server path not found");
@@ -64,7 +65,7 @@ describe("ServerResolver", () => {
     const expectedPath = path.join("/mock/extension/root", "server", "gls.jar");
     mockFs.setExists(expectedPath, true);
 
-    const result = await resolver.resolve(mockContext as never, {
+    const result = await resolver.resolve(mockContext as unknown as ExtensionContext, {
       serverPath: undefined,
     });
 
@@ -76,7 +77,7 @@ describe("ServerResolver", () => {
     mockFs.setExists(expectedPath, false);
 
     try {
-      await resolver.resolve(mockContext as never, { serverPath: undefined });
+      await resolver.resolve(mockContext as unknown as ExtensionContext, { serverPath: undefined });
       expect.fail("Should have thrown an error");
     } catch (error) {
       expect((error as Error).message).to.contain("Groovy Language Server JAR not found");

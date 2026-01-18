@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
+import type { OutputChannel } from "vscode";
 import {
   GradleJdkIncompatibleError,
   GroovyJdkIncompatibleError,
@@ -394,7 +395,7 @@ describe("Error Notification Handler", () => {
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
         errorDetails,
-        mockOutputChannel as never,
+        mockOutputChannel as unknown as OutputChannel,
         undefined,
       );
 

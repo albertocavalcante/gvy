@@ -63,6 +63,14 @@ interface StatusBarModule {
   setClient: (client: unknown) => void;
 }
 
+interface StatusNotification {
+  health: string;
+  quiescent: boolean;
+  message?: string;
+  filesIndexed?: number;
+  filesTotal?: number;
+}
+
 describe("StatusBar", () => {
   let mockVscode: MockVscode;
   let mockLanguageClient: MockLanguageClient;
@@ -668,7 +676,7 @@ describe("StatusBar", () => {
   });
 
   describe("groovy/status notification handling", () => {
-    let statusHandler: (notification: { health: string; quiescent: boolean; message?: string; filesIndexed?: number; filesTotal?: number }) => void;
+    let statusHandler: (notification: StatusNotification) => void;
 
     beforeEach(() => {
       // Add onNotification mock to client
@@ -676,7 +684,7 @@ describe("StatusBar", () => {
         .stub()
         .callsFake((method: string, handler: unknown) => {
           if (method === "groovy/status") {
-            statusHandler = handler as (notification: { health: string; quiescent: boolean; message?: string; filesIndexed?: number; filesTotal?: number }) => void;
+            statusHandler = handler as (notification: StatusNotification) => void;
           }
           return { dispose: sinon.stub() };
         });
