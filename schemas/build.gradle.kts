@@ -32,8 +32,10 @@ val generateProtos by tasks.registering(JavaExec::class) {
     args(
         "--proto_path=${protoDir.asFile.absolutePath}",
         "--kotlin_out=${outputDir.get().asFile.absolutePath}",
-        "com/github/albertocavalcante/reports/coverage.proto",
-        "com/github/albertocavalcante/reports/results.proto",
+        *fileTree(protoDir) { include("**/*.proto") }
+            .map {
+                it.relativeTo(protoDir.asFile).path
+            }.toTypedArray(),
     )
 }
 

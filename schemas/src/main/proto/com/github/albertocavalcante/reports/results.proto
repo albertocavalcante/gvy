@@ -7,10 +7,10 @@ option java_package = "com.github.albertocavalcante.schemas.results";
 
 enum TestResultStatus {
   TEST_RESULT_STATUS_UNSPECIFIED = 0;
-  SUCCESS = 1;
-  FAILURE = 2;
-  SKIPPED = 3;
-  ERROR = 4;
+  TEST_RESULT_STATUS_SUCCESS = 1;
+  TEST_RESULT_STATUS_FAILURE = 2;
+  TEST_RESULT_STATUS_SKIPPED = 3;
+  TEST_RESULT_STATUS_ERROR = 4;
 }
 
 message TestResultItem {
