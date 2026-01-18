@@ -1333,7 +1333,7 @@ def truncate_file_diff(file_diff: str, max_lines: int) -> tuple[str, bool]:
     middle_start = header_lines
     middle_end = len(lines) - tail_count
 
-    truncated_count = middle_end - middle_start - head_count
+    truncated_count = max(0, middle_end - middle_start - head_count)
     head_section = lines[middle_start : middle_start + head_count]
     tail_section = lines[middle_end:]
 
@@ -1484,6 +1484,7 @@ def generate_ai_message(
     diff_content, diff_mode = prepare_diff_for_ai(pr_number)
 
     if diff_mode == "error":
+        typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
         return "", ""
 
     # Add context about truncation to the prompt if needed
@@ -1530,6 +1531,12 @@ def generate_ai_message(
 """
 
     try:
+        # Security: validate cmd is an expected value (allowlist check)
+        allowed_cmds = {"gemini", "claude"}
+        if cmd not in allowed_cmds:
+            typer.echo(f"⚠️ Invalid AI command: {cmd}", err=True)
+            return "", ""
+
         # Build command with provider-specific args
         cmd_args = [cmd]
 
@@ -1552,10 +1559,17 @@ def generate_ai_message(
         stdout, stderr = ps.communicate(input=prompt)
 
         if ps.returncode != 0:
-            typer.echo(f"⚠️ {provider.value} failed: {stderr}", err=True)
+            error_detail = stderr.strip() or stdout.strip() or "No error output"
+            typer.echo(f"⚠️ {provider.value} failed (exit {ps.returncode}):", err=True)
+            # Show first 500 chars of error to avoid flooding terminal
+            typer.echo(f"   {error_detail[:500]}", err=True)
             return "", ""
 
         output = stdout.strip()
+
+        if not output:
+            typer.echo(f"⚠️ {provider.value} returned empty output", err=True)
+            return "", ""
 
         # Parse output
         title_match = re.search(r"TITLE:\s*(.+)", output)
@@ -1564,16 +1578,24 @@ def generate_ai_message(
         ai_title = title_match.group(1).strip() if title_match else ""
         ai_body = body_match.group(1).strip() if body_match else ""
 
-        # Fallback if parsing fails
+        # Fallback if parsing fails - try first non-empty line as title
         if not ai_title:
-            lines = output.split("\n")
-            ai_title = lines[0]
-            ai_body = "\n".join(lines[1:])
+            lines = [line for line in output.split("\n") if line.strip()]
+            if lines:
+                ai_title = lines[0].strip()
+                ai_body = "\n".join(lines[1:]).strip()
+            else:
+                typer.echo(f"⚠️ {provider.value} output could not be parsed", err=True)
+                typer.echo(f"   Raw output: {output[:200]}...", err=True)
+                return "", ""
 
         return ai_title, ai_body
 
+    except FileNotFoundError:
+        typer.echo(f"⚠️ {provider.value} CLI not found. Is it installed?", err=True)
+        return "", ""
     except Exception as e:
-        typer.echo(f"⚠️ AI Generation failed: {e}", err=True)
+        typer.echo(f"⚠️ AI generation failed: {type(e).__name__}: {e}", err=True)
         return "", ""
 
 
@@ -1598,7 +1620,7 @@ def merge(
         "gemini",
         "--provider",
         "-P",
-        help="AI provider: gemini (default) or claude",
+        help="AI provider (case-insensitive): gemini (default), claude",
     ),
     model: Optional[str] = typer.Option(
         None,
@@ -1643,7 +1665,7 @@ def merge(
         ai_provider = AIProvider(provider.lower())
     except ValueError:
         rprint(
-            f"[bold red]Error: Invalid provider '{provider}'. Use: gemini, claude[/bold red]"
+            f"[bold red]Error: Invalid provider '{provider}'. Use (case-insensitive): gemini, claude[/bold red]"
         )
         raise typer.Exit(1)
 
