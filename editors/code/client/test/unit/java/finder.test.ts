@@ -11,16 +11,30 @@ interface TestJdkResult {
   sourceDescription?: string;
 }
 
+interface FindJavaFunction {
+  (): Promise<TestJdkResult | null>;
+}
+
+interface FindAllJdksFunction {
+  (minVersion?: number, preferredVersion?: number): Promise<TestJdkResult[]>;
+}
+
+interface MockVscode {
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+  };
+}
+
 describe("JDK Finder Module - Public API", () => {
   let findRuntimesStub: sinon.SinonStub;
   let getRuntimeStub: sinon.SinonStub;
   let getSourcesStub: sinon.SinonStub;
   let getConfigurationStub: sinon.SinonStub;
   let execAsyncStub: sinon.SinonStub;
-  let findJava: unknown;
-  let findAllJdks: unknown;
+  let findJava: FindJavaFunction;
+  let findAllJdks: FindAllJdksFunction;
   let MINIMUM_JAVA_VERSION: number;
-  let mockVscode: unknown;
+  let mockVscode: MockVscode;
 
   beforeEach(() => {
     // Create stubs for jdk-utils

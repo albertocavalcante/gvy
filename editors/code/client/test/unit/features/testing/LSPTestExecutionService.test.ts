@@ -2,8 +2,15 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface LSPTestExecutionServiceInstance {
+  runTestsWithCoverage: (request: unknown, token: unknown, testController: unknown, coverageService: unknown) => Promise<void>;
+  runTests: (request: unknown, token: unknown, testController: unknown) => Promise<void>;
+  isValidJavaHome: (path: string) => boolean;
+  collectAllTestItems: (items: unknown[]) => unknown[];
+}
+
 interface LSPTestExecutionServiceType {
-  new (testService: unknown, logger: unknown, extensionPath: string): unknown;
+  new (testService: unknown, logger: unknown, extensionPath: string): LSPTestExecutionServiceInstance;
 }
 
 interface TestServiceMock {
@@ -59,7 +66,7 @@ interface PathMock {
 
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
-  let service: unknown;
+  let service: LSPTestExecutionServiceInstance;
   let testServiceMock: TestServiceMock;
   let loggerMock: LoggerMock;
   let sandbox: sinon.SinonSandbox;
@@ -629,7 +636,7 @@ describe("LSPTestExecutionService", () => {
     it("should reject relative paths", () => {
       const relativePath = "./some/relative/path";
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(relativePath);
+      const result = service.isValidJavaHome(relativePath);
 
       assert.strictEqual(
         result,
@@ -647,7 +654,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.statSync.returns({ isFile: () => false, isDirectory: () => true });
       fsMock.realpathSync = sandbox.stub().returns("/etc/passwd");
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(traversalPath);
+      const result = service.isValidJavaHome(traversalPath);
 
       // Should fail because realpath resolves to /etc/passwd which won't have bin/java
       assert.strictEqual(
@@ -662,7 +669,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.existsSync.returns(true);
       fsMock.realpathSync = sandbox.stub().throws(new Error("Invalid path"));
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(maliciousPath);
+      const result = service.isValidJavaHome(maliciousPath);
 
       assert.strictEqual(
         result,
@@ -694,7 +701,7 @@ describe("LSPTestExecutionService", () => {
         isDirectory: () => false,
       });
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(symlinkPath);
+      const result = service.isValidJavaHome(symlinkPath);
 
       assert.strictEqual(
         result,
@@ -709,7 +716,7 @@ describe("LSPTestExecutionService", () => {
         .stub()
         .throws(new Error("ENOENT: no such file or directory"));
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(nonExistentPath);
+      const result = service.isValidJavaHome(nonExistentPath);
 
       assert.strictEqual(
         result,
@@ -723,7 +730,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.realpathSync = sandbox.stub().returns(filePath);
       fsMock.statSync.returns({ isFile: () => true, isDirectory: () => false });
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(filePath);
+      const result = service.isValidJavaHome(filePath);
 
       assert.strictEqual(
         result,
@@ -740,7 +747,7 @@ describe("LSPTestExecutionService", () => {
       fsMock.realpathSync.onSecondCall().returns(maliciousJavaPath);
       fsMock.statSync.returns({ isFile: () => false, isDirectory: () => true });
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(javaHome);
+      const result = service.isValidJavaHome(javaHome);
 
       assert.strictEqual(
         result,
@@ -771,7 +778,7 @@ describe("LSPTestExecutionService", () => {
         isDirectory: () => false,
       });
 
-      const result = (service as { isValidJavaHome: (path: string) => boolean }).isValidJavaHome(validJavaHome);
+      const result = service.isValidJavaHome(validJavaHome);
 
       assert.strictEqual(result, true, "Should accept valid JAVA_HOME");
     });
@@ -814,7 +821,7 @@ describe("LSPTestExecutionService", () => {
       };
 
       // This should not stack overflow
-      const result = (service as { collectAllTestItems: (items: unknown[]) => unknown[] }).collectAllTestItems([item1]);
+      const result = service.collectAllTestItems([item1]);
 
       assert.ok(result.length >= 1, "Should collect at least one item");
       assert.ok(
@@ -864,7 +871,7 @@ describe("LSPTestExecutionService", () => {
       };
       shared.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
-      const result = (service as { collectAllTestItems: (items: unknown[]) => TestItemType[] }).collectAllTestItems([root]);
+      const result = service.collectAllTestItems([root]) as TestItemType[];
 
       // Count occurrences of shared item
       const sharedCount = result.filter(
@@ -903,7 +910,7 @@ describe("LSPTestExecutionService", () => {
       current.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
       // Should not stack overflow
-      const result = (service as { collectAllTestItems: (items: unknown[]) => unknown[] }).collectAllTestItems([root]);
+      const result = service.collectAllTestItems([root]);
 
       assert.strictEqual(result.length, 100, "Should collect all 100 items");
     });

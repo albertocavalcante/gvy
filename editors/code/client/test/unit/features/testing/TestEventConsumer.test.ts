@@ -2,13 +2,51 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface TestEventConsumerClass {
+  new (run: unknown, logger: unknown, testController: unknown): TestEventConsumerInstance;
+}
+
+interface TestEventConsumerInstance {
+  registerTestItem: (id: string, item: unknown) => void;
+  clear: () => void;
+  processLine: (line: string) => boolean;
+  getAllRegisteredItems: () => unknown[];
+  markPassed: (item: unknown) => void;
+  markFailed: (item: unknown, message: string) => void;
+}
+
+interface RunMock {
+  started: sinon.SinonStub;
+  passed: sinon.SinonStub;
+  failed: sinon.SinonStub;
+  skipped: sinon.SinonStub;
+  errored: sinon.SinonStub;
+  enqueued: sinon.SinonStub;
+}
+
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface TestControllerMock {
+  createTestItem: sinon.SinonStub;
+}
+
+interface VscodeMock {
+  TestMessage: new (message: string) => { message: string };
+}
+
+interface ProxyquireModule {
+  TestEventConsumer: TestEventConsumerClass;
+}
+
 describe("TestEventConsumer", () => {
-  let TestEventConsumer: unknown;
-  let consumer: unknown;
-  let runMock: unknown;
-  let loggerMock: unknown;
-  let testControllerMock: unknown;
-  let vscodeMock: unknown;
+  let TestEventConsumer: TestEventConsumerClass;
+  let consumer: TestEventConsumerInstance;
+  let runMock: RunMock;
+  let loggerMock: LoggerMock;
+  let testControllerMock: TestControllerMock;
+  let vscodeMock: VscodeMock;
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -51,7 +89,7 @@ describe("TestEventConsumer", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as unknown).noCallThru()(
+    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => ProxyquireModule }).noCallThru()(
       "../../../../src/features/testing/TestEventConsumer",
       {
         vscode: vscodeMock,

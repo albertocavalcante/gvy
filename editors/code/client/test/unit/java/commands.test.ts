@@ -2,11 +2,66 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface MockVscode {
+  window: {
+    showQuickPick: sinon.SinonStub;
+    showOpenDialog: sinon.SinonStub;
+    showInformationMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    showErrorMessage: sinon.SinonStub;
+    withProgress: sinon.SinonStub;
+    showTextDocument: sinon.SinonStub;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+    workspaceFolders?: unknown[];
+    findFiles: sinon.SinonStub;
+    openTextDocument: sinon.SinonStub;
+    applyEdit: sinon.SinonStub;
+    asRelativePath: sinon.SinonStub;
+    getWorkspaceFolder: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+    registerCommand: sinon.SinonStub;
+  };
+  Uri: {
+    joinPath: sinon.SinonStub;
+  };
+  QuickPickItemKind: {
+    Separator: number;
+  };
+  ConfigurationTarget: {
+    Workspace: number;
+  };
+  ProgressLocation: {
+    Notification: number;
+  };
+  Position: sinon.SinonStub;
+  WorkspaceEdit: sinon.SinonStub;
+}
+
+interface MockFinder {
+  findAllJdks: sinon.SinonStub;
+  MINIMUM_JAVA_VERSION: number;
+  JavaResolutionExtended: Record<string, unknown>;
+}
+
+interface MockJdkUtils {
+  getRuntime: sinon.SinonStub;
+}
+
+interface CommandsModule {
+  configureJava: (requiredVersion?: number, purpose?: string) => Promise<boolean>;
+  addFoojayResolver: () => Promise<boolean>;
+  registerJavaCommands: (context: unknown) => void;
+}
+
 describe("Java Commands", () => {
-  let mockVscode: unknown;
-  let mockFinder: unknown;
-  let mockJdkUtils: unknown;
-  let commandsModule: unknown;
+  let mockVscode: MockVscode;
+  let mockFinder: MockFinder;
+  let mockJdkUtils: MockJdkUtils;
+  let commandsModule: CommandsModule;
 
   beforeEach(() => {
     // Mock vscode module
@@ -92,7 +147,7 @@ describe("Java Commands", () => {
       vscode: mockVscode,
       "./finder": mockFinder,
       "jdk-utils": mockJdkUtils,
-    });
+    }) as CommandsModule;
   });
 
   afterEach(() => {
