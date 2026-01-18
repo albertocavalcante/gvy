@@ -1361,7 +1361,12 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
             check=True,
         )
         diff_stats = stat_result.stdout.strip()
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"⚠️ Failed to get diff stats (exit {e.returncode}):", err=True)
+        typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
+        return "", "error"
+    except FileNotFoundError:
+        typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
         return "", "error"
 
     # Get full diff
@@ -1373,7 +1378,9 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
             check=True,
         )
         full_diff = diff_result.stdout
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"⚠️ Failed to get PR diff (exit {e.returncode}):", err=True)
+        typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
         return "", "error"
 
     total_lines = len(full_diff.split("\n"))
