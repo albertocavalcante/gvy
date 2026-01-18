@@ -41,7 +41,7 @@ describe("ServerResolver", () => {
     const customPath = "/custom/path/to/server.jar";
     mockFs.setExists(customPath, true);
 
-    const result = await resolver.resolve(mockContext, {
+    const result = await resolver.resolve(mockContext as never, {
       serverPath: customPath,
     });
 
@@ -53,7 +53,7 @@ describe("ServerResolver", () => {
     mockFs.setExists(customPath, false);
 
     try {
-      await resolver.resolve(mockContext, { serverPath: customPath });
+      await resolver.resolve(mockContext as never, { serverPath: customPath });
       expect.fail("Should have thrown an error");
     } catch (error) {
       expect((error as Error).message).to.contain("Custom server path not found");
@@ -64,7 +64,7 @@ describe("ServerResolver", () => {
     const expectedPath = path.join("/mock/extension/root", "server", "gls.jar");
     mockFs.setExists(expectedPath, true);
 
-    const result = await resolver.resolve(mockContext, {
+    const result = await resolver.resolve(mockContext as never, {
       serverPath: undefined,
     });
 
@@ -76,7 +76,7 @@ describe("ServerResolver", () => {
     mockFs.setExists(expectedPath, false);
 
     try {
-      await resolver.resolve(mockContext, { serverPath: undefined });
+      await resolver.resolve(mockContext as never, { serverPath: undefined });
       expect.fail("Should have thrown an error");
     } catch (error) {
       expect((error as Error).message).to.contain("Groovy Language Server JAR not found");
