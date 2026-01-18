@@ -297,6 +297,7 @@ describe("LanguageStatus", () => {
       const manager = languageStatusModule.createLanguageStatusManager();
       manager.updateServerStatus("ready", "unknown");
 
+      assert.ok(serverStatusItemStub.command, "Command should be defined");
       assert.equal(
         serverStatusItemStub.command.command,
         "groovy.showStatusMenu",
