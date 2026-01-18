@@ -245,6 +245,8 @@ describe("TestCodeLensProvider", () => {
       assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(debugLens, "Should have $(debug) Debug CodeLens");
 
+      assert.ok(runLens.command, "Run lens should have command");
+      assert.ok(debugLens.command, "Debug lens should have command");
       assert.strictEqual(runLens.command.command, "groovy.test.run");
       assert.strictEqual(debugLens.command.command, "groovy.test.debug");
     });
@@ -268,6 +270,7 @@ describe("TestCodeLensProvider", () => {
       );
 
       assert.ok(runLens, "Should have $(play) Run CodeLens");
+      assert.ok(runLens.command, "Run lens should have command");
       assert.ok(runLens.command.arguments, "Command should have arguments");
       assert.strictEqual(
         runLens.command.arguments.length,
@@ -275,7 +278,7 @@ describe("TestCodeLensProvider", () => {
         "Should have one argument object",
       );
 
-      const args = runLens.command.arguments[0];
+      const args = runLens.command.arguments[0] as { uri?: string; suite?: string; test?: string };
       assert.ok(args.uri, "Arguments should include uri");
       assert.ok(args.suite, "Arguments should include suite (class name)");
       assert.ok(args.test, "Arguments should include test (method name)");
@@ -309,8 +312,10 @@ describe("TestCodeLensProvider", () => {
         (lens: CodeLensType) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runLens, "Should have CodeLens for single-quoted test name");
+      assert.ok(runLens.command, "Run lens should have command");
+      assert.ok(runLens.command.arguments, "Command should have arguments");
 
-      const args = runLens.command.arguments[0];
+      const args = runLens.command.arguments[0] as { test?: string };
       assert.strictEqual(args.test, "test with single quotes");
     });
 
