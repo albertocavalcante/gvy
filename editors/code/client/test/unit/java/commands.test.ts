@@ -93,7 +93,7 @@ describe("Java Commands", () => {
           getText: sinon.stub().returns(""),
         }),
         applyEdit: sinon.stub().resolves(true),
-        asRelativePath: sinon.stub().callsFake((uri: unknown) => uri.path),
+        asRelativePath: sinon.stub().callsFake((uri: { path: string }) => uri.path),
         getWorkspaceFolder: sinon.stub().callsFake((uri: unknown) => ({
           name: "test-workspace",
           uri,
