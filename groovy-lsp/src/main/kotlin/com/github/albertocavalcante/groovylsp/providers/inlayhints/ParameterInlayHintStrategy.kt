@@ -49,33 +49,8 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
             return emptyList()
         }
 
-        // Try to resolve the method to get parameter names
         val parameterNames = resolveMethodParameterNames(call, context)
-        if (parameterNames.isEmpty()) {
-            return emptyList()
-        }
-
-        // Generate hints for each argument
-        return arguments.expressions.mapIndexedNotNull { index, arg ->
-            if (index >= parameterNames.size) return@mapIndexedNotNull null
-
-            val paramName = parameterNames[index]
-
-            // Skip if argument is a closure (they provide their own context)
-            if (arg is ClosureExpression) {
-                return@mapIndexedNotNull null
-            }
-
-            val position = Position(
-                arg.lineNumber - 1,
-                arg.columnNumber - 1,
-            )
-
-            InlayHint(position, Either.forLeft("$paramName:")).apply {
-                kind = InlayHintKind.Parameter
-                paddingRight = true
-            }
-        }
+        return createHintsForArguments(arguments, parameterNames)
     }
 
     private fun generateConstructorParameterHints(
@@ -88,8 +63,21 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
             return emptyList()
         }
 
-        // Try to resolve constructor parameter names
         val parameterNames = resolveConstructorParameterNames(call, context)
+        return createHintsForArguments(arguments, parameterNames)
+    }
+
+    /**
+     * Create inlay hints for the given arguments using the resolved parameter names.
+     *
+     * @param arguments The argument list expression
+     * @param parameterNames The resolved parameter names
+     * @return A list of inlay hints for the arguments
+     */
+    private fun createHintsForArguments(
+        arguments: ArgumentListExpression,
+        parameterNames: List<String>,
+    ): List<InlayHint> {
         if (parameterNames.isEmpty()) {
             return emptyList()
         }
@@ -99,6 +87,7 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
 
             val paramName = parameterNames[index]
 
+            // Skip if argument is a closure (they provide their own context)
             if (arg is ClosureExpression) {
                 return@mapIndexedNotNull null
             }
