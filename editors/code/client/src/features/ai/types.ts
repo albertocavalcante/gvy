@@ -71,44 +71,47 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: "groovy_find_symbol",
     command: "groovy.ai.find_symbol",
     handler: async (service, params) => {
-      if (typeof params?.query !== "string") {
+      const p = params as { query?: unknown };
+      if (typeof p.query !== "string") {
         throw new Error(
           "Parameter 'query' is required for groovy_find_symbol.",
         );
       }
-      return service.findWorkspaceSymbol(params.query);
+      return service.findWorkspaceSymbol(p.query);
     },
   },
   {
     name: "groovy_get_references",
     command: "groovy.ai.get_references",
     handler: async (service, params) => {
+      const p = params as { uri?: unknown; line?: unknown; character?: unknown };
       if (
-        typeof params?.uri !== "string" ||
-        typeof params?.line !== "number" ||
-        typeof params?.character !== "number"
+        typeof p.uri !== "string" ||
+        typeof p.line !== "number" ||
+        typeof p.character !== "number"
       ) {
         throw new Error(
           "Parameters 'uri', 'line', and 'character' are required for groovy_get_references.",
         );
       }
-      return service.findReferences(params.uri, params.line, params.character);
+      return service.findReferences(p.uri, p.line, p.character);
     },
   },
   {
     name: "groovy_get_definition",
     command: "groovy.ai.get_definition",
     handler: async (service, params) => {
+      const p = params as { uri?: unknown; line?: unknown; character?: unknown };
       if (
-        typeof params?.uri !== "string" ||
-        typeof params?.line !== "number" ||
-        typeof params?.character !== "number"
+        typeof p.uri !== "string" ||
+        typeof p.line !== "number" ||
+        typeof p.character !== "number"
       ) {
         throw new Error(
           "Parameters 'uri', 'line', and 'character' are required for groovy_get_definition.",
         );
       }
-      return service.getDefinition(params.uri, params.line, params.character);
+      return service.getDefinition(p.uri, p.line, p.character);
     },
   },
 ];
