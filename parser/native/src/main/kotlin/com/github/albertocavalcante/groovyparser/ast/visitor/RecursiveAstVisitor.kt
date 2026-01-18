@@ -17,7 +17,11 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.PackageNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ArrayExpression
 import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.BitwiseNegationExpression
+import org.codehaus.groovy.ast.expr.BooleanExpression
+import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -25,18 +29,25 @@ import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.LambdaExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.MethodReferenceExpression
+import org.codehaus.groovy.ast.expr.NotExpression
 import org.codehaus.groovy.ast.expr.PostfixExpression
 import org.codehaus.groovy.ast.expr.PrefixExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.RangeExpression
 import org.codehaus.groovy.ast.expr.SpreadExpression
 import org.codehaus.groovy.ast.expr.SpreadMapExpression
+import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.TernaryExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.ast.expr.UnaryMinusExpression
+import org.codehaus.groovy.ast.expr.UnaryPlusExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.AssertStatement
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.BreakStatement
 import org.codehaus.groovy.ast.stmt.CaseStatement
@@ -429,6 +440,52 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
         override fun visitSpreadMapExpression(expression: SpreadMapExpression) {
             visitWithTracking(expression) { super.visitSpreadMapExpression(it) }
+        }
+
+        // === Issue #983: Missing visitor coverage for expression/statement types ===
+
+        override fun visitArrayExpression(expression: ArrayExpression) {
+            visitWithTracking(expression) { super.visitArrayExpression(it) }
+        }
+
+        override fun visitCastExpression(expression: CastExpression) {
+            visitWithTracking(expression) { super.visitCastExpression(it) }
+        }
+
+        override fun visitUnaryMinusExpression(expression: UnaryMinusExpression) {
+            visitWithTracking(expression) { super.visitUnaryMinusExpression(it) }
+        }
+
+        override fun visitUnaryPlusExpression(expression: UnaryPlusExpression) {
+            visitWithTracking(expression) { super.visitUnaryPlusExpression(it) }
+        }
+
+        override fun visitNotExpression(expression: NotExpression) {
+            visitWithTracking(expression) { super.visitNotExpression(it) }
+        }
+
+        override fun visitBooleanExpression(expression: BooleanExpression) {
+            visitWithTracking(expression) { super.visitBooleanExpression(it) }
+        }
+
+        override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
+            visitWithTracking(call) { super.visitStaticMethodCallExpression(it) }
+        }
+
+        override fun visitAssertStatement(statement: AssertStatement) {
+            visitWithTracking(statement) { super.visitAssertStatement(it) }
+        }
+
+        override fun visitBitwiseNegationExpression(expression: BitwiseNegationExpression) {
+            visitWithTracking(expression) { super.visitBitwiseNegationExpression(it) }
+        }
+
+        override fun visitMethodReferenceExpression(expression: MethodReferenceExpression) {
+            visitWithTracking(expression) { super.visitMethodReferenceExpression(it) }
+        }
+
+        override fun visitLambdaExpression(expression: LambdaExpression) {
+            visitWithTracking(expression) { super.visitLambdaExpression(it) }
         }
     }
 }
