@@ -54,6 +54,7 @@ import java.util.concurrent.CompletableFuture
  *
  * Implements the BSP 2.1 specification for Maven projects.
  */
+@Suppress("TooManyFunctions") // BSP protocol implementation - one method per BSP endpoint (21 requests)
 class MavenBuildServer(
     private val workspaceRoot: Path,
     private val repositorySystem: RepositorySystem,

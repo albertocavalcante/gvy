@@ -143,7 +143,8 @@ class MavenBuildServerNotificationTest {
                 mockClient.onBuildTaskFinish(any<TaskFinishParams>())
             }
 
-            // TODO(#821): Should send TaskStart with message "Scanning Maven workspace" and TaskFinish with StatusCode.OK
+            // TODO(#821): Should send TaskStart with message "Scanning Maven workspace"
+            //   and TaskFinish with StatusCode.OK
         }
 
         @Test

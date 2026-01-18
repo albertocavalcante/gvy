@@ -70,6 +70,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
 
     companion object {
         private val logger = KotlinLogging.logger {}
+        private const val MAX_PORT_NUMBER = 65535
 
         /**
          * Connects to a BSP server via TCP socket.
@@ -82,7 +83,7 @@ class SocketTransport private constructor(private val socket: Socket) : BspTrans
          * @throws kotlinx.coroutines.TimeoutCancellationException if timeout is exceeded
          */
         suspend fun connect(host: String, port: Int, timeout: Duration): SocketTransport = withContext(Dispatchers.IO) {
-            require(port in 1..65535) { "Port must be in range 1-65535" }
+            require(port in 1..MAX_PORT_NUMBER) { "Port must be in range 1-$MAX_PORT_NUMBER" }
 
             logger.info { "Connecting to BSP server at $host:$port (timeout: $timeout)" }
 

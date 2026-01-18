@@ -186,6 +186,7 @@ class BuildTargetCache {
      *
      * @param connection The BSP server connection (to be implemented)
      */
+    @Suppress("UnusedParameter") // TODO: Implement when BuildServerConnection refactoring is complete
     suspend fun refresh(connection: Any) {
         // TODO: Implement once BuildServerConnection is available
         // 1. val targetsResult = connection.workspaceBuildTargets().await()

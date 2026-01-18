@@ -91,6 +91,7 @@ class MavenWorkspaceScanner {
         null
     }
 
+    @Suppress("CyclomaticComplexMethod") // Maven POM parsing has inherent complexity, extracting multiple fields
     private fun modelToModuleInfo(model: Model, pomPath: Path): MavenModuleInfo {
         // Extract dependencies
         val dependencies = model.dependencies.map { dep ->
