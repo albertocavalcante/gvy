@@ -23,9 +23,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
-import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
-import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -63,7 +61,6 @@ object CompletionProvider {
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
     internal const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
     private const val MAX_TYPE_COMPLETION_RESULTS = 20
-    private const val MAX_IMPORT_COMPLETION_RESULTS = 50
 
     /**
      * Get basic Groovy language completion items using DSL.
@@ -336,40 +333,6 @@ object CompletionProvider {
         }
 
         null -> false
-    }
-
-    /**
-     * Adds workspace members (fields, methods, properties) to completions.
-     *
-     * @param members List of member information from WorkspaceSymbolIndex
-     */
-    private fun CompletionsBuilder.addWorkspaceMembers(members: List<MemberInfo>) {
-        members.forEach { member ->
-            when (member.kind) {
-                SymbolKind.FIELD,
-                SymbolKind.PROPERTY,
-                -> {
-                    field(
-                        name = member.name,
-                        type = member.type?.let { formatType(it) } ?: "def",
-                        doc = "Field: ${member.name}",
-                    )
-                }
-
-                SymbolKind.METHOD -> {
-                    method(
-                        name = member.name,
-                        returnType = member.type?.let { formatType(it) } ?: "def",
-                        parameters = parseSignatureToParams(member.signature),
-                        doc = "Method: ${member.name}${member.signature ?: "()"}",
-                    )
-                }
-
-                else -> {
-                    /* Skip constructors and other kinds */
-                }
-            }
-        }
     }
 
     /**

@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.completion.strategy
 import com.github.albertocavalcante.groovylsp.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.groovylsp.dsl.completion.GroovyCompletions
 import com.github.albertocavalcante.groovylsp.dsl.completion.completions
+import com.github.albertocavalcante.groovylsp.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.semantics.native.ClassSymbol
 import com.github.albertocavalcante.gvy.semantics.native.FieldSymbol
 import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
@@ -28,13 +29,17 @@ internal class GroovyCompletionStrategy : CompletionStrategy {
         // (only declarative directives allowed - this also skips keywords and snippets)
         val skipGroovyCompletions = context.jenkinsBlockContext?.isStrictDeclarative == true
 
-        val items = buildGroovyCompletions(context, skipGroovyCompletions)
+        // Skip keywords when in member access context (e.g., "config.█")
+        val isMemberAccess = context.contextType is ContextType.MemberAccess
+
+        val items = buildGroovyCompletions(context, skipGroovyCompletions, isMemberAccess)
         return CompletionStrategy.found(items)
     }
 
     private fun buildGroovyCompletions(
         context: CompletionStrategyContext,
         skipGroovyCompletions: Boolean,
+        isMemberAccess: Boolean,
     ): List<CompletionItem> = completions {
         if (!skipGroovyCompletions) {
             addClasses(context.symbolContext.classes)
@@ -42,7 +47,10 @@ internal class GroovyCompletionStrategy : CompletionStrategy {
             addFields(context.symbolContext.fields)
             addVariables(context.symbolContext.variables)
             addImports(context.symbolContext.imports)
-            addKeywords()
+            // Skip keywords in member access context (e.g., "config.abstract" makes no sense)
+            if (!isMemberAccess) {
+                addKeywords()
+            }
             // Only add basic snippets when not in strict declarative mode
             GroovyCompletions.basic().forEach(::add)
         }
