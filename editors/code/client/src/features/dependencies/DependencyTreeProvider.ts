@@ -31,10 +31,13 @@ export class DependencyItem extends vscode.TreeItem {
 /**
  * Provides tree data for the Groovy Dependencies view
  */
-export class DependencyTreeProvider
-  implements vscode.TreeDataProvider<DependencyItem>
-{
-  private static readonly SCOPE_ORDER = ["compile", "runtime", "test", "provided"];
+export class DependencyTreeProvider implements vscode.TreeDataProvider<DependencyItem> {
+  private static readonly SCOPE_ORDER = [
+    "compile",
+    "runtime",
+    "test",
+    "provided",
+  ];
 
   private _onDidChangeTreeData: vscode.EventEmitter<
     DependencyItem | undefined | null | void
@@ -108,7 +111,11 @@ export class DependencyTreeProvider
           workspaceFolder.uri.toString(),
         );
 
-        if (!result || !result.dependencies || result.dependencies.length === 0) {
+        if (
+          !result ||
+          !result.dependencies ||
+          result.dependencies.length === 0
+        ) {
           // No dependencies found for this workspace - this is expected for non-Groovy projects
           // The LSP server returns empty dependencies with buildTool="unknown" for such cases
           console.debug(`No dependencies found for ${workspaceFolder.name}`);
@@ -117,7 +124,10 @@ export class DependencyTreeProvider
 
         // Group dependencies by scope
         const scopeMap = this.groupByScope(result.dependencies);
-        const scopeItems = this.createScopeItems(scopeMap, workspaceFolders.length > 1 ? workspaceFolder.name : undefined);
+        const scopeItems = this.createScopeItems(
+          scopeMap,
+          workspaceFolders.length > 1 ? workspaceFolder.name : undefined,
+        );
 
         // Cache the result
         this.dependenciesCache.set(cacheKey, scopeItems);
@@ -129,10 +139,12 @@ export class DependencyTreeProvider
           error,
         );
         // Only show popup for genuine errors (not network timeouts or missing projects)
-        if (error instanceof Error &&
-            !error.message.includes("timeout") &&
-            !error.message.includes("not found") &&
-            !error.message.includes("No build tool")) {
+        if (
+          error instanceof Error &&
+          !error.message.includes("timeout") &&
+          !error.message.includes("not found") &&
+          !error.message.includes("No build tool")
+        ) {
           vscode.window.showErrorMessage(
             `Failed to fetch dependencies for ${workspaceFolder.name}: ${error.message}`,
           );

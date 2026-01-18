@@ -109,7 +109,7 @@ describe("GitHubReleaseProvider", () => {
       await provider.fetchLatestRelease();
 
       assert.isTrue(fetchStub.calledOnce);
-      const [url, options] = fetchStub.firstCall.args;
+      const [url] = fetchStub.firstCall.args;
       assert.include(url, "api.github.com");
       assert.include(url, "GroovyLanguageServer/groovy-lsp");
       assert.include(url, "releases/latest");

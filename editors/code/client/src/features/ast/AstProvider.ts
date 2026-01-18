@@ -219,7 +219,6 @@ class AstProvider {
     this._panel.dispose();
 
     vscode.Disposable.from(...this._disposables).dispose();
-    this._disposables = [];
   }
 
   private _getHtmlForWebview(): string {

@@ -40,7 +40,7 @@ describe("TestCodeLensProvider", () => {
         })),
       },
       workspace: {
-        getConfiguration: sandbox.stub().callsFake((section: string) => ({
+        getConfiguration: sandbox.stub().callsFake((_section: string) => ({
           get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
             // Override codelens.test.source to "extension" so tests work with the new logic
             if (key === "codelens.test.source") {

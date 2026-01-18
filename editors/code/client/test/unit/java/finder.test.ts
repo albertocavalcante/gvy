@@ -720,7 +720,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should include user-configured runtimes from groovy.configuration.runtimes", async () => {
         // Configure mock to return configured runtimes
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, _defaultValue?: any) => {
             if (key === "configuration.runtimes") {
               return [
                 {
@@ -765,7 +765,7 @@ describe("JDK Finder Module - Public API", () => {
       it("should deduplicate configured runtimes with auto-detected JDKs", async () => {
         // Configure mock to return configured runtime that matches auto-detected
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, defaultValue?: any) => {
+          get: sinon.stub().callsFake((key: string, _defaultValue?: any) => {
             if (key === "configuration.runtimes") {
               return [
                 {

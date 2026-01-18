@@ -114,7 +114,7 @@ describe("MavenExecutionService", () => {
       };
       const request = { include: [mockItem] };
       const filter = (service as any).buildTestFilter(request);
-      assert.ok(filter[0].includes('\"'));
+      assert.ok(filter[0].includes('"'));
     });
   });
 

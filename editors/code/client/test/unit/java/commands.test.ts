@@ -46,7 +46,7 @@ describe("Java Commands", () => {
       },
       commands: {
         executeCommand: sinon.stub().resolves(),
-        registerCommand: sinon.stub().callsFake((_cmd, handler) => ({
+        registerCommand: sinon.stub().callsFake((_cmd, _handler) => ({
           dispose: sinon.stub(),
         })),
       },

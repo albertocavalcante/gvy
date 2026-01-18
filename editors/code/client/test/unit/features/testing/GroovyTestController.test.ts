@@ -4,7 +4,6 @@ import proxyquire from "proxyquire";
 
 describe("GroovyTestController", () => {
   let GroovyTestController: any;
-  let controller: any;
   let contextMock: any;
   let executionServiceMock: any;
   let testServiceMock: any;
@@ -68,7 +67,7 @@ describe("GroovyTestController", () => {
       commands: {
         registerCommand: sandbox
           .stub()
-          .callsFake((command: string, handler: any) => {
+          .callsFake((_command: string, _handler: any) => {
             // Store the handler for testing
             return { dispose: sandbox.stub() };
           }),
@@ -176,9 +175,11 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with external files", () => {
+    let _controller: any;
+
     it("should show warning for external file and not run test", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -222,7 +223,7 @@ describe("GroovyTestController", () => {
 
     it("should use existing test item if found in workspace", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -278,7 +279,7 @@ describe("GroovyTestController", () => {
 
     it("should handle missing suite name gracefully", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -317,7 +318,7 @@ describe("GroovyTestController", () => {
     it("should preserve test suites when external file triggers warning", async () => {
       // Ensure external file warning doesn't affect existing workspace test suites
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -417,6 +418,8 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with wildcard", () => {
+    let _controller: any;
+
     it('should run entire suite when test is "*" (wildcard)', async () => {
       // Arrange: Set up a suite with tests discovered
       const suiteUri = "file:///workspace/MySpec.groovy";
@@ -432,7 +435,7 @@ describe("GroovyTestController", () => {
         },
       ]);
 
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -491,7 +494,7 @@ describe("GroovyTestController", () => {
         },
       ]);
 
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,

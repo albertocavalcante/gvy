@@ -602,7 +602,7 @@ describe("TestEventConsumer", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
       // Create deeply nested JSON (100+ levels)
-      let nested: any = { event: "testStarted", id: "test", name: "test" };
+      const nested: any = { event: "testStarted", id: "test", name: "test" };
       let current = nested;
       for (let i = 0; i < 100; i++) {
         current.nested = { level: i };
