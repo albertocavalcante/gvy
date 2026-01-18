@@ -126,7 +126,7 @@ class SarifRuleRegistryTest {
     // Category coverage tests
 
     @Test
-    fun `all categories should have at least one rule`() {
+    fun `should contain exactly the expected rule categories`() {
         val expectedCategories = setOf(
             "basic", "formatting", "unused", "imports", "naming",
             "groovyism", "size", "exceptions", "security", "unnecessary", "braces",
@@ -134,7 +134,7 @@ class SarifRuleRegistryTest {
         val actualCategories = SarifRuleRegistry.getCodeNarcRules()
             .mapNotNull { it.properties?.category }
             .toSet()
-        assertTrue(expectedCategories.all { it in actualCategories })
+        assertEquals(expectedCategories, actualCategories)
     }
 
     @Test
@@ -142,9 +142,10 @@ class SarifRuleRegistryTest {
         val rules = SarifRuleRegistry.getCodeNarcRules()
 
         rules.forEach { rule ->
-            assertNotNull(rule.properties?.category, "Rule ${rule.id} should have a category")
+            val category = assertNotNull(rule.properties?.category, "Rule ${rule.id} should have a category")
+            val helpUri = assertNotNull(rule.helpUri, "Rule ${rule.id} should have a helpUri")
             assertTrue(
-                rule.helpUri?.contains(rule.properties?.category ?: "") == true,
+                helpUri.contains(category),
                 "Rule ${rule.id} helpUri should contain its category",
             )
         }
@@ -175,9 +176,9 @@ class SarifRuleRegistryTest {
         val rules = SarifRuleRegistry.getCompilerRules()
 
         rules.forEach { rule ->
-            assertNotNull(rule.helpUri)
+            val helpUri = assertNotNull(rule.helpUri)
             assertTrue(
-                rule.helpUri?.contains("groovy-lang.org") == true,
+                helpUri.contains("groovy-lang.org"),
                 "Compiler rule ${rule.id} should have groovy-lang.org URI",
             )
         }
@@ -303,7 +304,7 @@ class SarifRuleRegistryTest {
     }
 
     @Test
-    fun `multiple calls to getCodeNarcRules should return same instances`() {
+    fun `getRule should return same instance on multiple calls`() {
         val rules1 = SarifRuleRegistry.getCodeNarcRules()
         val rules2 = SarifRuleRegistry.getCodeNarcRules()
 
