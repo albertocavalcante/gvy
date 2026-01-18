@@ -791,12 +791,16 @@ class GroovyTextDocumentService(
                     UnusedImportDetector.detectUnusedImports(it).toSet()
                 } ?: emptySet()
 
+                // Get source text for accurate method name offset calculation
+                val sourceText = compilationResult.sourceText ?: documentProvider.get(uri)
+
                 // Get general Groovy semantic tokens for ALL files
                 val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(
                     astModel,
                     uri,
                     unusedImports = unusedImports,
                     moduleNode = moduleNode,
+                    sourceText = sourceText,
                 )
 
                 // Get Jenkins-specific tokens (built-in blocks + vars/ globals) only for Jenkins files

@@ -119,12 +119,19 @@ object GroovySemanticTokenProvider {
     }
 
     /**
+     * Thread-local source lines for offset calculation.
+     * This avoids passing source lines through the entire call chain while maintaining thread safety.
+     */
+    private val sourceLines = ThreadLocal<List<String>>()
+
+    /**
      * Generate semantic tokens for all Groovy constructs.
      *
      * @param astModel Parsed AST model
      * @param uri Document URI
      * @param unusedImports Set of unused ImportNodes (for marking with UNNECESSARY modifier)
      * @param moduleNode Optional ModuleNode to get imports from (for generating import tokens)
+     * @param sourceText Optional source text for accurate offset calculation
      * @return List of semantic tokens
      */
     fun getSemanticTokens(
@@ -132,8 +139,12 @@ object GroovySemanticTokenProvider {
         uri: URI,
         unusedImports: Set<ImportNode> = emptySet(),
         moduleNode: ModuleNode? = null,
+        sourceText: String? = null,
     ): List<SemanticToken> {
         val tokens = mutableListOf<SemanticToken>()
+
+        // Set source lines for this thread (for accurate method name offset calculation)
+        sourceLines.set(sourceText?.lines() ?: emptyList())
 
         try {
             val allNodes = astModel.getAllNodes()
@@ -173,6 +184,9 @@ object GroovySemanticTokenProvider {
             logger.error(e) {
                 "Unexpected error generating semantic tokens for $uri: ${e.javaClass.simpleName} - ${e.message}"
             }
+        } finally {
+            // Clean up thread local to prevent memory leaks
+            sourceLines.remove()
         }
 
         return tokens
@@ -758,11 +772,37 @@ object GroovySemanticTokenProvider {
      * but we need the position of "myMethod". This calculates the offset based on
      * the method's modifiers and return type.
      *
+     * If source text is available, it extracts the actual declaration line to find
+     * the method name position, avoiding issues with generic type formatting variations
+     * (e.g., "Map<String, Integer>" vs "Map<String,Integer>").
+     *
      * Note: We exclude 'public' from the calculation because Groovy methods are
      * implicitly public - the modifier is rarely written explicitly. If we included
      * it, the offset would be wrong for 99% of Groovy code.
      */
     private fun calculateMethodNameOffset(method: MethodNode): Int {
+        // Try to use actual source text if available
+        val lines = sourceLines.get() ?: emptyList()
+        val (declLine, declCol) = getMethodDeclarationPosition(method)
+        // declLine is 1-based, so declLine <= lines.size ensures declLine - 1 < lines.size
+        if (lines.isNotEmpty() && declLine > 0 && declLine <= lines.size && declCol > 0) {
+            val sourceLine = lines[declLine - 1] // Convert to 0-based
+            val methodName = method.name
+
+            // Find the method name in the source line
+            // We look for the method name followed by '(' to avoid false matches
+            // Regex.escape handles any special characters in the method name
+            val namePattern = Regex("""\b${Regex.escape(methodName)}\s*\(""")
+            val match = namePattern.find(sourceLine)
+            if (match != null) {
+                // Calculate offset from the declaration start column to the method name
+                // declCol is 1-based, match.range.first is 0-based
+                // So the offset is: match.range.first - (declCol - 1)
+                return match.range.first - (declCol - 1)
+            }
+        }
+
+        // Fallback to reconstruction-based calculation if source text unavailable
         var offset = 0
 
         // Add modifier lengths + spaces
