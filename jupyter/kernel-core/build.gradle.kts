@@ -15,7 +15,7 @@ dependencies {
     api(libs.kotlin.logging)
 
     // Groovy REPL execution
-    api(project(":groovy-repl"))
+    api(project(":repl"))
 
     // Testing
     testImplementation(libs.kotlin.test)

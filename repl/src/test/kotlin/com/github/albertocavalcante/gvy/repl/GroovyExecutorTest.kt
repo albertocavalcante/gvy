@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyrepl
+package com.github.albertocavalcante.gvy.repl
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

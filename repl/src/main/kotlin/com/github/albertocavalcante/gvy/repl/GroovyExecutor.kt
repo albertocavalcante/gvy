@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyrepl
+package com.github.albertocavalcante.gvy.repl
 
 import groovy.lang.Binding
 import groovy.lang.GroovyShell

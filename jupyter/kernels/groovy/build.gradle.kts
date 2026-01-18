@@ -9,7 +9,7 @@ dependencies {
     implementation(project(":jupyter:kernel-core"))
 
     // Execution Engine (Groovy 4)
-    implementation(project(":groovy-repl"))
+    implementation(project(":repl"))
 
     // Groovy Parser/Common (transitive, but explicit for clarity)
     implementation(project(":groovy-common"))
