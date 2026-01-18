@@ -28,6 +28,7 @@ import org.eclipse.lsp4j.InlayHint
 import org.eclipse.lsp4j.InlayHintKind
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import java.net.URI
 
@@ -90,7 +91,7 @@ private data class CallableSignature(val parameterNames: List<String>, val param
  * Context for processing AST nodes during inlay hint generation.
  */
 private data class NodeProcessingContext(
-    val range: org.eclipse.lsp4j.Range,
+    val range: Range,
     val astModel: GroovyAstModel,
     val moduleNode: ModuleNode?,
     val symbolTable: SymbolTable?,

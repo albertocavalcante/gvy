@@ -11,6 +11,7 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
@@ -335,7 +336,7 @@ class GroovySemanticsTest {
         // Find the PropertyExpression 'p.someProperty'
         val block = module.statementBlock
         val secondStmt = block.statements[1] as ExpressionStatement
-        val propExpr = secondStmt.expression as org.codehaus.groovy.ast.expr.PropertyExpression
+        val propExpr = secondStmt.expression as PropertyExpression
         val objectExpr = propExpr.objectExpression as VariableExpression
 
         // The objectExpression 'p' should resolve to LinkedHashMap

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyspock
 
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -131,8 +132,8 @@ class SpockDetectorTest {
         // Simulate a class where 'Specification' is not on the classpath
         // In this case, Groovy resolves superClass to Object, but keeps the
         // unresolved name in unresolvedSuperClass
-        val classNode = ClassNode("com.example.FooSpec", 0, org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE)
-        val unresolvedSuper = ClassNode("spock.lang.Specification", 0, org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE)
+        val classNode = ClassNode("com.example.FooSpec", 0, ClassHelper.OBJECT_TYPE)
+        val unresolvedSuper = ClassNode("spock.lang.Specification", 0, ClassHelper.OBJECT_TYPE)
         classNode.unresolvedSuperClass = unresolvedSuper
 
         assertTrue(SpockDetector.isSpockSpec(classNode))

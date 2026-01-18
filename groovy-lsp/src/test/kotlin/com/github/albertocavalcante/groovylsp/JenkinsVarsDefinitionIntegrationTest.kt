@@ -3,7 +3,9 @@ package com.github.albertocavalcante.groovylsp
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DefinitionParams
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -43,7 +45,7 @@ class JenkinsVarsDefinitionIntegrationTest {
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "test"))
         }
         serverHandle!!.server.initialize(initParams).get()
-        serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+        serverHandle!!.server.initialized(InitializedParams())
 
         // Wait for workspace initialization to complete.
         // The initialized() call triggers startAsyncDependencyResolution() which runs
@@ -165,7 +167,7 @@ class JenkinsVarsDefinitionIntegrationTest {
 
     private suspend fun openDocument(uri: String, content: String) {
         serverHandle!!.server.textDocumentService.didOpen(
-            org.eclipse.lsp4j.DidOpenTextDocumentParams().apply {
+            DidOpenTextDocumentParams().apply {
                 textDocument = TextDocumentItem().apply {
                     this.uri = uri
                     languageId = "groovy"

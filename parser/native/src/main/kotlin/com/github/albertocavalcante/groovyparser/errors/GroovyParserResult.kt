@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovyparser.errors
 
+import io.github.oshai.kotlinlogging.KLogger
+import org.codehaus.groovy.control.CompilationFailedException
+
 /**
  * Type alias for Results containing LSP-specific errors
  */
@@ -49,7 +52,7 @@ inline fun <T> groovyParserResultOf(block: () -> T): GroovyParserResult<T> = try
     Result.failure(
         GroovyParserError.InternalError("state_check", e.message ?: "Invalid state", e),
     )
-} catch (e: org.codehaus.groovy.control.CompilationFailedException) {
+} catch (e: CompilationFailedException) {
     Result.failure(
         GroovyParserError.InternalError("compilation", e.message ?: "Groovy compilation failed", e),
     )
@@ -98,7 +101,7 @@ inline fun <T> GroovyParserResult<T>.recoverFrom(
  * Logs errors while preserving the result chain
  */
 inline fun <T> GroovyParserResult<T>.logError(
-    logger: io.github.oshai.kotlinlogging.KLogger,
+    logger: KLogger,
     crossinline message: (GroovyParserError) -> String = { "LSP operation failed: ${it.message}" },
 ): GroovyParserResult<T> = also { result ->
     result.exceptionOrNull()?.let { error ->
@@ -112,10 +115,7 @@ inline fun <T> GroovyParserResult<T>.logError(
 /**
  * Converts GroovyParserResult to nullable value, logging errors
  */
-fun <T> GroovyParserResult<T>.getOrLogNull(
-    logger: io.github.oshai.kotlinlogging.KLogger,
-    message: String = "Operation failed",
-): T? = fold(
+fun <T> GroovyParserResult<T>.getOrLogNull(logger: KLogger, message: String = "Operation failed"): T? = fold(
     onSuccess = { it },
     onFailure = { error ->
         when (error) {
@@ -131,7 +131,7 @@ fun <T> GroovyParserResult<T>.getOrLogNull(
  */
 fun <T> GroovyParserResult<T>.getOrDefault(
     default: T,
-    logger: io.github.oshai.kotlinlogging.KLogger? = null,
+    logger: KLogger? = null,
     message: String = "Operation failed, using default",
 ): T = fold(
     onSuccess = { it },

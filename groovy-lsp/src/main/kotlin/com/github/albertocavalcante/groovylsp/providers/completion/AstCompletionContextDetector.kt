@@ -8,6 +8,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -353,7 +354,7 @@ object AstCompletionContextDetector {
     /**
      * Extracts the receiver name from an expression.
      */
-    private fun extractReceiverName(expr: org.codehaus.groovy.ast.expr.Expression): String? = when (expr) {
+    private fun extractReceiverName(expr: Expression): String? = when (expr) {
         is VariableExpression -> expr.name
         is PropertyExpression -> expr.propertyAsString
         else -> null

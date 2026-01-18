@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -112,7 +113,7 @@ class GroovyLanguageServerTest {
             capabilities = ClientCapabilities()
         }
         server.initialize(initParams).get()
-        server.initialized(org.eclipse.lsp4j.InitializedParams())
+        server.initialized(InitializedParams())
 
         server.textDocumentService.didOpen(params)
 

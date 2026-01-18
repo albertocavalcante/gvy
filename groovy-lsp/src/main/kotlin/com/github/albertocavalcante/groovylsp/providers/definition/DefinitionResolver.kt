@@ -35,6 +35,7 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.Statement
+import org.eclipse.lsp4j.Range
 import java.net.URI
 
 class DefinitionResolver(
@@ -89,8 +90,7 @@ class DefinitionResolver(
      */
     sealed class DefinitionResult {
         data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
-        data class Binary(val uri: URI, val name: String, val range: org.eclipse.lsp4j.Range? = null) :
-            DefinitionResult()
+        data class Binary(val uri: URI, val name: String, val range: Range? = null) : DefinitionResult()
     }
 
     /**

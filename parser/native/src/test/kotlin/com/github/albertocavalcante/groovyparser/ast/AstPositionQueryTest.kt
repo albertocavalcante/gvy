@@ -2,11 +2,16 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -46,8 +51,8 @@ class AstPositionQueryTest {
         assertNotNull(node, "Should find node at constructor type position")
 
         val isConstructorOrType =
-            node is org.codehaus.groovy.ast.expr.ConstructorCallExpression ||
-                (node is org.codehaus.groovy.ast.ClassNode && node.nameWithoutPackage == "GenericPipelineDeclaration")
+            node is ConstructorCallExpression ||
+                (node is ClassNode && node.nameWithoutPackage == "GenericPipelineDeclaration")
 
         assertTrue(
             isConstructorOrType,
@@ -74,7 +79,7 @@ class AstPositionQueryTest {
         val node = visitor.getNodeAt(uri, 0, col + 2) // inside the identifier, not just the first char
         assertNotNull(node, "Should find node at import class name position")
         assertTrue(
-            node is org.codehaus.groovy.ast.ClassNode || node is org.codehaus.groovy.ast.ImportNode,
+            node is ClassNode || node is ImportNode,
             "Expected ClassNode or ImportNode but got ${node?.javaClass?.simpleName}",
         )
     }
@@ -100,7 +105,7 @@ class AstPositionQueryTest {
 
         // We specifically want the referenced type node (ClassNode) so definition can resolve it.
         assertTrue(
-            node is org.codehaus.groovy.ast.ClassNode,
+            node is ClassNode,
             "Expected ClassNode at extends type name but got ${node?.javaClass?.simpleName}",
         )
     }
@@ -120,7 +125,7 @@ class AstPositionQueryTest {
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!
         val block = methodNode.code as BlockStatement
         val stmt = block.statements[0] as ExpressionStatement
-        val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+        val decl = stmt.expression as DeclarationExpression
         val binaryExpr = decl.rightExpression as BinaryExpression
 
         assertTrue(binaryExpr.lineNumber > 0)
@@ -132,7 +137,7 @@ class AstPositionQueryTest {
         assertNotNull(startNode, "Should find node at binary expression start")
         // At the start position, we'll find the left operand (ConstantExpression "1")
         assertTrue(
-            startNode is org.codehaus.groovy.ast.expr.ConstantExpression,
+            startNode is ConstantExpression,
             "At start of '1 + 2', should find left operand (ConstantExpression)",
         )
 
@@ -160,7 +165,7 @@ class AstPositionQueryTest {
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!
         val block = methodNode.code as BlockStatement
         val stmt = block.statements[0] as ExpressionStatement
-        val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+        val decl = stmt.expression as DeclarationExpression
         val closureExpr = decl.rightExpression as ClosureExpression
 
         val queryLine = closureExpr.lineNumber - 1
@@ -187,7 +192,7 @@ class AstPositionQueryTest {
         val methodNode = result.ast!!.classes[0].methods.find { it.name == "run" }!!
         val block = methodNode.code as BlockStatement
         val stmt = block.statements[0] as ExpressionStatement
-        val decl = stmt.expression as org.codehaus.groovy.ast.expr.DeclarationExpression
+        val decl = stmt.expression as DeclarationExpression
         val gstringExpr = decl.rightExpression as GStringExpression
 
         val queryLine = gstringExpr.lineNumber - 1
@@ -200,8 +205,8 @@ class AstPositionQueryTest {
 
         // The node should be either the GString itself or one of its parts (String or Value)
         val isGStringOrPart = node is GStringExpression ||
-            node is org.codehaus.groovy.ast.expr.ConstantExpression ||
-            node is org.codehaus.groovy.ast.expr.VariableExpression
+            node is ConstantExpression ||
+            node is VariableExpression
 
         assertTrue(
             isGStringOrPart,
@@ -232,9 +237,9 @@ class AstPositionQueryTest {
 
         // The most specific node should be either a Variable, MethodCall, or part of the call
         assertTrue(
-            node is org.codehaus.groovy.ast.expr.VariableExpression ||
+            node is VariableExpression ||
                 node is MethodCallExpression ||
-                node is org.codehaus.groovy.ast.expr.ConstantExpression,
+                node is ConstantExpression,
             "At method call position, should find a call-related node, but got ${node?.javaClass?.simpleName}",
         )
     }
@@ -650,7 +655,7 @@ class AstPositionQueryTest {
         assertNotNull(node, "Should find node at 'withAge' in multi-line chain")
         // Should be MethodCallExpression or the method constant
         assertTrue(
-            node is MethodCallExpression || node is org.codehaus.groovy.ast.expr.ConstantExpression,
+            node is MethodCallExpression || node is ConstantExpression,
             "Expected method-related node, got ${node?.javaClass?.simpleName}",
         )
     }

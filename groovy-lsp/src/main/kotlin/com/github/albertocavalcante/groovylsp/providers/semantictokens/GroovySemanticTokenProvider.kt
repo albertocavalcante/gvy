@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.providers.semantictokens
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
@@ -833,10 +834,7 @@ object GroovySemanticTokenProvider {
      * Tokenize annotations with robust length calculation.
      * Uses lastColumnNumber when available, falls back to name length + 1 for @ symbol.
      */
-    private fun tokenizeAnnotations(
-        annotations: List<org.codehaus.groovy.ast.AnnotationNode>?,
-        tokens: MutableList<SemanticToken>,
-    ) {
+    private fun tokenizeAnnotations(annotations: List<AnnotationNode>?, tokens: MutableList<SemanticToken>) {
         annotations?.forEach { annotation ->
             if (annotation.lineNumber > 0 && annotation.columnNumber > 0) {
                 val length = if (annotation.lastLineNumber == annotation.lineNumber &&

@@ -8,11 +8,14 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
 
 private const val IMPORT_KEYWORD = "import"
 private const val STATIC_KEYWORD = "static"
@@ -509,16 +512,16 @@ fun detectCursorPositionContext(nodeAtCursor: ASTNode?, astModel: GroovyAstModel
         val parent = astModel.getParent(current)
 
         // Check if current node is a BlockStatement inside a ClosureExpression
-        if (current is org.codehaus.groovy.ast.stmt.BlockStatement) {
+        if (current is BlockStatement) {
             val blockParent = parent
-            if (blockParent is org.codehaus.groovy.ast.expr.ClosureExpression) {
+            if (blockParent is ClosureExpression) {
                 // We're inside the code block of a closure - this is block level
                 return CursorPositionContext.BlockLevel
             }
         }
 
         // Check if we're inside a closure expression at all
-        if (current is org.codehaus.groovy.ast.expr.ClosureExpression) {
+        if (current is ClosureExpression) {
             // We're at or inside a closure - block level
             return CursorPositionContext.BlockLevel
         }
@@ -530,16 +533,16 @@ fun detectCursorPositionContext(nodeAtCursor: ASTNode?, astModel: GroovyAstModel
             // Check various ways we might be in the arguments
             if (arguments === current) {
                 // Don't treat closure arguments as "inside method call"
-                if (current is org.codehaus.groovy.ast.expr.ClosureExpression) {
+                if (current is ClosureExpression) {
                     return CursorPositionContext.BlockLevel
                 }
                 return CursorPositionContext.InsideMethodCall(parent.methodAsString ?: "")
             }
 
             // Check if we're inside a tuple/map/named argument list
-            if (arguments is org.codehaus.groovy.ast.expr.TupleExpression) {
+            if (arguments is TupleExpression) {
                 val isInNonClosureArg = arguments.expressions.any { expr ->
-                    if (expr is org.codehaus.groovy.ast.expr.ClosureExpression) {
+                    if (expr is ClosureExpression) {
                         false // Skip closures
                     } else {
                         isNodeOrDescendant(current, expr, astModel)

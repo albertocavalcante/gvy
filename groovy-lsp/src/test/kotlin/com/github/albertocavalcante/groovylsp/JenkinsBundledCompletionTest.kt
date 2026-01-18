@@ -1,10 +1,14 @@
 package com.github.albertocavalcante.groovylsp
 
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -31,7 +35,7 @@ class JenkinsBundledCompletionTest {
             initializationOptions = mapOf("groovy.languageServer.engine" to "native")
         }
         serverHandle!!.server.initialize(initParams).get()
-        serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+        serverHandle!!.server.initialized(InitializedParams())
 
         // Wait for server to be ready and quiescent (background tasks finished)
         serverHandle!!.client.awaitQuiescentStatus()
@@ -201,13 +205,13 @@ class JenkinsBundledCompletionTest {
         }
 
         serverHandle!!.server.textDocumentService.didOpen(
-            org.eclipse.lsp4j.DidOpenTextDocumentParams().apply {
+            DidOpenTextDocumentParams().apply {
                 textDocument = textDoc
             },
         )
     }
 
-    private suspend fun requestCompletionsAt(uri: String, position: Position): List<org.eclipse.lsp4j.CompletionItem> {
+    private suspend fun requestCompletionsAt(uri: String, position: Position): List<CompletionItem> {
         val params = CompletionParams().apply {
             textDocument = TextDocumentIdentifier(uri)
             this.position = position
@@ -217,7 +221,7 @@ class JenkinsBundledCompletionTest {
         return result.left
     }
 
-    private suspend fun requestHoverAt(uri: String, position: Position): org.eclipse.lsp4j.Hover? {
+    private suspend fun requestHoverAt(uri: String, position: Position): Hover? {
         val params = HoverParams().apply {
             textDocument = TextDocumentIdentifier(uri)
             this.position = position

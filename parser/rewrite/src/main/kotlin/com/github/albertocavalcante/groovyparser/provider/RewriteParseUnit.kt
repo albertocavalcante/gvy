@@ -10,6 +10,7 @@ import com.github.albertocavalcante.groovyparser.api.model.Severity
 import com.github.albertocavalcante.groovyparser.api.model.SymbolInfo
 import com.github.albertocavalcante.groovyparser.api.model.SymbolKind
 import com.github.albertocavalcante.groovyparser.api.model.TypeInfo
+import org.openrewrite.Cursor
 import org.openrewrite.Tree
 import org.openrewrite.groovy.GroovyVisitor
 import org.openrewrite.groovy.tree.G
@@ -167,7 +168,7 @@ private class SymbolExtractorVisitor {
                         kind = kind,
                         range = range,
                         containerName = cu.packageDeclaration?.expression?.printTrimmed(
-                            org.openrewrite.Cursor(
+                            Cursor(
                                 null,
                                 cu,
                             ),

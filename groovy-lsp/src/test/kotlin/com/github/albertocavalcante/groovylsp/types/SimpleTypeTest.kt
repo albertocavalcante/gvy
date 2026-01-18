@@ -4,6 +4,8 @@ import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
@@ -55,10 +57,10 @@ class SimpleTypeTest {
     @Test
     fun `test if TypeResolver can handle basic nodes without suspension`() {
         // Create a simple field node
-        val fieldNode = org.codehaus.groovy.ast.FieldNode(
+        val fieldNode = FieldNode(
             "testField",
             0,
-            org.codehaus.groovy.ast.ClassHelper.STRING_TYPE,
+            ClassHelper.STRING_TYPE,
             null,
             null,
         )

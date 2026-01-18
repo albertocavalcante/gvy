@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -20,6 +21,10 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class DependencyGraph {
     private val logger = KotlinLogging.logger {}
+
+    companion object {
+        private val EXCLUDED_PREFIXES = listOf("java.", "groovy.")
+    }
 
     /**
      * Maps a file URI to the set of file URIs it depends on (direct dependencies only).
@@ -205,7 +210,7 @@ class DependencyGraph {
         val newDependencies = mutableSetOf<URI>()
 
         // Helper lambda for consistent import sorting (matches processing order)
-        val importSortKey: (org.codehaus.groovy.ast.ImportNode) -> String = {
+        val importSortKey: (ImportNode) -> String = {
             it.type?.name ?: it.className ?: ""
         }
 
@@ -339,7 +344,7 @@ class DependencyGraph {
         val className = classNode.name
 
         // Skip primitive types and JDK types
-        if (className.startsWith("java.") || className.startsWith("groovy.")) {
+        if (EXCLUDED_PREFIXES.any { className.startsWith(it) }) {
             return
         }
 

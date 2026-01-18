@@ -39,6 +39,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
@@ -252,7 +253,7 @@ class HoverProvider(
     ): ASTNode {
         // If it's a declaration, return the DeclarationExpression for richer hover info
         val parent = visitor.getParent(node)
-        if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
+        if (parent is DeclarationExpression && parent.leftExpression == node) {
             return parent // Return parent so SemanticTypeResolver can resolve the type
         }
 
@@ -379,7 +380,7 @@ class HoverProvider(
         }
 
         return Hover().apply {
-            contents = org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(markupContent)
+            contents = Either.forRight(markupContent)
         }
     }
 }

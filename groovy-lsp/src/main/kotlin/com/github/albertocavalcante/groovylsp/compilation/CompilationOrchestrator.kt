@@ -14,6 +14,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -273,7 +274,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun buildSemanticDocument(uri: URI, ast: org.codehaus.groovy.ast.ModuleNode) {
+    private fun buildSemanticDocument(uri: URI, ast: ModuleNode) {
         val db = semanticDb ?: return
         try {
             val builder = SemanticDocumentBuilder(ast, uri)

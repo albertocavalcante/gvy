@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.SourceUnit
 import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -175,7 +177,7 @@ class DependencyGraphTest {
         val workspaceIndex = mapOf("FileB" to fileB)
 
         // Create a module with an import
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("FileB", 0, null, null, null)
         moduleNode.addImport("FileB", classNode)
 
@@ -193,7 +195,7 @@ class DependencyGraphTest {
 
         val workspaceIndex = mapOf("Base" to base)
 
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("Derived", 0, null, null, null)
         classNode.superClass = ClassNode("Base", 0, null, null, null)
         moduleNode.classes.add(classNode)
@@ -212,7 +214,7 @@ class DependencyGraphTest {
 
         val workspaceIndex = mapOf("Interface" to iface)
 
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("Implementation", 0, null, null, null)
         classNode.interfaces = arrayOf(ClassNode("Interface", 0, null, null, null))
         moduleNode.classes.add(classNode)
@@ -236,13 +238,13 @@ class DependencyGraphTest {
         )
 
         // First update: A depends on B
-        val moduleNode1 = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode1 = ModuleNode(null as SourceUnit?)
         val classNode1 = ClassNode("FileB", 0, null, null, null)
         moduleNode1.addImport("FileB", classNode1)
         graph.updateFromModule(fileA, moduleNode1, workspaceIndex)
 
         // Second update: A depends on C (not B)
-        val moduleNode2 = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode2 = ModuleNode(null as SourceUnit?)
         val classNode2 = ClassNode("FileC", 0, null, null, null)
         moduleNode2.addImport("FileC", classNode2)
         graph.updateFromModule(fileA, moduleNode2, workspaceIndex)
@@ -417,11 +419,11 @@ class DependencyGraphTest {
         )
 
         // Create a module with a star import
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         // Note: We need to manually create the ImportNode because addStarImport(String)
         // doesn't set type/className which the current DependencyGraph code expects
         val packageClassNode = ClassNode("com.example", 0, null, null, null)
-        val starImport = org.codehaus.groovy.ast.ImportNode(packageClassNode, null)
+        val starImport = ImportNode(packageClassNode, null)
         moduleNode.starImports.add(starImport)
 
         // Update and verify dependencies are extracted
@@ -471,7 +473,7 @@ class DependencyGraphTest {
         )
 
         // Create a module with multiple static imports
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
 
         // Add static imports in non-alphabetical order
         moduleNode.addStaticImport(ClassNode("Zebra", 0, null, null, null), "zebraMethod", "zebraMethod")
@@ -517,7 +519,7 @@ class DependencyGraphTest {
         )
 
         // Create a module with multiple static star imports
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
 
         // Add static star imports in non-alphabetical order
         moduleNode.addStaticStarImport("Zebra", ClassNode("Zebra", 0, null, null, null))
@@ -566,7 +568,7 @@ class DependencyGraphTest {
             "StaticA" to URI.create("file:///src/StaticA.groovy"),
         )
 
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
 
         // Mix all types of imports - testing both regular and static imports
         // (star imports are tested in a separate test)
