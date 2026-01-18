@@ -1245,7 +1245,15 @@ DIFF_MAX_LINES = 8000  # Absolute max lines to send
 DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 
 # File priority for large diffs (higher = more important, show more content)
+# NOTE: Order matters! More specific patterns must come BEFORE general extensions
+# so that "MyTest.kt" matches "Test.kt" (priority 25) before ".kt" (priority 100)
 FILE_PRIORITY = {
+    # Tests - lowest priority (must be checked FIRST due to specificity)
+    "Test.kt": 25,
+    "Test.java": 25,
+    "_test.py": 25,
+    ".test.ts": 25,
+    ".spec.ts": 25,
     # Source files - highest priority
     ".kt": 100,
     ".java": 100,
@@ -1268,24 +1276,17 @@ FILE_PRIORITY = {
     # Docs - lower priority
     ".md": 30,
     ".txt": 20,
-    # Tests - lowest priority (often verbose)
-    "Test.kt": 25,
-    "Test.java": 25,
-    "_test.py": 25,
-    ".test.ts": 25,
-    ".spec.ts": 25,
 }
 
 
 def get_file_priority(filepath: str) -> int:
-    """Get priority score for a file (higher = more important)."""
-    # Check specific patterns first (like Test.kt)
+    """Get priority score for a file (higher = more important).
+
+    Relies on FILE_PRIORITY dict ordering: specific patterns (Test.kt)
+    must come before general extensions (.kt) for correct matching.
+    """
     for pattern, priority in FILE_PRIORITY.items():
         if filepath.endswith(pattern):
-            return priority
-    # Fall back to extension
-    for ext, priority in FILE_PRIORITY.items():
-        if ext.startswith(".") and filepath.endswith(ext):
             return priority
     return 50  # Default priority
 
