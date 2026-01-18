@@ -66,13 +66,19 @@ jobs:
       - name: Output failure summary
         if: failure()
         run: |
+          LOG_FILE="/home/runner/work/_temp/claude-execution-output.json"
           {
             echo "## Claude Code Execution Failed"
             echo ""
-            if [ -f /home/runner/work/_temp/claude-execution-output.json ]; then
+            if [ -f "$LOG_FILE" ]; then
               echo "### Execution Details"
               echo '```json'
-              jq -r 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' /home/runner/work/_temp/claude-execution-output.json 2>/dev/null | head -50 || head -100 /home/runner/work/_temp/claude-execution-output.json
+              if jq -e . "$LOG_FILE" >/dev/null 2>&1; then
+                jq -r 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' "$LOG_FILE" | head -200
+              else
+                echo "# Warning: Log is not valid JSON, showing raw content:"
+                head -200 "$LOG_FILE"
+              fi
               echo '```'
               echo ""
               echo "Full log available in artifacts: **claude-log-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.run_id }}**"
