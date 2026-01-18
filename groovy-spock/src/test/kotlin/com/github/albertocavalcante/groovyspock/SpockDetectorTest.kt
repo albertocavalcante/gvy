@@ -12,7 +12,12 @@ class SpockDetectorTest {
     @Test
     fun `detects spock spec by filename`() {
         val uri = URI.create("file:///src/test/groovy/com/example/FooSpec.groovy")
-        val content = "class FooSpec {}"
+        val content =
+            """
+            import spock.lang.Specification
+
+            class FooSpec extends Specification {}
+            """.trimIndent()
 
         assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
     }
@@ -97,7 +102,12 @@ class SpockDetectorTest {
     @Test
     fun `detects spock spec with different groovy extension casing`() {
         val uri = URI.create("file:///src/test/groovy/com/example/FooSpec.Groovy")
-        val content = "class FooSpec {}"
+        val content =
+            """
+            import spock.lang.Specification
+
+            class FooSpec extends Specification {}
+            """.trimIndent()
 
         assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
     }

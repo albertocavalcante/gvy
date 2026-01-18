@@ -130,15 +130,10 @@ object SpockDetector {
         val path = uri.path ?: return false
         if (!path.endsWith(".groovy", ignoreCase = true)) return false
 
-        // Filename heuristic: If the file ends with Spec.groovy, it's likely a Spock spec
-        // This is a common naming convention and provides a cheap detection method
-        if (path.endsWith("Spec.groovy", ignoreCase = true)) {
-            return true
-        }
-
         // NOTE: Heuristic / tradeoff:
         // Spock is typically identified by extending `spock.lang.Specification`, but that requires either AST or
         // classpath-aware type resolution. We use light string markers to enable quick, dependency-free detection.
+        // We do NOT rely on filename alone (e.g., *Spec.groovy) as that produces false positives.
         val normalized = content
             .replace("\r\n", "\n")
             .replace('\r', '\n')
