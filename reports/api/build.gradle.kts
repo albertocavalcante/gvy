@@ -2,6 +2,10 @@ plugins {
     kotlin("jvm")
 }
 
+base {
+    archivesName.set("reports-api")
+}
+
 dependencies {
     // Logging
     implementation(libs.kotlin.logging)
