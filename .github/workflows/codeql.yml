@@ -25,16 +25,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4
         with:
-          languages: java-kotlin, javascript-typescript
+          # Temporarily disabled kotlin due to CodeQL not supporting Kotlin 2.3.0
+          # CodeQL currently only supports Kotlin versions below 2.2.30
+          languages: javascript-typescript
           config-file: .github/codeql/codeql-config.yml
 
       - name: Autobuild
