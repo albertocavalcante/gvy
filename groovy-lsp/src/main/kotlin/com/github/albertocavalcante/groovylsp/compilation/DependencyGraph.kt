@@ -24,6 +24,21 @@ class DependencyGraph {
 
     companion object {
         private val EXCLUDED_PREFIXES = listOf("java.", "groovy.")
+
+        /**
+         * Removes a value from a set in a map, cleaning up the entry if the set becomes empty.
+         *
+         * This helper maintains map hygiene by removing empty sets, which is important
+         * for both memory efficiency and correct behavior of methods like hasInfo().
+         *
+         * Uses computeIfPresent for atomic updates on ConcurrentHashMap.
+         */
+        private fun <K, V> removeFromSetMap(map: MutableMap<K, MutableSet<V>>, key: K, value: V) {
+            map.computeIfPresent(key) { _, set ->
+                set.remove(value)
+                set.ifEmpty { null }
+            }
+        }
     }
 
     /**
@@ -66,20 +81,12 @@ class DependencyGraph {
     fun removeFile(uri: URI) {
         // Remove all dependencies this file has
         dependencies.remove(uri)?.forEach { dependencyUri ->
-            // Remove this file from the dependent's list
-            dependents[dependencyUri]?.remove(uri)
-            if (dependents[dependencyUri]?.isEmpty() == true) {
-                dependents.remove(dependencyUri)
-            }
+            removeFromSetMap(dependents, dependencyUri, uri)
         }
 
         // Remove all dependents of this file
         dependents.remove(uri)?.forEach { dependentUri ->
-            // Remove this file from the dependent's dependency list
-            dependencies[dependentUri]?.remove(uri)
-            if (dependencies[dependentUri]?.isEmpty() == true) {
-                dependencies.remove(dependentUri)
-            }
+            removeFromSetMap(dependencies, dependentUri, uri)
         }
 
         logger.debug { "Removed file from dependency graph: $uri" }
@@ -365,10 +372,7 @@ class DependencyGraph {
 
         // Clear this file from old dependencies' dependent lists
         oldDependencies.forEach { oldDependency ->
-            dependents[oldDependency]?.remove(uri)
-            if (dependents[oldDependency]?.isEmpty() == true) {
-                dependents.remove(oldDependency)
-            }
+            removeFromSetMap(dependents, oldDependency, uri)
         }
 
         // Add new dependencies
