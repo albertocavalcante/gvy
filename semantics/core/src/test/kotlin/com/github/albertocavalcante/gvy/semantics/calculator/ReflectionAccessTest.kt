@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlin.concurrent.write
 
 class ReflectionAccessTest {
 
@@ -96,6 +97,18 @@ class ReflectionAccessTest {
         return field.get(ReflectionAccess) as MutableMap<*, *>
     }
 
+    private fun getMethodCacheLock(): java.util.concurrent.locks.ReentrantReadWriteLock {
+        val field = ReflectionAccess::class.java.getDeclaredField("methodCacheLock")
+        field.isAccessible = true
+        return field.get(ReflectionAccess) as java.util.concurrent.locks.ReentrantReadWriteLock
+    }
+
+    private fun getFieldCacheLock(): java.util.concurrent.locks.ReentrantReadWriteLock {
+        val field = ReflectionAccess::class.java.getDeclaredField("fieldCacheLock")
+        field.isAccessible = true
+        return field.get(ReflectionAccess) as java.util.concurrent.locks.ReentrantReadWriteLock
+    }
+
     private fun readPrivateIntConstant(clazz: Class<*>, fieldName: String): Int {
         val field = clazz.getDeclaredField(fieldName)
         field.isAccessible = true
@@ -105,8 +118,8 @@ class ReflectionAccessTest {
     @AfterEach
     fun clearCaches() {
         // Clear the caches after each test to avoid interference
-        getMethodCache().clear()
-        getFieldCache().clear()
+        getMethodCacheLock().write { getMethodCache().clear() }
+        getFieldCacheLock().write { getFieldCache().clear() }
     }
 
     @Test
@@ -115,7 +128,7 @@ class ReflectionAccessTest {
         val cache = getMethodCache()
 
         // Clear cache first
-        cache.clear()
+        getMethodCacheLock().write { cache.clear() }
 
         // Create test objects with unique classes to populate the cache
         // We'll create (maxSize + 100) unique method lookups
@@ -132,7 +145,7 @@ class ReflectionAccessTest {
         }
 
         // Cache size should not exceed max size
-        val finalSize = cache.size
+        val finalSize = getMethodCacheLock().write { cache.size }
         assertTrue(
             finalSize <= maxSize,
             "Method cache size $finalSize should not exceed MAX_METHOD_CACHE_SIZE $maxSize",
@@ -145,7 +158,7 @@ class ReflectionAccessTest {
         val cache = getFieldCache()
 
         // Clear cache first
-        cache.clear()
+        getFieldCacheLock().write { cache.clear() }
 
         // Create test objects with unique classes to populate the cache
         // We'll create (maxSize + 100) unique field lookups
@@ -163,7 +176,7 @@ class ReflectionAccessTest {
         }
 
         // Cache size should not exceed max size
-        val finalSize = cache.size
+        val finalSize = getFieldCacheLock().write { cache.size }
         assertTrue(
             finalSize <= maxSize,
             "Field cache size $finalSize should not exceed MAX_FIELD_CACHE_SIZE $maxSize",
@@ -176,7 +189,7 @@ class ReflectionAccessTest {
         val cache = getMethodCache()
 
         // Clear cache first
-        cache.clear()
+        getMethodCacheLock().write { cache.clear() }
 
         // Create a reusable test class for hot entries
         class HotClass {
@@ -225,15 +238,15 @@ class ReflectionAccessTest {
         }
 
         // Check that recently accessed hot entries are still in cache
-        val keysInCache = cache.keys.map { it.toString() }
+        val keysInCache = getMethodCacheLock().write { cache.keys.toSet() }
         val retainedCount = hotMethods.count { methodName ->
-            keysInCache.any { key -> key.contains(methodName) }
+            (hotObject::class.java to methodName) in keysInCache
         }
 
-        // At least some of the hot entries should still be in cache
+        // All hot entries should be retained in LRU cache (deterministic in single-threaded test)
         assertTrue(
-            retainedCount >= 2,
-            "Recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of 3 retained",
+            retainedCount == hotMethods.size,
+            "All recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of ${hotMethods.size} retained",
         )
     }
 
@@ -243,7 +256,7 @@ class ReflectionAccessTest {
         val cache = getFieldCache()
 
         // Clear cache first
-        cache.clear()
+        getFieldCacheLock().write { cache.clear() }
 
         // Create a reusable test class for hot entries
         class HotFieldClass {
@@ -299,15 +312,15 @@ class ReflectionAccessTest {
         }
 
         // Check that recently accessed hot entries are still in cache
-        val keysInCache = cache.keys.map { it.toString() }
+        val keysInCache = getFieldCacheLock().write { cache.keys.toSet() }
         val retainedCount = hotFields.count { fieldName ->
-            keysInCache.any { key -> key.contains(fieldName) }
+            (hotObject::class.java to fieldName) in keysInCache
         }
 
-        // At least some of the hot entries should still be in cache
+        // All hot entries should be retained in LRU cache (deterministic in single-threaded test)
         assertTrue(
-            retainedCount >= 2,
-            "Recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of 3 retained",
+            retainedCount == hotFields.size,
+            "All recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of ${hotFields.size} retained",
         )
     }
 }

@@ -31,10 +31,19 @@ internal object ReflectionAccess {
 
     fun invokeNoArg(target: Any, methodName: String): Any? = runCatching {
         // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
-        // We check for the key and return if present, all within a brief write lock.
+        // Check if key exists in cache first to handle cached null values correctly.
         val key = target::class.java to methodName
-        methodCacheLock.write {
-            methodCache[key]?.let { return@runCatching it.invoke(target) }
+        val cachedMethod = methodCacheLock.write {
+            if (methodCache.containsKey(key)) {
+                methodCache[key]
+            } else {
+                null
+            }
+        }
+
+        // If key was in cache (even if value is null), use the cached value
+        if (methodCache.containsKey(key)) {
+            return@runCatching cachedMethod?.invoke(target)
         }
 
         // If not in cache, compute the result outside of any lock
@@ -43,19 +52,28 @@ internal object ReflectionAccess {
         // After computing, acquire the write lock again to put the result into the cache.
         // Use getOrPut to handle the race condition where another thread might have
         // computed and inserted the same key while we were working.
-        val cachedMethod = methodCacheLock.write {
+        val finalMethod = methodCacheLock.write {
             methodCache.getOrPut(key) { method }
         }
 
-        cachedMethod?.invoke(target)
+        finalMethod?.invoke(target)
     }.getOrNull()
 
     fun getField(target: Any, fieldName: String): Any? = runCatching {
         // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
-        // We check for the key and return if present, all within a brief write lock.
+        // Check if key exists in cache first to handle cached null values correctly.
         val key = target::class.java to fieldName
-        fieldCacheLock.write {
-            fieldCache[key]?.let { return@runCatching it.get(target) }
+        val cachedField = fieldCacheLock.write {
+            if (fieldCache.containsKey(key)) {
+                fieldCache[key]
+            } else {
+                null
+            }
+        }
+
+        // If key was in cache (even if value is null), use the cached value
+        if (fieldCache.containsKey(key)) {
+            return@runCatching cachedField?.get(target)
         }
 
         // If not in cache, compute the result outside of any lock
@@ -68,11 +86,11 @@ internal object ReflectionAccess {
         // After computing, acquire the write lock again to put the result into the cache.
         // Use getOrPut to handle the race condition where another thread might have
         // computed and inserted the same key while we were working.
-        val cachedField = fieldCacheLock.write {
+        val finalField = fieldCacheLock.write {
             fieldCache.getOrPut(key) { field }
         }
 
-        cachedField?.get(target)
+        finalField?.get(target)
     }.getOrNull()
 
     fun getProperty(target: Any, propertyName: String): Any? {
