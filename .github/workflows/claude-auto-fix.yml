@@ -20,115 +20,69 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'auto-fix'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # NOTE: Permissions here are required by ghalint policy (job_permissions).
+    # They match _claude-base.yml which actually enforces them at runtime.
     permissions:
       contents: write
       pull-requests: write
       issues: write
       id-token: write
+    uses: ./.github/workflows/_claude-base.yml
+    with:
+      workflow_name: Claude Auto-Fix
+      artifact_prefix: claude-auto-fix-log
+      artifact_suffix: ${{ github.event.issue.number || inputs.issue_number }}
+      timeout_minutes: 45
+      fetch_depth: 0
+      prompt: |
+        REPO: ${{ github.repository }}
+        ISSUE NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+        Fix the bug described in issue #${{ github.event.issue.number || inputs.issue_number }} following TDD workflow:
 
-      - name: Run Claude Auto-Fix
-        id: claude-fix
-        uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            REPO: ${{ github.repository }}
-            ISSUE NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        **Step 1: Understand the Bug**
+        - Read the issue description thoroughly
+        - Identify affected files and components
+        - Determine root cause
 
-            Fix the bug described in issue #${{ github.event.issue.number || inputs.issue_number }} following TDD workflow:
+        **Step 2: Write Failing Test (TDD - MANDATORY)**
+        - Create a test that reproduces the bug
+        - Run: make test
+        - Verify test FAILS for the right reason
+        - If test passes immediately, the bug may not exist or test is wrong
 
-            **Step 1: Understand the Bug**
-            - Read the issue description thoroughly
-            - Identify affected files and components
-            - Determine root cause
+        **Step 3: Implement Fix**
+        - Write minimal code to make test pass
+        - Follow AGENTS.md conventions:
+          * Kotlin best practices
+          * Proper error handling
+          * Null safety
 
-            **Step 2: Write Failing Test (TDD - MANDATORY)**
-            - Create a test that reproduces the bug
-            - Run: make test
-            - Verify test FAILS for the right reason
-            - If test passes immediately, the bug may not exist or test is wrong
+        **Step 4: Verify Fix**
+        - Run: make test (all tests must pass)
+        - Run: make lint (must pass)
+        - Verify no regressions
 
-            **Step 3: Implement Fix**
-            - Write minimal code to make test pass
-            - Follow AGENTS.md conventions:
-              * Kotlin best practices
-              * Proper error handling
-              * Null safety
+        **Step 5: Create PR**
+        - Create branch following git workflow rules
+        - Use explicit git add (NEVER git add .)
+        - Conventional commit: "fix: <description>"
+        - Create PR with:
+          * Clear title
+          * Link to issue: "Fixes #${{ github.event.issue.number || inputs.issue_number }}"
+          * Summary of changes
+          * Test coverage added
 
-            **Step 4: Verify Fix**
-            - Run: make test (all tests must pass)
-            - Run: make lint (must pass)
-            - Verify no regressions
-
-            **Step 5: Create PR**
-            - Create branch following git workflow rules
-            - Use explicit git add (NEVER git add .)
-            - Conventional commit: "fix: <description>"
-            - Create PR with:
-              * Clear title
-              * Link to issue: "Fixes #${{ github.event.issue.number || inputs.issue_number }}"
-              * Summary of changes
-              * Test coverage added
-
-            **CRITICAL RULES (from AGENTS.md):**
-            - TDD: Failing test FIRST, then implementation
-            - Git: Use `git add <file>` explicitly, NEVER `git add .`
-            - Git: Check branch with `git branch --show-current`
-            - Lint: Run `make lint` before commit
-            - Build: Verify with `make build`
-
-          # Security: Enforce AGENTS.md rules
-          # Allow: Read/write code, run tests/build, create PR, comment on issue
-          # Prevent: Dangerous operations (git add ., push --force, rm -rf)
-          claude_args: |
-            --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh :*)"
-            --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(git push -f:*),Bash(rm -rf:*)"
-            --max-turns 15
-
-      # Log path is hardcoded because claude-code-action doesn't expose an output variable.
-      # This is the standard path used by the action on GitHub-hosted runners.
-      # See: https://github.com/anthropics/claude-code-action
-      - name: Upload Claude execution log
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: claude-auto-fix-log-${{ github.event.issue.number || inputs.issue_number }}-${{ github.run_id }}
-          path: /home/runner/work/_temp/claude-execution-output.json
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Output failure summary
-        if: failure()
-        run: |
-          LOG_FILE="/home/runner/work/_temp/claude-execution-output.json"
-          {
-            echo "## Claude Auto-Fix Execution Failed"
-            echo ""
-            echo "**Issue:** #${{ github.event.issue.number || inputs.issue_number }}"
-            echo ""
-            if [ -f "$LOG_FILE" ]; then
-              echo "### Execution Details"
-              echo '```json'
-              if jq -e . "$LOG_FILE" >/dev/null 2>&1; then
-                jq 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' "$LOG_FILE" | head -200
-              else
-                echo "# Warning: Log is not valid JSON, showing raw content:"
-                head -200 "$LOG_FILE"
-              fi
-              echo '```'
-              echo ""
-              echo "Full log available in artifacts: **claude-auto-fix-log-${{ github.event.issue.number || inputs.issue_number }}-${{ github.run_id }}**"
-            else
-              echo "No execution log found."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        **CRITICAL RULES (from AGENTS.md):**
+        - TDD: Failing test FIRST, then implementation
+        - Git: Use `git add <file>` explicitly, NEVER `git add .`
+        - Git: Check branch with `git branch --show-current`
+        - Lint: Run `make lint` before commit
+        - Build: Verify with `make build`
+      claude_args: |
+        --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh :*)"
+        --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(git push -f:*),Bash(rm -rf:*)"
+        --max-turns 15
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

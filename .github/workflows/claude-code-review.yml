@@ -1,3 +1,7 @@
+# NOTE: This workflow intentionally does NOT use _claude-base.yml because it requires
+# read-only permissions (contents: read) for security. The base workflow grants
+# contents: write which would be inappropriate for automated code reviews.
+
 name: Claude Code Review
 
 on:
@@ -118,4 +122,3 @@ jobs:
               echo "No execution log found."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
