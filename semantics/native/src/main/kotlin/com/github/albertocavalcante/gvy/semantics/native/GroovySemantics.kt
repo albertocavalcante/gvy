@@ -37,15 +37,15 @@ class GroovySemantics(
     // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
     private val contextCache = Collections.synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
-    // Current module for single-parameter API compatibility
-    private var currentModule: ModuleNode? = null
+    // Thread-local current module for single-parameter API compatibility (prevents race conditions)
+    private val currentModule = ThreadLocal<ModuleNode?>()
 
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        currentModule = module
+        currentModule.set(module)
         if (contextCache.containsKey(module)) return
 
         val scope = buildRootScope(module)
@@ -149,7 +149,7 @@ class GroovySemantics(
      * @return Either a TypeInferenceError or the resolved SemanticType
      */
     fun resolveTypeResult(node: ASTNode): TypeResult {
-        val module = currentModule
+        val module = currentModule.get()
             ?: return TypeInferenceError.InternalError("No module injected").left()
 
         val context = contextCache[module]
