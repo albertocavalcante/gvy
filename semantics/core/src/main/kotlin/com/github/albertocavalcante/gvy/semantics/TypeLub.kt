@@ -4,7 +4,6 @@ package com.github.albertocavalcante.gvy.semantics
  * Logic for computing Least Upper Bound (LUB) of SemanticTypes.
  * Ported from LeastUpperBoundLogic.kt but adapted for SemanticType (no TypeSolver dependency).
  */
-import kotlin.concurrent.read
 import kotlin.concurrent.write
 
 object TypeLub {
@@ -210,25 +209,26 @@ object TypeLub {
     }
 
     private fun getAllAncestors(fqn: String): Set<String> {
-        // Try read lock first
-        ancestorCacheLock.read {
+        // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
+        // We check for the key and return if present, all within a brief write lock.
+        ancestorCacheLock.write {
             ANCESTOR_CACHE[fqn]?.let { return it }
         }
 
-        // Not in cache, compute with write lock
-        return ancestorCacheLock.write {
-            // Double-check after acquiring write lock
-            ANCESTOR_CACHE[fqn]?.let { return@write it }
+        // If not in cache, compute the result outside of any lock to avoid holding
+        // the lock during potentially long recursive computations.
+        val parents = HARDCODED_PARENTS[fqn] ?: emptySet()
+        val result = parents.toMutableSet()
+        for (parent in parents) {
+            result.addAll(getAllAncestors(parent))
+        }
+        result.add("java.lang.Object")
 
-            val parents = HARDCODED_PARENTS[fqn] ?: return@write emptySet()
-            val result = parents.toMutableSet()
-            for (parent in parents) {
-                result.addAll(getAllAncestors(parent))
-            }
-            // Always add Object
-            result.add("java.lang.Object")
-            ANCESTOR_CACHE[fqn] = result
-            result
+        // After computing, acquire the write lock again to put the result into the cache.
+        // Use getOrPut to handle the race condition where another thread might have
+        // computed and inserted the same key while we were working.
+        return ancestorCacheLock.write {
+            ANCESTOR_CACHE.getOrPut(fqn) { result }
         }
     }
 
