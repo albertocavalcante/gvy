@@ -30,17 +30,29 @@ interface ReadlineMock {
   createInterface: sinon.SinonStub;
 }
 
+interface CpMock {
+  spawn: sinon.SinonStub;
+}
+
+interface FsMock {
+  existsSync: sinon.SinonStub;
+  statSync: sinon.SinonStub;
+}
+
+interface MavenExecutionServiceInstance {
+  buildTestFilter: (request: unknown) => string[];
+  spawnMaven: (cwd: string, args: string[], consumer: unknown, token: unknown) => Promise<void>;
+  cpMock?: CpMock;
+  fsMock?: FsMock;
+}
+
 interface MavenExecutionServiceClass {
-  new (logger: LoggerMock): {
-    buildTestFilter: (request: unknown) => string[];
-    cpMock?: unknown;
-    fsMock?: unknown;
-  };
+  new (logger: LoggerMock): MavenExecutionServiceInstance;
 }
 
 describe("MavenExecutionService", () => {
   let MavenExecutionService: MavenExecutionServiceClass;
-  let service: { buildTestFilter: (request: unknown) => string[]; cpMock?: unknown; fsMock?: unknown };
+  let service: MavenExecutionServiceInstance;
   let loggerMock: LoggerMock;
   let sandbox: sinon.SinonSandbox;
 
@@ -134,8 +146,8 @@ describe("MavenExecutionService", () => {
     MavenExecutionService = module.MavenExecutionService;
     service = new MavenExecutionService(loggerMock);
     // Expose mocks for tests
-    (service as unknown).cpMock = cpMock;
-    (service as unknown).fsMock = fsMock;
+    service.cpMock = cpMock;
+    service.fsMock = fsMock;
   });
 
   afterEach(() => {
@@ -149,7 +161,7 @@ describe("MavenExecutionService", () => {
         children: { size: 0 },
       };
       const request = { include: [mockItem] };
-      const filter = (service as unknown).buildTestFilter(request);
+      const filter = service.buildTestFilter(request);
       assert.ok(filter[0].includes('"'));
     });
   });
@@ -165,7 +177,7 @@ describe("MavenExecutionService", () => {
         on: sandbox.stub(),
         kill: sandbox.stub(),
       };
-      (service as unknown).cpMock.spawn.returns(proc);
+      service.cpMock!.spawn.returns(proc);
 
       const consumerMock = {
         processLine: sandbox.stub(),
@@ -180,7 +192,7 @@ describe("MavenExecutionService", () => {
           .returns({ dispose: sandbox.stub() }),
       };
 
-      const promise = (service as unknown).spawnMaven(
+      const promise = service.spawnMaven(
         "/cwd",
         [],
         consumerMock,
@@ -219,7 +231,7 @@ describe("MavenExecutionService", () => {
         on: sandbox.stub(),
         kill: sandbox.stub(),
       };
-      (service as unknown).cpMock.spawn.returns(proc);
+      service.cpMock!.spawn.returns(proc);
 
       const consumerMock = {
         processLine: sandbox.stub(),
@@ -238,12 +250,12 @@ describe("MavenExecutionService", () => {
       let lineListener: ((line: string) => void) | undefined;
       readlineMock.createInterface.returns({
         on: (event: string, listener: unknown) => {
-          if (event === "line") lineListener = listener;
+          if (event === "line") lineListener = listener as (line: string) => void;
         },
         close: sandbox.stub(),
       });
 
-      const promise = (service as unknown).spawnMaven(
+      const promise = service.spawnMaven(
         "/cwd",
         [],
         consumerMock,
