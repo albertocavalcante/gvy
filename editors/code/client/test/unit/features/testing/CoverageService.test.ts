@@ -31,15 +31,18 @@ interface TestServiceMock {
   getCoverage: sinon.SinonStub;
 }
 
+interface CoverageServiceInstance {
+  loadCoverage: (coverageFilePath: string) => Promise<unknown>;
+  addCoverageToRun: (testRun: unknown, workspacePath: string) => Promise<void>;
+}
+
 interface CoverageServiceClass {
-  new (testService: TestServiceMock, logger: LoggerMock): {
-    loadCoverage: (coverageFilePath: string) => Promise<unknown>;
-  };
+  new (testService: TestServiceMock, logger: LoggerMock): CoverageServiceInstance;
 }
 
 describe("CoverageService", () => {
   let CoverageService: CoverageServiceClass;
-  let coverageService: { loadCoverage: (coverageFilePath: string) => Promise<unknown> };
+  let coverageService: CoverageServiceInstance;
   let loggerMock: LoggerMock;
   let testServiceMock: TestServiceMock;
   let fsMock: FsMock;
