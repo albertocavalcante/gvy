@@ -7,6 +7,7 @@ import io.mockk.mockk
 import org.codenarc.results.Results
 import org.codenarc.rule.Rule
 import org.codenarc.rule.Violation
+import org.eclipse.lsp4j.Diagnostic
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -490,10 +491,7 @@ class DiagnosticPositioningBattleTest {
         }
     }
 
-    private fun analyzAndGetDiagnostics(
-        sourceCode: String,
-        violations: List<Violation>,
-    ): List<org.eclipse.lsp4j.Diagnostic> {
+    private fun analyzAndGetDiagnostics(sourceCode: String, violations: List<Violation>): List<Diagnostic> {
         val leafResults = mockk<Results>()
         every { leafResults.children } returns mutableListOf()
         every { leafResults.violations } returns violations

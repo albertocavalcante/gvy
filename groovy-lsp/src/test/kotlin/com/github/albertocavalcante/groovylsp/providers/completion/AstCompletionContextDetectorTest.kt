@@ -1,5 +1,10 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
+import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.EmptyStatement
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -242,17 +247,17 @@ class AstCompletionContextDetectorTest {
  * Mock ClosureExpression for unit testing without real AST.
  */
 private class MockClosureExpression :
-    org.codehaus.groovy.ast.expr.ClosureExpression(
+    ClosureExpression(
         arrayOf(),
-        org.codehaus.groovy.ast.stmt.EmptyStatement.INSTANCE,
+        EmptyStatement.INSTANCE,
     )
 
 /**
  * Mock MethodCallExpression for unit testing without real AST.
  */
 private class MockMethodCallExpression(methodName: String) :
-    org.codehaus.groovy.ast.expr.MethodCallExpression(
-        org.codehaus.groovy.ast.expr.VariableExpression("this"),
+    MethodCallExpression(
+        VariableExpression("this"),
         methodName,
-        org.codehaus.groovy.ast.expr.ArgumentListExpression(),
+        ArgumentListExpression(),
     )

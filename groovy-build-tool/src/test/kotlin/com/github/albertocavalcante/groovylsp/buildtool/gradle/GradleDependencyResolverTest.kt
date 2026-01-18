@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.buildtool.gradle
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaProject
@@ -16,8 +17,8 @@ class GradleDependencyResolverTest {
     private val failureAnalyzer = mockk<GradleFailureAnalyzer>()
 
     private val connection = mockk<ProjectConnection>(relaxed = true)
-    private val modelBuilder = mockk<org.gradle.tooling.ModelBuilder<IdeaProject>>(relaxed = true)
-    private val buildEnvBuilder = mockk<org.gradle.tooling.ModelBuilder<BuildEnvironment>>(relaxed = true)
+    private val modelBuilder = mockk<ModelBuilder<IdeaProject>>(relaxed = true)
+    private val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
     private val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
     private val ideaProject = mockk<IdeaProject>(relaxed = true)
 

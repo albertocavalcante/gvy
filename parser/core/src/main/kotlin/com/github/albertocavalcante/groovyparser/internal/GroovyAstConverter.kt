@@ -915,10 +915,7 @@ internal class GroovyAstConverter {
         return constructor
     }
 
-    private fun setRange(
-        node: com.github.albertocavalcante.groovyparser.ast.Node,
-        nativeNode: org.codehaus.groovy.ast.ASTNode,
-    ) {
+    private fun setRange(node: com.github.albertocavalcante.groovyparser.ast.Node, nativeNode: ASTNode) {
         if (nativeNode.lineNumber > 0 && nativeNode.columnNumber > 0) {
             val begin = Position(nativeNode.lineNumber, nativeNode.columnNumber)
             val end = if (nativeNode.lastLineNumber > 0 && nativeNode.lastColumnNumber > 0) {

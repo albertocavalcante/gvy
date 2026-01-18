@@ -9,9 +9,11 @@ import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -87,7 +89,7 @@ class CodeActionProviderTest {
         val diagnostic = Diagnostic().apply {
             range = Range(Position(0, 8), Position(0, 20))
             message = "unable to resolve class UnknownClass"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Error
+            severity = DiagnosticSeverity.Error
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -106,7 +108,7 @@ class CodeActionProviderTest {
         val diagnostic = Diagnostic().apply {
             range = Range(Position(0, 8), Position(0, 20))
             message = "type mismatch"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Error
+            severity = DiagnosticSeverity.Error
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -126,7 +128,7 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 10))
             message = "Some CodeNarc issue"
             source = "CodeNarc"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -146,13 +148,13 @@ class CodeActionProviderTest {
         val diagnostic1 = Diagnostic().apply {
             range = Range(Position(0, 0), Position(0, 5))
             message = "Some issue"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            severity = DiagnosticSeverity.Warning
         }
 
         val diagnostic2 = Diagnostic().apply {
             range = Range(Position(1, 0), Position(1, 5))
             message = "Another issue"
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic1, diagnostic2))
@@ -191,8 +193,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 12))
             message = "Line has trailing whitespace"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("TrailingWhitespace")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("TrailingWhitespace")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -215,8 +217,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 10))
             message = "Unnecessary semicolon"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessarySemicolon")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessarySemicolon")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -237,8 +239,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 21))
             message = "Unused import"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnusedImport")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnusedImport")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -259,8 +261,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 7))
             message = "Unnecessary public modifier"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryPublicModifier")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryPublicModifier")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -281,8 +283,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 4), Position(0, 13))
             message = "Unnecessary getter"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGetter")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGetter")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -303,16 +305,16 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 12))
             message = "Line has trailing whitespace"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("TrailingWhitespace")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("TrailingWhitespace")
+            severity = DiagnosticSeverity.Warning
         }
 
         val diagnostic2 = Diagnostic().apply {
             range = Range(Position(1, 0), Position(1, 10))
             message = "Unnecessary semicolon"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessarySemicolon")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessarySemicolon")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic1, diagnostic2))
@@ -335,8 +337,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 12))
             message = "Line has trailing whitespace"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("TrailingWhitespace")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("TrailingWhitespace")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -360,8 +362,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 12))
             message = "Line has trailing whitespace"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("TrailingWhitespace")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("TrailingWhitespace")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -386,8 +388,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 0), Position(0, 12))
             message = "Line has trailing whitespace"
             source = "OtherLinter" // Not CodeNarc
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("TrailingWhitespace")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("TrailingWhitespace")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -412,8 +414,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 8), Position(0, 15))
             message = "The String 'hello' can be wrapped in single quotes"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGString")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -437,8 +439,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 8), Position(0, 15))
             message = "The String 'hello' can be wrapped in single quotes"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGString")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -473,8 +475,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 15), Position(0, 45))
             message = "The String 'myCustomDynamicPropertyValue' can be wrapped in single quotes"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGString")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -501,8 +503,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 8), Position(0, 14))
             message = "The String 'it's' can be wrapped in single quotes"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGString")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))
@@ -524,8 +526,8 @@ class CodeActionProviderTest {
             range = Range(Position(0, 8), Position(0, 10))
             message = "The String '' can be wrapped in single quotes"
             source = "CodeNarc"
-            code = org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("UnnecessaryGString")
-            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+            code = Either.forLeft("UnnecessaryGString")
+            severity = DiagnosticSeverity.Warning
         }
 
         val params = createCodeActionParams(listOf(diagnostic))

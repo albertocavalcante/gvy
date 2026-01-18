@@ -17,6 +17,7 @@ import org.eclipse.aether.collection.CollectRequest
 import org.eclipse.aether.graph.Dependency
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.resolution.DependencyRequest
+import org.eclipse.aether.resolution.DependencyResolutionException
 import java.nio.file.Path
 
 /**
@@ -158,7 +159,7 @@ class MavenDependencyProvider(
                         null
                     }
                 }
-        } catch (e: org.eclipse.aether.resolution.DependencyResolutionException) {
+        } catch (e: DependencyResolutionException) {
             logger.warn { "Failed to resolve dependencies for ${module.moduleId}: ${e.message}" }
             emptyList()
         } catch (e: Exception) {

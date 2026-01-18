@@ -3,7 +3,10 @@ package com.github.albertocavalcante.groovylsp
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DefinitionParams
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.DocumentFormattingParams
 import org.eclipse.lsp4j.DocumentSymbolParams
+import org.eclipse.lsp4j.FormattingOptions
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
@@ -68,7 +71,7 @@ class GroovyLanguageServerFeatureMatrixTest {
         client.awaitMessageMatching { it.message.startsWith("Dependencies loaded:") }
 
         val textDocument = TextDocumentItem(documentUri, "groovy", 1, documentContent)
-        server.textDocumentService.didOpen(org.eclipse.lsp4j.DidOpenTextDocumentParams(textDocument))
+        server.textDocumentService.didOpen(DidOpenTextDocumentParams(textDocument))
 
         client.awaitSuccessfulCompilation(documentUri)
     }
@@ -190,9 +193,9 @@ class GroovyLanguageServerFeatureMatrixTest {
 
     @Test
     fun `formatting returns edits for unformatted document`() = runBlocking {
-        val params = org.eclipse.lsp4j.DocumentFormattingParams().apply {
+        val params = DocumentFormattingParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
-            options = org.eclipse.lsp4j.FormattingOptions(4, true)
+            options = FormattingOptions(4, true)
         }
 
         val edits = server.textDocumentService.formatting(params).get()

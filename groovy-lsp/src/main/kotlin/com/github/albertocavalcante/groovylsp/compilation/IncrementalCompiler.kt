@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovylsp.compilation
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ModuleNode
 import java.net.URI
 
 /**
@@ -14,7 +15,7 @@ import java.net.URI
  * @property recompiledFiles Set of file URIs that were recompiled
  */
 data class IncrementalCompilationResult(
-    val modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>,
+    val modules: Map<URI, ModuleNode>,
     val errors: List<CompilationError>,
     val success: Boolean,
     val recompiledFiles: Set<URI>,
@@ -134,7 +135,7 @@ class IncrementalCompiler(
      * Extracts dependencies from each module's imports, superclasses, and interfaces,
      * then updates the graph.
      */
-    private fun buildDependencyGraph(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>) {
+    private fun buildDependencyGraph(modules: Map<URI, ModuleNode>) {
         logger.debug { "Building dependency graph from ${modules.size} modules" }
 
         // Build workspace index: class name -> file URI
@@ -157,7 +158,7 @@ class IncrementalCompiler(
      * This is used to resolve class references in imports and type references
      * to actual workspace files.
      */
-    private fun buildWorkspaceIndex(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>): Map<String, URI> {
+    private fun buildWorkspaceIndex(modules: Map<URI, ModuleNode>): Map<String, URI> {
         val index = mutableMapOf<String, URI>()
 
         modules.forEach { (uri, moduleNode) ->
@@ -183,7 +184,7 @@ class IncrementalCompiler(
      * Builds semantic documents from compiled modules and populates SemanticDB.
      * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
      */
-    private fun buildSemanticDocuments(modules: Map<URI, org.codehaus.groovy.ast.ModuleNode>) {
+    private fun buildSemanticDocuments(modules: Map<URI, ModuleNode>) {
         logger.debug { "Building semantic documents from ${modules.size} modules" }
 
         modules.forEach { (uri, moduleNode) ->

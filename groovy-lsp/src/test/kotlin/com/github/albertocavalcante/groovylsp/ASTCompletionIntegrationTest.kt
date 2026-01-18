@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.CompletionParams
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -36,7 +37,7 @@ class ASTCompletionIntegrationTest {
             workspaceFolders = listOf(WorkspaceFolder("file:///tmp/test", "test"))
         }
         serverHandle!!.server.initialize(initParams).get()
-        serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+        serverHandle!!.server.initialized(InitializedParams())
     }
 
     @AfterEach

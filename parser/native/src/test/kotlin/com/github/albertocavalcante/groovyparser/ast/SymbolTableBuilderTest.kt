@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast
 
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -17,20 +18,16 @@ class SymbolTableBuilderTest {
         val uri = URI.create("file:///test/Exploding.groovy")
         val classNode = ExplodingClassNode("Exploding")
         val astModel = object : GroovyAstModel {
-            override fun getParent(node: org.codehaus.groovy.ast.ASTNode) = null
-            override fun getChildren(node: org.codehaus.groovy.ast.ASTNode) =
-                emptyList<org.codehaus.groovy.ast.ASTNode>()
-            override fun getUri(node: org.codehaus.groovy.ast.ASTNode) = uri
+            override fun getParent(node: ASTNode) = null
+            override fun getChildren(node: ASTNode) = emptyList<ASTNode>()
+            override fun getUri(node: ASTNode) = uri
             override fun getNodes(uri: URI) = listOf(classNode)
             override fun getAllNodes() = listOf(classNode)
             override fun getAllClassNodes() = listOf(classNode)
             override fun getNodeAt(uri: URI, position: com.github.albertocavalcante.groovyparser.ast.types.Position) =
                 null
             override fun getNodeAt(uri: URI, line: Int, character: Int) = null
-            override fun contains(
-                ancestor: org.codehaus.groovy.ast.ASTNode,
-                descendant: org.codehaus.groovy.ast.ASTNode,
-            ) = false
+            override fun contains(ancestor: ASTNode, descendant: ASTNode) = false
         }
 
         val symbolTable = SymbolTable()

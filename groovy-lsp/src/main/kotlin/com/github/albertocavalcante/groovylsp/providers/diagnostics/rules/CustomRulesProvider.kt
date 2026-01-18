@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
 import java.net.URI
 
 /**
@@ -86,7 +87,7 @@ class CustomRulesProvider(
 
         override fun hasErrors(): Boolean = runCatching {
             compilationService.getDiagnostics(uri).any {
-                it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error
+                it.severity == DiagnosticSeverity.Error
             }
         }
             .onFailure { throwable ->

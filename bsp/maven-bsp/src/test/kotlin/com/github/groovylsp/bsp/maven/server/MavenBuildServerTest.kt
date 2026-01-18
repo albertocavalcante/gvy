@@ -16,6 +16,7 @@ import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
+import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResult
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -46,7 +47,7 @@ class MavenBuildServerTest {
         val emptyResult = mockk<DependencyResult>()
         every { emptyResult.artifactResults } returns emptyList()
         every {
-            repositorySystem.resolveDependencies(any(), any<org.eclipse.aether.resolution.DependencyRequest>())
+            repositorySystem.resolveDependencies(any(), any<DependencyRequest>())
         } returns
             emptyResult
 
