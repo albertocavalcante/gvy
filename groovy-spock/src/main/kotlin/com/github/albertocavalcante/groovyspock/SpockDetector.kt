@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyspock
 
+import com.github.albertocavalcante.groovycommon.text.GroovyCodeCleaner
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassHelper
@@ -141,7 +142,7 @@ object SpockDetector {
             .replace('\r', '\n')
 
         // Remove comments and string literals to avoid false positives
-        val cleaned = removeCommentsAndStrings(normalized)
+        val cleaned = GroovyCodeCleaner.removeCommentsAndStrings(normalized)
 
         // NOTE: Heuristic / tradeoff:
         // We intentionally key off common source-level patterns:
@@ -153,73 +154,5 @@ object SpockDetector {
         return spockImportRegex.containsMatchIn(cleaned) ||
             spockExtendsRegex.containsMatchIn(cleaned) ||
             spockBlockLabelRegex.containsMatchIn(cleaned)
-    }
-
-    /**
-     * Removes comments and string literals from code to avoid false positive detections.
-     * This is a heuristic approach that handles common cases but may not be perfect for all edge cases.
-     *
-     * NOTE: Heuristic / tradeoff:
-     * This function is intentionally complex as it needs to handle multiple Groovy string and comment formats
-     * (single/double quotes, triple quotes, GStrings, single/multi-line comments, escape sequences).
-     * A proper solution would require a full lexer/parser, but that would defeat the purpose of a lightweight
-     * heuristic check. Edge cases like nested strings or complex escape sequences may not be handled perfectly,
-     * but this is acceptable for a best-effort detection mechanism that's supplemented by AST-based checks.
-     */
-    @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "MagicNumber")
-    private fun removeCommentsAndStrings(code: String): String {
-        val result = StringBuilder()
-        var i = 0
-        while (i < code.length) {
-            when {
-                // Single-line comment
-                code.startsWith("//", i) -> {
-                    i = code.indexOf('\n', i).let { if (it == -1) code.length else it + 1 }
-                }
-                // Multi-line comment
-                code.startsWith("/*", i) -> {
-                    i = code.indexOf("*/", i + 2).let { if (it == -1) code.length else it + 2 }
-                }
-                // Triple-quoted string (GString or regular)
-                code.startsWith("'''", i) || code.startsWith("\"\"\"", i) -> {
-                    val delimiter = code.substring(i, i + 3)
-                    i = code.indexOf(delimiter, i + 3).let { if (it == -1) code.length else it + 3 }
-                }
-                // Single-quoted string
-                code[i] == '\'' -> {
-                    i++
-                    while (i < code.length) {
-                        if (code[i] == '\\') {
-                            i += 2 // Skip escaped character
-                        } else if (code[i] == '\'') {
-                            i++
-                            break
-                        } else {
-                            i++
-                        }
-                    }
-                }
-                // Double-quoted string (GString)
-                code[i] == '"' -> {
-                    i++
-                    while (i < code.length) {
-                        if (code[i] == '\\') {
-                            i += 2 // Skip escaped character
-                        } else if (code[i] == '"') {
-                            i++
-                            break
-                        } else {
-                            i++
-                        }
-                    }
-                }
-                // Regular code
-                else -> {
-                    result.append(code[i])
-                    i++
-                }
-            }
-        }
-        return result.toString()
     }
 }

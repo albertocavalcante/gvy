@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins.completion
 
+import com.github.albertocavalcante.groovycommon.text.GroovyCodeCleaner
 import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 
 /**
@@ -132,7 +133,7 @@ object JenkinsContextDetector {
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = lines[i]
-            val cleanLine = stripComments(line)
+            val cleanLine = GroovyCodeCleaner.stripSingleLineComments(line)
 
             addBlockOpenings(cleanLine, blockStack)
             addPostConditionBlocks(cleanLine, blockStack)
@@ -142,11 +143,6 @@ object JenkinsContextDetector {
         }
 
         return blockStack.toList()
-    }
-
-    private fun stripComments(line: String): String {
-        val commentIndex = line.indexOf("//")
-        return if (commentIndex != -1) line.substring(0, commentIndex) else line
     }
 
     /**
