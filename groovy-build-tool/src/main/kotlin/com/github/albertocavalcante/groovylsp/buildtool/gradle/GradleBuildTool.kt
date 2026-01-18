@@ -121,64 +121,78 @@ class GradleBuildTool(
             val connection = connectionFactory.getConnection(workspaceRoot, null)
             val ideaProject = connection.model(IdeaProject::class.java).get()
 
-            val dependencies = mutableListOf<DependencyMetadata>()
-
-            ideaProject.modules.forEach { module ->
-                logger.debug { "Processing module: ${module.name}" }
-
-                module.dependencies
-                    .filterIsInstance<IdeaSingleEntryLibraryDependency>()
-                    .forEach { dependency ->
-                        val jarPath = dependency.file.toPath()
-                        if (jarPath.exists()) {
-                            val depMetadata = extractDependencyMetadata(dependency, jarPath)
-                            dependencies.add(depMetadata)
-                            logger.debug { "Found dependency: ${depMetadata.name}" }
-                        } else {
-                            logger.warn { "Dependency JAR not found: $jarPath" }
-                        }
-                    }
-            }
-
+            val dependencies = extractDependenciesFromModules(ideaProject)
             logger.info { "Extracted ${dependencies.size} dependencies from Gradle project" }
 
-            // Remove duplicates across modules, using scope precedence when same dependency appears with different scopes
-            // Precedence: compile > runtime > provided > test
-            dependencies
-                .groupBy { it.path }
-                .map { (_, depsWithSamePath) ->
-                    val first = depsWithSamePath.first()
-                    if (depsWithSamePath.size == 1) {
-                        first
-                    } else {
-                        val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
-                        val selectedScope = when {
-                            DependencyMetadata.SCOPE_COMPILE in distinctScopes -> DependencyMetadata.SCOPE_COMPILE
-                            DependencyMetadata.SCOPE_RUNTIME in distinctScopes -> DependencyMetadata.SCOPE_RUNTIME
-                            DependencyMetadata.SCOPE_PROVIDED in distinctScopes -> DependencyMetadata.SCOPE_PROVIDED
-                            DependencyMetadata.SCOPE_TEST in distinctScopes -> DependencyMetadata.SCOPE_TEST
-                            else -> first.scope
-                        }
-                        // Merge isTransitive: if any is direct (false), the dependency is considered direct
-                        val isTransitive = depsWithSamePath.all { it.isTransitive }
-
-                        if (selectedScope == first.scope && isTransitive == first.isTransitive) {
-                            first
-                        } else {
-                            DependencyMetadata(
-                                name = first.name,
-                                version = first.version,
-                                scope = selectedScope,
-                                path = first.path,
-                                isTransitive = isTransitive,
-                            )
-                        }
-                    }
-                }
+            deduplicateDependencies(dependencies)
         } catch (e: Exception) {
             logger.error(e) { "Failed to extract Gradle dependency metadata: ${e.message}" }
             emptyList()
         }
+    }
+
+    private fun extractDependenciesFromModules(ideaProject: IdeaProject): List<DependencyMetadata> {
+        val dependencies = mutableListOf<DependencyMetadata>()
+
+        ideaProject.modules.forEach { module ->
+            logger.debug { "Processing module: ${module.name}" }
+
+            module.dependencies
+                .filterIsInstance<IdeaSingleEntryLibraryDependency>()
+                .forEach { dependency ->
+                    val jarPath = dependency.file.toPath()
+                    if (jarPath.exists()) {
+                        val depMetadata = extractDependencyMetadata(dependency, jarPath)
+                        dependencies.add(depMetadata)
+                        logger.debug { "Found dependency: ${depMetadata.name}" }
+                    } else {
+                        logger.warn { "Dependency JAR not found: $jarPath" }
+                    }
+                }
+        }
+
+        return dependencies
+    }
+
+    private fun deduplicateDependencies(dependencies: List<DependencyMetadata>): List<DependencyMetadata> {
+        // Remove duplicates across modules, using scope precedence when same dependency appears with different scopes
+        // Precedence: compile > runtime > provided > test
+        return dependencies
+            .groupBy { it.path }
+            .map { (_, depsWithSamePath) -> mergeDuplicateDependencies(depsWithSamePath) }
+    }
+
+    private fun mergeDuplicateDependencies(depsWithSamePath: List<DependencyMetadata>): DependencyMetadata {
+        val first = depsWithSamePath.first()
+        if (depsWithSamePath.size == 1) {
+            return first
+        }
+
+        val distinctScopes = depsWithSamePath.map { it.scope }.distinct()
+        val selectedScope = selectHighestPriorityScope(distinctScopes, first.scope)
+
+        // Merge isTransitive: if any is direct (false), the dependency is considered direct
+        val isTransitive = depsWithSamePath.all { it.isTransitive }
+
+        return if (selectedScope == first.scope && isTransitive == first.isTransitive) {
+            first
+        } else {
+            DependencyMetadata(
+                name = first.name,
+                version = first.version,
+                scope = selectedScope,
+                path = first.path,
+                isTransitive = isTransitive,
+            )
+        }
+    }
+
+    private fun selectHighestPriorityScope(distinctScopes: List<String>, fallback: String): String = when {
+        DependencyMetadata.SCOPE_COMPILE in distinctScopes -> DependencyMetadata.SCOPE_COMPILE
+        DependencyMetadata.SCOPE_RUNTIME in distinctScopes -> DependencyMetadata.SCOPE_RUNTIME
+        DependencyMetadata.SCOPE_PROVIDED in distinctScopes -> DependencyMetadata.SCOPE_PROVIDED
+        DependencyMetadata.SCOPE_TEST in distinctScopes -> DependencyMetadata.SCOPE_TEST
+        else -> fallback
     }
 
     /**
