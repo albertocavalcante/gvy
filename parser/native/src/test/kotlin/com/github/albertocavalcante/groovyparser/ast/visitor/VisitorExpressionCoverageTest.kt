@@ -336,10 +336,10 @@ class VisitorExpressionCoverageTest {
         if (allNodes.any { it is MethodReferenceExpression }) typesFound.add("MethodReferenceExpression")
         if (allNodes.any { it is StaticMethodCallExpression }) typesFound.add("StaticMethodCallExpression")
 
-        // StaticMethodCallExpression is version-dependent and may not be generated
+        // StaticMethodCallExpression is version-dependent, so we expect at least 9 of 10 types.
         assertTrue(
-            typesFound.size >= 8,
-            "Should track at least 8 of the tested expression types, found: ${typesFound.size} ($typesFound)",
+            typesFound.size >= 9,
+            "Should track at least 9 of 10 expression types (StaticMethodCallExpression is optional), found: ${typesFound.size} ($typesFound)",
         )
     }
 }
