@@ -215,11 +215,11 @@ class DependencyGraph {
         }
 
         // Extract dependencies from static imports
-        moduleNode.staticImports.values.forEach { importNode ->
+        moduleNode.staticImports.values.sortedBy { it.className ?: it.type?.name ?: "" }.forEach { importNode ->
             processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
-        moduleNode.staticStarImports.values.forEach { importNode ->
+        moduleNode.staticStarImports.values.sortedBy { it.className ?: it.type?.name ?: "" }.forEach { importNode ->
             processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
@@ -276,7 +276,7 @@ class DependencyGraph {
     ) {
         if (packageName == null) return
 
-        workspaceIndex.forEach { (className, uri) ->
+        workspaceIndex.entries.sortedBy { it.key }.forEach { (className, uri) ->
             // Check if the class is directly in the package (not a subpackage)
             if (className.startsWith("$packageName.") && !className.substringAfter("$packageName.").contains('.')) {
                 dependencies.add(uri)
