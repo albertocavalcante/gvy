@@ -14,7 +14,8 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections.synchronizedMap
+import java.util.WeakHashMap
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -33,32 +34,35 @@ class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
-    // Thread-safe cache of contexts per module
-    private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
+    // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
+    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
-    // Current module for single-parameter API compatibility
-    private var currentModule: ModuleNode? = null
+    // Thread-local current module for single-parameter API compatibility (avoids sharing this state across threads)
+    private val currentModule = ThreadLocal<ModuleNode?>()
 
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        currentModule = module
-        if (contextCache.containsKey(module)) return
+        // Manually perform atomic check-and-create under the synchronized map's lock
+        // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
+        synchronized(contextCache) {
+            if (!contextCache.containsKey(module)) {
+                val scope = buildRootScope(module)
+                val context = NativeTypeContext(
+                    typeSolver = typeSolver,
+                    calculatorRegistry = calculatorRegistry,
+                    scope = scope,
+                    isStaticCompilation = hasCompileStatic(module),
+                )
 
-        val scope = buildRootScope(module)
-        val context = NativeTypeContext(
-            typeSolver = typeSolver,
-            calculatorRegistry = calculatorRegistry,
-            scope = scope,
-            isStaticCompilation = hasCompileStatic(module),
-        )
+                populateScriptVariables(module, scope, context)
+                populateClassMethodVariables(module, scope, context)
 
-        populateScriptVariables(module, scope, context)
-        populateClassMethodVariables(module, scope, context)
-
-        contextCache[module] = context
+                contextCache[module] = context
+            }
+        }
     }
 
     private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
@@ -111,10 +115,15 @@ class GroovySemantics(
      * This is the preferred API for multi-document workspaces.
      */
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
-        inject(module)
-        val context = contextCache[module]
-            ?: return SemanticType.Unknown("Module not injected")
-        return calculatorRegistry.calculate(node, context)
+        currentModule.set(module)
+        try {
+            inject(module)
+            val context = contextCache[module]
+                ?: return SemanticType.Unknown("Module not injected")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -126,9 +135,13 @@ class GroovySemantics(
         ReplaceWith("resolveType(node, module)"),
     )
     fun resolveType(node: ASTNode): SemanticType {
-        val context = findContext(node)
-            ?: return SemanticType.Unknown("Node not in injected module")
-        return calculatorRegistry.calculate(node, context)
+        try {
+            val context = findContext(node)
+                ?: return SemanticType.Unknown("Node not in injected module")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -139,6 +152,7 @@ class GroovySemantics(
         "Use resolveType(expression, module) for multi-document safety",
         ReplaceWith("resolveType(expression, module)"),
     )
+    @Suppress("DEPRECATION")
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
 
     /**
@@ -148,21 +162,30 @@ class GroovySemantics(
      * @return Either a TypeInferenceError or the resolved SemanticType
      */
     fun resolveTypeResult(node: ASTNode): TypeResult {
-        val module = currentModule
-            ?: return TypeInferenceError.InternalError("No module injected").left()
+        try {
+            val module = currentModule.get()
+                ?: return TypeInferenceError.InternalError("No module injected").left()
 
-        val context = contextCache[module]
-            ?: return TypeInferenceError.InternalError("Module not in context cache").left()
+            val context = contextCache[module]
+                ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
-        return calculatorRegistry.calculateResult(node, context)
+            return calculatorRegistry.calculateResult(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
      * Resolve the type of an AST node with explicit module, returning Either.
      */
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
-        inject(module)
-        return resolveTypeResult(node)
+        currentModule.set(module)
+        try {
+            inject(module)
+            return resolveTypeResult(node)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**

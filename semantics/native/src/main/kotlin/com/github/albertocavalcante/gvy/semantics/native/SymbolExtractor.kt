@@ -21,6 +21,7 @@ object SymbolExtractor {
 
     private const val MAX_TYPE_FORMAT_DEPTH = 10
 
+    @Suppress("DEPRECATION")
     private fun ClassNode.isDynamicOrObject(): Boolean =
         ClassHelper.isDynamicTyped(this) || this == ClassHelper.OBJECT_TYPE || this == ClassHelper.DYNAMIC_TYPE
 
