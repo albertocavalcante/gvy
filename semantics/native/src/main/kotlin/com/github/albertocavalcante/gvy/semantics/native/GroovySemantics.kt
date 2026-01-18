@@ -14,7 +14,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
-import java.util.Collections
+import java.util.Collections.synchronizedMap
 import java.util.WeakHashMap
 
 /**
@@ -35,9 +35,9 @@ class GroovySemantics(
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
     // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
-    private val contextCache = Collections.synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
+    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
-    // Thread-local current module for single-parameter API compatibility (prevents race conditions)
+    // Thread-local current module for single-parameter API compatibility (avoids sharing this state across threads)
     private val currentModule = ThreadLocal<ModuleNode?>()
 
     /**
@@ -46,20 +46,21 @@ class GroovySemantics(
      */
     fun inject(module: ModuleNode) {
         currentModule.set(module)
-        if (contextCache.containsKey(module)) return
+        // Use computeIfAbsent for atomic check-and-create operation
+        contextCache.computeIfAbsent(module) {
+            val scope = buildRootScope(it)
+            val context = NativeTypeContext(
+                typeSolver = typeSolver,
+                calculatorRegistry = calculatorRegistry,
+                scope = scope,
+                isStaticCompilation = hasCompileStatic(it),
+            )
 
-        val scope = buildRootScope(module)
-        val context = NativeTypeContext(
-            typeSolver = typeSolver,
-            calculatorRegistry = calculatorRegistry,
-            scope = scope,
-            isStaticCompilation = hasCompileStatic(module),
-        )
+            populateScriptVariables(it, scope, context)
+            populateClassMethodVariables(it, scope, context)
 
-        populateScriptVariables(module, scope, context)
-        populateClassMethodVariables(module, scope, context)
-
-        contextCache[module] = context
+            context
+        }
     }
 
     private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {

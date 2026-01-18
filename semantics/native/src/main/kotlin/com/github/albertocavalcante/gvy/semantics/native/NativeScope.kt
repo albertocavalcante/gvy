@@ -4,24 +4,19 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
-import java.lang.ref.WeakReference
 
 /**
  * Scope tracking for variable resolution in native Groovy AST.
  * Supports module-level resolution for field and method lookups.
  *
- * Uses WeakReference for currentModule to prevent reference cycles when stored in WeakHashMap.
+ * WeakHashMap (used in GroovySemantics) handles weak keys properly even when values
+ * contain strong references back to the key. This is by design - see WeakHashMap javadoc.
  */
 class NativeScope private constructor(
     private val parent: NativeScope?,
     private val variables: MutableMap<String, SemanticType> = mutableMapOf(),
-    private val currentModuleRef: WeakReference<ModuleNode>? = null,
+    val currentModule: ModuleNode? = null,
 ) {
-    /**
-     * Access the current module (may be null if GC'd).
-     */
-    val currentModule: ModuleNode?
-        get() = currentModuleRef?.get()
 
     /**
      * Look up a variable by name in this scope or parent scopes.
@@ -39,7 +34,7 @@ class NativeScope private constructor(
      * Create a child scope.
      * Propagates module reference from parent.
      */
-    fun child(): NativeScope = NativeScope(parent = this, currentModuleRef = this.currentModuleRef)
+    fun child(): NativeScope = NativeScope(parent = this, currentModule = this.currentModule)
 
     companion object {
         /**
@@ -82,11 +77,10 @@ class NativeScope private constructor(
         /**
          * Create a root scope from a module.
          * Enables module-level resolution for fields and methods.
-         * Uses WeakReference to prevent reference cycles.
          */
         fun fromModule(moduleNode: ModuleNode): NativeScope = NativeScope(
             parent = null,
-            currentModuleRef = WeakReference(moduleNode),
+            currentModule = moduleNode,
         )
     }
 }

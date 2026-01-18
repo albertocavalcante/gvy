@@ -380,11 +380,10 @@ class GroovySemanticsTest {
 
         // Create and inject a module, then immediately lose the reference
         var module: ModuleNode? = parse(code)
-        val nonNullModule = module!! // Keep non-null reference for injection
-        semantics.inject(nonNullModule)
+        semantics.inject(module!!)
 
         // Verify context exists before GC
-        val contextBefore = semantics.getContext(nonNullModule)
+        val contextBefore = semantics.getContext(module)
         assertTrue(contextBefore != null, "Context should exist after injection")
 
         // Null the reference and request GC
@@ -427,7 +426,10 @@ class GroovySemanticsTest {
                 repeat(100) {
                     semantics.inject(module)
                     val context = semantics.getContext(module)
-                    assertTrue(context != null, "Context should be available in thread $index")
+                    assertTrue(
+                        context != null,
+                        "Context should remain available after concurrent inject operations in thread $index",
+                    )
                 }
             }
         }
