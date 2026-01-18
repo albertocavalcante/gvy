@@ -44,6 +44,16 @@ tail -100 ~/.local/share/groovy-lsp/logs/*.log 2>/dev/null | grep -i "error\|exc
 # View → Output → Groovy Language Server
 ```
 
+<critical>
+**REDACT BEFORE SHARING**: Before posting logs/config to GitHub, scrub sensitive data:
+- API tokens, secrets, passwords, private keys
+- OAuth/session tokens, credentials
+- Personal file paths (e.g., `/Users/john.doe/...`)
+- Email addresses, usernames, IP addresses
+
+Replace with placeholders: `[REDACTED]`, `[TOKEN]`, `[PATH]`
+</critical>
+
 ### 1.3 Collect Symptoms
 
 | Question                                 | Answer |
@@ -77,16 +87,14 @@ A bug without reproduction steps is very hard to fix. Invest time here.
    ```groovy
    [minimal code that triggers the bug]
    ```
-````
-
 3. [Trigger action - e.g., "Hover over the method name"]
 4. Observe: [What happens]
 
 ### Minimal Reproducible Example
 
 [Attach or link to minimal project that reproduces the issue]
-
 ````
+
 ### 2.3 Verify Reproduction
 
 ```bash
@@ -95,7 +103,7 @@ code --disable-extensions --install-extension groovy-language-server-*.vsix
 
 # Test with minimal config
 code --user-data-dir /tmp/vscode-clean
-````
+```
 
 ---
 
@@ -238,7 +246,6 @@ gh label list
 ```groovy
 [Code that triggers the bug]
 ```
-````
 
 ## Environment
 
@@ -252,7 +259,7 @@ gh label list
 <details>
 <summary>Error logs</summary>
 
-```
+```text
 [Paste relevant logs here]
 ```
 
@@ -265,8 +272,8 @@ gh label list
 ## Impact
 
 **Severity**: **Workaround**:
-
 ````
+
 ### 6.3 Create the Issue
 
 ```bash
@@ -277,7 +284,7 @@ gh issue create \
   --label "bug" \
   --label "priority/P2" \
   --label "area/lsp-core"
-````
+```
 
 ---
 

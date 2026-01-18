@@ -55,12 +55,20 @@ Only check lint on changed files, not the entire codebase.
 
 ```bash
 # Get changed Kotlin files
-CHANGED_KT=$(git diff --name-only origin/main...HEAD | grep '\.kt$' | tr '\n' ' ')
+CHANGED_KT=$(git diff --name-only origin/main...HEAD | grep '\.kt$')
 
-# Run detekt on changed files only (if any)
-if [ -n "$CHANGED_KT" ]; then
-  ./gradlew detekt --include "$CHANGED_KT"
+# Identify affected modules from changed files
+MODULES=$(echo "$CHANGED_KT" | cut -d'/' -f1 | sort -u | grep -v '^\.' || true)
+
+# Run detekt on affected modules only (if any)
+if [ -n "$MODULES" ]; then
+  for module in $MODULES; do
+    ./gradlew :$module:detekt --console=plain 2>&1 || true
+  done
 fi
+
+# Alternative: Run full detekt and filter results to changed files
+# ./gradlew detekt --console=plain 2>&1 | grep -F "$CHANGED_KT" || echo "No issues in changed files"
 ```
 
 ### 1.2 Check for New Warnings
