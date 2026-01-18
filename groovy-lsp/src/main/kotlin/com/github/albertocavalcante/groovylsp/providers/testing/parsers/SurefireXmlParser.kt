@@ -4,10 +4,11 @@ import com.github.albertocavalcante.groovylsp.providers.testing.TestResultItem
 import com.github.albertocavalcante.groovylsp.providers.testing.TestResultStatus
 import com.github.albertocavalcante.groovylsp.providers.testing.TestResultSummary
 import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
+import com.github.albertocavalcante.reports.discovery.ProjectDiscovery
+import com.github.albertocavalcante.reports.xml.XmlUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.w3c.dom.Element
 import java.io.File
-import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.math.roundToLong
 
 /**
@@ -78,7 +79,7 @@ object SurefireXmlParser {
         }
 
         // Discover submodules from pom.xml
-        val submodules = discoverMavenModules(workspaceRoot)
+        val submodules = ProjectDiscovery.discoverMavenModules(workspaceRoot)
         for (module in submodules) {
             val moduleDir = File(workspaceRoot, module)
 
@@ -97,38 +98,10 @@ object SurefireXmlParser {
     }
 
     /**
-     * Discover Maven submodules from pom.xml.
-     */
-    private fun discoverMavenModules(workspaceRoot: File): List<String> {
-        val pomFile = File(workspaceRoot, "pom.xml")
-        if (!pomFile.exists()) return emptyList()
-
-        return try {
-            val dbFactory = DocumentBuilderFactory.newInstance()
-            // Disable external entities for security
-            dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            val dBuilder = dbFactory.newDocumentBuilder()
-            val doc = dBuilder.parse(pomFile)
-            doc.documentElement.normalize()
-
-            val moduleNodes = doc.getElementsByTagName("module")
-            (0 until moduleNodes.length).mapNotNull { i ->
-                moduleNodes.item(i).textContent?.trim()?.takeIf { it.isNotEmpty() }
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to parse pom.xml for modules" }
-            emptyList()
-        }
-    }
-
-    /**
      * Parse a single Surefire XML report file.
      */
     fun parseReportFile(file: File): List<TestResultItem> {
-        val dbFactory = DocumentBuilderFactory.newInstance()
-        // Disable external entities for security
-        dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        val dBuilder = dbFactory.newDocumentBuilder()
+        val dBuilder = XmlUtils.createSecureDocumentBuilder()
         val doc = dBuilder.parse(file)
         doc.documentElement.normalize()
 
