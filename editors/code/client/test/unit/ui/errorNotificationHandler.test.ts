@@ -394,7 +394,7 @@ describe("Error Notification Handler", () => {
       await showErrorNotification(
         "TOOLCHAIN_PROVISIONING_FAILED",
         errorDetails,
-        mockOutputChannel as unknown,
+        mockOutputChannel as never,
         undefined,
       );
 
