@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.MySpec" time="4.662" tests="3" errors="1" skipped="1" failures="1">
+<testsuite name="com.example.MySpec" time="4.662" tests="4" errors="1" skipped="1" failures="1">
   <testcase name="testSuccess" classname="com.example.MySpec" time="0.123">
     <system-out><![CDATA[Test output here]]></system-out>
   </testcase>
