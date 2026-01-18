@@ -1,11 +1,4 @@
-package com.github.albertocavalcante.groovylsp.providers.coverage
-
-/**
- * Parameters for the `groovy/getCoverage` LSP request.
- *
- * @property workspaceUri URI of the workspace root
- */
-data class GetCoverageParams(val workspaceUri: String)
+package com.github.albertocavalcante.reports.coverage.model
 
 /**
  * Branch coverage information for a line.

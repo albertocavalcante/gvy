@@ -123,7 +123,7 @@ dependencies {
     implementation(project(":parser:rewrite"))
     implementation(project(":semantics:core"))
     implementation(project(":semantics-native"))
-    implementation(project(":reports:api"))
+    implementation(project(":reports:coverage"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;

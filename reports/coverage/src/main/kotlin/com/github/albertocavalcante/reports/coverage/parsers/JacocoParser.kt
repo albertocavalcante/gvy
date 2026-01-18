@@ -1,11 +1,11 @@
-package com.github.albertocavalcante.groovylsp.providers.coverage.parsers
+package com.github.albertocavalcante.reports.coverage.parsers
 
-import com.github.albertocavalcante.groovylsp.providers.coverage.BranchInfo
-import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
-import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageSummary
-import com.github.albertocavalcante.groovylsp.providers.coverage.FileCoverageData
-import com.github.albertocavalcante.groovylsp.providers.coverage.FileCoverageSummary
-import com.github.albertocavalcante.groovylsp.providers.coverage.LineCoverage
+import com.github.albertocavalcante.reports.coverage.model.BranchInfo
+import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
+import com.github.albertocavalcante.reports.coverage.model.CoverageSummary
+import com.github.albertocavalcante.reports.coverage.model.FileCoverageData
+import com.github.albertocavalcante.reports.coverage.model.FileCoverageSummary
+import com.github.albertocavalcante.reports.coverage.model.LineCoverage
 import com.github.albertocavalcante.reports.discovery.ProjectDiscovery
 import com.github.albertocavalcante.reports.xml.XmlUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -31,7 +31,7 @@ import java.net.URI
  * ```
  */
 @Suppress("TooManyFunctions") // Cohesive coverage parsing
-object JacocoXmlParser {
+object JacocoParser : CoverageParser {
     private val logger = KotlinLogging.logger {}
 
     /**
@@ -52,7 +52,7 @@ object JacocoXmlParser {
      * @param workspaceRoot Root directory of the workspace
      * @return Aggregated coverage data from all found reports
      */
-    fun parseWorkspace(workspaceRoot: File): CoverageResponse {
+    override fun parseWorkspace(workspaceRoot: File): CoverageResponse {
         val reportFiles = discoverJacocoReports(workspaceRoot)
         logger.info { "Found ${reportFiles.size} JaCoCo report files" }
 
@@ -132,7 +132,7 @@ object JacocoXmlParser {
      * @param file The JaCoCo XML report file
      * @param workspaceRoot Workspace root for resolving file URIs
      */
-    fun parseReportFile(file: File, workspaceRoot: File): List<FileCoverageData> {
+    override fun parseReportFile(file: File, workspaceRoot: File): List<FileCoverageData> {
         val dBuilder = XmlUtils.createSecureDocumentBuilder()
         val doc = dBuilder.parse(file)
         doc.documentElement.normalize()
