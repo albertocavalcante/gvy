@@ -789,36 +789,25 @@ describe("LSPTestExecutionService", () => {
       // Create a circular reference in test items
       type TestItemType = {
         id: string;
-        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+        children: Map<string, TestItemType>;
       };
       const item1: TestItemType = {
         id: "item1",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const item2: TestItemType = {
         id: "item2",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const item3: TestItemType = {
         id: "item3",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
 
       // Create circular reference: item1 -> item2 -> item3 -> item1
       item1.children.set("item2", item2);
       item2.children.set("item3", item3);
       item3.children.set("item1", item1);
-
-      // Mock forEach on children
-      item1.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(item2);
-      };
-      item2.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(item3);
-      };
-      item3.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(item1);
-      };
 
       // This should not stack overflow
       const result = service.collectAllTestItems([item1]);
@@ -834,42 +823,29 @@ describe("LSPTestExecutionService", () => {
       // Create a diamond structure where one item is reachable via two paths
       type TestItemType = {
         id: string;
-        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+        children: Map<string, TestItemType>;
       };
       const root: TestItemType = {
         id: "root",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const left: TestItemType = {
         id: "left",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const right: TestItemType = {
         id: "right",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const shared: TestItemType = {
         id: "shared",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
 
       root.children.set("left", left);
       root.children.set("right", right);
       left.children.set("shared", shared);
       right.children.set("shared", shared);
-
-      // Mock forEach
-      root.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(left);
-        callback(right);
-      };
-      left.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(shared);
-      };
-      right.children.forEach = function (callback: (item: TestItemType) => void) {
-        callback(shared);
-      };
-      shared.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
       const result = service.collectAllTestItems([root]) as TestItemType[];
 
@@ -888,26 +864,22 @@ describe("LSPTestExecutionService", () => {
       // Create a deeply nested tree (100 levels)
       type TestItemType = {
         id: string;
-        children: Map<string, TestItemType> & { forEach: (callback: (item: TestItemType) => void) => void };
+        children: Map<string, TestItemType>;
       };
       let current: TestItemType = {
         id: "item0",
-        children: new Map() as TestItemType["children"],
+        children: new Map(),
       };
       const root = current;
 
       for (let i = 1; i < 100; i++) {
         const child: TestItemType = {
           id: `item${i}`,
-          children: new Map() as TestItemType["children"],
+          children: new Map(),
         };
         current.children.set(child.id, child);
-        current.children.forEach = function (callback: (item: TestItemType) => void) {
-          callback(child);
-        };
         current = child;
       }
-      current.children.forEach = function (_callback: (item: TestItemType) => void) {};
 
       // Should not stack overflow
       const result = service.collectAllTestItems([root]);
