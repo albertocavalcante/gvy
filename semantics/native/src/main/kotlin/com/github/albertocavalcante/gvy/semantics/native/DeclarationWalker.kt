@@ -199,11 +199,9 @@ object DeclarationWalker {
     ) {
         val catchVar = catchStmt.variable ?: return
         val calculatedType = context.calculateType(catchVar)
-        val varType = calculatedType as? SemanticType
-            ?: SemanticType.Unknown("catch variable type inference")
         out += DeclarationInfo(
             name = catchVar.name,
-            inferredType = varType,
+            inferredType = calculatedType,
             line = catchVar.lineNumber,
             column = catchVar.columnNumber,
         )
