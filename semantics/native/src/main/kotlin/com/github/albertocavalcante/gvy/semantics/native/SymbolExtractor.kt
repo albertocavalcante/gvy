@@ -19,6 +19,8 @@ import java.lang.reflect.Modifier
  */
 object SymbolExtractor {
 
+    private const val MAX_TYPE_FORMAT_DEPTH = 10
+
     private fun ClassNode.isDynamicOrObject(): Boolean =
         ClassHelper.isDynamicTyped(this) || this == ClassHelper.OBJECT_TYPE || this == ClassHelper.DYNAMIC_TYPE
 
@@ -90,34 +92,35 @@ object SymbolExtractor {
     private fun extractVariablesWithoutSemantics(block: BlockStatement, out: MutableList<VariableSymbol>) {
         for (stmt in block.statements) {
             when (stmt) {
-                is ExpressionStatement -> {
-                    val expr = stmt.expression
-                    if (expr is DeclarationExpression) {
-                        val variable = expr.variableExpression
-                        val declaredType = variable.type
-                        val typeName = if (!declaredType.isDynamicOrObject()) {
-                            declaredType.name
-                        } else {
-                            expr.rightExpression?.type?.name ?: "java.lang.Object"
-                        }
-                        out.add(
-                            VariableSymbol(
-                                name = variable.name,
-                                type = typeName,
-                                kind = VariableKind.LOCAL_VARIABLE,
-                                line = stmt.lineNumber - 1,
-                            ),
-                        )
-                    }
-                }
-
+                is ExpressionStatement -> extractDeclarationFromExpression(stmt, out)
                 is BlockStatement -> extractVariablesWithoutSemantics(stmt, out)
             }
         }
     }
 
+    private fun extractDeclarationFromExpression(stmt: ExpressionStatement, out: MutableList<VariableSymbol>) {
+        val expr = stmt.expression
+        if (expr !is DeclarationExpression) return
+
+        val variable = expr.variableExpression
+        val declaredType = variable.type
+        val typeName = if (!declaredType.isDynamicOrObject()) {
+            declaredType.name
+        } else {
+            expr.rightExpression?.type?.name ?: "java.lang.Object"
+        }
+        out.add(
+            VariableSymbol(
+                name = variable.name,
+                type = typeName,
+                kind = VariableKind.LOCAL_VARIABLE,
+                line = stmt.lineNumber - 1,
+            ),
+        )
+    }
+
     private fun formatSemanticType(type: SemanticType, depth: Int = 0): String {
-        if (depth > 10) return "..." // Prevent StackOverflow from potential circularity (e.g. in mocks)
+        if (depth > MAX_TYPE_FORMAT_DEPTH) return "..." // Prevent StackOverflow from potential circularity
 
         return when (type) {
             is SemanticType.Known -> {
@@ -263,7 +266,7 @@ object SymbolExtractor {
     fun extractCompletionSymbols(
         ast: ASTNode,
         line: Int,
-        character: Int,
+        @Suppress("UNUSED_PARAMETER") character: Int,
         semantics: GroovySemantics? = null,
     ): SymbolCompletionContext {
         if (ast !is ModuleNode) return SymbolCompletionContext.EMPTY
