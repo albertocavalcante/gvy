@@ -459,14 +459,13 @@ class DiagnosticsOrchestratorTest {
         // When: Complete the compilation
         deferred.complete(result)
 
-        // Give it time to complete
-        delay(100)
+        // Wait for the await job to complete
+        awaitJob.join()
 
         // Then: awaitDiagnostics should complete
         assertTrue(awaitCompleted, "awaitDiagnostics should complete after job finishes")
 
         // Cleanup
-        awaitJob.cancel()
         scope.cancel()
     }
 

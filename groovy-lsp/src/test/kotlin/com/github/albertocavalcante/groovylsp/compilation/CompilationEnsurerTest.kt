@@ -126,7 +126,7 @@ class CompilationEnsurerTest {
         coEvery { compilationService.compile(uri, any()) } coAnswers {
             callCount++
             if (callCount == 1) {
-                throw IllegalStateException("Compilation failed")
+                error("Compilation failed")
             }
             mockk()
         }

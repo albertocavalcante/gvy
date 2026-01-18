@@ -60,6 +60,7 @@ class DiagnosticsOrchestrator(
     fun trigger(uri: URI, content: String) {
         // Launch a new diagnostic job
         val job = coroutineScope.launch {
+            val currentJob = coroutineContext[Job]
             try {
                 runCatching {
                     // Use compileAsync for proper coordination
@@ -102,7 +103,7 @@ class DiagnosticsOrchestrator(
                 }
             } finally {
                 // Remove job from map if it's the current one
-                diagnosticJobs.remove(uri, coroutineContext[Job])
+                diagnosticJobs.remove(uri, currentJob)
             }
         }
 
@@ -129,11 +130,9 @@ class DiagnosticsOrchestrator(
      * Useful when configuration changes or external factors require re-analysis.
      */
     fun refreshAll() {
-        coroutineScope.launch {
-            documentProvider.snapshot().forEach { (uri, content) ->
-                trigger(uri, content)
-                logger.info { "Triggered diagnostics refresh for $uri after dependency update" }
-            }
+        documentProvider.snapshot().forEach { (uri, content) ->
+            trigger(uri, content)
+            logger.info { "Triggered diagnostics refresh for $uri after dependency update" }
         }
     }
 
