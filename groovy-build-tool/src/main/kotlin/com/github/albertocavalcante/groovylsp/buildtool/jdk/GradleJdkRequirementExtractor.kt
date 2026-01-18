@@ -79,6 +79,7 @@ class GradleJdkRequirementExtractor : JdkRequirementExtractor {
 
     private fun parseJdkRequirements(
         content: String,
+        // Kept for potential future differentiation between Groovy and Kotlin DSL parsing
         @Suppress("UnusedParameter") isKts: Boolean,
     ): JdkRequirementResult {
         val toolchainVersion = extractToolchainVersion(content)

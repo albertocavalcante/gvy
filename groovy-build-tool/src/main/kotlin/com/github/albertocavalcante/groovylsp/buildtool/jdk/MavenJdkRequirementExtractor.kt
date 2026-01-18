@@ -111,8 +111,7 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
     private fun determineRequirementSource(versions: ExtractedVersions, toolchainVersion: Int?): RequirementSource =
         when {
             toolchainVersion != null -> RequirementSource.MAVEN_TOOLCHAIN
-            versions.releaseFromPlugin != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
-            versions.releaseFromProperty != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
+            versions.releaseVersion != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
             versions.sourceFromPlugin != null || versions.targetFromPlugin != null ->
                 RequirementSource.MAVEN_COMPILER_PLUGIN
             else -> RequirementSource.MAVEN_SOURCE_TARGET_PROPERTY
