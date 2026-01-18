@@ -141,7 +141,7 @@ class ClasspathService(
             .take(maxResults)
             .forEach { (simpleName, fullNames) ->
                 // For each matching simple name, add all fully qualified variants
-                fullNames.sorted().forEach { fullName ->
+                fullNames.forEach { fullName ->
                     val packageName = fullName.substringBeforeLast('.', "")
                     results.add(ClassInfo(simpleName, fullName, packageName))
                 }
