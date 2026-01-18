@@ -54,3 +54,30 @@ jobs:
             --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(rm -rf:*),Bash(curl :*),Bash(wget :*)"
             --max-turns 10
 
+      - name: Upload Claude execution log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: claude-log-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Output failure summary
+        if: failure()
+        run: |
+          {
+            echo "## Claude Code Execution Failed"
+            echo ""
+            if [ -f /home/runner/work/_temp/claude-execution-output.json ]; then
+              echo "### Execution Details"
+              echo '```json'
+              jq -r 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' /home/runner/work/_temp/claude-execution-output.json 2>/dev/null | head -50 || head -100 /home/runner/work/_temp/claude-execution-output.json
+              echo '```'
+              echo ""
+              echo "Full log available in artifacts: **claude-log-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.run_id }}**"
+            else
+              echo "No execution log found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
