@@ -53,8 +53,9 @@ class FixBrokenNullCheck : Recipe() {
                 }
             }
 
-            // Match direct dereferences (field access, method call, instanceof) of the given variable.
-            // This implementation handles the common `!= null` pattern; it does not cover all variants checked by CodeNarc.
+            // Match direct dereferences (field access, method call, instanceof) of the variable.
+            // This implementation handles the common `!= null` pattern;
+            // it does not cover all variants checked by CodeNarc.
             return b
         }
 

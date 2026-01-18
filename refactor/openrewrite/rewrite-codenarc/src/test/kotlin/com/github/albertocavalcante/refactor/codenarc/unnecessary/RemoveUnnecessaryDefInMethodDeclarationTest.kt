@@ -12,7 +12,8 @@ import org.openrewrite.test.RewriteTest
  *
  * In Groovy, def is unnecessary when explicit type or modifier is present.
  *
- * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefInmethoddeclaration">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefInmethoddeclaration">
+ *     CodeNarc Rule</a>
  */
 class RemoveUnnecessaryDefInMethodDeclarationTest : RewriteTest {
 

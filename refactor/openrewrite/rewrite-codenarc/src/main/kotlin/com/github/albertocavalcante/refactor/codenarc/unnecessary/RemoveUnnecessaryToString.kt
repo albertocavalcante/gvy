@@ -30,6 +30,7 @@ class RemoveUnnecessaryToString : Recipe() {
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyVisitor<ExecutionContext>() {
 
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitMethodInvocation(method: J.MethodInvocation, ctx: ExecutionContext): J {
             val m = super.visitMethodInvocation(method, ctx) as J.MethodInvocation
 

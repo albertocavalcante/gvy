@@ -32,6 +32,7 @@ class RemoveUnnecessaryGString : Recipe() {
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> {
         return object : GroovyVisitor<ExecutionContext>() {
 
+            @Suppress("ReturnCount") // Guard clauses for early exit validation
             override fun visitGString(gString: G.GString, ctx: ExecutionContext): J {
                 val g = super.visitGString(gString, ctx) as G.GString
 

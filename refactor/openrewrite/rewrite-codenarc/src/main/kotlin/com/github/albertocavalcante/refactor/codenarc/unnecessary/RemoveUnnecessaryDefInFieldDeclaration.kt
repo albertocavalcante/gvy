@@ -13,7 +13,8 @@ import org.openrewrite.java.tree.J
  *
  * This aligns with CodeNarc rule: UnnecessaryDefInFieldDeclaration
  *
- * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefinfielddeclaration">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarydefinfielddeclaration">
+ *     CodeNarc Rule</a>
  */
 class RemoveUnnecessaryDefInFieldDeclaration : Recipe() {
 

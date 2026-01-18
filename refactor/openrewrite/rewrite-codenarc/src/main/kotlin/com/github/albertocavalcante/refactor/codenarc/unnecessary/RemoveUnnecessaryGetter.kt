@@ -32,6 +32,20 @@ class RemoveUnnecessaryGetter : Recipe() {
 
         private val spockMethods = setOf("Mock", "Spy", "Stub")
 
+        // Getter prefixes and their lengths for property name extraction
+        @Suppress("ConstPropertyName")
+        private val GET_PREFIX = "get"
+
+        @Suppress("ConstPropertyName")
+        private val IS_PREFIX = "is"
+
+        @Suppress("ConstPropertyName")
+        private val GET_PREFIX_LENGTH = GET_PREFIX.length
+
+        @Suppress("ConstPropertyName")
+        private val IS_PREFIX_LENGTH = IS_PREFIX.length
+
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitMethodInvocation(method: J.MethodInvocation, ctx: ExecutionContext): J {
             val m = super.visitMethodInvocation(method, ctx) as J.MethodInvocation
 
@@ -77,8 +91,8 @@ class RemoveUnnecessaryGetter : Recipe() {
          * Returns null if not a valid getter pattern.
          */
         private fun extractPropertyName(name: String): String? = when {
-            name.startsWith("get") && name.length > 3 && name[3].isUpperCase() -> {
-                val suffix = name.substring(3)
+            name.startsWith(GET_PREFIX) && name.length > GET_PREFIX_LENGTH && name[GET_PREFIX_LENGTH].isUpperCase() -> {
+                val suffix = name.substring(GET_PREFIX_LENGTH)
                 // Skip getURL, getXML patterns (consecutive uppercase)
                 if (suffix.length > 1 && suffix[1].isUpperCase()) {
                     null
@@ -87,8 +101,8 @@ class RemoveUnnecessaryGetter : Recipe() {
                 }
             }
 
-            name.startsWith("is") && name.length > 2 && name[2].isUpperCase() -> {
-                val suffix = name.substring(2)
+            name.startsWith(IS_PREFIX) && name.length > IS_PREFIX_LENGTH && name[IS_PREFIX_LENGTH].isUpperCase() -> {
+                val suffix = name.substring(IS_PREFIX_LENGTH)
                 if (suffix.length > 1 && suffix[1].isUpperCase()) {
                     null
                 } else {
