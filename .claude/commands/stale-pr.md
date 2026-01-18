@@ -1,0 +1,33 @@
+---
+description: Review a potentially stale PR and decide whether to close, supersede, or extract valuable content
+---
+
+You are executing a STRICT, DETERMINISTIC workflow for reviewing stale PRs.
+
+**ARGUMENT:** `$ARGUMENTS` should be the PR number (e.g., `123` or `#123`)
+
+RULES (MUST FOLLOW):
+
+1. **NEVER CLOSE WITHOUT ANALYSIS** - Every PR must go through the full decision tree
+2. **PRESERVE VALUE** - Extract valuable concepts as issues before closing
+3. **COMMENT WITH RATIONALE** - Always explain why a PR is being closed
+4. **QUANTIFY DIVERGENCE** - Use concrete metrics (commits behind, files changed)
+5. **LOCAL CHECKOUT FOR LARGE PRs** - PRs with 10+ files MUST be checked out locally
+
+WORKFLOW PHASES:
+
+1. **Phase 0: Initial Assessment** - Get PR metadata, calculate divergence, classify scale
+2. **Phase 1: Remote Analysis** - For small PRs, analyze via GitHub API
+3. **Phase 2: Local Checkout** - For large PRs (10+ files), checkout and use git/rg
+4. **Phase 3: Decision** - Apply decision matrix (CLOSE/SUPERSEDE/CHERRY-PICK/MERGE)
+5. **Phase 4: Extract Value** - Create issues for valuable concepts before closing
+6. **Phase 5: Close with Rationale** - Comment explaining decision, link issues, close
+
+DECISION MATRIX:
+
+- **CLOSE** - All content stale/superseded → Create issues for concepts, close PR
+- **SUPERSEDE** - Core idea valid but needs rewrite → New PR referencing original
+- **CHERRY-PICK** - Some changes valuable → Extract to new PR, close original
+- **MERGE** - Still valid, needs rebase → Rebase and merge
+
+Read and execute `.agent/workflows/stale-pr.md` for the PR: $ARGUMENTS
