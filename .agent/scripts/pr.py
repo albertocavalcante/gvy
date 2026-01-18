@@ -1346,29 +1346,31 @@ def truncate_file_diff(file_diff: str, max_lines: int) -> tuple[str, bool]:
     return "\n".join(result), True
 
 
+def generate_diff_stats(files: list[tuple[str, str]]) -> str:
+    """Generate git-style stats from parsed diff files."""
+    stats_lines = []
+    total_adds = 0
+    total_dels = 0
+
+    for filepath, file_diff in files:
+        adds = file_diff.count("\n+") - file_diff.count("\n+++")
+        dels = file_diff.count("\n-") - file_diff.count("\n---")
+        total_adds += adds
+        total_dels += dels
+        stats_lines.append(f" {filepath} | +{adds} -{dels}")
+
+    stats_lines.append(
+        f" {len(files)} files changed, {total_adds} insertions(+), {total_dels} deletions(-)"
+    )
+    return "\n".join(stats_lines)
+
+
 def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     """
     Prepare diff content for AI, handling large diffs gracefully.
 
-    Returns (diff_content, mode) where mode is 'full', 'truncated', or 'stats-only'.
+    Returns (diff_content, mode) where mode is 'full', 'truncated', or 'error'.
     """
-    # Get diff stats first (fast, small)
-    try:
-        stat_result = subprocess.run(
-            ["gh", "pr", "diff", str(pr_number), "--stat"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        diff_stats = stat_result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"⚠️ Failed to get diff stats (exit {e.returncode}):", err=True)
-        typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
-        return "", "error"
-    except FileNotFoundError:
-        typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
-        return "", "error"
-
     # Get full diff
     try:
         diff_result = subprocess.run(
@@ -1381,6 +1383,9 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     except subprocess.CalledProcessError as e:
         typer.echo(f"⚠️ Failed to get PR diff (exit {e.returncode}):", err=True)
         typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
+        return "", "error"
+    except FileNotFoundError:
+        typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
         return "", "error"
 
     total_lines = len(full_diff.split("\n"))
@@ -1395,6 +1400,9 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
 
     # Case 2: Large diff - smart truncation
     files = parse_diff_into_files(full_diff)
+
+    # Generate stats from parsed files (since gh pr diff --stat doesn't exist)
+    diff_stats = generate_diff_stats(files)
 
     # Sort by priority (highest first)
     files_with_priority = [(get_file_priority(f), f, diff) for f, diff in files]
