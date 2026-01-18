@@ -45,7 +45,6 @@ class GroovySemantics(
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        currentModule.set(module)
         // Use computeIfAbsent for atomic check-and-create operation
         contextCache.computeIfAbsent(module) {
             val scope = buildRootScope(it)
@@ -113,10 +112,15 @@ class GroovySemantics(
      * This is the preferred API for multi-document workspaces.
      */
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
-        inject(module)
-        val context = contextCache[module]
-            ?: return SemanticType.Unknown("Module not injected")
-        return calculatorRegistry.calculate(node, context)
+        currentModule.set(module)
+        try {
+            inject(module)
+            val context = contextCache[module]
+                ?: return SemanticType.Unknown("Module not injected")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -128,9 +132,13 @@ class GroovySemantics(
         ReplaceWith("resolveType(node, module)"),
     )
     fun resolveType(node: ASTNode): SemanticType {
-        val context = findContext(node)
-            ?: return SemanticType.Unknown("Node not in injected module")
-        return calculatorRegistry.calculate(node, context)
+        try {
+            val context = findContext(node)
+                ?: return SemanticType.Unknown("Node not in injected module")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -151,21 +159,30 @@ class GroovySemantics(
      * @return Either a TypeInferenceError or the resolved SemanticType
      */
     fun resolveTypeResult(node: ASTNode): TypeResult {
-        val module = currentModule.get()
-            ?: return TypeInferenceError.InternalError("No module injected").left()
+        try {
+            val module = currentModule.get()
+                ?: return TypeInferenceError.InternalError("No module injected").left()
 
-        val context = contextCache[module]
-            ?: return TypeInferenceError.InternalError("Module not in context cache").left()
+            val context = contextCache[module]
+                ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
-        return calculatorRegistry.calculateResult(node, context)
+            return calculatorRegistry.calculateResult(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
      * Resolve the type of an AST node with explicit module, returning Either.
      */
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
-        inject(module)
-        return resolveTypeResult(node)
+        currentModule.set(module)
+        try {
+            inject(module)
+            return resolveTypeResult(node)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
