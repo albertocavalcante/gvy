@@ -83,17 +83,24 @@ class TestDiscoveryProvider(
             val testItems = registry.extractTests(classNode, ast, classLoader)
             if (testItems.isEmpty()) return@mapNotNull null
 
+            // Extract class line from the CLASS test item
+            val classItem = testItems.find { it.kind == TestItemKind.CLASS }
+            val classLine = classItem?.line ?: classNode.lineNumber.coerceAtLeast(1)
+
             val tests = testItems
                 .filter { it.kind == TestItemKind.METHOD }
                 .map { Test(test = it.name, line = it.line) }
             if (tests.isEmpty()) return@mapNotNull null
 
             val framework = testItems.firstOrNull()?.framework
-            logger.debug { "Found $framework test suite: ${classNode.name} with ${tests.size} tests" }
+            logger.debug {
+                "Found $framework test suite: ${classNode.name} at line $classLine with ${tests.size} tests"
+            }
 
             TestSuite(
                 uri = uri.toString(),
                 suite = classNode.name,
+                line = classLine,
                 tests = tests,
             )
         }
