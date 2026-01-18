@@ -204,6 +204,11 @@ class DependencyGraph {
     fun updateFromModule(uri: URI, moduleNode: ModuleNode, workspaceIndex: Map<String, URI>) {
         val newDependencies = mutableSetOf<URI>()
 
+        // Helper lambda for consistent import sorting (matches processing order)
+        val importSortKey: (org.codehaus.groovy.ast.ImportNode) -> String = {
+            it.type?.name ?: it.className ?: ""
+        }
+
         // Extract dependencies from imports
         moduleNode.imports.forEach { importNode ->
             processImportNode(importNode.className ?: importNode.type?.name, workspaceIndex, newDependencies)
@@ -215,11 +220,11 @@ class DependencyGraph {
         }
 
         // Extract dependencies from static imports
-        moduleNode.staticImports.values.sortedBy { it.className ?: it.type?.name ?: "" }.forEach { importNode ->
+        moduleNode.staticImports.values.sortedBy(importSortKey).forEach { importNode ->
             processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
-        moduleNode.staticStarImports.values.sortedBy { it.className ?: it.type?.name ?: "" }.forEach { importNode ->
+        moduleNode.staticStarImports.values.sortedBy(importSortKey).forEach { importNode ->
             processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
