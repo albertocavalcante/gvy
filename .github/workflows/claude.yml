@@ -54,6 +54,9 @@ jobs:
             --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(rm -rf:*),Bash(curl :*),Bash(wget :*)"
             --max-turns 10
 
+      # Log path is hardcoded because claude-code-action doesn't expose an output variable.
+      # This is the standard path used by the action on GitHub-hosted runners.
+      # See: https://github.com/anthropics/claude-code-action
       - name: Upload Claude execution log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -83,6 +83,9 @@ jobs:
             --allowed-tools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr comment:*),Bash(./gradlew test)"
             --max-turns 5
 
+      # Log path is hardcoded because claude-code-action doesn't expose an output variable.
+      # This is the standard path used by the action on GitHub-hosted runners.
+      # See: https://github.com/anthropics/claude-code-action
       - name: Upload Claude execution log
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
