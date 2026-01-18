@@ -45,20 +45,23 @@ class GroovySemantics(
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        // Use computeIfAbsent for atomic check-and-create operation
-        contextCache.computeIfAbsent(module) {
-            val scope = buildRootScope(it)
-            val context = NativeTypeContext(
-                typeSolver = typeSolver,
-                calculatorRegistry = calculatorRegistry,
-                scope = scope,
-                isStaticCompilation = hasCompileStatic(it),
-            )
+        // Manually perform atomic check-and-create under the synchronized map's lock
+        // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
+        synchronized(contextCache) {
+            if (!contextCache.containsKey(module)) {
+                val scope = buildRootScope(module)
+                val context = NativeTypeContext(
+                    typeSolver = typeSolver,
+                    calculatorRegistry = calculatorRegistry,
+                    scope = scope,
+                    isStaticCompilation = hasCompileStatic(module),
+                )
 
-            populateScriptVariables(it, scope, context)
-            populateClassMethodVariables(it, scope, context)
+                populateScriptVariables(module, scope, context)
+                populateClassMethodVariables(module, scope, context)
 
-            context
+                contextCache[module] = context
+            }
         }
     }
 
