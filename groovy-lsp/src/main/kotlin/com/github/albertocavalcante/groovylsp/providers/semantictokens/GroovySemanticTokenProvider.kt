@@ -119,12 +119,19 @@ object GroovySemanticTokenProvider {
     }
 
     /**
+     * Thread-local source lines for offset calculation.
+     * This avoids passing source lines through the entire call chain while maintaining thread safety.
+     */
+    private val sourceLines = ThreadLocal<List<String>>()
+
+    /**
      * Generate semantic tokens for all Groovy constructs.
      *
      * @param astModel Parsed AST model
      * @param uri Document URI
      * @param unusedImports Set of unused ImportNodes (for marking with UNNECESSARY modifier)
      * @param moduleNode Optional ModuleNode to get imports from (for generating import tokens)
+     * @param sourceText Optional source text for accurate offset calculation
      * @return List of semantic tokens
      */
     fun getSemanticTokens(
@@ -132,8 +139,12 @@ object GroovySemanticTokenProvider {
         uri: URI,
         unusedImports: Set<ImportNode> = emptySet(),
         moduleNode: ModuleNode? = null,
+        sourceText: String? = null,
     ): List<SemanticToken> {
         val tokens = mutableListOf<SemanticToken>()
+
+        // Set source lines for this thread (for accurate method name offset calculation)
+        sourceLines.set(sourceText?.lines() ?: emptyList())
 
         try {
             val allNodes = astModel.getAllNodes()
@@ -173,6 +184,9 @@ object GroovySemanticTokenProvider {
             logger.error(e) {
                 "Unexpected error generating semantic tokens for $uri: ${e.javaClass.simpleName} - ${e.message}"
             }
+        } finally {
+            // Clean up thread local to prevent memory leaks
+            sourceLines.remove()
         }
 
         return tokens
@@ -758,11 +772,19 @@ object GroovySemanticTokenProvider {
      * but we need the position of "myMethod". This calculates the offset based on
      * the method's modifiers and return type.
      *
+     * If source text is available, it extracts the actual declaration line to find
+     * the method name position, avoiding issues with generic type formatting variations
+     * (e.g., "Map<String, Integer>" vs "Map<String,Integer>").
+     *
      * Note: We exclude 'public' from the calculation because Groovy methods are
      * implicitly public - the modifier is rarely written explicitly. If we included
      * it, the offset would be wrong for 99% of Groovy code.
      */
     private fun calculateMethodNameOffset(method: MethodNode): Int {
+        // Try source-based calculation first (handles generic type spacing variations)
+        findMethodNameOffsetFromSource(method)?.let { return it }
+
+        // Fallback to reconstruction-based calculation if source text unavailable
         var offset = 0
 
         // Add modifier lengths + spaces
@@ -804,6 +826,37 @@ object GroovySemanticTokenProvider {
 
         return offset
     }
+
+    /**
+     * Try to find the method name offset by searching the actual source text.
+     * This handles generic type formatting variations (e.g., "Map<String,Integer>" vs "Map<String, Integer>").
+     *
+     * @return The offset from declaration start to method name, or null if source unavailable/not found
+     */
+    private fun findMethodNameOffsetFromSource(method: MethodNode): Int? {
+        val lines = sourceLines.get()
+        if (lines.isNullOrEmpty()) return null
+
+        val (declLine, declCol) = getMethodDeclarationPosition(method)
+        if (!isValidSourcePosition(declLine, declCol, lines.size)) return null
+
+        val sourceLine = lines[declLine - 1] // Convert to 0-based
+        val methodName = method.name
+
+        // Find the method name followed by '(' to avoid false matches
+        // Regex.escape handles any special characters in the method name
+        val namePattern = Regex("""\b${Regex.escape(methodName)}\s*\(""")
+        val match = namePattern.find(sourceLine) ?: return null
+
+        // Calculate offset: declCol is 1-based, match.range.first is 0-based
+        return match.range.first - (declCol - 1)
+    }
+
+    /**
+     * Check if source position is valid for the given line count.
+     */
+    private fun isValidSourcePosition(line: Int, column: Int, lineCount: Int): Boolean =
+        line > 0 && line <= lineCount && column > 0
 
     /**
      * Add a token for an AST node if it has valid position information.
