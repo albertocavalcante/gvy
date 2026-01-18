@@ -17,7 +17,6 @@ import com.github.albertocavalcante.groovylsp.providers.completion.CompletionPro
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.DiagnosticProviderAdapter
-import com.github.albertocavalcante.groovylsp.providers.diagnostics.UnusedImportDetector
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.UnusedImportDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.builtin.BuiltinRules
@@ -27,9 +26,7 @@ import com.github.albertocavalcante.groovylsp.providers.implementation.Implement
 import com.github.albertocavalcante.groovylsp.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
-import com.github.albertocavalcante.groovylsp.providers.semantictokens.GroovySemanticTokenProvider
-import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
-import com.github.albertocavalcante.groovylsp.providers.semantictokens.SemanticTokensEncoder
+import com.github.albertocavalcante.groovylsp.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
@@ -43,7 +40,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
-import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -235,6 +231,10 @@ class GroovyTextDocumentService(
 
     private val inlayHintsProvider by lazy {
         InlayHintsProvider(compilationService, semanticTypeResolver)
+    }
+
+    private val semanticTokensHandler by lazy {
+        SemanticTokensHandler(compilationService, documentProvider)
     }
 
     override fun prepareCallHierarchy(params: CallHierarchyPrepareParams): CompletableFuture<List<CallHierarchyItem>> =
@@ -757,81 +757,8 @@ class GroovyTextDocumentService(
     override fun semanticTokensFull(params: SemanticTokensParams): CompletableFuture<SemanticTokens> =
         coroutineScope.future {
             logger.debug { "Semantic tokens requested for ${params.textDocument.uri}" }
-
             val uri = URI.create(params.textDocument.uri)
-
-            try {
-                // Ensure document is compiled
-                val compilationResult = compilationService.ensureCompiled(uri)
-                if (compilationResult == null) {
-                    logger.warn { "Document $uri not compiled, returning empty tokens" }
-                    return@future SemanticTokens(emptyList())
-                }
-
-                // Get AST model
-                val astModel = compilationService.getAstModel(uri)
-                if (astModel == null) {
-                    logger.warn { "No AST model available for $uri, returning empty tokens" }
-                    return@future SemanticTokens(emptyList())
-                }
-
-                // Check if this is a Jenkins file
-                val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
-                val isJenkinsFile = jenkinsCapabilities?.isJenkinsFile(uri) ?: false
-
-                // Get vars/ global variable names for semantic highlighting
-                val varsNames = jenkinsCapabilities?.getGlobalVariables()
-                    ?.map { it.name }
-                    ?.toSet()
-                    ?: emptySet()
-
-                // Detect unused imports for dimming (semantic token modifier)
-                val moduleNode = compilationService.getAst(uri) as? ModuleNode
-                val unusedImports = moduleNode?.let {
-                    UnusedImportDetector.detectUnusedImports(it).toSet()
-                } ?: emptySet()
-
-                // Get source text for accurate method name offset calculation
-                val sourceText = compilationResult.sourceText ?: documentProvider.get(uri)
-
-                // Get general Groovy semantic tokens for ALL files
-                val groovyTokens = GroovySemanticTokenProvider.getSemanticTokens(
-                    astModel,
-                    uri,
-                    unusedImports = unusedImports,
-                    moduleNode = moduleNode,
-                    sourceText = sourceText,
-                )
-
-                // Get Jenkins-specific tokens (built-in blocks + vars/ globals) only for Jenkins files
-                val jenkinsTokens = if (isJenkinsFile) {
-                    JenkinsSemanticTokenProvider.getSemanticTokens(
-                        astModel,
-                        uri,
-                        isJenkinsFile,
-                        varsNames,
-                    )
-                } else {
-                    emptyList()
-                }
-
-                // Combine all tokens and encode using SemanticTokensEncoder
-                val allTokens = SemanticTokensEncoder.combine(groovyTokens, jenkinsTokens)
-                    .sortedWith(
-                        compareBy<JenkinsSemanticTokenProvider.SemanticToken> { it.line }
-                            .thenBy { it.startChar }
-                            .thenBy { it.length }
-                            .thenBy { it.tokenType }
-                            .thenBy { it.tokenModifiers },
-                    )
-                val encodedData = SemanticTokensEncoder.encode(allTokens)
-
-                logger.debug { "Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)" }
-                SemanticTokens(encodedData)
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to generate semantic tokens for $uri" }
-                SemanticTokens(emptyList())
-            }
+            semanticTokensHandler.getSemanticTokens(uri) ?: SemanticTokens(emptyList())
         }
 
     private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
