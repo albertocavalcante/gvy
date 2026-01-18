@@ -42,17 +42,42 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
     }
 
     private fun extractFromModel(model: Model, workspaceRoot: Path): JdkRequirementResult {
-        // 1. Check maven-compiler-plugin configuration
         val compilerConfig = findCompilerPluginConfig(model)
+        val versions = extractVersions(model, compilerConfig)
+        val toolchainVersion = extractToolchainVersionIfConfigured(model, workspaceRoot)
 
-        // 2. Check properties
+        if (hasNoJdkConfiguration(versions, toolchainVersion)) {
+            return JdkRequirementResult.NotConfigured("Maven")
+        }
+
+        val source = determineRequirementSource(versions, toolchainVersion)
+
+        return JdkRequirementResult.Found(
+            JdkRequirement(
+                sourceVersion = versions.sourceVersion,
+                targetVersion = versions.releaseVersion ?: versions.targetVersion,
+                toolchainVersion = toolchainVersion,
+                source = source,
+            ),
+        )
+    }
+
+    private data class ExtractedVersions(
+        val releaseVersion: Int?,
+        val sourceVersion: Int?,
+        val targetVersion: Int?,
+        val releaseFromPlugin: Int?,
+        val releaseFromProperty: Int?,
+        val sourceFromPlugin: Int?,
+        val targetFromPlugin: Int?,
+    )
+
+    private fun extractVersions(model: Model, compilerConfig: CompilerConfig?): ExtractedVersions {
         val properties = model.properties
         val releaseProperty = properties?.getProperty("maven.compiler.release")
         val sourceProperty = properties?.getProperty("maven.compiler.source")
         val targetProperty = properties?.getProperty("maven.compiler.target")
 
-        // 3. Determine effective versions and track their sources
-        // Plugin config takes precedence over properties
         val releaseFromPlugin = compilerConfig?.release?.let { parseJavaVersion(it) }
         val releaseFromProperty = releaseProperty?.let { parseJavaVersion(it) }
         val releaseVersion = releaseFromPlugin ?: releaseFromProperty
@@ -65,36 +90,33 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
         val targetFromProperty = targetProperty?.let { parseJavaVersion(it) }
         val targetVersion = targetFromPlugin ?: targetFromProperty
 
-        // 4. Check for toolchain usage
-        val toolchainVersion = if (hasToolchainPlugin(model)) {
-            extractToolchainVersion(workspaceRoot)
-        } else {
-            null
-        }
-
-        // If no configuration found, project uses default (JDK running Maven)
-        if (releaseVersion == null && sourceVersion == null && targetVersion == null && toolchainVersion == null) {
-            return JdkRequirementResult.NotConfigured("Maven")
-        }
-
-        // Determine the source of the requirement based on WHERE the values actually came from
-        val source = when {
-            toolchainVersion != null -> RequirementSource.MAVEN_TOOLCHAIN
-            releaseFromPlugin != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
-            releaseFromProperty != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
-            sourceFromPlugin != null || targetFromPlugin != null -> RequirementSource.MAVEN_COMPILER_PLUGIN
-            else -> RequirementSource.MAVEN_SOURCE_TARGET_PROPERTY
-        }
-
-        return JdkRequirementResult.Found(
-            JdkRequirement(
-                sourceVersion = sourceVersion,
-                targetVersion = releaseVersion ?: targetVersion,
-                toolchainVersion = toolchainVersion,
-                source = source,
-            ),
+        return ExtractedVersions(
+            releaseVersion = releaseVersion,
+            sourceVersion = sourceVersion,
+            targetVersion = targetVersion,
+            releaseFromPlugin = releaseFromPlugin,
+            releaseFromProperty = releaseFromProperty,
+            sourceFromPlugin = sourceFromPlugin,
+            targetFromPlugin = targetFromPlugin,
         )
     }
+
+    private fun extractToolchainVersionIfConfigured(model: Model, workspaceRoot: Path): Int? =
+        if (hasToolchainPlugin(model)) extractToolchainVersion(workspaceRoot) else null
+
+    private fun hasNoJdkConfiguration(versions: ExtractedVersions, toolchainVersion: Int?): Boolean =
+        versions.releaseVersion == null && versions.sourceVersion == null &&
+            versions.targetVersion == null && toolchainVersion == null
+
+    private fun determineRequirementSource(versions: ExtractedVersions, toolchainVersion: Int?): RequirementSource =
+        when {
+            toolchainVersion != null -> RequirementSource.MAVEN_TOOLCHAIN
+            versions.releaseFromPlugin != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
+            versions.releaseFromProperty != null -> RequirementSource.MAVEN_RELEASE_PROPERTY
+            versions.sourceFromPlugin != null || versions.targetFromPlugin != null ->
+                RequirementSource.MAVEN_COMPILER_PLUGIN
+            else -> RequirementSource.MAVEN_SOURCE_TARGET_PROPERTY
+        }
 
     private data class CompilerConfig(
         val source: String? = null,
@@ -151,6 +173,21 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
     }
 
     private fun parseToolchainsXml(toolchainsPath: Path): Int? {
+        val document = parseToolchainsDocument(toolchainsPath)
+        val toolchains = document.getElementsByTagName("toolchain")
+
+        for (i in 0 until toolchains.length) {
+            val toolchain = toolchains.item(i)
+            val jdkVersion = extractJdkVersionFromToolchain(toolchain)
+            if (jdkVersion != null) {
+                return jdkVersion
+            }
+        }
+
+        return null
+    }
+
+    private fun parseToolchainsDocument(toolchainsPath: Path): org.w3c.dom.Document {
         val factory = DocumentBuilderFactory.newInstance()
         // Secure XML parsing - prevent XXE attacks
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
@@ -161,38 +198,38 @@ class MavenJdkRequirementExtractor : JdkRequirementExtractor {
         factory.isExpandEntityReferences = false
 
         val builder = factory.newDocumentBuilder()
-        val document = builder.parse(toolchainsPath.toFile())
+        return builder.parse(toolchainsPath.toFile())
+    }
 
-        val toolchains = document.getElementsByTagName("toolchain")
-        for (i in 0 until toolchains.length) {
-            val toolchain = toolchains.item(i)
-            val children = toolchain.childNodes
+    private fun extractJdkVersionFromToolchain(toolchain: org.w3c.dom.Node): Int? {
+        val children = toolchain.childNodes
+        var type: String? = null
+        var version: String? = null
 
-            var type: String? = null
-            var version: String? = null
-
-            for (j in 0 until children.length) {
-                val child = children.item(j)
-                when (child.nodeName) {
-                    "type" -> type = child.textContent?.trim()
-                    "provides" -> {
-                        val provides = child.childNodes
-                        for (k in 0 until provides.length) {
-                            val provide = provides.item(k)
-                            if (provide.nodeName == "version") {
-                                version = provide.textContent?.trim()
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Only consider JDK toolchains
-            if (type == "jdk" && version != null) {
-                parseJavaVersion(version)?.let { return it }
+        for (j in 0 until children.length) {
+            val child = children.item(j)
+            when (child.nodeName) {
+                "type" -> type = child.textContent?.trim()
+                "provides" -> version = extractVersionFromProvides(child)
             }
         }
 
+        // Only consider JDK toolchains
+        return if (type == "jdk" && version != null) {
+            parseJavaVersion(version)
+        } else {
+            null
+        }
+    }
+
+    private fun extractVersionFromProvides(providesNode: org.w3c.dom.Node): String? {
+        val provides = providesNode.childNodes
+        for (k in 0 until provides.length) {
+            val provide = provides.item(k)
+            if (provide.nodeName == "version") {
+                return provide.textContent?.trim()
+            }
+        }
         return null
     }
 
