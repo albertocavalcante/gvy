@@ -1,5 +1,9 @@
-# Reusable workflow for Claude Code actions
-# Called by: claude-mentions.yml, claude-code-review.yml, claude-auto-fix.yml
+# Reusable workflow for Claude Code actions (WRITE ACCESS)
+# Called by: claude-mentions.yml, claude-auto-fix.yml
+#
+# NOTE: claude-code-review.yml does NOT use this workflow because it requires
+# read-only permissions (contents: read) for security. This base workflow
+# grants contents: write which is needed for mentions and auto-fix.
 #
 # This consolidates shared steps:
 # - Repository checkout

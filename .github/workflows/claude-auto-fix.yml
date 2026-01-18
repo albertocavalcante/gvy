@@ -20,6 +20,8 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'auto-fix'))
+    # NOTE: Permissions here are required by ghalint policy (job_permissions).
+    # They match _claude-base.yml which actually enforces them at runtime.
     permissions:
       contents: write
       pull-requests: write

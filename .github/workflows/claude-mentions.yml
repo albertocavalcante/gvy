@@ -21,6 +21,8 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    # NOTE: Permissions here are required by ghalint policy (job_permissions).
+    # They match _claude-base.yml which actually enforces them at runtime.
     permissions:
       contents: write
       pull-requests: write
@@ -29,7 +31,7 @@ jobs:
       actions: read
     uses: ./.github/workflows/_claude-base.yml
     with:
-      workflow_name: Claude Code
+      workflow_name: Claude Mentions
       artifact_prefix: claude-log
       artifact_suffix: ${{ github.event.issue.number || github.event.pull_request.number }}
       timeout_minutes: 30
