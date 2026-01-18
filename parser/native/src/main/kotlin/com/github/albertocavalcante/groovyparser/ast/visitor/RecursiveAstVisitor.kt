@@ -29,6 +29,7 @@ import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.LambdaExpression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
@@ -481,6 +482,10 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
         override fun visitMethodReferenceExpression(expression: MethodReferenceExpression) {
             visitWithTracking(expression) { super.visitMethodReferenceExpression(it) }
+        }
+
+        override fun visitLambdaExpression(expression: LambdaExpression) {
+            visitWithTracking(expression) { super.visitLambdaExpression(it) }
         }
     }
 }

@@ -342,10 +342,9 @@ class VisitorExpressionCoverageTest {
         if (allNodes.any { it is MethodReferenceExpression }) typesFound.add("MethodReferenceExpression")
         if (allNodes.any { it is StaticMethodCallExpression }) typesFound.add("StaticMethodCallExpression")
 
-        println("Expression types found: $typesFound")
         assertTrue(
-            typesFound.size >= 5,
-            "Should track at least 5 of the tested expression types, found: $typesFound",
+            typesFound.size >= 9,
+            "Should track at least 9 of the tested expression types, found: ${typesFound.size} ($typesFound)",
         )
     }
 }
