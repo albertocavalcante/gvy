@@ -30,10 +30,7 @@ Markdown report with categorized findings and severity estimates.
 ### 1.1 Run Extended Lint Checks
 
 ```bash
-# Run detekt with all rules enabled
-./gradlew detekt --console=plain
-
-# Capture full report
+# Run detekt with all rules enabled and capture full report
 ./gradlew detekt --console=plain 2>&1 | tee /tmp/detekt-report.txt
 ```
 
@@ -135,8 +132,11 @@ grep -rn "\.use\s*{" --include="*.kt" | wc -l
 ### 3.3 Error Handling
 
 ```bash
-# Find empty catch blocks
-grep -rn "catch.*{" --include="*.kt" -A 1 | grep -B 1 "^[^}]*}$" | head -20
+# Find empty catch blocks (single-line only)
+grep -rnE 'catch\s*\([^)]*\)\s*\{\s*\}' --include="*.kt" | head -20
+
+# For multi-line empty catch blocks, use ast-grep (more reliable):
+# ast-grep --pattern 'catch ($_) { }' --lang kotlin | head -20
 
 # Find catch-all patterns
 grep -rn "catch\s*(\s*e\s*:\s*Exception\s*)" --include="*.kt" | head -20

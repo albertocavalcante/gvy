@@ -54,12 +54,13 @@ Only check lint on changed files, not the entire codebase.
 ### 1.1 Run Lint on Changed Files
 
 ```bash
-# Get changed Kotlin files
-CHANGED_KT=$(git diff --name-only origin/main...HEAD | grep '\.kt$' | tr '\n' ' ')
+# Get changed Kotlin files (one per line)
+CHANGED_KT=$(git diff --name-only origin/main...HEAD | grep '\.kt$' || true)
 
-# Run detekt on changed files only (if any)
 if [ -n "$CHANGED_KT" ]; then
-  ./gradlew detekt --include "$CHANGED_KT"
+  # Run full detekt and filter output to only show issues in changed files
+  # Using process substitution to create a pattern file for grep
+  ./gradlew detekt --console=plain 2>&1 | grep -F -f <(echo "$CHANGED_KT") || echo "✓ No detekt issues in changed files"
 fi
 ```
 
