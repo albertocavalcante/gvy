@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package com.github.albertocavalcante.reports.results;
+
+option java_multiple_files = true;
+option java_package = "com.github.albertocavalcante.schemas.results";
+
+// Final outcome of a test execution.
+enum TestResultStatus {
+  TEST_RESULT_STATUS_UNSPECIFIED = 0;
+  TEST_RESULT_STATUS_SUCCESS = 1;
+  TEST_RESULT_STATUS_FAILURE = 2;
+  TEST_RESULT_STATUS_SKIPPED = 3;
+  TEST_RESULT_STATUS_ERROR = 4;
+}
+
+// Represents the result of a single test case execution.
+message TestResultItem {
+  // Fully qualified identifier for the test, e.g. "com.example.MySpec.testName".
+  string test_id = 1;
+  // Human-readable test name, suitable for display in reports or UIs.
+  string name = 2;
+  // Final outcome of the test execution.
+  TestResultStatus status = 3;
+  // Execution duration of the test in milliseconds.
+  int64 duration_ms = 4;
+  // Captured standard output and standard error produced by the test.
+  optional string output = 5;
+  // Short description or assertion message explaining why the test failed.
+  optional string failure_message = 6;
+  // Stack trace captured when the test failed or encountered an error.
+  optional string stack_trace = 7;
+  // Name of the test class or specification that contains this test, if applicable.
+  optional string class_name = 8;
+}
+
+// Aggregated test results for a single test run or suite.
+message TestResultSummary {
+  // Total number of tests that were executed (including passed, failed, skipped, and errored).
+  int32 total = 1;
+  // Number of tests that completed successfully.
+  int32 passed = 2;
+  // Number of tests that failed due to assertion or validation errors.
+  int32 failed = 3;
+  // Number of tests that were reported as skipped and therefore not executed.
+  int32 skipped = 4;
+  // Number of tests that ended with an unexpected error (e.g., exceptions, infrastructure issues).
+  int32 errors = 5;
+  // Total duration of all tests in milliseconds.
+  int64 duration_ms = 6;
+}
+
+// Response for the 'groovy/getTestResults' LSP request, containing individual test
+// results and an aggregate summary for the test run.
+message TestResultsResponse {
+  // Detailed results for individual tests returned by the LSP request.
+  repeated TestResultItem results = 1;
+  // Aggregate summary of the overall test execution.
+  TestResultSummary summary = 2;
+}

@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package com.github.albertocavalcante.reports.coverage;
+
+option java_multiple_files = true;
+option java_package = "com.github.albertocavalcante.schemas.coverage";
+
+// Branch coverage information for a specific line or code location.
+message BranchInfo {
+  // Number of branches that were executed at least once.
+  int32 covered = 1;
+  // Total number of branches at this location.
+  int32 total = 2;
+}
+
+// Coverage information for a single source line.
+message LineCoverage {
+  // 1-indexed line number in the source file.
+  int32 line = 1;
+  // Whether this line was executed at least once.
+  bool covered = 2;
+  // Number of times this line was executed.
+  optional int32 hit_count = 3;
+  // Branch coverage data associated with this line.
+  optional BranchInfo branch_info = 4;
+}
+
+// Summary of line and branch coverage for a single source file.
+message FileCoverageSummary {
+  // Number of executable lines that were executed at least once.
+  int32 lines_covered = 1;
+  // Total number of executable lines in the file.
+  int32 lines_total = 2;
+  // Number of branches that were taken at least once.
+  int32 branches_covered = 3;
+  // Total number of branches in the file.
+  int32 branches_total = 4;
+}
+
+// Coverage information for a single source file.
+message FileCoverageData {
+  // File URI for the source file (for example, "file:///path/to/MyClass.groovy").
+  string uri = 1;
+  // Per-line coverage information for this file.
+  repeated LineCoverage lines = 2;
+  // Aggregate coverage statistics for this file.
+  FileCoverageSummary summary = 3;
+}
+
+// Overall coverage summary aggregated across all files in the report.
+message CoverageSummary {
+  // Overall line coverage in percent, in the range [0, 100].
+  double line_coverage_percent = 1;
+  // Overall branch coverage in percent, in the range [0, 100].
+  double branch_coverage_percent = 2;
+  // Total number of lines that were executed at least once across all files.
+  int32 lines_covered = 3;
+  // Total number of lines that could be covered across all files.
+  int32 lines_total = 4;
+  // Total number of branches that were executed at least once across all files.
+  int32 branches_covered = 5;
+  // Total number of branches that could be covered across all files.
+  int32 branches_total = 6;
+}
+
+// Response for the 'groovy/getCoverage' LSP request.
+// Contains per-file coverage details and an overall aggregated summary.
+message CoverageResponse {
+  // Coverage data for each file, including line-level information and a file summary.
+  repeated FileCoverageData files = 1;
+  // Aggregated coverage summary across all reported files.
+  CoverageSummary summary = 2;
+}
