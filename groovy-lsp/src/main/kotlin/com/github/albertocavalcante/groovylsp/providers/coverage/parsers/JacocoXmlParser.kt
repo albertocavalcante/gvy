@@ -6,11 +6,12 @@ import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageSummary
 import com.github.albertocavalcante.groovylsp.providers.coverage.FileCoverageData
 import com.github.albertocavalcante.groovylsp.providers.coverage.FileCoverageSummary
 import com.github.albertocavalcante.groovylsp.providers.coverage.LineCoverage
+import com.github.albertocavalcante.reports.discovery.ProjectDiscovery
+import com.github.albertocavalcante.reports.xml.XmlUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.w3c.dom.Element
 import java.io.File
 import java.net.URI
-import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Parses JaCoCo XML coverage reports.
@@ -100,7 +101,7 @@ object JacocoXmlParser {
         }
 
         // Check Maven submodules
-        val submodules = discoverMavenModules(workspaceRoot)
+        val submodules = ProjectDiscovery.discoverMavenModules(workspaceRoot)
         for (module in submodules) {
             val moduleDir = File(workspaceRoot, module)
             for (path in JACOCO_REPORT_PATHS) {
@@ -112,7 +113,7 @@ object JacocoXmlParser {
         }
 
         // Also check Gradle subprojects (look for build directories)
-        val gradleSubprojects = findGradleSubprojects(workspaceRoot)
+        val gradleSubprojects = ProjectDiscovery.findGradleSubprojects(workspaceRoot)
         for (subproject in gradleSubprojects) {
             for (path in JACOCO_REPORT_PATHS) {
                 val file = File(subproject, path)
@@ -126,58 +127,13 @@ object JacocoXmlParser {
     }
 
     /**
-     * Discover Maven submodules from pom.xml.
-     */
-    private fun discoverMavenModules(workspaceRoot: File): List<String> {
-        val pomFile = File(workspaceRoot, "pom.xml")
-        if (!pomFile.exists()) return emptyList()
-
-        return try {
-            val dbFactory = DocumentBuilderFactory.newInstance()
-            dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            val dBuilder = dbFactory.newDocumentBuilder()
-            val doc = dBuilder.parse(pomFile)
-            doc.documentElement.normalize()
-
-            val moduleNodes = doc.getElementsByTagName("module")
-            (0 until moduleNodes.length).mapNotNull { i ->
-                moduleNodes.item(i).textContent?.trim()?.takeIf { it.isNotEmpty() }
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to parse pom.xml for modules" }
-            emptyList()
-        }
-    }
-
-    /**
-     * Find Gradle subprojects by looking for build.gradle files.
-     */
-    private fun findGradleSubprojects(workspaceRoot: File): List<File> {
-        val subprojects = mutableListOf<File>()
-
-        workspaceRoot.listFiles()?.forEach { dir ->
-            if (dir.isDirectory && dir.name != "build" && dir.name != ".gradle") {
-                val hasBuildGradle = File(dir, "build.gradle").exists() ||
-                    File(dir, "build.gradle.kts").exists()
-                if (hasBuildGradle) {
-                    subprojects.add(dir)
-                }
-            }
-        }
-
-        return subprojects
-    }
-
-    /**
      * Parse a single JaCoCo XML report file.
      *
      * @param file The JaCoCo XML report file
      * @param workspaceRoot Workspace root for resolving file URIs
      */
     fun parseReportFile(file: File, workspaceRoot: File): List<FileCoverageData> {
-        val dbFactory = DocumentBuilderFactory.newInstance()
-        dbFactory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        val dBuilder = dbFactory.newDocumentBuilder()
+        val dBuilder = XmlUtils.createSecureDocumentBuilder()
         val doc = dBuilder.parse(file)
         doc.documentElement.normalize()
 
@@ -289,7 +245,7 @@ object JacocoXmlParser {
         }
 
         // Also check Maven submodules
-        val submodules = discoverMavenModules(workspaceRoot)
+        val submodules = ProjectDiscovery.discoverMavenModules(workspaceRoot)
         for (module in submodules) {
             for (sourceDir in sourceDirs) {
                 val candidate = File(workspaceRoot, "$module/$sourceDir/$packagePath/$fileName")
