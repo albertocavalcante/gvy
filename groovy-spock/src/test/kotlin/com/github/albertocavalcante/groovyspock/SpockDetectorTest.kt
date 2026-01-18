@@ -148,4 +148,134 @@ class SpockDetectorTest {
 
         assertTrue(SpockDetector.isSpockSpec(classNode))
     }
+
+    @Test
+    fun `detects spock spec by block labels when extending custom base class`() {
+        val uri = URI.create("file:///src/test/groovy/com/example/MySpec.groovy")
+        val content =
+            """
+            class MySpec extends BaseSpec {
+                def "should work"() {
+                    given:
+                    def x = 1
+
+                    when:
+                    def result = x + 1
+
+                    then:
+                    result == 2
+                }
+            }
+            """.trimIndent()
+        assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `detects spock spec with expect block`() {
+        val uri = URI.create("file:///src/test/groovy/com/example/MySpec.groovy")
+        val content =
+            """
+            class MySpec extends BaseTest {
+                def "test with expect"() {
+                    expect:
+                    1 + 1 == 2
+                }
+            }
+            """.trimIndent()
+        assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `detects spock spec with where block`() {
+        val uri = URI.create("file:///src/test/groovy/com/example/MySpec.groovy")
+        val content =
+            """
+            class MySpec extends BaseSpec {
+                def "parameterized test"() {
+                    expect:
+                    a + b == c
+
+                    where:
+                    a | b | c
+                    1 | 2 | 3
+                }
+            }
+            """.trimIndent()
+        assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `detects spock spec with cleanup block`() {
+        val uri = URI.create("file:///src/test/groovy/com/example/MySpec.groovy")
+        val content =
+            """
+            class MySpec extends BaseTest {
+                def "test with cleanup"() {
+                    given:
+                    def resource = openResource()
+
+                    when:
+                    resource.use()
+
+                    then:
+                    resource.wasUsed()
+
+                    cleanup:
+                    resource.close()
+                }
+            }
+            """.trimIndent()
+        assertTrue(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `does not detect spock when block label is in string literal`() {
+        val uri = URI.create("file:///src/main/groovy/com/example/MyClass.groovy")
+        val content =
+            """
+            class MyClass {
+                def test() {
+                    println "given: this is not spock"
+                    def text = '''
+                    when: this is also not a spock block
+                    '''
+                }
+            }
+            """.trimIndent()
+        assertFalse(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `does not detect spock when block label is in comment`() {
+        val uri = URI.create("file:///src/main/groovy/com/example/MyClass.groovy")
+        val content =
+            """
+            class MyClass {
+                def test() {
+                    // given: this is not spock
+                    /*
+                    when: this is also not spock
+                    then: still not spock
+                    */
+                    println "hello"
+                }
+            }
+            """.trimIndent()
+        assertFalse(SpockDetector.isLikelySpockSpec(uri, content))
+    }
+
+    @Test
+    fun `does not detect spock when only partial block label match`() {
+        val uri = URI.create("file:///src/main/groovy/com/example/MyClass.groovy")
+        val content =
+            """
+            class MyClass {
+                def test() {
+                    def mapGiven = [key: "value"]
+                    def whenValue = "test"
+                }
+            }
+            """.trimIndent()
+        assertFalse(SpockDetector.isLikelySpockSpec(uri, content))
+    }
 }

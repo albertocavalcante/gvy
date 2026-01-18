@@ -14,6 +14,8 @@ object SpockDetector {
     private val spockImportRegex = Regex("(?m)^\\s*import\\s+spock\\.")
     private val spockExtendsRegex =
         Regex("(?m)^\\s*(?:abstract\\s+)?class\\s+\\w+.*\\bextends\\s+spock\\.lang\\.Specification\\b")
+    private val spockBlockLabelRegex =
+        Regex("(?m)^\\s*(given|when|then|expect|cleanup|where)\\s*:")
 
     /**
      * Checks if a file contains any Spock specifications.
@@ -138,17 +140,86 @@ object SpockDetector {
             .replace("\r\n", "\n")
             .replace('\r', '\n')
 
-        // Remove comments to avoid false positives (e.g., "import spock.*" in a comment)
-        // This is a simple heuristic - remove single-line comments and multi-line comments
-        val withoutComments = normalized
-            .replace(Regex("//.*"), "") // Remove single-line comments
-            .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "") // Remove multi-line comments
+        // Remove comments and string literals to avoid false positives
+        val cleaned = removeCommentsAndStrings(normalized)
 
         // NOTE: Heuristic / tradeoff:
-        // We intentionally key off common source-level patterns (`import spock.*`, `extends spock.lang.Specification`)
-        // rather than deeper semantic checks. This keeps detection cheap and dependency-free, but can miss unusual code
-        // layouts (e.g., split class declarations) or produce false negatives.
-        return spockImportRegex.containsMatchIn(withoutComments) ||
-            spockExtendsRegex.containsMatchIn(withoutComments)
+        // We intentionally key off common source-level patterns:
+        // 1. `import spock.*` - direct Spock imports
+        // 2. `extends spock.lang.Specification` - explicit Spock superclass
+        // 3. Spock block labels (given:, when:, then:, etc.) - unique to Spock test structure
+        // This keeps detection cheap and dependency-free, but can miss unusual code layouts or produce false negatives.
+        // Block label detection helps catch specs that extend custom base classes (e.g., BaseSpec, BaseTest).
+        return spockImportRegex.containsMatchIn(cleaned) ||
+            spockExtendsRegex.containsMatchIn(cleaned) ||
+            spockBlockLabelRegex.containsMatchIn(cleaned)
+    }
+
+    /**
+     * Removes comments and string literals from code to avoid false positive detections.
+     * This is a heuristic approach that handles common cases but may not be perfect for all edge cases.
+     *
+     * NOTE: Heuristic / tradeoff:
+     * This function is intentionally complex as it needs to handle multiple Groovy string and comment formats
+     * (single/double quotes, triple quotes, GStrings, single/multi-line comments, escape sequences).
+     * A proper solution would require a full lexer/parser, but that would defeat the purpose of a lightweight
+     * heuristic check. Edge cases like nested strings or complex escape sequences may not be handled perfectly,
+     * but this is acceptable for a best-effort detection mechanism that's supplemented by AST-based checks.
+     */
+    @Suppress("CyclomaticComplexMethod", "NestedBlockDepth", "MagicNumber")
+    private fun removeCommentsAndStrings(code: String): String {
+        val result = StringBuilder()
+        var i = 0
+        while (i < code.length) {
+            when {
+                // Single-line comment
+                code.startsWith("//", i) -> {
+                    i = code.indexOf('\n', i).let { if (it == -1) code.length else it + 1 }
+                }
+                // Multi-line comment
+                code.startsWith("/*", i) -> {
+                    i = code.indexOf("*/", i + 2).let { if (it == -1) code.length else it + 2 }
+                }
+                // Triple-quoted string (GString or regular)
+                code.startsWith("'''", i) || code.startsWith("\"\"\"", i) -> {
+                    val delimiter = code.substring(i, i + 3)
+                    i = code.indexOf(delimiter, i + 3).let { if (it == -1) code.length else it + 3 }
+                }
+                // Single-quoted string
+                code[i] == '\'' -> {
+                    i++
+                    while (i < code.length) {
+                        if (code[i] == '\\') {
+                            i += 2 // Skip escaped character
+                        } else if (code[i] == '\'') {
+                            i++
+                            break
+                        } else {
+                            i++
+                        }
+                    }
+                }
+                // Double-quoted string (GString)
+                code[i] == '"' -> {
+                    i++
+                    while (i < code.length) {
+                        if (code[i] == '\\') {
+                            i += 2 // Skip escaped character
+                        } else if (code[i] == '"') {
+                            i++
+                            break
+                        } else {
+                            i++
+                        }
+                    }
+                }
+                // Regular code
+                else -> {
+                    result.append(code[i])
+                    i++
+                }
+            }
+        }
+        return result.toString()
     }
 }
