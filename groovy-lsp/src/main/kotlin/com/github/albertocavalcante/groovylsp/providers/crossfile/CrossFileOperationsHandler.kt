@@ -57,6 +57,26 @@ class CrossFileOperationsHandler(
 ) {
     private val logger = KotlinLogging.logger {}
 
+    private val telemetrySink by lazy {
+        DefinitionTelemetrySink { event -> clientTelemetry(event) }
+    }
+
+    private val definitionProvider by lazy {
+        DefinitionProvider(
+            compilationService = compilationService,
+            sourceNavigator = sourceNavigator,
+            telemetrySink = telemetrySink,
+        )
+    }
+
+    private val referenceProvider by lazy {
+        ReferenceProvider(compilationService)
+    }
+
+    private val implementationProvider by lazy {
+        ImplementationProvider(compilationService)
+    }
+
     /**
      * Get definitions for the symbol at the given position.
      *
@@ -72,9 +92,6 @@ class CrossFileOperationsHandler(
         }
 
         val documentUri = URI.create(uri)
-        val telemetrySink = DefinitionTelemetrySink { event ->
-            clientTelemetry(event)
-        }
 
         try {
             // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
@@ -87,13 +104,6 @@ class CrossFileOperationsHandler(
                 logger.warn { "Document $documentUri not compiled, cannot provide definitions" }
                 return Either.forLeft(emptyList())
             }
-
-            // Create definition provider with source navigation support
-            val definitionProvider = DefinitionProvider(
-                compilationService = compilationService,
-                sourceNavigator = sourceNavigator,
-                telemetrySink = telemetrySink,
-            )
 
             // Try LocationLink format if supported
             if (definitionLinkSupport()) {
@@ -118,14 +128,8 @@ class CrossFileOperationsHandler(
             return Either.forLeft(locations)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments finding definitions" }
-            return Either.forLeft(emptyList())
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state finding definitions" }
-            return Either.forLeft(emptyList())
         } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding definitions" }
+            logException(e, "finding definitions")
             return Either.forLeft(emptyList())
         }
     }
@@ -156,7 +160,6 @@ class CrossFileOperationsHandler(
                 return emptyList()
             }
 
-            val referenceProvider = ReferenceProvider(compilationService)
             val locations = referenceProvider.provideReferences(
                 uri,
                 position,
@@ -167,14 +170,8 @@ class CrossFileOperationsHandler(
             return locations
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments finding references" }
-            return emptyList()
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state finding references" }
-            return emptyList()
         } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding references" }
+            logException(e, "finding references")
             return emptyList()
         }
     }
@@ -206,21 +203,14 @@ class CrossFileOperationsHandler(
                 return Either.forLeft(emptyList())
             }
 
-            val implementationProvider = ImplementationProvider(compilationService)
             val locations = implementationProvider.provideImplementations(uri, position).toList()
 
             logger.debug { "Found ${locations.size} implementations" }
             return Either.forLeft(locations)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IllegalArgumentException) {
-            logger.error(e) { "Invalid arguments finding implementations" }
-            return Either.forLeft(emptyList())
-        } catch (e: IllegalStateException) {
-            logger.error(e) { "Invalid state finding implementations" }
-            return Either.forLeft(emptyList())
         } catch (e: Exception) {
-            logger.error(e) { "Unexpected error finding implementations" }
+            logException(e, "finding implementations")
             return Either.forLeft(emptyList())
         }
     }
@@ -269,5 +259,17 @@ class CrossFileOperationsHandler(
 
         val content = documentProvider.get(uri) ?: return null
         return compilationService.compileAsync(coroutineScope, uri, content).await()
+    }
+
+    /**
+     * Helper function to log exceptions with appropriate context.
+     * Simplifies exception handling by consolidating logging logic.
+     */
+    private fun logException(e: Exception, operation: String) {
+        when (e) {
+            is IllegalArgumentException -> logger.error(e) { "Invalid arguments $operation" }
+            is IllegalStateException -> logger.error(e) { "Invalid state $operation" }
+            else -> logger.error(e) { "Unexpected error $operation" }
+        }
     }
 }
