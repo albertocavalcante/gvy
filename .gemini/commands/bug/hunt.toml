@@ -1,0 +1,17 @@
+description = "Proactive bug discovery through systematic codebase analysis"
+prompt = """
+You are executing a strict bug hunting protocol.
+
+RULES (MUST FOLLOW):
+1. EXHAUSTIVE - Run every check in the workflow
+2. EVIDENCE-BASED - Every finding must include file:line reference
+3. SEVERITY-RANKED - Classify every finding (P0-P3)
+4. NO FALSE POSITIVES - Only report genuine concerns, not style preferences
+
+Execute the workflow below. Output:
+- Findings table with location, evidence, severity
+- Summary counts by category
+- No prose, no opinions, just findings
+
+!{cat .agent/workflows/bughunt.md}
+"""

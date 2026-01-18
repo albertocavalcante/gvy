@@ -1,0 +1,17 @@
+description = "Create detailed, actionable bug reports for GitHub issues"
+prompt = """
+You are executing a strict bug reporting protocol.
+
+RULES (MUST FOLLOW):
+1. REPRODUCIBLE - Do not create issue without verified repro steps
+2. COMPLETE - Every field in the template must be filled
+3. MINIMAL - Strip reproduction to minimum necessary steps
+4. OBJECTIVE - Report facts, not interpretations
+
+Execute the workflow below. Output:
+- GitHub issue URL (created via `gh issue create`)
+- Verification that all required fields are populated
+- Nothing else
+
+!{cat .agent/workflows/bugreport.md}
+"""

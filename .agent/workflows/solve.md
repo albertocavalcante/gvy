@@ -328,3 +328,68 @@ Ensure the PR body contains `Fixes #<ISSUE_NUMBER>` for auto-closing.
 3. ❌ **Ignoring issue comments**: Comments often contain critical context
 4. ❌ **Skipping verification**: Every change must be tested
 5. ❌ **Silent deviations**: If you change the approach, document why
+
+---
+
+## Bug-Specific Protocol
+
+<critical>
+When the issue has a `bug` label, apply these additional requirements.
+</critical>
+
+### Detection
+
+```bash
+# Check if issue is a bug
+jq '.labels[] | select(.name == "bug")' /tmp/issue-<ISSUE_NUMBER>.json
+```
+
+### Bug-Specific Rules
+
+1. **REPRODUCTION FIRST**
+   - Create a failing test that reproduces the bug BEFORE any fix
+   - Test must fail without the fix, pass with the fix
+   - No fix is complete without a regression test
+
+2. **ROOT CAUSE ANALYSIS**
+   - Document the root cause in the PR description
+   - Explain WHY the bug occurred, not just WHAT was changed
+   - Consider: Was this a one-off mistake or a pattern that might recur?
+
+3. **REGRESSION PREVENTION**
+   - Add the test to prevent future regression
+   - Consider if similar bugs might exist elsewhere
+   - Update fragile areas documentation in `/qa` if applicable
+
+4. **PROPER LINKING**
+   - Use `Fixes #<ISSUE_NUMBER>` in commit message for auto-close
+   - Reference the issue in PR title: `fix(<scope>): <description> (#<ISSUE_NUMBER>)`
+
+### Bug Fix PR Template
+
+```markdown
+Fixes #<ISSUE_NUMBER>
+
+## Root Cause
+
+[Explain why the bug occurred]
+
+## Fix
+
+[Describe the fix approach]
+
+## Regression Test
+
+- Added test: `path/to/TestFile.kt#testMethodName`
+- Test verifies: [what scenario is now covered]
+
+## Risk Assessment
+
+- Blast radius: [Low/Medium/High]
+- Related areas checked: [list or N/A]
+```
+
+### Related Workflows
+
+- `/bug:hunt` - Proactive bug discovery
+- `/bug:report` - Create detailed bug reports

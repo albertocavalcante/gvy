@@ -1,0 +1,6 @@
+description = "GitHub issue creation patterns and label conventions"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/github-issues.md}
+"""
